@@ -11,7 +11,7 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Columns2, LayoutList, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { Columns2, LayoutList, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -100,6 +100,18 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
   useEffect(() => {
     loadBoard(workspaceId);
   }, [workspaceId, loadBoard]);
+
+  // Listen for "Create story" button click from the header
+  useEffect(() => {
+    const handler = () => {
+      const firstState = workflow?.states[0]?.id;
+      if (!firstState) return;
+      setCreateStateId(firstState);
+      setCreateOpen(true);
+    };
+    window.addEventListener('add-work-item', handler);
+    return () => window.removeEventListener('add-work-item', handler);
+  }, [workflow]);
 
   useEffect(() => {
     if (!workflow) return;
@@ -247,24 +259,6 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
           </Button>
         </div>
 
-        <Button variant="outline" size="sm" onClick={() => refreshBoard()}>
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
-
-        <Button
-          size="sm"
-          onClick={() => {
-            const firstState = workflow?.states[0]?.id;
-            if (!firstState) return;
-            setCreateStateId(firstState);
-            setCreateOpen(true);
-          }}
-          disabled={!workflow}
-        >
-          <Plus className="h-4 w-4" />
-          Add story
-        </Button>
       </header>
 
       {error ? (

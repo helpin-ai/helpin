@@ -156,7 +156,7 @@ export function Header() {
             onClick={() => window.dispatchEvent(new CustomEvent('add-work-item'))}
           >
             <Plus className="h-3.5 w-3.5" />
-            Add work item
+            Create story
           </Button>
         )}
       </div>
