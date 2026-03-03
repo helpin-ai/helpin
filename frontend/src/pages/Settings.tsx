@@ -4,6 +4,7 @@ import { useSessionStore } from '@/stores/sessionStore';
 import { settingsService } from '@/lib/services/settingsService';
 import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
+import { StateTypeIcon } from '@/lib/pmConstants';
 import type { StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -1190,7 +1191,10 @@ function WorkflowStatesTab({ workspaceId, editable }: {
                 {STATE_TYPE_ORDER.map((type) => (
                   <section key={type} className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-medium">{STATE_TYPE_LABEL[type]}</h4>
+                      <h4 className="flex items-center gap-1.5 text-sm font-medium">
+                        <StateTypeIcon stateType={type} className="h-4 w-4" />
+                        {STATE_TYPE_LABEL[type]}
+                      </h4>
                       {editable && (
                         <Button variant="ghost" size="sm" onClick={() => openCreateForType(type)}>
                           <Plus className="h-3.5 w-3.5 mr-1" /> Add
@@ -1208,6 +1212,7 @@ function WorkflowStatesTab({ workspaceId, editable }: {
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <div className="flex items-center gap-2">
+                                  <StateTypeIcon stateType={state.state_type} className="h-4 w-4" />
                                   <p className="font-medium">{state.name}</p>
                                   {state.is_default && (
                                     <Badge variant="secondary" className="text-xs">Default</Badge>

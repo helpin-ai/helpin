@@ -164,6 +164,7 @@ func (s *PMWorkflowService) CreateState(ctx context.Context, workflowID string, 
 		return nil, fmt.Errorf("workflow not found")
 	}
 
+	// Temporarily assign end position; normalizePositions will fix it.
 	position := len(wf.States)
 	if req.Position != nil {
 		position = *req.Position
@@ -194,10 +195,12 @@ func (s *PMWorkflowService) CreateState(ctx context.Context, workflowID string, 
 	if err != nil {
 		return nil, err
 	}
-	if err := validateWorkflowStateOrder(updated.States); err != nil {
+	if err := ensureWorkflowStateTypeCoverage(updated.States); err != nil {
 		return nil, err
 	}
-	if err := ensureWorkflowStateTypeCoverage(updated.States); err != nil {
+
+	// Normalize positions so states are ordered by type group, then by position within each group.
+	if err := s.normalizePositions(ctx, workflowID, updated.States); err != nil {
 		return nil, err
 	}
 
@@ -410,6 +413,35 @@ func (s *PMWorkflowService) seedDefaultLabels(ctx context.Context, workspaceID s
 		}
 	}
 	return nil
+}
+
+// normalizePositions reorders all states so they are grouped by type
+// (backlog → unstarted → started → done), preserving relative order within each group,
+// then persists the new positions via ReorderStates.
+func (s *PMWorkflowService) normalizePositions(ctx context.Context, workflowID string, states []model.PMWorkflowState) error {
+	typeRank := map[string]int{
+		model.PMStateTypeBacklog:   0,
+		model.PMStateTypeUnstarted: 1,
+		model.PMStateTypeStarted:   2,
+		model.PMStateTypeDone:      3,
+	}
+
+	sorted := make([]model.PMWorkflowState, len(states))
+	copy(sorted, states)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		ri := typeRank[sorted[i].StateType]
+		rj := typeRank[sorted[j].StateType]
+		if ri != rj {
+			return ri < rj
+		}
+		return sorted[i].Position < sorted[j].Position
+	})
+
+	ids := make([]string, len(sorted))
+	for i, state := range sorted {
+		ids[i] = state.ID
+	}
+	return s.workflowRepo.ReorderStates(ctx, workflowID, ids)
 }
 
 func isValidStateType(stateType string) bool {

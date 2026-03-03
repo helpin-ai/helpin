@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { CreateStoryRequest, Story, StoryStateColumn } from '@/lib/pmTypes';
 import { pmStoryService } from '@/lib/services/pmStoryService';
+import { StateTypeIcon } from '@/lib/pmConstants';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
 import { StoryDetailPanel } from './StoryDetailPanel';
@@ -39,7 +40,10 @@ function Column({ column, onCreate, onOpen }: ColumnProps) {
     <section className="flex h-full w-[360px] shrink-0 flex-col rounded-xl border border-border/70 bg-background/70">
       <header className="flex items-center justify-between border-b border-border/70 px-3 py-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{column.state.name}</p>
+          <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+            <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
+            {column.state.name}
+          </p>
           <p className="text-xs text-muted-foreground">
             {column.story_count} items · {column.point_total} pts
           </p>

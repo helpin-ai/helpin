@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Archive, Loader2, MessageSquare } from 'lucide-react';
+import { PRIORITY_CONFIG, PriorityIcon, StateTypeIcon } from '@/lib/pmConstants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -228,7 +229,10 @@ function StoryDetailPanelBody({
                   <SelectContent>
                     {states.map((state) => (
                       <SelectItem key={state.id} value={state.id}>
-                        {state.name}
+                        <span className="inline-flex items-center gap-2">
+                          <StateTypeIcon stateType={state.state_type} className="h-4 w-4" />
+                          {state.name}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -249,7 +253,10 @@ function StoryDetailPanelBody({
                   <SelectContent>
                     {priorityOptions.map((option) => (
                       <SelectItem key={option} value={option}>
-                        {option}
+                        <span className="inline-flex items-center gap-2">
+                          <PriorityIcon priority={option} className="h-4 w-4" />
+                          {PRIORITY_CONFIG[option].label}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>

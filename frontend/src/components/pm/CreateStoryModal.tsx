@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   CircleDot,
-  Flag,
   GitBranch,
   Hash,
   Layers,
@@ -22,6 +21,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { PRIORITY_CONFIG, PriorityIcon, StateTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateStoryRequest,
   IterationWithStats,
@@ -106,6 +106,8 @@ function ChipSelect<T extends string>({
   options,
   getLabel,
   onChange,
+  renderTriggerIcon,
+  renderOptionIcon,
 }: {
   icon: React.ElementType;
   label: string;
@@ -113,6 +115,8 @@ function ChipSelect<T extends string>({
   options: { value: T; label: string }[];
   getLabel: (value: T) => string;
   onChange: (value: T) => void;
+  renderTriggerIcon?: (value: T) => React.ReactNode;
+  renderOptionIcon?: (value: T) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -123,7 +127,7 @@ function ChipSelect<T extends string>({
           type="button"
           className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-transparent px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
         >
-          <Icon className="h-3.5 w-3.5 shrink-0" />
+          {renderTriggerIcon ? renderTriggerIcon(value) : <Icon className="h-3.5 w-3.5 shrink-0" />}
           <span className="whitespace-nowrap">{getLabel(value) || label}</span>
         </button>
       </PopoverTrigger>
@@ -141,6 +145,7 @@ function ChipSelect<T extends string>({
                 setOpen(false);
               }}
             >
+              {renderOptionIcon ? renderOptionIcon(option.value) : null}
               {option.label}
             </button>
           ))}
@@ -312,10 +317,18 @@ export function CreateStoryModal({
                 }))}
                 getLabel={() => currentStateName}
                 onChange={setStateId}
+                renderTriggerIcon={(v) => {
+                  const st = workflow.states.find((s) => s.id === v);
+                  return st ? <StateTypeIcon stateType={st.state_type} className="h-3.5 w-3.5 shrink-0" /> : <CircleDot className="h-3.5 w-3.5 shrink-0" />;
+                }}
+                renderOptionIcon={(v) => {
+                  const st = workflow.states.find((s) => s.id === v);
+                  return st ? <StateTypeIcon stateType={st.state_type} className="h-4 w-4 shrink-0" /> : null;
+                }}
               />
 
               <ChipSelect
-                icon={Flag}
+                icon={PRIORITY_CONFIG.none.icon}
                 label="Priority"
                 value={form.priority}
                 options={priorityOptions.map((p) => ({
@@ -326,6 +339,8 @@ export function CreateStoryModal({
                 onChange={(value) =>
                   setForm((prev) => ({ ...prev, priority: value }))
                 }
+                renderTriggerIcon={(v) => <PriorityIcon priority={v} className="h-3.5 w-3.5 shrink-0" />}
+                renderOptionIcon={(v) => <PriorityIcon priority={v} className="h-4 w-4 shrink-0" />}
               />
 
               <ChipSelect

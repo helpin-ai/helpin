@@ -13,7 +13,8 @@ import { format, isBefore, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import type { Priority, Story } from '@/lib/pmTypes';
+import { PriorityIcon } from '@/lib/pmConstants';
+import type { Story } from '@/lib/pmTypes';
 
 interface StoryCardProps {
   story: Story;
@@ -25,14 +26,6 @@ const storyTypeIcon: Record<Story['story_type'], typeof Star> = {
   feature: Star,
   bug: Bug,
   chore: Cog,
-};
-
-const priorityColor: Record<Priority, string> = {
-  none: 'bg-zinc-400',
-  low: 'bg-sky-500',
-  medium: 'bg-amber-500',
-  high: 'bg-orange-500',
-  urgent: 'bg-red-500',
 };
 
 const toInitials = (ownerId?: string) => {
@@ -92,13 +85,9 @@ export function StoryCard({ story, onOpen, isOverlay = false }: StoryCardProps) 
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <StoryTypeIcon className="h-3.5 w-3.5" />
         <span className="font-medium text-foreground">TP-{story.display_id}</span>
-        <span
-          className={cn(
-            'ml-auto h-2.5 w-2.5 rounded-full',
-            priorityColor[story.priority]
-          )}
-          title={`Priority: ${story.priority}`}
-        />
+        <span className="ml-auto" title={`Priority: ${story.priority}`}>
+          <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
+        </span>
       </div>
 
       <h4 className="mt-1.5 line-clamp-2 text-sm font-semibold leading-snug">
