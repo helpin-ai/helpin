@@ -182,11 +182,6 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">{currentWorkspace?.name} workspace configuration</p>
-      </div>
-
       <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="h-fit border-r pr-4">
           <p className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">Settings Sections</p>
