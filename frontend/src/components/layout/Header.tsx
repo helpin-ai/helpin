@@ -1,11 +1,21 @@
 import { Fragment, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
-import { Bell, CircleHelp, Search } from 'lucide-react';
+import { Bell, CircleHelp, LogOut, Search, User, Users } from 'lucide-react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { QuarterSelector } from '@/components/quarter/QuarterSelector';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useAuthStore } from '@/stores/authStore';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 type Crumb = {
   label: string;
@@ -16,6 +26,16 @@ export function Header() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
+  const { user, signOut } = useAuthStore();
+
+  const initials = user?.full_name
+    ? user.full_name
+      .split(' ')
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+    : user?.email?.slice(0, 2).toUpperCase() || '??';
 
   const breadcrumbs = useMemo<Crumb[]>(() => {
     const segments = location.pathname.split('/').filter(Boolean);
@@ -41,11 +61,37 @@ export function Header() {
       'my-quarter': 'My Quarter',
       settings: 'Settings',
       tasks: 'Tasks',
+      pm: 'Projects',
+      docs: 'Docs',
     };
 
     if (section === 'sprints' && subRoute[1]) {
       crumbs.push({ label: 'Sprints', to: `/w/${slug}/sprints` });
       crumbs.push({ label: 'Sprint Detail' });
+      return crumbs;
+    }
+
+    const pmSubMap: Record<string, string> = {
+      stories: 'Stories',
+      epics: 'Epics',
+      iterations: 'Iterations',
+      objectives: 'Objectives',
+      roadmap: 'Roadmap',
+      reports: 'Reports',
+    };
+
+    if (section === 'pm') {
+      crumbs.push({ label: 'Projects', to: `/w/${slug}/pm/stories` });
+      if (subRoute[1]) {
+        const pmSub = subRoute[1];
+        const pmLabel = pmSubMap[pmSub] ?? pmSub.replace(/-/g, ' ');
+        if (subRoute[2]) {
+          crumbs.push({ label: pmLabel, to: `/w/${slug}/pm/${pmSub}` });
+          crumbs.push({ label: `${pmLabel.replace(/s$/, '')} Detail` });
+        } else {
+          crumbs.push({ label: pmLabel });
+        }
+      }
       return crumbs;
     }
 
@@ -103,6 +149,38 @@ export function Header() {
           <CircleHelp className="h-4 w-4" />
         </Button>
         <QuarterSelector />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-1 size-8 rounded-full border border-border/70 p-0"
+            >
+              <Avatar className="size-7">
+                <AvatarFallback className="text-[11px]">{initials}</AvatarFallback>
+              </Avatar>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="truncate">
+              {user?.full_name || user?.email || 'Account'}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate({ to: '/profile' })}>
+              <User className="h-4 w-4" />
+              <span>Profile</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate({ to: '/workspaces' })}>
+              <Users className="h-4 w-4" />
+              <span>All Workspaces</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={signOut} variant="destructive">
+              <LogOut className="h-4 w-4" />
+              <span>Sign out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );
