@@ -52,16 +52,15 @@ export function WorkspaceSwitcher() {
           <PopoverTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              className="h-10 rounded-md border border-transparent px-2 data-[state=open]:bg-sidebar-accent/80 data-[state=open]:text-sidebar-accent-foreground hover:border-border/70"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-background">
-                <Building2 className="h-4 w-4 text-muted-foreground" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-black text-white">
+                <Building2 className="h-4 w-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{currentWorkspace.name}</span>
-                <span className="truncate text-xs text-muted-foreground">Workspace</span>
+                <span className="truncate font-semibold">{currentWorkspace.name}</span>
               </div>
-              <ChevronsUpDown className="ml-auto h-4 w-4" />
+              <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
             </SidebarMenuButton>
           </PopoverTrigger>
           <PopoverContent

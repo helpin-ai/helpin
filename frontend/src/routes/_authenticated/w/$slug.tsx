@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useQuarterStore } from '@/stores/quarterStore'
@@ -37,21 +37,26 @@ function WorkspaceLayout() {
 
   if (loading) {
     return (
-      <div className="flex h-screen">
-        <div className="w-64 border-r p-4 space-y-4">
-          <Skeleton className="h-6 w-32" />
-          <div className="space-y-2">
-            {Array.from({ length: 7 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full" />
-            ))}
-          </div>
-        </div>
-        <div className="flex-1 p-6 space-y-4">
-          <Skeleton className="h-8 w-48" />
-          <div className="grid grid-cols-3 gap-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 w-full" />
-            ))}
+      <div className="min-h-svh bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.9)_45%,rgba(187,210,229,0.55)_100%)]">
+        <div className="h-svh w-full overflow-hidden border border-border/70 bg-background/90 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
+          <div className="flex h-full">
+            <div className="w-72 border-r p-4 space-y-4">
+              <Skeleton className="h-7 w-48" />
+              <div className="space-y-2">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full" />
+                ))}
+              </div>
+            </div>
+            <div className="flex-1 p-6 space-y-4">
+              <Skeleton className="h-10 w-full max-w-xl" />
+              <Skeleton className="h-8 w-52" />
+              <div className="grid grid-cols-3 gap-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-32 w-full" />
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -67,14 +72,21 @@ function WorkspaceLayout() {
   }
 
   return (
-    <SidebarProvider>
-      <Sidebar />
-      <SidebarInset>
-        <Header />
-        <main className="flex-1 overflow-auto p-6">
-          <Outlet />
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+    <div className="min-h-svh bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.92)_45%,rgba(187,210,229,0.55)_100%)]">
+      <div className="h-svh w-full overflow-hidden border border-border/70 bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
+        <SidebarProvider
+          className="!min-h-0 h-full"
+          style={{ '--sidebar-width': '20rem', '--sidebar-width-icon': '3rem' } as CSSProperties}
+        >
+          <Sidebar />
+          <SidebarInset className="bg-transparent">
+            <Header />
+            <main className="flex-1 overflow-auto p-4 md:p-6">
+              <Outlet />
+            </main>
+          </SidebarInset>
+        </SidebarProvider>
+      </div>
+    </div>
   )
 }
