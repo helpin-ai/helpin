@@ -65,7 +65,7 @@ export function StoryCard({ story, onOpen, isOverlay = false }: StoryCardProps) 
         }
       }}
       className={cn(
-        'group rounded-md border border-border/60 bg-background px-3 py-2.5 transition-colors',
+        'group cursor-pointer rounded-md border border-border/60 bg-background px-3 py-2.5 transition-colors',
         'hover:bg-accent/40',
         isDragging && 'opacity-60',
         isOverlay && 'ring-1 ring-primary/30'
