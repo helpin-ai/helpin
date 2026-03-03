@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teampulse-frontend
+  namespace: teampulse
+  labels:
+    app: teampulse-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: teampulse-frontend
+  template:
+    metadata:
+      labels:
+        app: teampulse-frontend
+        env: prod
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: teampulse-frontend
+          image: ghcr.io/d4interactive/teampulse/frontend:prod-latest
+          ports:
+            - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: teampulse-frontend-svc
+  namespace: teampulse
+  labels:
+    app: teampulse-frontend
+spec:
+  ports:
+    - name: teampulse-frontend-port
+      port: 80
+      targetPort: 80
+  selector:
+    app: teampulse-frontend
+  type: ClusterIP

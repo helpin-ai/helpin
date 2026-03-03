@@ -1,0 +1,222 @@
+package handler
+
+import (
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/d4interactive/teampulse/server/internal/service"
+)
+
+// SettingsHandler handles workspace settings HTTP requests.
+type SettingsHandler struct {
+	settingsService *service.SettingsService
+}
+
+// NewSettingsHandler creates a new SettingsHandler.
+func NewSettingsHandler(settingsService *service.SettingsService) *SettingsHandler {
+	return &SettingsHandler{settingsService: settingsService}
+}
+
+// GetAll handles GET /api/settings?workspace_id=xxx.
+func (h *SettingsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	cfg, err := h.settingsService.GetAll(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+// Initialize handles POST /api/settings/initialize.
+func (h *SettingsHandler) Initialize(w http.ResponseWriter, r *http.Request) {
+	var req model.InitializeSettingsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	settings, err := h.settingsService.Initialize(r.Context(), req.WorkspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, settings)
+}
+
+// CreateTeam handles POST /api/settings/teams.
+func (h *SettingsHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
+	var req model.CreateTeamRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	team, err := h.settingsService.CreateTeam(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, team)
+}
+
+// UpdateTeam handles PUT /api/settings/teams/{id}.
+func (h *SettingsHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req model.UpdateTeamRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	team, err := h.settingsService.UpdateTeam(r.Context(), id, req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, team)
+}
+
+// DeleteTeam handles DELETE /api/settings/teams/{id}.
+func (h *SettingsHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.settingsService.DeleteTeam(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "team deleted"})
+}
+
+// CreatePerson handles POST /api/settings/people.
+func (h *SettingsHandler) CreatePerson(w http.ResponseWriter, r *http.Request) {
+	var req model.CreatePersonRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	person, err := h.settingsService.CreatePerson(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, person)
+}
+
+// UpdatePerson handles PUT /api/settings/people/{id}.
+func (h *SettingsHandler) UpdatePerson(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req model.UpdatePersonRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	person, err := h.settingsService.UpdatePerson(r.Context(), id, req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, person)
+}
+
+// DeletePerson handles DELETE /api/settings/people/{id}.
+func (h *SettingsHandler) DeletePerson(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.settingsService.DeletePerson(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "person deleted"})
+}
+
+// UpdateBonusTiers handles PUT /api/settings/bonus-tiers.
+func (h *SettingsHandler) UpdateBonusTiers(w http.ResponseWriter, r *http.Request) {
+	var req model.UpdateBonusTiersRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	tiers, err := h.settingsService.UpdateBonusTiers(r.Context(), req.WorkspaceID, req.Tiers)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tiers)
+}
+
+// UpdateJobRoleCriteria handles PUT /api/settings/job-roles.
+func (h *SettingsHandler) UpdateJobRoleCriteria(w http.ResponseWriter, r *http.Request) {
+	var req model.UpdateJobRoleCriteriaRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	criteria, err := h.settingsService.UpdateJobRoleCriteria(r.Context(), req.WorkspaceID, req.JobRole, req.Criteria)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, criteria)
+}
+
+// DeleteJobRole handles DELETE /api/settings/job-roles?workspace_id=xxx&job_role=xxx.
+func (h *SettingsHandler) DeleteJobRole(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	jobRole := r.URL.Query().Get("job_role")
+	if workspaceID == "" || jobRole == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id and job_role are required")
+		return
+	}
+
+	if err := h.settingsService.DeleteJobRole(r.Context(), workspaceID, jobRole); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "job role deleted"})
+}
+
+// UpdateSystem handles PUT /api/settings/system.
+func (h *SettingsHandler) UpdateSystem(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	var req model.UpdateSystemSettingsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	settings, err := h.settingsService.UpdateSystem(r.Context(), workspaceID, req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, settings)
+}

@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teampulse-server
+  namespace: teampulse
+  labels:
+    app: teampulse-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: teampulse-server
+  template:
+    metadata:
+      labels:
+        app: teampulse-server
+        env: stage
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: teampulse-server
+          image: ghcr.io/d4interactive/teampulse/server:stage-latest
+          envFrom:
+            - secretRef:
+                name: teampulse-secrets
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: teampulse-server-svc
+  namespace: teampulse
+  labels:
+    app: teampulse-server
+spec:
+  ports:
+    - name: teampulse-server-port
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: teampulse-server
+  type: ClusterIP

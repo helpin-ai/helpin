@@ -1,0 +1,21 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ingressroute-teampulse
+  namespace: teampulse
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`teampulse.d4interactive.io`) && PathPrefix(`/api`)
+      kind: Rule
+      services:
+        - name: teampulse-server-svc
+          port: 8080
+    - match: Host(`teampulse.d4interactive.io`)
+      kind: Rule
+      services:
+        - name: teampulse-frontend-svc
+          port: 80
+  tls:
+    secretName: cert-prod-teampulse-wildcard

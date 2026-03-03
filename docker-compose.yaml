@@ -1,0 +1,20 @@
+services:
+  server:
+    build: ./server
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=dev-secret-change-in-prod
+      - CORS_ORIGIN=http://localhost:5173
+      - PORT=8080
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8080/api
+    ports:
+      - "5173:80"
+    depends_on:
+      - server

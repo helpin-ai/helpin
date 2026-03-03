@@ -1,0 +1,52 @@
+import { StrictMode, useEffect } from 'react'
+import { createRoot } from 'react-dom/client'
+import { createRouter, RouterProvider } from '@tanstack/react-router'
+import { useAuthStore } from '@/stores/authStore'
+import { routeTree } from './routeTree.gen'
+import './index.css'
+
+const router = createRouter({
+  routeTree,
+  context: {
+    auth: {
+      user: null,
+      loading: true,
+    },
+  },
+  defaultNotFoundComponent: () => {
+    router.navigate({ to: '/workspaces' })
+    return null
+  },
+})
+
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router
+  }
+}
+
+function InnerApp() {
+  const user = useAuthStore((s) => s.user)
+  const loading = useAuthStore((s) => s.loading)
+
+  useEffect(() => {
+    useAuthStore.getState().initialize()
+  }, [])
+
+  // Force router to re-evaluate routes when auth state changes
+  useEffect(() => {
+    router.invalidate()
+  }, [user, loading])
+
+  return <RouterProvider router={router} context={{ auth: { user, loading } }} />
+}
+
+function App() {
+  return <InnerApp />
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)

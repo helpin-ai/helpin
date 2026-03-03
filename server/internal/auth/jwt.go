@@ -1,0 +1,84 @@
+package auth
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// Claims represents the JWT claims embedded in each token.
+type Claims struct {
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+	jwt.RegisteredClaims
+}
+
+// JWTManager handles token generation and validation.
+type JWTManager struct {
+	secret []byte
+}
+
+// NewJWTManager creates a new JWTManager with the given secret.
+func NewJWTManager(secret string) *JWTManager {
+	return &JWTManager{secret: []byte(secret)}
+}
+
+// GenerateTokenPair creates a new access token (15 min) and refresh token (7 days).
+func (m *JWTManager) GenerateTokenPair(userID, email string) (accessToken, refreshToken string, err error) {
+	now := time.Now()
+
+	// Access token: 15 minutes
+	accessClaims := Claims{
+		UserID: userID,
+		Email:  email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Subject:   userID,
+		},
+	}
+	accessTkn := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
+	accessToken, err = accessTkn.SignedString(m.secret)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to sign access token: %w", err)
+	}
+
+	// Refresh token: 7 days
+	refreshClaims := Claims{
+		UserID: userID,
+		Email:  email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(7 * 24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Subject:   userID,
+		},
+	}
+	refreshTkn := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	refreshToken, err = refreshTkn.SignedString(m.secret)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to sign refresh token: %w", err)
+	}
+
+	return accessToken, refreshToken, nil
+}
+
+// ValidateToken parses and validates a JWT string, returning the claims if valid.
+func (m *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return m.secret, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+
+	return claims, nil
+}
