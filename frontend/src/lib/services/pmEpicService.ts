@@ -29,7 +29,7 @@ export const pmEpicService = {
       archived?: boolean;
     }
   ) => api.get<EpicWithStats[]>(`/pm/epics${qs(workspaceId)}${filterQuery(filters ?? {})}`),
-  create: (payload: CreateEpicRequest) => api.post<EpicWithStats>('/pm/epics', payload),
+  create: (payload: CreateEpicRequest) => api.post<EpicWithStats>(`/pm/epics${qs(payload.workspace_id)}`, payload),
   get: (workspaceId: string, id: string) => api.get<EpicWithStats>(`/pm/epics/${id}${qs(workspaceId)}`),
   update: (workspaceId: string, id: string, payload: UpdateEpicRequest) =>
     api.put<EpicWithStats>(`/pm/epics/${id}${qs(workspaceId)}`, payload),

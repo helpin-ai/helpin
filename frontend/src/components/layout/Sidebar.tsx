@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   Award,
@@ -69,18 +69,11 @@ export function Sidebar() {
   const wsSlug = currentWorkspace?.slug ?? '';
   const activeRail = deriveActiveRail(location.pathname);
 
-  const [currentHash, setCurrentHash] = useState(window.location.hash);
-  useEffect(() => {
-    const onHashChange = () => setCurrentHash(window.location.hash);
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
-
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/stories` },
     { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
-    { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings` },
+    { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/system` },
   ];
 
   const panelNavGroups: Record<RailId, NavGroup[]> = {
@@ -127,16 +120,18 @@ export function Sidebar() {
       {
         label: 'My Account',
         items: [
-          { link: `/w/${wsSlug}/settings#system`, label: 'General', icon: Settings2 },
+          { link: `/w/${wsSlug}/settings/system`, label: 'General', icon: Settings2 },
         ],
       },
       {
         label: 'Workspace Settings',
         items: [
-          { link: `/w/${wsSlug}/settings#teams`, label: 'Teams', icon: Users },
-          { link: `/w/${wsSlug}/settings#people`, label: 'People', icon: UserPlus },
-          { link: `/w/${wsSlug}/settings#jobroles`, label: 'Job Roles', icon: Briefcase },
-          { link: `/w/${wsSlug}/settings#tiers`, label: 'Bonus Tiers', icon: Award },
+          { link: `/w/${wsSlug}/settings/teams`, label: 'Teams', icon: Users },
+          { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
+          { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
+          { link: `/w/${wsSlug}/settings/workflows`, label: 'Workflows', icon: FolderKanban },
+          { link: `/w/${wsSlug}/settings/workflowstates`, label: 'Workflow States', icon: LayoutList },
+          { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },
         ],
       },
     ],
@@ -157,16 +152,6 @@ export function Sidebar() {
   }, [workspaces, currentWorkspace?.name]);
 
   const isActive = (link: string) => {
-    const hashIdx = link.indexOf('#');
-    if (hashIdx !== -1) {
-      const path = link.substring(0, hashIdx);
-      const hash = link.substring(hashIdx);
-      if (location.pathname === path) {
-        const effectiveHash = currentHash || '#system';
-        return effectiveHash === hash;
-      }
-      return false;
-    }
     return location.pathname === link || location.pathname.startsWith(`${link}/`);
   };
 
@@ -221,18 +206,7 @@ export function Sidebar() {
                           href={item.link}
                           onClick={(event) => {
                             event.preventDefault();
-                            const hashIdx = item.link.indexOf('#');
-                            if (hashIdx !== -1) {
-                              const path = item.link.substring(0, hashIdx);
-                              const hash = item.link.substring(hashIdx + 1);
-                              if (location.pathname !== path) {
-                                navigate({ to: path as string });
-                              }
-                              window.location.hash = hash;
-                              setCurrentHash(`#${hash}`);
-                            } else {
-                              navigate({ to: item.link as string });
-                            }
+                            navigate({ to: item.link as string });
                           }}
                         >
                           <item.icon />

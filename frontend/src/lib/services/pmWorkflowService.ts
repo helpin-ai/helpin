@@ -13,7 +13,7 @@ const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspac
 export const pmWorkflowService = {
   list: (workspaceId: string) => api.get<WorkflowWithStates[]>(`/pm/workflows${qs(workspaceId)}`),
   listEpicStates: (workspaceId: string) => api.get<EpicWorkflowState[]>(`/pm/workflows/epic-states${qs(workspaceId)}`),
-  create: (payload: CreateWorkflowRequest) => api.post<WorkflowWithStates>('/pm/workflows', payload),
+  create: (payload: CreateWorkflowRequest) => api.post<WorkflowWithStates>(`/pm/workflows${qs(payload.workspace_id)}`, payload),
   get: (workspaceId: string, id: string) => api.get<WorkflowWithStates>(`/pm/workflows/${id}${qs(workspaceId)}`),
   update: (workspaceId: string, id: string, payload: UpdateWorkflowRequest) => api.put<WorkflowWithStates>(`/pm/workflows/${id}${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/pm/workflows/${id}${qs(workspaceId)}`),

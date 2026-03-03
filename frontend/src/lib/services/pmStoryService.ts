@@ -53,7 +53,7 @@ export const pmStoryService = {
     api.get<StoryStateColumn[]>(`/pm/stories/board?${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
   countByState: (workspaceId: string, workflowId: string) =>
     api.get<StoryStateCount[]>(`/pm/stories/counts?${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
-  create: (payload: CreateStoryRequest) => api.post<StoryDetail>('/pm/stories', payload),
+  create: (payload: CreateStoryRequest) => api.post<StoryDetail>(`/pm/stories?${qs(payload.workspace_id)}`, payload),
   get: (workspaceId: string, id: string) => api.get<StoryDetail>(`/pm/stories/${id}?${qs(workspaceId)}`),
   getByDisplayId: (workspaceId: string, displayId: number) =>
     api.get<StoryDetail>(`/pm/stories/display/${displayId}?${qs(workspaceId)}`),

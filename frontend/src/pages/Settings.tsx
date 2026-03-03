@@ -3,6 +3,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { settingsService } from '@/lib/services/settingsService';
 import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig } from '@/lib/types';
+import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
+import type { StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,12 +15,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Award, Briefcase, Pencil, Plus, Settings2, Trash2, UserPlus, Users, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, GitBranch, ListTree, Pencil, Plus, Settings2, Trash2, UserPlus, Users, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
-type SettingsSection = 'teams' | 'people' | 'jobroles' | 'tiers' | 'system';
+export type SettingsSection = 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'system';
 
-const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon }[] = [
+export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon }[] = [
   {
     id: 'teams',
     label: 'Teams',
@@ -44,6 +46,18 @@ const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: stri
     icon: Award,
   },
   {
+    id: 'workflows',
+    label: 'Workflows',
+    description: 'Configure team workflows and ownership behavior.',
+    icon: GitBranch,
+  },
+  {
+    id: 'workflowstates',
+    label: 'Workflow States',
+    description: 'Manage state columns and rules within workflows.',
+    icon: ListTree,
+  },
+  {
     id: 'system',
     label: 'System',
     description: 'Control global workspace behavior and defaults.',
@@ -51,17 +65,16 @@ const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: stri
   },
 ];
 
-const isSettingsSection = (value: string): value is SettingsSection =>
+export const isSettingsSection = (value: string): value is SettingsSection =>
   SETTINGS_SECTIONS.some((section) => section.id === value);
 
 const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
 
-export default function Settings() {
+export default function Settings({ section }: { section: SettingsSection }) {
   const { currentWorkspace } = useWorkspaceStore();
   const { isAdmin } = useSessionStore();
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<SettingsSection>('system');
 
   const load = async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
@@ -80,19 +93,6 @@ export default function Settings() {
   };
 
   useEffect(() => { load(); }, [currentWorkspace?.id]);
-
-  useEffect(() => {
-    const updateFromHash = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (isSettingsSection(hash)) {
-        setActiveSection(hash);
-      }
-    };
-
-    updateFromHash();
-    window.addEventListener('hashchange', updateFromHash);
-    return () => window.removeEventListener('hashchange', updateFromHash);
-  }, []);
 
   if (loading) {
     return (
@@ -120,10 +120,10 @@ export default function Settings() {
     );
   }
 
-  const sectionMeta = SETTINGS_SECTIONS.find((section) => section.id === activeSection)!;
+  const sectionMeta = SETTINGS_SECTIONS.find((candidate) => candidate.id === section)!;
 
   const renderSection = () => {
-    switch (activeSection) {
+    switch (section) {
       case 'teams':
         return (
           <TeamsTab
@@ -138,7 +138,6 @@ export default function Settings() {
           <PeopleTab
             workspaceId={workspaceId}
             people={settings.people}
-            teams={settings.teams}
             editable={isAdmin()}
             onRefresh={load}
           />
@@ -168,6 +167,21 @@ export default function Settings() {
             config={settings.settings}
             editable={isAdmin()}
             onRefresh={load}
+          />
+        );
+      case 'workflows':
+        return (
+          <WorkflowsTab
+            workspaceId={workspaceId}
+            teams={settings.teams}
+            editable={isAdmin()}
+          />
+        );
+      case 'workflowstates':
+        return (
+          <WorkflowStatesTab
+            workspaceId={workspaceId}
+            editable={isAdmin()}
           />
         );
       default:
@@ -315,10 +329,9 @@ function TeamsTab({ workspaceId, teams, editable, onRefresh }: {
 
 /* ============ People Tab ============ */
 
-function PeopleTab({ workspaceId, people, teams: _teams, editable, onRefresh }: {
+function PeopleTab({ workspaceId, people, editable, onRefresh }: {
   workspaceId: string;
   people: WorkspacePerson[];
-  teams: WorkspaceTeam[];
   editable: boolean;
   onRefresh: () => void;
 }) {
@@ -743,6 +756,557 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
           </div>
         )}
       </CardContent>
+    </Card>
+  );
+}
+
+/* ============ Workflows Tab ============ */
+
+function WorkflowsTab({ workspaceId, teams, editable }: {
+  workspaceId: string;
+  teams: WorkspaceTeam[];
+  editable: boolean;
+}) {
+  const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editWorkflow, setEditWorkflow] = useState<WorkflowWithStates | null>(null);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [teamID, setTeamID] = useState<string>('none');
+  const [autoAssignOwner, setAutoAssignOwner] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const loadWorkflows = async () => {
+    setLoading(true);
+    const { data, error } = await pmWorkflowService.list(workspaceId);
+    if (error) {
+      toast.error(error);
+      setWorkflows([]);
+    } else {
+      setWorkflows(data ?? []);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadWorkflows(); }, [workspaceId]);
+
+  const openCreate = () => {
+    setEditWorkflow(null);
+    setName('');
+    setDescription('');
+    setTeamID('none');
+    setAutoAssignOwner(false);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (workflow: WorkflowWithStates) => {
+    setEditWorkflow(workflow);
+    setName(workflow.workflow.name);
+    setDescription(workflow.workflow.description ?? '');
+    setTeamID(workflow.workflow.team_id ?? 'none');
+    setAutoAssignOwner(workflow.workflow.auto_assign_owner);
+    setDialogOpen(true);
+  };
+
+  const handleSave = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+
+    const normalizedTeamID = teamID === 'none' ? undefined : teamID;
+    if (editWorkflow) {
+      const { error } = await pmWorkflowService.update(workspaceId, editWorkflow.workflow.id, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        team_id: normalizedTeamID,
+        auto_assign_owner: autoAssignOwner,
+      });
+      if (error) toast.error(error);
+      else {
+        toast.success('Workflow updated');
+        setDialogOpen(false);
+        await loadWorkflows();
+      }
+    } else {
+      const { error } = await pmWorkflowService.create({
+        workspace_id: workspaceId,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        team_id: normalizedTeamID,
+        auto_assign_owner: autoAssignOwner,
+      });
+      if (error) toast.error(error);
+      else {
+        toast.success('Workflow created');
+        setDialogOpen(false);
+        await loadWorkflows();
+      }
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = async (workflowID: string) => {
+    const { error } = await pmWorkflowService.remove(workspaceId, workflowID);
+    if (error) toast.error(error);
+    else {
+      toast.success('Workflow deleted');
+      await loadWorkflows();
+    }
+  };
+
+  const findTeamName = (id?: string) => {
+    if (!id) return 'Workspace Default';
+    return teams.find((team) => team.id === id)?.name ?? 'Unknown Team';
+  };
+
+  return (
+    <Card className={LINEAR_CARD_CLASS}>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base">Workflows</CardTitle>
+            <CardDescription>{workflows.length} workflow{workflows.length !== 1 ? 's' : ''}</CardDescription>
+          </div>
+          {editable && (
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-1" /> Create Workflow
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <p className="text-sm text-muted-foreground text-center py-6">Loading workflows...</p>
+        ) : workflows.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">No workflows yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {workflows.map((workflow) => (
+              <div key={workflow.workflow.id} className="rounded-none border border-border px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{workflow.workflow.name}</p>
+                      {!workflow.workflow.team_id && (
+                        <Badge variant="secondary" className="text-xs">Workspace Default</Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {workflow.workflow.description || 'No description'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span>{workflow.states.length} states</span>
+                    <span>•</span>
+                    <span>{findTeamName(workflow.workflow.team_id)}</span>
+                    <span>•</span>
+                    <span>{workflow.workflow.auto_assign_owner ? 'Auto-assign owner' : 'Manual owner'}</span>
+                  </div>
+                </div>
+                {editable && (
+                  <div className="mt-2 flex justify-end gap-1">
+                    <Button size="icon" variant="ghost" onClick={() => openEdit(workflow)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="icon" variant="ghost" onClick={() => handleDelete(workflow.workflow.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <form onSubmit={handleSave}>
+            <DialogHeader>
+              <DialogTitle>{editWorkflow ? 'Edit Workflow' : 'Create Workflow'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Team</Label>
+                <Select value={teamID} onValueChange={setTeamID}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Workspace Default</SelectItem>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between rounded-none border border-border px-3 py-2">
+                <div>
+                  <Label>Auto assign owner when moved to started state</Label>
+                  <p className="text-xs text-muted-foreground">Assign current user when story enters a started state and has no owner.</p>
+                </div>
+                <Switch checked={autoAssignOwner} onCheckedChange={setAutoAssignOwner} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+/* ============ Workflow States Tab ============ */
+
+const STATE_TYPE_ORDER: StateType[] = ['backlog', 'unstarted', 'started', 'done'];
+const STATE_TYPE_LABEL: Record<StateType, string> = {
+  backlog: 'Backlog',
+  unstarted: 'Unstarted',
+  started: 'Started',
+  done: 'Done',
+};
+
+function WorkflowStatesTab({ workspaceId, editable }: {
+  workspaceId: string;
+  editable: boolean;
+}) {
+  const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
+  const [selectedWorkflowID, setSelectedWorkflowID] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editState, setEditState] = useState<WorkflowState | null>(null);
+  const [newStateType, setNewStateType] = useState<StateType>('unstarted');
+  const [stateName, setStateName] = useState('');
+  const [stateDescription, setStateDescription] = useState('');
+  const [stateColor, setStateColor] = useState('');
+  const [stateWIP, setStateWIP] = useState('');
+  const [stateDefault, setStateDefault] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const loadWorkflows = async () => {
+    setLoading(true);
+    const { data, error } = await pmWorkflowService.list(workspaceId);
+    if (error) {
+      toast.error(error);
+      setWorkflows([]);
+      setLoading(false);
+      return;
+    }
+    const next = data ?? [];
+    setWorkflows(next);
+    setSelectedWorkflowID((prev) => {
+      if (prev && next.some((workflow) => workflow.workflow.id === prev)) return prev;
+      return next[0]?.workflow.id ?? '';
+    });
+    setLoading(false);
+  };
+
+  useEffect(() => { loadWorkflows(); }, [workspaceId]);
+
+  const selectedWorkflow = workflows.find((workflow) => workflow.workflow.id === selectedWorkflowID) ?? null;
+  const sortedStates = selectedWorkflow
+    ? [...selectedWorkflow.states].sort((a, b) => a.position - b.position)
+    : [];
+
+  const statesByType: Record<StateType, WorkflowState[]> = {
+    backlog: sortedStates.filter((state) => state.state_type === 'backlog'),
+    unstarted: sortedStates.filter((state) => state.state_type === 'unstarted'),
+    started: sortedStates.filter((state) => state.state_type === 'started'),
+    done: sortedStates.filter((state) => state.state_type === 'done'),
+  };
+
+  const orderedStateIDs = (workflow: WorkflowWithStates) =>
+    STATE_TYPE_ORDER.flatMap((type) =>
+      [...workflow.states]
+        .filter((state) => state.state_type === type)
+        .sort((a, b) => a.position - b.position)
+        .map((state) => state.id)
+    );
+
+  const normalizeOrdering = async (workflow: WorkflowWithStates) => {
+    const targetIDs = orderedStateIDs(workflow);
+    const currentIDs = [...workflow.states].sort((a, b) => a.position - b.position).map((state) => state.id);
+    if (targetIDs.length === currentIDs.length && targetIDs.every((id, idx) => currentIDs[idx] === id)) return;
+    await pmWorkflowService.reorderStates(workspaceId, workflow.workflow.id, targetIDs);
+  };
+
+  const openCreateForType = (type: StateType) => {
+    setEditState(null);
+    setNewStateType(type);
+    setStateName('');
+    setStateDescription('');
+    setStateColor('');
+    setStateWIP('');
+    setStateDefault(false);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (state: WorkflowState) => {
+    setEditState(state);
+    setNewStateType(state.state_type);
+    setStateName(state.name);
+    setStateDescription(state.description ?? '');
+    setStateColor(state.color ?? '');
+    setStateWIP(state.wip_limit ? String(state.wip_limit) : '');
+    setStateDefault(state.is_default);
+    setDialogOpen(true);
+  };
+
+  const handleSaveState = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!selectedWorkflow || !stateName.trim()) return;
+    setSaving(true);
+    const payload = {
+      name: stateName.trim(),
+      state_type: newStateType,
+      description: stateDescription.trim() || undefined,
+      color: stateColor.trim() || undefined,
+      wip_limit: stateWIP.trim() ? Number(stateWIP) : undefined,
+      is_default: stateDefault,
+    };
+
+    if (editState) {
+      const { error } = await pmWorkflowService.updateState(workspaceId, selectedWorkflow.workflow.id, editState.id, payload);
+      if (error) toast.error(error);
+      else toast.success('State updated');
+    } else {
+      const { error } = await pmWorkflowService.createState(workspaceId, selectedWorkflow.workflow.id, payload);
+      if (error) toast.error(error);
+      else {
+        toast.success('State created');
+        const refreshed = await pmWorkflowService.get(workspaceId, selectedWorkflow.workflow.id);
+        if (refreshed.data) {
+          await normalizeOrdering(refreshed.data);
+        }
+      }
+    }
+    await loadWorkflows();
+    setDialogOpen(false);
+    setSaving(false);
+  };
+
+  const handleDeleteState = async () => {
+    if (!selectedWorkflow || !editState) return;
+    const { error } = await pmWorkflowService.removeState(workspaceId, selectedWorkflow.workflow.id, editState.id);
+    if (error) toast.error(error);
+    else {
+      toast.success('State deleted');
+      setDialogOpen(false);
+      await loadWorkflows();
+    }
+  };
+
+  const handleMoveWithinType = async (type: StateType, stateID: string, direction: 'up' | 'down') => {
+    if (!selectedWorkflow) return;
+    const typed = [...statesByType[type]];
+    const idx = typed.findIndex((state) => state.id === stateID);
+    if (idx < 0) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= typed.length) return;
+    const copy = [...typed];
+    const [current] = copy.splice(idx, 1);
+    copy.splice(swapIdx, 0, current);
+
+    const idsByType: Record<StateType, string[]> = {
+      backlog: statesByType.backlog.map((state) => state.id),
+      unstarted: statesByType.unstarted.map((state) => state.id),
+      started: statesByType.started.map((state) => state.id),
+      done: statesByType.done.map((state) => state.id),
+    };
+    idsByType[type] = copy.map((state) => state.id);
+    const nextIDs = STATE_TYPE_ORDER.flatMap((stateType) => idsByType[stateType]);
+
+    const { error } = await pmWorkflowService.reorderStates(workspaceId, selectedWorkflow.workflow.id, nextIDs);
+    if (error) toast.error(error);
+    else await loadWorkflows();
+  };
+
+  const toggleAutoAssignOwner = async (checked: boolean) => {
+    if (!selectedWorkflow) return;
+    const { error } = await pmWorkflowService.update(workspaceId, selectedWorkflow.workflow.id, {
+      auto_assign_owner: checked,
+    });
+    if (error) toast.error(error);
+    else await loadWorkflows();
+  };
+
+  return (
+    <Card className={LINEAR_CARD_CLASS}>
+      <CardHeader>
+        <CardTitle className="text-base">Workflow States</CardTitle>
+        <CardDescription>Manage state columns grouped by backlog/unstarted/started/done.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading workflows...</p>
+        ) : workflows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No workflows found. Create one in the Workflows tab first.</p>
+        ) : (
+          <>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Workflow</Label>
+                <Select value={selectedWorkflowID} onValueChange={setSelectedWorkflowID}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {workflows.map((workflow) => (
+                      <SelectItem key={workflow.workflow.id} value={workflow.workflow.id}>
+                        {workflow.workflow.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedWorkflow && (
+                <div className="flex items-end">
+                  <div className="flex w-full items-center justify-between rounded-none border border-border px-3 py-2.5">
+                    <div>
+                      <Label>Auto assign owner</Label>
+                      <p className="text-xs text-muted-foreground">Assign current user when stories move into started state without owner.</p>
+                    </div>
+                    <Switch
+                      checked={selectedWorkflow.workflow.auto_assign_owner}
+                      disabled={!editable}
+                      onCheckedChange={toggleAutoAssignOwner}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {selectedWorkflow && (
+              <div className="space-y-5">
+                {STATE_TYPE_ORDER.map((type) => (
+                  <section key={type} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-medium">{STATE_TYPE_LABEL[type]}</h4>
+                      {editable && (
+                        <Button variant="ghost" size="sm" onClick={() => openCreateForType(type)}>
+                          <Plus className="h-3.5 w-3.5 mr-1" /> Add
+                        </Button>
+                      )}
+                    </div>
+                    {statesByType[type].length === 0 ? (
+                      <div className="rounded-none border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+                        No states in this group.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {statesByType[type].map((state, idx) => (
+                          <div key={state.id} className="rounded-none border border-border px-3 py-2.5">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-medium">{state.name}</p>
+                                  {state.is_default && (
+                                    <Badge variant="secondary" className="text-xs">Default</Badge>
+                                  )}
+                                  {state.wip_limit ? (
+                                    <Badge variant="outline" className="text-xs">WIP {state.wip_limit}</Badge>
+                                  ) : null}
+                                </div>
+                                <p className="text-sm text-muted-foreground">{state.description || 'No description'}</p>
+                              </div>
+                              {editable && (
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    disabled={idx === 0}
+                                    onClick={() => handleMoveWithinType(type, state.id, 'up')}
+                                  >
+                                    <ArrowUp className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    disabled={idx === statesByType[type].length - 1}
+                                    onClick={() => handleMoveWithinType(type, state.id, 'down')}
+                                  >
+                                    <ArrowDown className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button size="icon" variant="ghost" onClick={() => openEdit(state)}>
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <form onSubmit={handleSaveState}>
+            <DialogHeader>
+              <DialogTitle>{editState ? 'Edit Workflow State' : 'Add Workflow State'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>State Type</Label>
+                <Input value={STATE_TYPE_LABEL[newStateType]} disabled />
+              </div>
+              <div className="space-y-2">
+                <Label>State Name</Label>
+                <Input value={stateName} onChange={(e) => setStateName(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Input value={stateDescription} onChange={(e) => setStateDescription(e.target.value)} />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Color</Label>
+                  <Input value={stateColor} onChange={(e) => setStateColor(e.target.value)} placeholder="#3b82f6" />
+                </div>
+                <div className="space-y-2">
+                  <Label>WIP Limit</Label>
+                  <Input type="number" min={0} value={stateWIP} onChange={(e) => setStateWIP(e.target.value)} />
+                </div>
+              </div>
+              <div className="flex items-center justify-between rounded-none border border-border px-3 py-2">
+                <div>
+                  <Label>Default state</Label>
+                  <p className="text-xs text-muted-foreground">Stories are created in this state by default.</p>
+                </div>
+                <Switch checked={stateDefault} onCheckedChange={setStateDefault} />
+              </div>
+            </div>
+            <DialogFooter className="justify-between">
+              <div>
+                {editState && editable && (
+                  <Button type="button" variant="ghost" className="text-destructive" onClick={handleDeleteState}>
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete State
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={saving || !editable}>{saving ? 'Saving...' : 'Save Changes'}</Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

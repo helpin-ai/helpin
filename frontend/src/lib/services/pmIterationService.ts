@@ -27,7 +27,7 @@ export const pmIterationService = {
       archived?: boolean;
     }
   ) => api.get<IterationWithStats[]>(`/pm/iterations${qs(workspaceId)}${filterQuery(filters ?? {})}`),
-  create: (payload: CreateIterationRequest) => api.post<IterationWithStats>('/pm/iterations', payload),
+  create: (payload: CreateIterationRequest) => api.post<IterationWithStats>(`/pm/iterations${qs(payload.workspace_id)}`, payload),
   get: (workspaceId: string, id: string) => api.get<IterationWithStats>(`/pm/iterations/${id}${qs(workspaceId)}`),
   update: (workspaceId: string, id: string, payload: UpdateIterationRequest) =>
     api.put<IterationWithStats>(`/pm/iterations/${id}${qs(workspaceId)}`, payload),

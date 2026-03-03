@@ -82,6 +82,16 @@ export function Header() {
       reports: 'Reports',
     };
 
+    const settingsSubMap: Record<string, string> = {
+      system: 'General',
+      teams: 'Teams',
+      people: 'People',
+      jobroles: 'Job Roles',
+      workflows: 'Workflows',
+      workflowstates: 'Workflow States',
+      tiers: 'Bonus Tiers',
+    };
+
     if (section === 'pm') {
       crumbs.push({ label: 'Projects', to: `/w/${slug}/pm/stories` });
       if (subRoute[1]) {
@@ -93,6 +103,15 @@ export function Header() {
         } else {
           crumbs.push({ label: pmLabel });
         }
+      }
+      return crumbs;
+    }
+
+    if (section === 'settings') {
+      crumbs.push({ label: 'Settings', to: `/w/${slug}/settings/system` });
+      if (subRoute[1]) {
+        const settingsSub = subRoute[1];
+        crumbs.push({ label: settingsSubMap[settingsSub] ?? settingsSub.replace(/-/g, ' ') });
       }
       return crumbs;
     }
