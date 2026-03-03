@@ -8,6 +8,6 @@ export const draftsService = {
     api.post<GoalDraft>('/drafts', data),
   get: (id: string) => api.get<GoalDraft>(`/drafts/${id}`),
   update: (id: string, data: { draft_data?: Record<string, unknown>; status?: string }) =>
-    api.patch<GoalDraft>(`/drafts/${id}`, data),
+    api.put<GoalDraft>(`/drafts/${id}`, data),
   delete: (id: string) => api.del(`/drafts/${id}`),
 };

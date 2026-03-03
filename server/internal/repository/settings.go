@@ -29,6 +29,12 @@ func (r *SettingsRepository) GetAll(ctx context.Context, workspaceID string) (*m
 	if err != nil {
 		return nil, err
 	}
+	if settings == nil {
+		settings, err = r.Initialize(ctx, workspaceID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	cfg.Settings = settings
 
 	teams, err := r.listTeams(ctx, workspaceID)

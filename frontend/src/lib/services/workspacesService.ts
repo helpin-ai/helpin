@@ -7,7 +7,7 @@ export const workspacesService = {
     api.post<Workspace>('/workspaces', data),
   getBySlug: (slug: string) => api.get<Workspace>(`/workspaces/by-slug/${slug}`),
   update: (id: string, data: Partial<Workspace>) =>
-    api.patch<Workspace>(`/workspaces/${id}`, data),
+    api.put<Workspace>(`/workspaces/${id}`, data),
   delete: (id: string) => api.del(`/workspaces/${id}`),
   getMyRole: (id: string) => api.get<{ role: string }>(`/workspaces/${id}/my-role`),
   getMyMembership: (id: string) => api.get<WorkspaceMember>(`/workspaces/${id}/my-membership`),

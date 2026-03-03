@@ -85,6 +85,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			// Goals
 			r.Get("/goals", h.Goal.List)
 			r.Post("/goals", h.Goal.Create)
+			r.Get("/goals/sprint", h.Goal.ListSprintGoals)
 			r.Post("/goals/sprint", h.Goal.UpsertSprintGoal)
 
 			// Bonus

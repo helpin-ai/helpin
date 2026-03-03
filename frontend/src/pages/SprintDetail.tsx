@@ -1,11 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { getRouteApi } from '@tanstack/react-router';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { sprintsService } from '@/lib/services/sprintsService';
 import { settingsService } from '@/lib/services/settingsService';
 import { goalsService } from '@/lib/services/goalsService';
-import { useQuarterStore } from '@/stores/quarterStore';
 import type { Sprint, SprintGoal, WorkspaceSettings, IndividualCheck } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -25,50 +24,44 @@ export default function SprintDetail() {
   const routeApi = getRouteApi('/_authenticated/w/$slug/sprints/$sprintId');
   const { sprintId } = routeApi.useParams();
   const { currentWorkspace } = useWorkspaceStore();
-  const { currentQuarter } = useQuarterStore();
   const { canEdit } = useSessionStore();
   const [sprint, setSprint] = useState<Sprint | null>(null);
   const [wsSettings, setWsSettings] = useState<WorkspaceSettings | null>(null);
-  const [sprintGoals] = useState<SprintGoal[]>([]);
+  const [sprintGoals, setSprintGoals] = useState<SprintGoal[]>([]);
   const [checks, setChecks] = useState<IndividualCheck[]>([]);
   const [loading, setLoading] = useState(true);
   const [addGoalOpen, setAddGoalOpen] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
     if (!sprintId || !ws?.id) {
       setSprint(null);
       setWsSettings(null);
+      setSprintGoals([]);
       setChecks([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const [sprintRes, settingsRes, checksRes] = await Promise.all([
+      const [sprintRes, settingsRes, sprintGoalsRes, checksRes] = await Promise.all([
         sprintsService.get(sprintId),
         settingsService.getAll(ws.id),
+        goalsService.listSprintGoals(sprintId),
         sprintsService.getIndividualChecks(sprintId, ws.id),
       ]);
       if (sprintRes.data) setSprint(sprintRes.data);
       if (settingsRes.data) setWsSettings(settingsRes.data);
+      setSprintGoals(sprintGoalsRes.data ?? []);
       if (checksRes.data) setChecks(checksRes.data);
     } finally {
       setLoading(false);
     }
-  };
+  }, [sprintId]);
 
-  useEffect(() => { load(); }, [sprintId, currentWorkspace?.id]);
-
-  // Load sprint goals from the goals service (sprint-level)
   useEffect(() => {
-    const ws = useWorkspaceStore.getState().currentWorkspace;
-    const q = useQuarterStore.getState().currentQuarter;
-    if (!ws?.id || !q?.id) return;
-    goalsService.list(ws.id, q.id).then(_res => {
-      // Sprint goals come from the sprint's associated data; for now we keep them separate
-    });
-  }, [currentWorkspace?.id, currentQuarter?.id]);
+    void load();
+  }, [load, currentWorkspace?.id]);
 
   const handleCheckToggle = async (employeeId: string, criteriaId: string, current: boolean) => {
     if (!sprintId || !currentWorkspace?.id) return;
@@ -98,6 +91,27 @@ export default function SprintDetail() {
           answer: !current,
         }];
       });
+    }
+  };
+
+  const handleGoalDoneToggle = async (goal: SprintGoal) => {
+    if (!canEdit() || sprint?.status === 'locked') return;
+    const { error, data } = await goalsService.upsertSprintGoal({
+      sprint_id: goal.sprint_id,
+      team_id: goal.team_id,
+      title: goal.title,
+      description: goal.description,
+      weight: goal.weight,
+      done: !goal.done,
+      kr_id: goal.kr_id,
+    });
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    if (data) {
+      setSprintGoals((prev) => prev.map((existing) => (existing.id === data.id ? data : existing)));
     }
   };
 
@@ -181,7 +195,11 @@ export default function SprintDetail() {
                         {teamGoals.map(sg => (
                           <div key={sg.id} className="flex items-center justify-between border rounded-md px-3 py-2">
                             <div className="flex items-center gap-3">
-                              <Checkbox checked={sg.done} disabled={sprint.status === 'locked'} />
+                              <Checkbox
+                                checked={sg.done}
+                                disabled={sprint.status === 'locked' || !canEdit()}
+                                onCheckedChange={() => void handleGoalDoneToggle(sg)}
+                              />
                               <span className="text-sm">{sg.title}</span>
                             </div>
                             <Badge variant="outline" className="text-xs">Weight: {sg.weight}</Badge>
@@ -201,7 +219,10 @@ export default function SprintDetail() {
             onOpenChange={setAddGoalOpen}
             sprintId={sprint.id}
             teams={teams}
-            onAdded={() => { setAddGoalOpen(false); load(); }}
+            onAdded={() => {
+              setAddGoalOpen(false);
+              void load();
+            }}
           />
         </TabsContent>
 

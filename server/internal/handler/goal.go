@@ -39,6 +39,32 @@ func (h *GoalHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, goals)
 }
 
+// ListSprintGoals handles GET /api/goals/sprint?sprint_id=xxx[&team_id=yyy].
+func (h *GoalHandler) ListSprintGoals(w http.ResponseWriter, r *http.Request) {
+	sprintID := r.URL.Query().Get("sprint_id")
+	if sprintID == "" {
+		writeError(w, http.StatusBadRequest, "sprint_id is required")
+		return
+	}
+
+	teamID := r.URL.Query().Get("team_id")
+	var teamFilter *string
+	if teamID != "" {
+		teamFilter = &teamID
+	}
+
+	goals, err := h.goalService.ListSprintGoals(r.Context(), sprintID, teamFilter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if goals == nil {
+		goals = []model.SprintGoal{}
+	}
+
+	writeJSON(w, http.StatusOK, goals)
+}
+
 // Create handles POST /api/goals.
 func (h *GoalHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())

@@ -8,7 +8,7 @@ export const authService = {
     api.post<AuthResponse>('/auth/signin', { email, password }),
   me: () => api.get<User>('/auth/me'),
   updateProfile: (data: { full_name?: string; avatar_url?: string }) =>
-    api.patch<User>('/auth/me', data),
+    api.put<User>('/auth/me', data),
   refresh: (refreshToken: string) =>
     api.post<AuthResponse>('/auth/refresh', { refresh_token: refreshToken }),
 };
