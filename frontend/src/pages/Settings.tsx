@@ -61,7 +61,7 @@ export default function Settings() {
   const { isAdmin } = useSessionStore();
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<SettingsSection>('teams');
+  const [activeSection, setActiveSection] = useState<SettingsSection>('system');
 
   const load = async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
@@ -122,11 +122,6 @@ export default function Settings() {
 
   const sectionMeta = SETTINGS_SECTIONS.find((section) => section.id === activeSection)!;
 
-  const handleSectionChange = (section: SettingsSection) => {
-    setActiveSection(section);
-    window.history.replaceState(null, '', `#${section}`);
-  };
-
   const renderSection = () => {
     switch (activeSection) {
       case 'teams':
@@ -181,37 +176,12 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="h-fit border-r pr-4">
-          <p className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">Settings Sections</p>
-          <div className="mt-3 space-y-0.5">
-            {SETTINGS_SECTIONS.map((section) => (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => handleSectionChange(section.id)}
-                className={`flex w-full items-start gap-2 border-l-2 px-3 py-2 text-left text-sm transition-colors ${
-                  activeSection === section.id
-                    ? 'border-l-foreground bg-accent/40 text-foreground'
-                    : 'border-l-transparent text-muted-foreground hover:bg-accent/30 hover:text-foreground'
-                }`}
-              >
-                <section.icon className="mt-0.5 h-4 w-4 shrink-0" />
-                <span className="font-medium">{section.label}</span>
-              </button>
-            ))}
-          </div>
-        </aside>
-
-        <div className="space-y-4 min-w-0">
-          <div>
-            <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
-            <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
-          </div>
-          {renderSection()}
-        </div>
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
+        <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
       </div>
+      {renderSection()}
     </div>
   );
 }
