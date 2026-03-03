@@ -11,7 +11,7 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Columns2, LayoutList, Loader2, Plus } from 'lucide-react';
+import { BarChart3, Columns2, LayoutList, Loader2, Plus, StickyNote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -44,8 +44,15 @@ function Column({ column, onCreate, onOpen }: ColumnProps) {
             <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
             {column.state.name}
           </p>
-          <p className="text-xs text-muted-foreground">
-            {column.story_count} items · {column.point_total} pts
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1" title={`${column.story_count} items`}>
+              <StickyNote className="h-3 w-3" />
+              {column.story_count}
+            </span>
+            <span className="inline-flex items-center gap-1" title={`${column.point_total} pts`}>
+              <BarChart3 className="h-3 w-3" />
+              {column.point_total}
+            </span>
           </p>
         </div>
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.state.id)}>

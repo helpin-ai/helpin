@@ -21,7 +21,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { PRIORITY_CONFIG, PriorityIcon, StateTypeIcon } from "@/lib/pmConstants";
+import { PRIORITY_CONFIG, PriorityIcon, StateTypeIcon, StoryTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateStoryRequest,
   IterationWithStats,
@@ -355,6 +355,8 @@ export function CreateStoryModal({
                 onChange={(value) =>
                   setForm((prev) => ({ ...prev, story_type: value }))
                 }
+                renderTriggerIcon={(v) => <StoryTypeIcon storyType={v} className="h-3.5 w-3.5 shrink-0" />}
+                renderOptionIcon={(v) => <StoryTypeIcon storyType={v} className="h-4 w-4 shrink-0" />}
               />
 
               <ChipButton icon={Users} label="Assignees" disabled />

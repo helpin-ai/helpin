@@ -3,17 +3,14 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
   AlertTriangle,
-  Bug,
   CalendarDays,
   Circle,
-  Cog,
-  Star,
 } from 'lucide-react';
 import { format, isBefore, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { PriorityIcon } from '@/lib/pmConstants';
+import { PriorityIcon, StoryTypeIcon } from '@/lib/pmConstants';
 import type { Story } from '@/lib/pmTypes';
 
 interface StoryCardProps {
@@ -21,12 +18,6 @@ interface StoryCardProps {
   onOpen: (story: Story) => void;
   isOverlay?: boolean;
 }
-
-const storyTypeIcon: Record<Story['story_type'], typeof Star> = {
-  feature: Star,
-  bug: Bug,
-  chore: Cog,
-};
 
 const toInitials = (ownerId?: string) => {
   if (!ownerId) return '??';
@@ -47,8 +38,6 @@ export function StoryCard({ story, onOpen, isOverlay = false }: StoryCardProps) 
     transform: CSS.Transform.toString(transform),
     transition,
   };
-
-  const StoryTypeIcon = storyTypeIcon[story.story_type];
 
   const due = useMemo(() => {
     if (!story.deadline) return null;
@@ -76,14 +65,14 @@ export function StoryCard({ story, onOpen, isOverlay = false }: StoryCardProps) 
         }
       }}
       className={cn(
-        'group rounded-xl border border-border/70 bg-background px-3 py-2.5 shadow-sm transition-all',
-        'hover:border-border hover:shadow-md',
+        'group rounded-md border border-border/60 bg-background px-3 py-2.5 transition-colors',
+        'hover:bg-accent/40',
         isDragging && 'opacity-60',
-        isOverlay && 'shadow-lg ring-1 ring-primary/30'
+        isOverlay && 'ring-1 ring-primary/30'
       )}
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <StoryTypeIcon className="h-3.5 w-3.5" />
+        <StoryTypeIcon storyType={story.story_type} className="h-3.5 w-3.5" />
         <span className="font-medium text-foreground">TP-{story.display_id}</span>
         <span className="ml-auto" title={`Priority: ${story.priority}`}>
           <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />

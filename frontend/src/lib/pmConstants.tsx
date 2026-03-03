@@ -1,15 +1,21 @@
 import {
   Ban,
+  Bug,
   CircleAlert,
   CircleCheck,
   CircleDashed,
   CircleDot,
   Minus,
+  OctagonAlert,
+  ShieldAlert,
   SignalHigh,
   SignalLow,
   SignalMedium,
+  Sparkles,
+  TriangleAlert,
+  Wrench,
 } from 'lucide-react';
-import type { Priority, StateType } from './pmTypes';
+import type { Priority, Severity, StateType, StoryType } from './pmTypes';
 
 // ── Priority icons & colors ────────────────────────────────────────
 
@@ -36,6 +42,30 @@ export function PriorityIcon({
   return <Icon className={`${className} ${config.color}`} />;
 }
 
+// ── Severity icons & colors ─────────────────────────────────────────
+
+export const SEVERITY_CONFIG: Record<
+  Severity,
+  { icon: React.ElementType; color: string; label: string }
+> = {
+  critical: { icon: OctagonAlert, color: 'text-red-600', label: 'Critical' },
+  major: { icon: ShieldAlert, color: 'text-orange-500', label: 'Major' },
+  minor: { icon: TriangleAlert, color: 'text-amber-500', label: 'Minor' },
+  none: { icon: Ban, color: 'text-zinc-400', label: 'None' },
+};
+
+export function SeverityIcon({
+  severity,
+  className = 'h-4 w-4',
+}: {
+  severity: Severity;
+  className?: string;
+}) {
+  const config = SEVERITY_CONFIG[severity];
+  const Icon = config.icon;
+  return <Icon className={`${className} ${config.color}`} />;
+}
+
 // ── Workflow state icons & colors ──────────────────────────────────
 
 export const STATE_TYPE_ICON_CONFIG: Record<
@@ -56,6 +86,29 @@ export function StateTypeIcon({
   className?: string;
 }) {
   const config = STATE_TYPE_ICON_CONFIG[stateType];
+  const Icon = config.icon;
+  return <Icon className={`${className} ${config.color}`} />;
+}
+
+// ── Story type icons & colors ──────────────────────────────────────
+
+export const STORY_TYPE_CONFIG: Record<
+  StoryType,
+  { icon: React.ElementType; color: string; label: string }
+> = {
+  feature: { icon: Sparkles, color: 'text-amber-500', label: 'Feature' },
+  bug: { icon: Bug, color: 'text-red-500', label: 'Bug' },
+  chore: { icon: Wrench, color: 'text-indigo-500', label: 'Chore' },
+};
+
+export function StoryTypeIcon({
+  storyType,
+  className = 'h-4 w-4',
+}: {
+  storyType: StoryType;
+  className?: string;
+}) {
+  const config = STORY_TYPE_CONFIG[storyType];
   const Icon = config.icon;
   return <Icon className={`${className} ${config.color}`} />;
 }

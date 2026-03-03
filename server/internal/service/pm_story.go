@@ -216,6 +216,7 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	}
 
 	stateChanged := false
+	oldStateID := current.WorkflowStateID
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -360,7 +361,19 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		}
 	}
 
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
+	if stateChanged {
+		oldName := oldStateID
+		newName := current.WorkflowStateID
+		if st, _ := s.workflowRepo.GetStateByID(ctx, oldStateID); st != nil {
+			oldName = st.Name
+		}
+		if st, _ := s.workflowRepo.GetStateByID(ctx, current.WorkflowStateID); st != nil {
+			newName = st.Name
+		}
+		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "moved", stringPtr("state"), &oldName, &newName, nil)
+	} else {
+		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
+	}
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
@@ -410,7 +423,15 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 		return nil, err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "moved", stringPtr("workflow_state_id"), &current.WorkflowStateID, &req.StateID, nil)
+	oldStateName := current.WorkflowStateID
+	newStateName := req.StateID
+	if st, _ := s.workflowRepo.GetStateByID(ctx, current.WorkflowStateID); st != nil {
+		oldStateName = st.Name
+	}
+	if st, _ := s.workflowRepo.GetStateByID(ctx, req.StateID); st != nil {
+		newStateName = st.Name
+	}
+	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "moved", stringPtr("state"), &oldStateName, &newStateName, nil)
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
