@@ -10,18 +10,58 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Users, UserPlus, Briefcase, Award, Settings2 } from 'lucide-react';
+import { Award, Briefcase, Pencil, Plus, Settings2, Trash2, UserPlus, Users, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
+
+type SettingsSection = 'teams' | 'people' | 'jobroles' | 'tiers' | 'system';
+
+const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon }[] = [
+  {
+    id: 'teams',
+    label: 'Teams',
+    description: 'Create teams and define managers.',
+    icon: Users,
+  },
+  {
+    id: 'people',
+    label: 'People',
+    description: 'Manage members, roles, and compensation inputs.',
+    icon: UserPlus,
+  },
+  {
+    id: 'jobroles',
+    label: 'Job Roles',
+    description: 'Configure role-based individual evaluation criteria.',
+    icon: Briefcase,
+  },
+  {
+    id: 'tiers',
+    label: 'Bonus Tiers',
+    description: 'Set score bands and multipliers for payouts.',
+    icon: Award,
+  },
+  {
+    id: 'system',
+    label: 'System',
+    description: 'Control global workspace behavior and defaults.',
+    icon: Settings2,
+  },
+];
+
+const isSettingsSection = (value: string): value is SettingsSection =>
+  SETTINGS_SECTIONS.some((section) => section.id === value);
+
+const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
 
 export default function Settings() {
   const { currentWorkspace } = useWorkspaceStore();
   const { isAdmin } = useSessionStore();
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState<SettingsSection>('teams');
 
   const load = async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
@@ -41,6 +81,19 @@ export default function Settings() {
 
   useEffect(() => { load(); }, [currentWorkspace?.id]);
 
+  useEffect(() => {
+    const updateFromHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (isSettingsSection(hash)) {
+        setActiveSection(hash);
+      }
+    };
+
+    updateFromHash();
+    window.addEventListener('hashchange', updateFromHash);
+    return () => window.removeEventListener('hashchange', updateFromHash);
+  }, []);
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -58,6 +111,75 @@ export default function Settings() {
     );
   }
 
+  const workspaceId = currentWorkspace?.id ?? settings.settings.workspace_id;
+  if (!workspaceId) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">Could not determine workspace for settings.</p>
+      </div>
+    );
+  }
+
+  const sectionMeta = SETTINGS_SECTIONS.find((section) => section.id === activeSection)!;
+
+  const handleSectionChange = (section: SettingsSection) => {
+    setActiveSection(section);
+    window.history.replaceState(null, '', `#${section}`);
+  };
+
+  const renderSection = () => {
+    switch (activeSection) {
+      case 'teams':
+        return (
+          <TeamsTab
+            workspaceId={workspaceId}
+            teams={settings.teams}
+            editable={isAdmin()}
+            onRefresh={load}
+          />
+        );
+      case 'people':
+        return (
+          <PeopleTab
+            workspaceId={workspaceId}
+            people={settings.people}
+            teams={settings.teams}
+            editable={isAdmin()}
+            onRefresh={load}
+          />
+        );
+      case 'jobroles':
+        return (
+          <JobRolesTab
+            workspaceId={workspaceId}
+            criteria={settings.job_role_criteria}
+            editable={isAdmin()}
+            onRefresh={load}
+          />
+        );
+      case 'tiers':
+        return (
+          <BonusTiersTab
+            workspaceId={workspaceId}
+            tiers={settings.bonus_tiers}
+            editable={isAdmin()}
+            onRefresh={load}
+          />
+        );
+      case 'system':
+        return (
+          <SystemTab
+            workspaceId={workspaceId}
+            config={settings.settings}
+            editable={isAdmin()}
+            onRefresh={load}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -65,61 +187,36 @@ export default function Settings() {
         <p className="text-muted-foreground">{currentWorkspace?.name} workspace configuration</p>
       </div>
 
-      <Tabs defaultValue="teams">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="teams" className="gap-1"><Users className="h-3.5 w-3.5" /> Teams</TabsTrigger>
-          <TabsTrigger value="people" className="gap-1"><UserPlus className="h-3.5 w-3.5" /> People</TabsTrigger>
-          <TabsTrigger value="jobroles" className="gap-1"><Briefcase className="h-3.5 w-3.5" /> Job Roles</TabsTrigger>
-          <TabsTrigger value="tiers" className="gap-1"><Award className="h-3.5 w-3.5" /> Bonus Tiers</TabsTrigger>
-          <TabsTrigger value="system" className="gap-1"><Settings2 className="h-3.5 w-3.5" /> System</TabsTrigger>
-        </TabsList>
+      <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="h-fit border-r pr-4">
+          <p className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">Settings Sections</p>
+          <div className="mt-3 space-y-0.5">
+            {SETTINGS_SECTIONS.map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => handleSectionChange(section.id)}
+                className={`flex w-full items-start gap-2 border-l-2 px-3 py-2 text-left text-sm transition-colors ${
+                  activeSection === section.id
+                    ? 'border-l-foreground bg-accent/40 text-foreground'
+                    : 'border-l-transparent text-muted-foreground hover:bg-accent/30 hover:text-foreground'
+                }`}
+              >
+                <section.icon className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="font-medium">{section.label}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
 
-        <TabsContent value="teams">
-          <TeamsTab
-            workspaceId={currentWorkspace!.id}
-            teams={settings.teams}
-            editable={isAdmin()}
-            onRefresh={load}
-          />
-        </TabsContent>
-
-        <TabsContent value="people">
-          <PeopleTab
-            workspaceId={currentWorkspace!.id}
-            people={settings.people}
-            teams={settings.teams}
-            editable={isAdmin()}
-            onRefresh={load}
-          />
-        </TabsContent>
-
-        <TabsContent value="jobroles">
-          <JobRolesTab
-            workspaceId={currentWorkspace!.id}
-            criteria={settings.job_role_criteria}
-            editable={isAdmin()}
-            onRefresh={load}
-          />
-        </TabsContent>
-
-        <TabsContent value="tiers">
-          <BonusTiersTab
-            workspaceId={currentWorkspace!.id}
-            tiers={settings.bonus_tiers}
-            editable={isAdmin()}
-            onRefresh={load}
-          />
-        </TabsContent>
-
-        <TabsContent value="system">
-          <SystemTab
-            workspaceId={currentWorkspace!.id}
-            config={settings.settings}
-            editable={isAdmin()}
-            onRefresh={load}
-          />
-        </TabsContent>
-      </Tabs>
+        <div className="space-y-4 min-w-0">
+          <div>
+            <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
+            <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
+          </div>
+          {renderSection()}
+        </div>
+      </div>
     </div>
   );
 }
@@ -174,7 +271,7 @@ function TeamsTab({ workspaceId, teams, editable, onRefresh }: {
   };
 
   return (
-    <Card>
+    <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -309,7 +406,7 @@ function PeopleTab({ workspaceId, people, teams: _teams, editable, onRefresh }: 
   };
 
   return (
-    <Card>
+    <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -440,7 +537,7 @@ function JobRolesTab({ workspaceId, criteria, editable, onRefresh }: {
   };
 
   return (
-    <Card>
+    <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <CardTitle className="text-base">Job Role Criteria</CardTitle>
         <CardDescription>Individual scoring criteria by job role</CardDescription>
@@ -451,7 +548,7 @@ function JobRolesTab({ workspaceId, criteria, editable, onRefresh }: {
         ) : (
           <div className="space-y-4">
             {jobRoles.map(role => (
-              <div key={role} className="border rounded-md p-4">
+              <div key={role} className="border border-border rounded-none p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-medium">{role}</h3>
                   <div className="flex items-center gap-2">
@@ -532,7 +629,7 @@ function BonusTiersTab({ workspaceId, tiers, editable, onRefresh }: {
   };
 
   return (
-    <Card>
+    <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -549,7 +646,7 @@ function BonusTiersTab({ workspaceId, tiers, editable, onRefresh }: {
       <CardContent>
         <div className="space-y-4">
           {localTiers.map((tier, idx) => (
-            <div key={tier.tier} className="border rounded-md p-4 space-y-3">
+            <div key={tier.tier} className="border border-border rounded-none p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Badge variant={tierVariant(tier.tier)}>Tier {tier.tier}</Badge>
                 {tier.description && <span className="text-sm text-muted-foreground">{tier.description}</span>}
@@ -624,7 +721,7 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
   };
 
   return (
-    <Card>
+    <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <CardTitle className="text-base">System Settings</CardTitle>
         <CardDescription>General workspace configuration</CardDescription>

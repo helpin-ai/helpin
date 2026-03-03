@@ -5,7 +5,7 @@ import { useQuarterStore } from '@/stores/quarterStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 
 export const Route = createFileRoute('/_authenticated/w/$slug')({
@@ -16,7 +16,6 @@ function WorkspaceLayout() {
   const { slug } = Route.useParams()
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
   const [loading, setLoading] = useState(true)
-  const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
     if (!slug) return
@@ -68,26 +67,14 @@ function WorkspaceLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex lg:w-64 lg:flex-col border-r">
-        <Sidebar />
-      </aside>
-
-      {/* Mobile sidebar */}
-      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="p-0 w-64">
-          <Sidebar onClose={() => setMobileOpen(false)} />
-        </SheetContent>
-      </Sheet>
-
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header onMenuClick={() => setMobileOpen(true)} />
+    <SidebarProvider>
+      <Sidebar />
+      <SidebarInset>
+        <Header />
         <main className="flex-1 overflow-auto p-6">
           <Outlet />
         </main>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

@@ -1,88 +1,160 @@
-import { Link, useLocation } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
+import { Calendar, DollarSign, LayoutDashboard, LogOut, Settings, Target, User, Users } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import {
-  LayoutDashboard, Target, Users, Calendar, DollarSign,
-  Settings, User, LogOut, ChevronLeft
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+import {
+  Sidebar as ShellSidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarSeparator,
+} from '@/components/ui/sidebar';
+import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 
-const navItems = [
-  { to: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: 'goals', label: 'Company Goals', icon: Target },
-  { to: 'team-goals', label: 'Team Goals', icon: Users },
-  { to: 'sprints', label: 'Sprints', icon: Calendar },
-  { to: 'bonus', label: 'Bonus Dashboard', icon: DollarSign },
-  { to: 'my-quarter', label: 'My Quarter', icon: User },
-  { to: 'settings', label: 'Settings', icon: Settings },
-];
+type NavItem = {
+  link: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
 
-interface SidebarProps {
-  onClose?: () => void;
-}
-
-export function Sidebar({ onClose }: SidebarProps) {
+export function Sidebar() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user, signOut } = useAuthStore();
   const { currentWorkspace } = useWorkspaceStore();
-  const location = useLocation();
+
+  const wsSlug = currentWorkspace?.slug ?? '';
+
+  const navGroups: { label: string; items: NavItem[] }[] = [
+    {
+      label: 'Main',
+      items: [
+        { link: `/w/${wsSlug}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
+        { link: `/w/${wsSlug}/goals`, label: 'Company Goals', icon: Target },
+        { link: `/w/${wsSlug}/team-goals`, label: 'Team Goals', icon: Users },
+        { link: `/w/${wsSlug}/sprints`, label: 'Sprints', icon: Calendar },
+      ],
+    },
+    {
+      label: 'Performance',
+      items: [
+        { link: `/w/${wsSlug}/bonus`, label: 'Bonus Dashboard', icon: DollarSign },
+        { link: `/w/${wsSlug}/my-quarter`, label: 'My Quarter', icon: User },
+      ],
+    },
+    {
+      label: 'Workspace',
+      items: [{ link: `/w/${wsSlug}/settings`, label: 'Settings', icon: Settings }],
+    },
+  ];
 
   const initials = user?.full_name
-    ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+    ? user.full_name
+      .split(' ')
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
     : user?.email?.slice(0, 2).toUpperCase() || '??';
 
+  const isActive = (link: string) =>
+    location.pathname === link || location.pathname.startsWith(`${link}/`);
+
   return (
-    <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
-      <div className="p-4 flex items-center gap-2">
-        <Link to="/workspaces" className="flex items-center gap-2 hover:opacity-80">
-          <ChevronLeft className="h-4 w-4" />
-          <span className="text-xs text-muted-foreground">Workspaces</span>
-        </Link>
-      </div>
-      <div className="px-4 pb-3">
-        <h2 className="font-semibold text-lg truncate">{currentWorkspace?.name || 'Workspace'}</h2>
-      </div>
-      <Separator />
-      <ScrollArea className="flex-1 px-2 py-2">
-        <nav className="space-y-1">
-          {navItems.map(item => {
-            const fullPath = `/w/${currentWorkspace?.slug}/${item.to}`;
-            const isActive = location.pathname.startsWith(fullPath);
-            return (
-              <Link
-                key={item.to}
-                to={fullPath}
-                onClick={onClose}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground'
-                )}
+    <ShellSidebar collapsible="icon">
+      <SidebarHeader>
+        <WorkspaceSwitcher />
+      </SidebarHeader>
+
+      <SidebarContent>
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarMenu>
+              {group.items.map((item) => (
+                <SidebarMenuItem key={item.link}>
+                  <SidebarMenuButton
+                    asChild
+                    tooltip={item.label}
+                    isActive={isActive(item.link)}
+                  >
+                    <a
+                      href={item.link}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate({ to: item.link as string });
+                      }}
+                    >
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </a>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              tooltip="All Workspaces"
+            >
+              <a
+                href="/workspaces"
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate({ to: '/workspaces' });
+                }}
               >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </ScrollArea>
-      <Separator />
-      <div className="p-4 flex items-center gap-3">
-        <Avatar className="h-8 w-8">
-          <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-        </Avatar>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{user?.full_name || user?.email}</p>
-          <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-        </div>
-        <Button variant="ghost" size="icon" onClick={signOut} title="Sign out">
-          <LogOut className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
+                <Users />
+                <span>All Workspaces</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+
+        <SidebarSeparator />
+
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild size="lg">
+              <div>
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
+                </Avatar>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">{user?.full_name || user?.email}</span>
+                  <span className="truncate text-xs text-muted-foreground">{user?.email}</span>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Sign out"
+                  className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    signOut();
+                  }}
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+
+      <SidebarRail />
+    </ShellSidebar>
   );
 }

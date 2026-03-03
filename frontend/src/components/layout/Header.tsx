@@ -1,17 +1,10 @@
-import { Menu } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import { QuarterSelector } from '@/components/quarter/QuarterSelector';
 
-interface HeaderProps {
-  onMenuClick: () => void;
-}
-
-export function Header({ onMenuClick }: HeaderProps) {
+export function Header() {
   return (
     <header className="h-14 border-b bg-background flex items-center px-4 gap-4">
-      <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}>
-        <Menu className="h-5 w-5" />
-      </Button>
+      <SidebarTrigger className="-ml-1" />
       <div className="flex-1" />
       <QuarterSelector />
     </header>
