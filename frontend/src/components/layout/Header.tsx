@@ -1,6 +1,6 @@
 import { Fragment, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
-import { Bell, CircleHelp, LogOut, Search, User, Users } from 'lucide-react';
+import { Bell, CircleHelp, LogOut, Plus, Search, User, Users } from 'lucide-react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { QuarterSelector } from '@/components/quarter/QuarterSelector';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -37,6 +37,8 @@ export function Header() {
       .slice(0, 2)
     : user?.email?.slice(0, 2).toUpperCase() || '??';
 
+  const isPmStories = location.pathname.includes('/pm/stories');
+
   const breadcrumbs = useMemo<Crumb[]>(() => {
     const segments = location.pathname.split('/').filter(Boolean);
     if (segments.length < 2 || segments[0] !== 'w') return [];
@@ -72,7 +74,7 @@ export function Header() {
     }
 
     const pmSubMap: Record<string, string> = {
-      stories: 'Stories',
+      stories: 'Work Items',
       epics: 'Epics',
       iterations: 'Iterations',
       objectives: 'Objectives',
@@ -103,7 +105,7 @@ export function Header() {
     <header className="h-14 border-b border-border/70 bg-background/95 px-3 flex items-center gap-3">
       <div className="flex min-w-0 items-center gap-2">
         <SidebarTrigger className="-ml-1" />
-        {breadcrumbs.length > 0 && (
+        {!isPmStories && breadcrumbs.length > 0 && (
           <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1 text-sm md:flex">
             {breadcrumbs.map((crumb, index) => {
               const isLast = index === breadcrumbs.length - 1;
@@ -127,6 +129,16 @@ export function Header() {
               );
             })}
           </nav>
+        )}
+        {isPmStories && (
+          <Button
+            size="sm"
+            className="h-7 rounded-sm text-xs"
+            onClick={() => window.dispatchEvent(new CustomEvent('add-work-item'))}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add work item
+          </Button>
         )}
       </div>
 

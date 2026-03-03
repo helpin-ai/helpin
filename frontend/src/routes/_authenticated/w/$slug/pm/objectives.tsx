@@ -7,7 +7,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/pm/objectives')({
 
 function Objectives() {
   return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
+    <div className="flex h-full flex-col items-center justify-center p-4 text-center md:p-6">
       <Target className="h-12 w-12 text-muted-foreground/40" />
       <h2 className="mt-4 text-xl font-semibold">Objectives</h2>
       <p className="mt-2 text-sm text-muted-foreground">

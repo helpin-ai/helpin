@@ -12,18 +12,24 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
-	Health    *handler.HealthHandler
-	Auth      *handler.AuthHandler
-	Workspace *handler.WorkspaceHandler
-	Quarter   *handler.QuarterHandler
-	Sprint    *handler.SprintHandler
-	Goal      *handler.GoalHandler
-	Bonus     *handler.BonusHandler
-	Finance   *handler.FinanceHandler
-	Settings  *handler.SettingsHandler
-	Audit     *handler.AuditHandler
-	Draft     *handler.DraftHandler
-	Invite    *handler.InviteHandler
+	Health      *handler.HealthHandler
+	Auth        *handler.AuthHandler
+	Workspace   *handler.WorkspaceHandler
+	Quarter     *handler.QuarterHandler
+	Sprint      *handler.SprintHandler
+	Goal        *handler.GoalHandler
+	Bonus       *handler.BonusHandler
+	Finance     *handler.FinanceHandler
+	Settings    *handler.SettingsHandler
+	Audit       *handler.AuditHandler
+	Draft       *handler.DraftHandler
+	Invite      *handler.InviteHandler
+	PMWorkflow  *handler.PMWorkflowHandler
+	PMLabel     *handler.PMLabelHandler
+	PMEpic      *handler.PMEpicHandler
+	PMIteration *handler.PMIterationHandler
+	PMStory     *handler.PMStoryHandler
+	PMComment   *handler.PMCommentHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -125,6 +131,71 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 
 			// Invite (stub)
 			r.Post("/invite", h.Invite.Send)
+
+			// PM module
+			r.Route("/pm", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+
+				// Workflows
+				r.Get("/workflows", h.PMWorkflow.List)
+				r.Post("/workflows", h.PMWorkflow.Create)
+				r.Get("/workflows/epic-states", h.PMWorkflow.ListEpicStates)
+				r.Get("/workflows/{id}", h.PMWorkflow.Get)
+				r.Put("/workflows/{id}", h.PMWorkflow.Update)
+				r.Delete("/workflows/{id}", h.PMWorkflow.Delete)
+				r.Post("/workflows/{id}/states", h.PMWorkflow.CreateState)
+				r.Put("/workflows/{id}/states/{stateId}", h.PMWorkflow.UpdateState)
+				r.Delete("/workflows/{id}/states/{stateId}", h.PMWorkflow.DeleteState)
+				r.Put("/workflows/{id}/states/reorder", h.PMWorkflow.ReorderStates)
+
+				// Labels
+				r.Get("/labels", h.PMLabel.List)
+				r.Post("/labels", h.PMLabel.Create)
+				r.Put("/labels/{id}", h.PMLabel.Update)
+				r.Delete("/labels/{id}", h.PMLabel.Delete)
+
+				// Epics
+				r.Get("/epics", h.PMEpic.List)
+				r.Post("/epics", h.PMEpic.Create)
+				r.Get("/epics/{id}", h.PMEpic.Get)
+				r.Put("/epics/{id}", h.PMEpic.Update)
+				r.Delete("/epics/{id}", h.PMEpic.Delete)
+				r.Get("/epics/{id}/stories", h.PMEpic.ListStories)
+				r.Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
+
+				// Iterations
+				r.Get("/iterations", h.PMIteration.List)
+				r.Post("/iterations", h.PMIteration.Create)
+				r.Get("/iterations/{id}", h.PMIteration.Get)
+				r.Put("/iterations/{id}", h.PMIteration.Update)
+				r.Delete("/iterations/{id}", h.PMIteration.Delete)
+				r.Get("/iterations/{id}/stories", h.PMIteration.ListStories)
+
+				// Stories
+				r.Get("/stories", h.PMStory.List)
+				r.Post("/stories", h.PMStory.Create)
+				r.Get("/stories/board", h.PMStory.ListBoard)
+				r.Get("/stories/counts", h.PMStory.CountByState)
+				r.Get("/stories/display/{displayID}", h.PMStory.GetByDisplayID)
+				r.Get("/stories/{id}", h.PMStory.Get)
+				r.Put("/stories/{id}", h.PMStory.Update)
+				r.Delete("/stories/{id}", h.PMStory.Delete)
+				r.Put("/stories/{id}/move", h.PMStory.Move)
+				r.Put("/stories/{id}/reorder", h.PMStory.Reorder)
+				r.Post("/stories/{id}/owners", h.PMStory.AddOwner)
+				r.Delete("/stories/{id}/owners/{userId}", h.PMStory.RemoveOwner)
+				r.Post("/stories/{id}/followers", h.PMStory.AddFollower)
+				r.Delete("/stories/{id}/followers", h.PMStory.RemoveFollower)
+				r.Post("/stories/{id}/labels", h.PMStory.AddLabel)
+				r.Delete("/stories/{id}/labels/{labelId}", h.PMStory.RemoveLabel)
+				r.Get("/stories/{id}/activity", h.PMStory.ListActivity)
+
+				// Comments
+				r.Get("/comments", h.PMComment.List)
+				r.Post("/comments", h.PMComment.Create)
+				r.Put("/comments/{id}", h.PMComment.Update)
+				r.Delete("/comments/{id}", h.PMComment.Delete)
+			})
 		})
 	})
 

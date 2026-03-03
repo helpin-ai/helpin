@@ -76,6 +76,21 @@ func main() {
 		&model.BonusCalculation{},
 		&model.FinanceSettings{},
 		&model.BonusAuditLog{},
+		&model.PMWorkflow{},
+		&model.PMWorkflowState{},
+		&model.PMEpicWorkflowState{},
+		&model.PMLabel{},
+		&model.PMEpic{},
+		&model.PMEpicObjective{},
+		&model.PMEpicLabel{},
+		&model.PMIteration{},
+		&model.PMIterationLabel{},
+		&model.PMStory{},
+		&model.PMStoryOwner{},
+		&model.PMStoryFollower{},
+		&model.PMStoryLabel{},
+		&model.PMComment{},
+		&model.PMActivityLog{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -94,10 +109,25 @@ func main() {
 	bonusRepo := repository.NewBonusRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
 	draftRepo := repository.NewDraftRepository(db)
+	pmWorkflowRepo := repository.NewPMWorkflowRepository(db)
+	pmLabelRepo := repository.NewPMLabelRepository(db)
+	pmEpicRepo := repository.NewPMEpicRepository(db)
+	pmIterationRepo := repository.NewPMIterationRepository(db)
+	pmStoryRepo := repository.NewPMStoryRepository(db)
+	pmCommentRepo := repository.NewPMCommentRepository(db)
+	pmActivityRepo := repository.NewPMActivityRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
-	workspaceService := service.NewWorkspaceService(workspaceRepo)
+	pmActivityService := service.NewPMActivityService(pmActivityRepo)
+	pmLabelService := service.NewPMLabelService(pmLabelRepo)
+	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
+	pmStoryService := service.NewPMStoryService(pmStoryRepo, pmWorkflowRepo, pmActivityService)
+	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmActivityService)
+	pmIterationService := service.NewPMIterationService(pmIterationRepo, pmActivityService)
+	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService)
+
+	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
 	quarterService := service.NewQuarterService(quarterRepo, sprintRepo)
 	sprintService := service.NewSprintService(sprintRepo, scoringRepo)
 	goalService := service.NewGoalService(goalRepo)
@@ -108,18 +138,24 @@ func main() {
 
 	// Initialize handlers.
 	handlers := router.Handlers{
-		Health:    handler.NewHealthHandler(),
-		Auth:      handler.NewAuthHandler(authService),
-		Workspace: handler.NewWorkspaceHandler(workspaceService),
-		Quarter:   handler.NewQuarterHandler(quarterService),
-		Sprint:    handler.NewSprintHandler(sprintService),
-		Goal:      handler.NewGoalHandler(goalService),
-		Bonus:     handler.NewBonusHandler(bonusService),
-		Finance:   handler.NewFinanceHandler(bonusService),
-		Settings:  handler.NewSettingsHandler(settingsService),
-		Audit:     handler.NewAuditHandler(auditService),
-		Draft:     handler.NewDraftHandler(draftService),
-		Invite:    handler.NewInviteHandler(),
+		Health:      handler.NewHealthHandler(),
+		Auth:        handler.NewAuthHandler(authService),
+		Workspace:   handler.NewWorkspaceHandler(workspaceService),
+		Quarter:     handler.NewQuarterHandler(quarterService),
+		Sprint:      handler.NewSprintHandler(sprintService),
+		Goal:        handler.NewGoalHandler(goalService),
+		Bonus:       handler.NewBonusHandler(bonusService),
+		Finance:     handler.NewFinanceHandler(bonusService),
+		Settings:    handler.NewSettingsHandler(settingsService),
+		Audit:       handler.NewAuditHandler(auditService),
+		Draft:       handler.NewDraftHandler(draftService),
+		Invite:      handler.NewInviteHandler(),
+		PMWorkflow:  handler.NewPMWorkflowHandler(pmWorkflowService),
+		PMLabel:     handler.NewPMLabelHandler(pmLabelService),
+		PMEpic:      handler.NewPMEpicHandler(pmEpicService),
+		PMIteration: handler.NewPMIterationHandler(pmIterationService),
+		PMStory:     handler.NewPMStoryHandler(pmStoryService),
+		PMComment:   handler.NewPMCommentHandler(pmCommentService),
 	}
 
 	// Set up router.

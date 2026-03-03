@@ -10,12 +10,25 @@ import (
 
 // WorkspaceService handles workspace business logic.
 type WorkspaceService struct {
-	workspaceRepo *repository.WorkspaceRepository
+	workspaceRepo       *repository.WorkspaceRepository
+	defaultsInitializer WorkspaceDefaultsInitializer
+}
+
+// WorkspaceDefaultsInitializer seeds default workspace-scoped data after creation.
+type WorkspaceDefaultsInitializer interface {
+	SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error
 }
 
 // NewWorkspaceService creates a new WorkspaceService.
-func NewWorkspaceService(workspaceRepo *repository.WorkspaceRepository) *WorkspaceService {
-	return &WorkspaceService{workspaceRepo: workspaceRepo}
+func NewWorkspaceService(workspaceRepo *repository.WorkspaceRepository, defaultsInitializer ...WorkspaceDefaultsInitializer) *WorkspaceService {
+	var initializer WorkspaceDefaultsInitializer
+	if len(defaultsInitializer) > 0 {
+		initializer = defaultsInitializer[0]
+	}
+	return &WorkspaceService{
+		workspaceRepo:       workspaceRepo,
+		defaultsInitializer: initializer,
+	}
 }
 
 // Create creates a workspace and adds the creator as the owner member.
@@ -32,6 +45,12 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 	_, err = s.workspaceRepo.AddMember(ctx, ws.ID, ownerID, "owner")
 	if err != nil {
 		return nil, fmt.Errorf("add owner as member: %w", err)
+	}
+
+	if s.defaultsInitializer != nil {
+		if err := s.defaultsInitializer.SeedWorkspaceDefaults(ctx, ws.ID, ownerID); err != nil {
+			return nil, fmt.Errorf("seed workspace defaults: %w", err)
+		}
 	}
 
 	return &model.WorkspaceWithRole{
