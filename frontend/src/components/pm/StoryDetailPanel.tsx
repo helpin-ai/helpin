@@ -68,6 +68,7 @@ import type {
 interface StoryDetailPanelProps {
   workspaceId: string;
   open: boolean;
+  loading?: boolean;
   onOpenChange: (open: boolean) => void;
   storyDetail: StoryDetail | null;
   states: WorkflowState[];
@@ -772,6 +773,7 @@ function StoryDetailPanelBody({
 export function StoryDetailPanel({
   workspaceId,
   open,
+  loading,
   onOpenChange,
   storyDetail,
   states,
@@ -792,6 +794,10 @@ export function StoryDetailPanel({
             onStoryUpdated={onStoryUpdated}
             onStoryArchived={onStoryArchived}
           />
+        ) : loading ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
         ) : null}
       </SheetContent>
     </Sheet>

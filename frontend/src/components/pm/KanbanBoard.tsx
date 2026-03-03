@@ -103,6 +103,7 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createStateId, setCreateStateId] = useState<string>('');
   const [selectedStory, setSelectedStory] = useState<Awaited<ReturnType<typeof pmStoryService.get>>['data'] | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
 
@@ -143,10 +144,13 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
 
   const openStory = useCallback(
     async (story: Story) => {
+      setSelectedStory(null);
+      setDetailLoading(true);
+      setDetailOpen(true);
       const detail = await pmStoryService.get(workspaceId, story.id);
+      setDetailLoading(false);
       if (!detail.data) return;
       setSelectedStory(detail.data);
-      setDetailOpen(true);
     },
     [workspaceId]
   );
@@ -334,6 +338,7 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
       <StoryDetailPanel
         workspaceId={workspaceId}
         open={detailOpen}
+        loading={detailLoading}
         onOpenChange={setDetailOpen}
         storyDetail={selectedStory}
         states={workflow?.states ?? []}
