@@ -1,13 +1,21 @@
-import { Fragment, useMemo } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
-import { Bell, CircleHelp, LogOut, Plus, Search, User, Users } from 'lucide-react';
-import { SidebarTrigger } from '@/components/ui/sidebar';
-import { QuarterSelector } from '@/components/quarter/QuarterSelector';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useAuthStore } from '@/stores/authStore';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Fragment, useMemo } from "react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import {
+  Bell,
+  CircleHelp,
+  LogOut,
+  Plus,
+  Search,
+  User,
+  Users,
+} from "lucide-react";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { QuarterSelector } from "@/components/quarter/QuarterSelector";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useAuthStore } from "@/stores/authStore";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,7 +23,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 
 type Crumb = {
   label: string;
@@ -30,76 +38,78 @@ export function Header() {
 
   const initials = user?.full_name
     ? user.full_name
-      .split(' ')
-      .map((part) => part[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2)
-    : user?.email?.slice(0, 2).toUpperCase() || '??';
+        .split(" ")
+        .map((part) => part[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : user?.email?.slice(0, 2).toUpperCase() || "??";
 
-  const isPmStories = location.pathname.includes('/pm/stories');
+  const isPmStories = location.pathname.includes("/pm/stories");
 
   const breadcrumbs = useMemo<Crumb[]>(() => {
-    const segments = location.pathname.split('/').filter(Boolean);
-    if (segments.length < 2 || segments[0] !== 'w') return [];
+    const segments = location.pathname.split("/").filter(Boolean);
+    if (segments.length < 2 || segments[0] !== "w") return [];
 
     const slug = segments[1];
     const subRoute = segments.slice(2);
-    const workspaceLabel = currentWorkspace?.name ?? 'Workspace';
+    const workspaceLabel = currentWorkspace?.name ?? "Workspace";
 
-    const crumbs: Crumb[] = [{ label: workspaceLabel, to: `/w/${slug}/dashboard` }];
+    const crumbs: Crumb[] = [
+      { label: workspaceLabel, to: `/w/${slug}/dashboard` },
+    ];
     if (subRoute.length === 0) {
-      crumbs.push({ label: 'Dashboard' });
+      crumbs.push({ label: "Dashboard" });
       return crumbs;
     }
 
     const section = subRoute[0];
     const sectionMap: Record<string, string> = {
-      dashboard: 'Dashboard',
-      goals: 'Company Goals',
-      'team-goals': 'Team Goals',
-      sprints: 'Sprints',
-      bonus: 'Bonus Dashboard',
-      'my-quarter': 'My Quarter',
-      settings: 'Settings',
-      tasks: 'Tasks',
-      pm: 'Projects',
-      docs: 'Docs',
+      dashboard: "Dashboard",
+      goals: "Company Goals",
+      "team-goals": "Team Goals",
+      sprints: "Sprints",
+      bonus: "Bonus Dashboard",
+      "my-quarter": "My Quarter",
+      settings: "Settings",
+      tasks: "Tasks",
+      pm: "Projects",
+      docs: "Docs",
     };
 
-    if (section === 'sprints' && subRoute[1]) {
-      crumbs.push({ label: 'Sprints', to: `/w/${slug}/sprints` });
-      crumbs.push({ label: 'Sprint Detail' });
+    if (section === "sprints" && subRoute[1]) {
+      crumbs.push({ label: "Sprints", to: `/w/${slug}/sprints` });
+      crumbs.push({ label: "Sprint Detail" });
       return crumbs;
     }
 
     const pmSubMap: Record<string, string> = {
-      stories: 'Work Items',
-      epics: 'Epics',
-      iterations: 'Iterations',
-      objectives: 'Objectives',
-      roadmap: 'Roadmap',
-      reports: 'Reports',
+      stories: "Work Items",
+      epics: "Epics",
+      iterations: "Iterations",
+      objectives: "Objectives",
+      roadmap: "Roadmap",
+      reports: "Reports",
     };
 
     const settingsSubMap: Record<string, string> = {
-      system: 'General',
-      teams: 'Teams',
-      people: 'People',
-      jobroles: 'Job Roles',
-      workflows: 'Workflows',
-      workflowstates: 'Workflow States',
-      tiers: 'Bonus Tiers',
+      system: "General",
+      teams: "Teams",
+      people: "People",
+      jobroles: "Job Roles",
+      workflows: "Workflows",
+      workflowstates: "Workflow States",
+      tiers: "Bonus Tiers",
     };
 
-    if (section === 'pm') {
-      crumbs.push({ label: 'Projects', to: `/w/${slug}/pm/stories` });
+    if (section === "pm") {
+      crumbs.push({ label: "Projects", to: `/w/${slug}/pm/stories` });
       if (subRoute[1]) {
         const pmSub = subRoute[1];
-        const pmLabel = pmSubMap[pmSub] ?? pmSub.replace(/-/g, ' ');
+        const pmLabel = pmSubMap[pmSub] ?? pmSub.replace(/-/g, " ");
         if (subRoute[2]) {
           crumbs.push({ label: pmLabel, to: `/w/${slug}/pm/${pmSub}` });
-          crumbs.push({ label: `${pmLabel.replace(/s$/, '')} Detail` });
+          crumbs.push({ label: `${pmLabel.replace(/s$/, "")} Detail` });
         } else {
           crumbs.push({ label: pmLabel });
         }
@@ -107,16 +117,18 @@ export function Header() {
       return crumbs;
     }
 
-    if (section === 'settings') {
-      crumbs.push({ label: 'Settings', to: `/w/${slug}/settings/system` });
+    if (section === "settings") {
+      crumbs.push({ label: "Settings", to: `/w/${slug}/settings/system` });
       if (subRoute[1]) {
         const settingsSub = subRoute[1];
-        crumbs.push({ label: settingsSubMap[settingsSub] ?? settingsSub.replace(/-/g, ' ') });
+        crumbs.push({
+          label: settingsSubMap[settingsSub] ?? settingsSub.replace(/-/g, " "),
+        });
       }
       return crumbs;
     }
 
-    crumbs.push({ label: sectionMap[section] ?? section.replace(/-/g, ' ') });
+    crumbs.push({ label: sectionMap[section] ?? section.replace(/-/g, " ") });
     return crumbs;
   }, [location.pathname, currentWorkspace?.name]);
 
@@ -125,12 +137,17 @@ export function Header() {
       <div className="flex min-w-0 items-center gap-2">
         <SidebarTrigger className="-ml-1" />
         {!isPmStories && breadcrumbs.length > 0 && (
-          <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1 text-sm md:flex">
+          <nav
+            aria-label="Breadcrumb"
+            className="hidden min-w-0 items-center gap-1 text-sm md:flex"
+          >
             {breadcrumbs.map((crumb, index) => {
               const isLast = index === breadcrumbs.length - 1;
               return (
                 <Fragment key={`${crumb.label}-${index}`}>
-                  {index > 0 && <span className="text-muted-foreground">/</span>}
+                  {index > 0 && (
+                    <span className="text-muted-foreground">/</span>
+                  )}
                   {crumb.to && !isLast ? (
                     <button
                       type="button"
@@ -153,7 +170,9 @@ export function Header() {
           <Button
             size="sm"
             className="h-7 rounded-sm text-xs"
-            onClick={() => window.dispatchEvent(new CustomEvent('add-work-item'))}
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent("add-work-item"))
+            }
           >
             <Plus className="h-3.5 w-3.5" />
             Create story
@@ -162,21 +181,29 @@ export function Header() {
       </div>
 
       <div className="hidden lg:flex flex-1 max-w-xl items-center">
-        <div className="relative w-full">
+        <div className="relative w-3/4">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             aria-label="Search workspace"
-            placeholder={`Search ${currentWorkspace?.name ?? 'workspace'}...`}
+            placeholder={`Search ${currentWorkspace?.name ?? "workspace"}...`}
             className="h-8 pl-8 bg-muted/40 border-border/70"
           />
         </div>
       </div>
 
       <div className="ml-auto flex items-center gap-1">
-        <Button variant="ghost" size="icon" className="size-8 text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-muted-foreground"
+        >
           <Bell className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="size-8 text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-muted-foreground"
+        >
           <CircleHelp className="h-4 w-4" />
         </Button>
         <QuarterSelector />
@@ -188,20 +215,22 @@ export function Header() {
               className="ml-1 size-8 rounded-full border border-border/70 p-0"
             >
               <Avatar className="size-7">
-                <AvatarFallback className="text-[11px]">{initials}</AvatarFallback>
+                <AvatarFallback className="text-[11px]">
+                  {initials}
+                </AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel className="truncate">
-              {user?.full_name || user?.email || 'Account'}
+              {user?.full_name || user?.email || "Account"}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate({ to: '/profile' })}>
+            <DropdownMenuItem onClick={() => navigate({ to: "/profile" })}>
               <User className="h-4 w-4" />
               <span>Profile</span>
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate({ to: '/workspaces' })}>
+            <DropdownMenuItem onClick={() => navigate({ to: "/workspaces" })}>
               <Users className="h-4 w-4" />
               <span>All Workspaces</span>
             </DropdownMenuItem>

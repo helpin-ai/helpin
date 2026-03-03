@@ -224,7 +224,7 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <header className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2">
+      <header className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold">Stories</h2>
           <Badge variant="secondary" className="rounded-full px-2 py-0 text-xs">

@@ -59,7 +59,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     content,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[200px] px-4 py-3',
+        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
       },
     },
     onUpdate: ({ editor }) => {
@@ -149,7 +149,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       </div>
 
       {/* Editor area */}
-      <EditorContent editor={editor} />
+      <EditorContent editor={editor} className="min-h-0 flex-1 overflow-y-auto" />
     </div>
   );
 }

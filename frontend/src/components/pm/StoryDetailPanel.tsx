@@ -227,7 +227,6 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
   }
 
   const { activity, actor } = item.data;
-  const hasFieldChange = activity.old_value || activity.new_value;
 
   return (
     <div className="flex items-center gap-2">
@@ -237,16 +236,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">
           <span className="text-xs font-medium">{actor?.full_name || actor?.email || 'System'}</span>
-          <span className="text-[11px] text-muted-foreground">
-            {activity.action}
-            {hasFieldChange && (
-              <>
-                {activity.field_name ? ` ${activity.field_name}` : ''}
-                {activity.old_value && <> from <span className="font-medium text-foreground/70">{activity.old_value}</span></>}
-                {activity.new_value && <> to <span className="font-medium text-foreground/70">{activity.new_value}</span></>}
-              </>
-            )}
-          </span>
+          <span className="text-[11px] text-muted-foreground">{activity.action}</span>
           <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{formatRelativeTime(activity.created_at)}</span>
         </div>
       </div>
@@ -408,19 +398,6 @@ function StoryDetailPanelBody({
     return iterations.find((i) => i.iteration.id === form.iteration_id)?.iteration.name ?? 'No iteration';
   }, [form.iteration_id, iterations]);
 
-  const mergedTimeline = useMemo<TimelineItem[]>(() => {
-    const items: TimelineItem[] = [
-      ...activity.map(
-        (a) => ({ kind: 'activity' as const, data: a, time: a.activity.created_at }),
-      ),
-      ...comments.map(
-        (c) => ({ kind: 'comment' as const, data: c, time: c.comment.created_at }),
-      ),
-    ];
-    items.sort((a, b) => b.time.localeCompare(a.time));
-    return items;
-  }, [activity, comments]);
-
   const storyLabels = storyDetail.labels ?? [];
 
   return (
@@ -489,71 +466,43 @@ function StoryDetailPanelBody({
           {/* Separator */}
           <Separator className="my-6" />
 
-          {/* Activity + comments timeline */}
+          {/* Comments + Activity */}
           <div>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activity</h3>
-            <div className="mt-3 space-y-2">
-              {mergedTimeline.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No activity yet.</p>
-              ) : (
-                <>
-                  {!showAllActivity && mergedTimeline.length > 5 && (
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                      onClick={() => setShowAllActivity(true)}
-                    >
-                      Show {mergedTimeline.length - 5} older entries...
-                    </button>
-                  )}
-                  {(showAllActivity ? mergedTimeline : mergedTimeline.slice(0, 5)).map((item) => {
-                    if (item.kind === 'activity') {
-                      return <TimelineEntry key={`a-${item.data.activity.id}`} item={item} />;
-                    }
-                    return null;
-                  })}
-                </>
-              )}
-            </div>
-
             {/* Comments card */}
-            {comments.length > 0 && (
-              <div className="mt-4 rounded-lg border border-border/60">
-                {comments.map((entry, idx) => (
-                  <div key={entry.comment.id}>
-                    {idx > 0 && <Separator />}
-                    <div className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-800 text-[9px] font-medium text-white">
-                          {getInitials(entry.author)}
-                        </div>
-                        <span className="text-xs font-semibold">{entry.author.full_name || entry.author.email}</span>
-                        <span className="text-[11px] text-muted-foreground">{formatRelativeTime(entry.comment.created_at)}</span>
+            <div className="rounded-lg border border-border/60">
+              {comments.map((entry, idx) => (
+                <div key={entry.comment.id}>
+                  {idx > 0 && <Separator />}
+                  <div className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-800 text-[9px] font-medium text-white">
+                        {getInitials(entry.author)}
                       </div>
-                      <p className="mt-1.5 pl-8 text-sm">{entry.comment.body}</p>
+                      <span className="text-xs font-semibold">{entry.author.full_name || entry.author.email}</span>
+                      <span className="text-[11px] text-muted-foreground">{formatRelativeTime(entry.comment.created_at)}</span>
                     </div>
+                    <p className="mt-1.5 pl-8 text-sm">{entry.comment.body}</p>
                   </div>
-                ))}
+                </div>
+              ))}
 
-                {/* Reply input */}
-                <Separator />
-                <div className="flex items-center gap-2 px-4 py-2.5">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-800 text-[9px] font-medium text-white">
-                    {getInitials(storyDetail.owners[0] ?? null)}
-                  </div>
-                  <input
-                    type="text"
-                    value={newComment}
-                    placeholder="Leave a reply..."
-                    className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
-                    onChange={(e) => setNewComment(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                        e.preventDefault();
-                        addComment();
-                      }
-                    }}
-                  />
+              {/* Comment input */}
+              {comments.length > 0 && <Separator />}
+              <div className="px-4 py-3">
+                <textarea
+                  value={newComment}
+                  placeholder="Leave a comment..."
+                  rows={2}
+                  className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      addComment();
+                    }
+                  }}
+                />
+                <div className="flex items-center justify-end gap-1">
                   <button
                     type="button"
                     className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:opacity-40"
@@ -564,34 +513,28 @@ function StoryDetailPanelBody({
                   </button>
                 </div>
               </div>
-            )}
-
-            {/* Leave a comment box (always visible) */}
-            <div className="mt-4 rounded-lg border border-border/60">
-              <textarea
-                value={newComment}
-                placeholder="Leave a comment..."
-                rows={3}
-                className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm placeholder:text-muted-foreground/50 focus:outline-none"
-                onChange={(e) => setNewComment(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    addComment();
-                  }
-                }}
-              />
-              <div className="flex items-center justify-end gap-1 px-2 pb-2">
-                <button
-                  type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:opacity-40"
-                  disabled={commentLoading || !newComment.trim()}
-                  onClick={addComment}
-                >
-                  {commentLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                </button>
-              </div>
             </div>
+
+            {/* Activity section */}
+            {activity.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activity</h3>
+                <div className="mt-3 space-y-2">
+                  {!showAllActivity && activity.length > 5 && (
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      onClick={() => setShowAllActivity(true)}
+                    >
+                      Show {activity.length - 5} older entries...
+                    </button>
+                  )}
+                  {(showAllActivity ? activity : activity.slice(0, 5)).map((entry) => (
+                    <TimelineEntry key={`a-${entry.activity.id}`} item={{ kind: 'activity', data: entry, time: entry.activity.created_at }} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

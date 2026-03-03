@@ -201,7 +201,11 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		return nil, err
 	}
 
-	_ = s.activityService.Log(ctx, story.WorkspaceID, "story", story.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
+	createdAction := "created this story"
+	if st, _ := s.workflowRepo.GetStateByID(ctx, story.WorkflowStateID); st != nil {
+		createdAction = "created this story in " + st.Name
+	}
+	_ = s.activityService.Log(ctx, story.WorkspaceID, "story", story.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil)
 	return s.storyRepo.GetByID(ctx, story.ID)
 }
 
@@ -216,7 +220,10 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	}
 
 	stateChanged := false
-	oldStateID := current.WorkflowStateID
+	oldPriority := current.Priority
+	oldSeverity := current.Severity
+	oldStoryType := current.StoryType
+	oldBlocked := current.Blocked
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -361,18 +368,36 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		}
 	}
 
+	// Only log meaningful field changes with descriptive messages
 	if stateChanged {
-		oldName := oldStateID
 		newName := current.WorkflowStateID
-		if st, _ := s.workflowRepo.GetStateByID(ctx, oldStateID); st != nil {
-			oldName = st.Name
-		}
 		if st, _ := s.workflowRepo.GetStateByID(ctx, current.WorkflowStateID); st != nil {
 			newName = st.Name
 		}
-		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "moved", stringPtr("state"), &oldName, &newName, nil)
-	} else {
-		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
+		action := "moved this story to " + newName
+		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+	}
+	if req.Priority != nil && *req.Priority != oldPriority {
+		action := "changed priority from " + oldPriority + " to " + *req.Priority
+		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+	}
+	if req.Severity != nil && *req.Severity != oldSeverity {
+		action := "changed severity from " + oldSeverity + " to " + *req.Severity
+		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+	}
+	if req.StoryType != nil && *req.StoryType != oldStoryType {
+		action := "changed type from " + oldStoryType + " to " + *req.StoryType
+		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+	}
+	if req.Blocked != nil && *req.Blocked != oldBlocked {
+		if *req.Blocked {
+			_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "marked this story as blocked", nil, nil, nil, nil)
+		} else {
+			_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "unblocked this story", nil, nil, nil, nil)
+		}
+	}
+	if req.Archived != nil && *req.Archived {
+		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil)
 	}
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
@@ -389,7 +414,7 @@ func (s *PMStoryService) Delete(ctx context.Context, id, actorID string) error {
 	if err := s.storyRepo.Delete(ctx, id); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived", nil, nil, nil, nil)
+	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil)
 	return nil
 }
 
@@ -423,15 +448,12 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 		return nil, err
 	}
-	oldStateName := current.WorkflowStateID
 	newStateName := req.StateID
-	if st, _ := s.workflowRepo.GetStateByID(ctx, current.WorkflowStateID); st != nil {
-		oldStateName = st.Name
-	}
 	if st, _ := s.workflowRepo.GetStateByID(ctx, req.StateID); st != nil {
 		newStateName = st.Name
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "moved", stringPtr("state"), &oldStateName, &newStateName, nil)
+	action := "moved this story to " + newStateName
+	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
