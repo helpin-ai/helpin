@@ -30,15 +30,23 @@ export default function CompanyGoals() {
   const load = async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
     const q = useQuarterStore.getState().currentQuarter;
-    if (!ws?.id || !q?.id) return;
+    if (!ws?.id || !q?.id) {
+      setGoals([]);
+      setTeams([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const [goalsRes, settingsRes] = await Promise.all([
-      goalsService.list(ws.id, q.id),
-      settingsService.getAll(ws.id),
-    ]);
-    if (goalsRes.data) setGoals(goalsRes.data);
-    if (settingsRes.data) setTeams(settingsRes.data.teams);
-    setLoading(false);
+    try {
+      const [goalsRes, settingsRes] = await Promise.all([
+        goalsService.list(ws.id, q.id),
+        settingsService.getAll(ws.id),
+      ]);
+      if (goalsRes.data) setGoals(goalsRes.data);
+      if (settingsRes.data) setTeams(settingsRes.data.teams);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, [currentWorkspace?.id, currentQuarter?.id]);
@@ -61,7 +69,7 @@ export default function CompanyGoals() {
           <h1 className="text-2xl font-bold">Company Goals</h1>
           <p className="text-muted-foreground">{currentQuarter?.name} &middot; {goals.length} goals</p>
         </div>
-        {canEdit() && (
+        {canEdit() && currentWorkspace?.id && currentQuarter?.id && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -70,8 +78,8 @@ export default function CompanyGoals() {
               </Button>
             </DialogTrigger>
             <CreateGoalDialog
-              workspaceId={currentWorkspace!.id}
-              quarterId={currentQuarter!.id}
+              workspaceId={currentWorkspace.id}
+              quarterId={currentQuarter.id}
               teams={teams}
               onCreated={() => { setDialogOpen(false); load(); }}
               onCancel={() => setDialogOpen(false)}
@@ -80,7 +88,13 @@ export default function CompanyGoals() {
         )}
       </div>
 
-      {goals.length === 0 ? (
+      {!currentQuarter?.id ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">No quarter selected yet. Create or activate a quarter first.</p>
+          </CardContent>
+        </Card>
+      ) : goals.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">No goals yet for this quarter.</p>

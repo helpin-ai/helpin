@@ -36,17 +36,26 @@ export default function SprintDetail() {
 
   const load = async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
-    if (!sprintId || !ws?.id) return;
+    if (!sprintId || !ws?.id) {
+      setSprint(null);
+      setWsSettings(null);
+      setChecks([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const [sprintRes, settingsRes, checksRes] = await Promise.all([
-      sprintsService.get(sprintId),
-      settingsService.getAll(ws.id),
-      sprintsService.getIndividualChecks(sprintId, ws.id),
-    ]);
-    if (sprintRes.data) setSprint(sprintRes.data);
-    if (settingsRes.data) setWsSettings(settingsRes.data);
-    if (checksRes.data) setChecks(checksRes.data);
-    setLoading(false);
+    try {
+      const [sprintRes, settingsRes, checksRes] = await Promise.all([
+        sprintsService.get(sprintId),
+        settingsService.getAll(ws.id),
+        sprintsService.getIndividualChecks(sprintId, ws.id),
+      ]);
+      if (sprintRes.data) setSprint(sprintRes.data);
+      if (settingsRes.data) setWsSettings(settingsRes.data);
+      if (checksRes.data) setChecks(checksRes.data);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, [sprintId, currentWorkspace?.id]);

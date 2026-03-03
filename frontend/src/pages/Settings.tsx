@@ -25,11 +25,18 @@ export default function Settings() {
 
   const load = async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
-    if (!ws?.id) return;
+    if (!ws?.id) {
+      setSettings(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const { data } = await settingsService.getAll(ws.id);
-    if (data) setSettings(data);
-    setLoading(false);
+    try {
+      const { data } = await settingsService.getAll(ws.id);
+      if (data) setSettings(data);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, [currentWorkspace?.id]);

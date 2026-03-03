@@ -25,44 +25,57 @@ export default function MyQuarter() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const ws = useWorkspaceStore.getState().currentWorkspace;
-    const q = useQuarterStore.getState().currentQuarter;
-    const u = useAuthStore.getState().user;
-    if (!ws?.id || !q?.id || !u?.id) return;
-    setLoading(true);
-
-    Promise.all([
-      sprintsService.list(q.id),
-      bonusService.getCalculations(ws.id, q.id),
-      settingsService.getAll(ws.id),
-    ]).then(async ([sprintsRes, calcRes, settingsRes]) => {
-      const sprintList = sprintsRes.data ?? [];
-      setSprints(sprintList.sort((a, b) => a.sprint_number - b.sprint_number));
-
-      if (settingsRes.data) setWsSettings(settingsRes.data);
-
-      // Find the person record that matches the current user
-      const personRecord = settingsRes.data?.people.find(p => p.email === u.email);
-
-      if (calcRes.data && personRecord) {
-        const mine = calcRes.data.find(c => c.employee_id === personRecord.id);
-        if (mine) setMyCalc(mine);
+    const load = async () => {
+      const ws = useWorkspaceStore.getState().currentWorkspace;
+      const q = useQuarterStore.getState().currentQuarter;
+      const u = useAuthStore.getState().user;
+      if (!ws?.id || !q?.id || !u?.id) {
+        setSprints([]);
+        setMyCalc(null);
+        setChecks(new Map());
+        setLoading(false);
+        return;
       }
 
-      // Load individual checks for each sprint
-      const checksMap = new Map<string, IndividualCheck[]>();
-      for (const s of sprintList) {
-        const res = await sprintsService.getIndividualChecks(s.id, ws.id);
-        if (res.data) {
-          const myChecks = personRecord
-            ? res.data.filter(c => c.employee_id === personRecord.id)
-            : [];
-          checksMap.set(s.id, myChecks);
+      setLoading(true);
+      try {
+        const [sprintsRes, calcRes, settingsRes] = await Promise.all([
+          sprintsService.list(q.id),
+          bonusService.getCalculations(ws.id, q.id),
+          settingsService.getAll(ws.id),
+        ]);
+
+        const sprintList = sprintsRes.data ?? [];
+        setSprints(sprintList.sort((a, b) => a.sprint_number - b.sprint_number));
+
+        if (settingsRes.data) setWsSettings(settingsRes.data);
+
+        // Find the person record that matches the current user
+        const personRecord = settingsRes.data?.people.find(p => p.email === u.email);
+
+        if (calcRes.data && personRecord) {
+          const mine = calcRes.data.find(c => c.employee_id === personRecord.id);
+          if (mine) setMyCalc(mine);
         }
+
+        // Load individual checks for each sprint
+        const checksMap = new Map<string, IndividualCheck[]>();
+        for (const s of sprintList) {
+          const res = await sprintsService.getIndividualChecks(s.id, ws.id);
+          if (res.data) {
+            const myChecks = personRecord
+              ? res.data.filter(c => c.employee_id === personRecord.id)
+              : [];
+            checksMap.set(s.id, myChecks);
+          }
+        }
+        setChecks(checksMap);
+      } finally {
+        setLoading(false);
       }
-      setChecks(checksMap);
-      setLoading(false);
-    });
+    };
+
+    void load();
   }, [currentWorkspace?.id, currentQuarter?.id, user?.id, user?.email]);
 
   const tierVariant = (tier: string): 'default' | 'secondary' | 'destructive' => {

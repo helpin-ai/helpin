@@ -32,11 +32,18 @@ export default function Sprints() {
 
   const load = async () => {
     const q = useQuarterStore.getState().currentQuarter;
-    if (!q?.id) return;
+    if (!q?.id) {
+      setSprints([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const { data } = await sprintsService.list(q.id);
-    if (data) setSprints(data.sort((a, b) => a.sprint_number - b.sprint_number));
-    setLoading(false);
+    try {
+      const { data } = await sprintsService.list(q.id);
+      if (data) setSprints(data.sort((a, b) => a.sprint_number - b.sprint_number));
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, [currentQuarter?.id]);

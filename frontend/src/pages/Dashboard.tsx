@@ -23,30 +23,42 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const ws = useWorkspaceStore.getState().currentWorkspace;
-    const q = useQuarterStore.getState().currentQuarter;
-    if (!ws?.id) return;
-
-    // If no quarter exists yet, still load settings and stop loading.
-    if (!q?.id) {
-      settingsService.getAll(ws.id).then(res => {
-        if (res.data) setSettings(res.data);
+    const load = async () => {
+      const ws = useWorkspaceStore.getState().currentWorkspace;
+      const q = useQuarterStore.getState().currentQuarter;
+      if (!ws?.id) {
+        setGoals([]);
+        setSprints([]);
+        setSettings(null);
         setLoading(false);
-      });
-      return;
-    }
+        return;
+      }
 
-    setLoading(true);
-    Promise.all([
-      goalsService.list(ws.id, q.id),
-      sprintsService.list(q.id),
-      settingsService.getAll(ws.id),
-    ]).then(([goalsRes, sprintsRes, settingsRes]) => {
-      if (goalsRes.data) setGoals(goalsRes.data);
-      if (sprintsRes.data) setSprints(sprintsRes.data);
-      if (settingsRes.data) setSettings(settingsRes.data);
-      setLoading(false);
-    });
+      setLoading(true);
+      try {
+        // If no quarter exists yet, still load settings.
+        if (!q?.id) {
+          const settingsRes = await settingsService.getAll(ws.id);
+          if (settingsRes.data) setSettings(settingsRes.data);
+          setGoals([]);
+          setSprints([]);
+          return;
+        }
+
+        const [goalsRes, sprintsRes, settingsRes] = await Promise.all([
+          goalsService.list(ws.id, q.id),
+          sprintsService.list(q.id),
+          settingsService.getAll(ws.id),
+        ]);
+        if (goalsRes.data) setGoals(goalsRes.data);
+        if (sprintsRes.data) setSprints(sprintsRes.data);
+        if (settingsRes.data) setSettings(settingsRes.data);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
   }, [currentWorkspace?.id, currentQuarter?.id]);
 
   const activeSprints = sprints.filter(s => s.status === 'active');

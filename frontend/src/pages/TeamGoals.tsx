@@ -31,20 +31,33 @@ export default function TeamGoals() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const ws = useWorkspaceStore.getState().currentWorkspace;
-    const q = useQuarterStore.getState().currentQuarter;
-    if (!ws?.id || !q?.id) return;
-    setLoading(true);
-    Promise.all([
-      goalsService.list(ws.id, q.id),
-      settingsService.getAll(ws.id),
-      sprintsService.list(q.id),
-    ]).then(([goalsRes, settingsRes, sprintsRes]) => {
-      if (goalsRes.data) setGoals(goalsRes.data);
-      if (settingsRes.data) setTeams(settingsRes.data.teams);
-      if (sprintsRes.data) setSprints(sprintsRes.data);
-      setLoading(false);
-    });
+    const load = async () => {
+      const ws = useWorkspaceStore.getState().currentWorkspace;
+      const q = useQuarterStore.getState().currentQuarter;
+      if (!ws?.id || !q?.id) {
+        setGoals([]);
+        setTeams([]);
+        setSprints([]);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const [goalsRes, settingsRes, sprintsRes] = await Promise.all([
+          goalsService.list(ws.id, q.id),
+          settingsService.getAll(ws.id),
+          sprintsService.list(q.id),
+        ]);
+        if (goalsRes.data) setGoals(goalsRes.data);
+        if (settingsRes.data) setTeams(settingsRes.data.teams);
+        if (sprintsRes.data) setSprints(sprintsRes.data);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
   }, [currentWorkspace?.id, currentQuarter?.id]);
 
   const teamSummaries: TeamGoalSummary[] = teams.map(team => {

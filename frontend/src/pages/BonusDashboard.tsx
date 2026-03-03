@@ -29,20 +29,30 @@ export default function BonusDashboard() {
   const load = async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
     const q = useQuarterStore.getState().currentQuarter;
-    if (!ws?.id || !q?.id) return;
-    setLoading(true);
-    const [calcRes, finRes, settingsRes] = await Promise.all([
-      bonusService.getCalculations(ws.id, q.id),
-      bonusService.getFinance(ws.id, q.id),
-      settingsService.getAll(ws.id),
-    ]);
-    if (calcRes.data) setCalculations(calcRes.data);
-    if (finRes.data) setFinance(finRes.data);
-    if (settingsRes.data) {
-      setPeople(settingsRes.data.people);
-      setTeams(settingsRes.data.teams);
+    if (!ws?.id || !q?.id) {
+      setCalculations([]);
+      setFinance(null);
+      setPeople([]);
+      setTeams([]);
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+    setLoading(true);
+    try {
+      const [calcRes, finRes, settingsRes] = await Promise.all([
+        bonusService.getCalculations(ws.id, q.id),
+        bonusService.getFinance(ws.id, q.id),
+        settingsService.getAll(ws.id),
+      ]);
+      if (calcRes.data) setCalculations(calcRes.data);
+      if (finRes.data) setFinance(finRes.data);
+      if (settingsRes.data) {
+        setPeople(settingsRes.data.people);
+        setTeams(settingsRes.data.teams);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, [currentWorkspace?.id, currentQuarter?.id]);
