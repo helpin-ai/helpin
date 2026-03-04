@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
   Archive,
@@ -332,16 +332,36 @@ function StoryDetailPanelBody({
   }, [storyDetail]);
 
   // ── Load comments + activity ───────────────────────────────────
+  const reloadCommentsAndActivity = useCallback(async () => {
+    const [commentsRes, activityRes] = await Promise.all([
+      pmCommentService.list(workspaceId, 'story', storyDetail.story.id),
+      pmStoryService.listActivity(workspaceId, storyDetail.story.id, 1, 30),
+    ]);
+    setComments(commentsRes.data ?? []);
+    setActivity(activityRes.data?.data ?? []);
+  }, [workspaceId, storyDetail.story.id]);
+
+  useEffect(() => { reloadCommentsAndActivity(); }, [reloadCommentsAndActivity]);
+
+  // Re-fetch comments + activity when another client makes changes
   useEffect(() => {
-    (async () => {
-      const [commentsRes, activityRes] = await Promise.all([
-        pmCommentService.list(workspaceId, 'story', storyDetail.story.id),
-        pmStoryService.listActivity(workspaceId, storyDetail.story.id, 1, 30),
-      ]);
-      setComments(commentsRes.data ?? []);
-      setActivity(activityRes.data?.data ?? []);
-    })();
-  }, [workspaceId, storyDetail]);
+    const storyId = storyDetail.story.id;
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent)?.detail;
+      if (d?.parent_id === storyId && d?.entity === 'comment') reloadCommentsAndActivity();
+    };
+    // Also reload activity on any story update (state changes, field edits, etc.)
+    const storyHandler = (e: Event) => {
+      const d = (e as CustomEvent)?.detail;
+      if (d?.entity_id === storyId) reloadCommentsAndActivity();
+    };
+    window.addEventListener('story-child-updated', handler);
+    window.addEventListener('story-updated', storyHandler);
+    return () => {
+      window.removeEventListener('story-child-updated', handler);
+      window.removeEventListener('story-updated', storyHandler);
+    };
+  }, [storyDetail.story.id, reloadCommentsAndActivity]);
 
   // ── Load epics, iterations, labels ─────────────────────────────
   useEffect(() => {

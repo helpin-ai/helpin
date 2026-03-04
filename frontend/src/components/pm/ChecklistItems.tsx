@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckSquare, GripVertical, Plus, Trash2 } from 'lucide-react';
 import {
   DndContext,
@@ -93,14 +93,22 @@ export function ChecklistItems({ workspaceId, storyId }: ChecklistItemsProps) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await pmChecklistService.list(workspaceId, storyId);
-      if (data) {
-        setItems(data.sort((a, b) => a.position - b.position));
-      }
-    })();
+  const reload = useCallback(async () => {
+    const { data } = await pmChecklistService.list(workspaceId, storyId);
+    if (data) setItems(data.sort((a, b) => a.position - b.position));
   }, [workspaceId, storyId]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  // Re-fetch when another client changes checklist items
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent)?.detail;
+      if (d?.parent_id === storyId && d?.entity === 'checklist_item') reload();
+    };
+    window.addEventListener('story-child-updated', handler);
+    return () => window.removeEventListener('story-child-updated', handler);
+  }, [storyId, reload]);
 
   const completedCount = useMemo(() => items.filter((i) => i.completed).length, [items]);
 

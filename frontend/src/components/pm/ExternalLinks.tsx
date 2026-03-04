@@ -32,12 +32,22 @@ export function ExternalLinks({ workspaceId, storyId }: ExternalLinksProps) {
   const [adding, setAdding] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await pmExternalLinkService.list(workspaceId, storyId);
-      setLinks(data ?? []);
-    })();
+  const reload = useCallback(async () => {
+    const { data } = await pmExternalLinkService.list(workspaceId, storyId);
+    setLinks(data ?? []);
   }, [workspaceId, storyId]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  // Re-fetch when another client changes external links
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent)?.detail;
+      if (d?.parent_id === storyId && d?.entity === 'external_link') reload();
+    };
+    window.addEventListener('story-child-updated', handler);
+    return () => window.removeEventListener('story-child-updated', handler);
+  }, [storyId, reload]);
 
   const handleAdd = useCallback(async () => {
     const url = newUrl.trim();

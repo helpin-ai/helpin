@@ -94,12 +94,22 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load attachments
-  useEffect(() => {
-    (async () => {
-      const { data } = await pmAttachmentService.list(workspaceId, entityType, entityId);
-      setAttachments(data ?? []);
-    })();
+  const reload = useCallback(async () => {
+    const { data } = await pmAttachmentService.list(workspaceId, entityType, entityId);
+    setAttachments(data ?? []);
   }, [workspaceId, entityType, entityId]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  // Re-fetch when another client changes attachments
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent)?.detail;
+      if (d?.parent_id === entityId && d?.entity === 'attachment') reload();
+    };
+    window.addEventListener('story-child-updated', handler);
+    return () => window.removeEventListener('story-child-updated', handler);
+  }, [entityId, reload]);
 
   const handleUpload = useCallback(
     async (files: FileList | File[]) => {
