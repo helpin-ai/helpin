@@ -126,6 +126,29 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
     return () => window.removeEventListener('story-created', handler);
   }, [refreshBoard]);
 
+  // Re-fetch open story detail when WS events arrive
+  useEffect(() => {
+    const refetchDetail = (e: Event) => {
+      const storyId = selectedStory?.story?.id;
+      if (!storyId || !detailOpen) return;
+      const detail = (e as CustomEvent)?.detail;
+      // For story events, check if it's the open story
+      const entityId = detail?.entity_id;
+      const parentId = detail?.parent_id;
+      if (entityId === storyId || parentId === storyId) {
+        pmStoryService.get(workspaceId, storyId).then((res) => {
+          if (res.data) setSelectedStory(res.data);
+        });
+      }
+    };
+    window.addEventListener('story-updated', refetchDetail);
+    window.addEventListener('story-child-updated', refetchDetail);
+    return () => {
+      window.removeEventListener('story-updated', refetchDetail);
+      window.removeEventListener('story-child-updated', refetchDetail);
+    };
+  }, [workspaceId, selectedStory?.story?.id, detailOpen]);
+
   useEffect(() => {
     if (!workflow) return;
     const maybeStory = new URLSearchParams(window.location.search).get('story');
