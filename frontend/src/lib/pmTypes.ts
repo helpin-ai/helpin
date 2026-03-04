@@ -157,6 +157,9 @@ export interface Story {
   external_id?: string;
   created_at: string;
   updated_at: string;
+  // Enriched by board endpoint
+  epic_name?: string;
+  owner_name?: string;
 }
 
 export interface StoryDetail {

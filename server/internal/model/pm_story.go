@@ -187,10 +187,17 @@ type StoryDetail struct {
 	State         *PMWorkflowState `json:"state"`
 }
 
+// BoardStory is a story enriched with relation names for board display.
+type BoardStory struct {
+	PMStory
+	EpicName  *string `json:"epic_name,omitempty"`
+	OwnerName *string `json:"owner_name,omitempty"`
+}
+
 // StoryStateColumn is the data shape used for board columns.
 type StoryStateColumn struct {
 	State      PMWorkflowState `json:"state"`
-	Stories    []PMStory       `json:"stories"`
+	Stories    []BoardStory    `json:"stories"`
 	StoryCount int             `json:"story_count"`
 	PointTotal int             `json:"point_total"`
 }

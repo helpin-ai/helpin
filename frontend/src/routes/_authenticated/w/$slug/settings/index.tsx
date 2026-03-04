@@ -6,5 +6,5 @@ export const Route = createFileRoute('/_authenticated/w/$slug/settings/')({
 
 function SettingsIndex() {
   const { slug } = Route.useParams()
-  return <Navigate to="/w/$slug/settings/$section" params={{ slug, section: 'system' }} replace />
+  return <Navigate to="/w/$slug/settings/$section" params={{ slug, section: 'profile' }} replace />
 }

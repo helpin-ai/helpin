@@ -73,7 +73,7 @@ export function Sidebar() {
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/stories` },
     { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
-    { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/system` },
+    { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
   ];
 
   const panelNavGroups: Record<RailId, NavGroup[]> = {
@@ -120,6 +120,7 @@ export function Sidebar() {
       {
         label: 'My Account',
         items: [
+          { link: `/w/${wsSlug}/settings/profile`, label: 'Profile', icon: User },
           { link: `/w/${wsSlug}/settings/system`, label: 'General', icon: Settings2 },
         ],
       },

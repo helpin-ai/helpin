@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { getInitials } from '@/lib/utils';
 import { Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -16,9 +17,7 @@ export default function Profile() {
   const [fullName, setFullName] = useState(user?.full_name ?? '');
   const [saving, setSaving] = useState(false);
 
-  const initials = user?.full_name
-    ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-    : user?.email?.slice(0, 2).toUpperCase() ?? '??';
+  const initials = getInitials(user?.full_name || user?.email);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

@@ -299,29 +299,103 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		return nil, fmt.Errorf("list board states: %w", err)
 	}
 
+	// Fetch all stories for the workflow in a single query.
+	stateIDs := make([]string, len(states))
+	for i, s := range states {
+		stateIDs[i] = s.ID
+	}
+
+	var allStories []model.PMStory
+	storyQuery := r.db.WithContext(ctx).
+		Where("workflow_state_id IN ? AND archived = false", stateIDs)
+	if teamID != "" {
+		storyQuery = storyQuery.Where("team_id = ?", teamID)
+	}
+	if err := storyQuery.
+		Order("position ASC, updated_at DESC").
+		Find(&allStories).Error; err != nil {
+		return nil, fmt.Errorf("list board stories: %w", err)
+	}
+
+	// Group stories by state and collect unique IDs for batch lookups.
+	storiesByState := map[string][]model.PMStory{}
+	epicIDs := map[string]struct{}{}
+	ownerIDs := map[string]struct{}{}
+	for _, s := range allStories {
+		storiesByState[s.WorkflowStateID] = append(storiesByState[s.WorkflowStateID], s)
+		if s.EpicID != nil {
+			epicIDs[*s.EpicID] = struct{}{}
+		}
+		if s.OwnerID != nil {
+			ownerIDs[*s.OwnerID] = struct{}{}
+		}
+	}
+
+	// Batch-lookup epic names.
+	epicNameMap := map[string]string{}
+	if len(epicIDs) > 0 {
+		ids := make([]string, 0, len(epicIDs))
+		for id := range epicIDs {
+			ids = append(ids, id)
+		}
+		var rows []struct {
+			ID   string
+			Name string
+		}
+		if err := r.db.WithContext(ctx).Table("pm_epics").Select("id, name").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+			return nil, fmt.Errorf("batch lookup epic names: %w", err)
+		}
+		for _, row := range rows {
+			epicNameMap[row.ID] = row.Name
+		}
+	}
+
+	// Batch-lookup owner names.
+	ownerNameMap := map[string]string{}
+	if len(ownerIDs) > 0 {
+		ids := make([]string, 0, len(ownerIDs))
+		for id := range ownerIDs {
+			ids = append(ids, id)
+		}
+		var rows []struct {
+			ID       string
+			FullName string `gorm:"column:full_name"`
+		}
+		if err := r.db.WithContext(ctx).Table("users").Select("id, full_name").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+			return nil, fmt.Errorf("batch lookup owner names: %w", err)
+		}
+		for _, row := range rows {
+			ownerNameMap[row.ID] = row.FullName
+		}
+	}
+
+	// Build enriched board stories.
 	columns := make([]model.StoryStateColumn, 0, len(states))
 	for _, state := range states {
-		var stories []model.PMStory
-		query := r.db.WithContext(ctx).
-			Where("workflow_state_id = ? AND archived = false", state.ID)
-		if teamID != "" {
-			query = query.Where("team_id = ?", teamID)
-		}
-		if err := query.
-			Order("position ASC, updated_at DESC").
-			Find(&stories).Error; err != nil {
-			return nil, fmt.Errorf("list stories by state: %w", err)
-		}
+		stateStories := storiesByState[state.ID]
+		boardStories := make([]model.BoardStory, 0, len(stateStories))
 		pointTotal := 0
-		for _, story := range stories {
+		for _, story := range stateStories {
+			bs := model.BoardStory{PMStory: story}
+			if story.EpicID != nil {
+				if name, ok := epicNameMap[*story.EpicID]; ok {
+					bs.EpicName = &name
+				}
+			}
+			if story.OwnerID != nil {
+				if name, ok := ownerNameMap[*story.OwnerID]; ok {
+					bs.OwnerName = &name
+				}
+			}
 			if story.Estimate != nil {
 				pointTotal += *story.Estimate
 			}
+			boardStories = append(boardStories, bs)
 		}
 		columns = append(columns, model.StoryStateColumn{
 			State:      state,
-			Stories:    stories,
-			StoryCount: len(stories),
+			Stories:    boardStories,
+			StoryCount: len(boardStories),
 			PointTotal: pointTotal,
 		})
 	}

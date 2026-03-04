@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { getInitials } from "@/lib/utils";
 import { QuarterSelector } from "@/components/quarter/QuarterSelector";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -42,14 +43,7 @@ export function Header() {
   const { currentWorkspace } = useWorkspaceStore();
   const { user, signOut } = useAuthStore();
 
-  const initials = user?.full_name
-    ? user.full_name
-        .split(" ")
-        .map((part) => part[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : user?.email?.slice(0, 2).toUpperCase() || "??";
+  const initials = getInitials(user?.full_name || user?.email);
 
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
 
@@ -265,7 +259,7 @@ export function Header() {
               {user?.full_name || user?.email || "Account"}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate({ to: "/profile" })}>
+            <DropdownMenuItem onClick={() => navigate({ to: '/w/$slug/settings/$section', params: { slug: currentWorkspace?.slug ?? '', section: 'profile' } })}>
               <User className="h-4 w-4" />
               <span>Profile</span>
             </DropdownMenuItem>

@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -318,13 +318,7 @@ export function IterationDetailPage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 {resources.map((person) => (
                   <div key={person.id} className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-1.5">
-                    <Avatar className="h-6 w-6 border border-border/60">
-                      <AvatarFallback className="text-[9px] font-semibold bg-muted/60">
-                        {person.name
-                          ? person.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
-                          : person.email.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                    <UserAvatar name={person.name || person.email} className="h-6 w-6 border-border/60" />
                     <span className="text-xs font-medium">{person.name || person.email}</span>
                   </div>
                 ))}

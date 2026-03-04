@@ -40,18 +40,18 @@ function Column({ column, onCreate, onOpen, findTeamName }: ColumnProps) {
 
   return (
     <section className="flex h-full w-[360px] shrink-0 flex-col">
-      <header className="flex items-center justify-between px-2 py-2">
+      <header className="flex items-center justify-between px-3 pt-4 pb-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
             <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
             {column.state.name}
           </p>
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1" title={`${column.story_count} items`}>
+          <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5" title={`${column.story_count} items`}>
               <StickyNote className="h-3 w-3" />
               {column.story_count}
             </span>
-            <span className="inline-flex items-center gap-1" title={`${column.point_total} pts`}>
+            <span className="inline-flex items-center gap-1.5" title={`${column.point_total} pts`}>
               <BarChart3 className="h-3 w-3" />
               {column.point_total}
             </span>
@@ -243,7 +243,7 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
             setWorkflow(value);
           }}
         >
-          <SelectTrigger className="ml-auto h-8 w-[260px]">
+          <SelectTrigger className="h-8 w-[260px]">
             <SelectValue placeholder="Select workflow" />
           </SelectTrigger>
           <SelectContent>
@@ -274,23 +274,25 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
           </Select>
         )}
 
-        <div className="flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1">
           <Button
-            variant={viewMode === 'board' ? 'default' : 'outline'}
-            size="sm"
+            variant={viewMode === 'board' ? 'default' : 'ghost'}
+            size="icon"
+            className="h-7 w-7"
             onClick={() => setViewMode('board')}
+            title="Board view"
           >
             <Columns2 className="h-4 w-4" />
-            Board
           </Button>
           <Button
-            variant={viewMode === 'list' ? 'default' : 'outline'}
-            size="sm"
+            variant={viewMode === 'list' ? 'default' : 'ghost'}
+            size="icon"
+            className="h-7 w-7"
             onClick={() => setViewMode('list')}
+            title="List view"
             disabled
           >
             <LayoutList className="h-4 w-4" />
-            List
           </Button>
         </div>
 

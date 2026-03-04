@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -99,11 +99,7 @@ function EpicCell({
       );
     case 'owner':
       return entry.epic.owner_id ? (
-        <Avatar className="h-6 w-6 border border-border/80">
-          <AvatarFallback className="text-[9px] font-semibold bg-muted/60">
-            {entry.epic.owner_id.slice(0, 2).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
+        <UserAvatar name={entry.epic.owner_id} />
       ) : (
         <User className="h-4 w-4 text-muted-foreground/50" />
       );

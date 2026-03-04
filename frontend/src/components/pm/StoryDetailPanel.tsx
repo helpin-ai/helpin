@@ -52,6 +52,7 @@ import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
 import { ChecklistItems } from '@/components/pm/ChecklistItems';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
+import { getInitials } from '@/lib/utils';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
@@ -145,9 +146,8 @@ function formatRelativeTime(iso: string) {
   }
 }
 
-function getInitials(user?: { full_name?: string; email?: string } | null): string {
-  const name = user?.full_name || user?.email || '?';
-  return name.slice(0, 2).toUpperCase();
+function userInitials(user?: { full_name?: string; email?: string } | null): string {
+  return getInitials(user?.full_name || user?.email);
 }
 
 // ── Metadata Row ───────────────────────────────────────────────────
@@ -234,7 +234,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
     return (
       <div className="flex items-start gap-2">
         <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[8px] font-medium">
-          {getInitials(author)}
+          {userInitials(author)}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5">
@@ -252,7 +252,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
   return (
     <div className="flex items-center gap-2">
       <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-medium text-muted-foreground">
-        {getInitials(actor)}
+        {userInitials(actor)}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">
@@ -628,7 +628,7 @@ function StoryDetailPanelBody({
                     <div className="group px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-800 text-[9px] font-medium text-white">
-                          {getInitials(entry.author)}
+                          {userInitials(entry.author)}
                         </div>
                         <span className="text-xs font-semibold">{entry.author.full_name || entry.author.email}</span>
                         <span className="text-[11px] text-muted-foreground">{formatRelativeTime(entry.comment.created_at)}</span>
@@ -951,6 +951,7 @@ function StoryDetailPanelBody({
             <MetadataRow icon={ShieldAlert} label="Blocked">
               <div className="flex items-center gap-2">
                 <Switch
+                  size="sm"
                   checked={form.blocked}
                   onCheckedChange={(checked) =>
                     updateField('blocked', checked, { blocked: checked })

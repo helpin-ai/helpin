@@ -4,13 +4,12 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   AlertTriangle,
   CalendarDays,
-  Circle,
 } from 'lucide-react';
-import { format, isBefore, parseISO } from 'date-fns';
+import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { PriorityIcon, StoryTypeIcon } from '@/lib/pmConstants';
+import { PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StoryTypeIcon } from '@/lib/pmConstants';
+import { UserAvatar } from './UserAvatar';
 import type { Story } from '@/lib/pmTypes';
 
 interface StoryCardProps {
@@ -19,11 +18,6 @@ interface StoryCardProps {
   isOverlay?: boolean;
   teamName?: string;
 }
-
-const toInitials = (ownerId?: string) => {
-  if (!ownerId) return '??';
-  return ownerId.slice(0, 2).toUpperCase();
-};
 
 export function StoryCard({ story, onOpen, isOverlay = false, teamName }: StoryCardProps) {
   const {
@@ -43,12 +37,20 @@ export function StoryCard({ story, onOpen, isOverlay = false, teamName }: StoryC
   const due = useMemo(() => {
     if (!story.deadline) return null;
     const date = parseISO(story.deadline);
-    const overdue = isBefore(date, new Date()) && !story.completed;
+    const today = startOfDay(new Date());
+    const overdue = isBefore(date, today) && !story.completed;
+    const daysAway = differenceInDays(date, today);
+    const approaching = !story.completed && !overdue && daysAway <= 3;
     return {
       label: format(date, 'MMM d'),
       overdue,
+      approaching,
     };
   }, [story.deadline, story.completed]);
+
+  const severityCfg = story.severity !== 'none' && story.severity in SEVERITY_CONFIG
+    ? SEVERITY_CONFIG[story.severity]
+    : null;
 
   return (
     <article
@@ -85,55 +87,48 @@ export function StoryCard({ story, onOpen, isOverlay = false, teamName }: StoryC
       </h4>
 
       <div className="mt-2 flex items-center gap-2 text-xs">
-        {story.estimate !== undefined && story.estimate !== null ? (
+        {story.estimate != null && (
           <Badge variant="secondary" className="h-5 rounded-full px-2 text-[10px]">
             {story.estimate} pts
           </Badge>
-        ) : (
-          <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] text-muted-foreground">
-            No estimate
+        )}
+
+        {severityCfg && (
+          <Badge variant="outline" className={cn('h-5 rounded-full px-2 text-[10px] font-medium', severityCfg.color)}>
+            <SeverityIcon severity={story.severity} className="h-3 w-3" />
+            {severityCfg.label}
           </Badge>
         )}
 
-        {story.blocked ? (
+        {story.blocked && (
           <Badge variant="destructive" className="h-5 rounded-full px-2 text-[10px]">
             <AlertTriangle className="h-3 w-3" />
             Blocked
           </Badge>
-        ) : (
-          <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] text-muted-foreground">
-            <Circle className="h-2.5 w-2.5" />
-            Clear
-          </Badge>
         )}
 
-        <Avatar className="ml-auto h-5 w-5 border border-border/80">
-          <AvatarFallback className="text-[9px] font-semibold bg-muted/60">
-            {toInitials(story.owner_id)}
-          </AvatarFallback>
-        </Avatar>
+        <UserAvatar name={story.owner_name} className="ml-auto h-5 w-5" />
       </div>
 
       <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
         <div className="flex items-center gap-1.5 min-w-0">
-          {teamName ? (
+          {teamName && (
             <Badge variant="outline" className="h-4 shrink-0 rounded px-1.5 text-[9px] font-medium">
               {teamName}
             </Badge>
-          ) : null}
-          {story.epic_id ? (
-            <span className="truncate max-w-[70%]">Epic {story.epic_id.slice(0, 8)}</span>
-          ) : (
-            <span>No epic</span>
+          )}
+          {story.epic_name && (
+            <span className="truncate max-w-[70%]">{story.epic_name}</span>
           )}
         </div>
-        {due ? (
-          <span className={cn('inline-flex items-center gap-1', due.overdue && 'text-red-600 font-medium')}>
+        {due && (
+          <span className={cn(
+            'inline-flex items-center gap-1',
+            (due.overdue || due.approaching) && 'text-red-600 font-medium'
+          )}>
             <CalendarDays className="h-3 w-3" />
             {due.label}
           </span>
-        ) : (
-          <span className="text-muted-foreground/70">No due date</span>
         )}
       </div>
     </article>
