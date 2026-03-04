@@ -31,5 +31,6 @@ type CreateAttachmentRequest struct {
 // AttachmentResponse is returned after creating or listing attachments.
 type AttachmentResponse struct {
 	Attachment PMAttachment `json:"attachment"`
-	URL        string       `json:"url,omitempty"` // presigned URL (PUT for create, GET for list)
+	URL        string       `json:"url,omitempty"`        // presigned URL (PUT for create, GET for list)
+	PublicURL  string       `json:"public_url,omitempty"` // direct public S3 URL
 }

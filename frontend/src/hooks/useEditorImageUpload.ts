@@ -1,0 +1,61 @@
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { uploadToS3 } from '@/lib/api';
+
+export interface EditorUploadConfig {
+  workspaceId: string;
+  entityType: 'story' | 'editor_upload';
+  entityId: string;
+}
+
+const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+
+/**
+ * Upload an image file via the attachment infrastructure and return its public S3 URL.
+ */
+export async function uploadEditorImage(
+  file: File,
+  config: EditorUploadConfig,
+): Promise<string> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Only image files are supported');
+  }
+  if (file.size > MAX_SIZE) {
+    throw new Error('Image exceeds maximum size of 10 MB');
+  }
+
+  // 1. Initiate upload → get presigned PUT URL + public URL
+  const { data: initData, error: initError } = await pmAttachmentService.initiateUpload(
+    config.workspaceId,
+    {
+      entity_type: config.entityType,
+      entity_id: config.entityId,
+      file_name: file.name || 'pasted-image.png',
+      file_size: file.size,
+      content_type: file.type,
+    },
+  );
+
+  if (initError || !initData) {
+    throw new Error(initError ?? 'Failed to initiate upload');
+  }
+
+  // 2. Upload directly to S3 with public-read ACL
+  const { ok, error: s3Error } = await uploadToS3(
+    initData.url,
+    file,
+    undefined,
+    { 'x-amz-acl': 'public-read' },
+  );
+  if (!ok) {
+    throw new Error(s3Error ?? 'Failed to upload to S3');
+  }
+
+  // 3. Confirm upload
+  await pmAttachmentService.confirmUpload(config.workspaceId, initData.attachment.id);
+
+  // 4. Return the permanent public URL
+  if (!initData.public_url) {
+    throw new Error('Server did not return a public URL');
+  }
+  return initData.public_url;
+}

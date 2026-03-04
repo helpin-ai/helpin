@@ -9,13 +9,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // S3Client wraps the AWS S3 presign client for generating presigned URLs and deleting objects.
 type S3Client struct {
-	client       *s3.Client
+	client        *s3.Client
 	presignClient *s3.PresignClient
-	bucket       string
+	bucket        string
+	endpointURL   string
 }
 
 // NewS3Client creates a new S3Client from the given configuration.
@@ -45,16 +47,35 @@ func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL strin
 		client:        client,
 		presignClient: presignClient,
 		bucket:        bucket,
+		endpointURL:   endpointURL,
 	}
 }
 
+// PublicURL constructs a direct public URL for the given storage key.
+func (s *S3Client) PublicURL(key string) string {
+	if s.endpointURL == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s/%s", s.endpointURL, s.bucket, key)
+}
+
+// HasPublicURL returns true when the endpoint URL is configured (public access possible).
+func (s *S3Client) HasPublicURL() bool {
+	return s.endpointURL != ""
+}
+
 // GeneratePresignedPutURL generates a presigned PUT URL for uploading a file.
-func (s *S3Client) GeneratePresignedPutURL(key, contentType string, size int64) (string, error) {
+// When publicRead is true, the presigned URL includes x-amz-acl=public-read so
+// the uploaded object is publicly accessible.
+func (s *S3Client) GeneratePresignedPutURL(key, contentType string, size int64, publicRead bool) (string, error) {
 	input := &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucket),
 		Key:           aws.String(key),
 		ContentType:   aws.String(contentType),
 		ContentLength: aws.Int64(size),
+	}
+	if publicRead {
+		input.ACL = s3types.ObjectCannedACLPublicRead
 	}
 
 	result, err := s.presignClient.PresignPutObject(context.Background(), input, func(o *s3.PresignOptions) {

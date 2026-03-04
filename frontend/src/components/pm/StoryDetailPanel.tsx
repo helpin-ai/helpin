@@ -586,6 +586,7 @@ function StoryDetailPanelBody({
               onChange={(html) => updateField('description', html, { description: html })}
               placeholder="Add a description..."
               className="border-transparent shadow-none"
+              uploadConfig={{ workspaceId, entityType: 'story', entityId: storyDetail.story.id }}
             />
           </div>
 

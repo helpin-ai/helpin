@@ -82,11 +82,17 @@ export async function uploadToS3(
   presignedUrl: string,
   file: File,
   onProgress?: (pct: number) => void,
+  extraHeaders?: Record<string, string>,
 ): Promise<{ ok: boolean; error: string | null }> {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', presignedUrl, true);
     xhr.setRequestHeader('Content-Type', file.type);
+    if (extraHeaders) {
+      for (const [k, v] of Object.entries(extraHeaders)) {
+        xhr.setRequestHeader(k, v);
+      }
+    }
 
     if (onProgress) {
       xhr.upload.addEventListener('progress', (e) => {

@@ -495,10 +495,11 @@ export interface Attachment {
 export interface AttachmentResponse {
   attachment: Attachment;
   url: string;
+  public_url?: string;
 }
 
 export interface CreateAttachmentRequest {
-  entity_type: 'story' | 'epic' | 'comment';
+  entity_type: 'story' | 'epic' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;

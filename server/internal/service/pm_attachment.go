@@ -32,7 +32,7 @@ var allowedMIMETypes = map[string]bool{
 }
 
 var allowedEntityTypes = map[string]bool{
-	"story": true, "epic": true, "comment": true,
+	"story": true, "epic": true, "comment": true, "editor_upload": true,
 }
 
 // PMAttachmentService contains attachment business logic.
@@ -60,7 +60,7 @@ func (s *PMAttachmentService) Create(ctx context.Context, req model.CreateAttach
 		return nil, fmt.Errorf("entity_type and entity_id are required")
 	}
 	if !allowedEntityTypes[req.EntityType] {
-		return nil, fmt.Errorf("invalid entity_type: must be story, epic, or comment")
+		return nil, fmt.Errorf("invalid entity_type: must be story, epic, comment, or editor_upload")
 	}
 	if strings.TrimSpace(req.FileName) == "" {
 		return nil, fmt.Errorf("file_name is required")
@@ -98,15 +98,19 @@ func (s *PMAttachmentService) Create(ctx context.Context, req model.CreateAttach
 		return nil, err
 	}
 
-	uploadURL, err := s.s3Client.GeneratePresignedPutURL(attachment.StorageKey, attachment.ContentType, attachment.FileSize)
+	uploadURL, err := s.s3Client.GeneratePresignedPutURL(attachment.StorageKey, attachment.ContentType, attachment.FileSize, s.s3Client.HasPublicURL())
 	if err != nil {
 		return nil, fmt.Errorf("generate upload URL: %w", err)
 	}
 
-	return &model.AttachmentResponse{
+	resp := &model.AttachmentResponse{
 		Attachment: *attachment,
 		URL:        uploadURL,
-	}, nil
+	}
+	if s.s3Client.HasPublicURL() {
+		resp.PublicURL = s.s3Client.PublicURL(attachment.StorageKey)
+	}
+	return resp, nil
 }
 
 // ConfirmUpload marks an attachment as successfully uploaded.
@@ -145,6 +149,9 @@ func (s *PMAttachmentService) List(ctx context.Context, entityType, entityID str
 			downloadURL, err := s.s3Client.GeneratePresignedGetURL(a.StorageKey, a.FileName)
 			if err == nil {
 				resp.URL = downloadURL
+			}
+			if s.s3Client.HasPublicURL() {
+				resp.PublicURL = s.s3Client.PublicURL(a.StorageKey)
 			}
 		}
 		result = append(result, resp)

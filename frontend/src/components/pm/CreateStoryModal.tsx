@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CircleDot,
+  CalendarDays,
+  Check,
+  Gauge,
   GitBranch,
   Hash,
   Layers,
@@ -9,7 +11,6 @@ import {
   Maximize2,
   Minimize2,
   Sparkles,
-  Tag,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { PRIORITY_CONFIG, PriorityIcon, StateTypeIcon, StoryTypeIcon } from "@/lib/pmConstants";
+import { PRIORITY_CONFIG, PriorityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateStoryRequest,
   IterationWithStats,
@@ -60,67 +61,40 @@ const defaultState = {
   deadline: "",
 };
 
-const priorityLabels: Record<Priority, string> = {
-  none: "None",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  urgent: "Urgent",
-};
+// ── Metadata Row ───────────────────────────────────────────────────
 
-const storyTypeLabels: Record<StoryType, string> = {
-  feature: "Feature",
-  bug: "Bug",
-  chore: "Chore",
-};
-
-function ChipButton({
+function MetadataRow({
   icon: Icon,
   label,
-  onClick,
-  active = false,
-  disabled = false,
+  children,
 }: {
   icon: React.ElementType;
   label: string;
-  onClick?: () => void;
-  active?: boolean;
-  disabled?: boolean;
+  children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors
-        ${active ? "border-border bg-accent text-foreground" : "border-border/60 bg-transparent text-muted-foreground"}
-        ${disabled ? "cursor-not-allowed opacity-50" : "hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"}
-      `}
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0" />
-      <span className="whitespace-nowrap">{label}</span>
-    </button>
+    <>
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+      <span className="text-xs text-muted-foreground self-center">{label}</span>
+      <div className="min-w-0 self-center">{children}</div>
+    </>
   );
 }
 
-function ChipSelect<T extends string>({
-  icon: Icon,
-  label,
+// ── Sidebar Popover Select ─────────────────────────────────────────
+
+function SidebarPopoverSelect<T extends string>({
   value,
   options,
-  getLabel,
   onChange,
-  renderTriggerIcon,
-  renderOptionIcon,
+  renderTrigger,
+  renderOption,
 }: {
-  icon: React.ElementType;
-  label: string;
   value: T;
   options: { value: T; label: string }[];
-  getLabel: (value: T) => string;
   onChange: (value: T) => void;
-  renderTriggerIcon?: (value: T) => React.ReactNode;
-  renderOptionIcon?: (value: T) => React.ReactNode;
+  renderTrigger: () => React.ReactNode;
+  renderOption?: (value: T) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -129,19 +103,18 @@ function ChipSelect<T extends string>({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-transparent px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
         >
-          {renderTriggerIcon ? renderTriggerIcon(value) : <Icon className="h-3.5 w-3.5 shrink-0" />}
-          <span className="whitespace-nowrap">{getLabel(value) || label}</span>
+          {renderTrigger()}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-44 p-1" align="start">
-        <div className="flex flex-col">
+      <PopoverContent className="w-40 p-0.5" align="start">
+        <div className="flex max-h-60 flex-col overflow-y-auto">
           {options.map((option) => (
             <button
               key={option.value}
               type="button"
-              className={`flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors cursor-pointer
+              className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors cursor-pointer
                 ${value === option.value ? "bg-accent text-foreground font-medium" : "text-muted-foreground hover:bg-accent hover:text-foreground"}
               `}
               onClick={() => {
@@ -149,8 +122,9 @@ function ChipSelect<T extends string>({
                 setOpen(false);
               }}
             >
-              {renderOptionIcon ? renderOptionIcon(option.value) : null}
-              {option.label}
+              {renderOption ? renderOption(option.value) : null}
+              <span className="truncate">{option.label}</span>
+              {value === option.value && <Check className="ml-auto h-3 w-3 shrink-0" />}
             </button>
           ))}
         </div>
@@ -207,21 +181,21 @@ export function CreateStoryModal({
   );
 
   const currentEpicName = useMemo(() => {
-    if (!form.epic_id) return "Epic";
-    return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? "Epic";
+    if (!form.epic_id) return "None";
+    return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? "None";
   }, [form.epic_id, epics]);
 
   const currentIterationName = useMemo(() => {
-    if (!form.iteration_id) return "Iteration";
+    if (!form.iteration_id) return "None";
     return (
       iterations.find((i) => i.iteration.id === form.iteration_id)?.iteration
-        .name ?? "Iteration"
+        .name ?? "None"
     );
   }, [form.iteration_id, iterations]);
 
   const currentTeamName = useMemo(() => {
-    if (!form.team_id) return "Team";
-    return teams.find((t) => t.id === form.team_id)?.name ?? "Team";
+    if (!form.team_id) return "None";
+    return teams.find((t) => t.id === form.team_id)?.name ?? "None";
   }, [form.team_id, teams]);
 
   const submit = useCallback(async () => {
@@ -282,215 +256,218 @@ export function CreateStoryModal({
             </h2>
           </div>
 
-          {/* Body */}
-          <div className="min-h-0 flex-1 flex flex-col overflow-hidden px-6 py-3 gap-4">
-            {/* Workflow badge + Title (always visible, never scrolled) */}
-            {!editorExpanded && (
-              <div className="inline-flex items-center gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm font-medium text-foreground self-start">
-                <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-                {workflow.workflow.name}
-              </div>
-            )}
+          {/* Two-column grid */}
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
+            {/* Left column — title + description */}
+            <div className="min-h-0 flex-1 flex flex-col overflow-y-auto px-6 py-3 gap-4">
+              {/* Workflow badge */}
+              {!editorExpanded && (
+                <div className="inline-flex items-center gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm font-medium text-foreground self-start">
+                  <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                  {workflow.workflow.name}
+                </div>
+              )}
 
-            {/* Title */}
-            <Input
-              id="story-title"
-              autoFocus
-              placeholder="Title"
-              className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
-              value={form.name}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, name: event.target.value }))
-              }
-            />
-
-            {/* Description — Tiptap rich text editor */}
-            <div className={`relative flex flex-col ${editorExpanded ? "min-h-0 flex-1" : ""}`}>
-              <TiptapEditor
-                content={form.description}
-                onChange={(html) =>
-                  setForm((prev) => ({ ...prev, description: html }))
+              {/* Title */}
+              <Input
+                id="story-title"
+                autoFocus
+                placeholder="Title"
+                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
+                value={form.name}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, name: event.target.value }))
                 }
-                placeholder="Press '/' for commands"
-                className={editorExpanded ? "min-h-0 flex-1 flex flex-col" : ""}
               />
-              <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setEditorExpanded((prev) => !prev)}
-                  className="inline-flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
-                  title={editorExpanded ? "Minimize editor" : "Maximize editor"}
-                >
-                  {editorExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-                </button>
-                <div className="pointer-events-none inline-flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground">
-                  <Sparkles className="h-3 w-3" />
-                  AI
+
+              {/* Description — Tiptap rich text editor */}
+              <div className={`relative flex flex-col ${editorExpanded ? "min-h-0 flex-1" : ""}`}>
+                <TiptapEditor
+                  content={form.description}
+                  onChange={(html) =>
+                    setForm((prev) => ({ ...prev, description: html }))
+                  }
+                  placeholder="Press '/' for commands"
+                  className={editorExpanded ? "min-h-0 flex-1 flex flex-col" : ""}
+                  uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+                />
+                <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditorExpanded((prev) => !prev)}
+                    className="inline-flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                    title={editorExpanded ? "Minimize editor" : "Maximize editor"}
+                  >
+                    {editorExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+                  </button>
+                  <div className="pointer-events-none inline-flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground">
+                    <Sparkles className="h-3 w-3" />
+                    AI
+                  </div>
                 </div>
               </div>
+
+              {error ? <p className="text-sm text-destructive">{error}</p> : null}
             </div>
 
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          </div>
+            {/* Right sidebar — metadata */}
+            <aside className="min-h-0 overflow-y-auto border-l border-border/50 px-4 py-4">
+              <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
+                {/* State */}
+                <MetadataRow icon={Hash} label="State">
+                  <SidebarPopoverSelect
+                    value={stateId}
+                    options={workflow.states.map((s) => ({ value: s.id, label: s.name }))}
+                    onChange={setStateId}
+                    renderTrigger={() => {
+                      const st = workflow.states.find((s) => s.id === stateId);
+                      return (
+                        <>
+                          {st && <StateTypeIcon stateType={st.state_type} className="h-3.5 w-3.5" />}
+                          <span>{currentStateName}</span>
+                        </>
+                      );
+                    }}
+                    renderOption={(v) => {
+                      const s = workflow.states.find((st) => st.id === v);
+                      return s ? <StateTypeIcon stateType={s.state_type} className="h-4 w-4 shrink-0" /> : null;
+                    }}
+                  />
+                </MetadataRow>
 
-          {/* Metadata chips row — pinned above footer */}
-          <div className="flex flex-wrap items-center gap-2 border-t border-border/50 px-6 py-3">
-            <ChipSelect
-              icon={CircleDot}
-              label="State"
-              value={stateId}
-              options={workflow.states.map((s) => ({
-                value: s.id,
-                label: s.name,
-              }))}
-              getLabel={() => currentStateName}
-              onChange={setStateId}
-              renderTriggerIcon={(v) => {
-                const st = workflow.states.find((s) => s.id === v);
-                return st ? <StateTypeIcon stateType={st.state_type} className="h-3.5 w-3.5 shrink-0" /> : <CircleDot className="h-3.5 w-3.5 shrink-0" />;
-              }}
-              renderOptionIcon={(v) => {
-                const st = workflow.states.find((s) => s.id === v);
-                return st ? <StateTypeIcon stateType={st.state_type} className="h-4 w-4 shrink-0" /> : null;
-              }}
-            />
+                {/* Priority */}
+                <MetadataRow icon={Gauge} label="Priority">
+                  <SidebarPopoverSelect
+                    value={form.priority}
+                    options={priorityOptions.map((p) => ({ value: p, label: PRIORITY_CONFIG[p].label }))}
+                    onChange={(value) =>
+                      setForm((prev) => ({ ...prev, priority: value as Priority }))
+                    }
+                    renderTrigger={() => (
+                      <>
+                        <PriorityIcon priority={form.priority} className="h-3.5 w-3.5" />
+                        <span>{PRIORITY_CONFIG[form.priority].label}</span>
+                      </>
+                    )}
+                    renderOption={(v) => <PriorityIcon priority={v as Priority} className="h-4 w-4 shrink-0" />}
+                  />
+                </MetadataRow>
 
-            <ChipSelect
-              icon={PRIORITY_CONFIG.none.icon}
-              label="Priority"
-              value={form.priority}
-              options={priorityOptions.map((p) => ({
-                value: p,
-                label: priorityLabels[p],
-              }))}
-              getLabel={(v) => priorityLabels[v]}
-              onChange={(value) =>
-                setForm((prev) => ({ ...prev, priority: value }))
-              }
-              renderTriggerIcon={(v) => <PriorityIcon priority={v} className="h-3.5 w-3.5 shrink-0" />}
-              renderOptionIcon={(v) => <PriorityIcon priority={v} className="h-4 w-4 shrink-0" />}
-            />
+                {/* Type */}
+                <MetadataRow icon={Hash} label="Type">
+                  <SidebarPopoverSelect
+                    value={form.story_type}
+                    options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
+                    onChange={(value) =>
+                      setForm((prev) => ({ ...prev, story_type: value as StoryType }))
+                    }
+                    renderTrigger={() => (
+                      <>
+                        <StoryTypeIcon storyType={form.story_type} className="h-3.5 w-3.5" />
+                        <span>{STORY_TYPE_CONFIG[form.story_type].label}</span>
+                      </>
+                    )}
+                    renderOption={(v) => <StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" />}
+                  />
+                </MetadataRow>
 
-            <ChipSelect
-              icon={Hash}
-              label="Type"
-              value={form.story_type}
-              options={storyTypeOptions.map((t) => ({
-                value: t,
-                label: storyTypeLabels[t],
-              }))}
-              getLabel={(v) => storyTypeLabels[v]}
-              onChange={(value) =>
-                setForm((prev) => ({ ...prev, story_type: value }))
-              }
-              renderTriggerIcon={(v) => <StoryTypeIcon storyType={v} className="h-3.5 w-3.5 shrink-0" />}
-              renderOptionIcon={(v) => <StoryTypeIcon storyType={v} className="h-4 w-4 shrink-0" />}
-            />
+                {/* Team */}
+                {teams.length > 0 && (
+                  <MetadataRow icon={Users} label="Team">
+                    <SidebarPopoverSelect
+                      value={form.team_id || "__none__"}
+                      options={[
+                        { value: "__none__", label: "No team" },
+                        ...teams.map((t) => ({ value: t.id, label: t.name })),
+                      ]}
+                      onChange={(value) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          team_id: value === "__none__" ? "" : value,
+                        }))
+                      }
+                      renderTrigger={() => <span>{currentTeamName}</span>}
+                    />
+                  </MetadataRow>
+                )}
 
-            {teams.length > 0 && (
-              <ChipSelect
-                icon={Users}
-                label="Team"
-                value={form.team_id || "__none__"}
-                options={[
-                  { value: "__none__", label: "No team" },
-                  ...teams.map((t) => ({
-                    value: t.id,
-                    label: t.name,
-                  })),
-                ]}
-                getLabel={() => currentTeamName}
-                onChange={(value) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    team_id: value === "__none__" ? "" : value,
-                  }))
-                }
-              />
-            )}
+                {/* Epic */}
+                <MetadataRow icon={Layers} label="Epic">
+                  <SidebarPopoverSelect
+                    value={form.epic_id || "__none__"}
+                    options={[
+                      { value: "__none__", label: "No epic" },
+                      ...epics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
+                    ]}
+                    onChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        epic_id: value === "__none__" ? "" : value,
+                      }))
+                    }
+                    renderTrigger={() => <span>{currentEpicName}</span>}
+                  />
+                </MetadataRow>
 
-            <ChipButton icon={Users} label="Assignees" disabled />
+                {/* Iteration */}
+                <MetadataRow icon={GitBranch} label="Iteration">
+                  <SidebarPopoverSelect
+                    value={form.iteration_id || "__none__"}
+                    options={[
+                      { value: "__none__", label: "No iteration" },
+                      ...iterations.map((i) => ({ value: i.iteration.id, label: i.iteration.name })),
+                    ]}
+                    onChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        iteration_id: value === "__none__" ? "" : value,
+                      }))
+                    }
+                    renderTrigger={() => <span>{currentIterationName}</span>}
+                  />
+                </MetadataRow>
 
-            <ChipButton icon={Tag} label="Labels" disabled />
+                {/* Estimate */}
+                <MetadataRow icon={LayoutGrid} label="Estimate">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+                      >
+                        {form.estimate ? `${form.estimate} pts` : "None"}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-36 p-3" align="start">
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder="Points"
+                        className="h-8 text-sm"
+                        value={form.estimate}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            estimate: event.target.value,
+                          }))
+                        }
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </MetadataRow>
 
-            <ChipSelect
-              icon={Layers}
-              label="Epic"
-              value={form.epic_id || "__none__"}
-              options={[
-                { value: "__none__", label: "No epic" },
-                ...epics.map((e) => ({
-                  value: e.epic.id,
-                  label: e.epic.name,
-                })),
-              ]}
-              getLabel={() => currentEpicName}
-              onChange={(value) =>
-                setForm((prev) => ({
-                  ...prev,
-                  epic_id: value === "__none__" ? "" : value,
-                }))
-              }
-            />
-
-            <ChipSelect
-              icon={GitBranch}
-              label="Iteration"
-              value={form.iteration_id || "__none__"}
-              options={[
-                { value: "__none__", label: "No iteration" },
-                ...iterations.map((i) => ({
-                  value: i.iteration.id,
-                  label: i.iteration.name,
-                })),
-              ]}
-              getLabel={() => currentIterationName}
-              onChange={(value) =>
-                setForm((prev) => ({
-                  ...prev,
-                  iteration_id: value === "__none__" ? "" : value,
-                }))
-              }
-            />
-
-            {/* Due date chip */}
-            <DatePicker
-              value={form.deadline}
-              onChange={(v) => setForm((prev) => ({ ...prev, deadline: v }))}
-              placeholder="Due date"
-              disablePast
-              className="h-auto border-border/60 bg-transparent px-2 py-1 text-xs text-muted-foreground shadow-none hover:border-border hover:bg-accent hover:text-foreground"
-            />
-
-            {/* Estimate chip */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-transparent px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
-                >
-                  <LayoutGrid className="h-3.5 w-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">
-                    {form.estimate ? `${form.estimate} pts` : "Estimate"}
-                  </span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-44 p-3" align="start">
-                <Input
-                  type="number"
-                  min={0}
-                  placeholder="Points"
-                  className="h-9"
-                  value={form.estimate}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      estimate: event.target.value,
-                    }))
-                  }
-                />
-              </PopoverContent>
-            </Popover>
+                {/* Due date */}
+                <MetadataRow icon={CalendarDays} label="Due date">
+                  <DatePicker
+                    value={form.deadline}
+                    onChange={(v) => setForm((prev) => ({ ...prev, deadline: v }))}
+                    placeholder="None"
+                    disablePast
+                    className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
+                  />
+                </MetadataRow>
+              </div>
+            </aside>
           </div>
 
           {/* Footer */}
