@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { format, parseISO } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { pmIterationService } from '@/lib/services/pmIterationService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import type { IterationWithStats, Story } from '@/lib/pmTypes';
+import type { IterationWithStats } from '@/lib/pmTypes';
 
 export function IterationsPage() {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
@@ -17,9 +17,7 @@ export function IterationsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const { findTeamName } = useWorkspaceTeams(workspaceId);
-
-  const [selectedIteration, setSelectedIteration] = useState<IterationWithStats | null>(null);
-  const [selectedStories, setSelectedStories] = useState<Story[]>([]);
+  const navigate = useNavigate();
 
   const loadData = async () => {
     if (!workspaceId) return;
@@ -48,11 +46,9 @@ export function IterationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
-  const openIteration = async (iteration: IterationWithStats) => {
-    setSelectedIteration(iteration);
-    if (!workspaceId) return;
-    const storiesRes = await pmIterationService.listStories(workspaceId, iteration.iteration.id);
-    setSelectedStories(storiesRes.data ?? []);
+  const openIteration = (iteration: IterationWithStats) => {
+    if (!workspace) return;
+    navigate({ to: '/w/$slug/pm/iterations/$iterationId', params: { slug: workspace.slug, iterationId: iteration.iteration.id } });
   };
 
   const pct = (iteration: IterationWithStats) => {
@@ -121,40 +117,6 @@ export function IterationsPage() {
         </div>
       )}
 
-      <Sheet open={Boolean(selectedIteration)} onOpenChange={(open) => !open && setSelectedIteration(null)}>
-        <SheetContent side="right" className="w-[90vw] sm:max-w-[720px]">
-          {selectedIteration ? (
-            <div className="space-y-4">
-              <SheetHeader>
-                <SheetTitle>{selectedIteration.iteration.name}</SheetTitle>
-              </SheetHeader>
-              <p className="text-sm text-muted-foreground">
-                {selectedIteration.iteration.description || 'No description.'}
-              </p>
-              <Progress value={pct(selectedIteration)} />
-              <p className="text-xs text-muted-foreground">
-                {selectedIteration.stats.done_story_count}/{selectedIteration.stats.story_count} stories done · {selectedIteration.stats.done_points}/{selectedIteration.stats.total_points} points
-              </p>
-
-              <section className="space-y-2">
-                <h3 className="text-sm font-semibold">Stories in this iteration</h3>
-                {selectedStories.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No stories linked yet.</p>
-                ) : (
-                  <div className="space-y-1">
-                    {selectedStories.map((story) => (
-                      <article key={story.id} className="rounded-md border border-border/70 px-3 py-2 text-sm">
-                        <p className="font-medium">TP-{story.display_id} · {story.name}</p>
-                        <p className="text-xs text-muted-foreground">{story.priority} priority · {story.story_type}</p>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }
