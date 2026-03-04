@@ -9,10 +9,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -237,24 +233,27 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
 function GlobalCreateIteration({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const { teams } = useWorkspaceTeams(workspaceId);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [teamId, setTeamId] = useState('');
+
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    startDate: '',
+    endDate: '',
+    teamId: '',
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const create = async () => {
-    if (!name.trim() || !startDate || !endDate || submitting) return;
+    if (!form.name.trim() || !form.startDate || !form.endDate || submitting) return;
     setSubmitting(true);
     const { error: createError } = await pmIterationService.create({
       workspace_id: workspaceId,
-      name: name.trim(),
-      description: description.trim() || undefined,
-      start_date: startDate,
-      end_date: endDate,
-      team_id: teamId || undefined,
+      name: form.name.trim(),
+      description: form.description.trim() || undefined,
+      start_date: form.startDate,
+      end_date: form.endDate,
+      team_id: form.teamId || undefined,
     });
     setSubmitting(false);
     if (createError) {
@@ -267,56 +266,84 @@ function GlobalCreateIteration({ workspaceId, onClose }: { workspaceId: string; 
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Create Iteration</DialogTitle>
-        </DialogHeader>
-        {error && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            {error}
+      <DialogContent className="max-w-4xl sm:max-w-4xl gap-0 overflow-hidden p-0" showCloseButton={false}>
+        <div className="flex h-[80vh] flex-col">
+          <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-semibold">Create Iteration</span>
+            <Button className="ml-auto" size="sm" onClick={create} disabled={!form.name.trim() || !form.startDate || !form.endDate || submitting}>
+              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? 'Creating...' : 'Create Iteration'}
+            </Button>
           </div>
-        )}
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Start date</Label>
-              <DatePicker value={startDate} onChange={setStartDate} placeholder="Start date" className="w-full" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>End date</Label>
-              <DatePicker value={endDate} onChange={setEndDate} placeholder="End date" className="w-full" />
-            </div>
-          </div>
-          {teams.length > 0 && (
-            <div className="space-y-1.5">
-              <Label>Team</Label>
-              <Select value={teamId || '__none__'} onValueChange={(v) => setTeamId(v === '__none__' ? '' : v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select team" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No team</SelectItem>
-                  {teams.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+          {error && (
+            <div className="mx-4 mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
             </div>
           )}
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={create} disabled={!name.trim() || !startDate || !endDate || submitting}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              Create
-            </Button>
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+            <div className="min-h-0 overflow-y-auto px-8 py-5">
+              <input
+                type="text"
+                autoFocus
+                aria-label="Iteration title"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                placeholder="Iteration title"
+              />
+              <div className="mt-4">
+                <TiptapEditor
+                  content={form.description}
+                  onChange={(html) => setForm((f) => ({ ...f, description: html }))}
+                  placeholder="Add a description..."
+                  className="border-transparent shadow-none"
+                />
+              </div>
+            </div>
+
+            <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
+              <p className="mb-4 text-xs text-muted-foreground">
+                Iterations are time-boxed periods for planning and tracking work.
+              </p>
+              <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
+                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <span className="text-xs text-muted-foreground self-center">Team</span>
+                <Select value={form.teamId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, teamId: v === '__none__' ? '' : v }))}>
+                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {teams.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <span className="text-xs text-muted-foreground self-center">Start date</span>
+                <DatePicker
+                  value={form.startDate}
+                  onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  placeholder="Pick a date"
+                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                />
+
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <span className="text-xs text-muted-foreground self-center">End date</span>
+                <DatePicker
+                  value={form.endDate}
+                  onChange={(v) => setForm((f) => ({ ...f, endDate: v }))}
+                  placeholder="Pick a date"
+                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                />
+              </div>
+            </aside>
           </div>
         </div>
       </DialogContent>

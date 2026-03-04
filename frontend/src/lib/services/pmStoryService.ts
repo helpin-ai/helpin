@@ -16,6 +16,10 @@ import type {
 
 const qs = (workspaceId: string) => `workspace_id=${encodeURIComponent(workspaceId)}`;
 
+/** Convert date-only "YYYY-MM-DD" to RFC 3339 "YYYY-MM-DDT00:00:00Z" for Go's time.Time. */
+const toRFC3339 = (v: string | undefined): string | undefined =>
+  v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T00:00:00Z` : v;
+
 const withFilters = (base: string, filters: Record<string, string | number | boolean | undefined>) => {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
@@ -55,12 +59,19 @@ export const pmStoryService = {
     ),
   countByState: (workspaceId: string, workflowId: string) =>
     api.get<StoryStateCount[]>(`/pm/stories/counts?${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
-  create: (payload: CreateStoryRequest) => api.post<StoryDetail>(`/pm/stories?${qs(payload.workspace_id)}`, payload),
+  create: (payload: CreateStoryRequest) =>
+    api.post<StoryDetail>(`/pm/stories?${qs(payload.workspace_id)}`, {
+      ...payload,
+      deadline: toRFC3339(payload.deadline),
+    }),
   get: (workspaceId: string, id: string) => api.get<StoryDetail>(`/pm/stories/${id}?${qs(workspaceId)}`),
   getByDisplayId: (workspaceId: string, displayId: number) =>
     api.get<StoryDetail>(`/pm/stories/display/${displayId}?${qs(workspaceId)}`),
   update: (workspaceId: string, id: string, payload: UpdateStoryRequest) =>
-    api.put<StoryDetail>(`/pm/stories/${id}?${qs(workspaceId)}`, payload),
+    api.put<StoryDetail>(`/pm/stories/${id}?${qs(workspaceId)}`, {
+      ...payload,
+      deadline: toRFC3339(payload.deadline),
+    }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/stories/${id}?${qs(workspaceId)}`),
   move: (workspaceId: string, id: string, payload: MoveStoryRequest) =>
     api.put<StoryDetail>(`/pm/stories/${id}/move?${qs(workspaceId)}`, payload),
