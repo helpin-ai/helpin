@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { File as FileIcon, Loader2, Paperclip, Trash2, Upload } from 'lucide-react';
+import { Loader2, Paperclip, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';

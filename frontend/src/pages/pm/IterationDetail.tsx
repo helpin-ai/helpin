@@ -131,6 +131,8 @@ export function IterationDetailPage() {
 
   const { teams, people, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
 
+  useTitle(form?.name ? `${form.name} — Iteration` : 'Iteration');
+
   // Load iteration data
   useEffect(() => {
     if (!workspaceId) return;

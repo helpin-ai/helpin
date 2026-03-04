@@ -7,6 +7,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/pm/objectives')({
 })
 
 function Objectives() {
+  useTitle('Objectives')
   return (
     <div className="flex h-full flex-col items-center justify-center p-4 text-center md:p-6">
       <Target className="h-12 w-12 text-muted-foreground/40" />
