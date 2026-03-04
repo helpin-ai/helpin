@@ -1,0 +1,69 @@
+package repository
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"gorm.io/gorm"
+
+	"github.com/d4interactive/teampulse/server/internal/model"
+)
+
+// PMKeyResultRepository handles DB operations for key results.
+type PMKeyResultRepository struct {
+	db *gorm.DB
+}
+
+// NewPMKeyResultRepository creates a new PMKeyResultRepository.
+func NewPMKeyResultRepository(db *gorm.DB) *PMKeyResultRepository {
+	return &PMKeyResultRepository{db: db}
+}
+
+// List returns key results for an objective.
+func (r *PMKeyResultRepository) List(ctx context.Context, objectiveID string) ([]model.PMKeyResult, error) {
+	var results []model.PMKeyResult
+	if err := r.db.WithContext(ctx).
+		Where("objective_id = ?", objectiveID).
+		Order("position ASC, created_at ASC").
+		Find(&results).Error; err != nil {
+		return nil, fmt.Errorf("list key results: %w", err)
+	}
+	return results, nil
+}
+
+// GetByID returns a key result by ID.
+func (r *PMKeyResultRepository) GetByID(ctx context.Context, id string) (*model.PMKeyResult, error) {
+	var kr model.PMKeyResult
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&kr).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get key result: %w", err)
+	}
+	return &kr, nil
+}
+
+// Create inserts a key result.
+func (r *PMKeyResultRepository) Create(ctx context.Context, kr *model.PMKeyResult) error {
+	if err := r.db.WithContext(ctx).Create(kr).Error; err != nil {
+		return fmt.Errorf("create key result: %w", err)
+	}
+	return nil
+}
+
+// Update saves a key result.
+func (r *PMKeyResultRepository) Update(ctx context.Context, kr *model.PMKeyResult) error {
+	if err := r.db.WithContext(ctx).Save(kr).Error; err != nil {
+		return fmt.Errorf("update key result: %w", err)
+	}
+	return nil
+}
+
+// Delete hard-deletes a key result.
+func (r *PMKeyResultRepository) Delete(ctx context.Context, id string) error {
+	if err := r.db.WithContext(ctx).Delete(&model.PMKeyResult{}, "id = ?", id).Error; err != nil {
+		return fmt.Errorf("delete key result: %w", err)
+	}
+	return nil
+}

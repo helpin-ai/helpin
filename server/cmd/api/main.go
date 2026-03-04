@@ -54,6 +54,9 @@ func main() {
 	// Ensure pgcrypto extension is available for gen_random_uuid().
 	db.Exec(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
 
+	// Drop legacy pm_epic_objectives table (replaced with composite PK version).
+	db.Exec("DROP TABLE IF EXISTS pm_epic_objectives")
+
 	// Auto-migrate all models.
 	// The SQL migration files in server/migrations/ are kept as reference documentation.
 	if err := db.AutoMigrate(
@@ -93,6 +96,11 @@ func main() {
 		&model.PMComment{},
 		&model.PMActivityLog{},
 		&model.PMAttachment{},
+		&model.PMObjective{},
+		&model.PMKeyResult{},
+		&model.PMObjectiveTeam{},
+		&model.PMObjectiveOwner{},
+		&model.PMObjectiveLabel{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -127,6 +135,8 @@ func main() {
 	pmCommentRepo := repository.NewPMCommentRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
+	pmObjectiveRepo := repository.NewPMObjectiveRepository(db)
+	pmKeyResultRepo := repository.NewPMKeyResultRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -138,6 +148,7 @@ func main() {
 	pmIterationService := service.NewPMIterationService(pmIterationRepo, pmActivityService)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client)
+	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmActivityService)
 
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
 	quarterService := service.NewQuarterService(quarterRepo, sprintRepo)
@@ -169,6 +180,7 @@ func main() {
 		PMStory:     handler.NewPMStoryHandler(pmStoryService),
 		PMComment:    handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment: handler.NewPMAttachmentHandler(pmAttachmentService),
+		PMObjective:  handler.NewPMObjectiveHandler(pmObjectiveService),
 	}
 
 	// Set up router.

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-type CreateModal = 'story' | 'epic' | 'iteration' | null;
+type CreateModal = 'story' | 'epic' | 'iteration' | 'objective' | null;
 
 interface GlobalCreateState {
   activeModal: CreateModal;

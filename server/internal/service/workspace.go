@@ -114,3 +114,8 @@ func (s *WorkspaceService) GetMyMembership(ctx context.Context, workspaceID, use
 	}
 	return m, nil
 }
+
+// ListMembers returns all members of a workspace with user details.
+func (s *WorkspaceService) ListMembers(ctx context.Context, workspaceID string) ([]model.MemberWithUser, error) {
+	return s.workspaceRepo.ListMembers(ctx, workspaceID)
+}

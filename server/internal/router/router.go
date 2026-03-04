@@ -31,6 +31,7 @@ type Handlers struct {
 	PMStory     *handler.PMStoryHandler
 	PMComment    *handler.PMCommentHandler
 	PMAttachment *handler.PMAttachmentHandler
+	PMObjective  *handler.PMObjectiveHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -74,6 +75,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Delete("/workspaces/{id}", h.Workspace.Delete)
 			r.Get("/workspaces/{id}/my-role", h.Workspace.GetMyRole)
 			r.Get("/workspaces/{id}/my-membership", h.Workspace.GetMyMembership)
+			r.Get("/workspaces/{id}/members", h.Workspace.ListMembers)
 
 			// Quarters
 			r.Get("/quarters", h.Quarter.List)
@@ -202,6 +204,22 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Patch("/attachments/{id}/confirm", h.PMAttachment.ConfirmUpload)
 				r.Get("/attachments", h.PMAttachment.List)
 				r.Delete("/attachments/{id}", h.PMAttachment.Delete)
+
+				// Objectives
+				r.Get("/objectives", h.PMObjective.List)
+				r.Post("/objectives", h.PMObjective.Create)
+				r.Get("/objectives/{id}", h.PMObjective.Get)
+				r.Put("/objectives/{id}", h.PMObjective.Update)
+				r.Delete("/objectives/{id}", h.PMObjective.Delete)
+				r.Post("/objectives/{id}/teams", h.PMObjective.AddTeam)
+				r.Delete("/objectives/{id}/teams/{teamId}", h.PMObjective.RemoveTeam)
+				r.Post("/objectives/{id}/owners", h.PMObjective.AddOwner)
+				r.Delete("/objectives/{id}/owners/{userId}", h.PMObjective.RemoveOwner)
+				r.Post("/objectives/{id}/epics", h.PMObjective.AddEpic)
+				r.Delete("/objectives/{id}/epics/{epicId}", h.PMObjective.RemoveEpic)
+				r.Post("/objectives/{id}/key-results", h.PMObjective.CreateKeyResult)
+				r.Put("/key-results/{id}", h.PMObjective.UpdateKeyResult)
+				r.Delete("/key-results/{id}", h.PMObjective.DeleteKeyResult)
 			})
 		})
 	})

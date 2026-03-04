@@ -122,3 +122,17 @@ func (h *WorkspaceHandler) GetMyMembership(w http.ResponseWriter, r *http.Reques
 
 	writeJSON(w, http.StatusOK, membership)
 }
+
+// ListMembers handles GET /api/workspaces/{id}/members.
+func (h *WorkspaceHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	members, err := h.workspaceService.ListMembers(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if members == nil {
+		members = []model.MemberWithUser{}
+	}
+	writeJSON(w, http.StatusOK, members)
+}

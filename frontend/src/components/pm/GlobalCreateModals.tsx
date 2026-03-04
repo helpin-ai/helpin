@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
   CalendarDays,
+  Crosshair,
   Hash,
   Heart,
   Loader2,
+  Target,
+  User,
   Users,
   X,
 } from 'lucide-react';
@@ -16,12 +19,38 @@ import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmIterationService } from '@/lib/services/pmIterationService';
+import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { EpicHealth, WorkflowWithStates } from '@/lib/pmTypes';
+import type { EpicHealth, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { MemberWithUser, WorkspacePerson } from '@/lib/types';
+
+/** Merge workspace members (user accounts) and settings people into one deduplicated list. */
+function mergeOwnerOptions(members: MemberWithUser[], people: WorkspacePerson[]) {
+  const seen = new Set<string>();
+  const result: { id: string; name: string }[] = [];
+
+  for (const m of members) {
+    const key = m.email.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push({ id: m.user_id, name: m.full_name || m.email });
+    }
+  }
+  for (const p of people) {
+    const key = p.email.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push({ id: p.id, name: p.name || p.email });
+    }
+  }
+  return result;
+}
 
 const healthOptions: EpicHealth[] = ['on_track', 'at_risk', 'off_track'];
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
@@ -73,7 +102,9 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
 function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const epicStates = usePMWorkflowStore((s) => s.epicStates);
   const loadEpicStates = usePMWorkflowStore((s) => s.loadEpicStates);
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams, people } = useWorkspaceTeams(workspaceId);
+  const { members } = useWorkspaceMembers(workspaceId);
+  const ownerOptions = mergeOwnerOptions(members, people);
 
   const [form, setForm] = useState({
     name: '',
@@ -81,6 +112,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     stateId: '',
     health: 'on_track' as EpicHealth,
     teamId: '',
+    ownerId: '',
     startDate: '',
     targetDate: '',
   });
@@ -100,6 +132,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       description: form.description.trim() || undefined,
       epic_state_id: form.stateId || undefined,
       team_id: form.teamId || undefined,
+      owner_id: form.ownerId || undefined,
       health: form.health,
       planned_start_date: form.startDate || undefined,
       deadline: form.targetDate || undefined,
@@ -170,6 +203,20 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     <SelectItem value="__none__">None</SelectItem>
                     {teams.map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <span className="text-xs text-muted-foreground self-center">Owner</span>
+                <Select value={form.ownerId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, ownerId: v === '__none__' ? '' : v }))}>
+                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {ownerOptions.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -351,6 +398,253 @@ function GlobalCreateIteration({ workspaceId, onClose }: { workspaceId: string; 
   );
 }
 
+// ── Objective dialog ──────────────────────────────────────────────────
+
+const objectiveStateOptions: { value: ObjectiveState; label: string }[] = [
+  { value: 'to_do', label: 'To Do' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'done', label: 'Done' },
+];
+
+function MultiSelectPopover({
+  items,
+  selected,
+  onChange,
+  placeholder,
+}: {
+  items: { id: string; name: string }[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const toggle = (id: string) => {
+    onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]);
+  };
+
+  const selectedNames = items.filter((i) => selected.includes(i.id)).map((i) => i.name);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors hover:bg-accent cursor-pointer truncate"
+        >
+          {selectedNames.length > 0 ? selectedNames.join(', ') : <span className="text-muted-foreground">{placeholder}</span>}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1" align="start">
+        <div className="flex max-h-60 flex-col overflow-y-auto">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs cursor-pointer transition-colors ${
+                selected.includes(item.id) ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+              }`}
+              onClick={() => toggle(item.id)}
+            >
+              <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border ${
+                selected.includes(item.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'
+              }`}>
+                {selected.includes(item.id) && <span className="text-[9px]">✓</span>}
+              </span>
+              <span className="truncate">{item.name}</span>
+            </button>
+          ))}
+          {items.length === 0 && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">No options</p>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const { teams, people } = useWorkspaceTeams(workspaceId);
+  const { members } = useWorkspaceMembers(workspaceId);
+  const ownerOptions = mergeOwnerOptions(members, people);
+
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    objectiveType: 'tactical' as ObjectiveType,
+    state: 'to_do' as ObjectiveState,
+    teamIds: [] as string[],
+    ownerIds: [] as string[],
+    startDate: '',
+    targetDate: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async () => {
+    if (!form.name.trim() || submitting) return;
+    setSubmitting(true);
+    const { error: createError } = await pmObjectiveService.create({
+      workspace_id: workspaceId,
+      name: form.name.trim(),
+      description: form.description.trim() || undefined,
+      objective_type: form.objectiveType,
+      state: form.state,
+      team_ids: form.teamIds.length > 0 ? form.teamIds : undefined,
+      owner_ids: form.ownerIds.length > 0 ? form.ownerIds : undefined,
+      planned_start_date: form.startDate || undefined,
+      deadline: form.targetDate || undefined,
+    });
+    setSubmitting(false);
+    if (createError) {
+      setError(createError);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('objective-created'));
+    onClose();
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-4xl sm:max-w-4xl gap-0 overflow-hidden p-0" showCloseButton={false}>
+        <div className="flex h-[80vh] flex-col">
+          <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-semibold">Create Objective</span>
+            <Button className="ml-auto" size="sm" onClick={create} disabled={!form.name.trim() || submitting}>
+              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? 'Creating...' : 'Create Objective'}
+            </Button>
+          </div>
+
+          {error && (
+            <div className="mx-4 mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+            <div className="min-h-0 overflow-y-auto px-8 py-5">
+              <input
+                type="text"
+                autoFocus
+                aria-label="Objective title"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                placeholder="Objective title"
+              />
+              <div className="mt-4">
+                <TiptapEditor
+                  content={form.description}
+                  onChange={(html) => setForm((f) => ({ ...f, description: html }))}
+                  placeholder="Add a description..."
+                  className="border-transparent shadow-none"
+                />
+              </div>
+
+              {/* Objective Type Selector — commented out for now */}
+              {/* <div className="mt-6">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Objective Type</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors cursor-pointer ${
+                      form.objectiveType === 'tactical'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border/60 hover:border-border'
+                    }`}
+                    onClick={() => setForm((f) => ({ ...f, objectiveType: 'tactical' }))}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Target className="h-4 w-4 text-blue-500" />
+                      <span className="text-sm font-medium">Tactical</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">Track linked Epics</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors cursor-pointer ${
+                      form.objectiveType === 'strategic'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border/60 hover:border-border'
+                    }`}
+                    onClick={() => setForm((f) => ({ ...f, objectiveType: 'strategic' }))}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Crosshair className="h-4 w-4 text-violet-500" />
+                      <span className="text-sm font-medium">Strategic</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">Group Key Results &amp; Epics</span>
+                  </button>
+                </div>
+              </div> */}
+            </div>
+
+            <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
+              <p className="mb-4 text-xs text-muted-foreground">
+                Objectives define high-level goals. Tactical objectives track linked Epics; Strategic objectives combine Key Results and Epics.
+              </p>
+              <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
+                <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <span className="text-xs text-muted-foreground self-center">State</span>
+                <Select value={form.state} onValueChange={(v) => setForm((f) => ({ ...f, state: v as ObjectiveState }))}>
+                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {objectiveStateOptions.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <span className="text-xs text-muted-foreground self-center">Teams</span>
+                <MultiSelectPopover
+                  items={teams.map((t) => ({ id: t.id, name: t.name }))}
+                  selected={form.teamIds}
+                  onChange={(ids) => setForm((f) => ({ ...f, teamIds: ids }))}
+                  placeholder="Select teams"
+                />
+
+                <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <span className="text-xs text-muted-foreground self-center">Owners</span>
+                <MultiSelectPopover
+                  items={ownerOptions}
+                  selected={form.ownerIds}
+                  onChange={(ids) => setForm((f) => ({ ...f, ownerIds: ids }))}
+                  placeholder="Select owners"
+                />
+
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <span className="text-xs text-muted-foreground self-center">Start date</span>
+                <DatePicker
+                  value={form.startDate}
+                  onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                  placeholder="Pick a date"
+                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                />
+
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                <span className="text-xs text-muted-foreground self-center">Target date</span>
+                <DatePicker
+                  value={form.targetDate}
+                  onChange={(v) => setForm((f) => ({ ...f, targetDate: v }))}
+                  placeholder="Pick a date"
+                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                />
+              </div>
+            </aside>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main export ──────────────────────────────────────────────────────
 
 export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
@@ -363,6 +657,7 @@ export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
       {activeModal === 'story' && <GlobalCreateStory workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'epic' && <GlobalCreateEpic workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'iteration' && <GlobalCreateIteration workspaceId={workspaceId} onClose={closeCreate} />}
+      {activeModal === 'objective' && <GlobalCreateObjective workspaceId={workspaceId} onClose={closeCreate} />}
     </>
   );
 }

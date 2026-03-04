@@ -143,6 +143,22 @@ func (r *WorkspaceRepository) GetMemberRole(ctx context.Context, workspaceID, us
 	return m.Role, nil
 }
 
+// ListMembers returns all members of a workspace with user details.
+func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID string) ([]model.MemberWithUser, error) {
+	var results []model.MemberWithUser
+	err := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Select("wm.id, wm.user_id, wm.role, u.email, u.full_name, u.avatar_url").
+		Joins("JOIN users u ON u.id = wm.user_id").
+		Where("wm.workspace_id = ?", workspaceID).
+		Order("u.full_name ASC").
+		Scan(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("list workspace members: %w", err)
+	}
+	return results, nil
+}
+
 // GetMembership returns the full membership record for a user in a workspace.
 func (r *WorkspaceRepository) GetMembership(ctx context.Context, workspaceID, userID string) (*model.WorkspaceMember, error) {
 	m := &model.WorkspaceMember{}

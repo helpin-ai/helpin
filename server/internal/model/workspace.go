@@ -33,6 +33,16 @@ type WorkspaceWithRole struct {
 	Role string `json:"role"`
 }
 
+// MemberWithUser is a workspace member with embedded user details.
+type MemberWithUser struct {
+	ID        string  `json:"id"`
+	UserID    string  `json:"user_id"`
+	Role      string  `json:"role"`
+	Email     string  `json:"email"`
+	FullName  string  `json:"full_name"`
+	AvatarURL *string `json:"avatar_url"`
+}
+
 // CreateWorkspaceRequest is the payload for POST /api/workspaces.
 type CreateWorkspaceRequest struct {
 	Name        string  `json:"name"`

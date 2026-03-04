@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Search,
   SquareKanban,
+  Target,
   User,
   Users,
 } from "lucide-react";
@@ -56,6 +57,7 @@ export function Header() {
     { key: 'story' as const, label: 'Story', icon: SquareKanban, pages: ['stories'] },
     { key: 'epic' as const, label: 'Epic', icon: Hexagon, pages: ['epics'] },
     { key: 'iteration' as const, label: 'Iteration', icon: RefreshCw, pages: ['iterations'] },
+    { key: 'objective' as const, label: 'Objective', icon: Target, pages: ['objectives'] },
   ];
 
   const primaryCreate = useMemo(() => {

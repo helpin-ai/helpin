@@ -35,13 +35,11 @@ type PMEpic struct {
 
 func (PMEpic) TableName() string { return "pm_epics" }
 
-// PMEpicObjective is a placeholder for future objective support.
+// PMEpicObjective is the many-to-many join between epics and objectives.
 type PMEpicObjective struct {
-	ID        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	EpicID    string    `json:"epic_id" gorm:"type:uuid;not null;index"`
-	Title     string    `json:"title" gorm:"not null"`
-	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	EpicID      string    `json:"epic_id" gorm:"type:uuid;primaryKey"`
+	ObjectiveID string    `json:"objective_id" gorm:"type:uuid;primaryKey"`
+	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (PMEpicObjective) TableName() string { return "pm_epic_objectives" }

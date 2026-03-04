@@ -32,6 +32,15 @@ export interface WorkspaceMember {
   updated_at: string;
 }
 
+export interface MemberWithUser {
+  id: string;
+  user_id: string;
+  role: string;
+  email: string;
+  full_name: string;
+  avatar_url?: string;
+}
+
 export interface Quarter {
   id: string;
   workspace_id: string;
