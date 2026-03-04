@@ -17,6 +17,11 @@ dev:
       trap "kill $frontend_pid $backend_pid 2>/dev/null || true" EXIT INT TERM; \
       wait -n $frontend_pid $backend_pid'
 
+dev-tmux:
+    tmux new-session -d -s teampulse -n dev 'cd server && go run ./cmd/api'
+    tmux split-window -h -t teampulse:dev 'cd frontend && npm run dev'
+    tmux attach -t teampulse
+
 build-server:
     cd server && go mod download && go build -o bin/api ./cmd/api
     @echo "✅ server built → server/bin/api"
