@@ -16,10 +16,13 @@ import {
   Loader2,
   MoreHorizontal,
   Paperclip,
+  Pencil,
   Send,
   ShieldAlert,
   Star,
   Tag,
+  Trash2,
+  User,
   Users,
   X,
 } from 'lucide-react';
@@ -56,7 +59,9 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmIterationService } from '@/lib/services/pmIterationService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
+import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import type {
   ActivityLogEntry,
@@ -97,6 +102,8 @@ interface FormState {
   epic_id: string;
   iteration_id: string;
   team_id: string;
+  owner_id: string;
+  requester_id: string;
   blocked: boolean;
   blocker: string;
 }
@@ -122,6 +129,8 @@ const buildFormState = (story: StoryDetail): FormState => ({
   epic_id: story.story.epic_id ?? '',
   iteration_id: story.story.iteration_id ?? '',
   team_id: story.story.team_id ?? '',
+  owner_id: story.story.owner_id ?? '',
+  requester_id: story.story.requester_id ?? '',
   blocked: story.story.blocked,
   blocker: story.story.blocker ?? '',
 });
@@ -282,6 +291,9 @@ function StoryDetailPanelBody({
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [newComment, setNewComment] = useState('');
   const [commentLoading, setCommentLoading] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentBody, setEditingCommentBody] = useState('');
+  const currentUser = useAuthStore((s) => s.user);
 
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
 
@@ -292,6 +304,7 @@ function StoryDetailPanelBody({
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const { teams } = useWorkspaceTeams(workspaceId);
+  const { members } = useWorkspaceMembers(workspaceId);
 
   // ── URL sync ───────────────────────────────────────────────────
   useEffect(() => {
@@ -389,6 +402,39 @@ function StoryDetailPanelBody({
     setNewComment('');
   };
 
+  const startEditComment = (comment: CommentWithAuthor) => {
+    setEditingCommentId(comment.comment.id);
+    setEditingCommentBody(comment.comment.body);
+  };
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentBody('');
+  };
+
+  const saveEditComment = async () => {
+    if (!editingCommentId || !editingCommentBody.trim()) return;
+    const { error } = await pmCommentService.update(workspaceId, editingCommentId, {
+      body: editingCommentBody.trim(),
+    });
+    if (error) return;
+    setComments((current) =>
+      current.map((c) =>
+        c.comment.id === editingCommentId
+          ? { ...c, comment: { ...c.comment, body: editingCommentBody.trim() } }
+          : c,
+      ),
+    );
+    setEditingCommentId(null);
+    setEditingCommentBody('');
+  };
+
+  const deleteComment = async (id: string) => {
+    const { error } = await pmCommentService.remove(workspaceId, id);
+    if (error) return;
+    setComments((current) => current.filter((c) => c.comment.id !== id));
+  };
+
   // ── Archive ────────────────────────────────────────────────────
   const archiveStory = async () => {
     const { error } = await pmStoryService.remove(workspaceId, storyDetail.story.id);
@@ -429,6 +475,16 @@ function StoryDetailPanelBody({
     if (!form.team_id) return 'No team';
     return teams.find((t) => t.id === form.team_id)?.name ?? 'No team';
   }, [form.team_id, teams]);
+
+  const currentOwnerName = useMemo(() => {
+    if (!form.owner_id) return 'No owner';
+    return members.find((m) => m.user_id === form.owner_id)?.full_name ?? 'No owner';
+  }, [form.owner_id, members]);
+
+  const currentRequesterName = useMemo(() => {
+    if (!form.requester_id) return 'No requester';
+    return members.find((m) => m.user_id === form.requester_id)?.full_name ?? 'No requester';
+  }, [form.requester_id, members]);
 
   const storyLabels = storyDetail.labels ?? [];
 
@@ -563,21 +619,69 @@ function StoryDetailPanelBody({
           <div>
             {/* Comments card */}
             <div className="rounded-lg border border-border/60">
-              {comments.map((entry, idx) => (
-                <div key={entry.comment.id}>
-                  {idx > 0 && <Separator />}
-                  <div className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-800 text-[9px] font-medium text-white">
-                        {getInitials(entry.author)}
+              {comments.map((entry, idx) => {
+                const isOwn = currentUser?.id === entry.comment.author_id;
+                const isEditing = editingCommentId === entry.comment.id;
+                return (
+                  <div key={entry.comment.id}>
+                    {idx > 0 && <Separator />}
+                    <div className="group px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-800 text-[9px] font-medium text-white">
+                          {getInitials(entry.author)}
+                        </div>
+                        <span className="text-xs font-semibold">{entry.author.full_name || entry.author.email}</span>
+                        <span className="text-[11px] text-muted-foreground">{formatRelativeTime(entry.comment.created_at)}</span>
+                        {isOwn && !isEditing && (
+                          <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+                              onClick={() => startEditComment(entry)}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
+                              onClick={() => deleteComment(entry.comment.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <span className="text-xs font-semibold">{entry.author.full_name || entry.author.email}</span>
-                      <span className="text-[11px] text-muted-foreground">{formatRelativeTime(entry.comment.created_at)}</span>
+                      {isEditing ? (
+                        <div className="mt-1.5 pl-8">
+                          <textarea
+                            value={editingCommentBody}
+                            rows={2}
+                            className="w-full resize-none rounded-md border border-border/60 bg-transparent px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            onChange={(e) => setEditingCommentBody(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                e.preventDefault();
+                                saveEditComment();
+                              }
+                              if (e.key === 'Escape') cancelEditComment();
+                            }}
+                          />
+                          <div className="mt-1 flex items-center gap-1.5">
+                            <Button variant="default" size="sm" className="h-6 px-2 text-xs" onClick={saveEditComment}>
+                              Save
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={cancelEditComment}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="mt-1.5 pl-8 text-sm">{entry.comment.body}</p>
+                      )}
                     </div>
-                    <p className="mt-1.5 pl-8 text-sm">{entry.comment.body}</p>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Comment input */}
               {comments.length > 0 && <Separator />}
@@ -693,13 +797,36 @@ function StoryDetailPanelBody({
               />
             </MetadataRow>
 
-            {/* Assignee (display only) */}
-            <MetadataRow icon={Users} label="Assignee">
-              <span className="text-xs text-muted-foreground">
-                {storyDetail.owners.length > 0
-                  ? storyDetail.owners.map((o) => o.full_name || o.email).join(', ')
-                  : 'Unassigned'}
-              </span>
+            {/* Owner */}
+            <MetadataRow icon={User} label="Owner">
+              <SidebarPopoverSelect
+                value={form.owner_id || '__none__'}
+                options={[
+                  { value: '__none__', label: 'No owner' },
+                  ...members.map((m) => ({ value: m.user_id, label: m.full_name || m.email })),
+                ]}
+                onChange={(v) => {
+                  const val = v === '__none__' ? '' : v;
+                  updateField('owner_id', val, { owner_id: val || undefined });
+                }}
+                renderTrigger={() => <span>{currentOwnerName}</span>}
+              />
+            </MetadataRow>
+
+            {/* Requester */}
+            <MetadataRow icon={User} label="Requester">
+              <SidebarPopoverSelect
+                value={form.requester_id || '__none__'}
+                options={[
+                  { value: '__none__', label: 'No requester' },
+                  ...members.map((m) => ({ value: m.user_id, label: m.full_name || m.email })),
+                ]}
+                onChange={(v) => {
+                  const val = v === '__none__' ? '' : v;
+                  updateField('requester_id', val, { requester_id: val || undefined });
+                }}
+                renderTrigger={() => <span>{currentRequesterName}</span>}
+              />
             </MetadataRow>
 
             {/* Team */}

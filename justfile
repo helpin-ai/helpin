@@ -30,6 +30,9 @@ build-frontend:
     cd frontend && npm install && npm run build
     @echo "✅ frontend built → frontend/dist"
 
+claude:
+    tmux new-session -s claude "claude"
+
 check:
     cd server && go vet ./... && go build ./cmd/api
     @echo "✅ vet + build passed"

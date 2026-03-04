@@ -52,7 +52,7 @@ export function ChecklistItems({ workspaceId, storyId }: ChecklistItemsProps) {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="max-w-sm space-y-2">
       <div className="flex items-center gap-1.5">
         <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Checklist</h3>
