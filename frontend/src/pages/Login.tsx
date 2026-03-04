@@ -30,7 +30,7 @@ export default function Login() {
     const { data: workspaces } = await workspacesService.list();
     setLoading(false);
     if (workspaces && workspaces.length > 0) {
-      navigate({ to: '/w/$slug/dashboard', params: { slug: workspaces[0].slug } });
+      navigate({ to: '/w/$slug/stories', params: { slug: workspaces[0].slug } });
     } else {
       navigate({ to: '/workspaces' });
     }
@@ -54,7 +54,7 @@ export default function Login() {
               <Input id="password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required />
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col gap-4">
+          <CardFooter className="flex flex-col gap-4 mt-4">
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign in'}
             </Button>

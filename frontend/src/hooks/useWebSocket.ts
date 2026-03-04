@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react'
+import { API_BASE } from '@/lib/api'
 
 export interface WSEvent {
   action: 'created' | 'updated' | 'deleted' | 'moved'
@@ -14,8 +15,6 @@ interface UseWebSocketOptions {
   workspaceId: string
   onEvent: (event: WSEvent) => void
 }
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
 
 function getWSUrl(workspaceId: string): string {
   const token = localStorage.getItem('access_token')

@@ -458,6 +458,7 @@ export function CreateStoryModal({
               value={form.deadline}
               onChange={(v) => setForm((prev) => ({ ...prev, deadline: v }))}
               placeholder="Due date"
+              disablePast
               className="h-auto border-border/60 bg-transparent px-2 py-1 text-xs text-muted-foreground shadow-none hover:border-border hover:bg-accent hover:text-foreground"
             />
 

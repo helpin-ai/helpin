@@ -12,9 +12,11 @@ interface DatePickerProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  /** If true, dates before today are disabled */
+  disablePast?: boolean;
 }
 
-export function DatePicker({ value, onChange, placeholder = 'Pick a date', className }: DatePickerProps) {
+export function DatePicker({ value, onChange, placeholder = 'Pick a date', className, disablePast }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
 
   const selected = React.useMemo(() => {
@@ -25,6 +27,12 @@ export function DatePicker({ value, onChange, placeholder = 'Pick a date', class
       return undefined;
     }
   }, [value]);
+
+  const today = React.useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -50,6 +58,7 @@ export function DatePicker({ value, onChange, placeholder = 'Pick a date', class
             setOpen(false);
           }}
           defaultMonth={selected}
+          {...(disablePast ? { disabled: { before: today } } : {})}
         />
       </PopoverContent>
     </Popover>

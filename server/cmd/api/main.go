@@ -214,11 +214,14 @@ func main() {
 	}
 
 	// Start HTTP server with graceful shutdown.
+	// WriteTimeout must be 0 for long-lived WebSocket connections.
+	// ReadTimeout is safe to keep because the topHandler wrapper
+	// routes /api/ws before Chi middleware processes the request.
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
 		Handler:      topHandler,
-		ReadTimeout:  0, // Disabled for long-lived WebSocket connections
-		WriteTimeout: 0, // Disabled for WebSocket; nhooyr.io/websocket manages per-write deadlines
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,
 	}
 

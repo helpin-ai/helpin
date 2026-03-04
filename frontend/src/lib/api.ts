@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 interface ApiResponse<T> {
   data: T | null;
@@ -17,8 +17,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       },
     });
 
-    if (res.status === 401) {
-      // Try refresh
+    if (res.status === 401 && !path.startsWith('/auth/')) {
+      // Try refresh (skip for auth endpoints — a 401 there means bad credentials)
       const refreshed = await tryRefreshToken();
       if (refreshed) {
         // Retry with new token

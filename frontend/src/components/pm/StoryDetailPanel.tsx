@@ -332,36 +332,42 @@ function StoryDetailPanelBody({
   }, [storyDetail]);
 
   // ── Load comments + activity ───────────────────────────────────
-  const reloadCommentsAndActivity = useCallback(async () => {
-    const [commentsRes, activityRes] = await Promise.all([
-      pmCommentService.list(workspaceId, 'story', storyDetail.story.id),
-      pmStoryService.listActivity(workspaceId, storyDetail.story.id, 1, 30),
-    ]);
-    setComments(commentsRes.data ?? []);
-    setActivity(activityRes.data?.data ?? []);
+  const reloadComments = useCallback(async () => {
+    const res = await pmCommentService.list(workspaceId, 'story', storyDetail.story.id);
+    setComments(res.data ?? []);
   }, [workspaceId, storyDetail.story.id]);
 
-  useEffect(() => { reloadCommentsAndActivity(); }, [reloadCommentsAndActivity]);
+  const reloadActivity = useCallback(async () => {
+    const res = await pmStoryService.listActivity(workspaceId, storyDetail.story.id, 1, 30);
+    setActivity(res.data?.data ?? []);
+  }, [workspaceId, storyDetail.story.id]);
 
-  // Re-fetch comments + activity when another client makes changes
+  useEffect(() => {
+    reloadComments();
+    reloadActivity();
+  }, [reloadComments, reloadActivity]);
+
+  // Re-fetch comments when comment events arrive; activity on any story change
   useEffect(() => {
     const storyId = storyDetail.story.id;
-    const handler = (e: Event) => {
+    const onChildEvent = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
-      if (d?.parent_id === storyId && d?.entity === 'comment') reloadCommentsAndActivity();
+      if (d?.parent_id === storyId && d?.entity === 'comment') {
+        reloadComments();
+        reloadActivity();
+      }
     };
-    // Also reload activity on any story update (state changes, field edits, etc.)
-    const storyHandler = (e: Event) => {
+    const onStoryEvent = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
-      if (d?.entity_id === storyId) reloadCommentsAndActivity();
+      if (d?.entity_id === storyId) reloadActivity();
     };
-    window.addEventListener('story-child-updated', handler);
-    window.addEventListener('story-updated', storyHandler);
+    window.addEventListener('story-child-updated', onChildEvent);
+    window.addEventListener('story-updated', onStoryEvent);
     return () => {
-      window.removeEventListener('story-child-updated', handler);
-      window.removeEventListener('story-updated', storyHandler);
+      window.removeEventListener('story-child-updated', onChildEvent);
+      window.removeEventListener('story-updated', onStoryEvent);
     };
-  }, [storyDetail.story.id, reloadCommentsAndActivity]);
+  }, [storyDetail.story.id, reloadComments, reloadActivity]);
 
   // ── Load epics, iterations, labels ─────────────────────────────
   useEffect(() => {
@@ -975,6 +981,7 @@ function StoryDetailPanelBody({
                 value={form.deadline}
                 onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
                 placeholder="None"
+                disablePast
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
