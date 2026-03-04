@@ -159,6 +159,7 @@ export function Sidebar() {
       {
         label: 'Workspace Settings',
         items: [
+          { link: `/w/${wsSlug}/settings/members`, label: 'Members', icon: Users },
           { link: `/w/${wsSlug}/settings/teams`, label: 'Teams', icon: Users },
           { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
           { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },

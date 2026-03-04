@@ -60,6 +60,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 		r.Post("/auth/signin", h.Auth.Signin)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Get("/health", h.Health.Check)
+		r.Get("/invitations/info", h.Invite.GetInfo)
 
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
@@ -134,8 +135,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Put("/drafts/{id}", h.Draft.Update)
 			r.Delete("/drafts/{id}", h.Draft.Delete)
 
-			// Invite (stub)
-			r.Post("/invite", h.Invite.Send)
+			// Invitations
+			r.Post("/invitations", h.Invite.Send)
+			r.Get("/invitations", h.Invite.List)
+			r.Post("/invitations/accept", h.Invite.Accept)
+			r.Post("/invitations/{id}/resend", h.Invite.Resend)
+			r.Delete("/invitations/{id}", h.Invite.Revoke)
 
 			// PM module
 			r.Route("/pm", func(r chi.Router) {

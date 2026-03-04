@@ -219,6 +219,7 @@ func (r *SettingsRepository) CreatePerson(ctx context.Context, req model.CreateP
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		p := &model.WorkspacePerson{
 			WorkspaceID:         req.WorkspaceID,
+			UserID:              req.UserID,
 			Name:                req.Name,
 			Email:               req.Email,
 			Role:                req.Role,

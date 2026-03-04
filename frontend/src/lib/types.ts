@@ -196,6 +196,7 @@ export interface WorkspaceTeam {
 export interface WorkspacePerson {
   id: string;
   workspace_id: string;
+  user_id?: string;
   name: string;
   email: string;
   role: 'executive' | 'manager' | 'employee';
@@ -245,6 +246,29 @@ export interface BonusTierConfig {
   salary_multiplier: number;
   description?: string;
   editable: boolean;
+}
+
+export interface Invitation {
+  id: string;
+  workspace_id: string;
+  email: string;
+  role: string;
+  status: 'pending' | 'accepted' | 'revoked';
+  invited_by: string;
+  expires_at: string;
+  accepted_at?: string;
+  created_at: string;
+  join_url?: string;
+}
+
+export interface InviteInfo {
+  workspace_name: string;
+  workspace_slug: string;
+  email: string;
+  role: string;
+  invited_by_name: string;
+  status: string;
+  expired: boolean;
 }
 
 export interface AuditEntry {

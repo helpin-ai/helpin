@@ -13,6 +13,7 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as JoinTokenRouteImport } from './routes/join/$token'
 import { Route as AuthenticatedWorkspacesRouteImport } from './routes/_authenticated/workspaces'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
@@ -56,6 +57,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JoinTokenRoute = JoinTokenRouteImport.update({
+  id: '/join/$token',
+  path: '/join/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedWorkspacesRoute = AuthenticatedWorkspacesRouteImport.update({
@@ -207,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
+  '/join/$token': typeof JoinTokenRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/w/$slug/bonus': typeof AuthenticatedWSlugBonusRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -237,6 +244,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
+  '/join/$token': typeof JoinTokenRoute
   '/w/$slug/bonus': typeof AuthenticatedWSlugBonusRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsRoute
@@ -268,6 +276,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/workspaces': typeof AuthenticatedWorkspacesRoute
+  '/join/$token': typeof JoinTokenRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/_authenticated/w/$slug/bonus': typeof AuthenticatedWSlugBonusRoute
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -300,6 +309,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/profile'
     | '/workspaces'
+    | '/join/$token'
     | '/w/$slug'
     | '/w/$slug/bonus'
     | '/w/$slug/dashboard'
@@ -330,6 +340,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/profile'
     | '/workspaces'
+    | '/join/$token'
     | '/w/$slug/bonus'
     | '/w/$slug/dashboard'
     | '/w/$slug/docs'
@@ -360,6 +371,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/_authenticated/profile'
     | '/_authenticated/workspaces'
+    | '/join/$token'
     | '/_authenticated/w/$slug'
     | '/_authenticated/w/$slug/bonus'
     | '/_authenticated/w/$slug/dashboard'
@@ -390,6 +402,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
+  JoinTokenRoute: typeof JoinTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -420,6 +433,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/join/$token': {
+      id: '/join/$token'
+      path: '/join/$token'
+      fullPath: '/join/$token'
+      preLoaderRoute: typeof JoinTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/workspaces': {
@@ -680,6 +700,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
+  JoinTokenRoute: JoinTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

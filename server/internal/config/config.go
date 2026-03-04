@@ -18,6 +18,11 @@ type Config struct {
 	AWSBucket          string
 	AWSRegion          string
 	AWSEndpointURL     string // For MinIO / local dev
+
+	// Postmark email (optional — email sending disabled if not set)
+	PostmarkServerToken string
+	PostmarkFromEmail   string
+	AppBaseURL          string
 }
 
 // Load reads configuration from environment variables.
@@ -44,15 +49,23 @@ func Load() (*Config, error) {
 		corsOrigin = "http://localhost:5173"
 	}
 
+	appBaseURL := os.Getenv("APP_BASE_URL")
+	if appBaseURL == "" {
+		appBaseURL = "http://localhost:5173"
+	}
+
 	return &Config{
-		DatabaseURL:        dbURL,
-		JWTSecret:          jwtSecret,
-		Port:               port,
-		CORSOrigin:         corsOrigin,
-		AWSAccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
-		AWSSecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		AWSBucket:          os.Getenv("AWS_S3_BUCKET_NAME"),
-		AWSRegion:          os.Getenv("AWS_REGION"),
-		AWSEndpointURL:     os.Getenv("AWS_S3_ENDPOINT_URL"),
+		DatabaseURL:         dbURL,
+		JWTSecret:           jwtSecret,
+		Port:                port,
+		CORSOrigin:          corsOrigin,
+		AWSAccessKeyID:      os.Getenv("AWS_ACCESS_KEY_ID"),
+		AWSSecretAccessKey:  os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AWSBucket:           os.Getenv("AWS_S3_BUCKET_NAME"),
+		AWSRegion:           os.Getenv("AWS_REGION"),
+		AWSEndpointURL:      os.Getenv("AWS_S3_ENDPOINT_URL"),
+		PostmarkServerToken: os.Getenv("POSTMARK_SERVER_TOKEN"),
+		PostmarkFromEmail:   os.Getenv("POSTMARK_FROM_EMAIL"),
+		AppBaseURL:          appBaseURL,
 	}, nil
 }

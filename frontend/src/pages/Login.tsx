@@ -26,6 +26,14 @@ export default function Login() {
       toast.error(error);
       return;
     }
+    // Check for redirect (e.g. from invitation join page).
+    const redirect = new URLSearchParams(window.location.search).get('redirect');
+    if (redirect && redirect.startsWith('/join/')) {
+      setLoading(false);
+      navigate({ to: redirect as string });
+      return;
+    }
+
     // After login, try to redirect to the user's default workspace.
     const { data: workspaces } = await workspacesService.list();
     setLoading(false);

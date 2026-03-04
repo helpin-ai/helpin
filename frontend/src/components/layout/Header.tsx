@@ -85,6 +85,7 @@ export function Header() {
 
     const settingsSubMap: Record<string, string> = {
       system: "General",
+      members: "Members",
       teams: "Teams",
       people: "People",
       jobroles: "Job Roles",

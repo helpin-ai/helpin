@@ -26,7 +26,12 @@ export default function Register() {
       toast.error(error);
     } else {
       toast.success('Account created successfully');
-      navigate({ to: '/workspaces' });
+      const redirect = new URLSearchParams(window.location.search).get('redirect');
+      if (redirect && redirect.startsWith('/join/')) {
+        navigate({ to: redirect as string });
+      } else {
+        navigate({ to: '/workspaces' });
+      }
     }
   };
 

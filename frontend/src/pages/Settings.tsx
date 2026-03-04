@@ -3,7 +3,9 @@ import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { settingsService } from '@/lib/services/settingsService';
-import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig } from '@/lib/types';
+import { workspacesService } from '@/lib/services/workspacesService';
+import { inviteService } from '@/lib/services/inviteService';
+import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import type { StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
@@ -17,12 +19,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, GitBranch, ListTree, Pencil, Plus, Settings2, Trash2, UserPlus, Users, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, Copy, GitBranch, ListTree, Pencil, Plus, RefreshCw, Settings2, Trash2, UserPlus, Users, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'system';
+export type SettingsSection = 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'system';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon }[] = [
+  {
+    id: 'members',
+    label: 'Members',
+    description: 'Manage workspace members and invitations.',
+    icon: Users,
+  },
   {
     id: 'teams',
     label: 'Teams',
@@ -32,7 +40,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   {
     id: 'people',
     label: 'People',
-    description: 'Manage members, roles, and compensation inputs.',
+    description: 'Edit HR details, job roles, and compensation for workspace members.',
     icon: UserPlus,
   },
   {
@@ -127,6 +135,13 @@ export default function Settings({ section }: { section: SettingsSection }) {
 
   const renderSection = () => {
     switch (section) {
+      case 'members':
+        return (
+          <MembersTab
+            workspaceId={workspaceId}
+            editable={isAdmin()}
+          />
+        );
       case 'teams':
         return (
           <TeamsTab
@@ -200,6 +215,242 @@ export default function Settings({ section }: { section: SettingsSection }) {
       </div>
       {renderSection()}
     </div>
+  );
+}
+
+/* ============ Members Tab ============ */
+
+function MembersTab({ workspaceId, editable }: {
+  workspaceId: string;
+  editable: boolean;
+}) {
+  const [members, setMembers] = useState<MemberWithUser[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invEmail, setInvEmail] = useState('');
+  const [invRole, setInvRole] = useState('member');
+  const [sending, setSending] = useState(false);
+  const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
+
+  const loadData = async () => {
+    setLoading(true);
+    const [membersRes, invitationsRes] = await Promise.all([
+      workspacesService.listMembers(workspaceId),
+      editable ? inviteService.list(workspaceId) : Promise.resolve({ data: null, error: null }),
+    ]);
+    if (membersRes.data) setMembers(membersRes.data);
+    if (invitationsRes.data) setInvitations(invitationsRes.data);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadData(); }, [workspaceId]);
+
+  const openInviteDialog = () => {
+    setCreatedJoinUrl(null);
+    setInvEmail('');
+    setInvRole('member');
+    setInviteOpen(true);
+  };
+
+  const closeInviteDialog = () => {
+    setInviteOpen(false);
+    if (createdJoinUrl) loadData();
+  };
+
+  const handleInvite = async (e: FormEvent) => {
+    e.preventDefault();
+    setSending(true);
+    const { data, error } = await inviteService.send({ workspace_id: workspaceId, email: invEmail, role: invRole });
+    setSending(false);
+    if (error) {
+      toast.error(error);
+    } else {
+      toast.success(`Invitation sent to ${invEmail}`);
+      if (data?.join_url) {
+        setCreatedJoinUrl(data.join_url);
+      } else {
+        setInviteOpen(false);
+        loadData();
+      }
+    }
+  };
+
+  const handleCopyLink = async (joinUrl: string) => {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(joinUrl);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = joinUrl;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      toast.success('Invite link copied to clipboard');
+    } catch {
+      toast.error('Failed to copy link');
+    }
+  };
+
+  const handleResend = async (id: string) => {
+    const { error } = await inviteService.resend(id);
+    if (error) toast.error(error);
+    else { toast.success('Invitation resent'); loadData(); }
+  };
+
+  const handleRevoke = async (id: string) => {
+    const { error } = await inviteService.revoke(id);
+    if (error) toast.error(error);
+    else { toast.success('Invitation revoked'); loadData(); }
+  };
+
+  if (loading) return <Skeleton className="h-96" />;
+
+  return (
+    <Card className={LINEAR_CARD_CLASS}>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base">Members</CardTitle>
+            <CardDescription>{members.length} member{members.length !== 1 ? 's' : ''}</CardDescription>
+          </div>
+          {editable && (
+            <Button size="sm" onClick={openInviteDialog}>
+              <Plus className="h-4 w-4 mr-1" /> Invite Member
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {members.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">No members yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {members.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="font-medium">{m.full_name || '—'}</TableCell>
+                    <TableCell className="text-muted-foreground">{m.email}</TableCell>
+                    <TableCell>
+                      <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* Pending Invitations */}
+        {editable && invitations.filter((inv) => inv.status === 'pending').length > 0 && (
+          <div className="mt-6">
+            <h4 className="text-sm font-medium mb-2">Pending Invitations</h4>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Sent</TableHead>
+                    <TableHead className="w-24">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {invitations.filter((inv) => inv.status === 'pending').map((inv) => (
+                    <TableRow key={inv.id}>
+                      <TableCell className="font-medium">{inv.email}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-xs">{inv.role}</Badge></TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(inv.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {inv.join_url && (
+                            <Button size="icon" variant="ghost" onClick={() => handleCopyLink(inv.join_url!)} title="Copy invite link">
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          <Button size="icon" variant="ghost" onClick={() => handleResend(inv.id)} title="Resend">
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button size="icon" variant="ghost" onClick={() => handleRevoke(inv.id)} title="Revoke">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={inviteOpen} onOpenChange={closeInviteDialog}>
+        <DialogContent>
+          {createdJoinUrl ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Invitation Sent</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <p className="text-sm text-muted-foreground">Share this link with <span className="font-medium text-foreground">{invEmail}</span> to join the workspace.</p>
+                <div className="flex gap-2">
+                  <Input value={createdJoinUrl} readOnly className="bg-muted text-xs" />
+                  <Button type="button" variant="outline" size="icon" onClick={() => handleCopyLink(createdJoinUrl)}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" onClick={closeInviteDialog}>Done</Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <form onSubmit={handleInvite}>
+              <DialogHeader>
+                <DialogTitle>Invite Member</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input type="email" placeholder="colleague@example.com" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={invRole} onValueChange={setInvRole}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="manager">Manager</SelectItem>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="viewer">Viewer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={closeInviteDialog}>Cancel</Button>
+                <Button type="submit" disabled={sending}>{sending ? 'Sending...' : 'Send Invite'}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 
@@ -340,43 +591,26 @@ function PeopleTab({ workspaceId, people, editable, onRefresh }: {
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editPerson, setEditPerson] = useState<WorkspacePerson | null>(null);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
   const [role, setRole] = useState<WorkspacePerson['role']>('employee');
   const [jobRole, setJobRole] = useState('');
   const [salary, setSalary] = useState('0');
   const [saving, setSaving] = useState(false);
 
-  const openCreate = () => {
-    setEditPerson(null);
-    setName(''); setEmail(''); setRole('employee'); setJobRole(''); setSalary('0');
-    setDialogOpen(true);
-  };
-
   const openEdit = (p: WorkspacePerson) => {
     setEditPerson(p);
-    setName(p.name); setEmail(p.email); setRole(p.role); setJobRole(p.job_role); setSalary(String(p.base_salary));
+    setRole(p.role); setJobRole(p.job_role); setSalary(String(p.base_salary));
     setDialogOpen(true);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!editPerson) return;
     setSaving(true);
-    if (editPerson) {
-      const { error } = await settingsService.updatePerson(editPerson.id, {
-        name, email, role, job_role: jobRole, base_salary: Number(salary),
-      });
-      if (error) toast.error(error);
-      else { toast.success('Person updated'); setDialogOpen(false); onRefresh(); }
-    } else {
-      const { error } = await settingsService.createPerson({
-        workspace_id: workspaceId, name, email, role, job_role: jobRole,
-        base_salary: Number(salary), hire_date: new Date().toISOString().split('T')[0],
-        status: 'active', active_for_bonus: true, active_for_evaluation: true, is_account_owner: false,
-      });
-      if (error) toast.error(error);
-      else { toast.success('Person added'); setDialogOpen(false); onRefresh(); }
-    }
+    const { error } = await settingsService.updatePerson(editPerson.id, {
+      role, job_role: jobRole, base_salary: Number(salary),
+    });
+    if (error) toast.error(error);
+    else { toast.success('Person updated'); setDialogOpen(false); onRefresh(); }
     setSaving(false);
   };
 
@@ -389,21 +623,14 @@ function PeopleTab({ workspaceId, people, editable, onRefresh }: {
   return (
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">People</CardTitle>
-            <CardDescription>{people.length} member{people.length !== 1 ? 's' : ''}</CardDescription>
-          </div>
-          {editable && (
-            <Button size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-1" /> Add Person
-            </Button>
-          )}
+        <div>
+          <CardTitle className="text-base">People</CardTitle>
+          <CardDescription>{people.length} member{people.length !== 1 ? 's' : ''} — invite new members from the Members tab</CardDescription>
         </div>
       </CardHeader>
       <CardContent>
         {people.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">No people added yet.</p>
+          <p className="text-sm text-muted-foreground text-center py-6">No people yet. Invite members from the Members tab to get started.</p>
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -423,7 +650,7 @@ function PeopleTab({ workspaceId, people, editable, onRefresh }: {
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell className="text-muted-foreground">{p.email}</TableCell>
                     <TableCell><Badge variant="outline" className="text-xs">{p.role}</Badge></TableCell>
-                    <TableCell>{p.job_role}</TableCell>
+                    <TableCell>{p.job_role || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={p.status === 'active' ? 'default' : 'secondary'} className="text-xs">
                         {p.status}
@@ -453,16 +680,16 @@ function PeopleTab({ workspaceId, people, editable, onRefresh }: {
         <DialogContent>
           <form onSubmit={handleSubmit}>
             <DialogHeader>
-              <DialogTitle>{editPerson ? 'Edit Person' : 'Add Person'}</DialogTitle>
+              <DialogTitle>Edit Person</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Name</Label>
-                <Input value={name} onChange={e => setName(e.target.value)} required />
+                <Input value={editPerson?.name ?? ''} disabled className="bg-muted" />
               </div>
               <div className="space-y-2">
                 <Label>Email</Label>
-                <Input type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+                <Input value={editPerson?.email ?? ''} disabled className="bg-muted" />
               </div>
               <div className="space-y-2">
                 <Label>Role</Label>
@@ -477,7 +704,7 @@ function PeopleTab({ workspaceId, people, editable, onRefresh }: {
               </div>
               <div className="space-y-2">
                 <Label>Job Role</Label>
-                <Input placeholder="e.g. Frontend Developer" value={jobRole} onChange={e => setJobRole(e.target.value)} required />
+                <Input placeholder="e.g. Frontend Developer" value={jobRole} onChange={e => setJobRole(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Base Salary</Label>

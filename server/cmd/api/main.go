@@ -16,6 +16,7 @@ import (
 
 	"github.com/d4interactive/teampulse/server/internal/auth"
 	"github.com/d4interactive/teampulse/server/internal/config"
+	"github.com/d4interactive/teampulse/server/internal/email"
 	"github.com/d4interactive/teampulse/server/internal/handler"
 	"github.com/d4interactive/teampulse/server/internal/model"
 	"github.com/d4interactive/teampulse/server/internal/repository"
@@ -36,7 +37,12 @@ func main() {
 	}
 
 	// Connect to PostgreSQL via GORM.
-	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	// PreferSimpleProtocol avoids pgx prepared-statement cache errors when
+	// AutoMigrate changes table schemas between restarts.
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  cfg.DatabaseURL,
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
@@ -104,10 +110,19 @@ func main() {
 		&model.PMObjectiveLabel{},
 		&model.PMChecklistItem{},
 		&model.PMExternalLink{},
+		&model.WorkspaceInvitation{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
 	log.Println("database migration complete")
+
+	// Initialize email client (nil if not configured).
+	emailClient := email.NewClient(cfg.PostmarkServerToken, cfg.PostmarkFromEmail)
+	if emailClient != nil {
+		log.Println("Postmark email configured")
+	} else {
+		log.Println("Postmark email not configured — invitation emails will be logged only")
+	}
 
 	// Initialize S3 storage client (nil if not configured).
 	s3Client := storage.NewS3Client(cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey, cfg.AWSBucket, cfg.AWSRegion, cfg.AWSEndpointURL)
@@ -147,6 +162,7 @@ func main() {
 	pmKeyResultRepo := repository.NewPMKeyResultRepository(db)
 	pmChecklistItemRepo := repository.NewPMChecklistItemRepository(db)
 	pmExternalLinkRepo := repository.NewPMExternalLinkRepository(db)
+	invitationRepo := repository.NewInvitationRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -170,6 +186,7 @@ func main() {
 	settingsService := service.NewSettingsService(settingsRepo)
 	auditService := service.NewAuditService(bonusRepo)
 	draftService := service.NewDraftService(draftRepo)
+	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL)
 
 	// Initialize handlers.
 	handlers := router.Handlers{
@@ -184,7 +201,7 @@ func main() {
 		Settings:    handler.NewSettingsHandler(settingsService),
 		Audit:       handler.NewAuditHandler(auditService),
 		Draft:       handler.NewDraftHandler(draftService),
-		Invite:      handler.NewInviteHandler(),
+		Invite:      handler.NewInviteHandler(inviteService),
 		PMWorkflow:  handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMLabel:     handler.NewPMLabelHandler(pmLabelService),
 		PMEpic:      handler.NewPMEpicHandler(pmEpicService),

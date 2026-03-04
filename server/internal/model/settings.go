@@ -34,6 +34,7 @@ func (WorkspaceTeam) TableName() string { return "workspace_teams" }
 type WorkspacePerson struct {
 	ID                  string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID         string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	UserID              *string   `json:"user_id" gorm:"type:uuid"`
 	Name                string    `json:"name" gorm:"not null"`
 	Email               string    `json:"email" gorm:"not null"`
 	Role                string    `json:"role" gorm:"not null"`
@@ -148,6 +149,7 @@ type CreatePersonRequest struct {
 	ActiveForEvaluation bool     `json:"active_for_evaluation"`
 	IsAccountOwner      bool     `json:"is_account_owner"`
 	TeamIDs             []string `json:"team_ids"`
+	UserID              *string  `json:"user_id"`
 }
 
 // UpdatePersonRequest is the payload for updating a person.
