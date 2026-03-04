@@ -2,15 +2,9 @@ import { Fragment, useMemo } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   Bell,
-  ChevronDown,
   CircleHelp,
-  Hexagon,
   LogOut,
-  Plus,
-  RefreshCw,
   Search,
-  SquareKanban,
-  Target,
   User,
   Users,
 } from "lucide-react";
@@ -30,7 +24,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useGlobalCreateStore } from "@/stores/globalCreateStore";
 
 type Crumb = {
   label: string;
@@ -44,28 +37,6 @@ export function Header() {
   const { user, signOut } = useAuthStore();
 
   const initials = getInitials(user?.full_name || user?.email);
-
-  const openCreate = useGlobalCreateStore((s) => s.openCreate);
-
-  const createOptions = [
-    { key: 'story' as const, label: 'Story', icon: SquareKanban, pages: ['stories'] },
-    { key: 'epic' as const, label: 'Epic', icon: Hexagon, pages: ['epics'] },
-    { key: 'iteration' as const, label: 'Iteration', icon: RefreshCw, pages: ['iterations'] },
-    { key: 'objective' as const, label: 'Objective', icon: Target, pages: ['objectives'] },
-  ];
-
-  const primaryCreate = useMemo(() => {
-    const segments = location.pathname.split('/').filter(Boolean);
-    // pattern: /w/:slug/pm/:sub
-    if (segments[0] === 'w' && segments[2] === 'pm') {
-      const sub = segments[3];
-      const match = createOptions.find((o) => o.pages.includes(sub));
-      if (match) return match;
-    }
-    return createOptions[0]; // default to Story
-  }, [location.pathname]);
-
-  const secondaryOptions = createOptions.filter((o) => o.key !== primaryCreate.key);
 
   const breadcrumbs = useMemo<Crumb[]>(() => {
     const segments = location.pathname.split("/").filter(Boolean);
@@ -186,31 +157,6 @@ export function Header() {
             })}
           </nav>
         )}
-        <div className="inline-flex items-center">
-          <Button
-            size="sm"
-            className="h-7 rounded-r-none text-xs gap-1.5"
-            onClick={() => openCreate(primaryCreate.key)}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {primaryCreate.label}
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" className="h-7 rounded-l-none border-l border-primary-foreground/20 px-1.5">
-                <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {secondaryOptions.map((opt) => (
-                <DropdownMenuItem key={opt.key} onClick={() => openCreate(opt.key)}>
-                  <opt.icon className="h-4 w-4" />
-                  {opt.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
       </div>
 
       <div className="hidden lg:flex flex-1 max-w-xl items-center">

@@ -5,16 +5,20 @@ import {
   BarChart3,
   Briefcase,
   Calendar,
+  ChevronDown,
   DollarSign,
   FileText,
   FolderKanban,
   GanttChart,
+  Hexagon,
   Layers,
   LayoutDashboard,
   LayoutList,
+  Plus,
   RefreshCw,
   Settings,
   Settings2,
+  SquareKanban,
   Target,
   User,
   UserPlus,
@@ -22,6 +26,14 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useGlobalCreateStore } from '@/stores/globalCreateStore';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Sidebar as ShellSidebar,
   SidebarContent,
@@ -68,6 +80,26 @@ export function Sidebar() {
 
   const wsSlug = currentWorkspace?.slug ?? '';
   const activeRail = deriveActiveRail(location.pathname);
+  const openCreate = useGlobalCreateStore((s) => s.openCreate);
+
+  const createOptions = [
+    { key: 'story' as const, label: 'Story', icon: SquareKanban, pages: ['stories'] },
+    { key: 'epic' as const, label: 'Epic', icon: Hexagon, pages: ['epics'] },
+    { key: 'iteration' as const, label: 'Iteration', icon: RefreshCw, pages: ['iterations'] },
+    { key: 'objective' as const, label: 'Objective', icon: Target, pages: ['objectives'] },
+  ];
+
+  const primaryCreate = useMemo(() => {
+    const segments = location.pathname.split('/').filter(Boolean);
+    if (segments[0] === 'w' && segments[2] === 'pm') {
+      const sub = segments[3];
+      const match = createOptions.find((o) => o.pages.includes(sub));
+      if (match) return match;
+    }
+    return createOptions[0];
+  }, [location.pathname]);
+
+  const secondaryOptions = createOptions.filter((o) => o.key !== primaryCreate.key);
 
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/stories` },
@@ -187,6 +219,34 @@ export function Sidebar() {
           </div>
 
           <div className="min-w-0 flex-1 overflow-y-auto p-2">
+            {activeRail === 'projects' && (
+              <div className="mb-2 flex w-full">
+                <Button
+                  size="sm"
+                  className="h-8 flex-1 rounded-r-none text-xs gap-1.5"
+                  onClick={() => openCreate(primaryCreate.key)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {primaryCreate.label}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" className="h-8 rounded-l-none border-l border-primary-foreground/20 px-1.5">
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {secondaryOptions.map((opt) => (
+                      <DropdownMenuItem key={opt.key} onClick={() => openCreate(opt.key)}>
+                        <opt.icon className="h-4 w-4" />
+                        {opt.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+
             {currentNavGroups.map((group, idx) => (
               <SidebarGroup key={group.label || idx} className="p-0 pb-3">
                 {group.label && (
