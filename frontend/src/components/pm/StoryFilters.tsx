@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { Check, ListFilter, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +44,27 @@ function filterStateToQueryParams(state: FilterState): BoardFilters {
     }
   }
   return params;
+}
+
+// ── Context for shared state between trigger + bar ─────────────────
+
+interface FilterContextValue {
+  filterState: FilterState;
+  definitions: FilterDefinition[];
+  activeKeys: Set<FilterKey>;
+  activeCount: number;
+  handleAdd: (key: FilterKey) => void;
+  handleToggle: (key: FilterKey, value: string) => void;
+  handleRemove: (key: FilterKey) => void;
+  handleClearAll: () => void;
+}
+
+const FilterContext = createContext<FilterContextValue | null>(null);
+
+function useFilterContext() {
+  const ctx = useContext(FilterContext);
+  if (!ctx) throw new Error('useFilterContext must be used within StoryFilterProvider');
+  return ctx;
 }
 
 // ── Sub-components ─────────────────────────────────────────────────
@@ -127,65 +148,18 @@ function FilterPill({
   );
 }
 
-function AddFilterDropdown({
-  definitions,
-  activeKeys,
-  onAdd,
-}: {
-  definitions: FilterDefinition[];
-  activeKeys: Set<FilterKey>;
-  onAdd: (key: FilterKey) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const available = definitions.filter((d) => !activeKeys.has(d.key));
+// ── Provider ───────────────────────────────────────────────────────
 
-  if (available.length === 0) return null;
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground">
-          <ListFilter className="h-3.5 w-3.5" />
-          Filters
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-48 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Filter by..." />
-          <CommandList>
-            <CommandEmpty>No filters.</CommandEmpty>
-            <CommandGroup>
-              {available.map((def) => (
-                <CommandItem
-                  key={def.key}
-                  value={def.label}
-                  onSelect={() => {
-                    onAdd(def.key);
-                    setOpen(false);
-                  }}
-                >
-                  {def.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-// ── Main component ─────────────────────────────────────────────────
-
-interface StoryFiltersProps {
+interface StoryFilterProviderProps {
   members: MemberWithUser[];
   labels: Label[];
   epics: EpicWithStats[];
   iterations: IterationWithStats[];
   onChange: (filters: BoardFilters) => void;
+  children: React.ReactNode;
 }
 
-export function StoryFilters({ members, labels, epics, iterations, onChange }: StoryFiltersProps) {
+export function StoryFilterProvider({ members, labels, epics, iterations, onChange, children }: StoryFilterProviderProps) {
   const [filterState, setFilterState] = useState<FilterState>({});
 
   const definitions = useMemo<FilterDefinition[]>(() => {
@@ -197,18 +171,18 @@ export function StoryFilters({ members, labels, epics, iterations, onChange }: S
       return { value: p, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
     });
 
-    const typeOptions: FilterOption[] = (['feature', 'bug', 'chore'] as StoryType[]).map((t) => {
-      const cfg = STORY_TYPE_CONFIG[t];
-      const Icon = cfg.icon;
-      return { value: t, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
-    });
-
     const severityOptions: FilterOption[] = (
       ['critical', 'major', 'minor', 'none'] as Severity[]
     ).map((s) => {
       const cfg = SEVERITY_CONFIG[s];
       const Icon = cfg.icon;
       return { value: s, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
+    });
+
+    const typeOptions: FilterOption[] = (['feature', 'bug', 'chore'] as StoryType[]).map((t) => {
+      const cfg = STORY_TYPE_CONFIG[t];
+      const Icon = cfg.icon;
+      return { value: t, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
     });
 
     const memberOptions: FilterOption[] = members.map((m) => ({
@@ -311,39 +285,106 @@ export function StoryFilters({ members, labels, epics, iterations, onChange }: S
     emitChange({});
   }, [emitChange]);
 
-  const activeCount = activeKeys.size;
+  const value = useMemo<FilterContextValue>(() => ({
+    filterState,
+    definitions,
+    activeKeys,
+    activeCount: activeKeys.size,
+    handleAdd,
+    handleToggle,
+    handleRemove,
+    handleClearAll,
+  }), [filterState, definitions, activeKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
+
+  return <FilterContext.Provider value={value}>{children}</FilterContext.Provider>;
+}
+
+// ── Trigger button (goes in the header row) ────────────────────────
+
+export function StoryFilterTrigger() {
+  const { definitions, activeKeys, activeCount, handleAdd } = useFilterContext();
+  const [open, setOpen] = useState(false);
+  const available = definitions.filter((d) => !activeKeys.has(d.key));
 
   return (
     <>
-      <AddFilterDropdown definitions={definitions} activeKeys={activeKeys} onAdd={handleAdd} />
-      {activeCount > 0 ? (
-        <Badge variant="secondary" className="rounded-full px-1.5 py-0 text-[10px]">
-          {activeCount}
-        </Badge>
-      ) : null}
-      {activeCount > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5 border-l border-border/70 pl-2 ml-1">
-          {definitions
-            .filter((def) => activeKeys.has(def.key))
-            .map((def) => (
-              <FilterPill
-                key={def.key}
-                definition={def}
-                selected={filterState[def.key] ?? []}
-                onToggle={(value) => handleToggle(def.key, value)}
-                onRemove={() => handleRemove(def.key)}
-              />
-            ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-[10px] text-muted-foreground"
-            onClick={handleClearAll}
-          >
-            Clear all
-          </Button>
-        </div>
-      ) : null}
+      {available.length > 0 ? (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground">
+              <ListFilter className="h-3.5 w-3.5" />
+              Filters
+              {activeCount > 0 ? (
+                <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
+                  {activeCount}
+                </Badge>
+              ) : null}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Filter by..." />
+              <CommandList>
+                <CommandEmpty>No filters.</CommandEmpty>
+                <CommandGroup>
+                  {available.map((def) => (
+                    <CommandItem
+                      key={def.key}
+                      value={def.label}
+                      onSelect={() => {
+                        handleAdd(def.key);
+                        setOpen(false);
+                      }}
+                    >
+                      {def.label}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground" disabled>
+          <ListFilter className="h-3.5 w-3.5" />
+          Filters
+          <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
+            {activeCount}
+          </Badge>
+        </Button>
+      )}
     </>
+  );
+}
+
+// ── Filter bar (renders on its own row below the header) ───────────
+
+export function StoryFilterBar() {
+  const { filterState, definitions, activeKeys, activeCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
+
+  if (activeCount === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-border/70 px-3 py-1.5">
+      {definitions
+        .filter((def) => activeKeys.has(def.key))
+        .map((def) => (
+          <FilterPill
+            key={def.key}
+            definition={def}
+            selected={filterState[def.key] ?? []}
+            onToggle={(value) => handleToggle(def.key, value)}
+            onRemove={() => handleRemove(def.key)}
+          />
+        ))}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-2 text-[10px] text-muted-foreground"
+        onClick={handleClearAll}
+      >
+        Clear all
+      </Button>
+    </div>
   );
 }

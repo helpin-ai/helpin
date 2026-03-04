@@ -27,7 +27,7 @@ import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
 import { StoryDetailPanel } from './StoryDetailPanel';
-import { StoryFilters } from './StoryFilters';
+import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar } from './StoryFilters';
 
 interface KanbanBoardProps {
   workspaceId: string;
@@ -263,6 +263,13 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
   );
 
   return (
+    <StoryFilterProvider
+      members={members}
+      labels={refLabels}
+      epics={refEpics}
+      iterations={refIterations}
+      onChange={setFilters}
+    >
     <div className="flex h-full min-h-0 flex-col gap-3">
       <header className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
         <div className="flex items-center gap-2">
@@ -309,13 +316,7 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
           </Select>
         )}
 
-        <StoryFilters
-          members={members}
-          labels={refLabels}
-          epics={refEpics}
-          iterations={refIterations}
-          onChange={setFilters}
-        />
+        <StoryFilterTrigger />
 
         <div className="ml-auto flex items-center gap-1">
           <Button
@@ -340,6 +341,8 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
         </div>
 
       </header>
+
+      <StoryFilterBar />
 
       {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -419,5 +422,6 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
         }}
       />
     </div>
+    </StoryFilterProvider>
   );
 }
