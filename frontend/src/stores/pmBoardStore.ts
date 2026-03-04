@@ -23,8 +23,10 @@ interface PMBoardState {
   columns: StoryStateColumn[];
   loading: boolean;
   error: string | null;
+  teamId: string | null;
   loadBoard: (workspaceId: string, workflowId?: string) => Promise<void>;
   setWorkflow: (workflowId: string) => Promise<void>;
+  setTeamFilter: (teamId: string | null) => Promise<void>;
   refreshBoard: () => Promise<void>;
   createStory: (payload: CreateStoryRequest) => Promise<Story | null>;
   moveStory: (payload: MovePayload) => Promise<void>;
@@ -53,6 +55,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   columns: [],
   loading: false,
   error: null,
+  teamId: null,
 
   loadBoard: async (workspaceId, workflowId) => {
     set({ loading: true, error: null, workspaceId });
@@ -72,7 +75,8 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       return;
     }
 
-    const boardRes = await pmStoryService.listBoard(workspaceId, selected.workflow.id);
+    const teamId = get().teamId;
+    const boardRes = await pmStoryService.listBoard(workspaceId, selected.workflow.id, teamId || undefined);
     if (boardRes.error || !boardRes.data) {
       set({ loading: false, error: boardRes.error ?? 'Failed to load board', workflows: workflowRes.data, workflow: selected });
       return;
@@ -88,11 +92,26 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     await get().loadBoard(workspaceId, workflowId);
   },
 
-  refreshBoard: async () => {
+  setTeamFilter: async (teamId) => {
+    set({ teamId });
     const workspaceId = get().workspaceId;
     const workflowId = get().workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId);
+    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, teamId || undefined);
+    if (boardRes.error || !boardRes.data) {
+      set({ error: boardRes.error ?? 'Failed to filter board' });
+      return;
+    }
+    const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
+    set({ columns: sorted });
+  },
+
+  refreshBoard: async () => {
+    const workspaceId = get().workspaceId;
+    const workflowId = get().workflow?.workflow.id;
+    const teamId = get().teamId;
+    if (!workspaceId || !workflowId) return;
+    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, teamId || undefined);
     if (boardRes.error || !boardRes.data) {
       set({ error: boardRes.error ?? 'Failed to refresh board' });
       return;

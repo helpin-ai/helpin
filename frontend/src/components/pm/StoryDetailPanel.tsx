@@ -49,6 +49,8 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmIterationService } from '@/lib/services/pmIterationService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { DatePicker } from '@/components/ui/date-picker';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -87,6 +89,7 @@ interface FormState {
   deadline: string;
   epic_id: string;
   iteration_id: string;
+  team_id: string;
   blocked: boolean;
   blocker: string;
 }
@@ -111,6 +114,7 @@ const buildFormState = (story: StoryDetail): FormState => ({
   deadline: story.story.deadline ? story.story.deadline.slice(0, 10) : '',
   epic_id: story.story.epic_id ?? '',
   iteration_id: story.story.iteration_id ?? '',
+  team_id: story.story.team_id ?? '',
   blocked: story.story.blocked,
   blocker: story.story.blocker ?? '',
 });
@@ -278,6 +282,7 @@ function StoryDetailPanelBody({
   const [iterations, setIterations] = useState<IterationWithStats[]>([]);
   const [_labels, _setLabels] = useState<Label[]>([]);
   const [showAllActivity, setShowAllActivity] = useState(false);
+  const { teams } = useWorkspaceTeams(workspaceId);
 
   // ── URL sync ───────────────────────────────────────────────────
   useEffect(() => {
@@ -398,6 +403,11 @@ function StoryDetailPanelBody({
     if (!form.iteration_id) return 'No iteration';
     return iterations.find((i) => i.iteration.id === form.iteration_id)?.iteration.name ?? 'No iteration';
   }, [form.iteration_id, iterations]);
+
+  const currentTeamName = useMemo(() => {
+    if (!form.team_id) return 'No team';
+    return teams.find((t) => t.id === form.team_id)?.name ?? 'No team';
+  }, [form.team_id, teams]);
 
   const storyLabels = storyDetail.labels ?? [];
 
@@ -610,6 +620,22 @@ function StoryDetailPanelBody({
               </span>
             </MetadataRow>
 
+            {/* Team */}
+            <MetadataRow icon={Users} label="Team">
+              <SidebarPopoverSelect
+                value={form.team_id || '__none__'}
+                options={[
+                  { value: '__none__', label: 'No team' },
+                  ...teams.map((t) => ({ value: t.id, label: t.name })),
+                ]}
+                onChange={(v) => {
+                  const val = v === '__none__' ? '' : v;
+                  updateField('team_id', val, { team_id: val || undefined });
+                }}
+                renderTrigger={() => <span>{currentTeamName}</span>}
+              />
+            </MetadataRow>
+
             {/* Severity */}
             <MetadataRow icon={ShieldAlert} label="Severity">
               <SidebarPopoverSelect
@@ -704,28 +730,12 @@ function StoryDetailPanelBody({
 
             {/* Due date */}
             <MetadataRow icon={CalendarDays} label="Due date">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-                  >
-                    {form.deadline || 'None'}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-3" align="start">
-                  <Input
-                    type="date"
-                    className="h-8 text-sm"
-                    value={form.deadline}
-                    onChange={(e) =>
-                      updateField('deadline', e.target.value, {
-                        deadline: e.target.value || undefined,
-                      })
-                    }
-                  />
-                </PopoverContent>
-              </Popover>
+              <DatePicker
+                value={form.deadline}
+                onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
+                placeholder="None"
+                className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
+              />
             </MetadataRow>
 
             {/* Blocked */}

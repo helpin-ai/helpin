@@ -9,8 +9,11 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { pmIterationService } from '@/lib/services/pmIterationService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { DatePicker } from '@/components/ui/date-picker';
 import type { IterationWithStats, Story } from '@/lib/pmTypes';
 
 export function IterationsPage() {
@@ -26,6 +29,8 @@ export function IterationsPage() {
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [teamId, setTeamId] = useState('');
+  const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
 
   const [selectedIteration, setSelectedIteration] = useState<IterationWithStats | null>(null);
   const [selectedStories, setSelectedStories] = useState<Story[]>([]);
@@ -57,6 +62,7 @@ export function IterationsPage() {
       description: description.trim() || undefined,
       start_date: startDate,
       end_date: endDate,
+      team_id: teamId || undefined,
     });
     if (res.error) {
       setError(res.error);
@@ -67,6 +73,7 @@ export function IterationsPage() {
     setDescription('');
     setStartDate('');
     setEndDate('');
+    setTeamId('');
     await loadData();
   };
 
@@ -123,7 +130,14 @@ export function IterationsPage() {
             >
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">{entry.iteration.name}</CardTitle>
-                <p className="text-xs text-muted-foreground">Status: {entry.iteration.status}</p>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Status: {entry.iteration.status}</span>
+                  {findTeamName(entry.iteration.team_id) && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+                      {findTeamName(entry.iteration.team_id)}
+                    </span>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 <Progress value={pct(entry)} />
@@ -157,13 +171,31 @@ export function IterationsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Start date</Label>
-                <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+                <DatePicker value={startDate} onChange={setStartDate} placeholder="Start date" className="w-full" />
               </div>
               <div className="space-y-1.5">
                 <Label>End date</Label>
-                <Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+                <DatePicker value={endDate} onChange={setEndDate} placeholder="End date" className="w-full" />
               </div>
             </div>
+            {teams.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Team</Label>
+                <Select value={teamId || '__none__'} onValueChange={(value) => setTeamId(value === '__none__' ? '' : value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select team" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No team</SelectItem>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancel

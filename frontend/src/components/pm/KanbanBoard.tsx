@@ -19,6 +19,7 @@ import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { CreateStoryRequest, Story, StoryStateColumn } from '@/lib/pmTypes';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { StateTypeIcon } from '@/lib/pmConstants';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
 import { StoryDetailPanel } from './StoryDetailPanel';
@@ -31,9 +32,10 @@ interface ColumnProps {
   column: StoryStateColumn;
   onCreate: (stateId: string) => void;
   onOpen: (story: Story) => void;
+  findTeamName: (teamId: string | undefined) => string | undefined;
 }
 
-function Column({ column, onCreate, onOpen }: ColumnProps) {
+function Column({ column, onCreate, onOpen, findTeamName }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
 
   return (
@@ -68,7 +70,7 @@ function Column({ column, onCreate, onOpen }: ColumnProps) {
           }`}
         >
           {column.stories.map((story) => (
-            <StoryCard key={story.id} story={story} onOpen={onOpen} />
+            <StoryCard key={story.id} story={story} onOpen={onOpen} teamName={findTeamName(story.team_id)} />
           ))}
 
           <Button
@@ -92,12 +94,16 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
     columns,
     loading,
     error,
+    teamId,
     loadBoard,
     setWorkflow,
+    setTeamFilter,
     createStory,
     moveStory,
     refreshBoard,
   } = usePMBoardStore();
+
+  const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
 
   const [activeStory, setActiveStory] = useState<Story | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -254,6 +260,25 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
           </SelectContent>
         </Select>
 
+        {teams.length > 0 && (
+          <Select
+            value={teamId ?? '__all__'}
+            onValueChange={(value) => setTeamFilter(value === '__all__' ? null : value)}
+          >
+            <SelectTrigger className="h-8 w-[180px]">
+              <SelectValue placeholder="All teams" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All teams</SelectItem>
+              {teams.map((team) => (
+                <SelectItem key={team.id} value={team.id}>
+                  {team.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
         <div className="flex items-center gap-1">
           <Button
             variant={viewMode === 'board' ? 'default' : 'outline'}
@@ -307,13 +332,14 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
                     setCreateOpen(true);
                   }}
                   onOpen={openStory}
+                  findTeamName={findTeamName}
                 />
               ))}
             </div>
           </div>
 
           <DragOverlay>
-            {activeStory ? <StoryCard story={activeStory} onOpen={() => {}} isOverlay /> : null}
+            {activeStory ? <StoryCard story={activeStory} onOpen={() => {}} isOverlay teamName={findTeamName(activeStory.team_id)} /> : null}
           </DragOverlay>
         </DndContext>
       ) : null}

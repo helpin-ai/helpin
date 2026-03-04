@@ -69,14 +69,15 @@ func (h *PMStoryHandler) List(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListBoard handles GET /api/pm/stories/board?workflow_id=...
+// ListBoard handles GET /api/pm/stories/board?workflow_id=...&team_id=...
 func (h *PMStoryHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 	workflowID := r.URL.Query().Get("workflow_id")
 	if workflowID == "" {
 		writeError(w, http.StatusBadRequest, "workflow_id is required")
 		return
 	}
-	columns, err := h.storyService.ListByWorkflowState(r.Context(), workflowID)
+	teamID := r.URL.Query().Get("team_id")
+	columns, err := h.storyService.ListByWorkflowState(r.Context(), workflowID, teamID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -34,6 +34,8 @@ import type {
 } from "@/lib/pmTypes";
 import { pmEpicService } from "@/lib/services/pmEpicService";
 import { pmIterationService } from "@/lib/services/pmIterationService";
+import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface CreateStoryModalProps {
   open: boolean;
@@ -55,6 +57,7 @@ const defaultState = {
   estimate: "",
   epic_id: "",
   iteration_id: "",
+  team_id: "",
   deadline: "",
 };
 
@@ -173,6 +176,7 @@ export function CreateStoryModal({
   const [editorExpanded, setEditorExpanded] = useState(false);
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [iterations, setIterations] = useState<IterationWithStats[]>([]);
+  const { teams } = useWorkspaceTeams(workspaceId);
 
   useEffect(() => {
     if (!open) return;
@@ -216,6 +220,11 @@ export function CreateStoryModal({
     );
   }, [form.iteration_id, iterations]);
 
+  const currentTeamName = useMemo(() => {
+    if (!form.team_id) return "Team";
+    return teams.find((t) => t.id === form.team_id)?.name ?? "Team";
+  }, [form.team_id, teams]);
+
   const submit = useCallback(async () => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
@@ -232,6 +241,7 @@ export function CreateStoryModal({
         estimate: form.estimate ? Number(form.estimate) : undefined,
         epic_id: form.epic_id || undefined,
         iteration_id: form.iteration_id || undefined,
+        team_id: form.team_id || undefined,
         deadline: form.deadline || undefined,
       });
 
@@ -378,6 +388,28 @@ export function CreateStoryModal({
               renderOptionIcon={(v) => <StoryTypeIcon storyType={v} className="h-4 w-4 shrink-0" />}
             />
 
+            {teams.length > 0 && (
+              <ChipSelect
+                icon={Users}
+                label="Team"
+                value={form.team_id || "__none__"}
+                options={[
+                  { value: "__none__", label: "No team" },
+                  ...teams.map((t) => ({
+                    value: t.id,
+                    label: t.name,
+                  })),
+                ]}
+                getLabel={() => currentTeamName}
+                onChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    team_id: value === "__none__" ? "" : value,
+                  }))
+                }
+              />
+            )}
+
             <ChipButton icon={Users} label="Assignees" disabled />
 
             <ChipButton icon={Tag} label="Labels" disabled />
@@ -423,32 +455,12 @@ export function CreateStoryModal({
             />
 
             {/* Due date chip */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-transparent px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
-                >
-                  <CalendarDays className="h-3.5 w-3.5 shrink-0" />
-                  <span className="whitespace-nowrap">
-                    {form.deadline || "Due date"}
-                  </span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-3" align="start">
-                <Input
-                  type="date"
-                  className="h-9"
-                  value={form.deadline}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      deadline: event.target.value,
-                    }))
-                  }
-                />
-              </PopoverContent>
-            </Popover>
+            <DatePicker
+              value={form.deadline}
+              onChange={(v) => setForm((prev) => ({ ...prev, deadline: v }))}
+              placeholder="Due date"
+              className="h-auto border-border/60 bg-transparent px-2 py-1 text-xs text-muted-foreground shadow-none hover:border-border hover:bg-accent hover:text-foreground"
+            />
 
             {/* Estimate chip */}
             <Popover>

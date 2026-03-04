@@ -289,8 +289,8 @@ func (r *PMStoryRepository) ReplaceLabels(ctx context.Context, storyID string, l
 	})
 }
 
-// ListByWorkflowState returns board columns grouped by workflow state.
-func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID string) ([]model.StoryStateColumn, error) {
+// ListByWorkflowState returns board columns grouped by workflow state, optionally filtered by team.
+func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID string, teamID string) ([]model.StoryStateColumn, error) {
 	var states []model.PMWorkflowState
 	if err := r.db.WithContext(ctx).
 		Where("workflow_id = ?", workflowID).
@@ -302,8 +302,12 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 	columns := make([]model.StoryStateColumn, 0, len(states))
 	for _, state := range states {
 		var stories []model.PMStory
-		if err := r.db.WithContext(ctx).
-			Where("workflow_state_id = ? AND archived = false", state.ID).
+		query := r.db.WithContext(ctx).
+			Where("workflow_state_id = ? AND archived = false", state.ID)
+		if teamID != "" {
+			query = query.Where("team_id = ?", teamID)
+		}
+		if err := query.
 			Order("position ASC, updated_at DESC").
 			Find(&stories).Error; err != nil {
 			return nil, fmt.Errorf("list stories by state: %w", err)

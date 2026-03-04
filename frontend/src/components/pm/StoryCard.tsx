@@ -17,6 +17,7 @@ interface StoryCardProps {
   story: Story;
   onOpen: (story: Story) => void;
   isOverlay?: boolean;
+  teamName?: string;
 }
 
 const toInitials = (ownerId?: string) => {
@@ -24,7 +25,7 @@ const toInitials = (ownerId?: string) => {
   return ownerId.slice(0, 2).toUpperCase();
 };
 
-export function StoryCard({ story, onOpen, isOverlay = false }: StoryCardProps) {
+export function StoryCard({ story, onOpen, isOverlay = false, teamName }: StoryCardProps) {
   const {
     attributes,
     listeners,
@@ -114,11 +115,18 @@ export function StoryCard({ story, onOpen, isOverlay = false }: StoryCardProps) 
       </div>
 
       <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-        {story.epic_id ? (
-          <span className="truncate max-w-[70%]">Epic {story.epic_id.slice(0, 8)}</span>
-        ) : (
-          <span>No epic</span>
-        )}
+        <div className="flex items-center gap-1.5 min-w-0">
+          {teamName ? (
+            <Badge variant="outline" className="h-4 shrink-0 rounded px-1.5 text-[9px] font-medium">
+              {teamName}
+            </Badge>
+          ) : null}
+          {story.epic_id ? (
+            <span className="truncate max-w-[70%]">Epic {story.epic_id.slice(0, 8)}</span>
+          ) : (
+            <span>No epic</span>
+          )}
+        </div>
         {due ? (
           <span className={cn('inline-flex items-center gap-1', due.overdue && 'text-red-600 font-medium')}>
             <CalendarDays className="h-3 w-3" />
