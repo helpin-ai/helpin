@@ -620,3 +620,33 @@ export interface UpdateKeyResultRequest {
   target_value?: number;
   position?: number;
 }
+
+// ── Views (Spaces) ──────────────────────────────────────────────────
+
+export interface PMView {
+  id: string;
+  workspace_id: string;
+  name: string;
+  filters: Record<string, string>;
+  is_shared: boolean;
+  is_pinned: boolean;
+  position: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateViewRequest {
+  name: string;
+  filters: Record<string, string>;
+  is_shared: boolean;
+  is_pinned: boolean;
+}
+
+export interface UpdateViewRequest {
+  name?: string;
+  filters?: Record<string, string>;
+  is_shared?: boolean;
+  is_pinned?: boolean;
+  position?: number;
+}

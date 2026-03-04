@@ -34,6 +34,7 @@ type Handlers struct {
 	PMObjective      *handler.PMObjectiveHandler
 	PMChecklistItem  *handler.PMChecklistItemHandler
 	PMExternalLink   *handler.PMExternalLinkHandler
+	PMView           *handler.PMViewHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -157,6 +158,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Put("/workflows/{id}/states/{stateId}", h.PMWorkflow.UpdateState)
 				r.Delete("/workflows/{id}/states/{stateId}", h.PMWorkflow.DeleteState)
 				r.Put("/workflows/{id}/states/reorder", h.PMWorkflow.ReorderStates)
+
+				// Views
+				r.Get("/views", h.PMView.List)
+				r.Post("/views", h.PMView.Create)
+				r.Put("/views/{id}", h.PMView.Update)
+				r.Delete("/views/{id}", h.PMView.Delete)
 
 				// Labels
 				r.Get("/labels", h.PMLabel.List)

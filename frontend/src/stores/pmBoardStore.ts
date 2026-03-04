@@ -1,12 +1,15 @@
 import { create } from 'zustand';
 import type {
   CreateStoryRequest,
+  PMView,
   Story,
   StoryStateColumn,
   WorkflowWithStates,
 } from '@/lib/pmTypes';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
+import { pmViewService } from '@/lib/services/pmViewService';
+import { getDefaultViews, isDefaultView } from '@/lib/pmDefaultViews';
 
 export type BoardFilters = Record<string, string | undefined>;
 
@@ -27,6 +30,12 @@ interface PMBoardState {
   error: string | null;
   teamId: string | null;
   filters: BoardFilters;
+
+  // View state
+  views: PMView[];
+  activeViewId: string | null;
+  savedViewFilters: BoardFilters;
+
   loadBoard: (workspaceId: string, workflowId?: string) => Promise<void>;
   setWorkflow: (workflowId: string) => Promise<void>;
   setTeamFilter: (teamId: string | null) => Promise<void>;
@@ -34,6 +43,15 @@ interface PMBoardState {
   refreshBoard: () => Promise<void>;
   createStory: (payload: CreateStoryRequest) => Promise<Story | null>;
   moveStory: (payload: MovePayload) => Promise<void>;
+
+  // View actions
+  loadViews: (workspaceId: string, currentUserId: string) => Promise<void>;
+  applyView: (view: PMView) => void;
+  saveCurrentAsView: (workspaceId: string, name: string, isShared: boolean) => Promise<PMView | null>;
+  saveChangesToView: (workspaceId: string) => Promise<void>;
+  discardChanges: () => void;
+  deleteView: (workspaceId: string, id: string) => Promise<void>;
+  updateView: (workspaceId: string, id: string, payload: Parameters<typeof pmViewService.update>[2]) => Promise<PMView | null>;
 }
 
 const cloneColumns = (columns: StoryStateColumn[]) =>
@@ -67,6 +85,11 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   error: null,
   teamId: null,
   filters: {},
+
+  // View state
+  views: [],
+  activeViewId: null,
+  savedViewFilters: {},
 
   loadBoard: async (workspaceId, workflowId) => {
     set({ loading: true, error: null, workspaceId });
@@ -228,5 +251,113 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
         return { columns };
       });
     }
+  },
+
+  // ── View actions ──────────────────────────────────────────────────
+
+  loadViews: async (workspaceId, currentUserId) => {
+    const defaults = getDefaultViews(currentUserId);
+    const res = await pmViewService.list(workspaceId);
+    const custom = res.data ?? [];
+    set({ views: [...defaults, ...custom] });
+
+    // Apply Everything view if no view is active
+    if (!get().activeViewId) {
+      get().applyView(defaults[0]);
+    }
+  },
+
+  applyView: (view) => {
+    const filters: BoardFilters = { ...view.filters };
+    set({
+      activeViewId: view.id,
+      filters,
+      savedViewFilters: { ...filters },
+    });
+    // Trigger board refresh with new filters
+    const { workspaceId, workflow, teamId } = get();
+    const workflowId = workflow?.workflow.id;
+    if (!workspaceId || !workflowId) return;
+    pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters)).then((boardRes) => {
+      if (boardRes.error || !boardRes.data) {
+        set({ error: boardRes.error ?? 'Failed to apply view' });
+        return;
+      }
+      const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
+      set({ columns: sorted });
+    });
+  },
+
+  saveCurrentAsView: async (workspaceId, name, isShared) => {
+    const { filters } = get();
+    const cleanFilters: Record<string, string> = {};
+    for (const [k, v] of Object.entries(filters)) {
+      if (v) cleanFilters[k] = v;
+    }
+    const res = await pmViewService.create(workspaceId, {
+      name,
+      filters: cleanFilters,
+      is_shared: isShared,
+      is_pinned: false,
+    });
+    if (res.error || !res.data) return null;
+    const newView = res.data;
+    set((state) => ({ views: [...state.views, newView] }));
+    get().applyView(newView);
+    return newView;
+  },
+
+  saveChangesToView: async (workspaceId) => {
+    const { activeViewId, filters, views } = get();
+    if (!activeViewId || isDefaultView(activeViewId)) return;
+    const cleanFilters: Record<string, string> = {};
+    for (const [k, v] of Object.entries(filters)) {
+      if (v) cleanFilters[k] = v;
+    }
+    const res = await pmViewService.update(workspaceId, activeViewId, { filters: cleanFilters });
+    if (res.error || !res.data) return;
+    const updated = res.data;
+    set({
+      views: views.map((v) => (v.id === updated.id ? updated : v)),
+      savedViewFilters: { ...filters },
+    });
+  },
+
+  discardChanges: () => {
+    const { savedViewFilters } = get();
+    set({ filters: { ...savedViewFilters } });
+    // Re-fetch board with saved filters
+    const { workspaceId, workflow, teamId } = get();
+    const workflowId = workflow?.workflow.id;
+    if (!workspaceId || !workflowId) return;
+    pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, savedViewFilters)).then((boardRes) => {
+      if (boardRes.error || !boardRes.data) return;
+      const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
+      set({ columns: sorted });
+    });
+  },
+
+  deleteView: async (workspaceId, id) => {
+    if (isDefaultView(id)) return;
+    const res = await pmViewService.remove(workspaceId, id);
+    if (res.error) return;
+    const { activeViewId, views } = get();
+    const nextViews = views.filter((v) => v.id !== id);
+    set({ views: nextViews });
+    if (activeViewId === id) {
+      const everything = nextViews.find((v) => v.id === '__default_everything__');
+      if (everything) get().applyView(everything);
+    }
+  },
+
+  updateView: async (workspaceId, id, payload) => {
+    if (isDefaultView(id)) return null;
+    const res = await pmViewService.update(workspaceId, id, payload);
+    if (res.error || !res.data) return null;
+    const updated = res.data;
+    set((state) => ({
+      views: state.views.map((v) => (v.id === updated.id ? updated : v)),
+    }));
+    return updated;
   },
 }));

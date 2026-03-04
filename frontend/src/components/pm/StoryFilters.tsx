@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ListFilter, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -156,11 +156,23 @@ interface StoryFilterProviderProps {
   epics: EpicWithStats[];
   iterations: IterationWithStats[];
   onChange: (filters: BoardFilters) => void;
+  externalFilters?: BoardFilters;
   children: React.ReactNode;
 }
 
-export function StoryFilterProvider({ members, labels, epics, iterations, onChange, children }: StoryFilterProviderProps) {
+export function StoryFilterProvider({ members, labels, epics, iterations, onChange, externalFilters, children }: StoryFilterProviderProps) {
   const [filterState, setFilterState] = useState<FilterState>({});
+  const prevExternalRef = useRef(externalFilters);
+
+  useEffect(() => {
+    if (!externalFilters || externalFilters === prevExternalRef.current) return;
+    prevExternalRef.current = externalFilters;
+    const next: FilterState = {};
+    for (const [key, value] of Object.entries(externalFilters)) {
+      if (value) next[key as FilterKey] = value.split(',');
+    }
+    setFilterState(next);
+  }, [externalFilters]);
 
   const definitions = useMemo<FilterDefinition[]>(() => {
     const priorityOptions: FilterOption[] = (

@@ -352,6 +352,12 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		storyQuery = storyQuery.Where("blocked = ?", *filters.Blocked == "true")
 	}
+	if filters.UpdatedAfter != nil && *filters.UpdatedAfter != "" {
+		t, err := time.Parse(time.RFC3339, *filters.UpdatedAfter)
+		if err == nil {
+			storyQuery = storyQuery.Where("pm_stories.updated_at >= ?", t)
+		}
+	}
 	if filters.LabelID != nil && *filters.LabelID != "" {
 		vals := strings.Split(*filters.LabelID, ",")
 		storyQuery = storyQuery.

@@ -96,6 +96,7 @@ type PMStoryFilters struct {
 	Priority        *string
 	Severity        *string
 	Blocked         *string
+	UpdatedAfter    *string
 	Archived        *bool
 }
 

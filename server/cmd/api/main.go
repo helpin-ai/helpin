@@ -110,6 +110,7 @@ func main() {
 		&model.PMObjectiveLabel{},
 		&model.PMChecklistItem{},
 		&model.PMExternalLink{},
+		&model.PMView{},
 		&model.WorkspaceInvitation{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
@@ -162,6 +163,7 @@ func main() {
 	pmKeyResultRepo := repository.NewPMKeyResultRepository(db)
 	pmChecklistItemRepo := repository.NewPMChecklistItemRepository(db)
 	pmExternalLinkRepo := repository.NewPMExternalLinkRepository(db)
+	pmViewRepo := repository.NewPMViewRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 
 	// Initialize services.
@@ -177,6 +179,7 @@ func main() {
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmActivityService, wsPublisher)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, wsPublisher)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
+	pmViewService := service.NewPMViewService(pmViewRepo)
 
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
 	quarterService := service.NewQuarterService(quarterRepo, sprintRepo)
@@ -212,6 +215,7 @@ func main() {
 		PMObjective:      handler.NewPMObjectiveHandler(pmObjectiveService),
 		PMChecklistItem:  handler.NewPMChecklistItemHandler(pmChecklistItemService),
 		PMExternalLink:   handler.NewPMExternalLinkHandler(pmExternalLinkService),
+		PMView:           handler.NewPMViewHandler(pmViewService),
 	}
 
 	// Set up router.

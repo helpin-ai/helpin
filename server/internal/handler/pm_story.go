@@ -86,7 +86,8 @@ func (h *PMStoryHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 		LabelID:     queryStringPtr(r, "label_id"),
 		OwnerID:     queryStringPtr(r, "owner_id"),
 		RequesterID: queryStringPtr(r, "requester_id"),
-		Blocked:     queryStringPtr(r, "blocked"),
+		Blocked:      queryStringPtr(r, "blocked"),
+		UpdatedAfter: queryStringPtr(r, "updated_after"),
 	}
 	columns, err := h.storyService.ListByWorkflowState(r.Context(), workflowID, filters)
 	if err != nil {

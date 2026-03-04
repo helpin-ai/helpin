@@ -24,10 +24,13 @@ import { pmIterationService } from '@/lib/services/pmIterationService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import { useAuthStore } from '@/stores/authStore';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
 import { StoryDetailPanel } from './StoryDetailPanel';
 import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar } from './StoryFilters';
+import { StoryListView } from './StoryListView';
+import { ViewBar } from './ViewBar';
 
 interface KanbanBoardProps {
   workspaceId: string;
@@ -100,6 +103,7 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
     loading,
     error,
     teamId,
+    filters,
     loadBoard,
     setWorkflow,
     setTeamFilter,
@@ -107,8 +111,10 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
     createStory,
     moveStory,
     refreshBoard,
+    loadViews,
   } = usePMBoardStore();
 
+  const currentUser = useAuthStore((s) => s.user);
   const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
   const { members } = useWorkspaceMembers(workspaceId);
 
@@ -135,6 +141,13 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
   useEffect(() => {
     loadBoard(workspaceId);
   }, [workspaceId, loadBoard]);
+
+  // Load views once board and user are ready
+  useEffect(() => {
+    if (currentUser?.id) {
+      loadViews(workspaceId, currentUser.id);
+    }
+  }, [workspaceId, currentUser?.id, loadViews]);
 
   // Refresh board when a story is created via the global modal
   useEffect(() => {
@@ -269,8 +282,12 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
       epics={refEpics}
       iterations={refIterations}
       onChange={setFilters}
+      externalFilters={filters}
     >
     <div className="flex h-full min-h-0 flex-col gap-3">
+      {currentUser && (
+        <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
+      )}
       <header className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold">Stories</h2>
@@ -334,7 +351,6 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
             className="h-7 w-7"
             onClick={() => setViewMode('list')}
             title="List view"
-            disabled
           >
             <LayoutList className="h-4 w-4" />
           </Button>
@@ -387,10 +403,18 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
         </DndContext>
       ) : null}
 
-      {viewMode === 'list' ? (
-        <div className="rounded-md border border-border/70 bg-background/70 p-4 text-sm text-muted-foreground">
-          List view is planned for Phase 2.
-        </div>
+      {!loading && viewMode === 'list' && workflow ? (
+        <StoryListView
+          workspaceId={workspaceId}
+          workflow={workflow}
+          teams={teams}
+          members={members}
+          epics={refEpics}
+          iterations={refIterations}
+          filters={filters}
+          teamId={teamId}
+          onOpenStory={openStory}
+        />
       ) : null}
 
       {workflow ? (
