@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CalendarDays,
   CircleDot,
   GitBranch,
   Hash,

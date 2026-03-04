@@ -119,17 +119,12 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
     loadBoard(workspaceId);
   }, [workspaceId, loadBoard]);
 
-  // Listen for "Create story" button click from the header
+  // Refresh board when a story is created via the global modal
   useEffect(() => {
-    const handler = () => {
-      const firstState = workflow?.states[0]?.id;
-      if (!firstState) return;
-      setCreateStateId(firstState);
-      setCreateOpen(true);
-    };
-    window.addEventListener('add-work-item', handler);
-    return () => window.removeEventListener('add-work-item', handler);
-  }, [workflow]);
+    const handler = () => { refreshBoard(); };
+    window.addEventListener('story-created', handler);
+    return () => window.removeEventListener('story-created', handler);
+  }, [refreshBoard]);
 
   useEffect(() => {
     if (!workflow) return;

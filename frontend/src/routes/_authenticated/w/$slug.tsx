@@ -5,6 +5,7 @@ import { useQuarterStore } from '@/stores/quarterStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
+import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -84,6 +85,7 @@ function WorkspaceLayout() {
             <main className="relative min-h-0 flex-1 overflow-hidden">
               <Outlet />
             </main>
+            <GlobalCreateModals workspaceId={currentWorkspace.id} />
           </SidebarInset>
         </SidebarProvider>
       </div>

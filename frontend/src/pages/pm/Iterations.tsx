@@ -1,19 +1,11 @@
 import { useEffect, useState } from 'react';
 import { format, parseISO } from 'date-fns';
-import { Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { pmIterationService } from '@/lib/services/pmIterationService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { DatePicker } from '@/components/ui/date-picker';
 import type { IterationWithStats, Story } from '@/lib/pmTypes';
 
 export function IterationsPage() {
@@ -24,13 +16,7 @@ export function IterationsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [createOpen, setCreateOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [teamId, setTeamId] = useState('');
-  const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
+  const { findTeamName } = useWorkspaceTeams(workspaceId);
 
   const [selectedIteration, setSelectedIteration] = useState<IterationWithStats | null>(null);
   const [selectedStories, setSelectedStories] = useState<Story[]>([]);
@@ -54,28 +40,13 @@ export function IterationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
-  const createIteration = async () => {
-    if (!workspaceId || !name.trim() || !startDate || !endDate) return;
-    const res = await pmIterationService.create({
-      workspace_id: workspaceId,
-      name: name.trim(),
-      description: description.trim() || undefined,
-      start_date: startDate,
-      end_date: endDate,
-      team_id: teamId || undefined,
-    });
-    if (res.error) {
-      setError(res.error);
-      return;
-    }
-    setCreateOpen(false);
-    setName('');
-    setDescription('');
-    setStartDate('');
-    setEndDate('');
-    setTeamId('');
-    await loadData();
-  };
+  // Refresh when iteration is created via global modal
+  useEffect(() => {
+    const handler = () => { loadData(); };
+    window.addEventListener('iteration-created', handler);
+    return () => window.removeEventListener('iteration-created', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
 
   const openIteration = async (iteration: IterationWithStats) => {
     setSelectedIteration(iteration);
@@ -100,10 +71,6 @@ export function IterationsPage() {
           <h2 className="text-xl font-semibold">Iterations</h2>
           <p className="text-sm text-muted-foreground">Plan cycles and monitor story completion.</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Create Iteration
-        </Button>
       </header>
 
       {error ? (
@@ -117,7 +84,7 @@ export function IterationsPage() {
       ) : iterations.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No iterations yet. Create one to group upcoming work.
+            No iterations yet. Use the Create button in the header to add one.
           </CardContent>
         </Card>
       ) : (
@@ -153,60 +120,6 @@ export function IterationsPage() {
           ))}
         </div>
       )}
-
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Iteration</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>Name</Label>
-              <Input value={name} onChange={(event) => setName(event.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Textarea value={description} onChange={(event) => setDescription(event.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Start date</Label>
-                <DatePicker value={startDate} onChange={setStartDate} placeholder="Start date" className="w-full" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>End date</Label>
-                <DatePicker value={endDate} onChange={setEndDate} placeholder="End date" className="w-full" />
-              </div>
-            </div>
-            {teams.length > 0 && (
-              <div className="space-y-1.5">
-                <Label>Team</Label>
-                <Select value={teamId || '__none__'} onValueChange={(value) => setTeamId(value === '__none__' ? '' : value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select team" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">No team</SelectItem>
-                    {teams.map((team) => (
-                      <SelectItem key={team.id} value={team.id}>
-                        {team.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={createIteration} disabled={!name.trim() || !startDate || !endDate}>
-                Create
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <Sheet open={Boolean(selectedIteration)} onOpenChange={(open) => !open && setSelectedIteration(null)}>
         <SheetContent side="right" className="w-[90vw] sm:max-w-[720px]">

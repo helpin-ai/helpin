@@ -3,9 +3,12 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   Bell,
   CircleHelp,
+  GitBranch,
+  Hexagon,
   LogOut,
   Plus,
   Search,
+  SquareKanban,
   User,
   Users,
 } from "lucide-react";
@@ -24,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useGlobalCreateStore } from "@/stores/globalCreateStore";
 
 type Crumb = {
   label: string;
@@ -45,7 +49,7 @@ export function Header() {
         .slice(0, 2)
     : user?.email?.slice(0, 2).toUpperCase() || "??";
 
-  const isPmStories = location.pathname.includes("/pm/stories");
+  const openCreate = useGlobalCreateStore((s) => s.openCreate);
 
   const breadcrumbs = useMemo<Crumb[]>(() => {
     const segments = location.pathname.split("/").filter(Boolean);
@@ -136,7 +140,7 @@ export function Header() {
     <header className="h-14 border-b border-border/70 bg-background/95 px-3 flex items-center gap-3">
       <div className="flex min-w-0 items-center gap-2">
         <SidebarTrigger className="-ml-1" />
-        {!isPmStories && breadcrumbs.length > 0 && (
+        {breadcrumbs.length > 0 && (
           <nav
             aria-label="Breadcrumb"
             className="hidden min-w-0 items-center gap-1 text-sm md:flex"
@@ -166,18 +170,28 @@ export function Header() {
             })}
           </nav>
         )}
-        {isPmStories && (
-          <Button
-            size="sm"
-            className="h-7 rounded-sm text-xs"
-            onClick={() =>
-              window.dispatchEvent(new CustomEvent("add-work-item"))
-            }
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Create story
-          </Button>
-        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" className="h-7 rounded-sm text-xs">
+              <Plus className="h-3.5 w-3.5" />
+              Create
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => openCreate('story')}>
+              <SquareKanban className="h-4 w-4" />
+              Story
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openCreate('epic')}>
+              <Hexagon className="h-4 w-4" />
+              Epic
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openCreate('iteration')}>
+              <GitBranch className="h-4 w-4" />
+              Iteration
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="hidden lg:flex flex-1 max-w-xl items-center">
