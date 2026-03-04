@@ -101,6 +101,8 @@ func main() {
 		&model.PMObjectiveTeam{},
 		&model.PMObjectiveOwner{},
 		&model.PMObjectiveLabel{},
+		&model.PMChecklistItem{},
+		&model.PMExternalLink{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -137,6 +139,8 @@ func main() {
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 	pmObjectiveRepo := repository.NewPMObjectiveRepository(db)
 	pmKeyResultRepo := repository.NewPMKeyResultRepository(db)
+	pmChecklistItemRepo := repository.NewPMChecklistItemRepository(db)
+	pmExternalLinkRepo := repository.NewPMExternalLinkRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -149,6 +153,8 @@ func main() {
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client)
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmActivityService)
+	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo)
+	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo)
 
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
 	quarterService := service.NewQuarterService(quarterRepo, sprintRepo)
@@ -180,7 +186,9 @@ func main() {
 		PMStory:     handler.NewPMStoryHandler(pmStoryService),
 		PMComment:    handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment: handler.NewPMAttachmentHandler(pmAttachmentService),
-		PMObjective:  handler.NewPMObjectiveHandler(pmObjectiveService),
+		PMObjective:      handler.NewPMObjectiveHandler(pmObjectiveService),
+		PMChecklistItem:  handler.NewPMChecklistItemHandler(pmChecklistItemService),
+		PMExternalLink:   handler.NewPMExternalLinkHandler(pmExternalLinkService),
 	}
 
 	// Set up router.

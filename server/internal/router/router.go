@@ -31,7 +31,9 @@ type Handlers struct {
 	PMStory     *handler.PMStoryHandler
 	PMComment    *handler.PMCommentHandler
 	PMAttachment *handler.PMAttachmentHandler
-	PMObjective  *handler.PMObjectiveHandler
+	PMObjective      *handler.PMObjectiveHandler
+	PMChecklistItem  *handler.PMChecklistItemHandler
+	PMExternalLink   *handler.PMExternalLinkHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -220,6 +222,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Post("/objectives/{id}/key-results", h.PMObjective.CreateKeyResult)
 				r.Put("/key-results/{id}", h.PMObjective.UpdateKeyResult)
 				r.Delete("/key-results/{id}", h.PMObjective.DeleteKeyResult)
+
+				// Checklist items
+				r.Get("/stories/{id}/checklist", h.PMChecklistItem.List)
+				r.Post("/stories/{id}/checklist", h.PMChecklistItem.Create)
+				r.Put("/checklist-items/{id}", h.PMChecklistItem.Update)
+				r.Delete("/checklist-items/{id}", h.PMChecklistItem.Delete)
+
+				// External links
+				r.Get("/stories/{id}/links", h.PMExternalLink.List)
+				r.Post("/stories/{id}/links", h.PMExternalLink.Create)
+				r.Put("/links/{id}", h.PMExternalLink.Update)
+				r.Delete("/links/{id}", h.PMExternalLink.Delete)
 			})
 		})
 	})

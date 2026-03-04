@@ -1,9 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Paperclip, Trash2, Upload } from 'lucide-react';
+import { Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
 import type { AttachmentResponse } from '@/lib/pmTypes';
+
+// File type icons from Plane.so
+import pdfIcon from '@/assets/attachment/pdf-icon.png';
+import csvIcon from '@/assets/attachment/csv-icon.png';
+import excelIcon from '@/assets/attachment/excel-icon.png';
+import docIcon from '@/assets/attachment/doc-icon.png';
+import pngIcon from '@/assets/attachment/png-icon.png';
+import jpgIcon from '@/assets/attachment/jpg-icon.png';
+import svgIcon from '@/assets/attachment/svg-icon.png';
+import txtIcon from '@/assets/attachment/txt-icon.png';
+import zipIcon from '@/assets/attachment/zip-icon.png';
+import rarIcon from '@/assets/attachment/rar-icon.png';
+import htmlIcon from '@/assets/attachment/html-icon.png';
+import cssIcon from '@/assets/attachment/css-icon.png';
+import jsIcon from '@/assets/attachment/js-icon.png';
+import audioIcon from '@/assets/attachment/audio-icon.png';
+import videoIcon from '@/assets/attachment/video-icon.png';
+import defaultIcon from '@/assets/attachment/default-icon.png';
 
 interface AttachmentsProps {
   workspaceId: string;
@@ -19,13 +37,51 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function fileIcon(contentType: string) {
-  if (contentType.startsWith('image/')) return '🖼️';
-  if (contentType === 'application/pdf') return '📄';
-  if (contentType.includes('spreadsheet') || contentType.includes('excel')) return '📊';
-  if (contentType.includes('word') || contentType.includes('document')) return '📝';
-  if (contentType.includes('zip') || contentType.includes('tar') || contentType.includes('gzip')) return '📦';
-  return '📎';
+function getFileExtension(filename: string): string {
+  const parts = filename.split('.');
+  return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+}
+
+function getFileName(filename: string): string {
+  const parts = filename.split('.');
+  if (parts.length > 1) parts.pop();
+  return parts.join('.');
+}
+
+function getFileTypeIcon(extension: string): string {
+  const iconMap: Record<string, string> = {
+    pdf: pdfIcon,
+    csv: csvIcon,
+    xlsx: excelIcon,
+    xls: excelIcon,
+    doc: docIcon,
+    docx: docIcon,
+    png: pngIcon,
+    jpg: jpgIcon,
+    jpeg: jpgIcon,
+    svg: svgIcon,
+    txt: txtIcon,
+    md: txtIcon,
+    zip: zipIcon,
+    gz: zipIcon,
+    tar: zipIcon,
+    rar: rarIcon,
+    html: htmlIcon,
+    css: cssIcon,
+    js: jsIcon,
+    ts: jsIcon,
+    mp3: audioIcon,
+    wav: audioIcon,
+    mp4: videoIcon,
+    mkv: videoIcon,
+    wmv: videoIcon,
+    webm: videoIcon,
+  };
+  return iconMap[extension] || defaultIcon;
+}
+
+function isImageType(contentType: string): boolean {
+  return contentType.startsWith('image/') && !contentType.includes('svg');
 }
 
 export function Attachments({ workspaceId, entityType, entityId }: AttachmentsProps) {
@@ -34,6 +90,7 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load attachments
@@ -58,7 +115,6 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
         setUploading(true);
         setUploadProgress(0);
 
-        // 1. Initiate upload — get presigned URL
         const { data: initData, error: initError } = await pmAttachmentService.initiateUpload(workspaceId, {
           entity_type: entityType,
           entity_id: entityId,
@@ -73,7 +129,6 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
           continue;
         }
 
-        // 2. Upload directly to S3
         const uploadResult = await uploadToS3(initData.url, file, setUploadProgress);
         if (!uploadResult.ok) {
           setError(uploadResult.error);
@@ -81,10 +136,8 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
           continue;
         }
 
-        // 3. Confirm upload
         await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
 
-        // 4. Refresh list to get download URLs
         const { data: refreshed } = await pmAttachmentService.list(workspaceId, entityType, entityId);
         setAttachments(refreshed ?? []);
         setUploading(false);
@@ -102,7 +155,6 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
     setAttachments((prev) => prev.filter((a) => a.attachment.id !== id));
   };
 
-  // Drag-and-drop handlers
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(true);
@@ -114,8 +166,11 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
     if (e.dataTransfer.files.length > 0) handleUpload(e.dataTransfer.files);
   };
 
+  const imageAttachments = attachments.filter(({ attachment }) => isImageType(attachment.content_type));
+  const fileAttachments = attachments.filter(({ attachment }) => !isImageType(attachment.content_type));
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center gap-1.5">
         <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments</h3>
@@ -156,38 +211,105 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
-      {/* File list */}
-      {attachments.length > 0 && (
-        <div className="space-y-1">
-          {attachments.map(({ attachment, url }) => (
-            <div
-              key={attachment.id}
-              className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50 transition-colors"
-            >
-              <span className="text-sm shrink-0">{fileIcon(attachment.content_type)}</span>
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="min-w-0 flex-1 truncate text-xs text-foreground hover:underline"
-                title={attachment.file_name}
+      {/* Image thumbnails grid */}
+      {imageAttachments.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {imageAttachments.map(({ attachment, url }) => (
+            <div key={attachment.id} className="group relative">
+              <button
+                type="button"
+                className="block w-full overflow-hidden rounded-md border border-border/60 cursor-pointer"
+                onClick={() => setPreviewUrl(url)}
               >
-                {attachment.file_name}
-              </a>
-              <span className="shrink-0 text-[11px] text-muted-foreground">{formatFileSize(attachment.file_size)}</span>
+                <img
+                  src={url}
+                  alt={attachment.file_name}
+                  className="aspect-square w-full object-cover transition-transform group-hover:scale-105"
+                  loading="lazy"
+                />
+              </button>
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="icon"
-                className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(attachment.id);
-                }}
+                className="absolute top-1 right-1 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm"
+                onClick={() => handleDelete(attachment.id)}
               >
-                <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                <Trash2 className="h-2.5 w-2.5 text-destructive" />
               </Button>
+              <p className="mt-1 truncate text-[11px] text-muted-foreground" title={attachment.file_name}>
+                {attachment.file_name}
+              </p>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Non-image file list */}
+      {fileAttachments.length > 0 && (
+        <div className="rounded-md border border-border/60">
+          {fileAttachments.map(({ attachment, url }, idx) => {
+            const ext = getFileExtension(attachment.file_name);
+            const name = getFileName(attachment.file_name);
+            return (
+              <div key={attachment.id}>
+                {idx > 0 && <div className="border-t border-border/40" />}
+                <div className="group flex h-11 items-center gap-3 px-3 hover:bg-accent/50 transition-colors">
+                  <img
+                    src={getFileTypeIcon(ext)}
+                    alt={ext}
+                    className="h-5 w-5 shrink-0"
+                  />
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90 hover:underline"
+                    title={attachment.file_name}
+                  >
+                    {name}
+                    {ext && <span className="text-muted-foreground">.{ext}</span>}
+                  </a>
+                  <span className="shrink-0 text-[11px] text-muted-foreground">
+                    {formatFileSize(attachment.file_size)}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleDelete(attachment.id);
+                    }}
+                  >
+                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Image preview lightbox */}
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setPreviewUrl(null)}
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-4 right-4 h-8 w-8 text-white hover:bg-white/20"
+            onClick={() => setPreviewUrl(null)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+          <img
+            src={previewUrl}
+            alt="Preview"
+            className="max-h-[70vh] max-w-[70vw] rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

@@ -4,6 +4,7 @@ import {
   Archive,
   CalendarDays,
   Check,
+  CheckSquare,
   ChevronRight,
   Copy,
   Gauge,
@@ -14,6 +15,7 @@ import {
   Link2,
   Loader2,
   MoreHorizontal,
+  Paperclip,
   Send,
   ShieldAlert,
   Star,
@@ -45,6 +47,10 @@ import {
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
+import { ChecklistItems } from '@/components/pm/ChecklistItems';
+import { ExternalLinks } from '@/components/pm/ExternalLinks';
+import { pmChecklistService } from '@/lib/services/pmChecklistService';
+import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -283,6 +289,8 @@ function StoryDetailPanelBody({
   const [iterations, setIterations] = useState<IterationWithStats[]>([]);
   const [_labels, _setLabels] = useState<Label[]>([]);
   const [showAllActivity, setShowAllActivity] = useState(false);
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [showExternalLinks, setShowExternalLinks] = useState(false);
   const { teams } = useWorkspaceTeams(workspaceId);
 
   // ── URL sync ───────────────────────────────────────────────────
@@ -323,6 +331,18 @@ function StoryDetailPanelBody({
       _setLabels(labelsRes.data ?? []);
     })();
   }, [workspaceId]);
+
+  // ── Auto-show checklist / external links if items exist ────────
+  useEffect(() => {
+    (async () => {
+      const [clRes, elRes] = await Promise.all([
+        pmChecklistService.list(workspaceId, storyDetail.story.id),
+        pmExternalLinkService.list(workspaceId, storyDetail.story.id),
+      ]);
+      if (clRes.data && clRes.data.length > 0) setShowChecklist(true);
+      if (elRes.data && elRes.data.length > 0) setShowExternalLinks(true);
+    })();
+  }, [workspaceId, storyDetail]);
 
   // ── Auto-save debounce ─────────────────────────────────────────
   useEffect(() => {
@@ -475,8 +495,60 @@ function StoryDetailPanelBody({
             />
           </div>
 
+          {/* Action bar — "Add to Story" */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                showChecklist
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-border/60 text-muted-foreground hover:bg-accent'
+              }`}
+              onClick={() => setShowChecklist((v) => !v)}
+            >
+              <CheckSquare className="h-3 w-3" />
+              Checklist
+            </button>
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                showExternalLinks
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-border/60 text-muted-foreground hover:bg-accent'
+              }`}
+              onClick={() => setShowExternalLinks((v) => !v)}
+            >
+              <Link2 className="h-3 w-3" />
+              External Links
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+              onClick={() => {
+                document.getElementById('attachments-section')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+            >
+              <Paperclip className="h-3 w-3" />
+              Attach Files
+            </button>
+          </div>
+
+          {/* Checklist */}
+          {showChecklist && (
+            <div className="mt-6">
+              <ChecklistItems workspaceId={workspaceId} storyId={storyDetail.story.id} />
+            </div>
+          )}
+
+          {/* External Links */}
+          {showExternalLinks && (
+            <div className="mt-6">
+              <ExternalLinks workspaceId={workspaceId} storyId={storyDetail.story.id} />
+            </div>
+          )}
+
           {/* Attachments */}
-          <div className="mt-6">
+          <div className="mt-6" id="attachments-section">
             <Attachments
               workspaceId={workspaceId}
               entityType="story"

@@ -429,6 +429,50 @@ export interface StoryLabelLinkRequest {
   label_id: string;
 }
 
+// ── Checklist Items ─────────────────────────────────────────────────
+
+export interface ChecklistItem {
+  id: string;
+  story_id: string;
+  text: string;
+  completed: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateChecklistItemRequest {
+  text: string;
+  position?: number;
+}
+
+export interface UpdateChecklistItemRequest {
+  text?: string;
+  completed?: boolean;
+  position?: number;
+}
+
+// ── External Links ──────────────────────────────────────────────────
+
+export interface ExternalLink {
+  id: string;
+  story_id: string;
+  title: string;
+  url: string;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateExternalLinkRequest {
+  url: string;
+}
+
+export interface UpdateExternalLinkRequest {
+  url?: string;
+  title?: string;
+}
+
 // ── Attachments ─────────────────────────────────────────────────────
 
 export interface Attachment {
