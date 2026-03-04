@@ -595,12 +595,12 @@ func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, acto
 	return nil
 }
 
-// ListByWorkflowState returns board columns for a workflow, optionally filtered by team.
-func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID string, teamID string) ([]model.StoryStateColumn, error) {
+// ListByWorkflowState returns board columns for a workflow with optional filters.
+func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters) ([]model.StoryStateColumn, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
-	return s.storyRepo.ListByWorkflowState(ctx, workflowID, teamID)
+	return s.storyRepo.ListByWorkflowState(ctx, workflowID, filters)
 }
 
 // CountByState returns state-level story counts for a workflow.

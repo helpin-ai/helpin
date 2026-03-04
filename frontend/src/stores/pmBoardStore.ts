@@ -8,6 +8,8 @@ import type {
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 
+export type BoardFilters = Record<string, string | undefined>;
+
 interface MovePayload {
   workspaceId: string;
   storyId: string;
@@ -24,9 +26,11 @@ interface PMBoardState {
   loading: boolean;
   error: string | null;
   teamId: string | null;
+  filters: BoardFilters;
   loadBoard: (workspaceId: string, workflowId?: string) => Promise<void>;
   setWorkflow: (workflowId: string) => Promise<void>;
   setTeamFilter: (teamId: string | null) => Promise<void>;
+  setFilters: (filters: BoardFilters) => Promise<void>;
   refreshBoard: () => Promise<void>;
   createStory: (payload: CreateStoryRequest) => Promise<Story | null>;
   moveStory: (payload: MovePayload) => Promise<void>;
@@ -48,6 +52,12 @@ const recalcColumn = (column: StoryStateColumn): StoryStateColumn => ({
   point_total: column.stories.reduce((sum, story) => sum + (story.estimate ?? 0), 0),
 });
 
+const buildApiFilters = (teamId: string | null, filters: BoardFilters): Record<string, string | undefined> => {
+  const result: Record<string, string | undefined> = { ...filters };
+  if (teamId) result.team_id = teamId;
+  return result;
+};
+
 export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   workspaceId: null,
   workflows: [],
@@ -56,6 +66,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   loading: false,
   error: null,
   teamId: null,
+  filters: {},
 
   loadBoard: async (workspaceId, workflowId) => {
     set({ loading: true, error: null, workspaceId });
@@ -75,8 +86,8 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       return;
     }
 
-    const teamId = get().teamId;
-    const boardRes = await pmStoryService.listBoard(workspaceId, selected.workflow.id, teamId || undefined);
+    const { teamId, filters } = get();
+    const boardRes = await pmStoryService.listBoard(workspaceId, selected.workflow.id, buildApiFilters(teamId, filters));
     if (boardRes.error || !boardRes.data) {
       set({ loading: false, error: boardRes.error ?? 'Failed to load board', workflows: workflowRes.data, workflow: selected });
       return;
@@ -94,10 +105,24 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
 
   setTeamFilter: async (teamId) => {
     set({ teamId });
-    const workspaceId = get().workspaceId;
-    const workflowId = get().workflow?.workflow.id;
+    const { workspaceId, workflow, filters } = get();
+    const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, teamId || undefined);
+    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters));
+    if (boardRes.error || !boardRes.data) {
+      set({ error: boardRes.error ?? 'Failed to filter board' });
+      return;
+    }
+    const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
+    set({ columns: sorted });
+  },
+
+  setFilters: async (filters) => {
+    set({ filters });
+    const { workspaceId, workflow, teamId } = get();
+    const workflowId = workflow?.workflow.id;
+    if (!workspaceId || !workflowId) return;
+    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters));
     if (boardRes.error || !boardRes.data) {
       set({ error: boardRes.error ?? 'Failed to filter board' });
       return;
@@ -107,11 +132,10 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   },
 
   refreshBoard: async () => {
-    const workspaceId = get().workspaceId;
-    const workflowId = get().workflow?.workflow.id;
-    const teamId = get().teamId;
+    const { workspaceId, workflow, teamId, filters } = get();
+    const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, teamId || undefined);
+    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters));
     if (boardRes.error || !boardRes.data) {
       set({ error: boardRes.error ?? 'Failed to refresh board' });
       return;

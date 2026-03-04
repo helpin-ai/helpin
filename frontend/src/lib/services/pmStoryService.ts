@@ -53,10 +53,21 @@ export const pmStoryService = {
         ...(filters ?? {}),
       })
     ),
-  listBoard: (workspaceId: string, workflowId: string, teamId?: string) =>
-    api.get<StoryStateColumn[]>(
-      `/pm/stories/board?${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}${teamId ? `&team_id=${encodeURIComponent(teamId)}` : ''}`
-    ),
+  listBoard: (
+    workspaceId: string,
+    workflowId: string,
+    filters?: Record<string, string | undefined>
+  ) => {
+    const params = new URLSearchParams();
+    params.set('workspace_id', workspaceId);
+    params.set('workflow_id', workflowId);
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+      });
+    }
+    return api.get<StoryStateColumn[]>(`/pm/stories/board?${params.toString()}`);
+  },
   countByState: (workspaceId: string, workflowId: string) =>
     api.get<StoryStateCount[]>(`/pm/stories/counts?${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
   create: (payload: CreateStoryRequest) =>

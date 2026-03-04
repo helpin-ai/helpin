@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -49,6 +50,15 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 	}
 	if filters.Priority != nil && *filters.Priority != "" {
 		query = query.Where("priority = ?", *filters.Priority)
+	}
+	if filters.RequesterID != nil && *filters.RequesterID != "" {
+		query = query.Where("requester_id = ?", *filters.RequesterID)
+	}
+	if filters.Severity != nil && *filters.Severity != "" {
+		query = query.Where("severity = ?", *filters.Severity)
+	}
+	if filters.Blocked != nil && *filters.Blocked != "" {
+		query = query.Where("blocked = ?", *filters.Blocked == "true")
 	}
 	if filters.Archived != nil {
 		query = query.Where("archived = ?", *filters.Archived)
@@ -289,8 +299,8 @@ func (r *PMStoryRepository) ReplaceLabels(ctx context.Context, storyID string, l
 	})
 }
 
-// ListByWorkflowState returns board columns grouped by workflow state, optionally filtered by team.
-func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID string, teamID string) ([]model.StoryStateColumn, error) {
+// ListByWorkflowState returns board columns grouped by workflow state with optional filters.
+func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters) ([]model.StoryStateColumn, error) {
 	var states []model.PMWorkflowState
 	if err := r.db.WithContext(ctx).
 		Where("workflow_id = ?", workflowID).
@@ -308,8 +318,45 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 	var allStories []model.PMStory
 	storyQuery := r.db.WithContext(ctx).
 		Where("workflow_state_id IN ? AND archived = false", stateIDs)
-	if teamID != "" {
-		storyQuery = storyQuery.Where("team_id = ?", teamID)
+	if filters.TeamID != nil && *filters.TeamID != "" {
+		storyQuery = storyQuery.Where("team_id = ?", *filters.TeamID)
+	}
+	if filters.Priority != nil && *filters.Priority != "" {
+		vals := strings.Split(*filters.Priority, ",")
+		storyQuery = storyQuery.Where("priority IN ?", vals)
+	}
+	if filters.StoryType != nil && *filters.StoryType != "" {
+		vals := strings.Split(*filters.StoryType, ",")
+		storyQuery = storyQuery.Where("story_type IN ?", vals)
+	}
+	if filters.EpicID != nil && *filters.EpicID != "" {
+		vals := strings.Split(*filters.EpicID, ",")
+		storyQuery = storyQuery.Where("epic_id IN ?", vals)
+	}
+	if filters.IterationID != nil && *filters.IterationID != "" {
+		vals := strings.Split(*filters.IterationID, ",")
+		storyQuery = storyQuery.Where("iteration_id IN ?", vals)
+	}
+	if filters.OwnerID != nil && *filters.OwnerID != "" {
+		vals := strings.Split(*filters.OwnerID, ",")
+		storyQuery = storyQuery.Where("owner_id IN ?", vals)
+	}
+	if filters.RequesterID != nil && *filters.RequesterID != "" {
+		vals := strings.Split(*filters.RequesterID, ",")
+		storyQuery = storyQuery.Where("requester_id IN ?", vals)
+	}
+	if filters.Severity != nil && *filters.Severity != "" {
+		vals := strings.Split(*filters.Severity, ",")
+		storyQuery = storyQuery.Where("severity IN ?", vals)
+	}
+	if filters.Blocked != nil && *filters.Blocked != "" {
+		storyQuery = storyQuery.Where("blocked = ?", *filters.Blocked == "true")
+	}
+	if filters.LabelID != nil && *filters.LabelID != "" {
+		vals := strings.Split(*filters.LabelID, ",")
+		storyQuery = storyQuery.
+			Joins("JOIN pm_story_labels psl ON psl.story_id = pm_stories.id").
+			Where("psl.label_id IN ?", vals)
 	}
 	if err := storyQuery.
 		Order("position ASC, updated_at DESC").

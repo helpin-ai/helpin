@@ -16,13 +16,18 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { CreateStoryRequest, Story, StoryStateColumn } from '@/lib/pmTypes';
+import type { CreateStoryRequest, Story, StoryStateColumn, Label, EpicWithStats, IterationWithStats } from '@/lib/pmTypes';
 import { pmStoryService } from '@/lib/services/pmStoryService';
+import { pmLabelService } from '@/lib/services/pmLabelService';
+import { pmEpicService } from '@/lib/services/pmEpicService';
+import { pmIterationService } from '@/lib/services/pmIterationService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
 import { StoryDetailPanel } from './StoryDetailPanel';
+import { StoryFilters } from './StoryFilters';
 
 interface KanbanBoardProps {
   workspaceId: string;
@@ -98,12 +103,24 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
     loadBoard,
     setWorkflow,
     setTeamFilter,
+    setFilters,
     createStory,
     moveStory,
     refreshBoard,
   } = usePMBoardStore();
 
   const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
+  const { members } = useWorkspaceMembers(workspaceId);
+
+  const [refLabels, setRefLabels] = useState<Label[]>([]);
+  const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
+  const [refIterations, setRefIterations] = useState<IterationWithStats[]>([]);
+
+  useEffect(() => {
+    pmLabelService.list(workspaceId).then((r) => { if (r.data) setRefLabels(r.data); });
+    pmEpicService.list(workspaceId).then((r) => { if (r.data) setRefEpics(r.data); });
+    pmIterationService.list(workspaceId).then((r) => { if (r.data) setRefIterations(r.data); });
+  }, [workspaceId]);
 
   const [activeStory, setActiveStory] = useState<Story | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -291,6 +308,14 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
             </SelectContent>
           </Select>
         )}
+
+        <StoryFilters
+          members={members}
+          labels={refLabels}
+          epics={refEpics}
+          iterations={refIterations}
+          onChange={setFilters}
+        />
 
         <div className="ml-auto flex items-center gap-1">
           <Button

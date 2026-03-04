@@ -76,8 +76,19 @@ func (h *PMStoryHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "workflow_id is required")
 		return
 	}
-	teamID := r.URL.Query().Get("team_id")
-	columns, err := h.storyService.ListByWorkflowState(r.Context(), workflowID, teamID)
+	filters := model.PMStoryFilters{
+		TeamID:      queryStringPtr(r, "team_id"),
+		Priority:    queryStringPtr(r, "priority"),
+		Severity:    queryStringPtr(r, "severity"),
+		StoryType:   queryStringPtr(r, "story_type"),
+		EpicID:      queryStringPtr(r, "epic_id"),
+		IterationID: queryStringPtr(r, "iteration_id"),
+		LabelID:     queryStringPtr(r, "label_id"),
+		OwnerID:     queryStringPtr(r, "owner_id"),
+		RequesterID: queryStringPtr(r, "requester_id"),
+		Blocked:     queryStringPtr(r, "blocked"),
+	}
+	columns, err := h.storyService.ListByWorkflowState(r.Context(), workflowID, filters)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

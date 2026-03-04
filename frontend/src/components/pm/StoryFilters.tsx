@@ -1,0 +1,349 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Check, ListFilter, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { PRIORITY_CONFIG, SEVERITY_CONFIG, STORY_TYPE_CONFIG } from '@/lib/pmConstants';
+import type { Priority, Severity, StoryType, Label, EpicWithStats, IterationWithStats } from '@/lib/pmTypes';
+import type { MemberWithUser } from '@/lib/types';
+import type { BoardFilters } from '@/stores/pmBoardStore';
+
+// ── Types ──────────────────────────────────────────────────────────
+
+type FilterKey = 'priority' | 'severity' | 'story_type' | 'owner_id' | 'requester_id' | 'label_id' | 'epic_id' | 'iteration_id' | 'blocked';
+
+type FilterState = Partial<Record<FilterKey, string[]>>;
+
+interface FilterOption {
+  value: string;
+  label: string;
+  icon?: React.ReactNode;
+}
+
+interface FilterDefinition {
+  key: FilterKey;
+  label: string;
+  options: FilterOption[];
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+
+function filterStateToQueryParams(state: FilterState): BoardFilters {
+  const params: BoardFilters = {};
+  for (const [key, values] of Object.entries(state)) {
+    if (values && values.length > 0) {
+      params[key] = values.join(',');
+    }
+  }
+  return params;
+}
+
+// ── Sub-components ─────────────────────────────────────────────────
+
+function FilterValueSelect({
+  definition,
+  selected,
+  onToggle,
+}: {
+  definition: FilterDefinition;
+  selected: string[];
+  onToggle: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedLabels = definition.options
+    .filter((opt) => selected.includes(opt.value))
+    .map((opt) => opt.label);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs hover:bg-accent transition-colors">
+          {selectedLabels.length === 1
+            ? selectedLabels[0]
+            : `${selectedLabels.length} selected`}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-52 p-0" align="start">
+        <Command>
+          <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} />
+          <CommandList>
+            <CommandEmpty>No results.</CommandEmpty>
+            <CommandGroup>
+              {definition.options.map((opt) => {
+                const isSelected = selected.includes(opt.value);
+                return (
+                  <CommandItem
+                    key={opt.value}
+                    value={opt.label}
+                    onSelect={() => onToggle(opt.value)}
+                  >
+                    <div className={`mr-2 flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                      {isSelected ? <Check className="h-3 w-3" /> : null}
+                    </div>
+                    {opt.icon ? <span className="mr-1.5 shrink-0">{opt.icon}</span> : null}
+                    <span className="truncate">{opt.label}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function FilterPill({
+  definition,
+  selected,
+  onToggle,
+  onRemove,
+}: {
+  definition: FilterDefinition;
+  selected: string[];
+  onToggle: (value: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
+      <span className="font-medium text-muted-foreground">{definition.label}</span>
+      <span className="text-muted-foreground/60">is</span>
+      <FilterValueSelect definition={definition} selected={selected} onToggle={onToggle} />
+      <button
+        onClick={onRemove}
+        className="ml-0.5 rounded p-0.5 text-muted-foreground/60 hover:bg-accent hover:text-foreground transition-colors"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+function AddFilterDropdown({
+  definitions,
+  activeKeys,
+  onAdd,
+}: {
+  definitions: FilterDefinition[];
+  activeKeys: Set<FilterKey>;
+  onAdd: (key: FilterKey) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const available = definitions.filter((d) => !activeKeys.has(d.key));
+
+  if (available.length === 0) return null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground">
+          <ListFilter className="h-3.5 w-3.5" />
+          Filters
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-48 p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Filter by..." />
+          <CommandList>
+            <CommandEmpty>No filters.</CommandEmpty>
+            <CommandGroup>
+              {available.map((def) => (
+                <CommandItem
+                  key={def.key}
+                  value={def.label}
+                  onSelect={() => {
+                    onAdd(def.key);
+                    setOpen(false);
+                  }}
+                >
+                  {def.label}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────
+
+interface StoryFiltersProps {
+  members: MemberWithUser[];
+  labels: Label[];
+  epics: EpicWithStats[];
+  iterations: IterationWithStats[];
+  onChange: (filters: BoardFilters) => void;
+}
+
+export function StoryFilters({ members, labels, epics, iterations, onChange }: StoryFiltersProps) {
+  const [filterState, setFilterState] = useState<FilterState>({});
+
+  const definitions = useMemo<FilterDefinition[]>(() => {
+    const priorityOptions: FilterOption[] = (
+      ['urgent', 'high', 'medium', 'low', 'none'] as Priority[]
+    ).map((p) => {
+      const cfg = PRIORITY_CONFIG[p];
+      const Icon = cfg.icon;
+      return { value: p, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
+    });
+
+    const typeOptions: FilterOption[] = (['feature', 'bug', 'chore'] as StoryType[]).map((t) => {
+      const cfg = STORY_TYPE_CONFIG[t];
+      const Icon = cfg.icon;
+      return { value: t, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
+    });
+
+    const severityOptions: FilterOption[] = (
+      ['critical', 'major', 'minor', 'none'] as Severity[]
+    ).map((s) => {
+      const cfg = SEVERITY_CONFIG[s];
+      const Icon = cfg.icon;
+      return { value: s, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
+    });
+
+    const memberOptions: FilterOption[] = members.map((m) => ({
+      value: m.user_id,
+      label: m.full_name || m.email || m.user_id,
+    }));
+
+    const labelOptions: FilterOption[] = labels.map((l) => ({
+      value: l.id,
+      label: l.name,
+      icon: l.color ? (
+        <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+      ) : undefined,
+    }));
+
+    const epicOptions: FilterOption[] = epics.map((e) => ({
+      value: e.epic.id,
+      label: e.epic.name,
+    }));
+
+    const iterationOptions: FilterOption[] = iterations.map((i) => ({
+      value: i.iteration.id,
+      label: i.iteration.name,
+    }));
+
+    const blockedOptions: FilterOption[] = [
+      { value: 'true', label: 'Blocked' },
+      { value: 'false', label: 'Not blocked' },
+    ];
+
+    return [
+      { key: 'priority' as FilterKey, label: 'Priority', options: priorityOptions },
+      { key: 'severity' as FilterKey, label: 'Severity', options: severityOptions },
+      { key: 'story_type' as FilterKey, label: 'Type', options: typeOptions },
+      { key: 'owner_id' as FilterKey, label: 'Owner', options: memberOptions },
+      { key: 'requester_id' as FilterKey, label: 'Requester', options: memberOptions },
+      { key: 'label_id' as FilterKey, label: 'Label', options: labelOptions },
+      { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions },
+      { key: 'iteration_id' as FilterKey, label: 'Iteration', options: iterationOptions },
+      { key: 'blocked' as FilterKey, label: 'Blocked', options: blockedOptions },
+    ];
+  }, [members, labels, epics, iterations]);
+
+  const activeKeys = useMemo(() => {
+    const keys = new Set<FilterKey>();
+    for (const [key, values] of Object.entries(filterState)) {
+      if (values && values.length > 0) keys.add(key as FilterKey);
+    }
+    return keys;
+  }, [filterState]);
+
+  const emitChange = useCallback(
+    (next: FilterState) => {
+      onChange(filterStateToQueryParams(next));
+    },
+    [onChange]
+  );
+
+  const handleAdd = useCallback(
+    (key: FilterKey) => {
+      const def = definitions.find((d) => d.key === key);
+      if (!def || !def.options[0]) return;
+      const next = { ...filterState, [key]: [def.options[0].value] };
+      setFilterState(next);
+      emitChange(next);
+    },
+    [filterState, definitions, emitChange]
+  );
+
+  const handleToggle = useCallback(
+    (key: FilterKey, value: string) => {
+      const current = filterState[key] ?? [];
+      const next = current.includes(value)
+        ? current.filter((v) => v !== value)
+        : [...current, value];
+      if (next.length === 0) {
+        const { [key]: _, ...rest } = filterState;
+        setFilterState(rest);
+        emitChange(rest);
+      } else {
+        const updated = { ...filterState, [key]: next };
+        setFilterState(updated);
+        emitChange(updated);
+      }
+    },
+    [filterState, emitChange]
+  );
+
+  const handleRemove = useCallback(
+    (key: FilterKey) => {
+      const { [key]: _, ...rest } = filterState;
+      setFilterState(rest);
+      emitChange(rest);
+    },
+    [filterState, emitChange]
+  );
+
+  const handleClearAll = useCallback(() => {
+    setFilterState({});
+    emitChange({});
+  }, [emitChange]);
+
+  const activeCount = activeKeys.size;
+
+  return (
+    <>
+      <AddFilterDropdown definitions={definitions} activeKeys={activeKeys} onAdd={handleAdd} />
+      {activeCount > 0 ? (
+        <Badge variant="secondary" className="rounded-full px-1.5 py-0 text-[10px]">
+          {activeCount}
+        </Badge>
+      ) : null}
+      {activeCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5 border-l border-border/70 pl-2 ml-1">
+          {definitions
+            .filter((def) => activeKeys.has(def.key))
+            .map((def) => (
+              <FilterPill
+                key={def.key}
+                definition={def}
+                selected={filterState[def.key] ?? []}
+                onToggle={(value) => handleToggle(def.key, value)}
+                onRemove={() => handleRemove(def.key)}
+              />
+            ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[10px] text-muted-foreground"
+            onClick={handleClearAll}
+          >
+            Clear all
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
+}

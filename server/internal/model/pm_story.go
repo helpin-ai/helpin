@@ -91,8 +91,11 @@ type PMStoryFilters struct {
 	WorkflowStateID *string
 	StoryType       *string
 	OwnerID         *string
+	RequesterID     *string
 	LabelID         *string
 	Priority        *string
+	Severity        *string
+	Blocked         *string
 	Archived        *bool
 }
 
