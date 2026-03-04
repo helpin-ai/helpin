@@ -8,6 +8,7 @@ import (
 
 	"github.com/d4interactive/teampulse/server/internal/model"
 	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/d4interactive/teampulse/server/internal/websocket"
 )
 
 // PMEpicService contains epic business logic.
@@ -15,14 +16,16 @@ type PMEpicService struct {
 	epicRepo        *repository.PMEpicRepository
 	storyRepo       *repository.PMStoryRepository
 	activityService *PMActivityService
+	wsPublisher     *websocket.Publisher
 }
 
 // NewPMEpicService creates a new PMEpicService.
-func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, activityService *PMActivityService) *PMEpicService {
+func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMEpicService {
 	return &PMEpicService{
 		epicRepo:        epicRepo,
 		storyRepo:       storyRepo,
 		activityService: activityService,
+		wsPublisher:     wsPublisher,
 	}
 }
 
@@ -107,6 +110,7 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 		return nil, err
 	}
 	_ = s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
 	return s.epicRepo.GetWithStats(ctx, epic.ID)
 }
@@ -179,6 +183,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		return nil, err
 	}
 	_ = s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 	return s.epicRepo.GetWithStats(ctx, epic.ID)
 }
 
@@ -195,6 +200,7 @@ func (s *PMEpicService) Delete(ctx context.Context, id string, actorID string) e
 		return err
 	}
 	_ = s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", id, optionalActor(actorID), "archived", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "epic", EntityID: id, WorkspaceID: epic.Epic.WorkspaceID, ActorID: actorID})
 	return nil
 }
 

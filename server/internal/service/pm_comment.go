@@ -8,6 +8,7 @@ import (
 
 	"github.com/d4interactive/teampulse/server/internal/model"
 	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/d4interactive/teampulse/server/internal/websocket"
 )
 
 var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9._-]+)`)
@@ -17,14 +18,16 @@ type PMCommentService struct {
 	commentRepo     *repository.PMCommentRepository
 	storyRepo       *repository.PMStoryRepository
 	activityService *PMActivityService
+	wsPublisher     *websocket.Publisher
 }
 
 // NewPMCommentService creates a new PMCommentService.
-func NewPMCommentService(commentRepo *repository.PMCommentRepository, storyRepo *repository.PMStoryRepository, activityService *PMActivityService) *PMCommentService {
+func NewPMCommentService(commentRepo *repository.PMCommentRepository, storyRepo *repository.PMStoryRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMCommentService {
 	return &PMCommentService{
 		commentRepo:     commentRepo,
 		storyRepo:       storyRepo,
 		activityService: activityService,
+		wsPublisher:     wsPublisher,
 	}
 }
 
@@ -67,6 +70,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		metadata["mentions"] = mentions
 	}
 	_ = s.activityService.Log(ctx, workspaceID, req.EntityType, req.EntityID, optionalActor(authorID), "comment_added", nil, nil, nil, metadata)
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "comment", EntityID: comment.ID, WorkspaceID: workspaceID, ActorID: authorID, ParentType: req.EntityType, ParentID: req.EntityID})
 
 	comments, err := s.commentRepo.List(ctx, req.EntityType, req.EntityID)
 	if err != nil {
@@ -103,6 +107,7 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 	}
 
 	_ = s.activityService.Log(ctx, workspaceID, comment.EntityType, comment.EntityID, optionalActor(actorID), "comment_updated", stringPtr("body"), &oldValue, &comment.Body, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "comment", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: comment.EntityType, ParentID: comment.EntityID})
 	return comment, nil
 }
 
@@ -123,6 +128,7 @@ func (s *PMCommentService) Delete(ctx context.Context, id string, actorID string
 	}
 
 	_ = s.activityService.Log(ctx, workspaceID, comment.EntityType, comment.EntityID, optionalActor(actorID), "comment_deleted", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "comment", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: comment.EntityType, ParentID: comment.EntityID})
 	return nil
 }
 

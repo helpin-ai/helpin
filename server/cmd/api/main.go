@@ -22,6 +22,7 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/router"
 	"github.com/d4interactive/teampulse/server/internal/service"
 	"github.com/d4interactive/teampulse/server/internal/storage"
+	ws "github.com/d4interactive/teampulse/server/internal/websocket"
 )
 
 func main() {
@@ -119,6 +120,11 @@ func main() {
 	// Initialize JWT manager.
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
 
+	// Initialize WebSocket hub and publisher.
+	wsHub := ws.NewHub()
+	wsPublisher := ws.NewPublisher(wsHub)
+	wsHandler := ws.NewHandler(wsHub, jwtManager)
+
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -147,14 +153,14 @@ func main() {
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
-	pmStoryService := service.NewPMStoryService(pmStoryRepo, pmWorkflowRepo, pmActivityService)
-	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmActivityService)
-	pmIterationService := service.NewPMIterationService(pmIterationRepo, pmActivityService)
-	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService)
-	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client)
-	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmActivityService)
-	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo)
-	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo)
+	pmStoryService := service.NewPMStoryService(pmStoryRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
+	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmActivityService, wsPublisher)
+	pmIterationService := service.NewPMIterationService(pmIterationRepo, pmActivityService, wsPublisher)
+	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher)
+	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
+	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmActivityService, wsPublisher)
+	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, wsPublisher)
+	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
 	quarterService := service.NewQuarterService(quarterRepo, sprintRepo)
@@ -194,12 +200,25 @@ func main() {
 	// Set up router.
 	r := router.New(handlers, jwtManager, cfg.CORSOrigin)
 
+	// Wrap router so /api/ws bypasses Chi middleware (Recoverer strips
+	// http.Hijacker which WebSocket upgrade requires).
+	var topHandler http.Handler = r
+	if wsHandler != nil {
+		topHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == "/api/ws" {
+				wsHandler.ServeHTTP(w, req)
+				return
+			}
+			r.ServeHTTP(w, req)
+		})
+	}
+
 	// Start HTTP server with graceful shutdown.
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Handler:      topHandler,
+		ReadTimeout:  0, // Disabled for long-lived WebSocket connections
+		WriteTimeout: 0, // Disabled for WebSocket; nhooyr.io/websocket manages per-write deadlines
 		IdleTimeout:  60 * time.Second,
 	}
 

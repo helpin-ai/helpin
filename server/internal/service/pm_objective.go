@@ -8,6 +8,7 @@ import (
 
 	"github.com/d4interactive/teampulse/server/internal/model"
 	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/d4interactive/teampulse/server/internal/websocket"
 )
 
 // PMObjectiveService contains objective business logic.
@@ -15,6 +16,7 @@ type PMObjectiveService struct {
 	objectiveRepo *repository.PMObjectiveRepository
 	krRepo        *repository.PMKeyResultRepository
 	activitySvc   *PMActivityService
+	wsPublisher   *websocket.Publisher
 }
 
 // NewPMObjectiveService creates a new PMObjectiveService.
@@ -22,11 +24,13 @@ func NewPMObjectiveService(
 	objectiveRepo *repository.PMObjectiveRepository,
 	krRepo *repository.PMKeyResultRepository,
 	activitySvc *PMActivityService,
+	wsPublisher *websocket.Publisher,
 ) *PMObjectiveService {
 	return &PMObjectiveService{
 		objectiveRepo: objectiveRepo,
 		krRepo:        krRepo,
 		activitySvc:   activitySvc,
+		wsPublisher:   wsPublisher,
 	}
 }
 
@@ -130,6 +134,7 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 	}
 
 	_ = s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 	return s.objectiveRepo.GetByID(ctx, obj.ID)
 }
 
@@ -205,6 +210,7 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 	}
 
 	_ = s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 	return s.objectiveRepo.GetByID(ctx, obj.ID)
 }
 
@@ -221,6 +227,7 @@ func (s *PMObjectiveService) Delete(ctx context.Context, id string, actorID stri
 		return err
 	}
 	_ = s.activitySvc.Log(ctx, obj.Objective.WorkspaceID, "objective", id, optionalActor(actorID), "archived", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "objective", EntityID: id, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
@@ -233,12 +240,27 @@ func (s *PMObjectiveService) AddTeam(ctx context.Context, objectiveID, teamID, a
 	if obj == nil {
 		return fmt.Errorf("objective not found")
 	}
-	return s.objectiveRepo.AddTeam(ctx, objectiveID, teamID)
+	if err := s.objectiveRepo.AddTeam(ctx, objectiveID, teamID); err != nil {
+		return err
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
+	return nil
 }
 
 // RemoveTeam unlinks a team from an objective.
 func (s *PMObjectiveService) RemoveTeam(ctx context.Context, objectiveID, teamID, actorID string) error {
-	return s.objectiveRepo.RemoveTeam(ctx, objectiveID, teamID)
+	obj, err := s.objectiveRepo.GetByID(ctx, objectiveID)
+	if err != nil {
+		return err
+	}
+	if obj == nil {
+		return fmt.Errorf("objective not found")
+	}
+	if err := s.objectiveRepo.RemoveTeam(ctx, objectiveID, teamID); err != nil {
+		return err
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
+	return nil
 }
 
 // AddOwner links an owner to an objective.
@@ -250,12 +272,27 @@ func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, userID, 
 	if obj == nil {
 		return fmt.Errorf("objective not found")
 	}
-	return s.objectiveRepo.AddOwner(ctx, objectiveID, userID)
+	if err := s.objectiveRepo.AddOwner(ctx, objectiveID, userID); err != nil {
+		return err
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
+	return nil
 }
 
 // RemoveOwner unlinks an owner from an objective.
 func (s *PMObjectiveService) RemoveOwner(ctx context.Context, objectiveID, userID, actorID string) error {
-	return s.objectiveRepo.RemoveOwner(ctx, objectiveID, userID)
+	obj, err := s.objectiveRepo.GetByID(ctx, objectiveID)
+	if err != nil {
+		return err
+	}
+	if obj == nil {
+		return fmt.Errorf("objective not found")
+	}
+	if err := s.objectiveRepo.RemoveOwner(ctx, objectiveID, userID); err != nil {
+		return err
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
+	return nil
 }
 
 // AddEpic links an epic to an objective.
@@ -267,12 +304,27 @@ func (s *PMObjectiveService) AddEpic(ctx context.Context, objectiveID, epicID, a
 	if obj == nil {
 		return fmt.Errorf("objective not found")
 	}
-	return s.objectiveRepo.AddEpic(ctx, objectiveID, epicID)
+	if err := s.objectiveRepo.AddEpic(ctx, objectiveID, epicID); err != nil {
+		return err
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
+	return nil
 }
 
 // RemoveEpic unlinks an epic from an objective.
 func (s *PMObjectiveService) RemoveEpic(ctx context.Context, objectiveID, epicID, actorID string) error {
-	return s.objectiveRepo.RemoveEpic(ctx, objectiveID, epicID)
+	obj, err := s.objectiveRepo.GetByID(ctx, objectiveID)
+	if err != nil {
+		return err
+	}
+	if obj == nil {
+		return fmt.Errorf("objective not found")
+	}
+	if err := s.objectiveRepo.RemoveEpic(ctx, objectiveID, epicID); err != nil {
+		return err
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
+	return nil
 }
 
 // ── Key Results ────────────────────────────────────────────────────
@@ -316,6 +368,7 @@ func (s *PMObjectiveService) CreateKeyResult(ctx context.Context, objectiveID st
 	}
 
 	_ = s.activitySvc.Log(ctx, obj.Objective.WorkspaceID, "objective", objectiveID, optionalActor(actorID), "key_result_created", nil, nil, &kr.Name, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "key_result", EntityID: kr.ID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID, ParentType: "objective", ParentID: objectiveID})
 	return kr, nil
 }
 
@@ -359,6 +412,9 @@ func (s *PMObjectiveService) UpdateKeyResult(ctx context.Context, id string, req
 	if err := s.krRepo.Update(ctx, kr); err != nil {
 		return nil, err
 	}
+	if obj, _ := s.objectiveRepo.GetByID(ctx, kr.ObjectiveID); obj != nil {
+		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "key_result", EntityID: id, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID, ParentType: "objective", ParentID: kr.ObjectiveID})
+	}
 	return kr, nil
 }
 
@@ -371,7 +427,13 @@ func (s *PMObjectiveService) DeleteKeyResult(ctx context.Context, id string, act
 	if kr == nil {
 		return fmt.Errorf("key result not found")
 	}
-	return s.krRepo.Delete(ctx, id)
+	if err := s.krRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	if obj, _ := s.objectiveRepo.GetByID(ctx, kr.ObjectiveID); obj != nil {
+		s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "key_result", EntityID: id, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID, ParentType: "objective", ParentID: kr.ObjectiveID})
+	}
+	return nil
 }
 
 // ── Helpers ────────────────────────────────────────────────────────

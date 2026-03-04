@@ -8,6 +8,7 @@ import (
 
 	"github.com/d4interactive/teampulse/server/internal/model"
 	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/d4interactive/teampulse/server/internal/websocket"
 )
 
 // PMStoryService contains story business logic.
@@ -15,14 +16,16 @@ type PMStoryService struct {
 	storyRepo       *repository.PMStoryRepository
 	workflowRepo    *repository.PMWorkflowRepository
 	activityService *PMActivityService
+	wsPublisher     *websocket.Publisher
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *repository.PMWorkflowRepository, activityService *PMActivityService) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *repository.PMWorkflowRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMStoryService {
 	return &PMStoryService{
 		storyRepo:       storyRepo,
 		workflowRepo:    workflowRepo,
 		activityService: activityService,
+		wsPublisher:     wsPublisher,
 	}
 }
 
@@ -206,6 +209,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		createdAction = "created this story in " + st.Name
 	}
 	_ = s.activityService.Log(ctx, story.WorkspaceID, "story", story.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "story", EntityID: story.ID, WorkspaceID: story.WorkspaceID, ActorID: actorID})
 	return s.storyRepo.GetByID(ctx, story.ID)
 }
 
@@ -399,6 +403,7 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	if req.Archived != nil && *req.Archived {
 		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil)
 	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
@@ -415,6 +420,7 @@ func (s *PMStoryService) Delete(ctx context.Context, id, actorID string) error {
 		return err
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "story", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
@@ -454,6 +460,7 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	}
 	action := "moved this story to " + newStateName
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "moved", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
@@ -473,6 +480,7 @@ func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.Reord
 		return err
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "reordered", stringPtr("position"), nil, nil, map[string]interface{}{"position": req.Position})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
@@ -495,6 +503,7 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 		return err
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &userID, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
@@ -511,6 +520,7 @@ func (s *PMStoryService) RemoveOwner(ctx context.Context, storyID, userID, actor
 		return err
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "owner_removed", stringPtr("owner"), &userID, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
@@ -530,6 +540,7 @@ func (s *PMStoryService) AddFollower(ctx context.Context, storyID, userID, actor
 		return err
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "follower_added", stringPtr("follower"), nil, &userID, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
@@ -546,6 +557,7 @@ func (s *PMStoryService) RemoveFollower(ctx context.Context, storyID, userID, ac
 		return err
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "follower_removed", stringPtr("follower"), &userID, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
@@ -562,6 +574,7 @@ func (s *PMStoryService) AddLabel(ctx context.Context, storyID, labelID, actorID
 		return err
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
@@ -578,6 +591,7 @@ func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, acto
 		return err
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
 

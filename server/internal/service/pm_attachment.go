@@ -8,6 +8,7 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/model"
 	"github.com/d4interactive/teampulse/server/internal/repository"
 	"github.com/d4interactive/teampulse/server/internal/storage"
+	"github.com/d4interactive/teampulse/server/internal/websocket"
 )
 
 const maxFileSize = 10 * 1024 * 1024 // 10 MB
@@ -38,13 +39,15 @@ var allowedEntityTypes = map[string]bool{
 type PMAttachmentService struct {
 	attachmentRepo *repository.PMAttachmentRepository
 	s3Client       *storage.S3Client
+	wsPublisher    *websocket.Publisher
 }
 
 // NewPMAttachmentService creates a new PMAttachmentService.
-func NewPMAttachmentService(attachmentRepo *repository.PMAttachmentRepository, s3Client *storage.S3Client) *PMAttachmentService {
+func NewPMAttachmentService(attachmentRepo *repository.PMAttachmentRepository, s3Client *storage.S3Client, wsPublisher *websocket.Publisher) *PMAttachmentService {
 	return &PMAttachmentService{
 		attachmentRepo: attachmentRepo,
 		s3Client:       s3Client,
+		wsPublisher:    wsPublisher,
 	}
 }
 
@@ -118,7 +121,11 @@ func (s *PMAttachmentService) ConfirmUpload(ctx context.Context, id string) erro
 	if attachment.IsUploaded {
 		return nil // Already confirmed, idempotent
 	}
-	return s.attachmentRepo.ConfirmUpload(ctx, id)
+	if err := s.attachmentRepo.ConfirmUpload(ctx, id); err != nil {
+		return err
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "attachment", EntityID: id, WorkspaceID: attachment.WorkspaceID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
+	return nil
 }
 
 // List returns uploaded attachments for an entity with presigned GET URLs.
@@ -163,5 +170,9 @@ func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string) err
 		_ = s.s3Client.DeleteObject(ctx, attachment.StorageKey)
 	}
 
-	return s.attachmentRepo.Delete(ctx, id)
+	if err := s.attachmentRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "attachment", EntityID: id, WorkspaceID: attachment.WorkspaceID, ActorID: userID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
+	return nil
 }

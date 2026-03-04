@@ -3,6 +3,7 @@ import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useQuarterStore } from '@/stores/quarterStore'
 import { useSessionStore } from '@/stores/sessionStore'
+import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
@@ -17,6 +18,8 @@ function WorkspaceLayout() {
   const { slug } = Route.useParams()
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
   const [loading, setLoading] = useState(true)
+
+  useRealtimeSync(currentWorkspace?.id ?? '')
 
   useEffect(() => {
     if (!slug) return

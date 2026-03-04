@@ -8,17 +8,19 @@ import (
 
 	"github.com/d4interactive/teampulse/server/internal/model"
 	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/d4interactive/teampulse/server/internal/websocket"
 )
 
 // PMIterationService contains iteration business logic.
 type PMIterationService struct {
 	iterationRepo   *repository.PMIterationRepository
 	activityService *PMActivityService
+	wsPublisher     *websocket.Publisher
 }
 
 // NewPMIterationService creates a new PMIterationService.
-func NewPMIterationService(iterationRepo *repository.PMIterationRepository, activityService *PMActivityService) *PMIterationService {
-	return &PMIterationService{iterationRepo: iterationRepo, activityService: activityService}
+func NewPMIterationService(iterationRepo *repository.PMIterationRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMIterationService {
+	return &PMIterationService{iterationRepo: iterationRepo, activityService: activityService, wsPublisher: wsPublisher}
 }
 
 // List returns iterations with filters.
@@ -93,6 +95,7 @@ func (s *PMIterationService) Create(ctx context.Context, req model.CreateIterati
 	}
 
 	_ = s.activityService.Log(ctx, iteration.WorkspaceID, "iteration", iteration.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "iteration", EntityID: iteration.ID, WorkspaceID: iteration.WorkspaceID, ActorID: actorID})
 	return s.iterationRepo.GetWithStats(ctx, iteration.ID)
 }
 
@@ -152,6 +155,7 @@ func (s *PMIterationService) Update(ctx context.Context, id string, req model.Up
 	}
 
 	_ = s.activityService.Log(ctx, iteration.WorkspaceID, "iteration", iteration.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "iteration", EntityID: iteration.ID, WorkspaceID: iteration.WorkspaceID, ActorID: actorID})
 	return s.iterationRepo.GetWithStats(ctx, iteration.ID)
 }
 
@@ -168,6 +172,7 @@ func (s *PMIterationService) Delete(ctx context.Context, id string, actorID stri
 		return err
 	}
 	_ = s.activityService.Log(ctx, current.Iteration.WorkspaceID, "iteration", id, optionalActor(actorID), "deleted", nil, nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "iteration", EntityID: id, WorkspaceID: current.Iteration.WorkspaceID, ActorID: actorID})
 	return nil
 }
 
