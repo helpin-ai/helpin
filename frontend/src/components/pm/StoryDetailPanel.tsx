@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
   Archive,
@@ -287,6 +287,18 @@ function StoryDetailPanelBody({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+
+  // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
+  const lastSyncedAt = useRef(storyDetail.story.updated_at);
+  useEffect(() => {
+    if (storyDetail.story.updated_at !== lastSyncedAt.current) {
+      lastSyncedAt.current = storyDetail.story.updated_at;
+      // Only reset form if no unsaved edits
+      if (Object.keys(pendingPatch).length === 0 && !saving) {
+        setForm(buildFormState(storyDetail));
+      }
+    }
+  }, [storyDetail, pendingPatch, saving]);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [newComment, setNewComment] = useState('');
