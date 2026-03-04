@@ -21,6 +21,7 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/repository"
 	"github.com/d4interactive/teampulse/server/internal/router"
 	"github.com/d4interactive/teampulse/server/internal/service"
+	"github.com/d4interactive/teampulse/server/internal/storage"
 )
 
 func main() {
@@ -91,10 +92,19 @@ func main() {
 		&model.PMStoryLabel{},
 		&model.PMComment{},
 		&model.PMActivityLog{},
+		&model.PMAttachment{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
 	log.Println("database migration complete")
+
+	// Initialize S3 storage client (nil if not configured).
+	s3Client := storage.NewS3Client(cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey, cfg.AWSBucket, cfg.AWSRegion, cfg.AWSEndpointURL)
+	if s3Client != nil {
+		log.Println("S3 storage configured")
+	} else {
+		log.Println("S3 storage not configured — attachments disabled")
+	}
 
 	// Initialize JWT manager.
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
@@ -116,6 +126,7 @@ func main() {
 	pmStoryRepo := repository.NewPMStoryRepository(db)
 	pmCommentRepo := repository.NewPMCommentRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
+	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -126,6 +137,7 @@ func main() {
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmActivityService)
 	pmIterationService := service.NewPMIterationService(pmIterationRepo, pmActivityService)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService)
+	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client)
 
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
 	quarterService := service.NewQuarterService(quarterRepo, sprintRepo)
@@ -155,7 +167,8 @@ func main() {
 		PMEpic:      handler.NewPMEpicHandler(pmEpicService),
 		PMIteration: handler.NewPMIterationHandler(pmIterationService),
 		PMStory:     handler.NewPMStoryHandler(pmStoryService),
-		PMComment:   handler.NewPMCommentHandler(pmCommentService),
+		PMComment:    handler.NewPMCommentHandler(pmCommentService),
+		PMAttachment: handler.NewPMAttachmentHandler(pmAttachmentService),
 	}
 
 	// Set up router.

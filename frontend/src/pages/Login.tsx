@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
+import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { toast } from 'sonner';
 
 export default function Login() {
+  useTitle('Sign In');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);

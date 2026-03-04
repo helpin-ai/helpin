@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useQuarterStore } from '@/stores/quarterStore';
 import { goalsService } from '@/lib/services/goalsService';
@@ -23,6 +24,7 @@ interface TeamGoalSummary {
 }
 
 export default function TeamGoals() {
+  useTitle('Team Goals');
   const { currentWorkspace } = useWorkspaceStore();
   const { currentQuarter } = useQuarterStore();
   const [goals, setGoals] = useState<CompanyGoal[]>([]);

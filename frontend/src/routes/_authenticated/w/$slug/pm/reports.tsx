@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { BarChart3 } from 'lucide-react'
+import { useTitle } from '@/hooks/useTitle'
 
 export const Route = createFileRoute('/_authenticated/w/$slug/pm/reports')({
   component: Reports,

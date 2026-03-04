@@ -1,7 +1,9 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckSquare } from 'lucide-react';
+import { useTitle } from '@/hooks/useTitle';
 
 export default function Tasks() {
+  useTitle('Tasks');
   return (
     <div className="max-w-2xl mx-auto py-12 px-4">
       <Card>

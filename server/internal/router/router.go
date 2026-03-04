@@ -29,7 +29,8 @@ type Handlers struct {
 	PMEpic      *handler.PMEpicHandler
 	PMIteration *handler.PMIterationHandler
 	PMStory     *handler.PMStoryHandler
-	PMComment   *handler.PMCommentHandler
+	PMComment    *handler.PMCommentHandler
+	PMAttachment *handler.PMAttachmentHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -195,6 +196,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Post("/comments", h.PMComment.Create)
 				r.Put("/comments/{id}", h.PMComment.Update)
 				r.Delete("/comments/{id}", h.PMComment.Delete)
+
+				// Attachments
+				r.Post("/attachments", h.PMAttachment.Create)
+				r.Patch("/attachments/{id}/confirm", h.PMAttachment.ConfirmUpload)
+				r.Get("/attachments", h.PMAttachment.List)
+				r.Delete("/attachments/{id}", h.PMAttachment.Delete)
 			})
 		})
 	})

@@ -429,6 +429,35 @@ export interface StoryLabelLinkRequest {
   label_id: string;
 }
 
+// ── Attachments ─────────────────────────────────────────────────────
+
+export interface Attachment {
+  id: string;
+  workspace_id: string;
+  entity_type: 'story' | 'epic' | 'comment';
+  entity_id: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  storage_key: string;
+  is_uploaded: boolean;
+  uploaded_by_id: string;
+  created_at: string;
+}
+
+export interface AttachmentResponse {
+  attachment: Attachment;
+  url: string;
+}
+
+export interface CreateAttachmentRequest {
+  entity_type: 'story' | 'epic' | 'comment';
+  entity_id: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+}
+
 export interface CreateCommentRequest {
   entity_type: 'story' | 'epic' | 'doc';
   entity_id: string;

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { generateWorkspaceSlug } from '@/lib/slugUtils';
@@ -14,6 +15,7 @@ import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Workspaces() {
+  useTitle('Workspaces');
   const { workspaces, loading, loadWorkspaces } = useWorkspaceStore();
   const navigate = useNavigate();
   const [dialogOpen, setDialogOpen] = useState(false);

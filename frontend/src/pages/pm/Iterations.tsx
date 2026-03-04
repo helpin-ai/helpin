@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useTitle } from '@/hooks/useTitle';
 import { format, parseISO } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -9,6 +10,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import type { IterationWithStats } from '@/lib/pmTypes';
 
 export function IterationsPage() {
+  useTitle('Iterations');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
 

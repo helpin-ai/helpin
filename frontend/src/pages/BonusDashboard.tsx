@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useQuarterStore } from '@/stores/quarterStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -17,6 +18,7 @@ import { DollarSign, Lock, Unlock } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function BonusDashboard() {
+  useTitle('Bonus Dashboard');
   const { currentWorkspace } = useWorkspaceStore();
   const { currentQuarter } = useQuarterStore();
   const { isAdmin } = useSessionStore();

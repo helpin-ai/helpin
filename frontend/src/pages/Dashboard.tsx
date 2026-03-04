@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useQuarterStore } from '@/stores/quarterStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -14,6 +15,7 @@ import { Target, Calendar, Users, TrendingUp } from 'lucide-react';
 import dayjs from 'dayjs';
 
 export default function Dashboard() {
+  useTitle('Dashboard');
   const { user } = useAuthStore();
   const { currentWorkspace } = useWorkspaceStore();
   const { currentQuarter } = useQuarterStore();

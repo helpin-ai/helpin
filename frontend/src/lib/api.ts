@@ -77,6 +77,35 @@ async function tryRefreshToken(): Promise<boolean> {
   }
 }
 
+/** Upload a file directly to S3 using a presigned PUT URL. */
+export async function uploadToS3(
+  presignedUrl: string,
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<{ ok: boolean; error: string | null }> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', presignedUrl, true);
+    xhr.setRequestHeader('Content-Type', file.type);
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      });
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve({ ok: true, error: null });
+      } else {
+        resolve({ ok: false, error: `Upload failed: ${xhr.status}` });
+      }
+    };
+    xhr.onerror = () => resolve({ ok: false, error: 'Network error during upload' });
+    xhr.send(file);
+  });
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Profile() {
+  useTitle('Profile');
   const { user, updateUser } = useAuthStore();
   const [fullName, setFullName] = useState(user?.full_name ?? '');
   const [saving, setSaving] = useState(false);

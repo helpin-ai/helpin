@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { useTitle } from '@/hooks/useTitle';
 import {
   ArrowLeft,
   CalendarDays,

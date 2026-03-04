@@ -1,7 +1,9 @@
 import { KanbanBoard } from '@/components/pm/KanbanBoard';
+import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 export function StoriesPage() {
+  useTitle('Stories');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
 
   if (!workspace) {

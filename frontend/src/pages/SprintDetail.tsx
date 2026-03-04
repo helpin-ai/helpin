@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { getRouteApi } from '@tanstack/react-router';
+import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { sprintsService } from '@/lib/services/sprintsService';
@@ -24,6 +25,7 @@ export default function SprintDetail() {
   const routeApi = getRouteApi('/_authenticated/w/$slug/sprints/$sprintId');
   const { sprintId } = routeApi.useParams();
   const { currentWorkspace } = useWorkspaceStore();
+  useTitle(`Sprint ${sprintId}`);
   const { canEdit } = useSessionStore();
   const [sprint, setSprint] = useState<Sprint | null>(null);
   const [wsSettings, setWsSettings] = useState<WorkspaceSettings | null>(null);

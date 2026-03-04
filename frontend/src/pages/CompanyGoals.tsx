@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useQuarterStore } from '@/stores/quarterStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -19,6 +20,7 @@ import { Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function CompanyGoals() {
+  useTitle('Company Goals');
   const { currentWorkspace } = useWorkspaceStore();
   const { currentQuarter } = useQuarterStore();
   const { canEdit } = useSessionStore();

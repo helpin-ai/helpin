@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { useTitle } from '@/hooks/useTitle';
 import {
   ArrowLeft,
   CalendarDays,
@@ -124,6 +125,7 @@ export function EpicDetailPage() {
   const { epicId, slug } = routeApi.useParams();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+
   const workspaceId = workspace?.id;
 
   const epicStates = usePMWorkflowStore((s) => s.epicStates);
@@ -140,6 +142,8 @@ export function EpicDetailPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const { teams, people, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
+
+  useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 
   // Load epic data
   useEffect(() => {

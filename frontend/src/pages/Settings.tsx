@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { settingsService } from '@/lib/services/settingsService';
@@ -72,6 +73,7 @@ export const isSettingsSection = (value: string): value is SettingsSection =>
 const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
 
 export default function Settings({ section }: { section: SettingsSection }) {
+  useTitle('Settings');
   const { currentWorkspace } = useWorkspaceStore();
   const { isAdmin } = useSessionStore();
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);

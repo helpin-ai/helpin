@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useQuarterStore } from '@/stores/quarterStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -23,6 +24,7 @@ const statusVariant = (status: Sprint['status']): 'default' | 'secondary' | 'out
 };
 
 export default function Sprints() {
+  useTitle('Sprints');
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const { currentQuarter } = useQuarterStore();

@@ -81,11 +81,11 @@ export function Sidebar() {
       {
         label: '',
         items: [
-          { link: `/w/${wsSlug}/pm/stories`, label: 'Stories', icon: LayoutList },
-          { link: `/w/${wsSlug}/pm/epics`, label: 'Epics', icon: Layers },
-          { link: `/w/${wsSlug}/pm/iterations`, label: 'Iterations', icon: RefreshCw },
-          { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
           { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
+          { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
+          { link: `/w/${wsSlug}/pm/iterations`, label: 'Iterations', icon: RefreshCw },
+          { link: `/w/${wsSlug}/pm/epics`, label: 'Epics', icon: Layers },
+          { link: `/w/${wsSlug}/pm/stories`, label: 'Stories', icon: LayoutList },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },
         ],
       },

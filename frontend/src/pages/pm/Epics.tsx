@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
+import { useTitle } from '@/hooks/useTitle';
 import {
   CalendarDays,
   Hexagon,
@@ -235,6 +236,7 @@ function DisplayPropertiesPopover({
 // ── Main page ──────────────────────────────────────────────────────
 
 export function EpicsPage() {
+  useTitle('Epics');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const navigate = useNavigate();
 

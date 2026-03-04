@@ -1,0 +1,167 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/d4interactive/teampulse/server/internal/storage"
+)
+
+const maxFileSize = 10 * 1024 * 1024 // 10 MB
+
+var allowedMIMETypes = map[string]bool{
+	// Images
+	"image/jpeg": true, "image/png": true, "image/gif": true,
+	"image/webp": true, "image/svg+xml": true,
+	// Documents
+	"application/pdf": true,
+	"application/msword": true,
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
+	// Spreadsheets
+	"application/vnd.ms-excel": true,
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": true,
+	// Text
+	"text/plain": true, "text/csv": true, "text/markdown": true,
+	// Archives
+	"application/zip": true, "application/gzip": true,
+	"application/x-tar": true,
+}
+
+var allowedEntityTypes = map[string]bool{
+	"story": true, "epic": true, "comment": true,
+}
+
+// PMAttachmentService contains attachment business logic.
+type PMAttachmentService struct {
+	attachmentRepo *repository.PMAttachmentRepository
+	s3Client       *storage.S3Client
+}
+
+// NewPMAttachmentService creates a new PMAttachmentService.
+func NewPMAttachmentService(attachmentRepo *repository.PMAttachmentRepository, s3Client *storage.S3Client) *PMAttachmentService {
+	return &PMAttachmentService{
+		attachmentRepo: attachmentRepo,
+		s3Client:       s3Client,
+	}
+}
+
+// Create validates file metadata, creates a DB record, and returns a presigned PUT URL.
+func (s *PMAttachmentService) Create(ctx context.Context, req model.CreateAttachmentRequest, workspaceID, userID string) (*model.AttachmentResponse, error) {
+	if s.s3Client == nil {
+		return nil, fmt.Errorf("file storage is not configured")
+	}
+	if req.EntityType == "" || req.EntityID == "" {
+		return nil, fmt.Errorf("entity_type and entity_id are required")
+	}
+	if !allowedEntityTypes[req.EntityType] {
+		return nil, fmt.Errorf("invalid entity_type: must be story, epic, or comment")
+	}
+	if strings.TrimSpace(req.FileName) == "" {
+		return nil, fmt.Errorf("file_name is required")
+	}
+	if req.FileSize <= 0 {
+		return nil, fmt.Errorf("file_size must be positive")
+	}
+	if req.FileSize > maxFileSize {
+		return nil, fmt.Errorf("file exceeds maximum size of 10MB")
+	}
+	if req.ContentType == "" {
+		return nil, fmt.Errorf("content_type is required")
+	}
+	if !allowedMIMETypes[req.ContentType] {
+		return nil, fmt.Errorf("file type %s is not allowed", req.ContentType)
+	}
+
+	attachment := &model.PMAttachment{
+		WorkspaceID:  workspaceID,
+		EntityType:   req.EntityType,
+		EntityID:     req.EntityID,
+		FileName:     strings.TrimSpace(req.FileName),
+		FileSize:     req.FileSize,
+		ContentType:  req.ContentType,
+		UploadedByID: userID,
+	}
+
+	if err := s.attachmentRepo.Create(ctx, attachment); err != nil {
+		return nil, err
+	}
+
+	// Build storage key: {workspace_id}/{attachment_id}-{filename}
+	attachment.StorageKey = fmt.Sprintf("%s/%s-%s", workspaceID, attachment.ID, attachment.FileName)
+	if err := s.attachmentRepo.UpdateStorageKey(ctx, attachment.ID, attachment.StorageKey); err != nil {
+		return nil, err
+	}
+
+	uploadURL, err := s.s3Client.GeneratePresignedPutURL(attachment.StorageKey, attachment.ContentType, attachment.FileSize)
+	if err != nil {
+		return nil, fmt.Errorf("generate upload URL: %w", err)
+	}
+
+	return &model.AttachmentResponse{
+		Attachment: *attachment,
+		URL:        uploadURL,
+	}, nil
+}
+
+// ConfirmUpload marks an attachment as successfully uploaded.
+func (s *PMAttachmentService) ConfirmUpload(ctx context.Context, id string) error {
+	attachment, err := s.attachmentRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if attachment == nil {
+		return fmt.Errorf("attachment not found")
+	}
+	if attachment.IsUploaded {
+		return nil // Already confirmed, idempotent
+	}
+	return s.attachmentRepo.ConfirmUpload(ctx, id)
+}
+
+// List returns uploaded attachments for an entity with presigned GET URLs.
+func (s *PMAttachmentService) List(ctx context.Context, entityType, entityID string) ([]model.AttachmentResponse, error) {
+	if entityType == "" || entityID == "" {
+		return nil, fmt.Errorf("entity_type and entity_id are required")
+	}
+	attachments, err := s.attachmentRepo.List(ctx, entityType, entityID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.AttachmentResponse, 0, len(attachments))
+	for _, a := range attachments {
+		resp := model.AttachmentResponse{Attachment: a}
+		if s.s3Client != nil && a.StorageKey != "" {
+			downloadURL, err := s.s3Client.GeneratePresignedGetURL(a.StorageKey, a.FileName)
+			if err == nil {
+				resp.URL = downloadURL
+			}
+		}
+		result = append(result, resp)
+	}
+	return result, nil
+}
+
+// Delete deletes an attachment (S3 object + DB record).
+func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string) error {
+	attachment, err := s.attachmentRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if attachment == nil {
+		return fmt.Errorf("attachment not found")
+	}
+	if attachment.UploadedByID != userID {
+		return fmt.Errorf("only the uploader can delete this attachment")
+	}
+
+	// Delete from S3 if uploaded
+	if s.s3Client != nil && attachment.StorageKey != "" && attachment.IsUploaded {
+		_ = s.s3Client.DeleteObject(ctx, attachment.StorageKey)
+	}
+
+	return s.attachmentRepo.Delete(ctx, id)
+}

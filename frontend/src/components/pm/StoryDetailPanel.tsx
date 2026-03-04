@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
+import { Attachments } from '@/components/pm/Attachments';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -471,6 +472,15 @@ function StoryDetailPanelBody({
               onChange={(html) => updateField('description', html, { description: html })}
               placeholder="Add a description..."
               className="border-transparent shadow-none"
+            />
+          </div>
+
+          {/* Attachments */}
+          <div className="mt-6">
+            <Attachments
+              workspaceId={workspaceId}
+              entityType="story"
+              entityId={storyDetail.story.id}
             />
           </div>
 
