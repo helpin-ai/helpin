@@ -280,6 +280,9 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	if req.OwnerID != nil {
 		current.OwnerID = req.OwnerID
 	}
+	if req.RequesterID != nil {
+		current.RequesterID = req.RequesterID
+	}
 	if req.Estimate != nil {
 		current.Estimate = req.Estimate
 	}

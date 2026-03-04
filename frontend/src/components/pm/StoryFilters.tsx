@@ -162,11 +162,16 @@ interface StoryFilterProviderProps {
 
 export function StoryFilterProvider({ members, labels, epics, iterations, onChange, externalFilters, children }: StoryFilterProviderProps) {
   const [filterState, setFilterState] = useState<FilterState>({});
-  const prevExternalRef = useRef(externalFilters);
+  const internalChangeRef = useRef(false);
 
+  // Hydrate internal filter state from external filters (e.g. when a view is applied).
+  // Skip when the change originated from user interaction with filter pills.
   useEffect(() => {
-    if (!externalFilters || externalFilters === prevExternalRef.current) return;
-    prevExternalRef.current = externalFilters;
+    if (!externalFilters) return;
+    if (internalChangeRef.current) {
+      internalChangeRef.current = false;
+      return;
+    }
     const next: FilterState = {};
     for (const [key, value] of Object.entries(externalFilters)) {
       if (value) next[key as FilterKey] = value.split(',');
@@ -248,6 +253,7 @@ export function StoryFilterProvider({ members, labels, epics, iterations, onChan
 
   const emitChange = useCallback(
     (next: FilterState) => {
+      internalChangeRef.current = true;
       onChange(filterStateToQueryParams(next));
     },
     [onChange]

@@ -400,6 +400,7 @@ export interface UpdateStoryRequest {
   iteration_id?: string;
   team_id?: string;
   owner_id?: string;
+  requester_id?: string;
   estimate?: number;
   priority?: Priority;
   severity?: Severity;

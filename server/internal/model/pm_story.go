@@ -144,6 +144,7 @@ type UpdateStoryRequest struct {
 	IterationID     *string    `json:"iteration_id"`
 	TeamID          *string    `json:"team_id"`
 	OwnerID         *string    `json:"owner_id"`
+	RequesterID     *string    `json:"requester_id"`
 	Estimate        *int       `json:"estimate"`
 	Priority        *string    `json:"priority"`
 	Severity        *string    `json:"severity"`
