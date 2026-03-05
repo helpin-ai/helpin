@@ -1,9 +1,9 @@
 import { api } from '../api';
 import type {
-  CreateIterationRequest,
-  IterationWithStats,
+  CreateSprintRequest,
+  SprintWithStats,
   Story,
-  UpdateIterationRequest,
+  UpdateSprintRequest,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -22,7 +22,7 @@ const filterQuery = (filters: Record<string, string | boolean | undefined>) => {
   return str ? `&${str}` : '';
 };
 
-export const pmIterationService = {
+export const pmSprintService = {
   list: (
     workspaceId: string,
     filters?: {
@@ -30,20 +30,20 @@ export const pmIterationService = {
       status?: string;
       archived?: boolean;
     }
-  ) => api.get<IterationWithStats[]>(`/pm/iterations${qs(workspaceId)}${filterQuery(filters ?? {})}`),
-  create: (payload: CreateIterationRequest) =>
-    api.post<IterationWithStats>(`/pm/iterations${qs(payload.workspace_id)}`, {
+  ) => api.get<SprintWithStats[]>(`/pm/sprints${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  create: (payload: CreateSprintRequest) =>
+    api.post<SprintWithStats>(`/pm/sprints${qs(payload.workspace_id)}`, {
       ...payload,
       start_date: toRFC3339(payload.start_date),
       end_date: toRFC3339(payload.end_date),
     }),
-  get: (workspaceId: string, id: string) => api.get<IterationWithStats>(`/pm/iterations/${id}${qs(workspaceId)}`),
-  update: (workspaceId: string, id: string, payload: UpdateIterationRequest) =>
-    api.put<IterationWithStats>(`/pm/iterations/${id}${qs(workspaceId)}`, {
+  get: (workspaceId: string, id: string) => api.get<SprintWithStats>(`/pm/sprints/${id}${qs(workspaceId)}`),
+  update: (workspaceId: string, id: string, payload: UpdateSprintRequest) =>
+    api.put<SprintWithStats>(`/pm/sprints/${id}${qs(workspaceId)}`, {
       ...payload,
       start_date: toRFC3339(payload.start_date),
       end_date: toRFC3339(payload.end_date),
     }),
-  remove: (workspaceId: string, id: string) => api.del(`/pm/iterations/${id}${qs(workspaceId)}`),
-  listStories: (workspaceId: string, id: string) => api.get<Story[]>(`/pm/iterations/${id}/stories${qs(workspaceId)}`),
+  remove: (workspaceId: string, id: string) => api.del(`/pm/sprints/${id}${qs(workspaceId)}`),
+  listStories: (workspaceId: string, id: string) => api.get<Story[]>(`/pm/sprints/${id}/stories${qs(workspaceId)}`),
 };

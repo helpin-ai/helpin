@@ -94,8 +94,8 @@ func main() {
 		&model.PMEpic{},
 		&model.PMEpicObjective{},
 		&model.PMEpicLabel{},
-		&model.PMIteration{},
-		&model.PMIterationLabel{},
+		&model.PMSprint{},
+		&model.PMSprintLabel{},
 		&model.PMStory{},
 		&model.PMStoryOwner{},
 		&model.PMStoryFollower{},
@@ -154,7 +154,7 @@ func main() {
 	pmWorkflowRepo := repository.NewPMWorkflowRepository(db)
 	pmLabelRepo := repository.NewPMLabelRepository(db)
 	pmEpicRepo := repository.NewPMEpicRepository(db)
-	pmIterationRepo := repository.NewPMIterationRepository(db)
+	pmSprintRepo := repository.NewPMSprintRepository(db)
 	pmStoryRepo := repository.NewPMStoryRepository(db)
 	pmCommentRepo := repository.NewPMCommentRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
@@ -173,7 +173,7 @@ func main() {
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
 	pmStoryService := service.NewPMStoryService(pmStoryRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmActivityService, wsPublisher)
-	pmIterationService := service.NewPMIterationService(pmIterationRepo, pmActivityService, wsPublisher)
+	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmActivityService, wsPublisher)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmActivityService, wsPublisher)
@@ -208,7 +208,7 @@ func main() {
 		PMWorkflow:  handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMLabel:     handler.NewPMLabelHandler(pmLabelService),
 		PMEpic:      handler.NewPMEpicHandler(pmEpicService),
-		PMIteration: handler.NewPMIterationHandler(pmIterationService),
+		PMSprint: handler.NewPMSprintHandler(pmSprintService),
 		PMStory:     handler.NewPMStoryHandler(pmStoryService),
 		PMComment:    handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment: handler.NewPMAttachmentHandler(pmAttachmentService),

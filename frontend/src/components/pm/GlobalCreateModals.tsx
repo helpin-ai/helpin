@@ -23,7 +23,7 @@ import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
-import { pmIterationService } from '@/lib/services/pmIterationService';
+import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
@@ -276,9 +276,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   );
 }
 
-// ── Iteration dialog ─────────────────────────────────────────────────
+// ── Sprint dialog ─────────────────────────────────────────────────
 
-function GlobalCreateIteration({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const { teams } = useWorkspaceTeams(workspaceId);
 
   const [form, setForm] = useState({
@@ -294,7 +294,7 @@ function GlobalCreateIteration({ workspaceId, onClose }: { workspaceId: string; 
   const create = async () => {
     if (!form.name.trim() || !form.startDate || !form.endDate || submitting) return;
     setSubmitting(true);
-    const { error: createError } = await pmIterationService.create({
+    const { error: createError } = await pmSprintService.create({
       workspace_id: workspaceId,
       name: form.name.trim(),
       description: form.description.trim() || undefined,
@@ -307,7 +307,7 @@ function GlobalCreateIteration({ workspaceId, onClose }: { workspaceId: string; 
       setError(createError);
       return;
     }
-    window.dispatchEvent(new CustomEvent('iteration-created'));
+    window.dispatchEvent(new CustomEvent('sprint-created'));
     onClose();
   };
 
@@ -319,10 +319,10 @@ function GlobalCreateIteration({ workspaceId, onClose }: { workspaceId: string; 
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
-            <span className="text-sm font-semibold">Create Iteration</span>
+            <span className="text-sm font-semibold">Create Sprint</span>
             <Button className="ml-auto" size="sm" onClick={create} disabled={!form.name.trim() || !form.startDate || !form.endDate || submitting}>
               {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              {submitting ? 'Creating...' : 'Create Iteration'}
+              {submitting ? 'Creating...' : 'Create Sprint'}
             </Button>
           </div>
 
@@ -337,11 +337,11 @@ function GlobalCreateIteration({ workspaceId, onClose }: { workspaceId: string; 
               <input
                 type="text"
                 autoFocus
-                aria-label="Iteration title"
+                aria-label="Sprint title"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-                placeholder="Iteration title"
+                placeholder="Sprint title"
               />
               <div className="mt-4">
                 <TiptapEditor
@@ -355,7 +355,7 @@ function GlobalCreateIteration({ workspaceId, onClose }: { workspaceId: string; 
 
             <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
               <p className="mb-4 text-xs text-muted-foreground">
-                Iterations are time-boxed periods for planning and tracking work.
+                Sprints are time-boxed periods for planning and tracking work.
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
                 <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
@@ -656,7 +656,7 @@ export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
     <>
       {activeModal === 'story' && <GlobalCreateStory workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'epic' && <GlobalCreateEpic workspaceId={workspaceId} onClose={closeCreate} />}
-      {activeModal === 'iteration' && <GlobalCreateIteration workspaceId={workspaceId} onClose={closeCreate} />}
+      {activeModal === 'sprint' && <GlobalCreateSprint workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'objective' && <GlobalCreateObjective workspaceId={workspaceId} onClose={closeCreate} />}
     </>
   );

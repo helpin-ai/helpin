@@ -12,13 +12,13 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { PRIORITY_CONFIG, SEVERITY_CONFIG, STORY_TYPE_CONFIG } from '@/lib/pmConstants';
-import type { Priority, Severity, StoryType, Label, EpicWithStats, IterationWithStats } from '@/lib/pmTypes';
+import type { Priority, Severity, StoryType, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 
 // ── Types ──────────────────────────────────────────────────────────
 
-type FilterKey = 'priority' | 'severity' | 'story_type' | 'owner_id' | 'requester_id' | 'label_id' | 'epic_id' | 'iteration_id' | 'blocked';
+type FilterKey = 'priority' | 'severity' | 'story_type' | 'owner_id' | 'requester_id' | 'label_id' | 'epic_id' | 'sprint_id' | 'blocked';
 
 type FilterState = Partial<Record<FilterKey, string[]>>;
 
@@ -154,13 +154,13 @@ interface StoryFilterProviderProps {
   members: MemberWithUser[];
   labels: Label[];
   epics: EpicWithStats[];
-  iterations: IterationWithStats[];
+  sprints: SprintWithStats[];
   onChange: (filters: BoardFilters) => void;
   externalFilters?: BoardFilters;
   children: React.ReactNode;
 }
 
-export function StoryFilterProvider({ members, labels, epics, iterations, onChange, externalFilters, children }: StoryFilterProviderProps) {
+export function StoryFilterProvider({ members, labels, epics, sprints, onChange, externalFilters, children }: StoryFilterProviderProps) {
   const [filterState, setFilterState] = useState<FilterState>({});
   const internalChangeRef = useRef(false);
 
@@ -220,9 +220,9 @@ export function StoryFilterProvider({ members, labels, epics, iterations, onChan
       label: e.epic.name,
     }));
 
-    const iterationOptions: FilterOption[] = iterations.map((i) => ({
-      value: i.iteration.id,
-      label: i.iteration.name,
+    const sprintOptions: FilterOption[] = sprints.map((i) => ({
+      value: i.sprint.id,
+      label: i.sprint.name,
     }));
 
     const blockedOptions: FilterOption[] = [
@@ -238,10 +238,10 @@ export function StoryFilterProvider({ members, labels, epics, iterations, onChan
       { key: 'requester_id' as FilterKey, label: 'Requester', options: memberOptions },
       { key: 'label_id' as FilterKey, label: 'Label', options: labelOptions },
       { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions },
-      { key: 'iteration_id' as FilterKey, label: 'Iteration', options: iterationOptions },
+      { key: 'sprint_id' as FilterKey, label: 'Sprint', options: sprintOptions },
       { key: 'blocked' as FilterKey, label: 'Blocked', options: blockedOptions },
     ];
-  }, [members, labels, epics, iterations]);
+  }, [members, labels, epics, sprints]);
 
   const activeKeys = useMemo(() => {
     const keys = new Set<FilterKey>();

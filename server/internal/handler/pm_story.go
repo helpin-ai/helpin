@@ -36,7 +36,7 @@ func (h *PMStoryHandler) List(w http.ResponseWriter, r *http.Request) {
 	filters := model.PMStoryFilters{
 		TeamID:          queryStringPtr(r, "team_id"),
 		EpicID:          queryStringPtr(r, "epic_id"),
-		IterationID:     queryStringPtr(r, "iteration_id"),
+		SprintID:     queryStringPtr(r, "sprint_id"),
 		WorkflowID:      queryStringPtr(r, "workflow_id"),
 		WorkflowStateID: queryStringPtr(r, "state_id"),
 		StoryType:       queryStringPtr(r, "story_type"),
@@ -82,7 +82,7 @@ func (h *PMStoryHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 		Severity:    queryStringPtr(r, "severity"),
 		StoryType:   queryStringPtr(r, "story_type"),
 		EpicID:      queryStringPtr(r, "epic_id"),
-		IterationID: queryStringPtr(r, "iteration_id"),
+		SprintID: queryStringPtr(r, "sprint_id"),
 		LabelID:     queryStringPtr(r, "label_id"),
 		OwnerID:     queryStringPtr(r, "owner_id"),
 		RequesterID: queryStringPtr(r, "requester_id"),

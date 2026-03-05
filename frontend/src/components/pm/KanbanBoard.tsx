@@ -16,11 +16,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { CreateStoryRequest, Story, StoryStateColumn, Label, EpicWithStats, IterationWithStats } from '@/lib/pmTypes';
+import type { CreateStoryRequest, Story, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
-import { pmIterationService } from '@/lib/services/pmIterationService';
+import { pmSprintService } from '@/lib/services/pmSprintService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
@@ -120,12 +120,12 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
 
   const [refLabels, setRefLabels] = useState<Label[]>([]);
   const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
-  const [refIterations, setRefIterations] = useState<IterationWithStats[]>([]);
+  const [refSprints, setRefSprints] = useState<SprintWithStats[]>([]);
 
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setRefLabels(r.data); });
     pmEpicService.list(workspaceId).then((r) => { if (r.data) setRefEpics(r.data); });
-    pmIterationService.list(workspaceId).then((r) => { if (r.data) setRefIterations(r.data); });
+    pmSprintService.list(workspaceId).then((r) => { if (r.data) setRefSprints(r.data); });
   }, [workspaceId]);
 
   const [activeStory, setActiveStory] = useState<Story | null>(null);
@@ -280,7 +280,7 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
       members={members}
       labels={refLabels}
       epics={refEpics}
-      iterations={refIterations}
+      sprints={refSprints}
       onChange={setFilters}
       externalFilters={filters}
     >
@@ -410,7 +410,7 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
           teams={teams}
           members={members}
           epics={refEpics}
-          iterations={refIterations}
+          sprints={refSprints}
           filters={filters}
           teamId={teamId}
           onOpenStory={openStory}

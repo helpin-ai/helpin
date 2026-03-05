@@ -27,7 +27,7 @@ type Handlers struct {
 	PMWorkflow  *handler.PMWorkflowHandler
 	PMLabel     *handler.PMLabelHandler
 	PMEpic      *handler.PMEpicHandler
-	PMIteration *handler.PMIterationHandler
+	PMSprint *handler.PMSprintHandler
 	PMStory     *handler.PMStoryHandler
 	PMComment    *handler.PMCommentHandler
 	PMAttachment *handler.PMAttachmentHandler
@@ -180,13 +180,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Get("/epics/{id}/stories", h.PMEpic.ListStories)
 				r.Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 
-				// Iterations
-				r.Get("/iterations", h.PMIteration.List)
-				r.Post("/iterations", h.PMIteration.Create)
-				r.Get("/iterations/{id}", h.PMIteration.Get)
-				r.Put("/iterations/{id}", h.PMIteration.Update)
-				r.Delete("/iterations/{id}", h.PMIteration.Delete)
-				r.Get("/iterations/{id}/stories", h.PMIteration.ListStories)
+				// Sprints (PM)
+				r.Get("/sprints", h.PMSprint.List)
+				r.Post("/sprints", h.PMSprint.Create)
+				r.Get("/sprints/{id}", h.PMSprint.Get)
+				r.Put("/sprints/{id}", h.PMSprint.Update)
+				r.Delete("/sprints/{id}", h.PMSprint.Delete)
+				r.Get("/sprints/{id}/stories", h.PMSprint.ListStories)
 
 				// Stories
 				r.Get("/stories", h.PMStory.List)

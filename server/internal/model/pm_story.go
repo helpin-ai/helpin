@@ -30,7 +30,7 @@ type PMStory struct {
 	WorkflowID      string     `json:"workflow_id" gorm:"type:uuid;not null;index"`
 	WorkflowStateID string     `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
 	EpicID          *string    `json:"epic_id" gorm:"type:uuid;index"`
-	IterationID     *string    `json:"iteration_id" gorm:"type:uuid;index"`
+	SprintID     *string    `json:"sprint_id" gorm:"type:uuid;index"`
 	TeamID          *string    `json:"team_id" gorm:"type:uuid;index"`
 	OwnerID         *string    `json:"owner_id" gorm:"type:uuid;index"`
 	RequesterID     *string    `json:"requester_id" gorm:"type:uuid"`
@@ -86,7 +86,7 @@ func (PMStoryLabel) TableName() string { return "pm_story_labels" }
 type PMStoryFilters struct {
 	TeamID          *string
 	EpicID          *string
-	IterationID     *string
+	SprintID     *string
 	WorkflowID      *string
 	WorkflowStateID *string
 	StoryType       *string
@@ -115,7 +115,7 @@ type CreateStoryRequest struct {
 	WorkflowID      string     `json:"workflow_id"`
 	WorkflowStateID string     `json:"workflow_state_id"`
 	EpicID          *string    `json:"epic_id"`
-	IterationID     *string    `json:"iteration_id"`
+	SprintID     *string    `json:"sprint_id"`
 	TeamID          *string    `json:"team_id"`
 	OwnerID         *string    `json:"owner_id"`
 	RequesterID     *string    `json:"requester_id"`
@@ -141,7 +141,7 @@ type UpdateStoryRequest struct {
 	WorkflowID      *string    `json:"workflow_id"`
 	WorkflowStateID *string    `json:"workflow_state_id"`
 	EpicID          *string    `json:"epic_id"`
-	IterationID     *string    `json:"iteration_id"`
+	SprintID     *string    `json:"sprint_id"`
 	TeamID          *string    `json:"team_id"`
 	OwnerID         *string    `json:"owner_id"`
 	RequesterID     *string    `json:"requester_id"`
@@ -188,7 +188,7 @@ type StoryDetail struct {
 	Followers     []User           `json:"followers"`
 	Labels        []PMLabel        `json:"labels"`
 	EpicName      *string          `json:"epic_name"`
-	IterationName *string          `json:"iteration_name"`
+	SprintName *string          `json:"sprint_name"`
 	State         *PMWorkflowState `json:"state"`
 }
 

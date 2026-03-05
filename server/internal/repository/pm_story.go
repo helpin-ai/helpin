@@ -33,8 +33,8 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 	if filters.EpicID != nil && *filters.EpicID != "" {
 		query = query.Where("epic_id = ?", *filters.EpicID)
 	}
-	if filters.IterationID != nil && *filters.IterationID != "" {
-		query = query.Where("iteration_id = ?", *filters.IterationID)
+	if filters.SprintID != nil && *filters.SprintID != "" {
+		query = query.Where("sprint_id = ?", *filters.SprintID)
 	}
 	if filters.WorkflowID != nil && *filters.WorkflowID != "" {
 		query = query.Where("workflow_id = ?", *filters.WorkflowID)
@@ -333,9 +333,9 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		vals := strings.Split(*filters.EpicID, ",")
 		storyQuery = storyQuery.Where("epic_id IN ?", vals)
 	}
-	if filters.IterationID != nil && *filters.IterationID != "" {
-		vals := strings.Split(*filters.IterationID, ",")
-		storyQuery = storyQuery.Where("iteration_id IN ?", vals)
+	if filters.SprintID != nil && *filters.SprintID != "" {
+		vals := strings.Split(*filters.SprintID, ",")
+		storyQuery = storyQuery.Where("sprint_id IN ?", vals)
 	}
 	if filters.OwnerID != nil && *filters.OwnerID != "" {
 		vals := strings.Split(*filters.OwnerID, ",")
@@ -574,11 +574,11 @@ func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PM
 		}
 	}
 
-	var iterationName *string
-	if story.IterationID != nil {
+	var sprintName *string
+	if story.SprintID != nil {
 		var value string
-		if err := r.db.WithContext(ctx).Table("pm_iterations").Select("name").Where("id = ?", *story.IterationID).Scan(&value).Error; err == nil && value != "" {
-			iterationName = &value
+		if err := r.db.WithContext(ctx).Table("pm_sprints").Select("name").Where("id = ?", *story.SprintID).Scan(&value).Error; err == nil && value != "" {
+			sprintName = &value
 		}
 	}
 
@@ -588,7 +588,7 @@ func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PM
 		Followers:     followers,
 		Labels:        labels,
 		EpicName:      epicName,
-		IterationName: iterationName,
+		SprintName: sprintName,
 		State:         &state,
 	}, nil
 }

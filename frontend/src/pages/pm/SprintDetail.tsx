@@ -16,15 +16,15 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
-import { pmIterationService } from '@/lib/services/pmIterationService';
+import { pmSprintService } from '@/lib/services/pmSprintService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import type { IterationWithStats, IterationStatus, Story, UpdateIterationRequest } from '@/lib/pmTypes';
+import type { SprintWithStats, SprintStatus, Story, UpdateSprintRequest } from '@/lib/pmTypes';
 
-const routeApi = getRouteApi('/_authenticated/w/$slug/pm/iterations/$iterationId');
+const routeApi = getRouteApi('/_authenticated/w/$slug/pm/sprints/$sprintId');
 
-const statusOptions: IterationStatus[] = ['unstarted', 'started', 'done'];
-const statusConfig: Record<IterationStatus, { label: string; color: string }> = {
+const statusOptions: SprintStatus[] = ['unstarted', 'started', 'done'];
+const statusConfig: Record<SprintStatus, { label: string; color: string }> = {
   unstarted: { label: 'Unstarted', color: 'text-muted-foreground' },
   started: { label: 'Started', color: 'text-blue-600' },
   done: { label: 'Done', color: 'text-green-600' },
@@ -97,7 +97,7 @@ function MetadataRow({
 
 // ── Main Page ──────────────────────────────────────────────────────
 
-interface IterationFormState {
+interface SprintFormState {
   name: string;
   description: string;
   team_id: string;
@@ -105,97 +105,97 @@ interface IterationFormState {
   end_date: string;
 }
 
-const buildForm = (iter: IterationWithStats): IterationFormState => ({
-  name: iter.iteration.name,
-  description: iter.iteration.description ?? '',
-  team_id: iter.iteration.team_id ?? '',
-  start_date: iter.iteration.start_date ? iter.iteration.start_date.slice(0, 10) : '',
-  end_date: iter.iteration.end_date ? iter.iteration.end_date.slice(0, 10) : '',
+const buildForm = (iter: SprintWithStats): SprintFormState => ({
+  name: iter.sprint.name,
+  description: iter.sprint.description ?? '',
+  team_id: iter.sprint.team_id ?? '',
+  start_date: iter.sprint.start_date ? iter.sprint.start_date.slice(0, 10) : '',
+  end_date: iter.sprint.end_date ? iter.sprint.end_date.slice(0, 10) : '',
 });
 
-export function IterationDetailPage() {
-  const { iterationId, slug } = routeApi.useParams();
+export function SprintDetailPage() {
+  const { sprintId, slug } = routeApi.useParams();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
 
-  const [iteration, setIteration] = useState<IterationWithStats | null>(null);
+  const [sprint, setSprint] = useState<SprintWithStats | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [form, setForm] = useState<IterationFormState | null>(null);
-  const [pendingPatch, setPendingPatch] = useState<UpdateIterationRequest>({});
+  const [form, setForm] = useState<SprintFormState | null>(null);
+  const [pendingPatch, setPendingPatch] = useState<UpdateSprintRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const { teams, people, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
 
-  useTitle(form?.name ? `${form.name} — Iteration` : 'Iteration');
+  useTitle(form?.name ? `${form.name} — Sprint` : 'Sprint');
 
-  // Load iteration data
+  // Load sprint data
   useEffect(() => {
     if (!workspaceId) return;
     (async () => {
       setLoading(true);
       setError(null);
-      const [iterRes, storiesRes] = await Promise.all([
-        pmIterationService.get(workspaceId, iterationId),
-        pmIterationService.listStories(workspaceId, iterationId),
+      const [sprintRes, storiesRes] = await Promise.all([
+        pmSprintService.get(workspaceId, sprintId),
+        pmSprintService.listStories(workspaceId, sprintId),
       ]);
-      if (iterRes.error || !iterRes.data) {
-        setError(iterRes.error ?? 'Iteration not found');
+      if (sprintRes.error || !sprintRes.data) {
+        setError(sprintRes.error ?? 'Sprint not found');
         setLoading(false);
         return;
       }
-      setIteration(iterRes.data);
-      setForm(buildForm(iterRes.data));
+      setSprint(sprintRes.data);
+      setForm(buildForm(sprintRes.data));
       setStories(storiesRes.data ?? []);
       setLoading(false);
     })();
-  }, [workspaceId, iterationId]);
+  }, [workspaceId, sprintId]);
 
   // Auto-save debounce
   useEffect(() => {
-    if (saving || Object.keys(pendingPatch).length === 0 || !workspaceId || !iteration) return;
+    if (saving || Object.keys(pendingPatch).length === 0 || !workspaceId || !sprint) return;
     const timer = window.setTimeout(async () => {
       const patch = pendingPatch;
       setPendingPatch({});
       setSaving(true);
-      const { data, error: err } = await pmIterationService.update(workspaceId, iteration.iteration.id, patch);
+      const { data, error: err } = await pmSprintService.update(workspaceId, sprint.sprint.id, patch);
       if (err || !data) {
         setSaveError(err ?? 'Failed to save');
         setPendingPatch((current) => ({ ...patch, ...current }));
       } else {
         setSaveError(null);
-        setIteration(data);
+        setSprint(data);
       }
       setSaving(false);
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [workspaceId, iteration, pendingPatch, saving]);
+  }, [workspaceId, sprint, pendingPatch, saving]);
 
-  const queuePatch = (patch: UpdateIterationRequest) => {
+  const queuePatch = (patch: UpdateSprintRequest) => {
     setPendingPatch((current) => ({ ...current, ...patch }));
   };
 
-  const updateField = <K extends keyof IterationFormState>(key: K, value: IterationFormState[K], patch: UpdateIterationRequest) => {
+  const updateField = <K extends keyof SprintFormState>(key: K, value: SprintFormState[K], patch: UpdateSprintRequest) => {
     setForm((current) => current ? { ...current, [key]: value } : current);
     queuePatch(patch);
   };
 
   // Derived data
   const progress = useMemo(() => {
-    if (!iteration || iteration.stats.story_count === 0) return 0;
-    return Math.round((iteration.stats.done_story_count / iteration.stats.story_count) * 100);
-  }, [iteration]);
+    if (!sprint || sprint.stats.story_count === 0) return 0;
+    return Math.round((sprint.stats.done_story_count / sprint.stats.story_count) * 100);
+  }, [sprint]);
 
   const currentTeamName = useMemo(
     () => (form?.team_id ? findTeamName(form.team_id) ?? 'No team' : 'No team'),
     [form?.team_id, findTeamName],
   );
 
-  // Resources: unique people from story owners + iteration team members
+  // Resources: unique people from story owners + sprint team members
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
@@ -217,7 +217,7 @@ export function IterationDetailPage() {
     return Array.from(personMap.values());
   }, [stories, people, form?.team_id, getTeamMembers]);
 
-  const goBack = () => navigate({ to: '/w/$slug/pm/iterations', params: { slug } });
+  const goBack = () => navigate({ to: '/w/$slug/pm/sprints', params: { slug } });
 
   if (loading) {
     return (
@@ -227,13 +227,13 @@ export function IterationDetailPage() {
     );
   }
 
-  if (error || !iteration || !form) {
+  if (error || !sprint || !form) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-muted-foreground">{error ?? 'Iteration not found'}</p>
+        <p className="text-sm text-muted-foreground">{error ?? 'Sprint not found'}</p>
         <Button variant="outline" size="sm" onClick={goBack}>
           <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-          Back to Iterations
+          Back to Sprints
         </Button>
       </div>
     );
@@ -250,7 +250,7 @@ export function IterationDetailPage() {
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
           <RefreshCw className="h-3.5 w-3.5 shrink-0 text-blue-500" />
           <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
-            Iterations
+            Sprints
           </button>
           <ChevronRight className="h-3 w-3 shrink-0" />
           <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
@@ -276,7 +276,7 @@ export function IterationDetailPage() {
           {/* Title */}
           <input
             type="text"
-            aria-label="Iteration title"
+            aria-label="Sprint title"
             value={form.name}
             onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
             className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
@@ -303,7 +303,7 @@ export function IterationDetailPage() {
             </div>
             <Progress value={progress} />
             <p className="text-xs text-muted-foreground">
-              {iteration.stats.done_story_count}/{iteration.stats.story_count} stories done · {iteration.stats.done_points}/{iteration.stats.total_points} points
+              {sprint.stats.done_story_count}/{sprint.stats.story_count} stories done · {sprint.stats.done_points}/{sprint.stats.total_points} points
             </p>
           </div>
 
@@ -354,12 +354,12 @@ export function IterationDetailPage() {
             {/* Status */}
             <MetadataRow icon={RefreshCw} label="Status">
               <SidebarPopoverSelect
-                value={iteration.iteration.status}
+                value={sprint.sprint.status}
                 options={statusOptions.map((s) => ({ value: s, label: statusConfig[s].label, className: statusConfig[s].color }))}
                 onChange={() => {/* status is computed server-side */}}
                 renderTrigger={() => (
-                  <span className={statusConfig[iteration.iteration.status]?.color}>
-                    {statusConfig[iteration.iteration.status]?.label}
+                  <span className={statusConfig[sprint.sprint.status]?.color}>
+                    {statusConfig[sprint.sprint.status]?.label}
                   </span>
                 )}
               />

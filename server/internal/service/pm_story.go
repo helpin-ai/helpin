@@ -147,7 +147,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		WorkflowID:      workflowID,
 		WorkflowStateID: stateID,
 		EpicID:          req.EpicID,
-		IterationID:     req.IterationID,
+		SprintID:     req.SprintID,
 		TeamID:          req.TeamID,
 		OwnerID:         req.OwnerID,
 		RequesterID:     requesterID,
@@ -271,8 +271,8 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	if req.EpicID != nil {
 		current.EpicID = req.EpicID
 	}
-	if req.IterationID != nil {
-		current.IterationID = req.IterationID
+	if req.SprintID != nil {
+		current.SprintID = req.SprintID
 	}
 	if req.TeamID != nil {
 		current.TeamID = req.TeamID

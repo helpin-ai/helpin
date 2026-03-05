@@ -10,7 +10,7 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 interface PMStoryFilters {
   team_id?: string;
   epic_id?: string;
-  iteration_id?: string;
+  sprint_id?: string;
   workflow_id?: string;
   state_id?: string;
   story_type?: string;

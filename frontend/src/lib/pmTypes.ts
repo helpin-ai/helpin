@@ -3,7 +3,7 @@ export type StateType = 'backlog' | 'unstarted' | 'started' | 'done';
 export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 export type Severity = 'none' | 'minor' | 'major' | 'critical';
 export type EpicHealth = 'on_track' | 'at_risk' | 'off_track';
-export type IterationStatus = 'unstarted' | 'started' | 'done';
+export type SprintStatus = 'unstarted' | 'started' | 'done';
 
 export interface Workflow {
   id: string;
@@ -98,14 +98,14 @@ export interface EpicWithStats {
   stats: EpicStats;
 }
 
-export interface Iteration {
+export interface PMSprint {
   id: string;
   workspace_id: string;
   name: string;
   description?: string;
   start_date: string;
   end_date: string;
-  status: IterationStatus;
+  status: SprintStatus;
   team_id?: string;
   archived: boolean;
   created_by?: string;
@@ -113,17 +113,17 @@ export interface Iteration {
   updated_at: string;
 }
 
-export interface IterationStats {
+export interface PMSprintStats {
   story_count: number;
   done_story_count: number;
   total_points: number;
   done_points: number;
 }
 
-export interface IterationWithStats {
-  iteration: Iteration;
+export interface SprintWithStats {
+  sprint: PMSprint;
   labels: Label[];
-  stats: IterationStats;
+  stats: PMSprintStats;
 }
 
 export interface Story {
@@ -136,7 +136,7 @@ export interface Story {
   workflow_id: string;
   workflow_state_id: string;
   epic_id?: string;
-  iteration_id?: string;
+  sprint_id?: string;
   team_id?: string;
   owner_id?: string;
   requester_id?: string;
@@ -182,7 +182,7 @@ export interface StoryDetail {
   }>;
   labels: Label[];
   epic_name?: string;
-  iteration_name?: string;
+  sprint_name?: string;
   state?: WorkflowState;
 }
 
@@ -344,7 +344,7 @@ export interface UpdateEpicHealthRequest {
   comment?: string;
 }
 
-export interface CreateIterationRequest {
+export interface CreateSprintRequest {
   workspace_id: string;
   name: string;
   description?: string;
@@ -354,7 +354,7 @@ export interface CreateIterationRequest {
   label_ids?: string[];
 }
 
-export interface UpdateIterationRequest {
+export interface UpdateSprintRequest {
   name?: string;
   description?: string;
   start_date?: string;
@@ -372,7 +372,7 @@ export interface CreateStoryRequest {
   workflow_id?: string;
   workflow_state_id?: string;
   epic_id?: string;
-  iteration_id?: string;
+  sprint_id?: string;
   team_id?: string;
   owner_id?: string;
   requester_id?: string;
@@ -397,7 +397,7 @@ export interface UpdateStoryRequest {
   workflow_id?: string;
   workflow_state_id?: string;
   epic_id?: string;
-  iteration_id?: string;
+  sprint_id?: string;
   team_id?: string;
   owner_id?: string;
   requester_id?: string;

@@ -58,7 +58,7 @@ import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
-import { pmIterationService } from '@/lib/services/pmIterationService';
+import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -68,7 +68,7 @@ import type {
   ActivityLogEntry,
   CommentWithAuthor,
   EpicWithStats,
-  IterationWithStats,
+  SprintWithStats,
   Label,
   Priority,
   Severity,
@@ -101,7 +101,7 @@ interface FormState {
   estimate: string;
   deadline: string;
   epic_id: string;
-  iteration_id: string;
+  sprint_id: string;
   team_id: string;
   owner_id: string;
   requester_id: string;
@@ -128,7 +128,7 @@ const buildFormState = (story: StoryDetail): FormState => ({
       : String(story.story.estimate),
   deadline: story.story.deadline ? story.story.deadline.slice(0, 10) : '',
   epic_id: story.story.epic_id ?? '',
-  iteration_id: story.story.iteration_id ?? '',
+  sprint_id: story.story.sprint_id ?? '',
   team_id: story.story.team_id ?? '',
   owner_id: story.story.owner_id ?? '',
   requester_id: story.story.requester_id ?? '',
@@ -310,7 +310,7 @@ function StoryDetailPanelBody({
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
 
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
-  const [iterations, setIterations] = useState<IterationWithStats[]>([]);
+  const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [_labels, _setLabels] = useState<Label[]>([]);
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
@@ -369,16 +369,16 @@ function StoryDetailPanelBody({
     };
   }, [storyDetail.story.id, reloadComments, reloadActivity]);
 
-  // ── Load epics, iterations, labels ─────────────────────────────
+  // ── Load epics, sprints, labels ─────────────────────────────
   useEffect(() => {
     (async () => {
-      const [epicsRes, iterationsRes, labelsRes] = await Promise.all([
+      const [epicsRes, sprintsRes, labelsRes] = await Promise.all([
         pmEpicService.list(workspaceId, { archived: false }),
-        pmIterationService.list(workspaceId, { archived: false }),
+        pmSprintService.list(workspaceId, { archived: false }),
         pmLabelService.list(workspaceId),
       ]);
       setEpics(epicsRes.data ?? []);
-      setIterations(iterationsRes.data ?? []);
+      setSprints(sprintsRes.data ?? []);
       _setLabels(labelsRes.data ?? []);
     })();
   }, [workspaceId]);
@@ -504,10 +504,10 @@ function StoryDetailPanelBody({
     return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? 'No epic';
   }, [form.epic_id, epics]);
 
-  const currentIterationName = useMemo(() => {
-    if (!form.iteration_id) return 'No iteration';
-    return iterations.find((i) => i.iteration.id === form.iteration_id)?.iteration.name ?? 'No iteration';
-  }, [form.iteration_id, iterations]);
+  const currentSprintName = useMemo(() => {
+    if (!form.sprint_id) return 'No sprint';
+    return sprints.find((i) => i.sprint.id === form.sprint_id)?.sprint.name ?? 'No sprint';
+  }, [form.sprint_id, sprints]);
 
   const currentTeamName = useMemo(() => {
     if (!form.team_id) return 'No team';
@@ -931,19 +931,19 @@ function StoryDetailPanelBody({
               />
             </MetadataRow>
 
-            {/* Iteration */}
-            <MetadataRow icon={GitBranch} label="Iteration">
+            {/* Sprint */}
+            <MetadataRow icon={GitBranch} label="Sprint">
               <SidebarPopoverSelect
-                value={form.iteration_id || '__none__'}
+                value={form.sprint_id || '__none__'}
                 options={[
-                  { value: '__none__', label: 'No iteration' },
-                  ...iterations.map((i) => ({ value: i.iteration.id, label: i.iteration.name })),
+                  { value: '__none__', label: 'No sprint' },
+                  ...sprints.map((i) => ({ value: i.sprint.id, label: i.sprint.name })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
-                  updateField('iteration_id', val, { iteration_id: val || undefined });
+                  updateField('sprint_id', val, { sprint_id: val || undefined });
                 }}
-                renderTrigger={() => <span>{currentIterationName}</span>}
+                renderTrigger={() => <span>{currentSprintName}</span>}
               />
             </MetadataRow>
 

@@ -85,7 +85,7 @@ export function Sidebar() {
   const createOptions = [
     { key: 'story' as const, label: 'Story', icon: SquareKanban, pages: ['stories'] },
     { key: 'epic' as const, label: 'Epic', icon: Hexagon, pages: ['epics'] },
-    { key: 'iteration' as const, label: 'Iteration', icon: RefreshCw, pages: ['iterations'] },
+    { key: 'sprint' as const, label: 'Sprint', icon: RefreshCw, pages: ['sprints'] },
     { key: 'objective' as const, label: 'Objective', icon: Target, pages: ['objectives'] },
   ];
 
@@ -115,7 +115,7 @@ export function Sidebar() {
         items: [
           { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
           { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
-          { link: `/w/${wsSlug}/pm/iterations`, label: 'Iterations', icon: RefreshCw },
+          { link: `/w/${wsSlug}/pm/sprints`, label: 'Sprints', icon: RefreshCw },
           { link: `/w/${wsSlug}/pm/epics`, label: 'Epics', icon: Layers },
           { link: `/w/${wsSlug}/pm/stories`, label: 'Stories', icon: LayoutList },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },

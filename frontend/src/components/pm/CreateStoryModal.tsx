@@ -26,14 +26,14 @@ import {
 import { PRIORITY_CONFIG, PriorityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateStoryRequest,
-  IterationWithStats,
+  SprintWithStats,
   Priority,
   StoryType,
   WorkflowWithStates,
   EpicWithStats,
 } from "@/lib/pmTypes";
 import { pmEpicService } from "@/lib/services/pmEpicService";
-import { pmIterationService } from "@/lib/services/pmIterationService";
+import { pmSprintService } from "@/lib/services/pmSprintService";
 import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
 import { DatePicker } from "@/components/ui/date-picker";
 
@@ -56,7 +56,7 @@ const defaultState = {
   priority: "none" as Priority,
   estimate: "",
   epic_id: "",
-  iteration_id: "",
+  sprint_id: "",
   team_id: "",
   deadline: "",
 };
@@ -148,7 +148,7 @@ export function CreateStoryModal({
   const [error, setError] = useState<string | null>(null);
   const [editorExpanded, setEditorExpanded] = useState(false);
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
-  const [iterations, setIterations] = useState<IterationWithStats[]>([]);
+  const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const { teams } = useWorkspaceTeams(workspaceId);
 
   useEffect(() => {
@@ -161,12 +161,12 @@ export function CreateStoryModal({
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const [epicsRes, iterationsRes] = await Promise.all([
+      const [epicsRes, sprintsRes] = await Promise.all([
         pmEpicService.list(workspaceId, { archived: false }),
-        pmIterationService.list(workspaceId, { archived: false }),
+        pmSprintService.list(workspaceId, { archived: false }),
       ]);
       setEpics(epicsRes.data ?? []);
-      setIterations(iterationsRes.data ?? []);
+      setSprints(sprintsRes.data ?? []);
     })();
   }, [open, workspaceId]);
 
@@ -185,13 +185,13 @@ export function CreateStoryModal({
     return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? "None";
   }, [form.epic_id, epics]);
 
-  const currentIterationName = useMemo(() => {
-    if (!form.iteration_id) return "None";
+  const currentSprintName = useMemo(() => {
+    if (!form.sprint_id) return "None";
     return (
-      iterations.find((i) => i.iteration.id === form.iteration_id)?.iteration
+      sprints.find((i) => i.sprint.id === form.sprint_id)?.sprint
         .name ?? "None"
     );
-  }, [form.iteration_id, iterations]);
+  }, [form.sprint_id, sprints]);
 
   const currentTeamName = useMemo(() => {
     if (!form.team_id) return "None";
@@ -213,7 +213,7 @@ export function CreateStoryModal({
         priority: form.priority,
         estimate: form.estimate ? Number(form.estimate) : undefined,
         epic_id: form.epic_id || undefined,
-        iteration_id: form.iteration_id || undefined,
+        sprint_id: form.sprint_id || undefined,
         team_id: form.team_id || undefined,
         deadline: form.deadline || undefined,
       });
@@ -409,21 +409,21 @@ export function CreateStoryModal({
                   />
                 </MetadataRow>
 
-                {/* Iteration */}
-                <MetadataRow icon={GitBranch} label="Iteration">
+                {/* Sprint */}
+                <MetadataRow icon={GitBranch} label="Sprint">
                   <SidebarPopoverSelect
-                    value={form.iteration_id || "__none__"}
+                    value={form.sprint_id || "__none__"}
                     options={[
-                      { value: "__none__", label: "No iteration" },
-                      ...iterations.map((i) => ({ value: i.iteration.id, label: i.iteration.name })),
+                      { value: "__none__", label: "No sprint" },
+                      ...sprints.map((i) => ({ value: i.sprint.id, label: i.sprint.name })),
                     ]}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
-                        iteration_id: value === "__none__" ? "" : value,
+                        sprint_id: value === "__none__" ? "" : value,
                       }))
                     }
-                    renderTrigger={() => <span>{currentIterationName}</span>}
+                    renderTrigger={() => <span>{currentSprintName}</span>}
                   />
                 </MetadataRow>
 

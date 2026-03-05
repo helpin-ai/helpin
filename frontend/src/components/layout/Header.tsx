@@ -77,7 +77,7 @@ export function Header() {
     const pmSubMap: Record<string, string> = {
       stories: "Work Items",
       epics: "Epics",
-      iterations: "Iterations",
+      sprints: "Sprints",
       objectives: "Objectives",
       roadmap: "Roadmap",
       reports: "Reports",

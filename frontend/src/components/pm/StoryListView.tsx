@@ -27,7 +27,7 @@ import type {
   Story,
   WorkflowWithStates,
   EpicWithStats,
-  IterationWithStats,
+  SprintWithStats,
 } from '@/lib/pmTypes';
 import type { MemberWithUser, WorkspaceTeam } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
@@ -38,7 +38,7 @@ interface StoryListViewProps {
   teams: WorkspaceTeam[];
   members: MemberWithUser[];
   epics: EpicWithStats[];
-  iterations: IterationWithStats[];
+  sprints: SprintWithStats[];
   filters: BoardFilters;
   teamId: string | null;
   onOpenStory: (story: Story) => void;
@@ -51,7 +51,7 @@ type GroupByOption =
   | 'priority'
   | 'severity'
   | 'epic'
-  | 'iteration'
+  | 'sprint'
   | 'owner'
   | 'team';
 
@@ -62,7 +62,7 @@ const GROUP_BY_OPTIONS: { value: GroupByOption; label: string }[] = [
   { value: 'priority', label: 'Priority' },
   { value: 'severity', label: 'Severity' },
   { value: 'epic', label: 'Epic' },
-  { value: 'iteration', label: 'Iteration' },
+  { value: 'sprint', label: 'Sprint' },
   { value: 'owner', label: 'Owner' },
   { value: 'team', label: 'Team' },
 ];
@@ -75,7 +75,7 @@ const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
   priority: 'priorityName',
   severity: 'severityName',
   epic: 'epicName',
-  iteration: 'iterationName',
+  sprint: 'sprintName',
   owner: 'ownerName',
   team: 'teamName',
 };
@@ -88,7 +88,7 @@ export function StoryListView({
   teams,
   members,
   epics,
-  iterations,
+  sprints,
   filters,
   teamId,
   onOpenStory,
@@ -132,13 +132,13 @@ export function StoryListView({
     return map;
   }, [epics]);
 
-  const iterationMap = useMemo(() => {
+  const sprintMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const i of iterations) {
-      map.set(i.iteration.id, i.iteration.name);
+    for (const i of sprints) {
+      map.set(i.sprint.id, i.sprint.name);
     }
     return map;
-  }, [iterations]);
+  }, [sprints]);
 
   // Fetch stories
   const fetchStories = useCallback(async () => {
@@ -303,14 +303,14 @@ export function StoryListView({
         }
       ),
       columnHelper.accessor(
-        (row) => (row.iteration_id ? iterationMap.get(row.iteration_id) ?? 'Unknown' : 'No Iteration'),
+        (row) => (row.sprint_id ? sprintMap.get(row.sprint_id) ?? 'Unknown' : 'No Sprint'),
         {
-          id: 'iterationName',
-          header: 'Iteration',
+          id: 'sprintName',
+          header: 'Sprint',
           size: 130,
           cell: (info) => {
             const v = info.getValue();
-            return v !== 'No Iteration' ? <span className="truncate text-xs">{v}</span> : null;
+            return v !== 'No Sprint' ? <span className="truncate text-xs">{v}</span> : null;
           },
         }
       ),
@@ -363,7 +363,7 @@ export function StoryListView({
         },
       }),
     ],
-    [stateMap, memberMap, teamMap, epicMap, iterationMap, onOpenStory]
+    [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory]
   );
 
   // Hidden columns (for grouping only)

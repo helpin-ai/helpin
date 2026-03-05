@@ -33,11 +33,11 @@ import { Route as AuthenticatedWSlugSettingsSectionRouteImport } from './routes/
 import { Route as AuthenticatedWSlugPmStoriesRouteImport } from './routes/_authenticated/w/$slug/pm/stories'
 import { Route as AuthenticatedWSlugPmRoadmapRouteImport } from './routes/_authenticated/w/$slug/pm/roadmap'
 import { Route as AuthenticatedWSlugPmReportsRouteImport } from './routes/_authenticated/w/$slug/pm/reports'
+import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
-import { Route as AuthenticatedWSlugPmIterationsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/iterations/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
+import { Route as AuthenticatedWSlugPmSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/$sprintId'
 import { Route as AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/$objectiveId'
-import { Route as AuthenticatedWSlugPmIterationsIterationIdRouteImport } from './routes/_authenticated/w/$slug/pm/iterations/$iterationId'
 import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_authenticated/w/$slug/pm/epics/$epicId'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -170,16 +170,16 @@ const AuthenticatedWSlugPmReportsRoute =
     path: '/pm/reports',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugPmSprintsIndexRoute =
+  AuthenticatedWSlugPmSprintsIndexRouteImport.update({
+    id: '/pm/sprints/',
+    path: '/pm/sprints/',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugPmObjectivesIndexRoute =
   AuthenticatedWSlugPmObjectivesIndexRouteImport.update({
     id: '/pm/objectives/',
     path: '/pm/objectives/',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
-const AuthenticatedWSlugPmIterationsIndexRoute =
-  AuthenticatedWSlugPmIterationsIndexRouteImport.update({
-    id: '/pm/iterations/',
-    path: '/pm/iterations/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugPmEpicsIndexRoute =
@@ -188,16 +188,16 @@ const AuthenticatedWSlugPmEpicsIndexRoute =
     path: '/pm/epics/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugPmSprintsSprintIdRoute =
+  AuthenticatedWSlugPmSprintsSprintIdRouteImport.update({
+    id: '/pm/sprints/$sprintId',
+    path: '/pm/sprints/$sprintId',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugPmObjectivesObjectiveIdRoute =
   AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport.update({
     id: '/pm/objectives/$objectiveId',
     path: '/pm/objectives/$objectiveId',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
-const AuthenticatedWSlugPmIterationsIterationIdRoute =
-  AuthenticatedWSlugPmIterationsIterationIdRouteImport.update({
-    id: '/pm/iterations/$iterationId',
-    path: '/pm/iterations/$iterationId',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugPmEpicsEpicIdRoute =
@@ -232,11 +232,11 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/': typeof AuthenticatedWSlugSettingsIndexRoute
   '/w/$slug/sprints/': typeof AuthenticatedWSlugSprintsIndexRoute
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
-  '/w/$slug/pm/iterations/$iterationId': typeof AuthenticatedWSlugPmIterationsIterationIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
+  '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
-  '/w/$slug/pm/iterations/': typeof AuthenticatedWSlugPmIterationsIndexRoute
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
+  '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -262,11 +262,11 @@ export interface FileRoutesByTo {
   '/w/$slug/settings': typeof AuthenticatedWSlugSettingsIndexRoute
   '/w/$slug/sprints': typeof AuthenticatedWSlugSprintsIndexRoute
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
-  '/w/$slug/pm/iterations/$iterationId': typeof AuthenticatedWSlugPmIterationsIterationIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
+  '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
-  '/w/$slug/pm/iterations': typeof AuthenticatedWSlugPmIterationsIndexRoute
   '/w/$slug/pm/objectives': typeof AuthenticatedWSlugPmObjectivesIndexRoute
+  '/w/$slug/pm/sprints': typeof AuthenticatedWSlugPmSprintsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -295,11 +295,11 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/': typeof AuthenticatedWSlugSettingsIndexRoute
   '/_authenticated/w/$slug/sprints/': typeof AuthenticatedWSlugSprintsIndexRoute
   '/_authenticated/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
-  '/_authenticated/w/$slug/pm/iterations/$iterationId': typeof AuthenticatedWSlugPmIterationsIterationIdRoute
   '/_authenticated/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
+  '/_authenticated/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
-  '/_authenticated/w/$slug/pm/iterations/': typeof AuthenticatedWSlugPmIterationsIndexRoute
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
+  '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -328,11 +328,11 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/'
     | '/w/$slug/sprints/'
     | '/w/$slug/pm/epics/$epicId'
-    | '/w/$slug/pm/iterations/$iterationId'
     | '/w/$slug/pm/objectives/$objectiveId'
+    | '/w/$slug/pm/sprints/$sprintId'
     | '/w/$slug/pm/epics/'
-    | '/w/$slug/pm/iterations/'
     | '/w/$slug/pm/objectives/'
+    | '/w/$slug/pm/sprints/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -358,11 +358,11 @@ export interface FileRouteTypes {
     | '/w/$slug/settings'
     | '/w/$slug/sprints'
     | '/w/$slug/pm/epics/$epicId'
-    | '/w/$slug/pm/iterations/$iterationId'
     | '/w/$slug/pm/objectives/$objectiveId'
+    | '/w/$slug/pm/sprints/$sprintId'
     | '/w/$slug/pm/epics'
-    | '/w/$slug/pm/iterations'
     | '/w/$slug/pm/objectives'
+    | '/w/$slug/pm/sprints'
   id:
     | '__root__'
     | '/'
@@ -390,11 +390,11 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/'
     | '/_authenticated/w/$slug/sprints/'
     | '/_authenticated/w/$slug/pm/epics/$epicId'
-    | '/_authenticated/w/$slug/pm/iterations/$iterationId'
     | '/_authenticated/w/$slug/pm/objectives/$objectiveId'
+    | '/_authenticated/w/$slug/pm/sprints/$sprintId'
     | '/_authenticated/w/$slug/pm/epics/'
-    | '/_authenticated/w/$slug/pm/iterations/'
     | '/_authenticated/w/$slug/pm/objectives/'
+    | '/_authenticated/w/$slug/pm/sprints/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -575,18 +575,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmReportsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/pm/sprints/': {
+      id: '/_authenticated/w/$slug/pm/sprints/'
+      path: '/pm/sprints'
+      fullPath: '/w/$slug/pm/sprints/'
+      preLoaderRoute: typeof AuthenticatedWSlugPmSprintsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/pm/objectives/': {
       id: '/_authenticated/w/$slug/pm/objectives/'
       path: '/pm/objectives'
       fullPath: '/w/$slug/pm/objectives/'
       preLoaderRoute: typeof AuthenticatedWSlugPmObjectivesIndexRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
-    '/_authenticated/w/$slug/pm/iterations/': {
-      id: '/_authenticated/w/$slug/pm/iterations/'
-      path: '/pm/iterations'
-      fullPath: '/w/$slug/pm/iterations/'
-      preLoaderRoute: typeof AuthenticatedWSlugPmIterationsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/pm/epics/': {
@@ -596,18 +596,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/pm/sprints/$sprintId': {
+      id: '/_authenticated/w/$slug/pm/sprints/$sprintId'
+      path: '/pm/sprints/$sprintId'
+      fullPath: '/w/$slug/pm/sprints/$sprintId'
+      preLoaderRoute: typeof AuthenticatedWSlugPmSprintsSprintIdRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/pm/objectives/$objectiveId': {
       id: '/_authenticated/w/$slug/pm/objectives/$objectiveId'
       path: '/pm/objectives/$objectiveId'
       fullPath: '/w/$slug/pm/objectives/$objectiveId'
       preLoaderRoute: typeof AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
-    '/_authenticated/w/$slug/pm/iterations/$iterationId': {
-      id: '/_authenticated/w/$slug/pm/iterations/$iterationId'
-      path: '/pm/iterations/$iterationId'
-      fullPath: '/w/$slug/pm/iterations/$iterationId'
-      preLoaderRoute: typeof AuthenticatedWSlugPmIterationsIterationIdRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/pm/epics/$epicId': {
@@ -638,11 +638,11 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsIndexRoute: typeof AuthenticatedWSlugSettingsIndexRoute
   AuthenticatedWSlugSprintsIndexRoute: typeof AuthenticatedWSlugSprintsIndexRoute
   AuthenticatedWSlugPmEpicsEpicIdRoute: typeof AuthenticatedWSlugPmEpicsEpicIdRoute
-  AuthenticatedWSlugPmIterationsIterationIdRoute: typeof AuthenticatedWSlugPmIterationsIterationIdRoute
   AuthenticatedWSlugPmObjectivesObjectiveIdRoute: typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
+  AuthenticatedWSlugPmSprintsSprintIdRoute: typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   AuthenticatedWSlugPmEpicsIndexRoute: typeof AuthenticatedWSlugPmEpicsIndexRoute
-  AuthenticatedWSlugPmIterationsIndexRoute: typeof AuthenticatedWSlugPmIterationsIndexRoute
   AuthenticatedWSlugPmObjectivesIndexRoute: typeof AuthenticatedWSlugPmObjectivesIndexRoute
+  AuthenticatedWSlugPmSprintsIndexRoute: typeof AuthenticatedWSlugPmSprintsIndexRoute
 }
 
 const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
@@ -665,15 +665,14 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsIndexRoute: AuthenticatedWSlugSettingsIndexRoute,
   AuthenticatedWSlugSprintsIndexRoute: AuthenticatedWSlugSprintsIndexRoute,
   AuthenticatedWSlugPmEpicsEpicIdRoute: AuthenticatedWSlugPmEpicsEpicIdRoute,
-  AuthenticatedWSlugPmIterationsIterationIdRoute:
-    AuthenticatedWSlugPmIterationsIterationIdRoute,
   AuthenticatedWSlugPmObjectivesObjectiveIdRoute:
     AuthenticatedWSlugPmObjectivesObjectiveIdRoute,
+  AuthenticatedWSlugPmSprintsSprintIdRoute:
+    AuthenticatedWSlugPmSprintsSprintIdRoute,
   AuthenticatedWSlugPmEpicsIndexRoute: AuthenticatedWSlugPmEpicsIndexRoute,
-  AuthenticatedWSlugPmIterationsIndexRoute:
-    AuthenticatedWSlugPmIterationsIndexRoute,
   AuthenticatedWSlugPmObjectivesIndexRoute:
     AuthenticatedWSlugPmObjectivesIndexRoute,
+  AuthenticatedWSlugPmSprintsIndexRoute: AuthenticatedWSlugPmSprintsIndexRoute,
 }
 
 const AuthenticatedWSlugRouteWithChildren =
