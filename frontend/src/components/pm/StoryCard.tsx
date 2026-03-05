@@ -167,7 +167,7 @@ export function StoryCard({
         isOverlay && 'ring-1 ring-primary/30 shadow-lg',
       )}
     >
-      {/* Row 1: ID + Story type + Priority */}
+      {/* Row 1: Story type + Epic + Priority */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -177,7 +177,9 @@ export function StoryCard({
           </TooltipTrigger>
           <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>
         </Tooltip>
-        <span className="font-medium text-foreground/80">TP-{story.display_id}</span>
+        {story.epic_name && (
+          <span className="truncate text-[11px] text-muted-foreground max-w-[160px]">{story.epic_name}</span>
+        )}
 
         {/* Priority pill — clickable dropdown */}
         {workspaceId ? (
@@ -384,16 +386,18 @@ export function StoryCard({
         )}
       </div>
 
-      {/* Row 4: Footer - team, epic, assignee */}
+      {/* Row 4: Footer - team, assignee */}
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {teamName && (
-            <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
-              {teamName}
-            </span>
-          )}
-          {story.epic_name && (
-            <span className="truncate text-[11px] text-muted-foreground max-w-[120px]">{story.epic_name}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
+                  {teamName}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">Team: {teamName}</TooltipContent>
+            </Tooltip>
           )}
         </div>
 

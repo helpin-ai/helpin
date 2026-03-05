@@ -11,8 +11,10 @@ import {
   type Row,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Loader2, UserPlus } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import {
   PriorityIcon,
@@ -23,7 +25,9 @@ import {
   SEVERITY_CONFIG,
   STORY_TYPE_CONFIG,
 } from '@/lib/pmConstants';
+import { UserAvatar } from './UserAvatar';
 import type {
+  Priority,
   Story,
   WorkflowWithStates,
   EpicWithStats,
@@ -31,6 +35,8 @@ import type {
 } from '@/lib/pmTypes';
 import type { MemberWithUser, WorkspaceTeam } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
+
+const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 
 interface StoryListViewProps {
   workspaceId: string;
@@ -162,6 +168,17 @@ export function StoryListView({
     fetchStories();
   }, [fetchStories]);
 
+  // Optimistic inline update
+  const updateStoryField = useCallback(
+    async (storyId: string, patch: Partial<Story>) => {
+      setStories((prev) =>
+        prev.map((s) => (s.id === storyId ? { ...s, ...patch } : s)),
+      );
+      await pmStoryService.update(workspaceId, storyId, patch);
+    },
+    [workspaceId],
+  );
+
   // Listen for story events
   useEffect(() => {
     const handler = () => { fetchStories(); };
@@ -214,34 +231,28 @@ export function StoryListView({
         {
           id: 'stateName',
           header: 'State',
-          size: 130,
-          cell: (info) => {
-            const stateInfo = stateMap.get(info.row.original.workflow_state_id);
-            return (
-              <span className="flex items-center gap-1.5 text-xs">
-                {stateInfo && (
-                  <StateTypeIcon stateType={stateInfo.stateType as 'backlog' | 'unstarted' | 'started' | 'done'} className="h-3.5 w-3.5" />
-                )}
-                {info.getValue()}
-              </span>
-            );
-          },
+          size: 150,
+          cell: (info) => (
+            <InlineStateCell
+              story={info.row.original}
+              states={workflow.states}
+              stateMap={stateMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor('priority', {
         id: 'priorityIcon',
         header: 'Priority',
-        size: 90,
+        size: 110,
         enableGrouping: false,
-        cell: (info) => {
-          const p = info.getValue();
-          return (
-            <span className="flex items-center gap-1.5 text-xs">
-              <PriorityIcon priority={p} className="h-3.5 w-3.5" />
-              {PRIORITY_CONFIG[p].label}
-            </span>
-          );
-        },
+        cell: (info) => (
+          <InlinePriorityCell
+            story={info.row.original}
+            onUpdate={updateStoryField}
+          />
+        ),
       }),
       columnHelper.accessor('severity', {
         id: 'severityIcon',
@@ -274,8 +285,15 @@ export function StoryListView({
         {
           id: 'ownerName',
           header: 'Owner',
-          size: 130,
-          cell: (info) => <span className="truncate text-xs">{info.getValue()}</span>,
+          size: 150,
+          cell: (info) => (
+            <InlineOwnerCell
+              story={info.row.original}
+              members={members}
+              memberMap={memberMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor(
@@ -363,7 +381,7 @@ export function StoryListView({
         },
       }),
     ],
-    [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory]
+    [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, members, updateStoryField]
   );
 
   // Hidden columns (for grouping only)
@@ -539,5 +557,210 @@ function DataRow({ row, onOpenStory }: { row: Row<Story>; onOpenStory: (story: S
         );
       })}
     </div>
+  );
+}
+
+// ── Inline editable cells ──────────────────────────────────────────
+
+function InlinePriorityCell({
+  story,
+  onUpdate,
+}: {
+  story: Story;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const p = story.priority;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          <PriorityIcon priority={p} className="h-3.5 w-3.5" />
+          {PRIORITY_CONFIG[p].label}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[180px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandGroup>
+                {ALL_PRIORITIES.map((pri) => {
+                  const cfg = PRIORITY_CONFIG[pri];
+                  return (
+                    <CommandItem
+                      key={pri}
+                      value={cfg.label}
+                      onSelect={() => {
+                        if (pri !== p) onUpdate(story.id, { priority: pri });
+                        setOpen(false);
+                      }}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <PriorityIcon priority={pri} className="h-3.5 w-3.5" />
+                      <span>{cfg.label}</span>
+                      {p === pri && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineStateCell({
+  story,
+  states,
+  stateMap,
+  onUpdate,
+}: {
+  story: Story;
+  states: WorkflowWithStates['states'];
+  stateMap: Map<string, { name: string; stateType: string }>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = stateMap.get(story.workflow_state_id);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {current && (
+            <StateTypeIcon stateType={current.stateType as 'backlog' | 'unstarted' | 'started' | 'done'} className="h-3.5 w-3.5" />
+          )}
+          {current?.name ?? 'Unknown'}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[200px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandGroup>
+                {states.map((s) => (
+                  <CommandItem
+                    key={s.id}
+                    value={s.name}
+                    onSelect={() => {
+                      if (s.id !== story.workflow_state_id)
+                        onUpdate(story.id, { workflow_state_id: s.id });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <StateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
+                    <span>{s.name}</span>
+                    {story.workflow_state_id === s.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineOwnerCell({
+  story,
+  members,
+  memberMap,
+  onUpdate,
+}: {
+  story: Story;
+  members: MemberWithUser[];
+  memberMap: Map<string, string>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const ownerName = story.owner_id ? memberMap.get(story.owner_id) ?? 'Unknown' : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {ownerName ? (
+            <>
+              <UserAvatar name={ownerName} className="h-4 w-4" />
+              <span className="truncate">{ownerName}</span>
+            </>
+          ) : (
+            <>
+              <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">Assign</span>
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[220px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search members..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No members found</CommandEmpty>
+              <CommandGroup>
+                {members.map((m) => (
+                  <CommandItem
+                    key={m.user_id}
+                    value={m.full_name || m.email}
+                    onSelect={() => {
+                      const newOwnerId = story.owner_id === m.user_id ? undefined : m.user_id;
+                      onUpdate(story.id, { owner_id: newOwnerId });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <UserAvatar name={m.full_name || m.email} className="h-5 w-5" />
+                    <span className="truncate">{m.full_name || m.email}</span>
+                    {story.owner_id === m.user_id && (
+                      <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
   );
 }
