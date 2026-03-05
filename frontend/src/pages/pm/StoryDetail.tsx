@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
+import { useTitle } from '@/hooks/useTitle';
 import {
   Archive,
+  ArrowLeft,
   CalendarDays,
   Check,
   CheckSquare,
@@ -15,18 +17,15 @@ import {
   LayoutGrid,
   Link2,
   Loader2,
-  Maximize2,
   MoreHorizontal,
   Paperclip,
   Pencil,
   Send,
   ShieldAlert,
-  Star,
   Tag,
   Trash2,
   User,
   Users,
-  X,
 } from 'lucide-react';
 import {
   PRIORITY_CONFIG,
@@ -49,11 +48,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
 import { ChecklistItems } from '@/components/pm/ChecklistItems';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
+import { DatePicker } from '@/components/ui/date-picker';
 import { getInitials } from '@/lib/utils';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
@@ -61,38 +60,27 @@ import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
-import { pmLabelService } from '@/lib/services/pmLabelService';
 import { useAuthStore } from '@/stores/authStore';
+import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
-import { DatePicker } from '@/components/ui/date-picker';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
   EpicWithStats,
-  SprintWithStats,
-  Label,
   Priority,
   Severity,
+  SprintWithStats,
   StoryDetail,
   StoryType,
   UpdateStoryRequest,
   WorkflowState,
 } from '@/lib/pmTypes';
 
-// ── Types ──────────────────────────────────────────────────────────
+const routeApi = getRouteApi('/_authenticated/w/$slug/pm/stories/$storyId');
 
-interface StoryDetailPanelProps {
-  workspaceId: string;
-  open: boolean;
-  loading?: boolean;
-  onOpenChange: (open: boolean) => void;
-  storyDetail: StoryDetail | null;
-  states: WorkflowState[];
-  onStoryUpdated: (story: StoryDetail) => void;
-  onStoryArchived: (storyId: string) => void;
-}
+// ── Types ──────────────────────────────────────────────────────────
 
 interface FormState {
   name: string;
@@ -227,30 +215,8 @@ function SidebarPopoverSelect<T extends string>({
 
 // ── Timeline Entry ─────────────────────────────────────────────────
 
-type TimelineItem =
-  | { kind: 'activity'; data: ActivityLogEntry; time: string }
-  | { kind: 'comment'; data: CommentWithAuthor; time: string };
-
-function TimelineEntry({ item }: { item: TimelineItem }) {
-  if (item.kind === 'comment') {
-    const { comment, author } = item.data;
-    return (
-      <div className="flex items-start gap-2">
-        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[8px] font-medium">
-          {userInitials(author)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-xs font-medium">{author.full_name || author.email}</span>
-            <span className="text-[11px] text-muted-foreground">{formatRelativeTime(comment.created_at)}</span>
-          </div>
-          <p className="mt-0.5 text-xs text-foreground/90">{comment.body}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const { activity, actor } = item.data;
+function ActivityEntry({ entry }: { entry: ActivityLogEntry }) {
+  const { activity, actor } = entry;
 
   return (
     <div className="flex items-center gap-2">
@@ -268,93 +234,105 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
   );
 }
 
-// ── Main Body ──────────────────────────────────────────────────────
+// ── Main Page ──────────────────────────────────────────────────────
 
-function StoryDetailPanelBody({
-  workspaceId,
-  storyDetail,
-  states,
-  onOpenChange,
-  onStoryUpdated,
-  onStoryArchived,
-}: {
-  workspaceId: string;
-  storyDetail: StoryDetail;
-  states: WorkflowState[];
-  onOpenChange: (open: boolean) => void;
-  onStoryUpdated: (story: StoryDetail) => void;
-  onStoryArchived: (storyId: string) => void;
-}) {
+export function StoryDetailPage() {
+  const { storyId, slug } = routeApi.useParams();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const [form, setForm] = useState<FormState>(() => buildFormState(storyDetail));
-  const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const workspaceId = workspace?.id;
+  const currentUser = useAuthStore((s) => s.user);
 
-  // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
-  const lastSyncedAt = useRef(storyDetail.story.updated_at);
-  useEffect(() => {
-    if (storyDetail.story.updated_at !== lastSyncedAt.current) {
-      lastSyncedAt.current = storyDetail.story.updated_at;
-      // Only reset form if no unsaved edits
-      if (Object.keys(pendingPatch).length === 0 && !saving) {
-        setForm(buildFormState(storyDetail));
-      }
-    }
-  }, [storyDetail, pendingPatch, saving]);
+  const loadWorkflows = usePMWorkflowStore((s) => s.loadWorkflows);
+
+  const [storyDetail, setStoryDetail] = useState<StoryDetail | null>(null);
+  const [states, setStates] = useState<WorkflowState[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [form, setForm] = useState<FormState | null>(null);
+  const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [newComment, setNewComment] = useState('');
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentBody, setEditingCommentBody] = useState('');
-  const currentUser = useAuthStore((s) => s.user);
 
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
+  const [showAllActivity, setShowAllActivity] = useState(false);
 
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
-  const [_labels, _setLabels] = useState<Label[]>([]);
-  const [showAllActivity, setShowAllActivity] = useState(false);
+
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
+
   const { teams } = useWorkspaceTeams(workspaceId);
-  const { members } = useWorkspaceMembers(workspaceId);
+  const { members } = useWorkspaceMembers(workspaceId ?? '');
 
-  // ── URL sync ───────────────────────────────────────────────────
+  useTitle(form?.name ? `TP-${storyDetail?.story.display_id} ${form.name}` : 'Story');
+
+  // ── Load all data in parallel ───────────────────────────────────
   useEffect(() => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('story', `TP-${storyDetail.story.display_id}`);
-    window.history.replaceState({}, '', url.toString());
+    if (!workspaceId) return;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      const [storyRes, , epicsRes, sprintsRes, commentsRes, activityRes, clRes, elRes] =
+        await Promise.all([
+          pmStoryService.get(workspaceId, storyId),
+          loadWorkflows(workspaceId),
+          pmEpicService.list(workspaceId, { archived: false }),
+          pmSprintService.list(workspaceId, { archived: false }),
+          pmCommentService.list(workspaceId, 'story', storyId),
+          pmStoryService.listActivity(workspaceId, storyId, 1, 30),
+          pmChecklistService.list(workspaceId, storyId),
+          pmExternalLinkService.list(workspaceId, storyId),
+        ]);
+      if (storyRes.error || !storyRes.data) {
+        setError(storyRes.error ?? 'Story not found');
+        setLoading(false);
+        return;
+      }
+      const detail = storyRes.data;
+      setStoryDetail(detail);
+      setForm(buildFormState(detail));
 
-    return () => {
-      const cleanupUrl = new URL(window.location.href);
-      cleanupUrl.searchParams.delete('story');
-      window.history.replaceState({}, '', cleanupUrl.toString());
-    };
-  }, [storyDetail]);
+      // Load workflow states for this story's workflow
+      const allWorkflows = usePMWorkflowStore.getState().workflows;
+      const wf = allWorkflows.find((w) => w.workflow.id === detail.story.workflow_id);
+      setStates(wf?.states ?? []);
 
-  // ── Load comments + activity ───────────────────────────────────
+      setEpics(epicsRes.data ?? []);
+      setSprints(sprintsRes.data ?? []);
+      setComments(commentsRes.data ?? []);
+      setActivity(activityRes.data?.data ?? []);
+      if (clRes.data && clRes.data.length > 0) setShowChecklist(true);
+      if (elRes.data && elRes.data.length > 0) setShowExternalLinks(true);
+
+      setLoading(false);
+    })();
+  }, [workspaceId, storyId, loadWorkflows]);
+
+  // ── Reload helpers (for real-time events) ───────────────────────
   const reloadComments = useCallback(async () => {
-    const res = await pmCommentService.list(workspaceId, 'story', storyDetail.story.id);
+    if (!workspaceId) return;
+    const res = await pmCommentService.list(workspaceId, storyId);
     setComments(res.data ?? []);
-  }, [workspaceId, storyDetail.story.id]);
+  }, [workspaceId, storyId]);
 
   const reloadActivity = useCallback(async () => {
-    const res = await pmStoryService.listActivity(workspaceId, storyDetail.story.id, 1, 30);
+    if (!workspaceId) return;
+    const res = await pmStoryService.listActivity(workspaceId, storyId, 1, 30);
     setActivity(res.data?.data ?? []);
-  }, [workspaceId, storyDetail.story.id]);
+  }, [workspaceId, storyId]);
 
+  // ── Real-time event listeners ───────────────────────────────────
   useEffect(() => {
-    reloadComments();
-    reloadActivity();
-  }, [reloadComments, reloadActivity]);
-
-  // Re-fetch comments when comment events arrive; activity on any story change
-  useEffect(() => {
-    const storyId = storyDetail.story.id;
     const onChildEvent = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
       if (d?.parent_id === storyId && d?.entity === 'comment') {
@@ -372,75 +350,61 @@ function StoryDetailPanelBody({
       window.removeEventListener('story-child-updated', onChildEvent);
       window.removeEventListener('story-updated', onStoryEvent);
     };
-  }, [storyDetail.story.id, reloadComments, reloadActivity]);
+  }, [storyId, reloadComments, reloadActivity]);
 
-  // ── Load epics, sprints, labels ─────────────────────────────
+  // ── Re-sync form when storyDetail changes externally ────────────
+  const lastSyncedAt = useRef(storyDetail?.story.updated_at);
   useEffect(() => {
-    (async () => {
-      const [epicsRes, sprintsRes, labelsRes] = await Promise.all([
-        pmEpicService.list(workspaceId, { archived: false }),
-        pmSprintService.list(workspaceId, { archived: false }),
-        pmLabelService.list(workspaceId),
-      ]);
-      setEpics(epicsRes.data ?? []);
-      setSprints(sprintsRes.data ?? []);
-      _setLabels(labelsRes.data ?? []);
-    })();
-  }, [workspaceId]);
+    if (!storyDetail) return;
+    if (storyDetail.story.updated_at !== lastSyncedAt.current) {
+      lastSyncedAt.current = storyDetail.story.updated_at;
+      if (Object.keys(pendingPatch).length === 0 && !saving) {
+        setForm(buildFormState(storyDetail));
+      }
+    }
+  }, [storyDetail, pendingPatch, saving]);
 
-  // ── Auto-show checklist / external links if items exist ────────
+  // ── Auto-save debounce ──────────────────────────────────────────
+  const storyEntityId = storyDetail?.story.id;
   useEffect(() => {
-    (async () => {
-      const [clRes, elRes] = await Promise.all([
-        pmChecklistService.list(workspaceId, storyDetail.story.id),
-        pmExternalLinkService.list(workspaceId, storyDetail.story.id),
-      ]);
-      if (clRes.data && clRes.data.length > 0) setShowChecklist(true);
-      if (elRes.data && elRes.data.length > 0) setShowExternalLinks(true);
-    })();
-  }, [workspaceId, storyDetail]);
-
-  // ── Auto-save debounce ─────────────────────────────────────────
-  useEffect(() => {
-    if (saving || Object.keys(pendingPatch).length === 0) return;
+    if (saving || Object.keys(pendingPatch).length === 0 || !workspaceId || !storyEntityId) return;
     const timer = window.setTimeout(async () => {
       const patch = pendingPatch;
       setPendingPatch({});
       setSaving(true);
-      const { data, error } = await pmStoryService.update(workspaceId, storyDetail.story.id, patch);
-      if (error || !data) {
-        setSaveError(error ?? 'Failed to save changes');
+      const { data, error: err } = await pmStoryService.update(workspaceId, storyEntityId, patch);
+      if (err || !data) {
+        setSaveError(err ?? 'Failed to save');
         setPendingPatch((current) => ({ ...patch, ...current }));
       } else {
         setSaveError(null);
-        onStoryUpdated(data);
+        setStoryDetail(data);
       }
       setSaving(false);
     }, 650);
-
     return () => window.clearTimeout(timer);
-  }, [workspaceId, storyDetail, pendingPatch, saving, onStoryUpdated]);
+  }, [workspaceId, storyEntityId, pendingPatch, saving]);
 
   const queuePatch = (patch: UpdateStoryRequest) => {
     setPendingPatch((current) => ({ ...current, ...patch }));
   };
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateStoryRequest) => {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => (current ? { ...current, [key]: value } : current));
     queuePatch(patch);
   };
 
-  // ── Comments ───────────────────────────────────────────────────
+  // ── Comments ────────────────────────────────────────────────────
   const addComment = async () => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || !workspaceId || !storyDetail) return;
     setCommentLoading(true);
-    const { data, error } = await pmCommentService.create(workspaceId, {
+    const { data, error: err } = await pmCommentService.create(workspaceId, {
       entity_type: 'story',
       entity_id: storyDetail.story.id,
       body: newComment.trim(),
     });
     setCommentLoading(false);
-    if (error || !data) return;
+    if (err || !data) return;
     setComments((current) => [...current, data]);
     setNewComment('');
   };
@@ -456,11 +420,11 @@ function StoryDetailPanelBody({
   };
 
   const saveEditComment = async () => {
-    if (!editingCommentId || !editingCommentBody.trim()) return;
-    const { error } = await pmCommentService.update(workspaceId, editingCommentId, {
+    if (!editingCommentId || !editingCommentBody.trim() || !workspaceId) return;
+    const { error: err } = await pmCommentService.update(workspaceId, editingCommentId, {
       body: editingCommentBody.trim(),
     });
-    if (error) return;
+    if (err) return;
     setComments((current) =>
       current.map((c) =>
         c.comment.id === editingCommentId
@@ -473,110 +437,124 @@ function StoryDetailPanelBody({
   };
 
   const deleteComment = async (id: string) => {
-    const { error } = await pmCommentService.remove(workspaceId, id);
-    if (error) return;
+    if (!workspaceId) return;
+    const { error: err } = await pmCommentService.remove(workspaceId, id);
+    if (err) return;
     setComments((current) => current.filter((c) => c.comment.id !== id));
   };
 
-  // ── Archive ────────────────────────────────────────────────────
+  // ── Archive ─────────────────────────────────────────────────────
   const archiveStory = async () => {
-    const { error } = await pmStoryService.remove(workspaceId, storyDetail.story.id);
-    if (error) {
-      setSaveError(error);
+    if (!workspaceId || !storyDetail) return;
+    const { error: err } = await pmStoryService.remove(workspaceId, storyDetail.story.id);
+    if (err) {
+      setSaveError(err);
       return;
     }
-    onStoryArchived(storyDetail.story.id);
-    onOpenChange(false);
+    navigate({ to: '/w/$slug/pm/stories', params: { slug } });
   };
 
-  // ── Copy link ──────────────────────────────────────────────────
+  // ── Copy link ───────────────────────────────────────────────────
   const copyLink = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('story', `TP-${storyDetail.story.display_id}`);
-    navigator.clipboard.writeText(url.toString());
+    navigator.clipboard.writeText(window.location.href);
     setLinkCopied(true);
     setTimeout(() => setLinkCopied(false), 2000);
   };
 
-  // ── Derived data ───────────────────────────────────────────────
+  // ── Derived data ────────────────────────────────────────────────
   const currentState = useMemo(
-    () => states.find((s) => s.id === form.workflow_state_id),
-    [states, form.workflow_state_id],
+    () => states.find((s) => s.id === form?.workflow_state_id),
+    [states, form?.workflow_state_id],
   );
 
   const currentEpicName = useMemo(() => {
-    if (!form.epic_id) return 'No epic';
+    if (!form?.epic_id) return 'No epic';
     return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? 'No epic';
-  }, [form.epic_id, epics]);
+  }, [form?.epic_id, epics]);
 
   const currentSprintName = useMemo(() => {
-    if (!form.sprint_id) return 'No sprint';
+    if (!form?.sprint_id) return 'No sprint';
     return sprints.find((i) => i.sprint.id === form.sprint_id)?.sprint.name ?? 'No sprint';
-  }, [form.sprint_id, sprints]);
+  }, [form?.sprint_id, sprints]);
 
   const currentTeamName = useMemo(() => {
-    if (!form.team_id) return 'No team';
+    if (!form?.team_id) return 'No team';
     return teams.find((t) => t.id === form.team_id)?.name ?? 'No team';
-  }, [form.team_id, teams]);
+  }, [form?.team_id, teams]);
 
   const currentOwnerName = useMemo(() => {
-    if (!form.owner_id) return 'No owner';
+    if (!form?.owner_id) return 'No owner';
     return members.find((m) => m.user_id === form.owner_id)?.full_name ?? 'No owner';
-  }, [form.owner_id, members]);
+  }, [form?.owner_id, members]);
 
   const currentRequesterName = useMemo(() => {
-    if (!form.requester_id) return 'No requester';
+    if (!form?.requester_id) return 'No requester';
     return members.find((m) => m.user_id === form.requester_id)?.full_name ?? 'No requester';
-  }, [form.requester_id, members]);
+  }, [form?.requester_id, members]);
 
-  const storyLabels = storyDetail.labels ?? [];
+  const storyLabels = storyDetail?.labels ?? [];
+
+  const goBack = () => navigate({ to: '/w/$slug/pm/stories', params: { slug } });
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error || !storyDetail || !form) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3">
+        <p className="text-sm text-muted-foreground">{error ?? 'Story not found'}</p>
+        <Button variant="outline" size="sm" onClick={goBack}>
+          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          Back to Stories
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
-          <X className="h-4 w-4" />
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
+          <ArrowLeft className="h-4 w-4" />
         </Button>
-        {workspace && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0"
-            title="Open full page"
-            onClick={() => {
-              onOpenChange(false);
-              navigate({
-                to: '/w/$slug/pm/stories/$storyId',
-                params: { slug: workspace.slug, storyId: storyDetail.story.id },
-              });
-            }}
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
+          <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
+            Stories
+          </button>
+          <ChevronRight className="h-3 w-3 shrink-0" />
           <span className="shrink-0 font-medium text-foreground/80">TP-{storyDetail.story.display_id}</span>
           <ChevronRight className="h-3 w-3 shrink-0" />
-          <span className="truncate">{form.name || 'Untitled'}</span>
+          <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
         </div>
 
-        <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-7 w-7">
-            <Star className="h-3.5 w-3.5" />
-          </Button>
+        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+          {saving ? (
+            <span className="inline-flex items-center gap-1">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Saving...
+            </span>
+          ) : (
+            <span>All changes saved</span>
+          )}
+          {saveError && <span className="ml-2 text-destructive">{saveError}</span>}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7">
+              <Button variant="ghost" size="icon" className="h-7 w-7 ml-2">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={copyLink}>
                 <Link2 className="mr-2 h-4 w-4" />
-                Copy link
+                {linkCopied ? 'Copied!' : 'Copy link'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={archiveStory} className="text-destructive focus:text-destructive">
                 <Archive className="mr-2 h-4 w-4" />
@@ -587,10 +565,10 @@ function StoryDetailPanelBody({
         </div>
       </div>
 
-      {/* ── Two-column grid ─────────────────────────────────────── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
+      {/* ── Two-column layout ───────────────────────────────────── */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]">
         {/* ── Left column (main content) ────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 py-5">
+        <div className="min-h-0 overflow-y-auto px-8 py-6">
           {/* Title */}
           <input
             type="text"
@@ -608,7 +586,7 @@ function StoryDetailPanelBody({
               onChange={(html) => updateField('description', html, { description: html })}
               placeholder="Add a description..."
               className="border-transparent shadow-none"
-              uploadConfig={{ workspaceId, entityType: 'story', entityId: storyDetail.story.id }}
+              uploadConfig={{ workspaceId: workspaceId!, entityType: 'story', entityId: storyDetail.story.id }}
             />
           </div>
 
@@ -653,27 +631,26 @@ function StoryDetailPanelBody({
           {/* Checklist */}
           {showChecklist && (
             <div className="mt-6">
-              <ChecklistItems workspaceId={workspaceId} storyId={storyDetail.story.id} />
+              <ChecklistItems workspaceId={workspaceId!} storyId={storyDetail.story.id} />
             </div>
           )}
 
           {/* External Links */}
           {showExternalLinks && (
             <div className="mt-6">
-              <ExternalLinks workspaceId={workspaceId} storyId={storyDetail.story.id} />
+              <ExternalLinks workspaceId={workspaceId!} storyId={storyDetail.story.id} />
             </div>
           )}
 
           {/* Attachments */}
           <div className="mt-6" id="attachments-section">
             <Attachments
-              workspaceId={workspaceId}
+              workspaceId={workspaceId!}
               entityType="story"
               entityId={storyDetail.story.id}
             />
           </div>
 
-          {/* Separator */}
           <Separator className="my-6" />
 
           {/* Comments + Activity */}
@@ -788,7 +765,7 @@ function StoryDetailPanelBody({
                     </button>
                   )}
                   {(showAllActivity ? activity : activity.slice(0, 5)).map((entry) => (
-                    <TimelineEntry key={`a-${entry.activity.id}`} item={{ kind: 'activity', data: entry, time: entry.activity.created_at }} />
+                    <ActivityEntry key={`a-${entry.activity.id}`} entry={entry} />
                   ))}
                 </div>
               </div>
@@ -796,8 +773,8 @@ function StoryDetailPanelBody({
           </div>
         </div>
 
-        {/* ── Right column (sidebar) ────────────────────────────── */}
-        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
+        {/* ── Right column — metadata sidebar ────────────────────── */}
+        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
           {/* Story ID + copy */}
           <div className="mb-4 flex items-center justify-between">
             <span className="text-sm font-semibold text-foreground">TP-{storyDetail.story.display_id}</span>
@@ -1027,61 +1004,6 @@ function StoryDetailPanelBody({
           </div>
         </aside>
       </div>
-
-      {/* ── Footer ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between border-t border-border/60 px-4 py-2 text-xs text-muted-foreground">
-        <div>
-          {saving ? (
-            <span className="inline-flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Saving...
-            </span>
-          ) : (
-            <span>All changes saved</span>
-          )}
-          {saveError && <span className="ml-3 text-destructive">{saveError}</span>}
-        </div>
-        <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-destructive" onClick={archiveStory}>
-          <Archive className="mr-1 h-3 w-3" />
-          Archive
-        </Button>
-      </div>
     </div>
-  );
-}
-
-// ── Export wrapper ──────────────────────────────────────────────────
-
-export function StoryDetailPanel({
-  workspaceId,
-  open,
-  loading,
-  onOpenChange,
-  storyDetail,
-  states,
-  onStoryUpdated,
-  onStoryArchived,
-}: StoryDetailPanelProps) {
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[85vw] !max-w-[85vw] p-0" showCloseButton={false}>
-        <SheetTitle className="sr-only">Story Detail</SheetTitle>
-        {storyDetail ? (
-          <StoryDetailPanelBody
-            key={storyDetail.story.id}
-            workspaceId={workspaceId}
-            storyDetail={storyDetail}
-            states={states}
-            onOpenChange={onOpenChange}
-            onStoryUpdated={onStoryUpdated}
-            onStoryArchived={onStoryArchived}
-          />
-        ) : loading ? (
-          <div className="flex h-full items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : null}
-      </SheetContent>
-    </Sheet>
   );
 }
