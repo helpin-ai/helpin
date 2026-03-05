@@ -1,11 +1,13 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
+import { Collapsible } from 'radix-ui';
 import {
   Award,
   BarChart3,
   Briefcase,
   Calendar,
   ChevronDown,
+  ChevronRight,
   DollarSign,
   FileText,
   FolderKanban,
@@ -27,6 +29,7 @@ import {
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -43,6 +46,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 
@@ -73,14 +79,74 @@ function deriveActiveRail(pathname: string): RailId {
   return 'rewards';
 }
 
+// ── localStorage helpers for expanded teams ──
+
+function getExpandedTeams(wsId: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(`pm_sidebar_expanded_teams_${wsId}`);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+}
+
+function saveExpandedTeams(wsId: string, teams: Set<string>) {
+  try {
+    localStorage.setItem(`pm_sidebar_expanded_teams_${wsId}`, JSON.stringify([...teams]));
+  } catch {}
+}
+
+// ── Team sub-items config ──
+
+const teamSubItems: { key: string; label: string; icon: LucideIcon; path: string }[] = [
+  { key: 'stories', label: 'Stories', icon: LayoutList, path: 'stories' },
+  { key: 'sprints', label: 'Sprints', icon: RefreshCw, path: 'sprints' },
+  { key: 'epics', label: 'Epics', icon: Layers, path: 'epics' },
+];
+
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentWorkspace, workspaces } = useWorkspaceStore();
 
   const wsSlug = currentWorkspace?.slug ?? '';
+  const workspaceId = currentWorkspace?.id;
   const activeRail = deriveActiveRail(location.pathname);
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
+
+  const { teams } = useWorkspaceTeams(workspaceId);
+
+  // ── Expanded teams state ──
+  const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() =>
+    workspaceId ? getExpandedTeams(workspaceId) : new Set()
+  );
+
+  const toggleTeam = (teamId: string) => {
+    setExpandedTeams((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamId)) next.delete(teamId);
+      else next.add(teamId);
+      if (workspaceId) saveExpandedTeams(workspaceId, next);
+      return next;
+    });
+  };
+
+  // ── Detect active team from URL search params ──
+  const activeTeamParam = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('team') ?? null;
+  }, [location.search]);
+
+  // ── Auto-expand team when navigating via direct URL ──
+  useEffect(() => {
+    if (activeTeamParam && workspaceId && !expandedTeams.has(activeTeamParam)) {
+      setExpandedTeams((prev) => {
+        const next = new Set(prev);
+        next.add(activeTeamParam);
+        saveExpandedTeams(workspaceId, next);
+        return next;
+      });
+    }
+  }, [activeTeamParam, workspaceId]);
 
   const createOptions = [
     { key: 'story' as const, label: 'Story', icon: SquareKanban, pages: ['stories'] },
@@ -115,9 +181,6 @@ export function Sidebar() {
         items: [
           { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
           { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
-          { link: `/w/${wsSlug}/pm/sprints`, label: 'Sprints', icon: RefreshCw },
-          { link: `/w/${wsSlug}/pm/epics`, label: 'Epics', icon: Layers },
-          { link: `/w/${wsSlug}/pm/stories`, label: 'Stories', icon: LayoutList },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },
         ],
       },
@@ -187,6 +250,11 @@ export function Sidebar() {
 
   const isActive = (link: string) => {
     return location.pathname === link || location.pathname.startsWith(`${link}/`);
+  };
+
+  const isTeamSubActive = (teamId: string, subPath: string) => {
+    const pagePath = `/w/${wsSlug}/pm/${subPath}`;
+    return (location.pathname === pagePath || location.pathname.startsWith(`${pagePath}/`)) && activeTeamParam === teamId;
   };
 
   return (
@@ -280,6 +348,69 @@ export function Sidebar() {
                 </SidebarMenu>
               </SidebarGroup>
             ))}
+
+            {/* ── Team-scoped navigation (projects rail only) ── */}
+            {activeRail === 'projects' && teams.length > 0 && (
+              <SidebarGroup className="p-0 pb-3">
+                <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+                  Your Teams
+                </SidebarGroupLabel>
+                <SidebarMenu>
+                  {teams.map((team) => {
+                    const isExpanded = expandedTeams.has(team.id);
+                    return (
+                      <Collapsible.Root
+                        key={team.id}
+                        asChild
+                        open={isExpanded}
+                        onOpenChange={() => toggleTeam(team.id)}
+                      >
+                        <SidebarMenuItem>
+                          <Collapsible.Trigger asChild>
+                            <SidebarMenuButton className="h-8 rounded-md px-2">
+                              <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                              <span className="truncate">{team.name}</span>
+                            </SidebarMenuButton>
+                          </Collapsible.Trigger>
+                          <Collapsible.Content>
+                            <SidebarMenuSub>
+                              {teamSubItems.map((sub) => {
+                                const link = `/w/${wsSlug}/pm/${sub.path}?team=${team.id}`;
+                                const active = isTeamSubActive(team.id, sub.path);
+                                return (
+                                  <SidebarMenuSubItem key={sub.key}>
+                                    <SidebarMenuSubButton
+                                      asChild
+                                      size="sm"
+                                      isActive={active}
+                                    >
+                                      <a
+                                        href={link}
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          navigate({
+                                            to: `/w/$slug/pm/${sub.path}` as string,
+                                            params: { slug: wsSlug },
+                                            search: { team: team.id },
+                                          });
+                                        }}
+                                      >
+                                        <sub.icon className="h-3.5 w-3.5" />
+                                        <span>{sub.label}</span>
+                                      </a>
+                                    </SidebarMenuSubButton>
+                                  </SidebarMenuSubItem>
+                                );
+                              })}
+                            </SidebarMenuSub>
+                          </Collapsible.Content>
+                        </SidebarMenuItem>
+                      </Collapsible.Root>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroup>
+            )}
 
             {showProjects && (
               <SidebarGroup className="p-0">

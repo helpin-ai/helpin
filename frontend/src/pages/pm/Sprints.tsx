@@ -9,7 +9,11 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import type { SprintWithStats } from '@/lib/pmTypes';
 
-export function SprintsPage() {
+interface SprintsPageProps {
+  teamId?: string;
+}
+
+export function SprintsPage({ teamId }: SprintsPageProps) {
   useTitle('Sprints');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
@@ -25,7 +29,7 @@ export function SprintsPage() {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
-    const res = await pmSprintService.list(workspaceId, { archived: false });
+    const res = await pmSprintService.list(workspaceId, { archived: false, team_id: teamId });
     if (res.error || !res.data) {
       setError(res.error ?? 'Failed to load sprints');
       setLoading(false);
@@ -38,7 +42,7 @@ export function SprintsPage() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
+  }, [workspaceId, teamId]);
 
   // Refresh when sprint is created via global modal
   useEffect(() => {

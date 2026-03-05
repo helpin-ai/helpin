@@ -231,7 +231,11 @@ function DisplayPropertiesPopover({
 
 // ── Main page ──────────────────────────────────────────────────────
 
-export function EpicsPage() {
+interface EpicsPageProps {
+  teamId?: string;
+}
+
+export function EpicsPage({ teamId }: EpicsPageProps) {
   useTitle('Epics');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const navigate = useNavigate();
@@ -260,7 +264,7 @@ export function EpicsPage() {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
-    const epicsRes = await pmEpicService.list(workspaceId, { archived: false });
+    const epicsRes = await pmEpicService.list(workspaceId, { archived: false, team_id: teamId });
     if (epicsRes.error || !epicsRes.data) {
       setError(epicsRes.error ?? 'Failed to load epics');
       setLoading(false);
@@ -273,7 +277,7 @@ export function EpicsPage() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
+  }, [workspaceId, teamId]);
 
   // Refresh when epic is created via global modal
   useEffect(() => {

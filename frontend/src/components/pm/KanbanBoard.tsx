@@ -34,6 +34,7 @@ import { ViewBar } from './ViewBar';
 
 interface KanbanBoardProps {
   workspaceId: string;
+  initialTeamId?: string;
 }
 
 interface ColumnProps {
@@ -95,7 +96,7 @@ function Column({ column, onCreate, onOpen, findTeamName }: ColumnProps) {
   );
 }
 
-export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
+export function KanbanBoard({ workspaceId, initialTeamId }: KanbanBoardProps) {
   const {
     workflows,
     workflow,
@@ -117,6 +118,11 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
   const currentUser = useAuthStore((s) => s.user);
   const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
   const { members } = useWorkspaceMembers(workspaceId);
+
+  // Sync URL team param → store on mount / prop change
+  useEffect(() => {
+    setTeamFilter(initialTeamId ?? null);
+  }, [initialTeamId, setTeamFilter]);
 
   const [refLabels, setRefLabels] = useState<Label[]>([]);
   const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
@@ -323,25 +329,6 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
             ))}
           </SelectContent>
         </Select>
-
-        {teams.length > 0 && (
-          <Select
-            value={teamId ?? '__all__'}
-            onValueChange={(value) => setTeamFilter(value === '__all__' ? null : value)}
-          >
-            <SelectTrigger className="h-8 w-[180px]">
-              <SelectValue placeholder="All teams" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All teams</SelectItem>
-              {teams.map((team) => (
-                <SelectItem key={team.id} value={team.id}>
-                  {team.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
 
         <StoryFilterTrigger />
 
