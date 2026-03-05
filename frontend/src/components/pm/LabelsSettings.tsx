@@ -2,89 +2,67 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
+import { Progress } from '@/components/ui/progress';
+import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
 import { pmLabelService } from '@/lib/services/pmLabelService';
-import type { Label } from '@/lib/pmTypes';
-
-const PRESET_COLORS = [
-  '#3b82f6', // blue
-  '#16a34a', // green
-  '#ec4899', // pink
-  '#64748b', // slate
-  '#ef4444', // red
-  '#f97316', // orange
-  '#eab308', // yellow
-  '#14b8a6', // teal
-  '#8b5cf6', // violet
-  '#6366f1', // indigo
-  '#06b6d4', // cyan
-  '#d946ef', // fuchsia
-  '#84cc16', // lime
-  '#f43f5e', // rose
-  '#0ea5e9', // sky
-  '#a855f7', // purple
-];
+import type { LabelWithStats } from '@/lib/pmTypes';
 
 interface LabelsSettingsProps {
   workspaceId: string;
 }
 
-interface LabelFormState {
+export interface LabelFormState {
   name: string;
   description: string;
   color: string;
 }
 
-const emptyForm: LabelFormState = { name: '', description: '', color: PRESET_COLORS[0] };
+export const emptyForm: LabelFormState = { name: '', description: '', color: PRESET_COLORS[0] };
 
-function ColorPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (color: string) => void;
-}) {
+export function pct(done: number, total: number) {
+  if (total === 0) return 0;
+  return Math.round((done / total) * 100);
+}
+
+export function StatCell({ done, total, entity }: { done: number; total: number; entity: string }) {
+  const p = pct(done, total);
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {PRESET_COLORS.map((c) => (
-        <button
-          key={c}
-          type="button"
-          className={cn(
-            'h-6 w-6 rounded-full border-2 transition-all cursor-pointer',
-            value === c
-              ? 'border-foreground scale-110'
-              : 'border-transparent hover:border-muted-foreground/40',
-          )}
-          style={{ backgroundColor: c }}
-          onClick={() => onChange(c)}
-        />
-      ))}
+    <div className="space-y-1 min-w-[140px]">
+      <span className="text-xs font-medium text-foreground">{p}% Completed</span>
+      <Progress value={p} className="h-1.5" />
+      <span className="text-[11px] text-muted-foreground">
+        {done} of {total} {entity} Completed
+      </span>
     </div>
   );
 }
 
 function LabelRow({
-  label,
+  entry,
   onEdit,
   onDelete,
 }: {
-  label: Label;
+  entry: LabelWithStats;
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { label, stats } = entry;
   return (
-    <div className="group flex items-center gap-3 rounded-md px-3 py-2.5 hover:bg-accent/50 transition-colors">
-      <span
-        className="h-3 w-3 rounded-full shrink-0"
-        style={{ backgroundColor: label.color || '#64748b' }}
-      />
-      <div className="min-w-0 flex-1">
-        <span className="text-sm font-medium text-foreground">{label.name}</span>
-        {label.description && (
-          <span className="ml-2 text-xs text-muted-foreground">{label.description}</span>
-        )}
+    <div className="group flex items-center gap-4 rounded-md px-3 py-4 hover:bg-accent/50 transition-colors border-b border-border/30 last:border-b-0">
+      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+        <span
+          className="h-3 w-3 rounded-full shrink-0"
+          style={{ backgroundColor: label.color || '#64748b' }}
+        />
+        <div className="min-w-0">
+          <span className="text-sm font-medium text-foreground">{label.name}</span>
+          {label.description && (
+            <p className="text-xs text-muted-foreground truncate">{label.description}</p>
+          )}
+        </div>
       </div>
+      <StatCell done={stats.done_story_count} total={stats.story_count} entity="Stories" />
+      <StatCell done={stats.done_epic_count} total={stats.epic_count} entity="Epics" />
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <Button
           variant="ghost"
@@ -168,7 +146,7 @@ function LabelForm({
 }
 
 export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
-  const [labels, setLabels] = useState<Label[]>([]);
+  const [labels, setLabels] = useState<LabelWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -176,8 +154,8 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const { data } = await pmLabelService.list(workspaceId);
-    if (data) setLabels(data.filter((l) => !l.archived));
+    const { data } = await pmLabelService.listWithStats(workspaceId);
+    if (data) setLabels(data.filter((e) => !e.label.archived));
     setLoading(false);
   }, [workspaceId]);
 
@@ -187,37 +165,38 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
 
   const handleCreate = async (form: LabelFormState) => {
     setSaving(true);
-    const { data } = await pmLabelService.create({
+    const { error } = await pmLabelService.create({
       workspace_id: workspaceId,
       name: form.name,
       description: form.description || undefined,
       color: form.color,
     });
     setSaving(false);
-    if (data) {
-      setLabels((prev) => [...prev, data]);
+    if (!error) {
       setShowCreate(false);
+      reload();
     }
   };
 
   const handleUpdate = async (id: string, form: LabelFormState) => {
     setSaving(true);
-    const { data } = await pmLabelService.update(workspaceId, id, {
+    const { error } = await pmLabelService.update(workspaceId, id, {
       name: form.name,
       description: form.description || undefined,
       color: form.color,
     });
     setSaving(false);
-    if (data) {
-      setLabels((prev) => prev.map((l) => (l.id === id ? data : l)));
+    if (!error) {
       setEditingId(null);
+      reload();
     }
   };
 
   const handleDelete = async (id: string) => {
     setDeleteConfirmId(null);
-    setLabels((prev) => prev.filter((l) => l.id !== id));
-    await pmLabelService.remove(workspaceId, id);
+    setLabels((prev) => prev.filter((e) => e.label.id !== id));
+    const { error } = await pmLabelService.remove(workspaceId, id);
+    if (error) reload();
   };
 
   if (loading) {
@@ -230,27 +209,19 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">Labels</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Manage labels for organizing stories, epics, and sprints.
-          </p>
-        </div>
-        {!showCreate && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setShowCreate(true);
-              setEditingId(null);
-            }}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add label
-          </Button>
-        )}
-      </div>
+      {!showCreate && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setShowCreate(true);
+            setEditingId(null);
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add label
+        </Button>
+      )}
 
       {showCreate && (
         <LabelForm
@@ -261,42 +232,42 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
         />
       )}
 
-      <div className="space-y-0.5">
+      <div>
         {labels.length === 0 && !showCreate && (
           <p className="text-sm text-muted-foreground py-6 text-center">
             No labels yet. Create one to get started.
           </p>
         )}
-        {labels.map((label) =>
-          editingId === label.id ? (
+        {labels.map((entry) =>
+          editingId === entry.label.id ? (
             <LabelForm
-              key={label.id}
+              key={entry.label.id}
               initial={{
-                name: label.name,
-                description: label.description || '',
-                color: label.color || PRESET_COLORS[0],
+                name: entry.label.name,
+                description: entry.label.description || '',
+                color: entry.label.color || PRESET_COLORS[0],
               }}
-              onSave={(form) => handleUpdate(label.id, form)}
+              onSave={(form) => handleUpdate(entry.label.id, form)}
               onCancel={() => setEditingId(null)}
               saving={saving}
             />
-          ) : deleteConfirmId === label.id ? (
+          ) : deleteConfirmId === entry.label.id ? (
             <div
-              key={label.id}
+              key={entry.label.id}
               className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5"
             >
               <span
                 className="h-3 w-3 rounded-full shrink-0"
-                style={{ backgroundColor: label.color || '#64748b' }}
+                style={{ backgroundColor: entry.label.color || '#64748b' }}
               />
               <span className="flex-1 text-sm text-foreground">
-                Delete <span className="font-medium">{label.name}</span>?
+                Delete <span className="font-medium">{entry.label.name}</span>?
               </span>
               <div className="flex items-center gap-1">
                 <Button
                   variant="destructive"
                   size="xs"
-                  onClick={() => handleDelete(label.id)}
+                  onClick={() => handleDelete(entry.label.id)}
                 >
                   Delete
                 </Button>
@@ -311,13 +282,13 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
             </div>
           ) : (
             <LabelRow
-              key={label.id}
-              label={label}
+              key={entry.label.id}
+              entry={entry}
               onEdit={() => {
-                setEditingId(label.id);
+                setEditingId(entry.label.id);
                 setShowCreate(false);
               }}
-              onDelete={() => setDeleteConfirmId(label.id)}
+              onDelete={() => setDeleteConfirmId(entry.label.id)}
             />
           ),
         )}

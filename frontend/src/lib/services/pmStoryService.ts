@@ -100,6 +100,18 @@ export const pmStoryService = {
     api.post(`/pm/stories/${id}/labels?${qs(workspaceId)}`, payload),
   removeLabel: (workspaceId: string, id: string, labelId: string) =>
     api.del(`/pm/stories/${id}/labels/${labelId}?${qs(workspaceId)}`),
+  syncLabels: (workspaceId: string, storyId: string, currentIds: string[], nextIds: string[]) => {
+    const current = new Set(currentIds);
+    const next = new Set(nextIds);
+    return Promise.all([
+      ...nextIds.filter((id) => !current.has(id)).map((id) =>
+        api.post(`/pm/stories/${storyId}/labels?${qs(workspaceId)}`, { label_id: id }),
+      ),
+      ...[...current].filter((id) => !next.has(id)).map((id) =>
+        api.del(`/pm/stories/${storyId}/labels/${id}?${qs(workspaceId)}`),
+      ),
+    ]);
+  },
   listActivity: (workspaceId: string, id: string, page = 1, perPage = 50) =>
     api.get<PaginatedResponse<ActivityLogEntry[]>>(
       `/pm/stories/${id}/activity?${qs(workspaceId)}&page=${page}&per_page=${perPage}`

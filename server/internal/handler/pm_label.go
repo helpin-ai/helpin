@@ -37,6 +37,26 @@ func (h *PMLabelHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, labels)
 }
 
+// ListWithStats handles GET /api/pm/labels/stats.
+func (h *PMLabelHandler) ListWithStats(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	archived, err := queryBoolPtr(r, "archived")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid archived query param")
+		return
+	}
+	results, err := h.labelService.ListWithStats(r.Context(), workspaceID, archived)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, results)
+}
+
 // Create handles POST /api/pm/labels.
 func (h *PMLabelHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateLabelRequest

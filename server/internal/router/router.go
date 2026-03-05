@@ -174,6 +174,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 
 				// Labels
 				r.Get("/labels", h.PMLabel.List)
+				r.Get("/labels/stats", h.PMLabel.ListWithStats)
 				r.Post("/labels", h.PMLabel.Create)
 				r.Put("/labels/{id}", h.PMLabel.Update)
 				r.Delete("/labels/{id}", h.PMLabel.Delete)

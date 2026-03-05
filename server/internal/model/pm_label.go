@@ -31,3 +31,19 @@ type UpdateLabelRequest struct {
 	Color       *string `json:"color"`
 	Archived    *bool   `json:"archived"`
 }
+
+// LabelStats holds completion metrics for stories and epics associated with a label.
+type LabelStats struct {
+	StoryCount     int `json:"story_count"`
+	DoneStoryCount int `json:"done_story_count"`
+	TotalPoints    int `json:"total_points"`
+	DonePoints     int `json:"done_points"`
+	EpicCount      int `json:"epic_count"`
+	DoneEpicCount  int `json:"done_epic_count"`
+}
+
+// LabelWithStats pairs a label with its computed stats.
+type LabelWithStats struct {
+	Label PMLabel    `json:"label"`
+	Stats LabelStats `json:"stats"`
+}

@@ -27,6 +27,14 @@ func (s *PMLabelService) ListByWorkspace(ctx context.Context, workspaceID string
 	return s.labelRepo.ListByWorkspace(ctx, workspaceID)
 }
 
+// ListWithStats returns labels with story/epic completion stats.
+func (s *PMLabelService) ListWithStats(ctx context.Context, workspaceID string, archived *bool) ([]model.LabelWithStats, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.labelRepo.ListWithStats(ctx, workspaceID, archived)
+}
+
 // Create creates a label after uniqueness validation.
 func (s *PMLabelService) Create(ctx context.Context, req model.CreateLabelRequest) (*model.PMLabel, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {

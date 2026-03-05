@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Tag, X } from 'lucide-react';
+import { Check, Loader2, Plus, Tag, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Command,
@@ -10,6 +10,8 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
+import { pmLabelService } from '@/lib/services/pmLabelService';
+import { PRESET_COLORS } from '@/components/pm/ColorPicker';
 import type { Label } from '@/lib/pmTypes';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -77,16 +79,22 @@ interface LabelPickerProps {
   selectedLabelIds: string[];
   onChange: (labelIds: string[]) => void;
   labels: Label[];
+  /** Called when the labels list changes (e.g. a new label was created inline). */
+  onLabelsChange?: (labels: Label[]) => void;
   className?: string;
 }
 
 export function LabelPicker({
+  workspaceId,
   selectedLabelIds,
   onChange,
   labels,
+  onLabelsChange,
   className,
 }: LabelPickerProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const availableLabels = labels.filter((l) => !l.archived);
   const selectedLabels = availableLabels.filter((l) => selectedLabelIds.includes(l.id));
@@ -103,13 +111,37 @@ export function LabelPicker({
     onChange(selectedLabelIds.filter((id) => id !== labelId));
   };
 
+  const trimmed = search.trim().toLowerCase();
+  const hasExactMatch = trimmed
+    ? availableLabels.some((l) => l.name.toLowerCase() === trimmed)
+    : true;
+
+  const createAndSelect = async () => {
+    if (!trimmed || hasExactMatch || creating) return;
+    setCreating(true);
+    try {
+      const { data } = await pmLabelService.create({
+        workspace_id: workspaceId,
+        name: search.trim(),
+        color: PRESET_COLORS[0],
+      });
+      if (data) {
+        onLabelsChange?.([...labels, data]);
+        onChange([...selectedLabelIds, data.id]);
+        setSearch('');
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <div className={cn('flex flex-wrap items-center gap-1', className)}>
       {selectedLabels.map((label) => (
         <LabelBadge key={label.id} label={label} onRemove={() => removeLabel(label.id)} />
       ))}
 
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSearch(''); }}>
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -134,11 +166,28 @@ export function LabelPicker({
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
           >
-            <Command>
-              <CommandInput placeholder="Search labels..." className="h-8 text-xs" />
+            <Command shouldFilter={true}>
+              <CommandInput
+                placeholder="Search labels..."
+                className="h-8 text-xs"
+                value={search}
+                onValueChange={setSearch}
+              />
               <CommandList>
-                <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
-                  No labels found
+                <CommandEmpty className="py-1.5 px-2">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+                    onClick={createAndSelect}
+                    disabled={creating}
+                  >
+                    {creating ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    Create &ldquo;{search.trim()}&rdquo;
+                  </button>
                 </CommandEmpty>
                 <CommandGroup>
                   {availableLabels.map((label) => {

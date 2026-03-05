@@ -38,7 +38,6 @@ import {
 } from '@/lib/pmConstants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -60,6 +59,8 @@ import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
+import { pmLabelService } from '@/lib/services/pmLabelService';
+import { LabelPicker } from '@/components/pm/LabelPicker';
 import { useAuthStore } from '@/stores/authStore';
 import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -69,6 +70,7 @@ import type {
   ActivityLogEntry,
   CommentWithAuthor,
   EpicWithStats,
+  Label,
   Priority,
   Severity,
   SprintWithStats,
@@ -267,6 +269,7 @@ export function StoryDetailPage() {
 
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
+  const [allLabels, setAllLabels] = useState<Label[]>([]);
 
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
@@ -282,12 +285,13 @@ export function StoryDetailPage() {
     (async () => {
       setLoading(true);
       setError(null);
-      const [storyRes, , epicsRes, sprintsRes, commentsRes, activityRes, clRes, elRes] =
+      const [storyRes, , epicsRes, sprintsRes, labelsRes, commentsRes, activityRes, clRes, elRes] =
         await Promise.all([
           pmStoryService.get(workspaceId, storyId),
           loadWorkflows(workspaceId),
           pmEpicService.list(workspaceId, { archived: false }),
           pmSprintService.list(workspaceId, { archived: false }),
+          pmLabelService.list(workspaceId),
           pmCommentService.list(workspaceId, 'story', storyId),
           pmStoryService.listActivity(workspaceId, storyId, 1, 30),
           pmChecklistService.list(workspaceId, storyId),
@@ -309,6 +313,7 @@ export function StoryDetailPage() {
 
       setEpics(epicsRes.data ?? []);
       setSprints(sprintsRes.data ?? []);
+      setAllLabels(labelsRes.data ?? []);
       setComments(commentsRes.data ?? []);
       setActivity(activityRes.data?.data ?? []);
       if (clRes.data && clRes.data.length > 0) setShowChecklist(true);
@@ -901,17 +906,20 @@ export function StoryDetailPage() {
 
             {/* Labels */}
             <MetadataRow icon={Tag} label="Labels">
-              {storyLabels.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {storyLabels.map((l) => (
-                    <Badge key={l.id} variant="secondary" className="px-1.5 py-0 text-[10px]">
-                      {l.name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-xs text-muted-foreground">None</span>
-              )}
+              <LabelPicker
+                workspaceId={workspaceId!}
+                labels={allLabels}
+                selectedLabelIds={storyLabels.map((l) => l.id)}
+                onLabelsChange={setAllLabels}
+                onChange={async (labelIds) => {
+                  await pmStoryService.syncLabels(workspaceId!, storyDetail.story.id, storyLabels.map((l) => l.id), labelIds);
+                  const res = await pmStoryService.get(workspaceId!, storyDetail.story.id);
+                  if (res.data) {
+                    setStoryDetail(res.data);
+                    setForm(buildFormState(res.data));
+                  }
+                }}
+              />
             </MetadataRow>
 
             {/* Epic */}

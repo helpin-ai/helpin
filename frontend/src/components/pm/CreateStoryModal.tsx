@@ -558,6 +558,7 @@ export function CreateStoryModal({
                     workspaceId={workspaceId}
                     labels={labels}
                     selectedLabelIds={form.label_ids}
+                    onLabelsChange={setLabels}
                     onChange={(ids) => setForm((prev) => ({ ...prev, label_ids: ids }))}
                   />
                 </MetadataRow>

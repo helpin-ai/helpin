@@ -293,6 +293,20 @@ export interface UpdateWorkflowStateRequest {
   is_default?: boolean;
 }
 
+export interface LabelStats {
+  story_count: number;
+  done_story_count: number;
+  total_points: number;
+  done_points: number;
+  epic_count: number;
+  done_epic_count: number;
+}
+
+export interface LabelWithStats {
+  label: Label;
+  stats: LabelStats;
+}
+
 export interface CreateLabelRequest {
   workspace_id: string;
   name: string;

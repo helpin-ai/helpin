@@ -928,17 +928,9 @@ function StoryDetailPanelBody({
                 workspaceId={workspaceId}
                 labels={allLabels}
                 selectedLabelIds={storyLabels.map((l) => l.id)}
+                onLabelsChange={setAllLabels}
                 onChange={async (labelIds) => {
-                  const current = new Set(storyLabels.map((l) => l.id));
-                  const next = new Set(labelIds);
-                  const added = labelIds.filter((id) => !current.has(id));
-                  const removed = [...current].filter((id) => !next.has(id));
-                  for (const id of added) {
-                    await pmStoryService.addLabel(workspaceId, storyDetail.story.id, { label_id: id });
-                  }
-                  for (const id of removed) {
-                    await pmStoryService.removeLabel(workspaceId, storyDetail.story.id, id);
-                  }
+                  await pmStoryService.syncLabels(workspaceId, storyDetail.story.id, storyLabels.map((l) => l.id), labelIds);
                   const res = await pmStoryService.get(workspaceId, storyDetail.story.id);
                   if (res.data) onStoryUpdated(res.data);
                 }}

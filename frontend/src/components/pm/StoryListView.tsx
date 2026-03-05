@@ -168,13 +168,16 @@ export function StoryListView({
     fetchStories();
   }, [fetchStories]);
 
-  // Optimistic inline update
+  // Optimistic inline update with rollback on failure
   const updateStoryField = useCallback(
     async (storyId: string, patch: Partial<Story>) => {
-      setStories((prev) =>
-        prev.map((s) => (s.id === storyId ? { ...s, ...patch } : s)),
-      );
-      await pmStoryService.update(workspaceId, storyId, patch);
+      let snapshot: Story[] = [];
+      setStories((current) => {
+        snapshot = current;
+        return current.map((s) => (s.id === storyId ? { ...s, ...patch } : s));
+      });
+      const { error } = await pmStoryService.update(workspaceId, storyId, patch);
+      if (error) setStories(snapshot);
     },
     [workspaceId],
   );

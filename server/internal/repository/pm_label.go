@@ -74,6 +74,99 @@ func (r *PMLabelRepository) Update(ctx context.Context, label *model.PMLabel) er
 	return nil
 }
 
+// ListWithStats returns all labels in a workspace with story/epic completion stats.
+func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID string, archived *bool) ([]model.LabelWithStats, error) {
+	// Fetch labels
+	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
+	if archived != nil {
+		query = query.Where("archived = ?", *archived)
+	}
+	var labels []model.PMLabel
+	if err := query.Order("name ASC").Find(&labels).Error; err != nil {
+		return nil, fmt.Errorf("list labels with stats: %w", err)
+	}
+
+	if len(labels) == 0 {
+		return []model.LabelWithStats{}, nil
+	}
+
+	// Collect label IDs
+	labelIDs := make([]string, len(labels))
+	for i, l := range labels {
+		labelIDs[i] = l.ID
+	}
+
+	// Query story stats per label
+	type storyStatRow struct {
+		LabelID   string `gorm:"column:label_id"`
+		Total     int    `gorm:"column:total"`
+		Done      int    `gorm:"column:done"`
+		Points    int    `gorm:"column:points"`
+		DonePts   int    `gorm:"column:done_pts"`
+	}
+	var storyRows []storyStatRow
+	if err := r.db.WithContext(ctx).
+		Table("pm_story_labels sl").
+		Select(`sl.label_id,
+			COUNT(*) AS total,
+			SUM(CASE WHEN s.completed = true THEN 1 ELSE 0 END) AS done,
+			COALESCE(SUM(COALESCE(s.estimate, 0)), 0) AS points,
+			COALESCE(SUM(CASE WHEN s.completed = true THEN COALESCE(s.estimate, 0) ELSE 0 END), 0) AS done_pts`).
+		Joins("JOIN pm_stories s ON s.id = sl.story_id").
+		Where("sl.label_id IN ? AND s.archived = false", labelIDs).
+		Group("sl.label_id").
+		Scan(&storyRows).Error; err != nil {
+		return nil, fmt.Errorf("label story stats: %w", err)
+	}
+
+	// Query epic stats per label
+	type epicStatRow struct {
+		LabelID string `gorm:"column:label_id"`
+		Total   int    `gorm:"column:total"`
+		Done    int    `gorm:"column:done"`
+	}
+	var epicRows []epicStatRow
+	if err := r.db.WithContext(ctx).
+		Table("pm_epic_labels el").
+		Select(`el.label_id,
+			COUNT(*) AS total,
+			SUM(CASE WHEN e.completed = true THEN 1 ELSE 0 END) AS done`).
+		Joins("JOIN pm_epics e ON e.id = el.epic_id").
+		Where("el.label_id IN ? AND e.archived = false", labelIDs).
+		Group("el.label_id").
+		Scan(&epicRows).Error; err != nil {
+		return nil, fmt.Errorf("label epic stats: %w", err)
+	}
+
+	// Index stats by label ID
+	storyMap := make(map[string]storyStatRow, len(storyRows))
+	for _, r := range storyRows {
+		storyMap[r.LabelID] = r
+	}
+	epicMap := make(map[string]epicStatRow, len(epicRows))
+	for _, r := range epicRows {
+		epicMap[r.LabelID] = r
+	}
+
+	// Build result
+	results := make([]model.LabelWithStats, len(labels))
+	for i, label := range labels {
+		stats := model.LabelStats{}
+		if ss, ok := storyMap[label.ID]; ok {
+			stats.StoryCount = ss.Total
+			stats.DoneStoryCount = ss.Done
+			stats.TotalPoints = ss.Points
+			stats.DonePoints = ss.DonePts
+		}
+		if es, ok := epicMap[label.ID]; ok {
+			stats.EpicCount = es.Total
+			stats.DoneEpicCount = es.Done
+		}
+		results[i] = model.LabelWithStats{Label: label, Stats: stats}
+	}
+	return results, nil
+}
+
 // Delete hard-deletes a label.
 func (r *PMLabelRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Delete(&model.PMLabel{}, "id = ?", id).Error; err != nil {
