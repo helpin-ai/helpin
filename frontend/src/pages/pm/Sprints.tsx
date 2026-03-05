@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { Plus } from 'lucide-react';
 import { useTitle } from '@/hooks/useTitle';
 import { format, parseISO } from 'date-fns';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import type { SprintWithStats } from '@/lib/pmTypes';
 
 interface SprintsPageProps {
@@ -24,6 +27,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
 
   const { findTeamName } = useWorkspaceTeams(workspaceId);
   const navigate = useNavigate();
+  const openCreate = useGlobalCreateStore((s) => s.openCreate);
 
   const loadData = async () => {
     if (!workspaceId) return;
@@ -85,8 +89,16 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
         <p className="text-sm text-muted-foreground">Loading sprints...</p>
       ) : sprints.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No sprints yet. Use the Create button in the header to add one.
+          <CardContent className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
+            <p>No sprints yet.</p>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => openCreate('sprint', { teamId })}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Create Sprint
+            </Button>
           </CardContent>
         </Card>
       ) : (
