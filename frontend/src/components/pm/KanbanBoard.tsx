@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { CreateStoryRequest, Story, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { MemberWithUser } from '@/lib/types';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -43,9 +44,12 @@ interface ColumnProps {
   onCreate: (stateId: string) => void;
   onOpen: (story: Story) => void;
   findTeamName: (teamId: string | undefined) => string | undefined;
+  workspaceId: string;
+  members: MemberWithUser[];
+  onOwnerChanged: () => void;
 }
 
-function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName }: ColumnProps) {
+function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, onOwnerChanged }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
 
   if (collapsed) {
@@ -113,7 +117,15 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
           }`}
         >
           {column.stories.map((story) => (
-            <StoryCard key={story.id} story={story} onOpen={onOpen} teamName={findTeamName(story.team_id)} />
+            <StoryCard
+              key={story.id}
+              story={story}
+              onOpen={onOpen}
+              teamName={findTeamName(story.team_id)}
+              workspaceId={workspaceId}
+              members={members}
+              onOwnerChanged={onOwnerChanged}
+            />
           ))}
 
           <Button
@@ -337,7 +349,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     [createStory]
   );
 
-
+  const handleOwnerChanged = useCallback(() => {
+    refreshBoard();
+  }, [refreshBoard]);
 
   return (
     <StoryFilterProvider
@@ -433,6 +447,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   }}
                   onOpen={openStory}
                   findTeamName={findTeamName}
+                  workspaceId={workspaceId}
+                  members={members}
+                  onOwnerChanged={handleOwnerChanged}
                 />
               ))}
             </div>
