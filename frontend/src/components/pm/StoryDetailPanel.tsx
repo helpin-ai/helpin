@@ -39,7 +39,6 @@ import {
 } from '@/lib/pmConstants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -62,6 +61,7 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
+import { LabelPicker } from '@/components/pm/LabelPicker';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -316,7 +316,7 @@ function StoryDetailPanelBody({
 
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
-  const [_labels, _setLabels] = useState<Label[]>([]);
+  const [allLabels, setAllLabels] = useState<Label[]>([]);
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
@@ -384,7 +384,7 @@ function StoryDetailPanelBody({
       ]);
       setEpics(epicsRes.data ?? []);
       setSprints(sprintsRes.data ?? []);
-      _setLabels(labelsRes.data ?? []);
+      setAllLabels(labelsRes.data ?? []);
     })();
   }, [workspaceId]);
 
@@ -924,17 +924,25 @@ function StoryDetailPanelBody({
 
             {/* Labels */}
             <MetadataRow icon={Tag} label="Labels">
-              {storyLabels.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {storyLabels.map((l) => (
-                    <Badge key={l.id} variant="secondary" className="px-1.5 py-0 text-[10px]">
-                      {l.name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-xs text-muted-foreground">None</span>
-              )}
+              <LabelPicker
+                workspaceId={workspaceId}
+                labels={allLabels}
+                selectedLabelIds={storyLabels.map((l) => l.id)}
+                onChange={async (labelIds) => {
+                  const current = new Set(storyLabels.map((l) => l.id));
+                  const next = new Set(labelIds);
+                  const added = labelIds.filter((id) => !current.has(id));
+                  const removed = [...current].filter((id) => !next.has(id));
+                  for (const id of added) {
+                    await pmStoryService.addLabel(workspaceId, storyDetail.story.id, { label_id: id });
+                  }
+                  for (const id of removed) {
+                    await pmStoryService.removeLabel(workspaceId, storyDetail.story.id, id);
+                  }
+                  const res = await pmStoryService.get(workspaceId, storyDetail.story.id);
+                  if (res.data) onStoryUpdated(res.data);
+                }}
+              />
             </MetadataRow>
 
             {/* Epic */}

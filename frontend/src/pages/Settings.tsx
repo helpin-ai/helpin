@@ -8,6 +8,7 @@ import { inviteService } from '@/lib/services/inviteService';
 import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { StateTypeIcon } from '@/lib/pmConstants';
+import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import type { StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,11 +20,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, Copy, GitBranch, ListTree, Pencil, Plus, RefreshCw, Settings2, Trash2, UserPlus, Users, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, Copy, GitBranch, ListTree, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, UserPlus, Users, type LucideIcon } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'system';
+export type SettingsSection = 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'system';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon }[] = [
   {
@@ -67,6 +68,12 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Workflow States',
     description: 'Manage state columns and rules within workflows.',
     icon: ListTree,
+  },
+  {
+    id: 'labels',
+    label: 'Labels',
+    description: 'Create and manage labels for stories, epics, and sprints.',
+    icon: Tag,
   },
   {
     id: 'system',
@@ -204,6 +211,8 @@ export default function Settings({ section, initialWorkflowId }: { section: Sett
             initialWorkflowId={initialWorkflowId}
           />
         );
+      case 'labels':
+        return <LabelsSettings workspaceId={workspaceId} />;
       default:
         return null;
     }

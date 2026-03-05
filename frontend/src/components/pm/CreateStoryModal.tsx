@@ -12,6 +12,7 @@ import {
   Maximize2,
   Minimize2,
   Sparkles,
+  Tag,
   User,
   Users,
 } from "lucide-react";
@@ -28,6 +29,7 @@ import {
 import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateStoryRequest,
+  Label,
   SprintWithStats,
   Priority,
   Severity,
@@ -37,6 +39,8 @@ import type {
 } from "@/lib/pmTypes";
 import { pmEpicService } from "@/lib/services/pmEpicService";
 import { pmSprintService } from "@/lib/services/pmSprintService";
+import { pmLabelService } from "@/lib/services/pmLabelService";
+import { LabelPicker } from "@/components/pm/LabelPicker";
 import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
 import { useWorkspaceMembers } from "@/hooks/useWorkspaceMembers";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -67,6 +71,7 @@ const defaultState = {
   owner_id: "",
   requester_id: "",
   deadline: "",
+  label_ids: [] as string[],
 };
 
 // ── Metadata Row ───────────────────────────────────────────────────
@@ -157,6 +162,7 @@ export function CreateStoryModal({
   const [editorExpanded, setEditorExpanded] = useState(false);
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
+  const [labels, setLabels] = useState<Label[]>([]);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members } = useWorkspaceMembers(workspaceId);
 
@@ -170,12 +176,14 @@ export function CreateStoryModal({
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const [epicsRes, sprintsRes] = await Promise.all([
+      const [epicsRes, sprintsRes, labelsRes] = await Promise.all([
         pmEpicService.list(workspaceId, { archived: false }),
         pmSprintService.list(workspaceId, { archived: false }),
+        pmLabelService.list(workspaceId),
       ]);
       setEpics(epicsRes.data ?? []);
       setSprints(sprintsRes.data ?? []);
+      setLabels(labelsRes.data ?? []);
     })();
   }, [open, workspaceId]);
 
@@ -238,6 +246,7 @@ export function CreateStoryModal({
         owner_id: form.owner_id || undefined,
         requester_id: form.requester_id || undefined,
         deadline: form.deadline || undefined,
+        label_ids: form.label_ids.length > 0 ? form.label_ids : undefined,
       });
 
       if (createMore) {
@@ -540,6 +549,16 @@ export function CreateStoryModal({
                     placeholder="None"
                     disablePast
                     className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
+                  />
+                </MetadataRow>
+
+                {/* Labels */}
+                <MetadataRow icon={Tag} label="Labels">
+                  <LabelPicker
+                    workspaceId={workspaceId}
+                    labels={labels}
+                    selectedLabelIds={form.label_ids}
+                    onChange={(ids) => setForm((prev) => ({ ...prev, label_ids: ids }))}
                   />
                 </MetadataRow>
               </div>
