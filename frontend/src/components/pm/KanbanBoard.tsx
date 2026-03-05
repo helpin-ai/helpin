@@ -134,7 +134,17 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
   const [selectedStory, setSelectedStory] = useState<Awaited<ReturnType<typeof pmStoryService.get>>['data'] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
+  const VIEW_MODE_KEY = `pm_view_mode_${workspaceId}`;
+  const [viewMode, setViewModeState] = useState<'board' | 'list'>(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_MODE_KEY);
+      return saved === 'list' ? 'list' : 'board';
+    } catch { return 'board'; }
+  });
+  const setViewMode = useCallback((mode: 'board' | 'list') => {
+    setViewModeState(mode);
+    try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
+  }, [VIEW_MODE_KEY]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -284,7 +294,7 @@ export function KanbanBoard({ workspaceId }: KanbanBoardProps) {
       onChange={setFilters}
       externalFilters={filters}
     >
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col">
       {currentUser && (
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}

@@ -76,6 +76,23 @@ const buildApiFilters = (teamId: string | null, filters: BoardFilters): Record<s
   return result;
 };
 
+// ── localStorage helpers for user preferences ─────────────────────────
+const WORKFLOW_KEY = (wsId: string) => `pm_workflow_${wsId}`;
+const VIEW_KEY = (wsId: string) => `pm_active_view_${wsId}`;
+
+function getSavedWorkflowId(workspaceId: string): string | null {
+  try { return localStorage.getItem(WORKFLOW_KEY(workspaceId)); } catch { return null; }
+}
+function saveWorkflowId(workspaceId: string, id: string) {
+  try { localStorage.setItem(WORKFLOW_KEY(workspaceId), id); } catch {}
+}
+function getSavedViewId(workspaceId: string): string | null {
+  try { return localStorage.getItem(VIEW_KEY(workspaceId)); } catch { return null; }
+}
+function saveActiveViewId(workspaceId: string, id: string) {
+  try { localStorage.setItem(VIEW_KEY(workspaceId), id); } catch {}
+}
+
 export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   workspaceId: null,
   workflows: [],
@@ -100,8 +117,9 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       return;
     }
 
-    const selected = workflowId
-      ? workflowRes.data.find((workflow) => workflow.workflow.id === workflowId) ?? workflowRes.data[0] ?? null
+    const resolvedId = workflowId ?? getSavedWorkflowId(workspaceId);
+    const selected = resolvedId
+      ? workflowRes.data.find((workflow) => workflow.workflow.id === resolvedId) ?? workflowRes.data[0] ?? null
       : workflowRes.data[0] ?? null;
 
     if (!selected) {
@@ -117,6 +135,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     }
 
     const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
+    saveWorkflowId(workspaceId, selected.workflow.id);
     set({ workflows: workflowRes.data, workflow: selected, columns: sorted, loading: false });
   },
 
@@ -259,11 +278,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     const defaults = getDefaultViews(currentUserId);
     const res = await pmViewService.list(workspaceId);
     const custom = res.data ?? [];
-    set({ views: [...defaults, ...custom] });
+    const allViews = [...defaults, ...custom];
+    set({ views: allViews });
 
-    // Apply Everything view if no view is active
+    // Restore saved view, or fall back to Everything
     if (!get().activeViewId) {
-      get().applyView(defaults[0]);
+      const savedId = getSavedViewId(workspaceId);
+      const savedView = savedId ? allViews.find((v) => v.id === savedId) : null;
+      get().applyView(savedView ?? defaults[0]);
     }
   },
 
@@ -272,6 +294,8 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     for (const [k, v] of Object.entries(view.filters)) {
       if (v) cleanFilters[k] = v;
     }
+    const wsId = get().workspaceId;
+    if (wsId) saveActiveViewId(wsId, view.id);
     set({
       activeViewId: view.id,
       filters: { ...cleanFilters },

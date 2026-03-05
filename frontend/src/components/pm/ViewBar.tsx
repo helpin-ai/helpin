@@ -29,6 +29,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -115,18 +116,20 @@ function SaveViewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[400px]">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+      <DialogContent className="sm:max-w-[420px] gap-0 p-0">
+        <DialogHeader className="px-5 pt-5 pb-4">
+          <DialogTitle className="text-base">{title}</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Save the current filters as a reusable view.
+          </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div>
-            <label className="text-sm font-medium">Name</label>
+        <div className="space-y-4 px-5 pb-5">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">View name</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="View name"
-              className="mt-1"
+              placeholder="e.g. My bug tracker, Sprint 4..."
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && name.trim()) {
@@ -136,26 +139,32 @@ function SaveViewDialog({
               }}
             />
           </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {isShared ? <Globe className="h-4 w-4 text-muted-foreground" /> : <Lock className="h-4 w-4 text-muted-foreground" />}
-              <span className="text-sm">{isShared ? 'Shared with workspace' : 'Personal view'}</span>
+          <div className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className={`flex h-7 w-7 items-center justify-center rounded-md ${isShared ? 'bg-blue-500/10 text-blue-500' : 'bg-muted text-muted-foreground'}`}>
+                {isShared ? <Globe className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+              </div>
+              <div>
+                <p className="text-sm font-medium leading-none">{isShared ? 'Shared' : 'Personal'}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">{isShared ? 'Visible to all workspace members' : 'Only visible to you'}</p>
+              </div>
             </div>
             <Switch checked={isShared} onCheckedChange={setIsShared} />
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="border-t border-border/70 px-5 py-3">
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
+            size="sm"
             disabled={!name.trim()}
             onClick={() => {
               onSave(name.trim(), isShared);
               onOpenChange(false);
             }}
           >
-            Save
+            Save View
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -377,6 +386,7 @@ function ViewTab({
   onClose,
   workspaceId,
   hasChanges,
+  onSaveAsNew,
 }: {
   view: PMView;
   isActive: boolean;
@@ -386,6 +396,7 @@ function ViewTab({
   onClose: () => void;
   workspaceId: string;
   hasChanges: boolean;
+  onSaveAsNew: () => void;
 }) {
   return (
     <button
@@ -397,7 +408,20 @@ function ViewTab({
       }`}
     >
       {view.name}
-      {isActive && hasChanges && (
+      {isActive && hasChanges && isDefault && (
+        <span
+          role="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSaveAsNew();
+          }}
+          className="ml-0.5 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors"
+        >
+          <Plus className="h-3 w-3" />
+          New View
+        </span>
+      )}
+      {isActive && hasChanges && !isDefault && (
         <span className="h-1.5 w-1.5 rounded-full bg-primary" title="Unsaved changes" />
       )}
       {isActive && !isDefault && (
@@ -423,6 +447,7 @@ function ViewTab({
 
 export function ViewBar({ workspaceId, currentUserId }: ViewBarProps) {
   const { views, activeViewId, filters, savedViewFilters, applyView } = usePMBoardStore();
+  const [saveAsNewOpen, setSaveAsNewOpen] = useState(false);
 
   const [openNonPinnedIds, setOpenNonPinnedIds] = useState<Set<string>>(() => {
     return new Set(getOpenViewIds(workspaceId));
@@ -500,9 +525,19 @@ export function ViewBar({ workspaceId, currentUserId }: ViewBarProps) {
             onClose={() => handleCloseTab(view.id)}
             workspaceId={workspaceId}
             hasChanges={view.id === activeViewId && hasChanges}
+            onSaveAsNew={() => setSaveAsNewOpen(true)}
           />
         );
       })}
+
+      <SaveViewDialog
+        open={saveAsNewOpen}
+        onOpenChange={setSaveAsNewOpen}
+        title="Save as New View"
+        onSave={(name, isShared) => {
+          usePMBoardStore.getState().saveCurrentAsView(workspaceId, name, isShared);
+        }}
+      />
     </div>
   );
 }

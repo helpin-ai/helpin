@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ArrowDown, ArrowUp, Award, Briefcase, Copy, GitBranch, ListTree, Pencil, Plus, RefreshCw, Settings2, Trash2, UserPlus, Users, type LucideIcon } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
 export type SettingsSection = 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'system';
@@ -80,7 +81,7 @@ export const isSettingsSection = (value: string): value is SettingsSection =>
 
 const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
 
-export default function Settings({ section }: { section: SettingsSection }) {
+export default function Settings({ section, initialWorkflowId }: { section: SettingsSection; initialWorkflowId?: string }) {
   useTitle('Settings');
   const { currentWorkspace } = useWorkspaceStore();
   const { isAdmin } = useSessionStore();
@@ -200,6 +201,7 @@ export default function Settings({ section }: { section: SettingsSection }) {
           <WorkflowStatesTab
             workspaceId={workspaceId}
             editable={isAdmin()}
+            initialWorkflowId={initialWorkflowId}
           />
         );
       default:
@@ -997,6 +999,8 @@ function WorkflowsTab({ workspaceId, teams, editable }: {
   teams: WorkspaceTeam[];
   editable: boolean;
 }) {
+  const navigate = useNavigate();
+  const { currentWorkspace } = useWorkspaceStore();
   const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1136,6 +1140,24 @@ function WorkflowsTab({ workspaceId, teams, editable }: {
                 </div>
                 {editable && (
                   <div className="mt-2 flex justify-end gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 gap-1 text-xs"
+                      onClick={() => {
+                        const slug = currentWorkspace?.slug;
+                        if (slug) {
+                          navigate({
+                            to: '/w/$slug/settings/$section',
+                            params: { slug, section: 'workflowstates' },
+                            search: { workflow: workflow.workflow.id },
+                          });
+                        }
+                      }}
+                    >
+                      <ListTree className="h-3.5 w-3.5" />
+                      Modify States
+                    </Button>
                     <Button size="icon" variant="ghost" onClick={() => openEdit(workflow)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
@@ -1206,9 +1228,10 @@ const STATE_TYPE_LABEL: Record<StateType, string> = {
   done: 'Done',
 };
 
-function WorkflowStatesTab({ workspaceId, editable }: {
+function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
   workspaceId: string;
   editable: boolean;
+  initialWorkflowId?: string;
 }) {
   const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
   const [selectedWorkflowID, setSelectedWorkflowID] = useState<string>('');
@@ -1236,6 +1259,8 @@ function WorkflowStatesTab({ workspaceId, editable }: {
     const next = data ?? [];
     setWorkflows(next);
     setSelectedWorkflowID((prev) => {
+      // Prefer URL param, then keep existing selection, then fall back to first
+      if (initialWorkflowId && next.some((workflow) => workflow.workflow.id === initialWorkflowId)) return initialWorkflowId;
       if (prev && next.some((workflow) => workflow.workflow.id === prev)) return prev;
       return next[0]?.workflow.id ?? '';
     });

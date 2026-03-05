@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   CalendarDays,
   Check,
   Gauge,
@@ -11,6 +12,7 @@ import {
   Maximize2,
   Minimize2,
   Sparkles,
+  User,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,11 +25,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { PRIORITY_CONFIG, PriorityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateStoryRequest,
   SprintWithStats,
   Priority,
+  Severity,
   StoryType,
   WorkflowWithStates,
   EpicWithStats,
@@ -35,6 +38,7 @@ import type {
 import { pmEpicService } from "@/lib/services/pmEpicService";
 import { pmSprintService } from "@/lib/services/pmSprintService";
 import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
+import { useWorkspaceMembers } from "@/hooks/useWorkspaceMembers";
 import { DatePicker } from "@/components/ui/date-picker";
 
 interface CreateStoryModalProps {
@@ -47,6 +51,7 @@ interface CreateStoryModalProps {
 }
 
 const priorityOptions: Priority[] = ["none", "low", "medium", "high", "urgent"];
+const severityOptions: Severity[] = ["none", "minor", "major", "critical"];
 const storyTypeOptions: StoryType[] = ["feature", "bug", "chore"];
 
 const defaultState = {
@@ -54,10 +59,13 @@ const defaultState = {
   story_type: "feature" as StoryType,
   description: "",
   priority: "none" as Priority,
+  severity: "none" as Severity,
   estimate: "",
   epic_id: "",
   sprint_id: "",
   team_id: "",
+  owner_id: "",
+  requester_id: "",
   deadline: "",
 };
 
@@ -150,6 +158,7 @@ export function CreateStoryModal({
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const { teams } = useWorkspaceTeams(workspaceId);
+  const { members } = useWorkspaceMembers(workspaceId);
 
   useEffect(() => {
     if (!open) return;
@@ -198,6 +207,16 @@ export function CreateStoryModal({
     return teams.find((t) => t.id === form.team_id)?.name ?? "None";
   }, [form.team_id, teams]);
 
+  const currentOwnerName = useMemo(() => {
+    if (!form.owner_id) return "No owner";
+    return members.find((m) => m.user_id === form.owner_id)?.full_name ?? "No owner";
+  }, [form.owner_id, members]);
+
+  const currentRequesterName = useMemo(() => {
+    if (!form.requester_id) return "No requester";
+    return members.find((m) => m.user_id === form.requester_id)?.full_name ?? "No requester";
+  }, [form.requester_id, members]);
+
   const submit = useCallback(async () => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
@@ -211,10 +230,13 @@ export function CreateStoryModal({
         workflow_id: workflow.workflow.id,
         workflow_state_id: stateId,
         priority: form.priority,
+        severity: form.severity !== "none" ? form.severity : undefined,
         estimate: form.estimate ? Number(form.estimate) : undefined,
         epic_id: form.epic_id || undefined,
         sprint_id: form.sprint_id || undefined,
         team_id: form.team_id || undefined,
+        owner_id: form.owner_id || undefined,
+        requester_id: form.requester_id || undefined,
         deadline: form.deadline || undefined,
       });
 
@@ -368,6 +390,60 @@ export function CreateStoryModal({
                       </>
                     )}
                     renderOption={(v) => <StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" />}
+                  />
+                </MetadataRow>
+
+                {/* Owner */}
+                <MetadataRow icon={User} label="Owner">
+                  <SidebarPopoverSelect
+                    value={form.owner_id || "__none__"}
+                    options={[
+                      { value: "__none__", label: "No owner" },
+                      ...members.map((m) => ({ value: m.user_id, label: m.full_name || m.email })),
+                    ]}
+                    onChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        owner_id: value === "__none__" ? "" : value,
+                      }))
+                    }
+                    renderTrigger={() => <span>{currentOwnerName}</span>}
+                  />
+                </MetadataRow>
+
+                {/* Requester */}
+                <MetadataRow icon={User} label="Requester">
+                  <SidebarPopoverSelect
+                    value={form.requester_id || "__none__"}
+                    options={[
+                      { value: "__none__", label: "No requester" },
+                      ...members.map((m) => ({ value: m.user_id, label: m.full_name || m.email })),
+                    ]}
+                    onChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        requester_id: value === "__none__" ? "" : value,
+                      }))
+                    }
+                    renderTrigger={() => <span>{currentRequesterName}</span>}
+                  />
+                </MetadataRow>
+
+                {/* Severity */}
+                <MetadataRow icon={AlertTriangle} label="Severity">
+                  <SidebarPopoverSelect
+                    value={form.severity}
+                    options={severityOptions.map((s) => ({ value: s, label: SEVERITY_CONFIG[s].label }))}
+                    onChange={(value) =>
+                      setForm((prev) => ({ ...prev, severity: value as Severity }))
+                    }
+                    renderTrigger={() => (
+                      <>
+                        <SeverityIcon severity={form.severity} className="h-3.5 w-3.5" />
+                        <span>{SEVERITY_CONFIG[form.severity].label}</span>
+                      </>
+                    )}
+                    renderOption={(v) => <SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" />}
                   />
                 </MetadataRow>
 

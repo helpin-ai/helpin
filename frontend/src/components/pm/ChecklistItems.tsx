@@ -172,6 +172,23 @@ export function ChecklistItems({ workspaceId, storyId }: ChecklistItemsProps) {
         </h3>
       </div>
 
+      {/* Progress bar */}
+      {items.length > 0 && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">
+            {Math.round((completedCount / items.length) * 100)}%
+          </span>
+          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                completedCount === items.length ? 'bg-green-500' : 'bg-primary'
+              }`}
+              style={{ width: `${(completedCount / items.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Items */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
