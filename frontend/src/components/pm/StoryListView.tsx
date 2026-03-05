@@ -412,7 +412,7 @@ export function StoryListView({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {/* Group By control */}
-      <div className="flex items-center gap-2 px-3">
+      <div className="flex items-center gap-2 px-3 pt-2">
         <span className="text-xs text-muted-foreground">Group by:</span>
         <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
           <SelectTrigger className="h-7 w-[160px] text-xs">

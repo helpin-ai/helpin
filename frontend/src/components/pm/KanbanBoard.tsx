@@ -11,9 +11,8 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { BarChart3, Columns2, LayoutList, Loader2, Plus, StickyNote } from 'lucide-react';
+import { BarChart3, Columns2, LayoutList, Loader2, Maximize2, Minimize2, Plus, StickyNote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { CreateStoryRequest, Story, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
@@ -39,13 +38,37 @@ interface KanbanBoardProps {
 
 interface ColumnProps {
   column: StoryStateColumn;
+  collapsed: boolean;
+  onToggleCollapse: (stateId: string) => void;
   onCreate: (stateId: string) => void;
   onOpen: (story: Story) => void;
   findTeamName: (teamId: string | undefined) => string | undefined;
 }
 
-function Column({ column, onCreate, onOpen, findTeamName }: ColumnProps) {
+function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
+
+  if (collapsed) {
+    return (
+      <section
+        className="flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-4 transition-colors hover:bg-muted/50"
+        onClick={() => onToggleCollapse(column.state.id)}
+        title={`Expand ${column.state.name}`}
+      >
+        <Maximize2 className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
+        <span className="text-xs font-medium text-muted-foreground">{column.story_count}</span>
+        <div className="mt-3 flex flex-1 items-start">
+          <span
+            className="text-xs font-semibold whitespace-nowrap"
+            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+          >
+            {column.state.name}
+          </span>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="flex h-full w-[360px] shrink-0 flex-col">
@@ -66,9 +89,20 @@ function Column({ column, onCreate, onOpen, findTeamName }: ColumnProps) {
             </span>
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.state.id)}>
-          <Plus className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => onToggleCollapse(column.state.id)}
+            title="Collapse column"
+          >
+            <Minimize2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.state.id)}>
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
       </header>
 
       <SortableContext items={column.stories.map((story) => story.id)} strategy={verticalListSortingStrategy}>
@@ -151,6 +185,23 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     setViewModeState(mode);
     try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
   }, [VIEW_MODE_KEY]);
+
+  const COLLAPSED_KEY = `pm_kanban_collapsed_${workspaceId}`;
+  const [collapsedColumns, setCollapsedColumnsState] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(COLLAPSED_KEY);
+      return saved ? new Set(JSON.parse(saved) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+  const toggleCollapse = useCallback((stateId: string) => {
+    setCollapsedColumnsState((prev) => {
+      const next = new Set(prev);
+      if (next.has(stateId)) next.delete(stateId);
+      else next.add(stateId);
+      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, [COLLAPSED_KEY]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -286,10 +337,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     [createStory]
   );
 
-  const totalStories = useMemo(
-    () => columns.reduce((sum, column) => sum + column.story_count, 0),
-    [columns]
-  );
+
 
   return (
     <StoryFilterProvider
@@ -305,20 +353,14 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}
       <header className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">Stories</h2>
-          <Badge variant="secondary" className="rounded-full px-2 py-0 text-xs">
-            {totalStories}
-          </Badge>
-        </div>
-
         <Select
           value={workflow?.workflow.id}
           onValueChange={(value) => {
             setWorkflow(value);
           }}
         >
-          <SelectTrigger className="h-8 w-[260px]">
+          <SelectTrigger className="h-7 w-auto gap-1.5 text-xs px-2.5">
+            <span className="text-muted-foreground">Workflow:</span>
             <SelectValue placeholder="Select workflow" />
           </SelectTrigger>
           <SelectContent>
@@ -383,6 +425,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                 <Column
                   key={column.state.id}
                   column={column}
+                  collapsed={collapsedColumns.has(column.state.id)}
+                  onToggleCollapse={toggleCollapse}
                   onCreate={(stateId) => {
                     setCreateStateId(stateId);
                     setCreateOpen(true);

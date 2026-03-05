@@ -292,16 +292,16 @@ export function Sidebar() {
               <div className="mb-2 flex w-full">
                 <Button
                   size="sm"
-                  className="h-8 flex-1 rounded-r-none text-xs gap-1.5"
+                  className="h-7 flex-1 rounded-r-none text-xs gap-1.5"
                   onClick={() => openCreate(primaryCreate.key)}
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="h-3 w-3" />
                   {primaryCreate.label}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="sm" className="h-8 rounded-l-none border-l border-primary-foreground/20 px-1.5">
-                      <ChevronDown className="h-3.5 w-3.5" />
+                    <Button size="sm" className="h-7 rounded-l-none border-l border-primary-foreground/20 px-1.5">
+                      <ChevronDown className="h-3 w-3" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
@@ -330,7 +330,7 @@ export function Sidebar() {
                         asChild
                         tooltip={item.label}
                         isActive={isActive(item.link)}
-                        className="h-8 rounded-md px-2"
+                        className="h-8 rounded-md px-2 text-xs"
                       >
                         <a
                           href={item.link}
