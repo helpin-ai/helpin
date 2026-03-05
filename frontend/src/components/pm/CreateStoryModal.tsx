@@ -41,6 +41,7 @@ import { pmEpicService } from "@/lib/services/pmEpicService";
 import { pmSprintService } from "@/lib/services/pmSprintService";
 import { pmLabelService } from "@/lib/services/pmLabelService";
 import { LabelPicker } from "@/components/pm/LabelPicker";
+import { EstimatePicker } from "@/components/pm/EstimatePicker";
 import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
 import { useWorkspaceMembers } from "@/hooks/useWorkspaceMembers";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -528,31 +529,13 @@ export function CreateStoryModal({
 
                 {/* Estimate */}
                 <MetadataRow icon={LayoutGrid} label="Estimate">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-                      >
-                        {form.estimate ? `${form.estimate} pts` : "None"}
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-36 p-3" align="start">
-                      <Input
-                        type="number"
-                        min={0}
-                        placeholder="Points"
-                        className="h-8 text-sm"
-                        value={form.estimate}
-                        onChange={(event) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            estimate: event.target.value,
-                          }))
-                        }
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <EstimatePicker
+                    value={form.estimate}
+                    teamId={form.team_id || undefined}
+                    onChange={(displayValue) =>
+                      setForm((prev) => ({ ...prev, estimate: displayValue }))
+                    }
+                  />
                 </MetadataRow>
 
                 {/* Due date */}

@@ -85,6 +85,12 @@ func (r *SettingsRepository) GetAll(ctx context.Context, workspaceID string) (*m
 	}
 	cfg.InvitationTeamPreassignments = preassignments
 
+	estimateSettings, err := r.listTeamEstimateSettings(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	cfg.TeamEstimateSettings = estimateSettings
+
 	return cfg, nil
 }
 
@@ -698,6 +704,90 @@ func (r *SettingsRepository) RemoveInvitationTeamPreassignment(ctx context.Conte
 		return fmt.Errorf("remove invitation team preassignment: %w", result.Error)
 	}
 	return nil
+}
+
+// GetTeamEstimateSettings returns estimate settings for a team.
+func (r *SettingsRepository) GetTeamEstimateSettings(ctx context.Context, teamID string) (*model.PMTeamEstimateSettings, error) {
+	s := &model.PMTeamEstimateSettings{}
+	err := r.db.WithContext(ctx).Where("team_id = ?", teamID).First(s).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get team estimate settings: %w", err)
+	}
+	return s, nil
+}
+
+// UpsertTeamEstimateSettings creates or updates estimate settings for a team.
+func (r *SettingsRepository) UpsertTeamEstimateSettings(ctx context.Context, teamID string, req model.UpdateTeamEstimateSettingsRequest) (*model.PMTeamEstimateSettings, error) {
+	existing, err := r.GetTeamEstimateSettings(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+
+	if existing == nil {
+		s := &model.PMTeamEstimateSettings{TeamID: teamID}
+		if req.Enabled != nil {
+			s.Enabled = *req.Enabled
+		}
+		if req.Scale != nil {
+			s.Scale = *req.Scale
+		}
+		if req.Extended != nil {
+			s.Extended = *req.Extended
+		}
+		if req.AllowZero != nil {
+			s.AllowZero = *req.AllowZero
+		}
+		if req.CountUnestimatedAsOne != nil {
+			s.CountUnestimatedAsOne = *req.CountUnestimatedAsOne
+		}
+		if err := r.db.WithContext(ctx).Create(s).Error; err != nil {
+			return nil, fmt.Errorf("create team estimate settings: %w", err)
+		}
+		return s, nil
+	}
+
+	updates := map[string]interface{}{}
+	if req.Enabled != nil {
+		updates["enabled"] = *req.Enabled
+	}
+	if req.Scale != nil {
+		updates["scale"] = *req.Scale
+	}
+	if req.Extended != nil {
+		updates["extended"] = *req.Extended
+	}
+	if req.AllowZero != nil {
+		updates["allow_zero"] = *req.AllowZero
+	}
+	if req.CountUnestimatedAsOne != nil {
+		updates["count_unestimated_as_one"] = *req.CountUnestimatedAsOne
+	}
+
+	if len(updates) > 0 {
+		if err := r.db.WithContext(ctx).Model(&model.PMTeamEstimateSettings{}).Where("team_id = ?", teamID).Updates(updates).Error; err != nil {
+			return nil, fmt.Errorf("update team estimate settings: %w", err)
+		}
+	}
+
+	return r.GetTeamEstimateSettings(ctx, teamID)
+}
+
+// listTeamEstimateSettings returns all estimate settings for a workspace's teams.
+func (r *SettingsRepository) listTeamEstimateSettings(ctx context.Context, workspaceID string) ([]model.PMTeamEstimateSettings, error) {
+	var results []model.PMTeamEstimateSettings
+	err := r.db.WithContext(ctx).
+		Table("pm_team_estimate_settings").
+		Joins("JOIN workspace_teams ON pm_team_estimate_settings.team_id = workspace_teams.id").
+		Where("workspace_teams.workspace_id = ?", workspaceID).
+		Select("pm_team_estimate_settings.*").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("list team estimate settings: %w", err)
+	}
+	return results, nil
 }
 
 // GetInvitationTeamPreassignmentsByInvitation returns all team preassignments for an invitation.

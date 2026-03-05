@@ -175,6 +175,7 @@ export interface WorkspaceSettings {
   job_role_criteria: JobRoleCriteria[];
   bonus_tiers: BonusTierConfig[];
   invitation_team_preassignments: InvitationTeamPreassignment[];
+  team_estimate_settings: TeamEstimateSettings[];
 }
 
 export interface InvitationTeamPreassignment {
@@ -182,6 +183,20 @@ export interface InvitationTeamPreassignment {
   invitation_id: string;
   team_id: string;
   created_at: string;
+}
+
+export type EstimateScale = 'exponential' | 'fibonacci' | 'linear' | 'tshirt' | 'hours';
+
+export interface TeamEstimateSettings {
+  id: string;
+  team_id: string;
+  enabled: boolean;
+  scale: EstimateScale;
+  extended: boolean;
+  allow_zero: boolean;
+  count_unestimated_as_one: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface WorkspaceConfig {

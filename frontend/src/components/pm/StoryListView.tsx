@@ -38,6 +38,7 @@ import type {
   SprintWithStats,
 } from '@/lib/pmTypes';
 import type { MemberWithUser, WorkspaceTeam } from '@/lib/types';
+import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
@@ -867,63 +868,19 @@ function InlineEstimateCell({
   story: Story;
   onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState(story.estimate?.toString() ?? '');
-
-  const save = () => {
-    const num = value.trim() === '' ? null : Number(value);
-    if (num !== story.estimate && (num === null || !isNaN(num))) {
-      onUpdate(story.id, { estimate: num as number });
-    }
-    setOpen(false);
-  };
-
   return (
-    <Popover
-      open={open}
-      onOpenChange={(o) => {
-        if (o) setValue(story.estimate?.toString() ?? '');
-        else save();
-        setOpen(o);
-      }}
-    >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-        >
-          {story.estimate != null ? (
-            <span className="text-muted-foreground">{story.estimate} pts</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          )}
-        </button>
-      </PopoverTrigger>
-      {open && (
-        <PopoverContent
-          className="w-[120px] p-2"
-          align="start"
-          side="bottom"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <Input
-            type="number"
-            min={0}
-            placeholder="Points"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') save();
-              if (e.key === 'Escape') setOpen(false);
-            }}
-            className="h-7 text-xs"
-            autoFocus
-          />
-        </PopoverContent>
-      )}
-    </Popover>
+    <div onClick={(e) => e.stopPropagation()}>
+      <EstimatePicker
+        value={story.estimate?.toString() ?? ''}
+        teamId={story.team_id}
+        onChange={(_displayValue, apiValue) => {
+          const next = apiValue ?? null;
+          if (next !== story.estimate) {
+            onUpdate(story.id, { estimate: next as number });
+          }
+        }}
+      />
+    </div>
   );
 }
 

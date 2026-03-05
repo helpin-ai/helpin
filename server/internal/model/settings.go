@@ -122,6 +122,30 @@ type BonusTier struct {
 
 func (BonusTier) TableName() string { return "bonus_tiers" }
 
+// PMTeamEstimateSettings stores per-team estimate configuration.
+type PMTeamEstimateSettings struct {
+	ID                    string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	TeamID                string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex"`
+	Enabled               bool      `json:"enabled" gorm:"not null;default:false"`
+	Scale                 string    `json:"scale" gorm:"not null;default:'linear'"`
+	Extended              bool      `json:"extended" gorm:"not null;default:false"`
+	AllowZero             bool      `json:"allow_zero" gorm:"not null;default:false"`
+	CountUnestimatedAsOne bool      `json:"count_unestimated_as_one" gorm:"not null;default:true"`
+	CreatedAt             time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt             time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (PMTeamEstimateSettings) TableName() string { return "pm_team_estimate_settings" }
+
+// UpdateTeamEstimateSettingsRequest is the payload for updating team estimate settings.
+type UpdateTeamEstimateSettingsRequest struct {
+	Enabled               *bool   `json:"enabled"`
+	Scale                 *string `json:"scale"`
+	Extended              *bool   `json:"extended"`
+	AllowZero             *bool   `json:"allow_zero"`
+	CountUnestimatedAsOne *bool   `json:"count_unestimated_as_one"`
+}
+
 // InvitationTeamPreassignment pre-assigns a pending invitation to a team.
 // When the invitation is accepted, the user is automatically added to the team.
 type InvitationTeamPreassignment struct {
@@ -144,6 +168,7 @@ type FullWorkspaceConfig struct {
 	JobRoles                       []JobRoleCriteria              `json:"job_roles"`
 	BonusTiers                     []BonusTier                    `json:"bonus_tiers"`
 	InvitationTeamPreassignments   []InvitationTeamPreassignment  `json:"invitation_team_preassignments"`
+	TeamEstimateSettings           []PMTeamEstimateSettings       `json:"team_estimate_settings"`
 }
 
 // CreateTeamRequest is the payload for creating a team.

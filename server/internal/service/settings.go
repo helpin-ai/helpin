@@ -206,6 +206,28 @@ func isValidTeamMemberRole(role string) bool {
 	return role == "owner" || role == "member"
 }
 
+// validEstimateScales enumerates the allowed estimate scale values.
+var validEstimateScales = map[string]bool{
+	"exponential": true,
+	"fibonacci":   true,
+	"linear":      true,
+	"tshirt":      true,
+	"hours":       true,
+}
+
+// GetTeamEstimateSettings returns estimate settings for a team.
+func (s *SettingsService) GetTeamEstimateSettings(ctx context.Context, teamID string) (*model.PMTeamEstimateSettings, error) {
+	return s.settingsRepo.GetTeamEstimateSettings(ctx, teamID)
+}
+
+// UpdateTeamEstimateSettings creates or updates estimate settings for a team.
+func (s *SettingsService) UpdateTeamEstimateSettings(ctx context.Context, teamID string, req model.UpdateTeamEstimateSettingsRequest) (*model.PMTeamEstimateSettings, error) {
+	if req.Scale != nil && !validEstimateScales[*req.Scale] {
+		return nil, fmt.Errorf("invalid estimate scale: %s", *req.Scale)
+	}
+	return s.settingsRepo.UpsertTeamEstimateSettings(ctx, teamID, req)
+}
+
 // AddInvitationTeamPreassignment pre-assigns a pending invitation to a team.
 func (s *SettingsService) AddInvitationTeamPreassignment(ctx context.Context, teamID, invitationID string) (*model.InvitationTeamPreassignment, error) {
 	return s.settingsRepo.AddInvitationTeamPreassignment(ctx, invitationID, teamID)

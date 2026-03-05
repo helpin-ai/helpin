@@ -3,9 +3,10 @@ import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { settingsService } from '@/lib/services/settingsService';
+import { useTeamEstimateStore } from '@/stores/teamEstimateStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
-import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment } from '@/lib/types';
+import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, EstimateScale } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { StateTypeIcon } from '@/lib/pmConstants';
@@ -24,7 +25,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn, getInitials } from '@/lib/utils';
-import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, GitBranch, Info, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, GitBranch, Info, LayoutGrid, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
+import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
@@ -132,7 +134,10 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
     setLoading(true);
     try {
       const { data } = await settingsService.getAll(ws.id);
-      if (data) setSettings(data);
+      if (data) {
+        setSettings(data);
+        useTeamEstimateStore.getState().setSettings(data.team_estimate_settings ?? []);
+      }
     } finally {
       setLoading(false);
     }
@@ -184,6 +189,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             teams={settings.teams}
             userMemberships={settings.user_memberships}
             invitationPreassignments={settings.invitation_team_preassignments}
+            teamEstimateSettings={settings.team_estimate_settings}
             editable={isAdmin()}
             onRefresh={load}
           />
@@ -520,13 +526,123 @@ function MembersTab({ workspaceId, editable }: {
   );
 }
 
+/* ============ Estimate Settings Form ============ */
+
+function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
+  teamId: string;
+  initial: TeamEstimateSettings | null;
+  saving: boolean;
+  onSave: (data: { enabled?: boolean; scale?: EstimateScale; extended?: boolean; allow_zero?: boolean; count_unestimated_as_one?: boolean }) => void;
+}) {
+  const [enabled, setEnabled] = useState(initial?.enabled ?? false);
+  const [scale, setScale] = useState<EstimateScale>(initial?.scale ?? 'linear');
+  const [extended, setExtended] = useState(initial?.extended ?? false);
+  const [allowZero, setAllowZero] = useState(initial?.allow_zero ?? false);
+  const [countUnestimated, setCountUnestimated] = useState(initial?.count_unestimated_as_one ?? true);
+
+  useEffect(() => {
+    setEnabled(initial?.enabled ?? false);
+    setScale(initial?.scale ?? 'linear');
+    setExtended(initial?.extended ?? false);
+    setAllowZero(initial?.allow_zero ?? false);
+    setCountUnestimated(initial?.count_unestimated_as_one ?? true);
+  }, [initial, teamId]);
+
+  const scaleOptions = getEstimateOptions(scale, extended, allowZero);
+  const preview = scaleOptions.map((o) => o.label).join(', ');
+
+  return (
+    <div className="space-y-5 py-2">
+      {/* Enable toggle */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">Enable estimates</p>
+          <p className="text-xs text-muted-foreground">Show effort estimates on issues</p>
+        </div>
+        <Switch checked={enabled} onCheckedChange={setEnabled} />
+      </div>
+
+      {enabled && (
+        <>
+          {/* Scale selection */}
+          <div className="space-y-2">
+            <Label className="text-sm">Scale</Label>
+            <Select value={scale} onValueChange={(v) => setScale(v as EstimateScale)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(SCALE_LABELS) as EstimateScale[]).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    <span className="font-medium">{SCALE_LABELS[s]}</span>
+                    <span className="ml-2 text-muted-foreground">{SCALE_DESCRIPTIONS[s]}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Preview */}
+          <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground mb-1">Scale values</p>
+            <div className="flex flex-wrap gap-1.5">
+              {scaleOptions.map((opt) => (
+                <span key={opt.value} className="inline-flex items-center rounded-md border border-border bg-background px-2 py-0.5 text-xs font-medium">
+                  {opt.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Extended scale */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Extended scale</p>
+              <p className="text-xs text-muted-foreground">Add two additional larger values</p>
+            </div>
+            <Switch checked={extended} onCheckedChange={setExtended} />
+          </div>
+
+          {/* Allow zero */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Allow zero estimates</p>
+              <p className="text-xs text-muted-foreground">Allow issues to be estimated as zero effort</p>
+            </div>
+            <Switch checked={allowZero} onCheckedChange={setAllowZero} />
+          </div>
+
+          {/* Count unestimated as one */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Count unestimated as 1 point</p>
+              <p className="text-xs text-muted-foreground">Unestimated issues count as 1 point in calculations</p>
+            </div>
+            <Switch checked={countUnestimated} onCheckedChange={setCountUnestimated} />
+          </div>
+        </>
+      )}
+
+      <DialogFooter>
+        <Button
+          disabled={saving}
+          onClick={() => onSave({ enabled, scale, extended, allow_zero: allowZero, count_unestimated_as_one: countUnestimated })}
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
 /* ============ Teams Tab ============ */
 
-function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, editable, onRefresh }: {
+function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, editable, onRefresh }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
   userMemberships: TeamUserMembership[];
   invitationPreassignments: InvitationTeamPreassignment[];
+  teamEstimateSettings: TeamEstimateSettings[];
   editable: boolean;
   onRefresh: () => void | Promise<void>;
 }) {
@@ -540,6 +656,9 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+
+  const [estimateDialogOpen, setEstimateDialogOpen] = useState(false);
+  const [estimateSaving, setEstimateSaving] = useState(false);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
@@ -719,6 +838,10 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
   if (selectedTeam) {
     const invitedCount = invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length;
     const memberCount = teamMembers.length + invitedCount;
+    const teamEstConfig = teamEstimateSettings.find((s) => s.team_id === selectedTeam.id);
+    const estimateMeta = teamEstConfig?.enabled
+      ? SCALE_LABELS[teamEstConfig.scale]
+      : 'Disabled';
     const settingsGroups: {
       label?: string;
       rows: { key: string; icon: LucideIcon; title: string; description: string; meta: string; action: () => void; disabled: boolean }[];
@@ -748,6 +871,15 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
       {
         label: 'Issues, projects, and docs',
         rows: [
+          {
+            key: 'estimates',
+            icon: LayoutGrid,
+            title: 'Estimates',
+            description: 'Configure estimate scale and options',
+            meta: estimateMeta,
+            action: () => setEstimateDialogOpen(true),
+            disabled: !editable,
+          },
           {
             key: 'labels',
             icon: Tag,
@@ -1031,6 +1163,32 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
                 </div>
               )}
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Estimate Settings Dialog */}
+        <Dialog open={estimateDialogOpen} onOpenChange={setEstimateDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Estimate Settings</DialogTitle>
+            </DialogHeader>
+            <EstimateSettingsForm
+              teamId={selectedTeam.id}
+              initial={teamEstConfig ?? null}
+              saving={estimateSaving}
+              onSave={async (data) => {
+                setEstimateSaving(true);
+                const { error } = await settingsService.updateTeamEstimateSettings(selectedTeam.id, data);
+                setEstimateSaving(false);
+                if (error) {
+                  toast.error(error);
+                } else {
+                  toast.success('Estimate settings updated');
+                  setEstimateDialogOpen(false);
+                  await onRefresh();
+                }
+              }}
+            />
           </DialogContent>
         </Dialog>
       </>

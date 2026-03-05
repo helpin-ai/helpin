@@ -281,6 +281,43 @@ func (h *SettingsHandler) DeleteJobRole(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "job role deleted"})
 }
 
+// GetTeamEstimateSettings handles GET /api/settings/teams/{id}/estimates.
+func (h *SettingsHandler) GetTeamEstimateSettings(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+
+	settings, err := h.settingsService.GetTeamEstimateSettings(r.Context(), teamID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if settings == nil {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, settings)
+}
+
+// UpdateTeamEstimateSettings handles PUT /api/settings/teams/{id}/estimates.
+func (h *SettingsHandler) UpdateTeamEstimateSettings(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+
+	var req model.UpdateTeamEstimateSettingsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	settings, err := h.settingsService.UpdateTeamEstimateSettings(r.Context(), teamID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, settings)
+}
+
 // UpdateSystem handles PUT /api/settings/system.
 func (h *SettingsHandler) UpdateSystem(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.URL.Query().Get("workspace_id")

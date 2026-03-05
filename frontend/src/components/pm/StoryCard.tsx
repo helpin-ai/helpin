@@ -17,6 +17,7 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { UserAvatar } from './UserAvatar';
 import type { Priority, Story, WorkflowState } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
+import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -333,10 +334,10 @@ export function StoryCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
-                {story.estimate} pts
+                {formatEstimateDisplay(story.estimate, story.team_id)}
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top">Estimate: {story.estimate} points</TooltipContent>
+            <TooltipContent side="top">Estimate: {formatEstimateDisplay(story.estimate, story.team_id)}</TooltipContent>
           </Tooltip>
         )}
 

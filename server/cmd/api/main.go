@@ -116,6 +116,7 @@ func main() {
 		&model.PMAutomation{},
 		&model.WorkspaceInvitation{},
 		&model.InvitationTeamPreassignment{},
+		&model.PMTeamEstimateSettings{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}

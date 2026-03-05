@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, BonusTierConfig, JobRoleCriteria, InvitationTeamPreassignment } from '../types';
+import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, BonusTierConfig, JobRoleCriteria, InvitationTeamPreassignment, TeamEstimateSettings, EstimateScale } from '../types';
 
 interface RawWorkspaceSettings extends Omit<WorkspaceSettings, 'job_role_criteria'> {
   job_role_criteria?: JobRoleCriteria[];
@@ -24,6 +24,7 @@ const normalizeWorkspaceSettings = (raw: RawWorkspaceSettings): WorkspaceSetting
   job_role_criteria: raw.job_role_criteria ?? raw.job_roles ?? [],
   bonus_tiers: raw.bonus_tiers ?? [],
   invitation_team_preassignments: raw.invitation_team_preassignments ?? [],
+  team_estimate_settings: raw.team_estimate_settings ?? [],
 });
 
 export const settingsService = {
@@ -70,4 +71,8 @@ export const settingsService = {
     api.post<InvitationTeamPreassignment>(`/settings/teams/${teamId}/invitations`, { invitation_id: invitationId }),
   removeTeamInvitation: (teamId: string, invitationId: string) =>
     api.del(`/settings/teams/${teamId}/invitations/${invitationId}`),
+  getTeamEstimateSettings: (teamId: string) =>
+    api.get<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates`),
+  updateTeamEstimateSettings: (teamId: string, data: { enabled?: boolean; scale?: EstimateScale; extended?: boolean; allow_zero?: boolean; count_unestimated_as_one?: boolean }) =>
+    api.put<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates`, data),
 };

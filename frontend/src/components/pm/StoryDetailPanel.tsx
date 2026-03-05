@@ -67,6 +67,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
+import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -986,31 +987,15 @@ function StoryDetailPanelBody({
 
             {/* Estimate */}
             <MetadataRow icon={LayoutGrid} label="Estimate">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-                  >
-                    {form.estimate ? `${form.estimate} pts` : 'None'}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-36 p-3" align="start">
-                  <Input
-                    type="number"
-                    min={0}
-                    placeholder="Points"
-                    className="h-8 text-sm"
-                    value={form.estimate}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      updateField('estimate', next, {
-                        estimate: next === '' ? undefined : Number(next),
-                      });
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
+              <EstimatePicker
+                value={form.estimate}
+                teamId={form.team_id}
+                onChange={(displayValue, apiValue) => {
+                  updateField('estimate', displayValue, {
+                    estimate: apiValue,
+                  });
+                }}
+              />
             </MetadataRow>
 
             {/* Due date */}
