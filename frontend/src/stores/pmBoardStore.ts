@@ -268,12 +268,16 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   },
 
   applyView: (view) => {
-    const filters: BoardFilters = { ...view.filters };
+    const cleanFilters: Record<string, string> = {};
+    for (const [k, v] of Object.entries(view.filters)) {
+      if (v) cleanFilters[k] = v;
+    }
     set({
       activeViewId: view.id,
-      filters,
-      savedViewFilters: { ...filters },
+      filters: { ...cleanFilters },
+      savedViewFilters: { ...cleanFilters },
     });
+    const filters = cleanFilters;
     // Trigger board refresh with new filters
     const { workspaceId, workflow, teamId } = get();
     const workflowId = workflow?.workflow.id;
@@ -319,7 +323,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     const updated = res.data;
     set({
       views: views.map((v) => (v.id === updated.id ? updated : v)),
-      savedViewFilters: { ...filters },
+      savedViewFilters: { ...cleanFilters },
     });
   },
 

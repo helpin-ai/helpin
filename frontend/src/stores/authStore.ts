@@ -23,10 +23,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     _initializing = true;
     const token = localStorage.getItem('access_token');
     if (token) {
-      const { data, error } = await authService.me();
+      const { data, error, isNetworkError } = await authService.me();
       if (data && !error) {
         set({ user: data, loading: false });
+      } else if (isNetworkError) {
+        // Server unreachable / CORS error — keep tokens, don't log out
+        set({ loading: false });
       } else {
+        // Genuine auth failure (401, invalid token, etc.) — clear session
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         set({ loading: false });

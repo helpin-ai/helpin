@@ -3,6 +3,8 @@ export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/a
 interface ApiResponse<T> {
   data: T | null;
   error: string | null;
+  status?: number;
+  isNetworkError?: boolean;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
@@ -48,13 +50,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
-      return { data: null, error: err.error || res.statusText };
+      return { data: null, error: err.error || res.statusText, status: res.status };
     }
-    if (res.status === 204) return { data: null as T, error: null };
+    if (res.status === 204) return { data: null as T, error: null, status: 204 };
     const data = await res.json();
-    return { data, error: null };
+    return { data, error: null, status: res.status };
   } catch (e) {
-    return { data: null, error: e instanceof Error ? e.message : 'Network error' };
+    return { data: null, error: e instanceof Error ? e.message : 'Network error', isNetworkError: true };
   }
 }
 

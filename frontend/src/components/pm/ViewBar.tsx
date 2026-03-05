@@ -71,11 +71,21 @@ function setOpenViewIds(workspaceId: string, ids: string[]) {
   localStorage.setItem(OPEN_VIEWS_KEY(workspaceId), JSON.stringify(ids));
 }
 
+function normalizeFilters(f: BoardFilters): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(f)) {
+    if (v !== undefined && v !== '') out[k] = v;
+  }
+  return out;
+}
+
 function filtersEqual(a: BoardFilters, b: BoardFilters): boolean {
-  const aKeys = Object.keys(a).filter((k) => a[k] !== undefined && a[k] !== '');
-  const bKeys = Object.keys(b).filter((k) => b[k] !== undefined && b[k] !== '');
+  const na = normalizeFilters(a);
+  const nb = normalizeFilters(b);
+  const aKeys = Object.keys(na);
+  const bKeys = Object.keys(nb);
   if (aKeys.length !== bKeys.length) return false;
-  return aKeys.every((k) => a[k] === b[k]);
+  return aKeys.every((k) => na[k] === nb[k]);
 }
 
 // ── Save View Dialog ────────────────────────────────────────────────
@@ -379,7 +389,7 @@ function ViewTab({
 }) {
   return (
     <button
-      onClick={onActivate}
+      onClick={() => { if (!isActive) onActivate(); }}
       className={`group relative inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
         isActive
           ? 'text-foreground border-b-2 border-primary'
