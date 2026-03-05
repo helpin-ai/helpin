@@ -34,7 +34,7 @@ import { ViewBar } from './ViewBar';
 
 interface KanbanBoardProps {
   workspaceId: string;
-  initialTeamId?: string;
+  teamId?: string;
 }
 
 interface ColumnProps {
@@ -96,14 +96,14 @@ function Column({ column, onCreate, onOpen, findTeamName }: ColumnProps) {
   );
 }
 
-export function KanbanBoard({ workspaceId, initialTeamId }: KanbanBoardProps) {
+export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const {
     workflows,
     workflow,
     columns,
     loading,
     error,
-    teamId,
+    teamId: storeTeamId,
     filters,
     loadBoard,
     setWorkflow,
@@ -121,8 +121,8 @@ export function KanbanBoard({ workspaceId, initialTeamId }: KanbanBoardProps) {
 
   // Sync URL team param → store on mount / prop change
   useEffect(() => {
-    setTeamFilter(initialTeamId ?? null);
-  }, [initialTeamId, setTeamFilter]);
+    setTeamFilter(teamId ?? null);
+  }, [teamId, setTeamFilter]);
 
   const [refLabels, setRefLabels] = useState<Label[]>([]);
   const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
@@ -409,7 +409,7 @@ export function KanbanBoard({ workspaceId, initialTeamId }: KanbanBoardProps) {
           epics={refEpics}
           sprints={refSprints}
           filters={filters}
-          teamId={teamId}
+          teamId={storeTeamId}
           onOpenStory={openStory}
         />
       ) : null}

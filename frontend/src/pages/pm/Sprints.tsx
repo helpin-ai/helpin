@@ -50,7 +50,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     window.addEventListener('sprint-created', handler);
     return () => window.removeEventListener('sprint-created', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
+  }, [workspaceId, teamId]);
 
   const openSprint = (entry: SprintWithStats) => {
     if (!workspace) return;

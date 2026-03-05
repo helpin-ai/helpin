@@ -14,7 +14,7 @@ function StoriesRoute() {
   const { team } = Route.useSearch();
   return (
     <div className="h-full overflow-hidden pt-4 md:pt-6">
-      <StoriesPage initialTeamId={team} />
+      <StoriesPage teamId={team} />
     </div>
   );
 }

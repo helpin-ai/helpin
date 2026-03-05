@@ -146,6 +146,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   },
 
   setTeamFilter: async (teamId) => {
+    if (teamId === get().teamId) return;
     set({ teamId });
     const { workspaceId, workflow, filters } = get();
     const workflowId = workflow?.workflow.id;

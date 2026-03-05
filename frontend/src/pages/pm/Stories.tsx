@@ -3,10 +3,10 @@ import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 interface StoriesPageProps {
-  initialTeamId?: string;
+  teamId?: string;
 }
 
-export function StoriesPage({ initialTeamId }: StoriesPageProps) {
+export function StoriesPage({ teamId }: StoriesPageProps) {
   useTitle('Stories');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
 
@@ -14,5 +14,5 @@ export function StoriesPage({ initialTeamId }: StoriesPageProps) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
 
-  return <KanbanBoard workspaceId={workspace.id} initialTeamId={initialTeamId} />;
+  return <KanbanBoard workspaceId={workspace.id} teamId={teamId} />;
 }

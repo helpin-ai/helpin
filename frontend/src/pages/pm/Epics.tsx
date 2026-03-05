@@ -285,7 +285,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     window.addEventListener('epic-created', handler);
     return () => window.removeEventListener('epic-created', handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
+  }, [workspaceId, teamId]);
 
   const completionPct = (entry: EpicWithStats) => {
     if (entry.stats.story_count === 0) return 0;

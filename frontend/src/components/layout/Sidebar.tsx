@@ -138,8 +138,9 @@ export function Sidebar() {
 
   // ── Auto-expand team when navigating via direct URL ──
   useEffect(() => {
-    if (activeTeamParam && workspaceId && !expandedTeams.has(activeTeamParam)) {
+    if (activeTeamParam && workspaceId) {
       setExpandedTeams((prev) => {
+        if (prev.has(activeTeamParam)) return prev;
         const next = new Set(prev);
         next.add(activeTeamParam);
         saveExpandedTeams(workspaceId, next);
@@ -253,8 +254,7 @@ export function Sidebar() {
   };
 
   const isTeamSubActive = (teamId: string, subPath: string) => {
-    const pagePath = `/w/${wsSlug}/pm/${subPath}`;
-    return (location.pathname === pagePath || location.pathname.startsWith(`${pagePath}/`)) && activeTeamParam === teamId;
+    return isActive(`/w/${wsSlug}/pm/${subPath}`) && activeTeamParam === teamId;
   };
 
   return (
