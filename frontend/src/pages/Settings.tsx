@@ -1640,7 +1640,10 @@ function AutomationsTab({ workspaceId, teams }: {
       config_int: opts?.configInt,
       config_int2: opts?.configInt2,
       config_int3: opts?.configInt3,
-    } as const;
+    };
+
+    // Snapshot for rollback
+    const snapshot = automations;
 
     // Optimistic update
     setAutomations((prev) => {
@@ -1653,26 +1656,44 @@ function AutomationsTab({ workspaceId, teams }: {
       return [...prev, { id: 'temp-' + Date.now(), workspace_id: workspaceId, automation_type: type, enabled, team_id: opts?.teamId, config_state_id: opts?.configStateId, config_int: opts?.configInt, config_int2: opts?.configInt2, config_int3: opts?.configInt3, created_at: '', updated_at: '' }];
     });
 
-    const res = await pmAutomationService.upsert(workspaceId, payload);
-    if (res.data) {
-      // Replace temp/stale entry with server response
-      setAutomations((prev) => {
-        const idx = prev.findIndex((a) => a.automation_type === type && (opts?.teamId ? a.team_id === opts.teamId : !a.team_id));
-        if (idx >= 0) {
-          const updated = [...prev];
-          updated[idx] = res.data!;
-          return updated;
-        }
-        return prev;
-      });
+    try {
+      const res = await pmAutomationService.upsert(workspaceId, payload);
+      if (res.data) {
+        // Replace temp/stale entry with server response
+        setAutomations((prev) => {
+          const idx = prev.findIndex((a) => a.automation_type === type && (opts?.teamId ? a.team_id === opts.teamId : !a.team_id));
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = res.data!;
+            return updated;
+          }
+          return prev;
+        });
+      }
+    } catch {
+      setAutomations(snapshot);
+      toast.error('Failed to save automation');
     }
   };
 
   const removeAuto = async (type: AutomationType, teamId?: string) => {
-    // Optimistic removal
+    const snapshot = automations;
     setAutomations((prev) => prev.filter((a) => !(a.automation_type === type && (teamId ? a.team_id === teamId : !a.team_id))));
-    await pmAutomationService.remove(workspaceId, type, teamId);
+    try {
+      await pmAutomationService.remove(workspaceId, type, teamId);
+    } catch {
+      setAutomations(snapshot);
+      toast.error('Failed to remove automation');
+    }
   };
+
+  const updateSprintConfig = (cfg: PMAutomation, patch: { enabled?: boolean; configInt?: number; configInt2?: number; configInt3?: number }) =>
+    upsert('sprint_auto_create', patch.enabled ?? cfg.enabled, {
+      teamId: cfg.team_id!,
+      configInt: patch.configInt ?? cfg.config_int ?? 2,
+      configInt2: patch.configInt2 ?? cfg.config_int2 ?? 1,
+      configInt3: patch.configInt3 ?? cfg.config_int3 ?? 1,
+    });
 
   const startedStates = epicStates.filter((s) => s.state_type === 'started');
   const doneStates = epicStates.filter((s) => s.state_type === 'done');
@@ -1718,22 +1739,30 @@ function AutomationsTab({ workspaceId, teams }: {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Select
-                value={autoStart?.config_state_id ?? ''}
-                onValueChange={(val) => upsert('epic_auto_start', autoStart?.enabled ?? true, { configStateId: val })}
-              >
-                <SelectTrigger className="w-[180px] h-8 text-xs">
-                  <SelectValue placeholder="Target state..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {startedStates.map((st) => (
-                    <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {startedStates.length > 1 ? (
+                <Select
+                  value={autoStart?.config_state_id ?? ''}
+                  onValueChange={(val) => upsert('epic_auto_start', autoStart?.enabled ?? true, { configStateId: val })}
+                >
+                  <SelectTrigger className="w-[180px] h-8 text-xs">
+                    <SelectValue placeholder="Target state..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {startedStates.map((st) => (
+                      <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : startedStates.length === 1 ? (
+                <Badge variant="secondary" className="text-xs">{startedStates[0].name}</Badge>
+              ) : null}
               <Switch
                 checked={autoStart?.enabled ?? false}
-                onCheckedChange={(checked) => upsert('epic_auto_start', checked, { configStateId: autoStart?.config_state_id ?? undefined })}
+                onCheckedChange={(checked) => {
+                  const stateId = autoStart?.config_state_id ?? startedStates[0]?.id;
+                  if (!stateId) return;
+                  upsert('epic_auto_start', checked, { configStateId: stateId });
+                }}
               />
             </div>
           </div>
@@ -1747,22 +1776,30 @@ function AutomationsTab({ workspaceId, teams }: {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Select
-                value={autoComplete?.config_state_id ?? ''}
-                onValueChange={(val) => upsert('epic_auto_complete', autoComplete?.enabled ?? true, { configStateId: val })}
-              >
-                <SelectTrigger className="w-[180px] h-8 text-xs">
-                  <SelectValue placeholder="Target state..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {doneStates.map((st) => (
-                    <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {doneStates.length > 1 ? (
+                <Select
+                  value={autoComplete?.config_state_id ?? ''}
+                  onValueChange={(val) => upsert('epic_auto_complete', autoComplete?.enabled ?? true, { configStateId: val })}
+                >
+                  <SelectTrigger className="w-[180px] h-8 text-xs">
+                    <SelectValue placeholder="Target state..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {doneStates.map((st) => (
+                      <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : doneStates.length === 1 ? (
+                <Badge variant="secondary" className="text-xs">{doneStates[0].name}</Badge>
+              ) : null}
               <Switch
                 checked={autoComplete?.enabled ?? false}
-                onCheckedChange={(checked) => upsert('epic_auto_complete', checked, { configStateId: autoComplete?.config_state_id ?? undefined })}
+                onCheckedChange={(checked) => {
+                  const stateId = autoComplete?.config_state_id ?? doneStates[0]?.id;
+                  if (!stateId) return;
+                  upsert('epic_auto_complete', checked, { configStateId: stateId });
+                }}
               />
             </div>
           </div>
@@ -1816,7 +1853,7 @@ function AutomationsTab({ workspaceId, teams }: {
                       min={1}
                       max={10}
                       value={cfg.config_int ?? 2}
-                      onChange={(e) => upsert('sprint_auto_create', cfg.enabled, { teamId: cfg.team_id!, configInt: Number(e.target.value), configInt2: cfg.config_int2 ?? 1, configInt3: cfg.config_int3 ?? 1 })}
+                      onChange={(e) => updateSprintConfig(cfg, { configInt: Number(e.target.value) })}
                       className="w-16 h-7 text-xs"
                     />
                     <Label className="text-xs text-muted-foreground">Weeks:</Label>
@@ -1825,13 +1862,13 @@ function AutomationsTab({ workspaceId, teams }: {
                       min={1}
                       max={8}
                       value={cfg.config_int2 ?? 1}
-                      onChange={(e) => upsert('sprint_auto_create', cfg.enabled, { teamId: cfg.team_id!, configInt: cfg.config_int ?? 2, configInt2: Number(e.target.value), configInt3: cfg.config_int3 ?? 1 })}
+                      onChange={(e) => updateSprintConfig(cfg, { configInt2: Number(e.target.value) })}
                       className="w-16 h-7 text-xs"
                     />
                     <Label className="text-xs text-muted-foreground">Start day:</Label>
                     <Select
                       value={String(cfg.config_int3 ?? 1)}
-                      onValueChange={(val) => upsert('sprint_auto_create', cfg.enabled, { teamId: cfg.team_id!, configInt: cfg.config_int ?? 2, configInt2: cfg.config_int2 ?? 1, configInt3: Number(val) })}
+                      onValueChange={(val) => updateSprintConfig(cfg, { configInt3: Number(val) })}
                     >
                       <SelectTrigger className="w-[100px] h-7 text-xs">
                         <SelectValue />
@@ -1845,7 +1882,7 @@ function AutomationsTab({ workspaceId, teams }: {
                   </div>
                   <Switch
                     checked={cfg.enabled}
-                    onCheckedChange={(checked) => upsert('sprint_auto_create', checked, { teamId: cfg.team_id!, configInt: cfg.config_int ?? 2, configInt2: cfg.config_int2 ?? 1, configInt3: cfg.config_int3 ?? 1 })}
+                    onCheckedChange={(checked) => updateSprintConfig(cfg, { enabled: checked })}
                   />
                   <button type="button" onClick={() => removeAuto('sprint_auto_create', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
                     <X className="h-4 w-4" />

@@ -61,9 +61,6 @@ func main() {
 	// Ensure pgcrypto extension is available for gen_random_uuid().
 	db.Exec(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
 
-	// Drop legacy pm_epic_objectives table (replaced with composite PK version).
-	db.Exec("DROP TABLE IF EXISTS pm_epic_objectives")
-
 	// Auto-migrate all models.
 	// The SQL migration files in server/migrations/ are kept as reference documentation.
 	if err := db.AutoMigrate(

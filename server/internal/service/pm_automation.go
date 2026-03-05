@@ -99,21 +99,14 @@ func (s *PMAutomationService) OnStoryStateChange(ctx context.Context, story *mod
 		return
 	}
 
-	// Fetch automations for this workspace
-	automations, err := s.automationRepo.ListByWorkspace(ctx, story.WorkspaceID)
-	if err != nil {
-		return
-	}
-
-	for _, auto := range automations {
-		if !auto.Enabled {
-			continue
+	// Only check epic automations relevant to the new state type
+	if newState.StateType == model.PMStateTypeStarted {
+		if auto, _ := s.automationRepo.GetByType(ctx, story.WorkspaceID, model.PMAutomationTypeEpicAutoStart, nil); auto != nil && auto.Enabled {
+			s.handleEpicAutoStart(ctx, *auto, epicID, newState)
 		}
-		switch auto.AutomationType {
-		case model.PMAutomationTypeEpicAutoStart:
-			s.handleEpicAutoStart(ctx, auto, epicID, newState)
-		case model.PMAutomationTypeEpicAutoComplete:
-			s.handleEpicAutoComplete(ctx, auto, epicID, newState)
+	} else if newState.StateType == model.PMStateTypeDone {
+		if auto, _ := s.automationRepo.GetByType(ctx, story.WorkspaceID, model.PMAutomationTypeEpicAutoComplete, nil); auto != nil && auto.Enabled {
+			s.handleEpicAutoComplete(ctx, *auto, epicID, newState)
 		}
 	}
 }
@@ -233,14 +226,14 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 			continue
 		}
 
-		now := time.Now().UTC()
+		now := toDay(time.Now().UTC())
 		futureCount := 0
 		var latestEnd time.Time
 		for _, sp := range sprints {
 			if sp.Archived {
 				continue
 			}
-			spEnd := time.Date(sp.EndDate.Year(), sp.EndDate.Month(), sp.EndDate.Day(), 0, 0, 0, 0, time.UTC)
+			spEnd := toDay(sp.EndDate)
 			if spEnd.After(now) || spEnd.Equal(now) {
 				futureCount++
 			}
@@ -304,8 +297,7 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 		return
 	}
 
-	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	today := toDay(time.Now().UTC())
 	twoDaysAgo := today.AddDate(0, 0, -2)
 
 	for _, cfg := range configs {
@@ -329,9 +321,9 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 			if sp.Archived {
 				continue
 			}
-			spEnd := time.Date(sp.EndDate.Year(), sp.EndDate.Month(), sp.EndDate.Day(), 0, 0, 0, 0, time.UTC)
+			spEnd := toDay(sp.EndDate)
 			if spEnd.Before(today) && (spEnd.After(twoDaysAgo) || spEnd.Equal(twoDaysAgo)) {
-				if endedSprint == nil || spEnd.After(time.Date(endedSprint.EndDate.Year(), endedSprint.EndDate.Month(), endedSprint.EndDate.Day(), 0, 0, 0, 0, time.UTC)) {
+				if endedSprint == nil || spEnd.After(toDay(endedSprint.EndDate)) {
 					endedSprint = sp
 				}
 			}
@@ -342,21 +334,16 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 		}
 
 		// Find the next sprint (earliest start_date after endedSprint.EndDate)
-		endedEnd := time.Date(endedSprint.EndDate.Year(), endedSprint.EndDate.Month(), endedSprint.EndDate.Day(), 0, 0, 0, 0, time.UTC)
+		endedEnd := toDay(endedSprint.EndDate)
 		for i := range sprints {
 			sp := &sprints[i]
 			if sp.Archived || sp.ID == endedSprint.ID {
 				continue
 			}
-			spStart := time.Date(sp.StartDate.Year(), sp.StartDate.Month(), sp.StartDate.Day(), 0, 0, 0, 0, time.UTC)
+			spStart := toDay(sp.StartDate)
 			if spStart.After(endedEnd) {
-				if nextSprint == nil {
+				if nextSprint == nil || spStart.Before(toDay(nextSprint.StartDate)) {
 					nextSprint = sp
-				} else {
-					existStart := time.Date(nextSprint.StartDate.Year(), nextSprint.StartDate.Month(), nextSprint.StartDate.Day(), 0, 0, 0, 0, time.UTC)
-					if spStart.Before(existStart) {
-						nextSprint = sp
-					}
 				}
 			}
 		}
@@ -380,7 +367,6 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 			if state.StateType == model.PMStateTypeDone {
 				continue
 			}
-			story.SprintID = &nextSprint.ID
 			if err := s.storyRepo.UpdateSprintID(ctx, story.ID, &nextSprint.ID); err != nil {
 				log.Printf("sprint move-unfinished: update story %s: %v", story.ID, err)
 				continue
