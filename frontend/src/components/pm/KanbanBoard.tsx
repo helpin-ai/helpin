@@ -15,7 +15,7 @@ import { BarChart3, Columns2, LayoutList, Loader2, Maximize2, Minimize2, Plus, S
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { CreateStoryRequest, Story, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { CreateStoryRequest, Story, StoryStateColumn, WorkflowState, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
@@ -46,10 +46,13 @@ interface ColumnProps {
   findTeamName: (teamId: string | undefined) => string | undefined;
   workspaceId: string;
   members: MemberWithUser[];
+  states: WorkflowState[];
   onOwnerChanged: () => void;
+  onStoryMoved: (storyId: string, fromStateId: string, toStateId: string) => void;
+  onPriorityChanged: () => void;
 }
 
-function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, onOwnerChanged }: ColumnProps) {
+function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, states, onOwnerChanged, onStoryMoved, onPriorityChanged }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
 
   if (collapsed) {
@@ -124,7 +127,10 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
               teamName={findTeamName(story.team_id)}
               workspaceId={workspaceId}
               members={members}
+              states={states}
               onOwnerChanged={onOwnerChanged}
+              onStoryMoved={onStoryMoved}
+              onPriorityChanged={onPriorityChanged}
             />
           ))}
 
@@ -353,6 +359,23 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     refreshBoard();
   }, [refreshBoard]);
 
+  const handleStoryMoved = useCallback(
+    (storyId: string, fromStateId: string, toStateId: string) => {
+      moveStory({
+        workspaceId,
+        storyId,
+        fromStateId,
+        toStateId,
+        toIndex: 0,
+      });
+    },
+    [workspaceId, moveStory],
+  );
+
+  const handlePriorityChanged = useCallback(() => {
+    refreshBoard();
+  }, [refreshBoard]);
+
   return (
     <StoryFilterProvider
       members={members}
@@ -449,7 +472,10 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   findTeamName={findTeamName}
                   workspaceId={workspaceId}
                   members={members}
+                  states={workflow?.states ?? []}
                   onOwnerChanged={handleOwnerChanged}
+                  onStoryMoved={handleStoryMoved}
+                  onPriorityChanged={handlePriorityChanged}
                 />
               ))}
             </div>

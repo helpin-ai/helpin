@@ -12,10 +12,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { UserAvatar } from './UserAvatar';
-import type { Priority, Story } from '@/lib/pmTypes';
+import type { Priority, Story, WorkflowState } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 
 // ── Shared constants ────────────────────────────────────────────────
@@ -30,6 +30,8 @@ const PRIORITY_BORDER_COLOR: Record<Priority, string> = {
   none: 'border-border',
 };
 
+const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
+
 // ── Component ───────────────────────────────────────────────────────
 
 interface StoryCardProps {
@@ -39,7 +41,10 @@ interface StoryCardProps {
   teamName?: string;
   workspaceId?: string;
   members?: MemberWithUser[];
+  states?: WorkflowState[];
   onOwnerChanged?: () => void;
+  onStoryMoved?: (storyId: string, fromStateId: string, toStateId: string) => void;
+  onPriorityChanged?: () => void;
 }
 
 export function StoryCard({
@@ -49,7 +54,10 @@ export function StoryCard({
   teamName,
   workspaceId,
   members,
+  states,
   onOwnerChanged,
+  onStoryMoved,
+  onPriorityChanged,
 }: StoryCardProps) {
   const {
     attributes,
@@ -66,6 +74,8 @@ export function StoryCard({
   };
 
   const [memberOpen, setMemberOpen] = useState(false);
+  const [priorityOpen, setPriorityOpen] = useState(false);
+  const [stateOpen, setStateOpen] = useState(false);
 
   const due = useMemo(() => {
     if (!story.deadline) return null;
@@ -87,6 +97,7 @@ export function StoryCard({
 
   const priorityCfg = PRIORITY_CONFIG[story.priority];
   const storyTypeCfg = STORY_TYPE_CONFIG[story.story_type];
+  const currentState = states?.find((s) => s.id === story.workflow_state_id);
 
   const handleAssignOwner = useCallback(
     async (member: MemberWithUser) => {
@@ -96,11 +107,40 @@ export function StoryCard({
         await pmStoryService.update(workspaceId, story.id, { owner_id: newOwnerId });
         onOwnerChanged?.();
       } catch {
-        // Silently fail — board will show stale data until next refresh
+        // Board will show stale data until next refresh
       }
       setMemberOpen(false);
     },
     [workspaceId, story.id, story.owner_id, onOwnerChanged],
+  );
+
+  const handleChangePriority = useCallback(
+    async (priority: Priority) => {
+      if (!workspaceId || priority === story.priority) {
+        setPriorityOpen(false);
+        return;
+      }
+      try {
+        await pmStoryService.update(workspaceId, story.id, { priority });
+        onPriorityChanged?.();
+      } catch {
+        // Board will show stale data until next refresh
+      }
+      setPriorityOpen(false);
+    },
+    [workspaceId, story.id, story.priority, onPriorityChanged],
+  );
+
+  const handleChangeState = useCallback(
+    (stateId: string) => {
+      if (stateId === story.workflow_state_id) {
+        setStateOpen(false);
+        return;
+      }
+      onStoryMoved?.(story.id, story.workflow_state_id, stateId);
+      setStateOpen(false);
+    },
+    [story.id, story.workflow_state_id, onStoryMoved],
   );
 
   const titleIsLong = story.name.length > 60;
@@ -139,18 +179,73 @@ export function StoryCard({
         </Tooltip>
         <span className="font-medium text-foreground/80">TP-{story.display_id}</span>
 
-        {/* Priority pill */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className={cn(
-              'ml-auto flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
-              PRIORITY_BORDER_COLOR[story.priority],
-            )}>
-              <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
-        </Tooltip>
+        {/* Priority pill — clickable dropdown */}
+        {workspaceId ? (
+          <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
+            <Tooltip open={priorityOpen ? false : undefined}>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      'ml-auto flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 transition-colors hover:bg-muted',
+                      PRIORITY_BORDER_COLOR[story.priority],
+                    )}
+                    onClick={(e) => { e.stopPropagation(); setPriorityOpen(true); }}
+                  >
+                    <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
+            </Tooltip>
+            {priorityOpen && (
+              <PopoverContent
+                className="w-[180px] p-0"
+                align="end"
+                side="bottom"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Command>
+                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+                    <CommandGroup>
+                      {ALL_PRIORITIES.map((p) => {
+                        const cfg = PRIORITY_CONFIG[p];
+                        return (
+                          <CommandItem
+                            key={p}
+                            value={cfg.label}
+                            onSelect={() => handleChangePriority(p)}
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            <PriorityIcon priority={p} className="h-3.5 w-3.5" />
+                            <span>{cfg.label}</span>
+                            {story.priority === p && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            )}
+          </Popover>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(
+                'ml-auto flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
+                PRIORITY_BORDER_COLOR[story.priority],
+              )}>
+                <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       {/* Row 2: Title */}
@@ -171,6 +266,67 @@ export function StoryCard({
 
       {/* Row 3: Property pills */}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {/* State pill — clickable dropdown */}
+        {currentState && states && states.length > 0 && onStoryMoved ? (
+          <Popover open={stateOpen} onOpenChange={setStateOpen}>
+            <Tooltip open={stateOpen ? false : undefined}>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground transition-colors hover:bg-muted')}
+                    onClick={(e) => { e.stopPropagation(); setStateOpen(true); }}
+                  >
+                    <StateTypeIcon stateType={currentState.state_type} className="h-3 w-3" />
+                    {currentState.name}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">State: {currentState.name}</TooltipContent>
+            </Tooltip>
+            {stateOpen && (
+              <PopoverContent
+                className="w-[200px] p-0"
+                align="start"
+                side="bottom"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Command>
+                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+                    <CommandGroup>
+                      {states.map((s) => (
+                        <CommandItem
+                          key={s.id}
+                          value={s.name}
+                          onSelect={() => handleChangeState(s.id)}
+                          className="flex items-center gap-2 text-xs"
+                        >
+                          <StateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
+                          <span>{s.name}</span>
+                          {story.workflow_state_id === s.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            )}
+          </Popover>
+        ) : currentState ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
+                <StateTypeIcon stateType={currentState.state_type} className="h-3 w-3" />
+                {currentState.name}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">State: {currentState.name}</TooltipContent>
+          </Tooltip>
+        ) : null}
+
         {story.estimate != null && (
           <Tooltip>
             <TooltipTrigger asChild>
