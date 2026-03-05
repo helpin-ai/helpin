@@ -46,7 +46,7 @@ export default function JoinWorkspace() {
     }
     toast.success(`Joined ${info?.workspace_name}!`);
     await loadWorkspaces();
-    navigate({ to: '/w/$slug/dashboard', params: { slug: info?.workspace_slug ?? '' } });
+    navigate({ to: '/w/$slug/pm/stories', params: { slug: info?.workspace_slug ?? '' } });
   };
 
   if (loading) {

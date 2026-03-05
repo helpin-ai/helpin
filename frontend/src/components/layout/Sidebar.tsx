@@ -256,6 +256,10 @@ export function Sidebar() {
     return location.pathname === link || location.pathname.startsWith(`${link}/`);
   };
 
+  const isAllWorkSubActive = (subPath: string) => {
+    return isActive(`/w/${wsSlug}/pm/${subPath}`) && !activeTeamParam;
+  };
+
   const isTeamSubActive = (teamId: string, subPath: string) => {
     return isActive(`/w/${wsSlug}/pm/${subPath}`) && activeTeamParam === teamId;
   };
@@ -353,12 +357,59 @@ export function Sidebar() {
             ))}
 
             {/* ── Team-scoped navigation (projects rail only) ── */}
-            {activeRail === 'projects' && teams.length > 0 && (
+            {activeRail === 'projects' && (
               <SidebarGroup className="p-0 pb-3">
                 <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
                   Your Teams
                 </SidebarGroupLabel>
                 <SidebarMenu>
+                  {/* ── All Work (workspace-level, no team filter) ── */}
+                  <Collapsible.Root
+                    asChild
+                    open={expandedTeams.has('__all_work__')}
+                    onOpenChange={() => toggleTeam('__all_work__')}
+                  >
+                    <SidebarMenuItem>
+                      <Collapsible.Trigger asChild>
+                        <SidebarMenuButton className="h-8 rounded-md px-2">
+                          <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${expandedTeams.has('__all_work__') ? 'rotate-90' : ''}`} />
+                          <span className="truncate">All Work</span>
+                        </SidebarMenuButton>
+                      </Collapsible.Trigger>
+                      <Collapsible.Content>
+                        <SidebarMenuSub>
+                          {teamSubItems.map((sub) => {
+                            const link = `/w/${wsSlug}/pm/${sub.path}`;
+                            const active = isAllWorkSubActive(sub.path);
+                            return (
+                              <SidebarMenuSubItem key={sub.key}>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  size="sm"
+                                  isActive={active}
+                                >
+                                  <a
+                                    href={link}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      navigate({
+                                        to: `/w/$slug/pm/${sub.path}` as string,
+                                        params: { slug: wsSlug },
+                                      });
+                                    }}
+                                  >
+                                    <sub.icon className="h-3.5 w-3.5" />
+                                    <span>{sub.label}</span>
+                                  </a>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            );
+                          })}
+                        </SidebarMenuSub>
+                      </Collapsible.Content>
+                    </SidebarMenuItem>
+                  </Collapsible.Root>
+
                   {teams.map((team) => {
                     const isExpanded = expandedTeams.has(team.id);
                     return (

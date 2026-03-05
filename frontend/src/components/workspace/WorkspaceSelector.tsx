@@ -16,7 +16,7 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
         <Card
           key={ws.id}
           className="cursor-pointer hover:border-primary/50 transition-colors"
-          onClick={() => navigate({ to: `/w/${ws.slug}/dashboard` })}
+          onClick={() => navigate({ to: `/w/${ws.slug}/pm/stories` })}
         >
           <CardHeader>
             <div className="flex items-center gap-3">

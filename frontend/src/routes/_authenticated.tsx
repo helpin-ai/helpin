@@ -17,6 +17,12 @@ function AuthenticatedLayout() {
   const { auth } = Route.useRouteContext()
   const [retrying, setRetrying] = useState(false)
 
+  const handleRetry = async () => {
+    setRetrying(true)
+    await useAuthStore.getState().initialize()
+    setRetrying(false)
+  }
+
   if (auth.loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -26,12 +32,6 @@ function AuthenticatedLayout() {
   }
 
   if (auth.serverUnreachable && !auth.user) {
-    const handleRetry = async () => {
-      setRetrying(true)
-      await useAuthStore.getState().initialize()
-      setRetrying(false)
-    }
-
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
         <div className="text-center space-y-2">
