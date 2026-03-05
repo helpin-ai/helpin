@@ -50,8 +50,10 @@ interface StoryListViewProps {
   members: MemberWithUser[];
   epics: EpicWithStats[];
   sprints: SprintWithStats[];
-  filters: BoardFilters;
-  teamId: string | null;
+  filters?: BoardFilters;
+  teamId?: string | null;
+  /** When provided, use these stories instead of fetching internally. */
+  externalStories?: Story[];
   onOpenStory: (story: Story) => void;
 }
 
@@ -104,10 +106,12 @@ export function StoryListView({
   sprints,
   filters,
   teamId,
+  externalStories,
   onOpenStory,
 }: StoryListViewProps) {
-  const [stories, setStories] = useState<Story[]>([]);
-  const [loading, setLoading] = useState(true);
+  const isExternal = externalStories !== undefined;
+  const [stories, setStories] = useState<Story[]>(externalStories ?? []);
+  const [loading, setLoading] = useState(!isExternal);
   const [groupBy, setGroupBy] = useState<GroupByOption>('workflow_state');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -153,8 +157,9 @@ export function StoryListView({
     return map;
   }, [sprints]);
 
-  // Fetch stories
+  // Fetch stories (skipped when externalStories is provided)
   const fetchStories = useCallback(async () => {
+    if (isExternal) return;
     setLoading(true);
     const apiFilters: Record<string, string | number | boolean | undefined> = {
       per_page: 500,
@@ -169,11 +174,16 @@ export function StoryListView({
       setStories(res.data.data);
     }
     setLoading(false);
-  }, [workspaceId, workflow.workflow.id, filters, teamId]);
+  }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal]);
 
   useEffect(() => {
-    fetchStories();
-  }, [fetchStories]);
+    if (!isExternal) fetchStories();
+  }, [fetchStories, isExternal]);
+
+  // Sync external stories when they change
+  useEffect(() => {
+    if (isExternal && externalStories) setStories(externalStories);
+  }, [isExternal, externalStories]);
 
   // Optimistic inline update with rollback on failure
   const updateStoryField = useCallback(
@@ -189,8 +199,9 @@ export function StoryListView({
     [workspaceId],
   );
 
-  // Listen for story events
+  // Listen for story events (only for self-fetching mode)
   useEffect(() => {
+    if (isExternal) return;
     const handler = () => { fetchStories(); };
     window.addEventListener('story-created', handler);
     window.addEventListener('story-updated', handler);
@@ -198,7 +209,7 @@ export function StoryListView({
       window.removeEventListener('story-created', handler);
       window.removeEventListener('story-updated', handler);
     };
-  }, [fetchStories]);
+  }, [fetchStories, isExternal]);
 
   // Table columns
   const tableColumns = useMemo(
