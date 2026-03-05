@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
@@ -90,7 +90,7 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewEntry, setPreviewEntry] = useState<AttachmentResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load attachments
@@ -139,7 +139,7 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
           continue;
         }
 
-        const uploadResult = await uploadToS3(initData.url, file, setUploadProgress);
+        const uploadResult = await uploadToS3(initData.url, file, setUploadProgress, { 'x-amz-acl': 'public-read' });
         if (!uploadResult.ok) {
           setError(uploadResult.error);
           setUploading(false);
@@ -176,6 +176,7 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
     if (e.dataTransfer.files.length > 0) handleUpload(e.dataTransfer.files);
   };
 
+  const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
   const imageAttachments = attachments.filter(({ attachment }) => isImageType(attachment.content_type));
   const fileAttachments = attachments.filter(({ attachment }) => !isImageType(attachment.content_type));
 
@@ -224,17 +225,17 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
       {/* Image thumbnails grid */}
       {imageAttachments.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
-          {imageAttachments.map(({ attachment, url }) => (
-            <div key={attachment.id} className="group relative">
+          {imageAttachments.map((entry) => (
+            <div key={entry.attachment.id} className="group relative">
               <button
                 type="button"
                 className="block w-full overflow-hidden rounded-md border border-border/60 cursor-pointer"
-                onClick={() => setPreviewUrl(url)}
+                onClick={() => setPreviewEntry(entry)}
               >
                 <img
-                  src={url}
-                  alt={attachment.file_name}
-                  className="aspect-square w-full object-cover transition-transform group-hover:scale-105"
+                  src={resolveUrl(entry)}
+                  alt={entry.attachment.file_name}
+                  className="aspect-[4/3] w-full object-cover transition-transform group-hover:scale-105"
                   loading="lazy"
                 />
               </button>
@@ -242,12 +243,12 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
                 variant="secondary"
                 size="icon"
                 className="absolute top-1 right-1 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm"
-                onClick={() => handleDelete(attachment.id)}
+                onClick={() => handleDelete(entry.attachment.id)}
               >
                 <Trash2 className="h-2.5 w-2.5 text-destructive" />
               </Button>
-              <p className="mt-1 truncate text-[11px] text-muted-foreground" title={attachment.file_name}>
-                {attachment.file_name}
+              <p className="mt-1 truncate text-[11px] text-muted-foreground" title={entry.attachment.file_name}>
+                {entry.attachment.file_name}
               </p>
             </div>
           ))}
@@ -257,11 +258,11 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
       {/* Non-image file list */}
       {fileAttachments.length > 0 && (
         <div className="rounded-md border border-border/60">
-          {fileAttachments.map(({ attachment, url }, idx) => {
-            const ext = getFileExtension(attachment.file_name);
-            const name = getFileName(attachment.file_name);
+          {fileAttachments.map((entry, idx) => {
+            const ext = getFileExtension(entry.attachment.file_name);
+            const name = getFileName(entry.attachment.file_name);
             return (
-              <div key={attachment.id}>
+              <div key={entry.attachment.id}>
                 {idx > 0 && <div className="border-t border-border/40" />}
                 <div className="group flex h-11 items-center gap-3 px-3 hover:bg-accent/50 transition-colors">
                   <img
@@ -270,17 +271,17 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
                     className="h-5 w-5 shrink-0"
                   />
                   <a
-                    href={url}
+                    href={resolveUrl(entry)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90 hover:underline"
-                    title={attachment.file_name}
+                    title={entry.attachment.file_name}
                   >
                     {name}
                     {ext && <span className="text-muted-foreground">.{ext}</span>}
                   </a>
                   <span className="shrink-0 text-[11px] text-muted-foreground">
-                    {formatFileSize(attachment.file_size)}
+                    {formatFileSize(entry.attachment.file_size)}
                   </span>
                   <Button
                     variant="ghost"
@@ -288,7 +289,7 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
                     className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.preventDefault();
-                      handleDelete(attachment.id);
+                      handleDelete(entry.attachment.id);
                     }}
                   >
                     <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
@@ -301,27 +302,71 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
       )}
 
       {/* Image preview lightbox */}
-      {previewUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => setPreviewUrl(null)}
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute top-4 right-4 h-8 w-8 text-white hover:bg-white/20"
-            onClick={() => setPreviewUrl(null)}
+      {previewEntry && (() => {
+        const curIdx = imageAttachments.findIndex((e) => e.attachment.id === previewEntry.attachment.id);
+        const hasPrev = curIdx > 0;
+        const hasNext = curIdx < imageAttachments.length - 1;
+        const goPrev = () => { if (hasPrev) setPreviewEntry(imageAttachments[curIdx - 1]); };
+        const goNext = () => { if (hasNext) setPreviewEntry(imageAttachments[curIdx + 1]); };
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={() => setPreviewEntry(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft') goPrev();
+              else if (e.key === 'ArrowRight') goNext();
+              else if (e.key === 'Escape') setPreviewEntry(null);
+            }}
+            tabIndex={0}
           >
-            <X className="h-5 w-5" />
-          </Button>
-          <img
-            src={previewUrl}
-            alt="Preview"
-            className="max-h-[70vh] max-w-[70vw] rounded-lg object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-4 right-4 h-8 w-8 text-white hover:bg-white/20"
+              onClick={() => setPreviewEntry(null)}
+            >
+              <X className="h-5 w-5" />
+            </Button>
+
+            {hasPrev && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute left-4 top-1/2 -translate-y-1/2 h-10 w-10 text-white hover:bg-white/20"
+                onClick={(e) => { e.stopPropagation(); goPrev(); }}
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </Button>
+            )}
+
+            {hasNext && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-4 top-1/2 -translate-y-1/2 h-10 w-10 text-white hover:bg-white/20"
+                onClick={(e) => { e.stopPropagation(); goNext(); }}
+              >
+                <ChevronRight className="h-6 w-6" />
+              </Button>
+            )}
+
+            <img
+              src={resolveUrl(previewEntry)}
+              alt={previewEntry.attachment.file_name}
+              className="max-h-[60vh] max-w-[70vw] rounded-lg object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="mt-3 flex items-center gap-2 text-white/80" onClick={(e) => e.stopPropagation()}>
+              <span className="text-sm font-medium">{previewEntry.attachment.file_name}</span>
+              <span className="text-xs text-white/50">{formatFileSize(previewEntry.attachment.file_size)}</span>
+              {imageAttachments.length > 1 && (
+                <span className="text-xs text-white/40">{curIdx + 1} / {imageAttachments.length}</span>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

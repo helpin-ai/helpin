@@ -164,6 +164,7 @@ func main() {
 	pmChecklistItemRepo := repository.NewPMChecklistItemRepository(db)
 	pmExternalLinkRepo := repository.NewPMExternalLinkRepository(db)
 	pmViewRepo := repository.NewPMViewRepository(db)
+	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 
 	// Initialize services.
@@ -180,6 +181,7 @@ func main() {
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, wsPublisher)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo)
+	searchService := service.NewSearchService(searchRepo)
 
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
 	quarterService := service.NewQuarterService(quarterRepo, sprintRepo)
@@ -216,6 +218,7 @@ func main() {
 		PMChecklistItem:  handler.NewPMChecklistItemHandler(pmChecklistItemService),
 		PMExternalLink:   handler.NewPMExternalLinkHandler(pmExternalLinkService),
 		PMView:           handler.NewPMViewHandler(pmViewService),
+		Search:           handler.NewSearchHandler(searchService),
 	}
 
 	// Set up router.

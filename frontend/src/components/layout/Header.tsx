@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   Bell,
@@ -13,9 +13,9 @@ import { getInitials } from "@/lib/utils";
 import { QuarterSelector } from "@/components/quarter/QuarterSelector";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAuthStore } from "@/stores/authStore";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { SearchCommandPalette } from "@/components/search/SearchCommandPalette";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +37,19 @@ export function Header() {
   const { user, signOut } = useAuthStore();
 
   const initials = getInitials(user?.full_name || user?.email);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Cmd+K / Ctrl+K shortcut
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const breadcrumbs = useMemo<Crumb[]>(() => {
     const segments = location.pathname.split("/").filter(Boolean);
@@ -161,15 +174,20 @@ export function Header() {
       </div>
 
       <div className="hidden lg:flex flex-1 max-w-xl items-center">
-        <div className="relative w-3/4">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Search workspace"
-            placeholder={`Search ${currentWorkspace?.name ?? "workspace"}...`}
-            className="h-8 pl-8 bg-muted/40 border-border/70"
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          className="relative flex h-8 w-3/4 items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground cursor-pointer"
+        >
+          <Search className="h-4 w-4 shrink-0" />
+          <span className="truncate">Search {currentWorkspace?.name ?? "workspace"}...</span>
+          <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground md:inline-block">
+            ⌘K
+          </kbd>
+        </button>
       </div>
+
+      <SearchCommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
 
       <div className="ml-auto flex items-center gap-1">
         <Button

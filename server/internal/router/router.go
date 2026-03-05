@@ -35,6 +35,7 @@ type Handlers struct {
 	PMChecklistItem  *handler.PMChecklistItemHandler
 	PMExternalLink   *handler.PMExternalLinkHandler
 	PMView           *handler.PMViewHandler
+	Search           *handler.SearchHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -142,6 +143,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Post("/invitations/accept", h.Invite.Accept)
 			r.Post("/invitations/{id}/resend", h.Invite.Resend)
 			r.Delete("/invitations/{id}", h.Invite.Revoke)
+
+			// Search
+			r.Route("/search", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Get("/", h.Search.Search)
+			})
 
 			// PM module
 			r.Route("/pm", func(r chi.Router) {
