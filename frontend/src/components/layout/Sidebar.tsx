@@ -231,6 +231,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/workflows`, label: 'Workflows', icon: FolderKanban },
           { link: `/w/${wsSlug}/settings/workflowstates`, label: 'Workflow States', icon: LayoutList },
           { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
+          { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },
         ],
       },

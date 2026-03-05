@@ -5,6 +5,7 @@ import { authService } from '@/lib/services/authService';
 interface AuthState {
   user: User | null;
   loading: boolean;
+  serverUnreachable: boolean;
   initialize: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
@@ -17,6 +18,7 @@ let _initializing = false;
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   loading: true,
+  serverUnreachable: false,
 
   initialize: async () => {
     if (_initializing) return;
@@ -25,15 +27,17 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (token) {
       const { data, error, isNetworkError } = await authService.me();
       if (data && !error) {
-        set({ user: data, loading: false });
+        set({ user: data, loading: false, serverUnreachable: false });
       } else if (isNetworkError) {
         // Server unreachable / CORS error — keep tokens, don't log out
-        set({ loading: false });
+        // Reset _initializing so retry is possible
+        _initializing = false;
+        set({ loading: false, serverUnreachable: true });
       } else {
         // Genuine auth failure (401, invalid token, etc.) — clear session
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
-        set({ loading: false });
+        set({ loading: false, serverUnreachable: false });
       }
     } else {
       set({ loading: false });

@@ -111,6 +111,7 @@ func main() {
 		&model.PMChecklistItem{},
 		&model.PMExternalLink{},
 		&model.PMView{},
+		&model.PMAutomation{},
 		&model.WorkspaceInvitation{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
@@ -164,6 +165,7 @@ func main() {
 	pmChecklistItemRepo := repository.NewPMChecklistItemRepository(db)
 	pmExternalLinkRepo := repository.NewPMExternalLinkRepository(db)
 	pmViewRepo := repository.NewPMViewRepository(db)
+	pmAutomationRepo := repository.NewPMAutomationRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 
@@ -172,7 +174,8 @@ func main() {
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
-	pmStoryService := service.NewPMStoryService(pmStoryRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
+	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
+	pmStoryService := service.NewPMStoryService(pmStoryRepo, pmWorkflowRepo, pmActivityService, wsPublisher, pmAutomationService)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmActivityService, wsPublisher)
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmActivityService, wsPublisher)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher)
@@ -219,10 +222,26 @@ func main() {
 		PMExternalLink:   handler.NewPMExternalLinkHandler(pmExternalLinkService),
 		PMView:           handler.NewPMViewHandler(pmViewService),
 		Search:           handler.NewSearchHandler(searchService),
+		PMAutomation:     handler.NewPMAutomationHandler(pmAutomationService),
 	}
 
 	// Set up router.
 	r := router.New(handlers, jwtManager, cfg.CORSOrigin)
+
+	// Start background ticker for iteration automations.
+	automationDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				pmAutomationService.RunSprintAutomations(context.Background())
+			case <-automationDone:
+				return
+			}
+		}
+	}()
 
 	// Wrap router so /api/ws bypasses Chi middleware (Recoverer strips
 	// http.Hijacker which WebSocket upgrade requires).
@@ -262,6 +281,7 @@ func main() {
 
 	<-done
 	log.Println("server shutting down...")
+	close(automationDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

@@ -11,6 +11,7 @@ const router = createRouter({
     auth: {
       user: null,
       loading: true,
+      serverUnreachable: false,
     },
   },
   defaultNotFoundComponent: () => {
@@ -28,6 +29,7 @@ declare module '@tanstack/react-router' {
 function InnerApp() {
   const user = useAuthStore((s) => s.user)
   const loading = useAuthStore((s) => s.loading)
+  const serverUnreachable = useAuthStore((s) => s.serverUnreachable)
 
   useEffect(() => {
     useAuthStore.getState().initialize()
@@ -36,9 +38,9 @@ function InnerApp() {
   // Force router to re-evaluate routes when auth state changes
   useEffect(() => {
     router.invalidate()
-  }, [user, loading])
+  }, [user, loading, serverUnreachable])
 
-  return <RouterProvider router={router} context={{ auth: { user, loading } }} />
+  return <RouterProvider router={router} context={{ auth: { user, loading, serverUnreachable } }} />
 }
 
 function App() {

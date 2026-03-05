@@ -7,9 +7,10 @@ import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
 import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
+import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { LabelsSettings } from '@/components/pm/LabelsSettings';
-import type { StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { StateType, WorkflowState, WorkflowWithStates, EpicWorkflowState, PMAutomation, AutomationType } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,11 +21,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, Copy, GitBranch, ListTree, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, UserPlus, Users, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, Copy, GitBranch, Info, ListTree, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'system';
+export type SettingsSection = 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'system';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon }[] = [
   {
@@ -74,6 +75,12 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Labels',
     description: 'Create and manage labels for stories, epics, and sprints.',
     icon: Tag,
+  },
+  {
+    id: 'automations',
+    label: 'Automations',
+    description: 'Automate epic transitions and sprint management.',
+    icon: RefreshCw,
   },
   {
     id: 'system',
@@ -213,6 +220,8 @@ export default function Settings({ section, initialWorkflowId }: { section: Sett
         );
       case 'labels':
         return <LabelsSettings workspaceId={workspaceId} />;
+      case 'automations':
+        return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} />;
       default:
         return null;
     }
@@ -1576,5 +1585,279 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+/* ============ Automations Tab ============ */
+
+function AutomationsTab({ workspaceId, teams }: {
+  workspaceId: string;
+  teams: WorkspaceTeam[];
+}) {
+  const [automations, setAutomations] = useState<PMAutomation[]>([]);
+  const [epicStates, setEpicStates] = useState<EpicWorkflowState[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [autoRes, statesRes] = await Promise.all([
+        pmAutomationService.list(workspaceId),
+        pmWorkflowService.listEpicStates(workspaceId),
+      ]);
+      if (autoRes.data) setAutomations(autoRes.data);
+      if (statesRes.data) setEpicStates(statesRes.data);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadData(); }, [workspaceId]);
+
+  const getAuto = (type: AutomationType, teamId?: string): PMAutomation | undefined =>
+    automations.find((a) => a.automation_type === type && (teamId ? a.team_id === teamId : !a.team_id));
+
+  const upsert = async (type: AutomationType, enabled: boolean, opts?: { teamId?: string; configStateId?: string; configInt?: number; configInt2?: number; configInt3?: number }) => {
+    await pmAutomationService.upsert(workspaceId, {
+      workspace_id: workspaceId,
+      automation_type: type,
+      enabled,
+      team_id: opts?.teamId,
+      config_state_id: opts?.configStateId,
+      config_int: opts?.configInt,
+      config_int2: opts?.configInt2,
+      config_int3: opts?.configInt3,
+    });
+    await loadData();
+  };
+
+  const removeAuto = async (type: AutomationType, teamId?: string) => {
+    await pmAutomationService.remove(workspaceId, type, teamId);
+    await loadData();
+  };
+
+  const startedStates = epicStates.filter((s) => s.state_type === 'started');
+  const doneStates = epicStates.filter((s) => s.state_type === 'done');
+
+  const autoStart = getAuto('epic_auto_start');
+  const autoComplete = getAuto('epic_auto_complete');
+
+  const sprintAutoCreateConfigs = automations.filter((a) => a.automation_type === 'sprint_auto_create' && a.team_id);
+  const sprintMoveConfigs = automations.filter((a) => a.automation_type === 'sprint_move_unfinished' && a.team_id);
+
+  const sprintAutoCreateTeamIds = new Set(sprintAutoCreateConfigs.map((a) => a.team_id!));
+  const sprintMoveTeamIds = new Set(sprintMoveConfigs.map((a) => a.team_id!));
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-48" />
+        <Skeleton className="h-48" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* ── Epic Automations ── */}
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">Epic Automations</CardTitle>
+          <CardDescription>Automatically transition epics based on story progress.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-800">
+            <Info className="h-4 w-4 shrink-0" />
+            Changes to Epic Automations affect the entire workspace.
+          </div>
+
+          {/* Auto Start Epic */}
+          <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+            <div className="flex-1">
+              <p className="text-sm font-medium">Auto Start Epic</p>
+              <p className="text-xs text-muted-foreground">
+                When any story moves to a started state, auto-transition its parent epic.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Select
+                value={autoStart?.config_state_id ?? ''}
+                onValueChange={(val) => upsert('epic_auto_start', autoStart?.enabled ?? true, { configStateId: val })}
+              >
+                <SelectTrigger className="w-[180px] h-8 text-xs">
+                  <SelectValue placeholder="Target state..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {startedStates.map((st) => (
+                    <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Switch
+                checked={autoStart?.enabled ?? false}
+                onCheckedChange={(checked) => upsert('epic_auto_start', checked, { configStateId: autoStart?.config_state_id ?? undefined })}
+              />
+            </div>
+          </div>
+
+          {/* Auto Complete Epic */}
+          <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+            <div className="flex-1">
+              <p className="text-sm font-medium">Auto Complete Epic</p>
+              <p className="text-xs text-muted-foreground">
+                When all stories in an epic reach a done state, auto-transition the epic.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Select
+                value={autoComplete?.config_state_id ?? ''}
+                onValueChange={(val) => upsert('epic_auto_complete', autoComplete?.enabled ?? true, { configStateId: val })}
+              >
+                <SelectTrigger className="w-[180px] h-8 text-xs">
+                  <SelectValue placeholder="Target state..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {doneStates.map((st) => (
+                    <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Switch
+                checked={autoComplete?.enabled ?? false}
+                onCheckedChange={(checked) => upsert('epic_auto_complete', checked, { configStateId: autoComplete?.config_state_id ?? undefined })}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Sprint Automations ── */}
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">Sprint Automations</CardTitle>
+          <CardDescription>Automate sprint creation and story rollover per team.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-800">
+            <Info className="h-4 w-4 shrink-0" />
+            Changes to Sprint Automations are specific to each Team.
+          </div>
+
+          {/* Auto-Create Future Sprints */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Auto-Create Future Sprints</p>
+                <p className="text-xs text-muted-foreground">
+                  Automatically create future sprints when a sprint completes.
+                </p>
+              </div>
+              <Select
+                value=""
+                onValueChange={(teamId) => upsert('sprint_auto_create', true, { teamId, configInt: 2, configInt2: 1, configInt3: 1 })}
+              >
+                <SelectTrigger className="w-[140px] h-8 text-xs">
+                  <SelectValue placeholder="Add Team..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {teams.filter((t) => !sprintAutoCreateTeamIds.has(t.id)).map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {sprintAutoCreateConfigs.map((cfg) => {
+              const team = teams.find((t) => t.id === cfg.team_id);
+              return (
+                <div key={cfg.id} className="flex items-center gap-3 rounded-md border p-3">
+                  <span className="text-sm font-medium min-w-[100px]">{team?.name ?? 'Unknown'}</span>
+                  <div className="flex items-center gap-2 text-xs flex-wrap">
+                    <Label className="text-xs text-muted-foreground">Sprints:</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={cfg.config_int ?? 2}
+                      onChange={(e) => upsert('sprint_auto_create', cfg.enabled, { teamId: cfg.team_id!, configInt: Number(e.target.value), configInt2: cfg.config_int2 ?? 1, configInt3: cfg.config_int3 ?? 1 })}
+                      className="w-16 h-7 text-xs"
+                    />
+                    <Label className="text-xs text-muted-foreground">Weeks:</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={8}
+                      value={cfg.config_int2 ?? 1}
+                      onChange={(e) => upsert('sprint_auto_create', cfg.enabled, { teamId: cfg.team_id!, configInt: cfg.config_int ?? 2, configInt2: Number(e.target.value), configInt3: cfg.config_int3 ?? 1 })}
+                      className="w-16 h-7 text-xs"
+                    />
+                    <Label className="text-xs text-muted-foreground">Start day:</Label>
+                    <Select
+                      value={String(cfg.config_int3 ?? 1)}
+                      onValueChange={(val) => upsert('sprint_auto_create', cfg.enabled, { teamId: cfg.team_id!, configInt: cfg.config_int ?? 2, configInt2: cfg.config_int2 ?? 1, configInt3: Number(val) })}
+                    >
+                      <SelectTrigger className="w-[100px] h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, i) => (
+                          <SelectItem key={i} value={String(i)}>{day}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Switch
+                    checked={cfg.enabled}
+                    onCheckedChange={(checked) => upsert('sprint_auto_create', checked, { teamId: cfg.team_id!, configInt: cfg.config_int ?? 2, configInt2: cfg.config_int2 ?? 1, configInt3: cfg.config_int3 ?? 1 })}
+                  />
+                  <button type="button" onClick={() => removeAuto('sprint_auto_create', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Move Unfinished Stories */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Move Unfinished Stories to Next Sprint</p>
+                <p className="text-xs text-muted-foreground">
+                  When a sprint ends, move incomplete stories to the next sprint.
+                </p>
+              </div>
+              <Select
+                value=""
+                onValueChange={(teamId) => upsert('sprint_move_unfinished', true, { teamId })}
+              >
+                <SelectTrigger className="w-[140px] h-8 text-xs">
+                  <SelectValue placeholder="Add Team..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {teams.filter((t) => !sprintMoveTeamIds.has(t.id)).map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {sprintMoveConfigs.map((cfg) => {
+              const team = teams.find((t) => t.id === cfg.team_id);
+              return (
+                <div key={cfg.id} className="flex items-center gap-3 rounded-md border p-3">
+                  <span className="text-sm font-medium flex-1">{team?.name ?? 'Unknown'}</span>
+                  <Switch
+                    checked={cfg.enabled}
+                    onCheckedChange={(checked) => upsert('sprint_move_unfinished', checked, { teamId: cfg.team_id! })}
+                  />
+                  <button type="button" onClick={() => removeAuto('sprint_move_unfinished', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

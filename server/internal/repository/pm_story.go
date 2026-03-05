@@ -529,6 +529,17 @@ func (r *PMStoryRepository) UpdateStartedCompleted(ctx context.Context, storyID 
 	return nil
 }
 
+// UpdateSprintID updates only the sprint_id field of a story.
+func (r *PMStoryRepository) UpdateSprintID(ctx context.Context, storyID string, sprintID *string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMStory{}).
+		Where("id = ?", storyID).
+		Update("sprint_id", sprintID).Error; err != nil {
+		return fmt.Errorf("update story sprint_id: %w", err)
+	}
+	return nil
+}
+
 func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PMStory) (*model.StoryDetail, error) {
 	var owners []model.User
 	if err := r.db.WithContext(ctx).

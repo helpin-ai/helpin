@@ -13,19 +13,21 @@ import (
 
 // PMStoryService contains story business logic.
 type PMStoryService struct {
-	storyRepo       *repository.PMStoryRepository
-	workflowRepo    *repository.PMWorkflowRepository
-	activityService *PMActivityService
-	wsPublisher     *websocket.Publisher
+	storyRepo         *repository.PMStoryRepository
+	workflowRepo      *repository.PMWorkflowRepository
+	activityService   *PMActivityService
+	wsPublisher       *websocket.Publisher
+	automationService *PMAutomationService
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *repository.PMWorkflowRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *repository.PMWorkflowRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService) *PMStoryService {
 	return &PMStoryService{
-		storyRepo:       storyRepo,
-		workflowRepo:    workflowRepo,
-		activityService: activityService,
-		wsPublisher:     wsPublisher,
+		storyRepo:         storyRepo,
+		workflowRepo:      workflowRepo,
+		activityService:   activityService,
+		wsPublisher:       wsPublisher,
+		automationService: automationService,
 	}
 }
 
@@ -204,6 +206,10 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		return nil, err
 	}
 
+	if s.automationService != nil {
+		s.automationService.OnStoryStateChange(ctx, story, story.WorkflowStateID)
+	}
+
 	createdAction := "created this story"
 	if st, _ := s.workflowRepo.GetStateByID(ctx, story.WorkflowStateID); st != nil {
 		createdAction = "created this story in " + st.Name
@@ -373,6 +379,9 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 			return nil, err
 		}
+		if s.automationService != nil {
+			s.automationService.OnStoryStateChange(ctx, current, current.WorkflowStateID)
+		}
 	}
 
 	// Only log meaningful field changes with descriptive messages
@@ -456,6 +465,9 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	}
 	if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 		return nil, err
+	}
+	if s.automationService != nil {
+		s.automationService.OnStoryStateChange(ctx, current, req.StateID)
 	}
 	newStateName := req.StateID
 	if st, _ := s.workflowRepo.GetStateByID(ctx, req.StateID); st != nil {

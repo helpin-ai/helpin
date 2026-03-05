@@ -35,6 +35,7 @@ type Handlers struct {
 	PMChecklistItem  *handler.PMChecklistItemHandler
 	PMExternalLink   *handler.PMExternalLinkHandler
 	PMView           *handler.PMViewHandler
+	PMAutomation     *handler.PMAutomationHandler
 	Search           *handler.SearchHandler
 }
 
@@ -254,6 +255,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Post("/stories/{id}/links", h.PMExternalLink.Create)
 				r.Put("/links/{id}", h.PMExternalLink.Update)
 				r.Delete("/links/{id}", h.PMExternalLink.Delete)
+
+				// Automations
+				r.Get("/automations", h.PMAutomation.List)
+				r.Put("/automations", h.PMAutomation.Upsert)
+				r.Delete("/automations", h.PMAutomation.Delete)
 			})
 		})
 	})
