@@ -3,21 +3,25 @@ import { Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import type { LabelWithStats } from '@/lib/pmTypes';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 
 interface LabelsSettingsProps {
   workspaceId: string;
+  initialTeamId?: string;
 }
 
 export interface LabelFormState {
   name: string;
   description: string;
   color: string;
+  team_id: string;
 }
 
-export const emptyForm: LabelFormState = { name: '', description: '', color: PRESET_COLORS[0] };
+export const emptyForm: LabelFormState = { name: '', description: '', color: PRESET_COLORS[0], team_id: '' };
 
 export function pct(done: number, total: number) {
   if (total === 0) return 0;
@@ -55,7 +59,12 @@ function LabelRow({
           style={{ backgroundColor: label.color || '#64748b' }}
         />
         <div className="min-w-0">
-          <span className="text-sm font-medium text-foreground">{label.name}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-foreground">{label.name}</span>
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              {label.team_id ? 'Team' : 'Shared'}
+            </span>
+          </div>
           {label.description && (
             <p className="text-xs text-muted-foreground truncate">{label.description}</p>
           )}
@@ -87,11 +96,13 @@ function LabelRow({
 
 function LabelForm({
   initial,
+  teams,
   onSave,
   onCancel,
   saving,
 }: {
   initial: LabelFormState;
+  teams: Array<{ id: string; name: string }>;
   onSave: (form: LabelFormState) => void;
   onCancel: () => void;
   saving: boolean;
@@ -130,6 +141,19 @@ function LabelForm({
         onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
         className="h-8 text-sm"
       />
+      <Select value={form.team_id || '__shared__'} onValueChange={(value) => setForm((f) => ({ ...f, team_id: value === '__shared__' ? '' : value }))}>
+        <SelectTrigger className="h-8 text-sm">
+          <SelectValue placeholder="Shared label" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__shared__">Shared label</SelectItem>
+          {teams.map((team) => (
+            <SelectItem key={team.id} value={team.id}>
+              {team.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <ColorPicker value={form.color} onChange={(c) => setForm((f) => ({ ...f, color: c }))} />
       <div className="flex items-center gap-2 pt-1">
         <Button type="submit" size="sm" disabled={saving || !form.name.trim()}>
@@ -145,19 +169,23 @@ function LabelForm({
   );
 }
 
-export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
+export function LabelsSettings({ workspaceId, initialTeamId }: LabelsSettingsProps) {
+  const { teams } = useWorkspaceTeams(workspaceId);
   const [labels, setLabels] = useState<LabelWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [scopeFilter, setScopeFilter] = useState<string>(initialTeamId || '__all__');
 
   const reload = useCallback(async () => {
-    const { data } = await pmLabelService.listWithStats(workspaceId);
+    const teamId = scopeFilter === '__all__' || scopeFilter === '__shared__' ? undefined : scopeFilter;
+    const includeShared = scopeFilter !== '__shared__';
+    const { data } = await pmLabelService.listWithStats(workspaceId, { teamId, includeShared, archived: false });
     if (data) setLabels(data.filter((e) => !e.label.archived));
     setLoading(false);
-  }, [workspaceId]);
+  }, [workspaceId, scopeFilter]);
 
   useEffect(() => {
     reload();
@@ -167,6 +195,7 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
     setSaving(true);
     const { error } = await pmLabelService.create({
       workspace_id: workspaceId,
+      team_id: form.team_id || undefined,
       name: form.name,
       description: form.description || undefined,
       color: form.color,
@@ -181,6 +210,7 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
   const handleUpdate = async (id: string, form: LabelFormState) => {
     setSaving(true);
     const { error } = await pmLabelService.update(workspaceId, id, {
+      team_id: form.team_id || undefined,
       name: form.name,
       description: form.description || undefined,
       color: form.color,
@@ -209,6 +239,22 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Select value={scopeFilter} onValueChange={setScopeFilter}>
+          <SelectTrigger className="h-8 w-[220px] text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All labels</SelectItem>
+            <SelectItem value="__shared__">Shared labels</SelectItem>
+            {teams.map((team) => (
+              <SelectItem key={team.id} value={team.id}>
+                {team.name} labels
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       {!showCreate && (
         <Button
           variant="outline"
@@ -226,6 +272,7 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
       {showCreate && (
         <LabelForm
           initial={emptyForm}
+          teams={teams}
           onSave={handleCreate}
           onCancel={() => setShowCreate(false)}
           saving={saving}
@@ -246,7 +293,9 @@ export function LabelsSettings({ workspaceId }: LabelsSettingsProps) {
                 name: entry.label.name,
                 description: entry.label.description || '',
                 color: entry.label.color || PRESET_COLORS[0],
+                team_id: entry.label.team_id || '',
               }}
+              teams={teams}
               onSave={(form) => handleUpdate(entry.label.id, form)}
               onCancel={() => setEditingId(null)}
               saving={saving}

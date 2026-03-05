@@ -184,6 +184,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
                   placeholder="Add a description..."
                   className="border-transparent shadow-none"
+                  teams={teams}
                 />
               </div>
             </div>
@@ -350,6 +351,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
                   placeholder="Add a description..."
                   className="border-transparent shadow-none"
+                  teams={teams}
                 />
               </div>
             </div>
@@ -543,6 +545,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
                   placeholder="Add a description..."
                   className="border-transparent shadow-none"
+                  teams={teams}
                 />
               </div>
 

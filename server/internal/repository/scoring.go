@@ -10,19 +10,19 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/model"
 )
 
-// ScoringRepository handles database operations for individual_checks.
-type ScoringRepository struct {
+// RewardScoringRepository handles database operations for individual_checks.
+type RewardScoringRepository struct {
 	db *gorm.DB
 }
 
-// NewScoringRepository creates a new ScoringRepository.
-func NewScoringRepository(db *gorm.DB) *ScoringRepository {
-	return &ScoringRepository{db: db}
+// NewRewardScoringRepository creates a new RewardScoringRepository.
+func NewRewardScoringRepository(db *gorm.DB) *RewardScoringRepository {
+	return &RewardScoringRepository{db: db}
 }
 
 // UpsertCheck inserts or updates an individual check.
-func (r *ScoringRepository) UpsertCheck(ctx context.Context, req model.UpsertCheckRequest, scoredBy string) (*model.IndividualCheck, error) {
-	ic := &model.IndividualCheck{
+func (r *RewardScoringRepository) UpsertCheck(ctx context.Context, req model.UpsertRewardCheckRequest, scoredBy string) (*model.RewardIndividualCheck, error) {
+	ic := &model.RewardIndividualCheck{
 		SprintID:    req.SprintID,
 		WorkspaceID: req.WorkspaceID,
 		EmployeeID:  req.EmployeeID,
@@ -41,7 +41,7 @@ func (r *ScoringRepository) UpsertCheck(ctx context.Context, req model.UpsertChe
 		return nil, fmt.Errorf("upsert check: %w", err)
 	}
 	// Re-fetch to get correct ID and timestamps after upsert.
-	result := &model.IndividualCheck{}
+	result := &model.RewardIndividualCheck{}
 	if err := r.db.WithContext(ctx).
 		Where("sprint_id = ? AND employee_id = ? AND criteria_id = ?", req.SprintID, req.EmployeeID, req.CriteriaID).
 		First(result).Error; err != nil {
@@ -51,8 +51,8 @@ func (r *ScoringRepository) UpsertCheck(ctx context.Context, req model.UpsertChe
 }
 
 // GetChecksBySprint returns all individual checks for a sprint.
-func (r *ScoringRepository) GetChecksBySprint(ctx context.Context, sprintID string) ([]model.IndividualCheck, error) {
-	var checks []model.IndividualCheck
+func (r *RewardScoringRepository) GetChecksBySprint(ctx context.Context, sprintID string) ([]model.RewardIndividualCheck, error) {
+	var checks []model.RewardIndividualCheck
 	err := r.db.WithContext(ctx).
 		Where("sprint_id = ?", sprintID).
 		Order("employee_id, criteria_id").
@@ -64,8 +64,8 @@ func (r *ScoringRepository) GetChecksBySprint(ctx context.Context, sprintID stri
 }
 
 // GetChecksByEmployee returns all individual checks for an employee within a sprint.
-func (r *ScoringRepository) GetChecksByEmployee(ctx context.Context, sprintID, employeeID string) ([]model.IndividualCheck, error) {
-	var checks []model.IndividualCheck
+func (r *RewardScoringRepository) GetChecksByEmployee(ctx context.Context, sprintID, employeeID string) ([]model.RewardIndividualCheck, error) {
+	var checks []model.RewardIndividualCheck
 	err := r.db.WithContext(ctx).
 		Where("sprint_id = ? AND employee_id = ?", sprintID, employeeID).
 		Order("criteria_id").

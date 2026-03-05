@@ -6,6 +6,7 @@ import "time"
 type PMLabel struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	TeamID      *string   `json:"team_id" gorm:"type:uuid;index"`
 	Name        string    `json:"name" gorm:"not null"`
 	Description *string   `json:"description"`
 	Color       *string   `json:"color"`
@@ -19,6 +20,7 @@ func (PMLabel) TableName() string { return "pm_labels" }
 // CreateLabelRequest is the payload for creating a label.
 type CreateLabelRequest struct {
 	WorkspaceID string  `json:"workspace_id"`
+	TeamID      *string `json:"team_id"`
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
 	Color       *string `json:"color"`
@@ -26,6 +28,7 @@ type CreateLabelRequest struct {
 
 // UpdateLabelRequest is the payload for updating a label.
 type UpdateLabelRequest struct {
+	TeamID      *string `json:"team_id"`
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	Color       *string `json:"color"`

@@ -1,9 +1,9 @@
-import { useQuarterStore } from '@/stores/quarterStore';
+import { useRewardQuarterStore } from '@/stores/quarterStore';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 
 export function QuarterSelector() {
-  const { quarters, currentQuarter, setCurrentQuarter } = useQuarterStore();
+  const { quarters, currentQuarter, setCurrentQuarter } = useRewardQuarterStore();
 
   if (quarters.length === 0) return null;
 

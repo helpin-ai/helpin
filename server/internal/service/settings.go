@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/d4interactive/teampulse/server/internal/model"
 	"github.com/d4interactive/teampulse/server/internal/repository"
@@ -11,6 +14,8 @@ import (
 type SettingsService struct {
 	settingsRepo *repository.SettingsRepository
 }
+
+var teamHandlePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // NewSettingsService creates a new SettingsService.
 func NewSettingsService(settingsRepo *repository.SettingsRepository) *SettingsService {
@@ -28,18 +33,97 @@ func (s *SettingsService) Initialize(ctx context.Context, workspaceID string) (*
 }
 
 // CreateTeam creates a new team.
-func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRequest) (*model.WorkspaceTeam, error) {
-	return s.settingsRepo.CreateTeam(ctx, req)
+func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRequest, actorUserID string) (*model.WorkspaceTeam, error) {
+	if strings.TrimSpace(req.WorkspaceID) == "" || strings.TrimSpace(req.Name) == "" {
+		return nil, fmt.Errorf("workspace_id and name are required")
+	}
+	handle, err := s.prepareTeamHandle(ctx, req.WorkspaceID, req.Handle, req.Name, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Handle = &handle
+
+	team, err := s.settingsRepo.CreateTeam(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if actorUserID != "" {
+		_, err = s.settingsRepo.AddTeamUserMembership(ctx, team.ID, actorUserID, "owner")
+		if err != nil {
+			return nil, err
+		}
+	}
+	return team, nil
 }
 
 // UpdateTeam modifies a team.
 func (s *SettingsService) UpdateTeam(ctx context.Context, id string, req model.UpdateTeamRequest) (*model.WorkspaceTeam, error) {
+	current, err := s.settingsRepo.GetTeamByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil {
+		return nil, fmt.Errorf("team not found")
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return nil, fmt.Errorf("name cannot be empty")
+		}
+		req.Name = &name
+	}
+	if req.Handle != nil {
+		handle, err := s.prepareTeamHandle(ctx, current.WorkspaceID, req.Handle, current.Name, &current.ID)
+		if err != nil {
+			return nil, err
+		}
+		req.Handle = &handle
+	}
 	return s.settingsRepo.UpdateTeam(ctx, id, req)
 }
 
 // DeleteTeam removes a team.
 func (s *SettingsService) DeleteTeam(ctx context.Context, id string) error {
 	return s.settingsRepo.DeleteTeam(ctx, id)
+}
+
+// AddTeamMember adds a workspace member to a team.
+func (s *SettingsService) AddTeamMember(ctx context.Context, teamID string, req model.AddTeamMemberRequest) (*model.TeamUserMembership, error) {
+	if strings.TrimSpace(req.UserID) == "" {
+		return nil, fmt.Errorf("user_id is required")
+	}
+	role := strings.TrimSpace(req.Role)
+	if role == "" {
+		role = "member"
+	}
+	if !isValidTeamMemberRole(role) {
+		return nil, fmt.Errorf("invalid role")
+	}
+	return s.settingsRepo.AddTeamUserMembership(ctx, teamID, req.UserID, role)
+}
+
+// UpdateTeamMember updates a user's role within a team.
+func (s *SettingsService) UpdateTeamMember(ctx context.Context, teamID, userID string, req model.UpdateTeamMemberRequest) (*model.TeamUserMembership, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, fmt.Errorf("user_id is required")
+	}
+	if req.Role != nil {
+		role := strings.TrimSpace(*req.Role)
+		if !isValidTeamMemberRole(role) {
+			return nil, fmt.Errorf("invalid role")
+		}
+		req.Role = &role
+	}
+	return s.settingsRepo.UpdateTeamUserMembership(ctx, teamID, userID, req)
+}
+
+// RemoveTeamMember removes a user from a team.
+func (s *SettingsService) RemoveTeamMember(ctx context.Context, teamID, userID string) error {
+	if strings.TrimSpace(userID) == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	return s.settingsRepo.RemoveTeamUserMembership(ctx, teamID, userID)
 }
 
 // CreatePerson creates a new person.
@@ -75,4 +159,59 @@ func (s *SettingsService) DeleteJobRole(ctx context.Context, workspaceID, jobRol
 // UpdateSystem updates workspace system settings.
 func (s *SettingsService) UpdateSystem(ctx context.Context, workspaceID string, req model.UpdateSystemSettingsRequest) (*model.WorkspaceSettings, error) {
 	return s.settingsRepo.UpdateSystem(ctx, workspaceID, req)
+}
+
+func (s *SettingsService) prepareTeamHandle(ctx context.Context, workspaceID string, requested *string, name string, excludeID *string) (string, error) {
+	source := name
+	if requested != nil {
+		source = *requested
+	}
+	handle := slugifyHandle(source)
+	if handle == "" {
+		return "", fmt.Errorf("team handle is required")
+	}
+	if !teamHandlePattern.MatchString(handle) {
+		return "", fmt.Errorf("team handle must contain only lowercase letters, numbers, and single hyphens")
+	}
+	existing, err := s.settingsRepo.GetTeamByHandle(ctx, workspaceID, handle)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil && (excludeID == nil || existing.ID != *excludeID) {
+		return "", fmt.Errorf("team handle already exists")
+	}
+	return handle, nil
+}
+
+func slugifyHandle(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash && b.Len() > 0 {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	result := strings.Trim(b.String(), "-")
+	return result
+}
+
+func isValidTeamMemberRole(role string) bool {
+	return role == "owner" || role == "member"
+}
+
+// AddInvitationTeamPreassignment pre-assigns a pending invitation to a team.
+func (s *SettingsService) AddInvitationTeamPreassignment(ctx context.Context, teamID, invitationID string) (*model.InvitationTeamPreassignment, error) {
+	return s.settingsRepo.AddInvitationTeamPreassignment(ctx, invitationID, teamID)
+}
+
+// RemoveInvitationTeamPreassignment removes a preassignment.
+func (s *SettingsService) RemoveInvitationTeamPreassignment(ctx context.Context, teamID, invitationID string) error {
+	return s.settingsRepo.RemoveInvitationTeamPreassignment(ctx, invitationID, teamID)
 }

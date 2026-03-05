@@ -531,6 +531,19 @@ function StoryDetailPanelBody({
 
   const storyLabels = storyDetail.labels ?? [];
 
+  useEffect(() => {
+    if (!form) return;
+    const validLabelIds = storyLabels
+      .filter((label) => !label.team_id || (form.team_id ? label.team_id === form.team_id : false))
+      .map((label) => label.id);
+    if (validLabelIds.length === storyLabels.length) return;
+    void (async () => {
+      await pmStoryService.syncLabels(workspaceId, storyDetail.story.id, storyLabels.map((label) => label.id), validLabelIds);
+      const res = await pmStoryService.get(workspaceId, storyDetail.story.id);
+      if (res.data) onStoryUpdated(res.data);
+    })();
+  }, [form?.team_id, onStoryUpdated, storyDetail.story.id, storyLabels, workspaceId]);
+
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
@@ -609,6 +622,7 @@ function StoryDetailPanelBody({
               placeholder="Add a description..."
               className="border-transparent shadow-none"
               uploadConfig={{ workspaceId, entityType: 'story', entityId: storyDetail.story.id }}
+              teams={teams}
             />
           </div>
 
@@ -926,6 +940,7 @@ function StoryDetailPanelBody({
             <MetadataRow icon={Tag} label="Labels">
               <LabelPicker
                 workspaceId={workspaceId}
+                teamId={form.team_id || undefined}
                 labels={allLabels}
                 selectedLabelIds={storyLabels.map((l) => l.id)}
                 onLabelsChange={setAllLabels}

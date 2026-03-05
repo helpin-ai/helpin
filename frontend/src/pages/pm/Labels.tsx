@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,7 @@ import { StatCell, emptyForm, type LabelFormState } from '@/components/pm/Labels
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { LabelWithStats } from '@/lib/pmTypes';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 
 // ── Label dialog ────────────────────────────────────────────────────
 
@@ -32,6 +34,7 @@ function LabelDialog({
   open,
   onOpenChange,
   initial,
+  teams,
   title,
   onSave,
   saving,
@@ -39,6 +42,7 @@ function LabelDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initial: LabelFormState;
+  teams: Array<{ id: string; name: string }>;
   title: string;
   onSave: (form: LabelFormState) => void;
   saving: boolean;
@@ -90,6 +94,22 @@ function LabelDialog({
               <label className="text-sm font-medium">Color</label>
               <ColorPicker value={form.color} onChange={(c) => setForm((f) => ({ ...f, color: c }))} />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Scope</label>
+              <Select value={form.team_id || '__shared__'} onValueChange={(value) => setForm((f) => ({ ...f, team_id: value === '__shared__' ? '' : value }))}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Shared label" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__shared__">Shared label</SelectItem>
+                  {teams.map((team) => (
+                    <SelectItem key={team.id} value={team.id}>
+                      {team.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
@@ -115,6 +135,7 @@ const columnHelper = createColumnHelper<LabelWithStats>();
 export function LabelsPage() {
   useTitle('Labels');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const { teams } = useWorkspaceTeams(workspace?.id);
 
   const [labels, setLabels] = useState<LabelWithStats[]>([]);
   const [loading, setLoading] = useState(false);
@@ -123,6 +144,7 @@ export function LabelsPage() {
   // Filter state
   const [search, setSearch] = useState('');
   const [onlyArchived, setOnlyArchived] = useState(false);
+  const [scopeFilter, setScopeFilter] = useState<string>('__all__');
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -135,7 +157,13 @@ export function LabelsPage() {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
-    const res = await pmLabelService.listWithStats(workspaceId);
+    const teamId = scopeFilter === '__all__' || scopeFilter === '__shared__' ? undefined : scopeFilter;
+    const includeShared = scopeFilter !== '__shared__';
+    const res = await pmLabelService.listWithStats(workspaceId, {
+      teamId,
+      includeShared,
+      archived: onlyArchived,
+    });
     if (res.error || !res.data) {
       setError(res.error ?? 'Failed to load labels');
       setLoading(false);
@@ -143,7 +171,7 @@ export function LabelsPage() {
     }
     setLabels(res.data);
     setLoading(false);
-  }, [workspaceId]);
+  }, [workspaceId, scopeFilter, onlyArchived]);
 
   useEffect(() => {
     loadData();
@@ -152,12 +180,6 @@ export function LabelsPage() {
   // Filtered data
   const filteredLabels = useMemo(() => {
     let result = labels;
-
-    if (onlyArchived) {
-      result = result.filter((entry) => entry.label.archived);
-    } else {
-      result = result.filter((entry) => !entry.label.archived);
-    }
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -183,6 +205,7 @@ export function LabelsPage() {
     setSaving(true);
     if (editingLabel) {
       const { error: err } = await pmLabelService.update(workspaceId, editingLabel.label.id, {
+        team_id: form.team_id || undefined,
         name: form.name,
         description: form.description || undefined,
         color: form.color,
@@ -193,6 +216,7 @@ export function LabelsPage() {
     } else {
       const { error: err } = await pmLabelService.create({
         workspace_id: workspaceId,
+        team_id: form.team_id || undefined,
         name: form.name,
         description: form.description || undefined,
         color: form.color,
@@ -235,7 +259,12 @@ export function LabelsPage() {
                 className="h-3 w-3 rounded-full shrink-0"
                 style={{ backgroundColor: entry.label.color || '#64748b' }}
               />
-              <span className="truncate font-medium text-sm">{entry.label.name}</span>
+              <div className="min-w-0">
+                <div className="truncate font-medium text-sm">{entry.label.name}</div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {entry.label.team_id ? 'Team' : 'Shared'}
+                </div>
+              </div>
             </div>
           );
         },
@@ -328,6 +357,20 @@ export function LabelsPage() {
           />
         </div>
         <div className="flex items-center gap-2">
+          <Select value={scopeFilter} onValueChange={setScopeFilter}>
+            <SelectTrigger className="h-8 w-[220px] text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All labels</SelectItem>
+              <SelectItem value="__shared__">Shared labels</SelectItem>
+              {teams.map((team) => (
+                <SelectItem key={team.id} value={team.id}>
+                  {team.name} labels
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Checkbox
             id="only-archived"
             checked={onlyArchived}
@@ -384,9 +427,11 @@ export function LabelsPage() {
                 name: editingLabel.label.name,
                 description: editingLabel.label.description || '',
                 color: editingLabel.label.color || PRESET_COLORS[0],
+                team_id: editingLabel.label.team_id || '',
               }
             : emptyForm
         }
+        teams={teams}
         title={editingLabel ? 'Edit Label' : 'Create Label'}
         onSave={handleSave}
         saving={saving}

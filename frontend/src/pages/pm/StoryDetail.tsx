@@ -499,6 +499,23 @@ export function StoryDetailPage() {
 
   const storyLabels = storyDetail?.labels ?? [];
 
+  useEffect(() => {
+    if (!form) return;
+    const validLabelIds = storyLabels
+      .filter((label) => !label.team_id || (form.team_id ? label.team_id === form.team_id : false))
+      .map((label) => label.id);
+    if (validLabelIds.length === storyLabels.length) return;
+    void (async () => {
+      if (!workspaceId || !storyDetail) return;
+      await pmStoryService.syncLabels(workspaceId, storyDetail.story.id, storyLabels.map((label) => label.id), validLabelIds);
+      const res = await pmStoryService.get(workspaceId, storyDetail.story.id);
+      if (res.data) {
+        setStoryDetail(res.data);
+        setForm(buildFormState(res.data));
+      }
+    })();
+  }, [form?.team_id, storyLabels, storyDetail, workspaceId]);
+
   const goBack = () => navigate({ to: '/w/$slug/pm/stories', params: { slug } });
 
   if (loading) {
@@ -592,6 +609,7 @@ export function StoryDetailPage() {
               placeholder="Add a description..."
               className="border-transparent shadow-none"
               uploadConfig={{ workspaceId: workspaceId!, entityType: 'story', entityId: storyDetail.story.id }}
+              teams={teams}
             />
           </div>
 
@@ -908,6 +926,7 @@ export function StoryDetailPage() {
             <MetadataRow icon={Tag} label="Labels">
               <LabelPicker
                 workspaceId={workspaceId!}
+                teamId={form.team_id || undefined}
                 labels={allLabels}
                 selectedLabelIds={storyLabels.map((l) => l.id)}
                 onLabelsChange={setAllLabels}

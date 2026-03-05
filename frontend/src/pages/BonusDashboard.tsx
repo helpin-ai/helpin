@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useQuarterStore } from '@/stores/quarterStore';
+import { useRewardQuarterStore } from '@/stores/quarterStore';
 import { useSessionStore } from '@/stores/sessionStore';
-import { bonusService } from '@/lib/services/bonusService';
+import { rewardBonusService } from '@/lib/services/rewardBonusService';
 import { settingsService } from '@/lib/services/settingsService';
-import type { BonusCalculation, FinanceSettings, WorkspacePerson, WorkspaceTeam } from '@/lib/types';
+import type { RewardBonusCalculation, RewardFinanceSettings, WorkspacePerson, WorkspaceTeam } from '@/lib/types';
 import { formatCurrencyUSD, formatPercentage } from '@/lib/formatters';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,17 +20,17 @@ import { toast } from 'sonner';
 export default function BonusDashboard() {
   useTitle('Bonus Dashboard');
   const { currentWorkspace } = useWorkspaceStore();
-  const { currentQuarter } = useQuarterStore();
+  const { currentQuarter } = useRewardQuarterStore();
   const { isAdmin } = useSessionStore();
-  const [calculations, setCalculations] = useState<BonusCalculation[]>([]);
-  const [finance, setFinance] = useState<FinanceSettings | null>(null);
+  const [calculations, setCalculations] = useState<RewardBonusCalculation[]>([]);
+  const [finance, setFinance] = useState<RewardFinanceSettings | null>(null);
   const [people, setPeople] = useState<WorkspacePerson[]>([]);
   const [, setTeams] = useState<WorkspaceTeam[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
-    const q = useQuarterStore.getState().currentQuarter;
+    const q = useRewardQuarterStore.getState().currentQuarter;
     if (!ws?.id || !q?.id) {
       setCalculations([]);
       setFinance(null);
@@ -42,8 +42,8 @@ export default function BonusDashboard() {
     setLoading(true);
     try {
       const [calcRes, finRes, settingsRes] = await Promise.all([
-        bonusService.getCalculations(ws.id, q.id),
-        bonusService.getFinance(ws.id, q.id),
+        rewardBonusService.getCalculations(ws.id, q.id),
+        rewardBonusService.getFinance(ws.id, q.id),
         settingsService.getAll(ws.id),
       ]);
       if (calcRes.data) setCalculations(calcRes.data);
@@ -61,22 +61,22 @@ export default function BonusDashboard() {
 
   const handleLock = async () => {
     if (!currentWorkspace?.id || !currentQuarter?.id) return;
-    const { error } = await bonusService.lock(currentWorkspace.id, currentQuarter.id);
+    const { error } = await rewardBonusService.lock(currentWorkspace.id, currentQuarter.id);
     if (error) toast.error(error);
     else { toast.success('Bonuses locked'); load(); }
   };
 
   const handleUnlock = async () => {
     if (!currentWorkspace?.id || !currentQuarter?.id) return;
-    const { error } = await bonusService.unlock(currentWorkspace.id, currentQuarter.id);
+    const { error } = await rewardBonusService.unlock(currentWorkspace.id, currentQuarter.id);
     if (error) toast.error(error);
     else { toast.success('Bonuses unlocked'); load(); }
   };
 
-  const handleFinanceUpdate = async (field: keyof FinanceSettings, value: string) => {
+  const handleFinanceUpdate = async (field: keyof RewardFinanceSettings, value: string) => {
     if (!currentWorkspace?.id || !currentQuarter?.id || !finance) return;
     const updated = { ...finance, [field]: Number(value) };
-    const { error } = await bonusService.upsertFinance({
+    const { error } = await rewardBonusService.upsertFinance({
       ...updated,
       workspace_id: currentWorkspace.id,
       quarter_id: currentQuarter.id,

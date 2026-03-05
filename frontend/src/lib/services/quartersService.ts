@@ -1,11 +1,11 @@
 import { api } from '../api';
-import type { Quarter } from '../types';
+import type { RewardQuarter } from '../types';
 
-export const quartersService = {
-  list: (workspaceId: string) => api.get<Quarter[]>(`/quarters?workspace_id=${workspaceId}`),
+export const rewardQuartersService = {
+  list: (workspaceId: string) => api.get<RewardQuarter[]>(`/rewards/quarters?workspace_id=${workspaceId}`),
   create: (data: { workspace_id: string; name: string; start_date: string; end_date: string }) =>
-    api.post<Quarter>('/quarters', data),
-  get: (id: string) => api.get<Quarter>(`/quarters/${id}`),
+    api.post<RewardQuarter>('/rewards/quarters', data),
+  get: (id: string) => api.get<RewardQuarter>(`/rewards/quarters/${id}`),
   updateStatus: (id: string, status: string) =>
-    api.patch<Quarter>(`/quarters/${id}/status`, { status }),
+    api.patch<RewardQuarter>(`/rewards/quarters/${id}/status`, { status }),
 };

@@ -7,17 +7,17 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/repository"
 )
 
-// AuditService handles bonus audit log business logic.
-type AuditService struct {
-	bonusRepo *repository.BonusRepository
+// RewardAuditService handles reward audit log business logic.
+type RewardAuditService struct {
+	bonusRepo *repository.RewardBonusRepository
 }
 
-// NewAuditService creates a new AuditService.
-func NewAuditService(bonusRepo *repository.BonusRepository) *AuditService {
-	return &AuditService{bonusRepo: bonusRepo}
+// NewRewardAuditService creates a new RewardAuditService.
+func NewRewardAuditService(bonusRepo *repository.RewardBonusRepository) *RewardAuditService {
+	return &RewardAuditService{bonusRepo: bonusRepo}
 }
 
 // List returns all audit entries for a workspace/quarter.
-func (s *AuditService) List(ctx context.Context, workspaceID, quarterID string) ([]model.BonusAuditLog, error) {
+func (s *RewardAuditService) List(ctx context.Context, workspaceID, quarterID string) ([]model.RewardAuditLog, error) {
 	return s.bonusRepo.ListAuditEntries(ctx, workspaceID, quarterID)
 }

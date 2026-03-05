@@ -399,7 +399,7 @@ func (s *PMWorkflowService) seedDefaultLabels(ctx context.Context, workspaceID s
 	}
 
 	for _, def := range defaults {
-		existing, err := s.labelRepo.GetByName(ctx, workspaceID, def.Name)
+		existing, err := s.labelRepo.GetByName(ctx, workspaceID, nil, def.Name)
 		if err != nil {
 			return err
 		}

@@ -187,6 +187,19 @@ export function CreateStoryModal({
     })();
   }, [open, workspaceId]);
 
+  useEffect(() => {
+    setForm((current) => {
+      const nextLabelIds = current.label_ids.filter((labelId) => {
+        const label = labels.find((entry) => entry.id === labelId);
+        if (!label) return false;
+        if (!current.team_id) return !label.team_id;
+        return !label.team_id || label.team_id === current.team_id;
+      });
+      if (nextLabelIds.length === current.label_ids.length) return current;
+      return { ...current, label_ids: nextLabelIds };
+    });
+  }, [labels, form.team_id]);
+
   const canSubmit = useMemo(
     () => form.name.trim().length > 0 && stateId.trim().length > 0,
     [form.name, stateId]
@@ -321,6 +334,7 @@ export function CreateStoryModal({
                   placeholder="Press '/' for commands"
                   className={editorExpanded ? "min-h-0 flex-1 flex flex-col" : ""}
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+                  teams={teams}
                 />
                 <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
                   <button
@@ -556,6 +570,7 @@ export function CreateStoryModal({
                 <MetadataRow icon={Tag} label="Labels">
                   <LabelPicker
                     workspaceId={workspaceId}
+                    teamId={form.team_id || undefined}
                     labels={labels}
                     selectedLabelIds={form.label_ids}
                     onLabelsChange={setLabels}

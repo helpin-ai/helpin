@@ -41,7 +41,7 @@ export interface MemberWithUser {
   avatar_url?: string;
 }
 
-export interface Quarter {
+export interface RewardQuarter {
   id: string;
   workspace_id: string;
   name: string;
@@ -53,7 +53,7 @@ export interface Quarter {
   updated_at: string;
 }
 
-export interface Sprint {
+export interface RewardSprint {
   id: string;
   quarter_id: string;
   workspace_id: string;
@@ -67,7 +67,7 @@ export interface Sprint {
   updated_at: string;
 }
 
-export interface CompanyGoal {
+export interface RewardCompanyGoal {
   id: string;
   workspace_id: string;
   quarter_id: string;
@@ -82,10 +82,10 @@ export interface CompanyGoal {
   created_by: string;
   created_at: string;
   updated_at: string;
-  team_contributions?: GoalTeamContribution[];
+  team_contributions?: RewardGoalTeamContribution[];
 }
 
-export interface GoalTeamContribution {
+export interface RewardGoalTeamContribution {
   id: string;
   goal_id: string;
   team_id: string;
@@ -96,7 +96,7 @@ export interface GoalTeamContribution {
   rationale?: string;
 }
 
-export interface SprintGoal {
+export interface RewardSprintGoal {
   id: string;
   sprint_id: string;
   team_id: string;
@@ -107,7 +107,7 @@ export interface SprintGoal {
   kr_id?: string;
 }
 
-export interface GoalDraft {
+export interface RewardGoalDraft {
   id: string;
   workspace_id: string;
   quarter_id: string;
@@ -118,7 +118,7 @@ export interface GoalDraft {
   updated_at: string;
 }
 
-export interface IndividualCheck {
+export interface RewardIndividualCheck {
   id: string;
   sprint_id: string;
   workspace_id: string;
@@ -129,7 +129,7 @@ export interface IndividualCheck {
   notes?: string;
 }
 
-export interface BonusCalculation {
+export interface RewardBonusCalculation {
   id: string;
   workspace_id: string;
   quarter_id: string;
@@ -146,7 +146,7 @@ export interface BonusCalculation {
   locked_at?: string;
 }
 
-export interface FinanceSettings {
+export interface RewardFinanceSettings {
   id: string;
   workspace_id: string;
   quarter_id: string;
@@ -170,9 +170,18 @@ export interface WorkspaceSettings {
   teams: WorkspaceTeam[];
   people: WorkspacePerson[];
   memberships: TeamMembership[];
+  user_memberships: TeamUserMembership[];
   managers: WorkspaceManager[];
   job_role_criteria: JobRoleCriteria[];
   bonus_tiers: BonusTierConfig[];
+  invitation_team_preassignments: InvitationTeamPreassignment[];
+}
+
+export interface InvitationTeamPreassignment {
+  id: string;
+  invitation_id: string;
+  team_id: string;
+  created_at: string;
 }
 
 export interface WorkspaceConfig {
@@ -189,6 +198,7 @@ export interface WorkspaceTeam {
   id: string;
   workspace_id: string;
   name: string;
+  handle?: string;
   description?: string;
   manager_id?: string;
 }
@@ -214,6 +224,15 @@ export interface TeamMembership {
   id: string;
   team_id: string;
   person_id: string;
+}
+
+export interface TeamUserMembership {
+  id: string;
+  team_id: string;
+  user_id: string;
+  role: 'owner' | 'member';
+  created_at: string;
+  updated_at: string;
 }
 
 export interface WorkspaceManager {
@@ -271,7 +290,7 @@ export interface InviteInfo {
   expired: boolean;
 }
 
-export interface AuditEntry {
+export interface RewardAuditEntry {
   id: string;
   workspace_id: string;
   quarter_id: string;

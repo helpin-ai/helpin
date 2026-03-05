@@ -8,18 +8,18 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/service"
 )
 
-// GoalHandler handles goal HTTP requests.
-type GoalHandler struct {
-	goalService *service.GoalService
+// RewardGoalHandler handles goal HTTP requests.
+type RewardGoalHandler struct {
+	goalService *service.RewardGoalService
 }
 
-// NewGoalHandler creates a new GoalHandler.
-func NewGoalHandler(goalService *service.GoalService) *GoalHandler {
-	return &GoalHandler{goalService: goalService}
+// NewRewardGoalHandler creates a new RewardGoalHandler.
+func NewRewardGoalHandler(goalService *service.RewardGoalService) *RewardGoalHandler {
+	return &RewardGoalHandler{goalService: goalService}
 }
 
-// List handles GET /api/goals?workspace_id=xxx&quarter_id=xxx.
-func (h *GoalHandler) List(w http.ResponseWriter, r *http.Request) {
+// List handles GET /api/rewards/goals?workspace_id=xxx&quarter_id=xxx.
+func (h *RewardGoalHandler) List(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.URL.Query().Get("workspace_id")
 	quarterID := r.URL.Query().Get("quarter_id")
 	if workspaceID == "" || quarterID == "" {
@@ -33,14 +33,14 @@ func (h *GoalHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if goals == nil {
-		goals = []model.CompanyGoalWithContributions{}
+		goals = []model.RewardCompanyGoalWithContributions{}
 	}
 
 	writeJSON(w, http.StatusOK, goals)
 }
 
-// ListSprintGoals handles GET /api/goals/sprint?sprint_id=xxx[&team_id=yyy].
-func (h *GoalHandler) ListSprintGoals(w http.ResponseWriter, r *http.Request) {
+// ListSprintGoals handles GET /api/rewards/goals/sprint?sprint_id=xxx[&team_id=yyy].
+func (h *RewardGoalHandler) ListSprintGoals(w http.ResponseWriter, r *http.Request) {
 	sprintID := r.URL.Query().Get("sprint_id")
 	if sprintID == "" {
 		writeError(w, http.StatusBadRequest, "sprint_id is required")
@@ -59,17 +59,17 @@ func (h *GoalHandler) ListSprintGoals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if goals == nil {
-		goals = []model.SprintGoal{}
+		goals = []model.RewardSprintGoal{}
 	}
 
 	writeJSON(w, http.StatusOK, goals)
 }
 
-// Create handles POST /api/goals.
-func (h *GoalHandler) Create(w http.ResponseWriter, r *http.Request) {
+// Create handles POST /api/rewards/goals.
+func (h *RewardGoalHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 
-	var req model.CreateGoalRequest
+	var req model.CreateRewardGoalRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -84,9 +84,9 @@ func (h *GoalHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, goal)
 }
 
-// UpsertSprintGoal handles POST /api/goals/sprint.
-func (h *GoalHandler) UpsertSprintGoal(w http.ResponseWriter, r *http.Request) {
-	var req model.UpsertSprintGoalRequest
+// UpsertSprintGoal handles POST /api/rewards/goals/sprint.
+func (h *RewardGoalHandler) UpsertSprintGoal(w http.ResponseWriter, r *http.Request) {
+	var req model.UpsertRewardSprintGoalRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return

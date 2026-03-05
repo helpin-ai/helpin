@@ -12,31 +12,31 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
-	Health      *handler.HealthHandler
-	Auth        *handler.AuthHandler
-	Workspace   *handler.WorkspaceHandler
-	Quarter     *handler.QuarterHandler
-	Sprint      *handler.SprintHandler
-	Goal        *handler.GoalHandler
-	Bonus       *handler.BonusHandler
-	Finance     *handler.FinanceHandler
-	Settings    *handler.SettingsHandler
-	Audit       *handler.AuditHandler
-	Draft       *handler.DraftHandler
-	Invite      *handler.InviteHandler
-	PMWorkflow  *handler.PMWorkflowHandler
-	PMLabel     *handler.PMLabelHandler
-	PMEpic      *handler.PMEpicHandler
-	PMSprint *handler.PMSprintHandler
-	PMStory     *handler.PMStoryHandler
-	PMComment    *handler.PMCommentHandler
-	PMAttachment *handler.PMAttachmentHandler
-	PMObjective      *handler.PMObjectiveHandler
-	PMChecklistItem  *handler.PMChecklistItemHandler
-	PMExternalLink   *handler.PMExternalLinkHandler
-	PMView           *handler.PMViewHandler
-	PMAutomation     *handler.PMAutomationHandler
-	Search           *handler.SearchHandler
+	Health          *handler.HealthHandler
+	Auth            *handler.AuthHandler
+	Workspace       *handler.WorkspaceHandler
+	RewardQuarter   *handler.RewardQuarterHandler
+	RewardSprint    *handler.RewardSprintHandler
+	RewardGoal      *handler.RewardGoalHandler
+	RewardBonus     *handler.RewardBonusHandler
+	RewardFinance   *handler.RewardFinanceHandler
+	Settings        *handler.SettingsHandler
+	RewardAudit     *handler.RewardAuditHandler
+	RewardDraft     *handler.RewardDraftHandler
+	Invite          *handler.InviteHandler
+	PMWorkflow      *handler.PMWorkflowHandler
+	PMLabel         *handler.PMLabelHandler
+	PMEpic          *handler.PMEpicHandler
+	PMSprint        *handler.PMSprintHandler
+	PMStory         *handler.PMStoryHandler
+	PMComment       *handler.PMCommentHandler
+	PMAttachment    *handler.PMAttachmentHandler
+	PMObjective     *handler.PMObjectiveHandler
+	PMChecklistItem *handler.PMChecklistItemHandler
+	PMExternalLink  *handler.PMExternalLinkHandler
+	PMView          *handler.PMViewHandler
+	PMAutomation    *handler.PMAutomationHandler
+	Search          *handler.SearchHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -83,36 +83,42 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Get("/workspaces/{id}/my-membership", h.Workspace.GetMyMembership)
 			r.Get("/workspaces/{id}/members", h.Workspace.ListMembers)
 
-			// Quarters
-			r.Get("/quarters", h.Quarter.List)
-			r.Post("/quarters", h.Quarter.Create)
-			r.Get("/quarters/{id}", h.Quarter.Get)
-			r.Patch("/quarters/{id}/status", h.Quarter.UpdateStatus)
+			// Rewards module
+			r.Route("/rewards", func(r chi.Router) {
+				r.Get("/quarters", h.RewardQuarter.List)
+				r.Post("/quarters", h.RewardQuarter.Create)
+				r.Get("/quarters/{id}", h.RewardQuarter.Get)
+				r.Patch("/quarters/{id}/status", h.RewardQuarter.UpdateStatus)
 
-			// Sprints
-			r.Get("/sprints", h.Sprint.List)
-			r.Get("/sprints/{id}", h.Sprint.Get)
-			r.Get("/sprints/{id}/checks", h.Sprint.GetIndividualChecks)
-			r.Post("/sprints/{id}/checks", h.Sprint.UpsertIndividualCheck)
-			r.Post("/sprints/{id}/lock", h.Sprint.Lock)
-			r.Post("/sprints/{id}/unlock", h.Sprint.Unlock)
+				r.Get("/sprints", h.RewardSprint.List)
+				r.Get("/sprints/{id}", h.RewardSprint.Get)
+				r.Get("/sprints/{id}/checks", h.RewardSprint.GetIndividualChecks)
+				r.Post("/sprints/{id}/checks", h.RewardSprint.UpsertIndividualCheck)
+				r.Post("/sprints/{id}/lock", h.RewardSprint.Lock)
+				r.Post("/sprints/{id}/unlock", h.RewardSprint.Unlock)
 
-			// Goals
-			r.Get("/goals", h.Goal.List)
-			r.Post("/goals", h.Goal.Create)
-			r.Get("/goals/sprint", h.Goal.ListSprintGoals)
-			r.Post("/goals/sprint", h.Goal.UpsertSprintGoal)
+				r.Get("/goals", h.RewardGoal.List)
+				r.Post("/goals", h.RewardGoal.Create)
+				r.Get("/goals/sprint", h.RewardGoal.ListSprintGoals)
+				r.Post("/goals/sprint", h.RewardGoal.UpsertSprintGoal)
 
-			// Bonus
-			r.Get("/bonus/calculations", h.Bonus.GetCalculations)
-			r.Post("/bonus/calculations", h.Bonus.SaveCalculations)
-			r.Post("/bonus/lock", h.Bonus.Lock)
-			r.Post("/bonus/unlock", h.Bonus.Unlock)
-			r.Get("/bonus/team-sprint-data", h.Bonus.GetTeamSprintData)
+				r.Get("/bonus/calculations", h.RewardBonus.GetCalculations)
+				r.Post("/bonus/calculations", h.RewardBonus.SaveCalculations)
+				r.Post("/bonus/lock", h.RewardBonus.Lock)
+				r.Post("/bonus/unlock", h.RewardBonus.Unlock)
+				r.Get("/bonus/team-sprint-data", h.RewardBonus.GetTeamSprintData)
 
-			// Finance
-			r.Get("/finance", h.Finance.Get)
-			r.Post("/finance", h.Finance.Upsert)
+				r.Get("/finance", h.RewardFinance.Get)
+				r.Post("/finance", h.RewardFinance.Upsert)
+
+				r.Get("/audit", h.RewardAudit.List)
+
+				r.Get("/drafts", h.RewardDraft.List)
+				r.Post("/drafts", h.RewardDraft.Create)
+				r.Get("/drafts/{id}", h.RewardDraft.Get)
+				r.Put("/drafts/{id}", h.RewardDraft.Update)
+				r.Delete("/drafts/{id}", h.RewardDraft.Delete)
+			})
 
 			// Settings
 			r.Get("/settings", h.Settings.GetAll)
@@ -120,6 +126,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Post("/settings/teams", h.Settings.CreateTeam)
 			r.Put("/settings/teams/{id}", h.Settings.UpdateTeam)
 			r.Delete("/settings/teams/{id}", h.Settings.DeleteTeam)
+			r.Post("/settings/teams/{id}/members", h.Settings.AddTeamMember)
+			r.Put("/settings/teams/{id}/members/{userId}", h.Settings.UpdateTeamMember)
+			r.Delete("/settings/teams/{id}/members/{userId}", h.Settings.DeleteTeamMember)
+			r.Post("/settings/teams/{id}/invitations", h.Settings.AddTeamInvitation)
+			r.Delete("/settings/teams/{id}/invitations/{invitationId}", h.Settings.DeleteTeamInvitation)
 			r.Post("/settings/people", h.Settings.CreatePerson)
 			r.Put("/settings/people/{id}", h.Settings.UpdatePerson)
 			r.Delete("/settings/people/{id}", h.Settings.DeletePerson)
@@ -127,16 +138,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Put("/settings/job-roles", h.Settings.UpdateJobRoleCriteria)
 			r.Delete("/settings/job-roles", h.Settings.DeleteJobRole)
 			r.Put("/settings/system", h.Settings.UpdateSystem)
-
-			// Audit
-			r.Get("/audit", h.Audit.List)
-
-			// Drafts
-			r.Get("/drafts", h.Draft.List)
-			r.Post("/drafts", h.Draft.Create)
-			r.Get("/drafts/{id}", h.Draft.Get)
-			r.Put("/drafts/{id}", h.Draft.Update)
-			r.Delete("/drafts/{id}", h.Draft.Delete)
 
 			// Invitations
 			r.Post("/invitations", h.Invite.Send)

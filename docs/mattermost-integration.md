@@ -6,11 +6,13 @@ TeamPulse needs a Mattermost integration similar to [Shortcut's Slack integratio
 
 ## How It Works (Self-Hosted Mattermost)
 
-**Approach**: TeamPulse acts as an API client to Mattermost. A Bot Account is created in Mattermost, and its Personal Access Token is stored in TeamPulse. TeamPulse then uses the Mattermost REST API (`/api/v4/*`) to:
+**Approach**: TeamPulse acts as an API client to Mattermost. A Bot Account is created in Mattermost, and its Personal Access Token is stored in TeamPulse. The integration is **owned by a TeamPulse team**, not the whole workspace. TeamPulse then uses the Mattermost REST API (`/api/v4/*`) to:
 - Post messages to channels (notifications)
 - Read channel lists (for config UI)
 - Send DMs to users (personal notifications)
 - Respond to slash commands and interactive messages (inbound)
+
+Because this deployment uses a **single Mattermost server**, each TeamPulse team stores the same Mattermost `server_url` in its own integration settings. That keeps ownership and permissions team-scoped while still supporting one shared Mattermost instance.
 
 **No Mattermost plugins required** -- everything works via REST API + webhooks + slash commands, all available in self-hosted Mattermost (any version 5.x+).
 
@@ -86,12 +88,18 @@ This means `Hub.Broadcast()` returns instantly -- no risk of Mattermost HTTP lat
 - Must be reachable from the TeamPulse server (network/firewall)
 
 ### Step 7: Configure in TeamPulse
-1. Navigate to **Settings > Integrations** in TeamPulse
-2. Enter the Mattermost Server URL
-3. Paste the Bot Access Token
-4. Click **Test Connection** -- should show the bot's display name
-5. Enable the integration
-6. Add channel links (map teams to Mattermost channels)
+1. Navigate to **Settings > Teams > {Team}** in TeamPulse
+2. Open the **Mattermost** section for that team
+3. Enter the Mattermost Server URL
+4. Paste the Bot Access Token
+5. Click **Test Connection** -- should show the bot's display name
+6. Enable the integration
+7. Add one or more channel links for that team
+
+The Team Settings UI should follow the same interaction model as the reference Slack example:
+- A **Connect a Mattermost channel** card at the top of the team's Mattermost section
+- A separate **Notifications** section below it with per-event toggles
+- Team users with permission can decide exactly which updates this team wants posted to Mattermost
 
 ---
 
@@ -101,7 +109,7 @@ This means `Hub.Broadcast()` returns instantly -- no risk of Mattermost HTTP lat
 
 ### Architecture
 
-Hook into the existing WebSocket `Hub.Broadcast()` in `server/internal/websocket/hub.go`. Add an `EventListener` interface so the Mattermost notifier receives every event without modifying any existing service code.
+Hook into the existing WebSocket `Hub.Broadcast()` in `server/internal/websocket/hub.go`, but do **not** derive Mattermost notifications from generic `updated` events alone. Mattermost routing needs explicit domain intent such as `story_state_changed`, `story_completed`, `comment_created`, `epic_state_changed`, etc. The PM services should emit richer notification events (or enrich `websocket.Event` with change metadata) before the notifier consumes them.
 
 ```
 Hub.Broadcast(event)
@@ -109,8 +117,9 @@ Hub.Broadcast(event)
   -> new: call registered EventListeners (MattermostNotifier)
 
 MattermostNotifier.OnEvent(event)
-  -> Looks up integration config (skip if none/disabled)
-  -> Looks up channel links (filtered by team if applicable)
+  -> Resolves the TeamPulse team(s) for the entity using explicit model fields
+  -> Looks up team-owned integration config(s) (skip if none/disabled)
+  -> Looks up channel links for that team
   -> Checks notification toggles for the entity type
   -> Fetches full entity details (story with state, owners, etc.)
   -> Formats a rich Mattermost message
@@ -127,12 +136,13 @@ River Worker (MattermostDeliveryWorker)
 
 File: `server/internal/model/mattermost.go`
 
-**MattermostIntegration** (one per workspace)
+**MattermostIntegration** (one per TeamPulse team)
 
 | Column | Type | Notes |
 |--------|------|-------|
 | id | UUID PK | `gen_random_uuid()` |
-| workspace_id | UUID | unique index, FK to workspaces |
+| workspace_id | UUID | index, FK to workspaces |
+| team_id | UUID | unique index with workspace, FK to `workspace_teams` |
 | server_url | string | e.g. `https://mattermost.example.com` |
 | bot_token | string | `json:"-"` -- never in API responses |
 | bot_user_id | string | cached after validation |
@@ -141,14 +151,16 @@ File: `server/internal/model/mattermost.go`
 | created_at | timestamp | auto |
 | updated_at | timestamp | auto |
 
-**MattermostChannelLink** (many per workspace)
+Unique key: `(workspace_id, team_id)`
+
+**MattermostChannelLink** (many per team integration)
 
 | Column | Type | Notes |
 |--------|------|-------|
 | id | UUID PK | |
 | workspace_id | UUID | index |
+| team_id | UUID | index, FK to `workspace_teams` |
 | integration_id | UUID | FK to MattermostIntegration |
-| team_id | UUID nullable | null = workspace-wide, else scoped to a TeamPulse team |
 | channel_id | string | Mattermost channel ID |
 | channel_name | string | cached display name |
 | notify_story_created | bool | default true -- a new story is added to the team |
@@ -163,6 +175,8 @@ File: `server/internal/model/mattermost.go`
 | created_at | timestamp | |
 | updated_at | timestamp | |
 
+Unique key: `(integration_id, channel_id)` to prevent duplicate posts to the same Mattermost channel for a team.
+
 These granular toggles follow the pattern used by Linear's Slack integration, giving teams fine-grained control over which events trigger notifications. For example, a team may only want to see completed stories and comments, but not every status change.
 
 ### Backend Files
@@ -171,11 +185,11 @@ These granular toggles follow the pattern used by Linear's Slack integration, gi
 |------|---------|
 | `server/internal/mattermost/client.go` | HTTP client wrapping Mattermost REST API. Nil-safe (like `email/postmark.go`). Methods: `PostMessage`, `PostMessageWithAttachments`, `GetChannels`, `GetChannel`, `ValidateConnection` |
 | `server/internal/mattermost/types.go` | Types: `Channel`, `Post`, `Attachment`, `AttachmentField`, `User`, `PostCreateRequest` |
-| `server/internal/mattermost/worker.go` | River worker (`MattermostDeliveryWorker`) that processes delivery jobs. Accepts `MattermostDeliveryArgs` (channel_id, message, attachments, workspace_id), resolves the client for the workspace, and calls the Mattermost API |
+| `server/internal/mattermost/worker.go` | River worker (`MattermostDeliveryWorker`) that processes delivery jobs. Accepts `MattermostDeliveryArgs` (integration_id, team_id, channel_id, message, attachments, workspace_id), resolves the client for the team integration, and calls the Mattermost API |
 | `server/internal/mattermost/jobs.go` | River job args types: `MattermostDeliveryArgs`, `MattermostDigestArgs` (Phase 5). Implements `river.JobArgs` interface |
 | `server/internal/model/mattermost.go` | GORM models above |
-| `server/internal/repository/mattermost.go` | `MattermostIntegrationRepo` (GetByWorkspace, Upsert, Delete) + `MattermostChannelLinkRepo` (ListByWorkspace, ListByWorkspaceAndTeam, Create, Update, Delete) |
-| `server/internal/service/mattermost.go` | CRUD for config + channel links, TestConnection, ListAvailableChannels |
+| `server/internal/repository/mattermost.go` | `MattermostIntegrationRepo` (GetByTeam, ListByWorkspace, UpsertByTeam, DeleteByTeam) + `MattermostChannelLinkRepo` (ListByTeam, Create, Update, Delete) |
+| `server/internal/service/mattermost.go` | Team-scoped CRUD for config + channel links, TestConnection, ListAvailableChannels, team authorization checks |
 | `server/internal/service/mattermost_notifier.go` | Implements `EventListener`, formats messages per entity type, enqueues River jobs (does NOT call Mattermost directly) |
 | `server/internal/handler/mattermost.go` | HTTP handlers for CRUD endpoints |
 
@@ -183,8 +197,11 @@ These granular toggles follow the pattern used by Linear's Slack integration, gi
 
 | File | Change |
 |------|--------|
-| `server/internal/websocket/hub.go` | Add `EventListener` interface, `listeners []EventListener` field, `AddListener()` method. In `Broadcast()`, iterate listeners and call `go l.OnEvent(event)` |
-| `server/internal/router/router.go` | Add `Mattermost` handler to `Handlers` struct, register 9 routes under `/api/pm/mattermost/` |
+| `server/internal/websocket/hub.go` | Add `EventListener` interface, `listeners []EventListener` field, `AddListener()` method. Extend `Event` to carry notification-relevant change metadata or explicit change kinds. In `Broadcast()`, iterate listeners and call `go l.OnEvent(event)` |
+| `server/internal/service/pm_story.go` | Emit explicit notification events for story creation, state changes, completions, and comments instead of relying on generic `updated` semantics |
+| `server/internal/service/pm_epic.go` | Emit explicit notification events for epic creation and state changes |
+| `server/internal/service/pm_objective.go` | Emit explicit notification events for objective updates and key result updates |
+| `server/internal/router/router.go` | Add `Mattermost` handler to `Handlers` struct, register team-scoped routes under `/api/settings/teams/{teamID}/mattermost/` and optional workspace admin list routes |
 | `server/cmd/api/main.go` | Wire repos, services, handler. Register notifier as Hub listener. Initialize River client with pgx pool, register `MattermostDeliveryWorker`, start River client. Add models to AutoMigrate |
 | `server/go.mod` | Add `github.com/riverqueue/river` and `github.com/riverqueue/river/riverdriver/riverpgxv5` dependencies |
 
@@ -216,7 +233,7 @@ River uses its own PostgreSQL tables (`river_job`, `river_leader`, etc.) created
 
 ### Team-Scoped Notification Routing
 
-Channel links support team-scoped routing via the `team_id` field. This controls which Mattermost channels receive updates for which TeamPulse team's stories.
+Each TeamPulse team owns its own Mattermost integration and channel links. Routing is based on the entity's **explicit team fields**, not inferred indirectly from workflow state transitions.
 
 **Example configuration:**
 
@@ -225,89 +242,84 @@ Channel links support team-scoped routing via the `team_id` field. This controls
 | Engineering | `#engineering` | on | on | on | on | on |
 | Customer Support | `#cs-updates` | on | off | on | on | off |
 | Marketing | `#marketing` | off | off | on | off | off |
-| *(all teams)* | `#all-projects` | off | off | on | off | off |
 
-This gives teams fine-grained control. For example, Marketing only sees completed stories (not every status change), while Engineering gets the full firehose. The workspace-wide `#all-projects` channel only gets completion notifications as a summary.
+This gives teams fine-grained control. For example, Marketing only sees completed stories (not every status change), while Engineering gets the full firehose.
 
 **Routing logic when a story changes state** (e.g., SC-42 moves from "In Progress" to "Done"):
 
-1. Notifier receives the event and fetches the story details, including which **team** the story belongs to (resolved via the story's workflow -- workflows in TeamPulse are team-specific)
-2. Queries `MattermostChannelLink`s for the workspace
-3. Finds all matching links:
-   - Links where `team_id` matches the story's team (e.g., Engineering -> `#engineering`)
-   - Links where `team_id IS NULL` (workspace-wide, e.g., `#all-projects`)
-4. Enqueues a River delivery job for **each matching channel**
+1. `PMStoryService` emits a notification event such as `story_state_changed` or `story_completed` with the old and new state IDs
+2. Notifier fetches the story and reads `story.team_id` directly
+3. If `story.team_id` is nil, the notifier skips delivery or uses `workflow.team_id` only as a fallback for legacy records
+4. Notifier loads that team's `MattermostIntegration`
+5. If the integration is enabled, it loads all `MattermostChannelLink`s for that team
+6. It filters by the correct toggle (`notify_story_status_changed` or `notify_story_completed`)
+7. It enqueues one River delivery job per matching channel
 
-So if SC-42 belongs to Engineering: the update posts to `#engineering` AND `#all-projects`, but NOT to `#cs-updates` or `#marketing`.
+So if SC-42 belongs to Engineering: the update posts only to Engineering's configured Mattermost channels, not to Customer Support or Marketing.
 
-**For epics/objectives** (which may span multiple teams): notifications go to workspace-wide channels (`team_id IS NULL`) and to channels linked to any team that has stories in the epic.
+**Entity team resolution rules:**
+- Stories: use `pm_stories.team_id`
+- Story comments: use the parent story's `team_id`
+- Epics: use `pm_epics.team_id`
+- Sprints: use `pm_sprints.team_id`
+- Objectives: use `pm_objective_teams` and fan out to each linked team's integration
+- Objective comments / key result updates: resolve through the objective's linked teams
 
 **Notifier resolution pseudocode:**
 ```
-func (n *MattermostNotifier) resolveTargetChannels(event Event) []ChannelLink:
-    allLinks = channelLinkRepo.ListByWorkspace(event.WorkspaceID)
+func (n *MattermostNotifier) resolveTargets(event Event) []DeliveryTarget:
+    teamIDs = resolveEntityTeams(event) // explicit team fields only
+    targets = []
 
-    if event.Entity == "story" && event.Action == "created":
-        story = storyRepo.GetByID(event.EntityID)
-        storyTeamID = workflowRepo.GetTeamForWorkflow(story.WorkflowID)
-        return filter(allLinks, link =>
-            link.notify_story_created &&
-            (link.team_id == nil || link.team_id == storyTeamID)
-        )
+    for teamID in teamIDs:
+        integration = integrationRepo.GetByTeam(event.WorkspaceID, teamID)
+        if integration == nil || !integration.enabled:
+            continue
 
-    if event.Entity == "story" && event.Action == "updated":
-        // Determine if this is a status change, completion, or other update
-        story = storyRepo.GetByID(event.EntityID)
-        storyTeamID = workflowRepo.GetTeamForWorkflow(story.WorkflowID)
-        isDone = story.State.StateType == "done"
-        toggleField = isDone ? "notify_story_completed" : "notify_story_status_changed"
-        return filter(allLinks, link =>
-            link[toggleField] &&
-            (link.team_id == nil || link.team_id == storyTeamID)
-        )
+        links = channelLinkRepo.ListByTeam(event.WorkspaceID, teamID)
+        for link in links:
+            if toggleEnabled(link, event.ChangeKind):
+                targets = append(targets, DeliveryTarget{
+                    TeamID: teamID,
+                    IntegrationID: integration.ID,
+                    ChannelID: link.ChannelID,
+                })
 
-    if event.Entity == "comment":
-        story = storyRepo.GetByID(event.ParentID)  // comment's parent
-        storyTeamID = workflowRepo.GetTeamForWorkflow(story.WorkflowID)
-        return filter(allLinks, link =>
-            link.notify_story_comment &&
-            (link.team_id == nil || link.team_id == storyTeamID)
-        )
-
-    if event.Entity == "epic":
-        toggleField = event.Action == "created" ? "notify_epic_created" : "notify_epic_status_changed"
-        return filter(allLinks, link =>
-            link[toggleField] && link.team_id == nil  // workspace-wide only
-        )
-
-    // similar for sprints (notify_sprint_started/completed), objectives
+    return targets
 ```
 
 ### Settings Access Points
 
-Following Linear's pattern, Mattermost notification settings are accessible from **two places**:
+Mattermost settings are primarily managed **inside each TeamPulse team**:
 
-1. **Centralized**: Settings > Integrations -- admin sees all channel links across all teams in one view. This is where the Mattermost server URL and bot token are configured.
+1. **Per-team**: Settings > Teams > {Team} -- team owners can configure that team's Mattermost server URL, bot token, enabled flag, and channel links.
+   The Team Settings view should include a connection card followed by a notification preferences list, so users can connect Mattermost and then choose which events the team wants to receive.
 
-2. **Per-team**: Team settings panel -- team leads can connect/configure their own team's Mattermost channel and toggle events without needing to visit the global integrations page. Shows only the channel link for that specific team.
+2. **Workspace overview (optional)**: Settings > Integrations -- workspace admins can see a read-only or admin-editable summary of all team integrations.
 
-Both views edit the same `MattermostChannelLink` records. The per-team view is a filtered subset of the centralized view.
+The source of truth is the team-owned `MattermostIntegration` record. The workspace overview is only an aggregate view.
 
 ### API Endpoints
 
-All under `/api/pm/mattermost/` (require JWT + workspace header):
+Primary routes under `/api/settings/teams/{teamID}/mattermost/` (require JWT + workspace header + workspace admin/owner or `team_user_memberships.role = 'owner'` for that team):
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/integration` | Get workspace integration config (token masked) |
-| PUT | `/integration` | Create/update integration config |
+| GET | `/integration` | Get team integration config (token masked) |
+| PUT | `/integration` | Create/update team integration config |
 | POST | `/integration/test` | Validate bot token, return bot info |
 | DELETE | `/integration` | Remove integration |
 | GET | `/channels` | List Mattermost channels the bot can access |
-| GET | `/channel-links` | List configured channel links |
-| POST | `/channel-links` | Create a channel link |
+| GET | `/channel-links` | List configured channel links for the team |
+| POST | `/channel-links` | Create a channel link for the team |
 | PUT | `/channel-links/{id}` | Update notification toggles |
 | DELETE | `/channel-links/{id}` | Remove a channel link |
+
+Optional admin overview routes under `/api/pm/mattermost/`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/integrations` | List all team integrations in the workspace |
 
 ### Frontend Changes
 
@@ -315,9 +327,29 @@ All under `/api/pm/mattermost/` (require JWT + workspace header):
 |------|--------|
 | `frontend/src/lib/pmTypes.ts` | Add `MattermostIntegration`, `MattermostChannelLink`, `MattermostChannel` interfaces |
 | `frontend/src/lib/services/mattermostService.ts` | New API service (follows `pmAutomationService.ts` pattern) |
-| `frontend/src/pages/Settings.tsx` | Add `'integrations'` to `SettingsSection` union type and `SETTINGS_SECTIONS` array |
-| `frontend/src/components/layout/Sidebar.tsx` | Add `{ link: .../settings/integrations, label: 'Integrations', icon: Plug }` to settings nav group |
-| `frontend/src/components/settings/MattermostSettings.tsx` | **New**: Connection config card (URL + token inputs, test button, enable toggle) + channel links table (add/edit/delete with notification toggles per entity type) |
+| `frontend/src/pages/Settings.tsx` | Add a Mattermost section inside Team Settings instead of a workspace-global integration owner form |
+| `frontend/src/components/settings/TeamMattermostSettings.tsx` | **New**: Team-scoped Mattermost settings UI with a top connection card and a notifications section below it |
+| `frontend/src/components/settings/MattermostWorkspaceOverview.tsx` | **Optional**: admin-only summary of team integrations |
+
+### Team Settings UX
+
+Inside **Settings > Teams > {Team} > Mattermost**, the UI should be structured as:
+
+1. **Connect a Mattermost channel** -- card for server URL, bot token, test connection, enable/disable, and channel selection
+2. **Notifications** -- list of toggles so the team can decide what should trigger a Mattermost post
+
+Recommended toggles:
+- New story is added to the team
+- Story changes status
+- Story is completed
+- Comments on stories
+- Epic is created
+- Epic changes status
+- Sprint starts
+- Sprint completes
+- Objective or key result is updated
+
+This keeps the integration clearly team-owned and gives users direct control over what their team is notified about, rather than forcing a workspace-wide default.
 
 ### Message Formats
 
@@ -351,8 +383,9 @@ Color-coded by story type (blue=feature, red=bug, yellow=chore).
 
 - Bot token: `json:"-"` tag, GET endpoint returns `****...last4`
 - Webhook secret: generated server-side via `crypto/rand` (32 bytes, hex-encoded)
-- All DB queries scoped by `workspace_id`
-- Rate limiting: per-workspace message throttle (configurable, default 10/sec)
+- All DB queries scoped by `workspace_id` and, for integration config, by `team_id`
+- Authorization: only workspace admins/owners or team owners can mutate a team's integration
+- Rate limiting: per-team message throttle (configurable, default 10/sec)
 - TLS: client validates certs by default; optional `allow_insecure` for dev with self-signed certs
 
 ---
@@ -368,12 +401,12 @@ Color-coded by story type (blue=feature, red=bug, yellow=chore).
    - **Command Trigger Word**: `teampulse`
    - **Request URL**: `https://teampulse.yourcompany.com/api/webhooks/mattermost/slash`
    - **Request Method**: POST
-   - **Token**: Copy this -- enter it as the webhook secret in TeamPulse integration settings
+   - **Token**: Copy this -- enter it as the webhook secret in that team's Mattermost settings
 3. Save
 
 ### Architecture
 
-Slash commands POST to a public endpoint (no JWT). Authentication is via the Mattermost webhook token matching the stored `webhook_secret`.
+Slash commands POST to a public endpoint (no JWT). Authentication is via the Mattermost webhook token matching the stored `webhook_secret` on the owning team integration.
 
 ### New Database Model
 
@@ -409,7 +442,7 @@ Button clicks POST to `/api/webhooks/mattermost/interactive`.
 ### Account Linking Flow
 
 1. User types `/teampulse link` in Mattermost
-2. Bot sends the user a DM with a one-time URL: `https://teampulse.example.com/api/mattermost/link?code=<otp>&mm_user=<mm_id>`
+2. Bot sends the user a DM with a one-time URL: `https://teampulse.example.com/api/mattermost/link?code=<otp>&mm_user=<mm_id>&team=<team_id>`
 3. User clicks link -- browser opens, TeamPulse validates their JWT session
 4. `MattermostUserMapping` record is created
 5. Bot confirms linkage via DM
@@ -475,6 +508,7 @@ Button clicks POST to `/api/webhooks/mattermost/interactive`.
 |--------|------|-------|
 | id | UUID PK | |
 | workspace_id | UUID | index |
+| team_id | UUID | index |
 | entity_type | string | "story" |
 | entity_id | UUID | unique index |
 | channel_id | string | Mattermost channel |
@@ -517,7 +551,7 @@ Requires: `MattermostUserMapping` from Phase 2.
 
 ### Daily Digest
 
-Configurable per channel link. Uses River's built-in **periodic job** support (cron-style scheduling) instead of a custom ticker. The `MattermostDigestArgs` job is registered with a cron schedule (e.g., `0 9 * * 1-5` for weekdays at 9am). River handles scheduling, deduplication, and execution:
+Configurable per channel link and executed per team integration. Uses River's built-in **periodic job** support (cron-style scheduling) instead of a custom ticker. The `MattermostDigestArgs` job is registered with a cron schedule (e.g., `0 9 * * 1-5` for weekdays at 9am). River handles scheduling, deduplication, and execution:
 
 ```
 Daily Summary for Frontend Team -- March 5, 2026

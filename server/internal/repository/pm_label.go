@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -15,18 +16,23 @@ type PMLabelRepository struct {
 	db *gorm.DB
 }
 
+type PMLabelListOptions struct {
+	TeamID        *string
+	IncludeShared bool
+	Archived      *bool
+}
+
 // NewPMLabelRepository creates a new PMLabelRepository.
 func NewPMLabelRepository(db *gorm.DB) *PMLabelRepository {
 	return &PMLabelRepository{db: db}
 }
 
 // ListByWorkspace lists labels by workspace.
-func (r *PMLabelRepository) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.PMLabel, error) {
+func (r *PMLabelRepository) ListByWorkspace(ctx context.Context, workspaceID string, opts PMLabelListOptions) ([]model.PMLabel, error) {
 	var labels []model.PMLabel
-	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ?", workspaceID).
-		Order("name ASC").
-		Find(&labels).Error; err != nil {
+	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
+	query = applyLabelScopeFilter(query, opts)
+	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&labels).Error; err != nil {
 		return nil, fmt.Errorf("list labels: %w", err)
 	}
 	return labels, nil
@@ -45,11 +51,16 @@ func (r *PMLabelRepository) GetByID(ctx context.Context, id string) (*model.PMLa
 }
 
 // GetByName returns a label by workspace/name.
-func (r *PMLabelRepository) GetByName(ctx context.Context, workspaceID, name string) (*model.PMLabel, error) {
+func (r *PMLabelRepository) GetByName(ctx context.Context, workspaceID string, teamID *string, name string) (*model.PMLabel, error) {
 	var label model.PMLabel
-	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND LOWER(name) = LOWER(?)", workspaceID, name).
-		First(&label).Error; err != nil {
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND LOWER(name) = LOWER(?)", workspaceID, strings.TrimSpace(name))
+	if teamID == nil || strings.TrimSpace(*teamID) == "" {
+		query = query.Where("team_id IS NULL")
+	} else {
+		query = query.Where("team_id = ?", *teamID)
+	}
+	if err := query.First(&label).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -75,14 +86,12 @@ func (r *PMLabelRepository) Update(ctx context.Context, label *model.PMLabel) er
 }
 
 // ListWithStats returns all labels in a workspace with story/epic completion stats.
-func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID string, archived *bool) ([]model.LabelWithStats, error) {
+func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID string, opts PMLabelListOptions) ([]model.LabelWithStats, error) {
 	// Fetch labels
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
-	if archived != nil {
-		query = query.Where("archived = ?", *archived)
-	}
+	query = applyLabelScopeFilter(query, opts)
 	var labels []model.PMLabel
-	if err := query.Order("name ASC").Find(&labels).Error; err != nil {
+	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&labels).Error; err != nil {
 		return nil, fmt.Errorf("list labels with stats: %w", err)
 	}
 
@@ -98,11 +107,11 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 
 	// Query story stats per label
 	type storyStatRow struct {
-		LabelID   string `gorm:"column:label_id"`
-		Total     int    `gorm:"column:total"`
-		Done      int    `gorm:"column:done"`
-		Points    int    `gorm:"column:points"`
-		DonePts   int    `gorm:"column:done_pts"`
+		LabelID string `gorm:"column:label_id"`
+		Total   int    `gorm:"column:total"`
+		Done    int    `gorm:"column:done"`
+		Points  int    `gorm:"column:points"`
+		DonePts int    `gorm:"column:done_pts"`
 	}
 	var storyRows []storyStatRow
 	if err := r.db.WithContext(ctx).
@@ -165,6 +174,22 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 		results[i] = model.LabelWithStats{Label: label, Stats: stats}
 	}
 	return results, nil
+}
+
+func applyLabelScopeFilter(query *gorm.DB, opts PMLabelListOptions) *gorm.DB {
+	if opts.Archived != nil {
+		query = query.Where("archived = ?", *opts.Archived)
+	}
+	if opts.TeamID == nil || strings.TrimSpace(*opts.TeamID) == "" {
+		if !opts.IncludeShared {
+			query = query.Where("team_id IS NULL")
+		}
+		return query
+	}
+	if opts.IncludeShared {
+		return query.Where("(team_id = ? OR team_id IS NULL)", *opts.TeamID)
+	}
+	return query.Where("team_id = ?", *opts.TeamID)
 }
 
 // Delete hard-deletes a label.

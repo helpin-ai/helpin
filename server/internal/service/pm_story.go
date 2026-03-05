@@ -15,16 +15,18 @@ import (
 type PMStoryService struct {
 	storyRepo         *repository.PMStoryRepository
 	workflowRepo      *repository.PMWorkflowRepository
+	labelRepo         *repository.PMLabelRepository
 	activityService   *PMActivityService
 	wsPublisher       *websocket.Publisher
 	automationService *PMAutomationService
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *repository.PMWorkflowRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService) *PMStoryService {
 	return &PMStoryService{
 		storyRepo:         storyRepo,
 		workflowRepo:      workflowRepo,
+		labelRepo:         labelRepo,
 		activityService:   activityService,
 		wsPublisher:       wsPublisher,
 		automationService: automationService,
@@ -149,7 +151,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		WorkflowID:      workflowID,
 		WorkflowStateID: stateID,
 		EpicID:          req.EpicID,
-		SprintID:     req.SprintID,
+		SprintID:        req.SprintID,
 		TeamID:          req.TeamID,
 		OwnerID:         req.OwnerID,
 		RequesterID:     requesterID,
@@ -196,6 +198,9 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	}
 
 	labelIDs := dedupeIDs(req.LabelIDs)
+	if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, labelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+		return nil, err
+	}
 	for _, labelID := range labelIDs {
 		if err := s.storyRepo.AddLabel(ctx, story.ID, labelID); err != nil {
 			return nil, err
@@ -370,7 +375,11 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		}
 	}
 	if req.LabelIDs != nil {
-		if err := s.storyRepo.ReplaceLabels(ctx, current.ID, dedupeIDs(req.LabelIDs)); err != nil {
+		labelIDs := dedupeIDs(req.LabelIDs)
+		if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, labelIDs, allowedTeamIDs(current.TeamID)); err != nil {
+			return nil, err
+		}
+		if err := s.storyRepo.ReplaceLabels(ctx, current.ID, labelIDs); err != nil {
 			return nil, err
 		}
 	}
@@ -584,6 +593,9 @@ func (s *PMStoryService) AddLabel(ctx context.Context, storyID, labelID, actorID
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, []string{labelID}, allowedTeamIDs(current.TeamID)); err != nil {
+		return err
 	}
 	if err := s.storyRepo.AddLabel(ctx, storyID, labelID); err != nil {
 		return err

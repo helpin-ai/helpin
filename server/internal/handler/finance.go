@@ -7,18 +7,18 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/service"
 )
 
-// FinanceHandler handles quarterly finance settings HTTP requests.
-type FinanceHandler struct {
-	bonusService *service.BonusService
+// RewardFinanceHandler handles quarterly finance settings HTTP requests.
+type RewardFinanceHandler struct {
+	bonusService *service.RewardBonusService
 }
 
-// NewFinanceHandler creates a new FinanceHandler.
-func NewFinanceHandler(bonusService *service.BonusService) *FinanceHandler {
-	return &FinanceHandler{bonusService: bonusService}
+// NewRewardFinanceHandler creates a new RewardFinanceHandler.
+func NewRewardFinanceHandler(bonusService *service.RewardBonusService) *RewardFinanceHandler {
+	return &RewardFinanceHandler{bonusService: bonusService}
 }
 
-// Get handles GET /api/finance?workspace_id=xxx&quarter_id=xxx.
-func (h *FinanceHandler) Get(w http.ResponseWriter, r *http.Request) {
+// Get handles GET /api/rewards/finance?workspace_id=xxx&quarter_id=xxx.
+func (h *RewardFinanceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.URL.Query().Get("workspace_id")
 	quarterID := r.URL.Query().Get("quarter_id")
 	if workspaceID == "" || quarterID == "" {
@@ -39,9 +39,9 @@ func (h *FinanceHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, fs)
 }
 
-// Upsert handles POST /api/finance.
-func (h *FinanceHandler) Upsert(w http.ResponseWriter, r *http.Request) {
-	var req model.UpsertFinanceRequest
+// Upsert handles POST /api/rewards/finance.
+func (h *RewardFinanceHandler) Upsert(w http.ResponseWriter, r *http.Request) {
+	var req model.UpsertRewardFinanceRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return

@@ -76,6 +76,7 @@ export function LabelBadge({ label, onRemove, className }: LabelBadgeProps) {
 
 interface LabelPickerProps {
   workspaceId: string;
+  teamId?: string;
   selectedLabelIds: string[];
   onChange: (labelIds: string[]) => void;
   labels: Label[];
@@ -86,6 +87,7 @@ interface LabelPickerProps {
 
 export function LabelPicker({
   workspaceId,
+  teamId,
   selectedLabelIds,
   onChange,
   labels,
@@ -96,7 +98,11 @@ export function LabelPicker({
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const availableLabels = labels.filter((l) => !l.archived);
+  const availableLabels = labels.filter((l) => {
+    if (l.archived) return false;
+    if (!teamId) return !l.team_id;
+    return !l.team_id || l.team_id === teamId;
+  });
   const selectedLabels = availableLabels.filter((l) => selectedLabelIds.includes(l.id));
 
   const toggleLabel = (labelId: string) => {
@@ -122,6 +128,7 @@ export function LabelPicker({
     try {
       const { data } = await pmLabelService.create({
         workspace_id: workspaceId,
+        team_id: teamId || undefined,
         name: search.trim(),
         color: PRESET_COLORS[0],
       });
@@ -210,6 +217,9 @@ export function LabelPicker({
                           style={{ backgroundColor: color ?? 'var(--muted-foreground)' }}
                         />
                         <span className="truncate">{label.name}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {label.team_id ? 'Team' : 'Shared'}
+                        </span>
                         {isSelected && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
                       </CommandItem>
                     );

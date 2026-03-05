@@ -51,6 +51,7 @@ export interface WorkflowWithStates {
 export interface Label {
   id: string;
   workspace_id: string;
+  team_id?: string;
   name: string;
   description?: string;
   color?: string;
@@ -309,12 +310,14 @@ export interface LabelWithStats {
 
 export interface CreateLabelRequest {
   workspace_id: string;
+  team_id?: string;
   name: string;
   description?: string;
   color?: string;
 }
 
 export interface UpdateLabelRequest {
+  team_id?: string;
   name?: string;
   description?: string;
   color?: string;

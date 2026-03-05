@@ -7,18 +7,18 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/service"
 )
 
-// AuditHandler handles bonus audit log HTTP requests.
-type AuditHandler struct {
-	auditService *service.AuditService
+// RewardAuditHandler handles reward audit log HTTP requests.
+type RewardAuditHandler struct {
+	auditService *service.RewardAuditService
 }
 
-// NewAuditHandler creates a new AuditHandler.
-func NewAuditHandler(auditService *service.AuditService) *AuditHandler {
-	return &AuditHandler{auditService: auditService}
+// NewRewardAuditHandler creates a new RewardAuditHandler.
+func NewRewardAuditHandler(auditService *service.RewardAuditService) *RewardAuditHandler {
+	return &RewardAuditHandler{auditService: auditService}
 }
 
-// List handles GET /api/audit?workspace_id=xxx&quarter_id=xxx.
-func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
+// List handles GET /api/rewards/audit?workspace_id=xxx&quarter_id=xxx.
+func (h *RewardAuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.URL.Query().Get("workspace_id")
 	quarterID := r.URL.Query().Get("quarter_id")
 	if workspaceID == "" || quarterID == "" {
@@ -32,7 +32,7 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if entries == nil {
-		entries = []model.BonusAuditLog{}
+		entries = []model.RewardAuditLog{}
 	}
 
 	writeJSON(w, http.StatusOK, entries)

@@ -1,23 +1,23 @@
 import { create } from 'zustand';
-import type { Quarter } from '@/lib/types';
-import { quartersService } from '@/lib/services/quartersService';
+import type { RewardQuarter } from '@/lib/types';
+import { rewardQuartersService } from '@/lib/services/quartersService';
 
 interface QuarterState {
-  quarters: Quarter[];
-  currentQuarter: Quarter | null;
+  quarters: RewardQuarter[];
+  currentQuarter: RewardQuarter | null;
   loading: boolean;
   loadQuarters: (workspaceId: string) => Promise<void>;
-  setCurrentQuarter: (q: Quarter) => void;
+  setCurrentQuarter: (q: RewardQuarter) => void;
 }
 
-export const useQuarterStore = create<QuarterState>((set) => ({
+export const useRewardQuarterStore = create<QuarterState>((set) => ({
   quarters: [],
   currentQuarter: null,
   loading: false,
 
   loadQuarters: async (workspaceId: string) => {
     set({ loading: true });
-    const { data } = await quartersService.list(workspaceId);
+    const { data } = await rewardQuartersService.list(workspaceId);
     if (data) {
       const active = data.find((q) => q.status === 'active');
       set({
@@ -30,7 +30,7 @@ export const useQuarterStore = create<QuarterState>((set) => ({
     }
   },
 
-  setCurrentQuarter: (q: Quarter) => {
+  setCurrentQuarter: (q: RewardQuarter) => {
     set({ currentQuarter: q });
   },
 }));

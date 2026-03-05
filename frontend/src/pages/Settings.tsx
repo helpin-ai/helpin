@@ -5,11 +5,12 @@ import { useSessionStore } from '@/stores/sessionStore';
 import { settingsService } from '@/lib/services/settingsService';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
-import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation } from '@/lib/types';
+import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { LabelsSettings } from '@/components/pm/LabelsSettings';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import type { StateType, WorkflowState, WorkflowWithStates, EpicWorkflowState, PMAutomation, AutomationType } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,8 +21,10 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, Copy, GitBranch, Info, ListTree, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
+import { cn, getInitials } from '@/lib/utils';
+import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, GitBranch, Info, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
@@ -38,7 +41,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   {
     id: 'teams',
     label: 'Teams',
-    description: 'Create teams and define managers.',
+    description: 'Create teams, assign members, and manage team-level PM settings.',
     icon: Users,
     group: 'Workspace',
   },
@@ -93,10 +96,10 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   },
   {
     id: 'system',
-    label: 'System',
+    label: 'General',
     description: 'Control global workspace behavior and defaults.',
     icon: Settings2,
-    group: 'General',
+    group: 'Reward Settings',
   },
 ];
 
@@ -105,7 +108,14 @@ export const isSettingsSection = (value: string): value is SettingsSection =>
 
 const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
 
-export default function Settings({ section, initialWorkflowId }: { section: SettingsSection; initialWorkflowId?: string }) {
+const slugifyTeamHandle = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+export default function Settings({ section, initialWorkflowId, initialTeamId }: { section: SettingsSection; initialWorkflowId?: string; initialTeamId?: string }) {
   useTitle('Settings');
   const { currentWorkspace } = useWorkspaceStore();
   const { isAdmin } = useSessionStore();
@@ -172,6 +182,8 @@ export default function Settings({ section, initialWorkflowId }: { section: Sett
           <TeamsTab
             workspaceId={workspaceId}
             teams={settings.teams}
+            userMemberships={settings.user_memberships}
+            invitationPreassignments={settings.invitation_team_preassignments}
             editable={isAdmin()}
             onRefresh={load}
           />
@@ -179,7 +191,6 @@ export default function Settings({ section, initialWorkflowId }: { section: Sett
       case 'people':
         return (
           <PeopleTab
-            workspaceId={workspaceId}
             people={settings.people}
             editable={isAdmin()}
             onRefresh={load}
@@ -218,6 +229,7 @@ export default function Settings({ section, initialWorkflowId }: { section: Sett
             workspaceId={workspaceId}
             teams={settings.teams}
             editable={isAdmin()}
+            initialTeamId={initialTeamId}
           />
         );
       case 'workflowstates':
@@ -229,7 +241,7 @@ export default function Settings({ section, initialWorkflowId }: { section: Sett
           />
         );
       case 'labels':
-        return <LabelsSettings workspaceId={workspaceId} />;
+        return <LabelsSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
       case 'automations':
         return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} />;
       default:
@@ -239,10 +251,12 @@ export default function Settings({ section, initialWorkflowId }: { section: Sett
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
-        <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
-      </div>
+      {section !== 'teams' && (
+        <div>
+          <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
+          <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
+        </div>
+      )}
       {renderSection()}
     </div>
   );
@@ -461,15 +475,37 @@ function MembersTab({ workspaceId, editable }: {
                 </div>
                 <div className="space-y-2">
                   <Label>Role</Label>
-                  <Select value={invRole} onValueChange={setInvRole}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="manager">Manager</SelectItem>
-                      <SelectItem value="member">Member</SelectItem>
-                      <SelectItem value="viewer">Viewer</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-2">
+                    {([
+                      { value: 'admin', label: 'Admin', description: 'Full access to all settings, members, billing, and workspace configuration.' },
+                      { value: 'manager', label: 'Manager', description: 'Can manage teams, projects, sprints, and view performance data.' },
+                      { value: 'member', label: 'Member', description: 'Can create and edit stories, epics, and participate in sprints.' },
+                      { value: 'viewer', label: 'Viewer', description: 'Read-only access. Can view projects and dashboards but cannot make changes.' },
+                    ] as const).map((role) => (
+                      <button
+                        key={role.value}
+                        type="button"
+                        onClick={() => setInvRole(role.value)}
+                        className={cn(
+                          'flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors',
+                          invRole === role.value
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:bg-muted/50'
+                        )}
+                      >
+                        <div className={cn(
+                          'mt-0.5 h-4 w-4 shrink-0 rounded-full border-2',
+                          invRole === role.value
+                            ? 'border-primary bg-primary'
+                            : 'border-muted-foreground/40'
+                        )} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{role.label}</p>
+                          <p className="text-xs text-muted-foreground">{role.description}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <DialogFooter>
@@ -486,21 +522,95 @@ function MembersTab({ workspaceId, editable }: {
 
 /* ============ Teams Tab ============ */
 
-function TeamsTab({ workspaceId, teams, editable, onRefresh }: {
+function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, editable, onRefresh }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
+  userMemberships: TeamUserMembership[];
+  invitationPreassignments: InvitationTeamPreassignment[];
   editable: boolean;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
 }) {
+  const navigate = useNavigate();
+  const { currentWorkspace } = useWorkspaceStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTeam, setEditTeam] = useState<WorkspaceTeam | null>(null);
   const [name, setName] = useState('');
+  const [handle, setHandle] = useState('');
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState('');
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+
+  const [memberDialogOpen, setMemberDialogOpen] = useState(false);
+  const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedRole, setSelectedRole] = useState<'owner' | 'member'>('member');
+  const [savingMember, setSavingMember] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadMembers = async () => {
+      setMembersLoading(true);
+      try {
+        const [membersRes, invitesRes] = await Promise.all([
+          workspacesService.listMembers(workspaceId),
+          editable ? inviteService.list(workspaceId) : Promise.resolve({ data: null, error: null }),
+        ]);
+        if (!mounted) return;
+        if (membersRes.error) {
+          if (editable) toast.error(membersRes.error);
+          setWorkspaceMembers([]);
+        } else {
+          setWorkspaceMembers(
+            [...(membersRes.data ?? [])].sort((a, b) =>
+              (a.full_name || a.email).localeCompare(b.full_name || b.email),
+            ),
+          );
+        }
+        setInvitations((invitesRes.data ?? []).filter((inv) => inv.status === 'pending'));
+      } finally {
+        if (mounted) setMembersLoading(false);
+      }
+    };
+    loadMembers();
+    return () => { mounted = false; };
+  }, [workspaceId, editable]);
+
+  const filteredTeams = [...teams]
+    .filter((team) => {
+      const search = query.trim().toLowerCase();
+      if (!search) return true;
+      return [team.name, team.handle, team.description]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(search));
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const selectedTeam = selectedTeamId ? teams.find((t) => t.id === selectedTeamId) ?? null : null;
+
+  const getTeamMemberships = (teamId: string) =>
+    userMemberships
+      .filter((membership) => membership.team_id === teamId)
+      .map((membership) => ({
+        membership,
+        user: workspaceMembers.find((member) => member.user_id === membership.user_id),
+      }))
+      .sort((a, b) => (a.user?.full_name || a.user?.email || '').localeCompare(b.user?.full_name || b.user?.email || ''));
+
+  const teamMembers = selectedTeam
+    ? getTeamMemberships(selectedTeam.id)
+    : [];
+
+  const availableMembers = selectedTeam
+    ? workspaceMembers.filter((member) => !userMemberships.some((membership) => membership.team_id === selectedTeam.id && membership.user_id === member.user_id))
+    : [];
 
   const openCreate = () => {
     setEditTeam(null);
     setName('');
+    setHandle('');
     setDescription('');
     setDialogOpen(true);
   };
@@ -508,21 +618,43 @@ function TeamsTab({ workspaceId, teams, editable, onRefresh }: {
   const openEdit = (team: WorkspaceTeam) => {
     setEditTeam(team);
     setName(team.name);
+    setHandle(team.handle ?? '');
     setDescription(team.description ?? '');
     setDialogOpen(true);
+  };
+
+  const openMembers = (team: WorkspaceTeam) => {
+    setSelectedTeamId(team.id);
+    setSelectedUserId('');
+    setSelectedRole('member');
+    setMemberDialogOpen(true);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    const payload = {
+      name,
+      handle: handle.trim() ? slugifyTeamHandle(handle) : undefined,
+      description: description || undefined,
+    };
     if (editTeam) {
-      const { error } = await settingsService.updateTeam(editTeam.id, { name, description: description || undefined });
+      const { error } = await settingsService.updateTeam(editTeam.id, payload);
       if (error) toast.error(error);
-      else { toast.success('Team updated'); setDialogOpen(false); onRefresh(); }
+      else {
+        toast.success('Team updated');
+        setDialogOpen(false);
+        await onRefresh();
+      }
     } else {
-      const { error } = await settingsService.createTeam({ workspace_id: workspaceId, name, description: description || undefined });
+      const { data, error } = await settingsService.createTeam({ workspace_id: workspaceId, ...payload });
       if (error) toast.error(error);
-      else { toast.success('Team created'); setDialogOpen(false); onRefresh(); }
+      else {
+        toast.success('Team created');
+        setDialogOpen(false);
+        setSelectedTeamId(data?.id ?? null);
+        await onRefresh();
+      }
     }
     setSaving(false);
   };
@@ -530,65 +662,495 @@ function TeamsTab({ workspaceId, teams, editable, onRefresh }: {
   const handleDelete = async (id: string) => {
     const { error } = await settingsService.deleteTeam(id);
     if (error) toast.error(error);
-    else { toast.success('Team deleted'); onRefresh(); }
+    else {
+      toast.success('Team deleted');
+      setSelectedTeamId(null);
+      await onRefresh();
+    }
   };
 
-  return (
-    <Card className={LINEAR_CARD_CLASS}>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">Teams</CardTitle>
-            <CardDescription>{teams.length} team{teams.length !== 1 ? 's' : ''}</CardDescription>
+  const handleRoleChange = async (teamId: string, userId: string, role: 'owner' | 'member') => {
+    const { error } = await settingsService.updateTeamMember(teamId, userId, { role });
+    if (error) toast.error(error);
+    else {
+      toast.success('Team member updated');
+      await onRefresh();
+    }
+  };
+
+  const handleRemoveMember = async (teamId: string, userId: string) => {
+    const { error } = await settingsService.removeTeamMember(teamId, userId);
+    if (error) toast.error(error);
+    else {
+      toast.success('Team member removed');
+      await onRefresh();
+    }
+  };
+
+  const handleAddInvitation = async (teamId: string, invitationId: string) => {
+    const { error } = await settingsService.addTeamInvitation(teamId, invitationId);
+    if (error) toast.error(error);
+    else {
+      toast.success('Invited member pre-assigned to team');
+      await onRefresh();
+    }
+  };
+
+  const handleRemoveInvitation = async (teamId: string, invitationId: string) => {
+    const { error } = await settingsService.removeTeamInvitation(teamId, invitationId);
+    if (error) toast.error(error);
+    else {
+      toast.success('Invitation pre-assignment removed');
+      await onRefresh();
+    }
+  };
+
+  const openSettingsSection = (section: SettingsSection) => {
+    const slug = currentWorkspace?.slug;
+    if (!slug) return;
+    navigate({
+      to: '/w/$slug/settings/$section',
+      params: { slug, section },
+      search: { team: selectedTeamId ?? undefined },
+    });
+  };
+
+  // ── Detail view (team selected) ──
+  if (selectedTeam) {
+    const invitedCount = invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length;
+    const memberCount = teamMembers.length + invitedCount;
+    const settingsGroups: {
+      label?: string;
+      rows: { key: string; icon: LucideIcon; title: string; description: string; meta: string; action: () => void; disabled: boolean }[];
+    }[] = [
+      {
+        rows: [
+          {
+            key: 'general',
+            icon: Settings2,
+            title: 'General',
+            description: 'Name, identifier, and broader settings',
+            meta: selectedTeam.handle ? `@${selectedTeam.handle}` : '',
+            action: () => openEdit(selectedTeam),
+            disabled: !editable,
+          },
+          {
+            key: 'members',
+            icon: Users,
+            title: 'Members',
+            description: 'Manage team members',
+            meta: `${memberCount} member${memberCount === 1 ? '' : 's'}`,
+            action: () => openMembers(selectedTeam),
+            disabled: !editable,
+          },
+        ],
+      },
+      {
+        label: 'Issues, projects, and docs',
+        rows: [
+          {
+            key: 'labels',
+            icon: Tag,
+            title: 'Issue labels',
+            description: "Labels available to this team's issues",
+            meta: '',
+            action: () => openSettingsSection('labels'),
+            disabled: false,
+          },
+        ],
+      },
+      {
+        label: 'Workflow',
+        rows: [
+          {
+            key: 'workflow',
+            icon: GitBranch,
+            title: 'Issue statuses & automations',
+            description: 'Customize issue statuses and automations',
+            meta: '',
+            action: () => openSettingsSection('workflows'),
+            disabled: false,
+          },
+          {
+            key: 'automations',
+            icon: RefreshCw,
+            title: 'Automations',
+            description: 'Sprint and epic automations for this team',
+            meta: '',
+            action: () => openSettingsSection('automations'),
+            disabled: false,
+          },
+        ],
+      },
+    ];
+
+    return (
+      <>
+        <div className="space-y-8">
+          <button
+            type="button"
+            onClick={() => setSelectedTeamId(null)}
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronRight className="h-4 w-4 rotate-180" />
+            Teams
+          </button>
+
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-base font-semibold text-primary">
+              {getInitials(selectedTeam.name)}
+            </div>
+            <div className="flex min-w-0 flex-1 items-center justify-between">
+              <h2 className="text-xl font-semibold tracking-tight">{selectedTeam.name}</h2>
+              {editable && (
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => openMembers(selectedTeam)}>
+                    <Users className="h-4 w-4 mr-1" />
+                    Add member
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleDelete(selectedTeam.id)}>
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
-          {editable && (
-            <Button size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-1" /> Add Team
-            </Button>
-          )}
+
+          {settingsGroups.map((group) => (
+            <div key={group.label ?? '_default'} className="space-y-3">
+              {group.label && (
+                <h3 className="text-sm font-medium text-muted-foreground">{group.label}</h3>
+              )}
+              <div className="overflow-hidden rounded-lg border border-border bg-background">
+                {group.rows.map((row, idx) => (
+                  <button
+                    key={row.key}
+                    type="button"
+                    disabled={row.disabled}
+                    onClick={row.action}
+                    className={cn(
+                      'flex w-full items-center gap-4 px-4 py-4 text-left transition-colors',
+                      row.disabled ? 'cursor-not-allowed opacity-60' : 'hover:bg-muted/40',
+                      idx > 0 && 'border-t border-border',
+                    )}
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      <row.icon className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{row.title}</p>
+                      <p className="text-sm text-muted-foreground">{row.description}</p>
+                    </div>
+                    {row.meta && (
+                      <span className="hidden text-sm text-muted-foreground md:block">{row.meta}</span>
+                    )}
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-      </CardHeader>
-      <CardContent>
-        {teams.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">No teams yet.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                {editable && <TableHead className="w-24">Actions</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {teams.map(team => (
-                <TableRow key={team.id}>
-                  <TableCell className="font-medium">{team.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{team.description || '--'}</TableCell>
-                  {editable && (
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" onClick={() => openEdit(team)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="icon" variant="ghost" onClick={() => handleDelete(team.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent>
+            <form onSubmit={handleSubmit}>
+              <DialogHeader>
+                <DialogTitle>{editTeam ? 'Edit Team' : 'Create Team'}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Name</Label>
+                  <Input value={name} onChange={e => setName(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label>Handle</Label>
+                  <Input
+                    value={handle}
+                    onChange={e => setHandle(e.target.value)}
+                    placeholder={slugifyTeamHandle(name) || 'growth'}
+                  />
+                  <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    rows={4}
+                    placeholder="Describe what this team owns."
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={memberDialogOpen} onOpenChange={setMemberDialogOpen}>
+          <DialogContent className="max-w-lg gap-0 p-0">
+            <DialogHeader className="border-b px-5 py-4">
+              <DialogTitle className="text-base">{selectedTeam ? `${selectedTeam.name} members` : 'Team Members'}</DialogTitle>
+            </DialogHeader>
+
+            {editable && (availableMembers.length > 0 || (selectedTeam && invitations.filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id)).length > 0)) && (
+              <div className="flex items-center gap-2 border-b px-5 py-3">
+                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                  <SelectTrigger className="h-9 flex-1">
+                    <SelectValue placeholder={membersLoading ? 'Loading...' : 'Add a member...'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableMembers.length > 0 && availableMembers.map((member) => (
+                      <SelectItem key={member.user_id} value={`user:${member.user_id}`}>
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={member.full_name || member.email} className="h-5 w-5" fallbackClassName="text-[9px]" />
+                          {member.full_name || member.email}
+                        </div>
+                      </SelectItem>
+                    ))}
+                    {selectedTeam && invitations.filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id)).length > 0 && (
+                      <>
+                        {availableMembers.length > 0 && (
+                          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Pending invitations</div>
+                        )}
+                        {invitations
+                          .filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id))
+                          .map((inv) => (
+                            <SelectItem key={inv.id} value={`inv:${inv.id}`}>
+                              <div className="flex items-center gap-2">
+                                <UserAvatar name={inv.email} className="h-5 w-5" fallbackClassName="text-[9px]" />
+                                <span>{inv.email}</span>
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Invited</Badge>
+                              </div>
+                            </SelectItem>
+                          ))}
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+                {selectedUserId.startsWith('user:') && (
+                  <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as 'owner' | 'member')}>
+                    <SelectTrigger className="h-9 w-[110px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="owner">Owner</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                <Button
+                  size="sm"
+                  className="h-9"
+                  disabled={!selectedUserId || savingMember}
+                  onClick={async () => {
+                    if (!selectedTeam) return;
+                    if (selectedUserId.startsWith('user:')) {
+                      const uid = selectedUserId.replace('user:', '');
+                      setSavingMember(true);
+                      const { error } = await settingsService.addTeamMember(selectedTeam.id, { user_id: uid, role: selectedRole });
+                      setSavingMember(false);
+                      if (error) { toast.error(error); return; }
+                      toast.success('Team member added');
+                      setSelectedUserId('');
+                      setSelectedRole('member');
+                      await onRefresh();
+                    } else if (selectedUserId.startsWith('inv:')) {
+                      const invId = selectedUserId.replace('inv:', '');
+                      await handleAddInvitation(selectedTeam.id, invId);
+                      setSelectedUserId('');
+                    }
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+            )}
+
+            <div className="max-h-[400px] overflow-y-auto">
+              {selectedTeam && (teamMembers.length > 0 || invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length > 0) ? (
+                <div className="divide-y">
+                  {teamMembers.map(({ membership, user }) => (
+                    <div key={membership.id} className="flex items-center gap-3 px-5 py-3">
+                      <UserAvatar name={user?.full_name || user?.email || membership.user_id} className="h-8 w-8" fallbackClassName="text-xs" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{user?.full_name || 'Unknown user'}</p>
+                        <p className="truncate text-xs text-muted-foreground">{user?.email || membership.user_id}</p>
                       </div>
-                    </TableCell>
-                  )}
+                      {editable ? (
+                        <div className="flex items-center gap-1.5">
+                          <Select
+                            value={membership.role}
+                            onValueChange={(value) => handleRoleChange(membership.team_id, membership.user_id, value as 'owner' | 'member')}
+                          >
+                            <SelectTrigger className="h-7 w-[100px] text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="member">Member</SelectItem>
+                              <SelectItem value="owner">Owner</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleRemoveMember(membership.team_id, membership.user_id)}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <Badge variant="outline" className="text-xs capitalize">{membership.role}</Badge>
+                      )}
+                    </div>
+                  ))}
+                  {invitationPreassignments
+                    .filter((pa) => pa.team_id === selectedTeam.id)
+                    .map((pa) => {
+                      const inv = invitations.find((i) => i.id === pa.invitation_id);
+                      return (
+                        <div key={pa.id} className="flex items-center gap-3 px-5 py-3 bg-muted/30">
+                          <UserAvatar name={inv?.email || pa.invitation_id} className="h-8 w-8" fallbackClassName="text-xs" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{inv?.email || 'Pending invitation'}</p>
+                            <p className="truncate text-xs text-muted-foreground">Will join as member when accepted</p>
+                          </div>
+                          <Badge variant="secondary" className="text-xs">Invited</Badge>
+                          {editable && (
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleRemoveInvitation(selectedTeam.id, pa.invitation_id)}>
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  No team members yet. Add members above.
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
+
+  // ── List view (no team selected) ──
+  return (
+    <>
+      <div className="space-y-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Teams</h2>
+            <p className="text-sm text-muted-foreground">
+              Create teams, assign members, and manage team-level PM settings.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {teams.length > 0 && (
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="h-9 w-60 pl-9"
+                  placeholder="Search teams..."
+                />
+              </div>
+            )}
+            {editable && (
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="h-4 w-4 mr-1" />
+                New Team
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {teams.length === 0 ? (
+          <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-muted/60">
+              <Users className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-medium">No teams yet</p>
+              <p className="text-sm text-muted-foreground">
+                Create your first team to manage memberships, labels, and workflows.
+              </p>
+            </div>
+            {editable && (
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4 mr-1" />
+                Create Team
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-[280px]">Name</TableHead>
+                  <TableHead className="w-[140px]">Handle</TableHead>
+                  <TableHead className="w-[100px]">Members</TableHead>
+                  <TableHead>Description</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredTeams.map((team) => {
+                  const memberCount = getTeamMemberships(team.id).length;
+                  return (
+                    <TableRow
+                      key={team.id}
+                      className="cursor-pointer"
+                      onClick={() => setSelectedTeamId(team.id)}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-xs font-semibold text-primary">
+                            {getInitials(team.name)}
+                          </div>
+                          <span className="font-medium">{team.name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {team.handle ? (
+                          <span className="font-mono text-xs text-muted-foreground">@{team.handle}</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50">&mdash;</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">{memberCount}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="line-clamp-1 text-sm text-muted-foreground">
+                          {team.description || '\u2014'}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {filteredTeams.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                      No teams match your search.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         )}
-      </CardContent>
+      </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <form onSubmit={handleSubmit}>
             <DialogHeader>
-              <DialogTitle>{editTeam ? 'Edit Team' : 'Add Team'}</DialogTitle>
+              <DialogTitle>Create Team</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -596,8 +1158,22 @@ function TeamsTab({ workspaceId, teams, editable, onRefresh }: {
                 <Input value={name} onChange={e => setName(e.target.value)} required />
               </div>
               <div className="space-y-2">
+                <Label>Handle</Label>
+                <Input
+                  value={handle}
+                  onChange={e => setHandle(e.target.value)}
+                  placeholder={slugifyTeamHandle(name) || 'growth'}
+                />
+                <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
+              </div>
+              <div className="space-y-2">
                 <Label>Description</Label>
-                <Input value={description} onChange={e => setDescription(e.target.value)} />
+                <Textarea
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  rows={4}
+                  placeholder="Describe what this team owns."
+                />
               </div>
             </div>
             <DialogFooter>
@@ -607,14 +1183,13 @@ function TeamsTab({ workspaceId, teams, editable, onRefresh }: {
           </form>
         </DialogContent>
       </Dialog>
-    </Card>
+    </>
   );
 }
 
 /* ============ People Tab ============ */
 
-function PeopleTab({ workspaceId, people, editable, onRefresh }: {
-  workspaceId: string;
+function PeopleTab({ people, editable, onRefresh }: {
   people: WorkspacePerson[];
   editable: boolean;
   onRefresh: () => void;
@@ -1022,15 +1597,17 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
 
 /* ============ Workflows Tab ============ */
 
-function WorkflowsTab({ workspaceId, teams, editable }: {
+function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
   editable: boolean;
+  initialTeamId?: string;
 }) {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
   const [loading, setLoading] = useState(true);
+  const [teamFilter, setTeamFilter] = useState<string>(initialTeamId || '__all__');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editWorkflow, setEditWorkflow] = useState<WorkflowWithStates | null>(null);
   const [name, setName] = useState('');
@@ -1122,29 +1699,51 @@ function WorkflowsTab({ workspaceId, teams, editable }: {
     return teams.find((team) => team.id === id)?.name ?? 'Unknown Team';
   };
 
+  const filteredWorkflows = teamFilter === '__all__'
+    ? workflows
+    : teamFilter === '__default__'
+      ? workflows.filter((w) => !w.workflow.team_id)
+      : workflows.filter((w) => w.workflow.team_id === teamFilter);
+
   return (
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-base">Workflows</CardTitle>
-            <CardDescription>{workflows.length} workflow{workflows.length !== 1 ? 's' : ''}</CardDescription>
+            <CardDescription>{filteredWorkflows.length} workflow{filteredWorkflows.length !== 1 ? 's' : ''}</CardDescription>
           </div>
-          {editable && (
-            <Button size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-1" /> Create Workflow
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <Select value={teamFilter} onValueChange={setTeamFilter}>
+              <SelectTrigger className="h-8 w-[220px] text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All workflows</SelectItem>
+                <SelectItem value="__default__">Workspace default</SelectItem>
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={team.id}>
+                    {team.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {editable && (
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="h-4 w-4 mr-1" /> Create Workflow
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
         {loading ? (
           <p className="text-sm text-muted-foreground text-center py-6">Loading workflows...</p>
-        ) : workflows.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">No workflows yet.</p>
+        ) : filteredWorkflows.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">No workflows found.</p>
         ) : (
           <div className="space-y-2">
-            {workflows.map((workflow) => (
+            {filteredWorkflows.map((workflow) => (
               <div key={workflow.workflow.id} className="rounded-none border border-border px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>

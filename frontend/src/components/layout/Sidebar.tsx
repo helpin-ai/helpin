@@ -12,6 +12,7 @@ import {
   FileText,
   FolderKanban,
   GanttChart,
+  EllipsisVertical,
   Hexagon,
   Layers,
   LayoutDashboard,
@@ -218,7 +219,6 @@ export function Sidebar() {
         label: 'My Account',
         items: [
           { link: `/w/${wsSlug}/settings/profile`, label: 'Profile', icon: User },
-          { link: `/w/${wsSlug}/settings/system`, label: 'General', icon: Settings2 },
         ],
       },
       {
@@ -240,6 +240,7 @@ export function Sidebar() {
       {
         label: 'Reward Settings',
         items: [
+          { link: `/w/${wsSlug}/settings/system`, label: 'General', icon: Settings2 },
           { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
           { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
           { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },
@@ -430,12 +431,30 @@ export function Sidebar() {
                         onOpenChange={() => toggleTeam(team.id)}
                       >
                         <SidebarMenuItem>
-                          <Collapsible.Trigger asChild>
-                            <SidebarMenuButton className="h-8 rounded-md px-2">
-                              <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                              <span className="truncate">{team.name}</span>
-                            </SidebarMenuButton>
-                          </Collapsible.Trigger>
+                          <div className="group/team relative flex items-center">
+                            <Collapsible.Trigger asChild>
+                              <SidebarMenuButton className="h-8 rounded-md px-2 flex-1">
+                                <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                <span className="truncate">{team.name}</span>
+                              </SidebarMenuButton>
+                            </Collapsible.Trigger>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 data-[state=open]:opacity-100"
+                                >
+                                  <EllipsisVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent side="right" align="start">
+                                <DropdownMenuItem onClick={() => navigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'teams' } })}>
+                                  <Settings className="h-4 w-4" />
+                                  Settings
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                           <Collapsible.Content>
                             <SidebarMenuSub>
                               {teamSubItems.map((sub) => {

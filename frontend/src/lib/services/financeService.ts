@@ -1,9 +1,9 @@
 import { api } from '../api';
-import type { FinanceSettings } from '../types';
+import type { RewardFinanceSettings } from '../types';
 
-export const financeService = {
+export const rewardFinanceService = {
   get: (workspaceId: string, quarterId: string) =>
-    api.get<FinanceSettings>(`/finance?workspace_id=${workspaceId}&quarter_id=${quarterId}`),
-  upsert: (data: Partial<FinanceSettings>) =>
-    api.post<FinanceSettings>('/finance', data),
+    api.get<RewardFinanceSettings>(`/rewards/finance?workspace_id=${workspaceId}&quarter_id=${quarterId}`),
+  upsert: (data: Partial<RewardFinanceSettings>) =>
+    api.post<RewardFinanceSettings>('/rewards/finance', data),
 };

@@ -14,9 +14,10 @@ import {
   Quote,
   Strikethrough,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
 import { uploadEditorImage } from '@/hooks/useEditorImageUpload';
+import type { WorkspaceTeam } from '@/lib/types';
 import { ResizableImageExtension } from './resizable-image-extension';
 
 export type { EditorUploadConfig };
@@ -27,6 +28,7 @@ interface TiptapEditorProps {
   placeholder?: string;
   className?: string;
   uploadConfig?: EditorUploadConfig;
+  teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
 }
 
 function ToolbarButton({
@@ -51,9 +53,17 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, teams = [] }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
+  const [mentionState, setMentionState] = useState<{
+    from: number;
+    to: number;
+    items: Array<{ id: string; name: string; handle: string }>;
+    selectedIndex: number;
+  } | null>(null);
+  const mentionStateRef = useRef(mentionState);
+  mentionStateRef.current = mentionState;
 
   const handleImageUpload = useCallback(
     async (file: File, editorInstance: ReturnType<typeof useEditor>) => {
@@ -151,7 +161,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
       },
-      handlePaste: (view, event) => {
+      handlePaste: (_view, event) => {
         if (!uploadConfigRef.current) return false;
         const items = event.clipboardData?.items;
         if (!items) return false;
@@ -168,7 +178,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         }
         return false;
       },
-      handleDrop: (view, event, _slice, moved) => {
+      handleDrop: (_view, event, _slice, moved) => {
         if (!uploadConfigRef.current || moved) return false;
         const files = event.dataTransfer?.files;
         if (!files?.length) return false;
@@ -182,10 +192,80 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         }
         return false;
       },
+      handleKeyDown: (_view, event) => {
+        const currentMention = mentionStateRef.current;
+        if (!currentMention || currentMention.items.length === 0) return false;
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          setMentionState({
+            ...currentMention,
+            selectedIndex: (currentMention.selectedIndex + 1) % currentMention.items.length,
+          });
+          return true;
+        }
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          setMentionState({
+            ...currentMention,
+            selectedIndex: (currentMention.selectedIndex - 1 + currentMention.items.length) % currentMention.items.length,
+          });
+          return true;
+        }
+        if (event.key === 'Enter' || event.key === 'Tab') {
+          const selected = currentMention.items[currentMention.selectedIndex];
+          if (!selected || !editorRef.current) return false;
+          event.preventDefault();
+          editorRef.current
+            .chain()
+            .focus()
+            .insertContentAt({ from: currentMention.from, to: currentMention.to }, `@${selected.handle} `)
+            .run();
+          setMentionState(null);
+          return true;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setMentionState(null);
+          return true;
+        }
+        return false;
+      },
     },
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
+      if (teams.length === 0) {
+        setMentionState(null);
+        return;
+      }
+      const { selection } = editor.state;
+      if (!selection.empty) {
+        setMentionState(null);
+        return;
+      }
+      const textBefore = selection.$from.parent.textBetween(0, selection.$from.parentOffset, undefined, '\ufffc');
+      const match = textBefore.match(/(?:^|\s)@([a-z0-9-]*)$/i);
+      if (!match) {
+        setMentionState(null);
+        return;
+      }
+      const query = match[1].toLowerCase();
+      const items = teams
+        .filter((team): team is typeof team & { handle: string } => Boolean(team.handle))
+        .filter((team) => !query || team.handle.toLowerCase().includes(query) || team.name.toLowerCase().includes(query))
+        .slice(0, 6)
+        .map((team) => ({ id: team.id, name: team.name, handle: team.handle }));
+      if (items.length === 0) {
+        setMentionState(null);
+        return;
+      }
+      setMentionState({
+        from: selection.from - (query.length + 1),
+        to: selection.from,
+        items,
+        selectedIndex: 0,
+      });
     },
+    onBlur: () => setMentionState(null),
   });
 
   const editorRef = useRef(editor);
@@ -292,6 +372,39 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
 
       {/* Editor area */}
       <EditorContent editor={editor} className="min-h-0 flex-1 overflow-y-auto" />
+      {mentionState && mentionState.items.length > 0 ? (
+        <div className="border-t border-border/60 bg-muted/40 px-2 py-2">
+          <div className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Mention team
+          </div>
+          <div className="space-y-1">
+            {mentionState.items.map((team, index) => (
+              <button
+                key={team.id}
+                type="button"
+                className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                  index === mentionState.selectedIndex
+                    ? 'bg-accent text-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                }`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  if (!editorRef.current) return;
+                  editorRef.current
+                    .chain()
+                    .focus()
+                    .insertContentAt({ from: mentionState.from, to: mentionState.to }, `@${team.handle} `)
+                    .run();
+                  setMentionState(null);
+                }}
+              >
+                <span>{team.name}</span>
+                <span className="font-mono text-xs text-muted-foreground">@{team.handle}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

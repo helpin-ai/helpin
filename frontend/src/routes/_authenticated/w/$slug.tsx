@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { useQuarterStore } from '@/stores/quarterStore'
+import { useRewardQuarterStore } from '@/stores/quarterStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -31,7 +31,7 @@ function WorkspaceLayout() {
         : await useWorkspaceStore.getState().loadWorkspaceBySlug(slug)
       if (!ws) { setLoading(false); return }
       await Promise.all([
-        useQuarterStore.getState().loadQuarters(ws.id),
+        useRewardQuarterStore.getState().loadQuarters(ws.id),
         useSessionStore.getState().loadMembership(ws.id),
       ])
       setLoading(false)

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useQuarterStore } from '@/stores/quarterStore';
+import { useRewardQuarterStore } from '@/stores/quarterStore';
 import { useAuthStore } from '@/stores/authStore';
-import { bonusService } from '@/lib/services/bonusService';
-import { sprintsService } from '@/lib/services/sprintsService';
+import { rewardBonusService } from '@/lib/services/rewardBonusService';
+import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
 import { settingsService } from '@/lib/services/settingsService';
-import type { Sprint, BonusCalculation, IndividualCheck, WorkspaceSettings } from '@/lib/types';
+import type { RewardSprint, RewardBonusCalculation, RewardIndividualCheck, WorkspaceSettings } from '@/lib/types';
 import { formatCurrencyUSD, formatPercentage } from '@/lib/formatters';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,17 +19,17 @@ export default function MyQuarter() {
   useTitle('My Quarter');
   const { user } = useAuthStore();
   const { currentWorkspace } = useWorkspaceStore();
-  const { currentQuarter } = useQuarterStore();
-  const [sprints, setSprints] = useState<Sprint[]>([]);
-  const [myCalc, setMyCalc] = useState<BonusCalculation | null>(null);
-  const [checks, setChecks] = useState<Map<string, IndividualCheck[]>>(new Map());
+  const { currentQuarter } = useRewardQuarterStore();
+  const [sprints, setSprints] = useState<RewardSprint[]>([]);
+  const [myCalc, setMyCalc] = useState<RewardBonusCalculation | null>(null);
+  const [checks, setChecks] = useState<Map<string, RewardIndividualCheck[]>>(new Map());
   const [, setWsSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       const ws = useWorkspaceStore.getState().currentWorkspace;
-      const q = useQuarterStore.getState().currentQuarter;
+      const q = useRewardQuarterStore.getState().currentQuarter;
       const u = useAuthStore.getState().user;
       if (!ws?.id || !q?.id || !u?.id) {
         setSprints([]);
@@ -42,8 +42,8 @@ export default function MyQuarter() {
       setLoading(true);
       try {
         const [sprintsRes, calcRes, settingsRes] = await Promise.all([
-          sprintsService.list(q.id),
-          bonusService.getCalculations(ws.id, q.id),
+          rewardSprintsService.list(q.id),
+          rewardBonusService.getCalculations(ws.id, q.id),
           settingsService.getAll(ws.id),
         ]);
 
@@ -61,9 +61,9 @@ export default function MyQuarter() {
         }
 
         // Load individual checks for each sprint
-        const checksMap = new Map<string, IndividualCheck[]>();
+        const checksMap = new Map<string, RewardIndividualCheck[]>();
         for (const s of sprintList) {
-          const res = await sprintsService.getIndividualChecks(s.id, ws.id);
+          const res = await rewardSprintsService.getIndividualChecks(s.id, ws.id);
           if (res.data) {
             const myChecks = personRecord
               ? res.data.filter(c => c.employee_id === personRecord.id)

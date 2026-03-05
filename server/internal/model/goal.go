@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// CompanyGoal represents a row in the company_goals table.
-type CompanyGoal struct {
+// RewardCompanyGoal represents a row in the reward_company_goals table.
+type RewardCompanyGoal struct {
 	ID           string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID  string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	QuarterID    string    `json:"quarter_id" gorm:"type:uuid;not null;index"`
@@ -23,16 +23,16 @@ type CompanyGoal struct {
 	UpdatedAt    time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (CompanyGoal) TableName() string { return "company_goals" }
+func (RewardCompanyGoal) TableName() string { return "reward_company_goals" }
 
-// CompanyGoalWithContributions is a company goal with its team contributions.
-type CompanyGoalWithContributions struct {
-	CompanyGoal
-	TeamContributions []GoalTeamContribution `json:"team_contributions"`
+// RewardCompanyGoalWithContributions is a company goal with its team contributions.
+type RewardCompanyGoalWithContributions struct {
+	RewardCompanyGoal
+	TeamContributions []RewardGoalTeamContribution `json:"team_contributions"`
 }
 
-// GoalTeamContribution represents a row in the goal_team_contributions table.
-type GoalTeamContribution struct {
+// RewardGoalTeamContribution represents a row in the reward_goal_team_contributions table.
+type RewardGoalTeamContribution struct {
 	ID              string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	GoalID          string    `json:"goal_id" gorm:"type:uuid;not null;index"`
 	TeamID          string    `json:"team_id" gorm:"type:uuid;not null"`
@@ -44,10 +44,10 @@ type GoalTeamContribution struct {
 	UpdatedAt       time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (GoalTeamContribution) TableName() string { return "goal_team_contributions" }
+func (RewardGoalTeamContribution) TableName() string { return "reward_goal_team_contributions" }
 
-// SprintGoal represents a row in the sprint_goals table.
-type SprintGoal struct {
+// RewardSprintGoal represents a row in the reward_sprint_goals table.
+type RewardSprintGoal struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	SprintID    string    `json:"sprint_id" gorm:"type:uuid;not null;uniqueIndex:idx_sprint_goal_unique"`
 	TeamID      string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex:idx_sprint_goal_unique"`
@@ -60,10 +60,10 @@ type SprintGoal struct {
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (SprintGoal) TableName() string { return "sprint_goals" }
+func (RewardSprintGoal) TableName() string { return "reward_sprint_goals" }
 
-// GoalDraft represents a row in the goal_drafts table.
-type GoalDraft struct {
+// RewardGoalDraft represents a row in the reward_goal_drafts table.
+type RewardGoalDraft struct {
 	ID          string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	QuarterID   string          `json:"quarter_id" gorm:"type:uuid;not null;index"`
@@ -74,31 +74,31 @@ type GoalDraft struct {
 	UpdatedAt   time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (GoalDraft) TableName() string { return "goal_drafts" }
+func (RewardGoalDraft) TableName() string { return "reward_goal_drafts" }
 
-// CreateGoalRequest is the payload for creating a company goal.
-type CreateGoalRequest struct {
-	WorkspaceID       string                          `json:"workspace_id"`
-	QuarterID         string                          `json:"quarter_id"`
-	Title             string                          `json:"title"`
-	Description       *string                         `json:"description"`
-	GoalType          string                          `json:"goal_type"`
-	Baseline          *float64                        `json:"baseline"`
-	Target            *float64                        `json:"target"`
-	Unit              *string                         `json:"unit"`
-	TeamContributions []CreateTeamContributionRequest `json:"team_contributions"`
+// CreateRewardGoalRequest is the payload for creating a company goal.
+type CreateRewardGoalRequest struct {
+	WorkspaceID       string                                    `json:"workspace_id"`
+	QuarterID         string                                    `json:"quarter_id"`
+	Title             string                                    `json:"title"`
+	Description       *string                                   `json:"description"`
+	GoalType          string                                    `json:"goal_type"`
+	Baseline          *float64                                  `json:"baseline"`
+	Target            *float64                                  `json:"target"`
+	Unit              *string                                   `json:"unit"`
+	TeamContributions []CreateRewardGoalTeamContributionRequest `json:"team_contributions"`
 }
 
-// CreateTeamContributionRequest is a nested payload for goal team contributions.
-type CreateTeamContributionRequest struct {
+// CreateRewardGoalTeamContributionRequest is a nested payload for goal team contributions.
+type CreateRewardGoalTeamContributionRequest struct {
 	TeamID          string   `json:"team_id"`
 	ContributionPct float64  `json:"contribution_pct"`
 	TargetValue     *float64 `json:"target_value"`
 	Rationale       *string  `json:"rationale"`
 }
 
-// UpsertSprintGoalRequest is the payload for upserting a sprint goal.
-type UpsertSprintGoalRequest struct {
+// UpsertRewardSprintGoalRequest is the payload for upserting a sprint goal.
+type UpsertRewardSprintGoalRequest struct {
 	SprintID    string  `json:"sprint_id"`
 	TeamID      string  `json:"team_id"`
 	Title       string  `json:"title"`
@@ -108,15 +108,15 @@ type UpsertSprintGoalRequest struct {
 	KRID        *string `json:"kr_id"`
 }
 
-// CreateDraftRequest is the payload for creating a goal draft.
-type CreateDraftRequest struct {
+// CreateRewardDraftRequest is the payload for creating a goal draft.
+type CreateRewardDraftRequest struct {
 	WorkspaceID string          `json:"workspace_id"`
 	QuarterID   string          `json:"quarter_id"`
 	DraftData   json.RawMessage `json:"draft_data"`
 }
 
-// UpdateDraftRequest is the payload for updating a goal draft.
-type UpdateDraftRequest struct {
+// UpdateRewardDraftRequest is the payload for updating a goal draft.
+type UpdateRewardDraftRequest struct {
 	DraftData json.RawMessage `json:"draft_data"`
 	Status    *string         `json:"status"`
 }

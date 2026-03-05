@@ -203,6 +203,18 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 		log.Printf("Warning: failed to create workspace_people record: %v", err)
 	}
 
+	// Auto-assign teams from preassignments
+	preassignments, err := s.settingsRepo.GetInvitationTeamPreassignmentsByInvitation(ctx, inv.ID)
+	if err != nil {
+		log.Printf("Warning: failed to get invitation team preassignments: %v", err)
+	} else {
+		for _, pa := range preassignments {
+			if _, err := s.settingsRepo.AddTeamUserMembership(ctx, pa.TeamID, userID, "member"); err != nil {
+				log.Printf("Warning: failed to auto-assign team %s for invitation %s: %v", pa.TeamID, inv.ID, err)
+			}
+		}
+	}
+
 	// Update invitation status
 	now := time.Now()
 	if err := s.invitationRepo.UpdateStatus(ctx, inv.ID, "accepted", &now); err != nil {

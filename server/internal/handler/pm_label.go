@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -26,7 +27,12 @@ func (h *PMLabelHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
-	labels, err := h.labelService.ListByWorkspace(r.Context(), workspaceID)
+	includeShared, err := queryBoolDefault(r, "include_shared", true)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid include_shared query param")
+		return
+	}
+	labels, err := h.labelService.ListByWorkspace(r.Context(), workspaceID, queryStringPtr(r, "team_id"), includeShared)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -49,7 +55,12 @@ func (h *PMLabelHandler) ListWithStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid archived query param")
 		return
 	}
-	results, err := h.labelService.ListWithStats(r.Context(), workspaceID, archived)
+	includeShared, err := queryBoolDefault(r, "include_shared", true)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid include_shared query param")
+		return
+	}
+	results, err := h.labelService.ListWithStats(r.Context(), workspaceID, queryStringPtr(r, "team_id"), includeShared, archived)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -99,4 +110,12 @@ func (h *PMLabelHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "label deleted"})
+}
+
+func queryBoolDefault(r *http.Request, key string, fallback bool) (bool, error) {
+	value := r.URL.Query().Get(key)
+	if value == "" {
+		return fallback, nil
+	}
+	return strconv.ParseBool(value)
 }

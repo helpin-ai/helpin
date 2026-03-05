@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/d4interactive/teampulse/server/internal/middleware"
 	"github.com/d4interactive/teampulse/server/internal/model"
 	"github.com/d4interactive/teampulse/server/internal/service"
 )
@@ -55,13 +56,14 @@ func (h *SettingsHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 
 // CreateTeam handles POST /api/settings/teams.
 func (h *SettingsHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
 	var req model.CreateTeamRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	team, err := h.settingsService.CreateTeam(r.Context(), req)
+	team, err := h.settingsService.CreateTeam(r.Context(), req, userID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -98,6 +100,87 @@ func (h *SettingsHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "team deleted"})
+}
+
+// AddTeamMember handles POST /api/settings/teams/{id}/members.
+func (h *SettingsHandler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req model.AddTeamMemberRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	membership, err := h.settingsService.AddTeamMember(r.Context(), id, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, membership)
+}
+
+// UpdateTeamMember handles PUT /api/settings/teams/{id}/members/{userId}.
+func (h *SettingsHandler) UpdateTeamMember(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userID := chi.URLParam(r, "userId")
+
+	var req model.UpdateTeamMemberRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	membership, err := h.settingsService.UpdateTeamMember(r.Context(), id, userID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, membership)
+}
+
+// DeleteTeamMember handles DELETE /api/settings/teams/{id}/members/{userId}.
+func (h *SettingsHandler) DeleteTeamMember(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userID := chi.URLParam(r, "userId")
+	if err := h.settingsService.RemoveTeamMember(r.Context(), id, userID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "team member removed"})
+}
+
+// AddTeamInvitation handles POST /api/settings/teams/{id}/invitations.
+func (h *SettingsHandler) AddTeamInvitation(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	var req struct {
+		InvitationID string `json:"invitation_id"`
+	}
+	if err := decodeJSON(r, &req); err != nil || req.InvitationID == "" {
+		writeError(w, http.StatusBadRequest, "invitation_id is required")
+		return
+	}
+
+	entry, err := h.settingsService.AddInvitationTeamPreassignment(r.Context(), teamID, req.InvitationID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, entry)
+}
+
+// DeleteTeamInvitation handles DELETE /api/settings/teams/{id}/invitations/{invitationId}.
+func (h *SettingsHandler) DeleteTeamInvitation(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	invitationID := chi.URLParam(r, "invitationId")
+	if err := h.settingsService.RemoveInvitationTeamPreassignment(r.Context(), teamID, invitationID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "invitation preassignment removed"})
 }
 
 // CreatePerson handles POST /api/settings/people.

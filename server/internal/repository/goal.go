@@ -10,22 +10,22 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/model"
 )
 
-// GoalRepository handles database operations for goals, contributions, and sprint goals.
-type GoalRepository struct {
+// RewardGoalRepository handles database operations for goals, contributions, and sprint goals.
+type RewardGoalRepository struct {
 	db *gorm.DB
 }
 
-// NewGoalRepository creates a new GoalRepository.
-func NewGoalRepository(db *gorm.DB) *GoalRepository {
-	return &GoalRepository{db: db}
+// NewRewardGoalRepository creates a new RewardGoalRepository.
+func NewRewardGoalRepository(db *gorm.DB) *RewardGoalRepository {
+	return &RewardGoalRepository{db: db}
 }
 
 // CreateCompanyGoal inserts a company goal and its team contributions in a transaction.
-func (r *GoalRepository) CreateCompanyGoal(ctx context.Context, req model.CreateGoalRequest, createdBy string) (*model.CompanyGoalWithContributions, error) {
-	var result model.CompanyGoalWithContributions
+func (r *RewardGoalRepository) CreateCompanyGoal(ctx context.Context, req model.CreateRewardGoalRequest, createdBy string) (*model.RewardCompanyGoalWithContributions, error) {
+	var result model.RewardCompanyGoalWithContributions
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		goal := model.CompanyGoal{
+		goal := model.RewardCompanyGoal{
 			WorkspaceID: req.WorkspaceID,
 			QuarterID:   req.QuarterID,
 			Title:       req.Title,
@@ -40,9 +40,9 @@ func (r *GoalRepository) CreateCompanyGoal(ctx context.Context, req model.Create
 			return fmt.Errorf("insert company goal: %w", err)
 		}
 
-		var contributions []model.GoalTeamContribution
+		var contributions []model.RewardGoalTeamContribution
 		for _, tc := range req.TeamContributions {
-			c := model.GoalTeamContribution{
+			c := model.RewardGoalTeamContribution{
 				GoalID:          goal.ID,
 				TeamID:          tc.TeamID,
 				ContributionPct: tc.ContributionPct,
@@ -55,8 +55,8 @@ func (r *GoalRepository) CreateCompanyGoal(ctx context.Context, req model.Create
 			contributions = append(contributions, c)
 		}
 
-		result = model.CompanyGoalWithContributions{
-			CompanyGoal:       goal,
+		result = model.RewardCompanyGoalWithContributions{
+			RewardCompanyGoal: goal,
 			TeamContributions: contributions,
 		}
 		return nil
@@ -68,8 +68,8 @@ func (r *GoalRepository) CreateCompanyGoal(ctx context.Context, req model.Create
 }
 
 // ListCompanyGoals returns all company goals for a workspace/quarter with their team contributions.
-func (r *GoalRepository) ListCompanyGoals(ctx context.Context, workspaceID, quarterID string) ([]model.CompanyGoalWithContributions, error) {
-	var goals []model.CompanyGoal
+func (r *RewardGoalRepository) ListCompanyGoals(ctx context.Context, workspaceID, quarterID string) ([]model.RewardCompanyGoalWithContributions, error) {
+	var goals []model.RewardCompanyGoal
 	err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND quarter_id = ?", workspaceID, quarterID).
 		Order("created_at ASC").
@@ -78,17 +78,17 @@ func (r *GoalRepository) ListCompanyGoals(ctx context.Context, workspaceID, quar
 		return nil, fmt.Errorf("list company goals: %w", err)
 	}
 
-	var result []model.CompanyGoalWithContributions
+	var result []model.RewardCompanyGoalWithContributions
 	for _, g := range goals {
-		var contribs []model.GoalTeamContribution
+		var contribs []model.RewardGoalTeamContribution
 		if err := r.db.WithContext(ctx).
 			Where("goal_id = ?", g.ID).
 			Order("created_at ASC").
 			Find(&contribs).Error; err != nil {
 			return nil, fmt.Errorf("list contributions: %w", err)
 		}
-		result = append(result, model.CompanyGoalWithContributions{
-			CompanyGoal:       g,
+		result = append(result, model.RewardCompanyGoalWithContributions{
+			RewardCompanyGoal: g,
 			TeamContributions: contribs,
 		})
 	}
@@ -96,8 +96,8 @@ func (r *GoalRepository) ListCompanyGoals(ctx context.Context, workspaceID, quar
 }
 
 // UpsertSprintGoal inserts or updates a sprint goal.
-func (r *GoalRepository) UpsertSprintGoal(ctx context.Context, req model.UpsertSprintGoalRequest) (*model.SprintGoal, error) {
-	sg := &model.SprintGoal{
+func (r *RewardGoalRepository) UpsertSprintGoal(ctx context.Context, req model.UpsertRewardSprintGoalRequest) (*model.RewardSprintGoal, error) {
+	sg := &model.RewardSprintGoal{
 		SprintID:    req.SprintID,
 		TeamID:      req.TeamID,
 		Title:       req.Title,
@@ -116,7 +116,7 @@ func (r *GoalRepository) UpsertSprintGoal(ctx context.Context, req model.UpsertS
 		return nil, fmt.Errorf("upsert sprint goal: %w", err)
 	}
 	// Re-fetch to get correct ID and timestamps after upsert.
-	result := &model.SprintGoal{}
+	result := &model.RewardSprintGoal{}
 	if err := r.db.WithContext(ctx).
 		Where("sprint_id = ? AND team_id = ? AND title = ?", req.SprintID, req.TeamID, req.Title).
 		First(result).Error; err != nil {
@@ -126,13 +126,13 @@ func (r *GoalRepository) UpsertSprintGoal(ctx context.Context, req model.UpsertS
 }
 
 // ListSprintGoals returns all sprint goals for a given sprint, optionally filtered by team.
-func (r *GoalRepository) ListSprintGoals(ctx context.Context, sprintID string, teamID *string) ([]model.SprintGoal, error) {
+func (r *RewardGoalRepository) ListSprintGoals(ctx context.Context, sprintID string, teamID *string) ([]model.RewardSprintGoal, error) {
 	query := r.db.WithContext(ctx).Where("sprint_id = ?", sprintID)
 	if teamID != nil && *teamID != "" {
 		query = query.Where("team_id = ?", *teamID)
 	}
 
-	var goals []model.SprintGoal
+	var goals []model.RewardSprintGoal
 	if err := query.Order("created_at ASC").Find(&goals).Error; err != nil {
 		return nil, fmt.Errorf("list sprint goals: %w", err)
 	}
