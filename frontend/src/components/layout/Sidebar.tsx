@@ -222,16 +222,26 @@ export function Sidebar() {
         ],
       },
       {
-        label: 'Workspace Settings',
+        label: 'Workspace',
         items: [
           { link: `/w/${wsSlug}/settings/members`, label: 'Members', icon: Users },
           { link: `/w/${wsSlug}/settings/teams`, label: 'Teams', icon: Users },
-          { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
-          { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
+        ],
+      },
+      {
+        label: 'Project Settings',
+        items: [
           { link: `/w/${wsSlug}/settings/workflows`, label: 'Workflows', icon: FolderKanban },
           { link: `/w/${wsSlug}/settings/workflowstates`, label: 'Workflow States', icon: LayoutList },
           { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
           { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
+        ],
+      },
+      {
+        label: 'Reward Settings',
+        items: [
+          { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
+          { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
           { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },
         ],
       },
