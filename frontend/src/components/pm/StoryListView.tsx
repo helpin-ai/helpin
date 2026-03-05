@@ -11,10 +11,13 @@ import {
   type Row,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Check, ChevronDown, ChevronRight, Loader2, UserPlus } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronRight, Loader2, UserPlus } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Calendar } from '@/components/ui/calendar';
+import { format, parseISO } from 'date-fns';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import {
   PriorityIcon,
@@ -28,6 +31,7 @@ import {
 import { UserAvatar } from './UserAvatar';
 import type {
   Priority,
+  Severity,
   Story,
   WorkflowWithStates,
   EpicWithStats,
@@ -37,6 +41,7 @@ import type { MemberWithUser, WorkspaceTeam } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
+const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 
 interface StoryListViewProps {
   workspaceId: string;
@@ -85,6 +90,8 @@ const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
   owner: 'ownerName',
   team: 'teamName',
 };
+
+const HIDDEN_GROUP_COLUMNS = ['typeName', 'priorityName', 'severityName'];
 
 const columnHelper = createColumnHelper<Story>();
 
@@ -260,28 +267,26 @@ export function StoryListView({
       columnHelper.accessor('severity', {
         id: 'severityIcon',
         header: 'Severity',
-        size: 90,
+        size: 110,
         enableGrouping: false,
-        cell: (info) => {
-          const s = info.getValue();
-          if (s === 'none') return null;
-          return (
-            <span className="flex items-center gap-1.5 text-xs">
-              <SeverityIcon severity={s} className="h-3.5 w-3.5" />
-              {SEVERITY_CONFIG[s].label}
-            </span>
-          );
-        },
+        cell: (info) => (
+          <InlineSeverityCell
+            story={info.row.original}
+            onUpdate={updateStoryField}
+          />
+        ),
       }),
       columnHelper.accessor('estimate', {
         id: 'estimate',
         header: 'Estimate',
-        size: 70,
+        size: 80,
         enableGrouping: false,
-        cell: (info) => {
-          const v = info.getValue();
-          return v != null ? <span className="text-xs text-muted-foreground">{v} pts</span> : null;
-        },
+        cell: (info) => (
+          <InlineEstimateCell
+            story={info.row.original}
+            onUpdate={updateStoryField}
+          />
+        ),
       }),
       columnHelper.accessor(
         (row) => (row.owner_id ? memberMap.get(row.owner_id) ?? 'Unknown' : 'Unassigned'),
@@ -304,11 +309,15 @@ export function StoryListView({
         {
           id: 'teamName',
           header: 'Team',
-          size: 120,
-          cell: (info) => {
-            const v = info.getValue();
-            return v !== 'No Team' ? <span className="truncate text-xs">{v}</span> : null;
-          },
+          size: 130,
+          cell: (info) => (
+            <InlineTeamCell
+              story={info.row.original}
+              teams={teams}
+              teamMap={teamMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor(
@@ -316,11 +325,15 @@ export function StoryListView({
         {
           id: 'epicName',
           header: 'Epic',
-          size: 140,
-          cell: (info) => {
-            const v = info.getValue();
-            return v !== 'No Epic' ? <span className="truncate text-xs">{v}</span> : null;
-          },
+          size: 150,
+          cell: (info) => (
+            <InlineEpicCell
+              story={info.row.original}
+              epics={epics}
+              epicMap={epicMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor(
@@ -328,11 +341,15 @@ export function StoryListView({
         {
           id: 'sprintName',
           header: 'Sprint',
-          size: 130,
-          cell: (info) => {
-            const v = info.getValue();
-            return v !== 'No Sprint' ? <span className="truncate text-xs">{v}</span> : null;
-          },
+          size: 140,
+          cell: (info) => (
+            <InlineSprintCell
+              story={info.row.original}
+              sprints={sprints}
+              sprintMap={sprintMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor(
@@ -368,27 +385,23 @@ export function StoryListView({
       columnHelper.accessor('deadline', {
         id: 'deadline',
         header: 'Deadline',
-        size: 100,
+        size: 120,
         enableGrouping: false,
-        cell: (info) => {
-          const v = info.getValue();
-          if (!v) return null;
-          const d = new Date(v);
-          const now = new Date();
-          const isOverdue = d < now;
-          return (
-            <span className={`text-xs ${isOverdue ? 'text-red-500' : 'text-muted-foreground'}`}>
-              {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
-          );
-        },
+        cell: (info) => (
+          <InlineDeadlineCell
+            story={info.row.original}
+            onUpdate={updateStoryField}
+          />
+        ),
       }),
     ],
-    [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, members, updateStoryField]
+    [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, members, teams, epics, sprints, updateStoryField]
   );
 
-  // Hidden columns (for grouping only)
-  const hiddenGroupColumns = ['typeName', 'priorityName', 'severityName'];
+  const columnVisibility = useMemo(
+    () => Object.fromEntries(HIDDEN_GROUP_COLUMNS.map((c) => [c, false])),
+    [],
+  );
 
   const grouping: GroupingState = useMemo(() => {
     const colId = GROUP_COLUMN_MAP[groupBy];
@@ -401,7 +414,7 @@ export function StoryListView({
     state: {
       grouping,
       expanded,
-      columnVisibility: Object.fromEntries(hiddenGroupColumns.map((c) => [c, false])),
+      columnVisibility,
     },
     onExpandedChange: setExpanded,
     getExpandedRowModel: getExpandedRowModel(),
@@ -762,6 +775,397 @@ function InlineOwnerCell({
               </CommandGroup>
             </CommandList>
           </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineSeverityCell({
+  story,
+  onUpdate,
+}: {
+  story: Story;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const s = story.severity;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {s !== 'none' ? (
+            <>
+              <SeverityIcon severity={s} className="h-3.5 w-3.5" />
+              {SEVERITY_CONFIG[s].label}
+            </>
+          ) : (
+            <span className="text-muted-foreground">None</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[180px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandGroup>
+                {ALL_SEVERITIES.map((sev) => {
+                  const cfg = SEVERITY_CONFIG[sev];
+                  return (
+                    <CommandItem
+                      key={sev}
+                      value={cfg.label}
+                      onSelect={() => {
+                        if (sev !== s) onUpdate(story.id, { severity: sev });
+                        setOpen(false);
+                      }}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <SeverityIcon severity={sev} className="h-3.5 w-3.5" />
+                      <span>{cfg.label}</span>
+                      {s === sev && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineEstimateCell({
+  story,
+  onUpdate,
+}: {
+  story: Story;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(story.estimate?.toString() ?? '');
+
+  const save = () => {
+    const num = value.trim() === '' ? null : Number(value);
+    if (num !== story.estimate && (num === null || !isNaN(num))) {
+      onUpdate(story.id, { estimate: num as number });
+    }
+    setOpen(false);
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        if (o) setValue(story.estimate?.toString() ?? '');
+        else save();
+        setOpen(o);
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {story.estimate != null ? (
+            <span className="text-muted-foreground">{story.estimate} pts</span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[120px] p-2"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Input
+            type="number"
+            min={0}
+            placeholder="Points"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') save();
+              if (e.key === 'Escape') setOpen(false);
+            }}
+            className="h-7 text-xs"
+            autoFocus
+          />
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineTeamCell({
+  story,
+  teams,
+  teamMap,
+  onUpdate,
+}: {
+  story: Story;
+  teams: WorkspaceTeam[];
+  teamMap: Map<string, string>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const teamName = story.team_id ? teamMap.get(story.team_id) ?? 'Unknown' : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {teamName ? (
+            <span className="truncate">{teamName}</span>
+          ) : (
+            <span className="text-muted-foreground">No Team</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[200px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search teams..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No teams found</CommandEmpty>
+              <CommandGroup>
+                {teams.map((t) => (
+                  <CommandItem
+                    key={t.id}
+                    value={t.name}
+                    onSelect={() => {
+                      const newTeamId = story.team_id === t.id ? undefined : t.id;
+                      onUpdate(story.id, { team_id: newTeamId });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span className="truncate">{t.name}</span>
+                    {story.team_id === t.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineEpicCell({
+  story,
+  epics,
+  epicMap,
+  onUpdate,
+}: {
+  story: Story;
+  epics: EpicWithStats[];
+  epicMap: Map<string, string>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const epicName = story.epic_id ? epicMap.get(story.epic_id) ?? 'Unknown' : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {epicName ? (
+            <span className="truncate">{epicName}</span>
+          ) : (
+            <span className="text-muted-foreground">No Epic</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[220px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search epics..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No epics found</CommandEmpty>
+              <CommandGroup>
+                {epics.map((e) => (
+                  <CommandItem
+                    key={e.epic.id}
+                    value={e.epic.name}
+                    onSelect={() => {
+                      const newEpicId = story.epic_id === e.epic.id ? undefined : e.epic.id;
+                      onUpdate(story.id, { epic_id: newEpicId });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span className="truncate">{e.epic.name}</span>
+                    {story.epic_id === e.epic.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineSprintCell({
+  story,
+  sprints,
+  sprintMap,
+  onUpdate,
+}: {
+  story: Story;
+  sprints: SprintWithStats[];
+  sprintMap: Map<string, string>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const sprintName = story.sprint_id ? sprintMap.get(story.sprint_id) ?? 'Unknown' : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {sprintName ? (
+            <span className="truncate">{sprintName}</span>
+          ) : (
+            <span className="text-muted-foreground">No Sprint</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[220px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search sprints..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No sprints found</CommandEmpty>
+              <CommandGroup>
+                {sprints.map((sp) => (
+                  <CommandItem
+                    key={sp.sprint.id}
+                    value={sp.sprint.name}
+                    onSelect={() => {
+                      const newSprintId = story.sprint_id === sp.sprint.id ? undefined : sp.sprint.id;
+                      onUpdate(story.id, { sprint_id: newSprintId });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span className="truncate">{sp.sprint.name}</span>
+                    {story.sprint_id === sp.sprint.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineDeadlineCell({
+  story,
+  onUpdate,
+}: {
+  story: Story;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const v = story.deadline;
+  const selected = v ? parseISO(v) : undefined;
+  const isOverdue = selected ? selected < new Date() : false;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {selected ? (
+            <>
+              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className={isOverdue ? 'text-red-500' : 'text-muted-foreground'}>
+                {format(selected, 'MMM d, yyyy')}
+              </span>
+            </>
+          ) : (
+            <>
+              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">No date</span>
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-auto p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Calendar
+            mode="single"
+            selected={selected}
+            defaultMonth={selected}
+            onSelect={(date) => {
+              onUpdate(story.id, { deadline: date ? format(date, 'yyyy-MM-dd') : undefined });
+              setOpen(false);
+            }}
+          />
         </PopoverContent>
       )}
     </Popover>
