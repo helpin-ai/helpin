@@ -27,66 +27,76 @@ import { toast } from 'sonner';
 
 export type SettingsSection = 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'system';
 
-export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon }[] = [
+export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
     id: 'members',
     label: 'Members',
     description: 'Manage workspace members and invitations.',
     icon: Users,
+    group: 'Workspace',
   },
   {
     id: 'teams',
     label: 'Teams',
     description: 'Create teams and define managers.',
     icon: Users,
-  },
-  {
-    id: 'people',
-    label: 'People',
-    description: 'Edit HR details, job roles, and compensation for workspace members.',
-    icon: UserPlus,
-  },
-  {
-    id: 'jobroles',
-    label: 'Job Roles',
-    description: 'Configure role-based individual evaluation criteria.',
-    icon: Briefcase,
-  },
-  {
-    id: 'tiers',
-    label: 'Bonus Tiers',
-    description: 'Set score bands and multipliers for payouts.',
-    icon: Award,
+    group: 'Workspace',
   },
   {
     id: 'workflows',
     label: 'Workflows',
     description: 'Configure team workflows and ownership behavior.',
     icon: GitBranch,
+    group: 'Project Settings',
   },
   {
     id: 'workflowstates',
     label: 'Workflow States',
     description: 'Manage state columns and rules within workflows.',
     icon: ListTree,
+    group: 'Project Settings',
   },
   {
     id: 'labels',
     label: 'Labels',
     description: 'Create and manage labels for stories, epics, and sprints.',
     icon: Tag,
+    group: 'Project Settings',
   },
   {
     id: 'automations',
     label: 'Automations',
     description: 'Automate epic transitions and sprint management.',
     icon: RefreshCw,
+    group: 'Project Settings',
+  },
+  {
+    id: 'people',
+    label: 'People',
+    description: 'Edit HR details, job roles, and compensation for workspace members.',
+    icon: UserPlus,
+    group: 'Reward Settings',
+  },
+  {
+    id: 'jobroles',
+    label: 'Job Roles',
+    description: 'Configure role-based individual evaluation criteria.',
+    icon: Briefcase,
+    group: 'Reward Settings',
+  },
+  {
+    id: 'tiers',
+    label: 'Bonus Tiers',
+    description: 'Set score bands and multipliers for payouts.',
+    icon: Award,
+    group: 'Reward Settings',
   },
   {
     id: 'system',
     label: 'System',
     description: 'Control global workspace behavior and defaults.',
     icon: Settings2,
+    group: 'General',
   },
 ];
 
@@ -1598,27 +1608,30 @@ function AutomationsTab({ workspaceId, teams }: {
   const [epicStates, setEpicStates] = useState<EpicWorkflowState[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [autoRes, statesRes] = await Promise.all([
-        pmAutomationService.list(workspaceId),
-        pmWorkflowService.listEpicStates(workspaceId),
-      ]);
-      if (autoRes.data) setAutomations(autoRes.data);
-      if (statesRes.data) setEpicStates(statesRes.data);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadData(); }, [workspaceId]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [autoRes, statesRes] = await Promise.all([
+          pmAutomationService.list(workspaceId),
+          pmWorkflowService.listEpicStates(workspaceId),
+        ]);
+        if (cancelled) return;
+        if (autoRes.data) setAutomations(autoRes.data);
+        if (statesRes.data) setEpicStates(statesRes.data);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [workspaceId]);
 
   const getAuto = (type: AutomationType, teamId?: string): PMAutomation | undefined =>
     automations.find((a) => a.automation_type === type && (teamId ? a.team_id === teamId : !a.team_id));
 
   const upsert = async (type: AutomationType, enabled: boolean, opts?: { teamId?: string; configStateId?: string; configInt?: number; configInt2?: number; configInt3?: number }) => {
-    await pmAutomationService.upsert(workspaceId, {
+    const payload = {
       workspace_id: workspaceId,
       automation_type: type,
       enabled,
@@ -1627,13 +1640,38 @@ function AutomationsTab({ workspaceId, teams }: {
       config_int: opts?.configInt,
       config_int2: opts?.configInt2,
       config_int3: opts?.configInt3,
+    } as const;
+
+    // Optimistic update
+    setAutomations((prev) => {
+      const idx = prev.findIndex((a) => a.automation_type === type && (opts?.teamId ? a.team_id === opts.teamId : !a.team_id));
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], enabled, config_state_id: opts?.configStateId, config_int: opts?.configInt, config_int2: opts?.configInt2, config_int3: opts?.configInt3 };
+        return updated;
+      }
+      return [...prev, { id: 'temp-' + Date.now(), workspace_id: workspaceId, automation_type: type, enabled, team_id: opts?.teamId, config_state_id: opts?.configStateId, config_int: opts?.configInt, config_int2: opts?.configInt2, config_int3: opts?.configInt3, created_at: '', updated_at: '' }];
     });
-    await loadData();
+
+    const res = await pmAutomationService.upsert(workspaceId, payload);
+    if (res.data) {
+      // Replace temp/stale entry with server response
+      setAutomations((prev) => {
+        const idx = prev.findIndex((a) => a.automation_type === type && (opts?.teamId ? a.team_id === opts.teamId : !a.team_id));
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = res.data!;
+          return updated;
+        }
+        return prev;
+      });
+    }
   };
 
   const removeAuto = async (type: AutomationType, teamId?: string) => {
+    // Optimistic removal
+    setAutomations((prev) => prev.filter((a) => !(a.automation_type === type && (teamId ? a.team_id === teamId : !a.team_id))));
     await pmAutomationService.remove(workspaceId, type, teamId);
-    await loadData();
   };
 
   const startedStates = epicStates.filter((s) => s.state_type === 'started');
