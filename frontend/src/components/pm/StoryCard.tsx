@@ -12,10 +12,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { UserAvatar } from './UserAvatar';
-import type { Priority, Severity, Story, WorkflowState } from '@/lib/pmTypes';
+import type { Priority, Severity, Story } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
@@ -45,9 +45,7 @@ interface StoryCardProps {
   teamName?: string;
   workspaceId?: string;
   members?: MemberWithUser[];
-  states?: WorkflowState[];
   onOwnerChanged?: (story: Story) => void;
-  onStoryMoved?: (storyId: string, fromStateId: string, toStateId: string) => void;
   onPriorityChanged?: (story: Story) => void;
   onSeverityChanged?: (story: Story) => void;
 }
@@ -59,9 +57,7 @@ export function StoryCard({
   teamName,
   workspaceId,
   members,
-  states,
   onOwnerChanged,
-  onStoryMoved,
   onPriorityChanged,
   onSeverityChanged,
 }: StoryCardProps) {
@@ -82,8 +78,6 @@ export function StoryCard({
   const [memberOpen, setMemberOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
-  const [stateOpen, setStateOpen] = useState(false);
-
   const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(story.team_id));
 
   const due = useMemo(() => {
@@ -106,8 +100,6 @@ export function StoryCard({
 
   const priorityCfg = PRIORITY_CONFIG[story.priority];
   const storyTypeCfg = STORY_TYPE_CONFIG[story.story_type];
-  const currentState = states?.find((s) => s.id === story.workflow_state_id);
-
   const handleAssignOwner = useCallback(
     async (member: MemberWithUser) => {
       if (!workspaceId) return;
@@ -163,18 +155,6 @@ export function StoryCard({
     [workspaceId, story.id, story.severity, onSeverityChanged],
   );
 
-  const handleChangeState = useCallback(
-    (stateId: string) => {
-      if (stateId === story.workflow_state_id) {
-        setStateOpen(false);
-        return;
-      }
-      onStoryMoved?.(story.id, story.workflow_state_id, stateId);
-      setStateOpen(false);
-    },
-    [story.id, story.workflow_state_id, onStoryMoved],
-  );
-
   const titleIsLong = story.name.length > 60;
 
   return (
@@ -199,7 +179,7 @@ export function StoryCard({
         isOverlay && 'ring-1 ring-primary/30 shadow-lg',
       )}
     >
-      {/* Row 1: Story type + Epic + Priority */}
+      {/* Row 1: Story type + Epic + Team + Priority */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {fieldVis.story_type && (
         <Tooltip>
@@ -212,7 +192,20 @@ export function StoryCard({
         </Tooltip>
         )}
         {fieldVis.epic && story.epic_name && (
-          <span className="truncate text-[11px] text-muted-foreground max-w-[160px]">{story.epic_name}</span>
+          <span className="truncate text-[11px] text-muted-foreground max-w-[120px]">{story.epic_name}</span>
+        )}
+
+        <span className="flex-1" />
+
+        {teamName && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
+                {teamName}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">Team: {teamName}</TooltipContent>
+          </Tooltip>
         )}
 
         {/* Priority pill — clickable dropdown */}
@@ -224,7 +217,7 @@ export function StoryCard({
                   <button
                     type="button"
                     className={cn(
-                      'ml-auto flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 transition-colors hover:bg-muted',
+                      'flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 transition-colors hover:bg-muted',
                       PRIORITY_BORDER_COLOR[story.priority],
                     )}
                     onClick={(e) => { e.stopPropagation(); setPriorityOpen(true); }}
@@ -273,7 +266,7 @@ export function StoryCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(
-                'ml-auto flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
+                'flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
                 PRIORITY_BORDER_COLOR[story.priority],
               )}>
                 <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
@@ -302,78 +295,6 @@ export function StoryCard({
 
       {/* Row 3: Property pills */}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {/* State pill — clickable dropdown */}
-        {currentState && states && states.length > 0 && onStoryMoved ? (
-          <Popover open={stateOpen} onOpenChange={setStateOpen}>
-            <Tooltip open={stateOpen ? false : undefined}>
-              <TooltipTrigger asChild>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground transition-colors hover:bg-muted')}
-                    onClick={(e) => { e.stopPropagation(); setStateOpen(true); }}
-                  >
-                    <StateTypeIcon stateType={currentState.state_type} className="h-3 w-3" />
-                    {currentState.name}
-                  </button>
-                </PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top">State: {currentState.name}</TooltipContent>
-            </Tooltip>
-            {stateOpen && (
-              <PopoverContent
-                className="w-[200px] p-0"
-                align="start"
-                side="bottom"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-              >
-                <Command>
-                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
-                  <CommandList>
-                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
-                    <CommandGroup>
-                      {states.map((s) => (
-                        <CommandItem
-                          key={s.id}
-                          value={s.name}
-                          onSelect={() => handleChangeState(s.id)}
-                          className="flex items-center gap-2 text-xs"
-                        >
-                          <StateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
-                          <span>{s.name}</span>
-                          {story.workflow_state_id === s.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            )}
-          </Popover>
-        ) : currentState ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
-                <StateTypeIcon stateType={currentState.state_type} className="h-3 w-3" />
-                {currentState.name}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">State: {currentState.name}</TooltipContent>
-          </Tooltip>
-        ) : null}
-
-        {fieldVis.estimate && story.estimate != null && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
-                {formatEstimateDisplay(story.estimate, story.team_id)}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">Estimate: {formatEstimateDisplay(story.estimate, story.team_id)}</TooltipContent>
-          </Tooltip>
-        )}
-
         {/* Severity pill — clickable dropdown */}
         {fieldVis.severity && (severityCfg && workspaceId ? (
           <Popover open={severityOpen} onOpenChange={setSeverityOpen}>
@@ -450,6 +371,14 @@ export function StoryCard({
           </Tooltip>
         )}
 
+        {/* Labels */}
+        {story.labels && story.labels.length > 0 && story.labels.map((label) => (
+          <LabelBadge key={label.id} label={label} />
+        ))}
+      </div>
+
+      {/* Row 4: Footer - due date, estimate + assignee */}
+      <div className="mt-2 flex items-center gap-1.5">
         {fieldVis.due_date && due && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -470,28 +399,17 @@ export function StoryCard({
             </TooltipContent>
           </Tooltip>
         )}
-
-        {/* Labels */}
-        {story.labels && story.labels.length > 0 && story.labels.map((label) => (
-          <LabelBadge key={label.id} label={label} />
-        ))}
-      </div>
-
-      {/* Row 4: Footer - team, assignee */}
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {teamName && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
-                  {teamName}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">Team: {teamName}</TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-
+        {fieldVis.estimate && story.estimate != null && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
+                {formatEstimateDisplay(story.estimate, story.team_id)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">Estimate: {formatEstimateDisplay(story.estimate, story.team_id)}</TooltipContent>
+          </Tooltip>
+        )}
+        <span className="flex-1" />
         {/* Assignee avatar / assign button */}
         {members && workspaceId ? (
           <Popover open={memberOpen} onOpenChange={setMemberOpen}>

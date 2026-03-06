@@ -130,9 +130,7 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
               teamName={findTeamName(story.team_id)}
               workspaceId={workspaceId}
               members={members}
-              states={states}
               onOwnerChanged={onOwnerChanged}
-              onStoryMoved={onStoryMoved}
               onPriorityChanged={onPriorityChanged}
               onSeverityChanged={onSeverityChanged}
             />

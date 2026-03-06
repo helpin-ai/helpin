@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { Building2, Check, ChevronsUpDown, ExternalLink } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useOrganizationStore } from '@/stores/organizationStore';
 import type { Workspace } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -21,14 +22,15 @@ export function WorkspaceSwitcher() {
   const location = useLocation();
   const { isMobile } = useSidebar();
   const { workspaces, currentWorkspace, setCurrentWorkspace, loadWorkspaces } = useWorkspaceStore();
+  const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
   useEffect(() => {
     if (workspaces.length === 0) {
-      void loadWorkspaces();
+      void loadWorkspaces(currentOrganization?.id);
     }
-  }, [workspaces.length, loadWorkspaces]);
+  }, [workspaces.length, loadWorkspaces, currentOrganization?.id]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -58,6 +60,9 @@ export function WorkspaceSwitcher() {
                 <Building2 className="h-4 w-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
+                {currentOrganization && (
+                  <span className="truncate text-[10px] text-muted-foreground">{currentOrganization.name}</span>
+                )}
                 <span className="truncate font-semibold">{currentWorkspace.name}</span>
               </div>
               <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-muted-foreground" />

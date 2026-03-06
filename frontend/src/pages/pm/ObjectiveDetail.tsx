@@ -28,6 +28,7 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import type { MemberWithUser, WorkspacePerson } from '@/lib/types';
 import type {
   EpicWithStats,
@@ -574,16 +575,8 @@ export function ObjectiveDetailPage() {
           <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
         </div>
 
-        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-          {saving ? (
-            <span className="inline-flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Saving...
-            </span>
-          ) : (
-            <span>All changes saved</span>
-          )}
-          {saveError && <span className="ml-2 text-destructive">{saveError}</span>}
+        <div className="ml-auto flex items-center gap-1">
+          <SaveIndicator saving={saving} error={saveError} />
         </div>
       </div>
 

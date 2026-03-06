@@ -4,14 +4,15 @@ import "time"
 
 // Workspace represents a row in the workspaces table.
 type Workspace struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	Name        string    `json:"name" gorm:"not null"`
-	Slug        string    `json:"slug" gorm:"uniqueIndex;not null"`
-	OwnerID     string    `json:"owner_id" gorm:"type:uuid;not null"`
-	Description *string   `json:"description"`
-	Timezone    string    `json:"timezone" gorm:"not null;default:'UTC'"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	Name           string    `json:"name" gorm:"not null"`
+	Slug           string    `json:"slug" gorm:"uniqueIndex;not null"`
+	OwnerID        string    `json:"owner_id" gorm:"type:uuid;not null"`
+	OrganizationID *string   `json:"organization_id" gorm:"type:uuid"`
+	Description    *string   `json:"description"`
+	Timezone       string    `json:"timezone" gorm:"not null;default:'UTC'"`
+	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt      time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (Workspace) TableName() string { return "workspaces" }
@@ -46,10 +47,11 @@ type MemberWithUser struct {
 
 // CreateWorkspaceRequest is the payload for POST /api/workspaces.
 type CreateWorkspaceRequest struct {
-	Name        string  `json:"name"`
-	Slug        string  `json:"slug"`
-	Description *string `json:"description"`
-	Timezone    string  `json:"timezone"`
+	Name           string  `json:"name"`
+	Slug           string  `json:"slug"`
+	OrganizationID string  `json:"organization_id"`
+	Description    *string `json:"description"`
+	Timezone       string  `json:"timezone"`
 }
 
 // UpdateWorkspaceRequest is the payload for PUT /api/workspaces/{id}.

@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useOrganizationStore } from '@/stores/organizationStore'
 import { useRewardQuarterStore } from '@/stores/quarterStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useTeamEstimateStore } from '@/stores/teamEstimateStore'
@@ -33,6 +34,17 @@ function WorkspaceLayout() {
         ? cachedWs
         : await useWorkspaceStore.getState().loadWorkspaceBySlug(slug)
       if (!ws) { setLoading(false); return }
+      // Load organization context if not already loaded.
+      const orgStore = useOrganizationStore.getState()
+      if (orgStore.organizations.length === 0) {
+        await orgStore.loadOrganizations()
+      }
+      // If workspace has an org, set it as current.
+      if (ws.organization_id) {
+        const org = useOrganizationStore.getState().organizations.find(o => o.id === ws.organization_id)
+        if (org) useOrganizationStore.getState().setCurrentOrganization(org)
+      }
+
       await Promise.all([
         useRewardQuarterStore.getState().loadQuarters(ws.id),
         useSessionStore.getState().loadMembership(ws.id),

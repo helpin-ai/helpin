@@ -6,6 +6,7 @@ import {
   BarChart3,
   Bot,
   Briefcase,
+  Building2,
   Calendar,
   ChevronDown,
   ChevronRight,
@@ -231,6 +232,7 @@ export function Sidebar() {
         label: 'My Account',
         items: [
           { link: `/w/${wsSlug}/settings/profile`, label: 'Profile', icon: User },
+          { link: `/w/${wsSlug}/settings/account`, label: 'Account', icon: Building2 },
         ],
       },
       {

@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   Paperclip,
   Pencil,
+  RefreshCw,
   Send,
   ShieldAlert,
   Tag,
@@ -69,6 +70,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import type {
@@ -580,13 +582,28 @@ function StoryDetailPanelBody({
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
           )}
+          {currentSprintName !== 'No sprint' && form.sprint_id && workspace && (
+            <>
+              <RefreshCw className="h-3.5 w-3.5 shrink-0 text-green-500" />
+              <button
+                type="button"
+                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                onClick={() => {
+                  onOpenChange(false);
+                  navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: form.sprint_id! } });
+                }}
+              >
+                {currentSprintName}
+              </button>
+              <ChevronRight className="h-3 w-3 shrink-0" />
+            </>
+          )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground/80">TP-{storyDetail.story.display_id}</span>
-          <ChevronRight className="h-3 w-3 shrink-0" />
-          <span className="truncate">{form.name || 'Untitled'}</span>
+          <span className="shrink-0 font-medium text-foreground">TP-{storyDetail.story.display_id}</span>
         </div>
 
         <div className="ml-auto flex items-center gap-1">
+          <SaveIndicator saving={saving} error={saveError} />
           {linkCopied ? (
             <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
               <Check className="h-3.5 w-3.5" />
@@ -916,6 +933,9 @@ function StoryDetailPanelBody({
             </MetadataRow>
             )}
 
+            {/* ── People ── */}
+            <div className="col-span-3 h-px bg-border/40 my-1" />
+
             {/* Owner */}
             <MetadataRow icon={User} label="Owner">
               <SidebarPopoverSelect
@@ -964,6 +984,9 @@ function StoryDetailPanelBody({
               />
             </MetadataRow>
 
+            {/* ── Classification ── */}
+            {(fieldVis.severity || fieldVis.labels) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+
             {/* Severity */}
             {fieldVis.severity && (
             <MetadataRow icon={ShieldAlert} label="Severity">
@@ -999,6 +1022,9 @@ function StoryDetailPanelBody({
               />
             </MetadataRow>
             )}
+
+            {/* ── Planning ── */}
+            {(fieldVis.epic || fieldVis.sprint || fieldVis.estimate || fieldVis.due_date || fieldVis.blocked) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
             {/* Epic */}
             {fieldVis.epic && (
@@ -1086,18 +1112,7 @@ function StoryDetailPanelBody({
       </div>
 
       {/* ── Footer ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between border-t border-border/60 px-4 py-2 text-xs text-muted-foreground">
-        <div>
-          {saving ? (
-            <span className="inline-flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Saving...
-            </span>
-          ) : (
-            <span>All changes saved</span>
-          )}
-          {saveError && <span className="ml-3 text-destructive">{saveError}</span>}
-        </div>
+      <div className="flex items-center justify-end border-t border-border/60 px-4 py-2 text-xs text-muted-foreground">
         <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-destructive" onClick={archiveStory}>
           <Archive className="mr-1 h-3 w-3" />
           Archive

@@ -22,13 +22,14 @@ func NewWorkspaceRepository(db *gorm.DB) *WorkspaceRepository {
 }
 
 // Create inserts a new workspace.
-func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID string, description *string, timezone string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID string, organizationID *string, description *string, timezone string) (*model.Workspace, error) {
 	ws := &model.Workspace{
-		Name:        name,
-		Slug:        slug,
-		OwnerID:     ownerID,
-		Description: description,
-		Timezone:    timezone,
+		Name:           name,
+		Slug:           slug,
+		OwnerID:        ownerID,
+		OrganizationID: organizationID,
+		Description:    description,
+		Timezone:       timezone,
 	}
 	if err := r.db.WithContext(ctx).Create(ws).Error; err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
@@ -37,15 +38,18 @@ func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID st
 }
 
 // List returns all workspaces a user is a member of, along with their role.
-func (r *WorkspaceRepository) List(ctx context.Context, userID string) ([]model.WorkspaceWithRole, error) {
+// If organizationID is non-empty, results are filtered to that organization.
+func (r *WorkspaceRepository) List(ctx context.Context, userID string, organizationID string) ([]model.WorkspaceWithRole, error) {
 	var results []model.WorkspaceWithRole
-	err := r.db.WithContext(ctx).
+	q := r.db.WithContext(ctx).
 		Table("workspaces w").
-		Select("w.id, w.name, w.slug, w.owner_id, w.description, w.timezone, w.created_at, w.updated_at, wm.role").
+		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.timezone, w.created_at, w.updated_at, wm.role").
 		Joins("JOIN workspace_members wm ON w.id = wm.workspace_id").
-		Where("wm.user_id = ?", userID).
-		Order("w.created_at DESC").
-		Scan(&results).Error
+		Where("wm.user_id = ?", userID)
+	if organizationID != "" {
+		q = q.Where("w.organization_id = ?", organizationID)
+	}
+	err := q.Order("w.created_at DESC").Scan(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}

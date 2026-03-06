@@ -13,11 +13,26 @@ export interface AuthResponse {
   refresh_token: string;
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  owner_id: string;
+  logo_url?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrganizationWithRole extends Organization {
+  role: 'owner' | 'admin' | 'member';
+}
+
 export interface Workspace {
   id: string;
   name: string;
   slug: string;
   owner_id: string;
+  organization_id?: string;
   description?: string;
   timezone: string;
   created_at: string;

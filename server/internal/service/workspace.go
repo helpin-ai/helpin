@@ -37,7 +37,12 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		return nil, fmt.Errorf("name and slug are required")
 	}
 
-	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, ownerID, req.Description, req.Timezone)
+	var orgID *string
+	if req.OrganizationID != "" {
+		orgID = &req.OrganizationID
+	}
+
+	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, ownerID, orgID, req.Description, req.Timezone)
 	if err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
 	}
@@ -59,9 +64,9 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 	}, nil
 }
 
-// List returns all workspaces the user belongs to.
-func (s *WorkspaceService) List(ctx context.Context, userID string) ([]model.WorkspaceWithRole, error) {
-	return s.workspaceRepo.List(ctx, userID)
+// List returns all workspaces the user belongs to. If organizationID is non-empty, filters by org.
+func (s *WorkspaceService) List(ctx context.Context, userID string, organizationID string) ([]model.WorkspaceWithRole, error) {
+	return s.workspaceRepo.List(ctx, userID, organizationID)
 }
 
 // GetBySlug returns a workspace by its slug.
