@@ -91,10 +91,11 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 
 	state := model.PMObjectiveStateNotStarted
 	if req.State != nil && *req.State != "" {
-		state = *req.State
-	}
-	if !isValidObjectiveState(state) {
-		return nil, fmt.Errorf("invalid state")
+		normalized, ok := normalizeObjectiveState(*req.State)
+		if !ok {
+			return nil, fmt.Errorf("invalid state")
+		}
+		state = normalized
 	}
 
 	health := model.PMObjectiveHealthOnTrack
@@ -185,10 +186,11 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 		obj.ObjectiveType = *req.ObjectiveType
 	}
 	if req.State != nil {
-		if !isValidObjectiveState(*req.State) {
+		normalized, ok := normalizeObjectiveState(*req.State)
+		if !ok {
 			return nil, fmt.Errorf("invalid state")
 		}
-		obj.State = *req.State
+		obj.State = normalized
 	}
 	if req.Health != nil {
 		if !isValidObjectiveHealth(*req.Health) {
@@ -500,6 +502,19 @@ func isValidObjectiveType(v string) bool {
 
 func isValidObjectiveState(v string) bool {
 	return v == model.PMObjectiveStateNotStarted || v == model.PMObjectiveStateActive || v == model.PMObjectiveStateClosed
+}
+
+func normalizeObjectiveState(v string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "not_started", "not started", "todo", "to_do", "to do":
+		return model.PMObjectiveStateNotStarted, true
+	case "active", "in_progress", "in progress", "started", "on_track", "behind", "at_risk":
+		return model.PMObjectiveStateActive, true
+	case "closed", "done", "complete", "completed":
+		return model.PMObjectiveStateClosed, true
+	default:
+		return "", false
+	}
 }
 
 func isValidObjectiveHealth(v string) bool {
