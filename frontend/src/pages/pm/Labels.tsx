@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Loader2, MoreHorizontal, Pencil, Plus, Search, Tag, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useTitle } from '@/hooks/useTitle';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -150,6 +151,7 @@ export function LabelsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingLabel, setEditingLabel] = useState<LabelWithStats | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteLabelConfirm, setDeleteLabelConfirm] = useState<LabelWithStats | null>(null);
 
   const workspaceId = workspace?.id;
 
@@ -312,7 +314,7 @@ export function LabelsPage() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
-                  onClick={() => handleDeleteRef.current(entry)}
+                  onClick={() => setDeleteLabelConfirm(entry)}
                 >
                   <Trash2 className="h-4 w-4" />
                   Delete
@@ -435,6 +437,16 @@ export function LabelsPage() {
         title={editingLabel ? 'Edit Label' : 'Create Label'}
         onSave={handleSave}
         saving={saving}
+      />
+
+      <ConfirmDialog
+        open={deleteLabelConfirm !== null}
+        onOpenChange={(open) => { if (!open) setDeleteLabelConfirm(null); }}
+        title="Delete label"
+        description={`This will permanently delete "${deleteLabelConfirm?.label.name ?? ''}". It will be removed from all stories. This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteLabelConfirm) handleDeleteRef.current(deleteLabelConfirm); setDeleteLabelConfirm(null); }}
       />
     </div>
   );

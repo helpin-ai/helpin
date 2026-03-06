@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Crosshair,
   Hash,
+  Heart,
   Hexagon,
   Loader2,
   Plus,
@@ -34,6 +35,7 @@ import type {
   EpicWithStats,
   KeyResult,
   KeyResultType,
+  ObjectiveHealth,
   ObjectiveState,
   ObjectiveWithDetails,
   UpdateObjectiveRequest,
@@ -62,9 +64,15 @@ function mergeOwnerOptions(members: MemberWithUser[], people: WorkspacePerson[])
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/objectives/$objectiveId');
 
 const stateOptions: { value: ObjectiveState; label: string }[] = [
-  { value: 'to_do', label: 'To Do' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'done', label: 'Done' },
+  { value: 'not_started', label: 'Not Started' },
+  { value: 'active', label: 'Active' },
+  { value: 'closed', label: 'Closed' },
+];
+
+const healthOptions: { value: ObjectiveHealth; label: string; color: string }[] = [
+  { value: 'on_track', label: 'On Track', color: 'text-green-600' },
+  { value: 'at_risk', label: 'At Risk', color: 'text-amber-600' },
+  { value: 'off_track', label: 'Off Track', color: 'text-red-600' },
 ];
 
 // ── Sidebar Popover Select ─────────────────────────────────────────
@@ -363,6 +371,7 @@ interface FormState {
   description: string;
   objective_type: string;
   state: ObjectiveState;
+  health: ObjectiveHealth;
   planned_start_date: string;
   deadline: string;
 }
@@ -372,6 +381,7 @@ const buildForm = (obj: ObjectiveWithDetails): FormState => ({
   description: obj.objective.description ?? '',
   objective_type: obj.objective.objective_type,
   state: obj.objective.state,
+  health: obj.objective.health,
   planned_start_date: obj.objective.planned_start_date?.slice(0, 10) ?? '',
   deadline: obj.objective.deadline?.slice(0, 10) ?? '',
 });
@@ -522,9 +532,15 @@ export function ObjectiveDetailPage() {
   // Derived
   const isStrategic = form?.objective_type === 'strategic';
   const currentStateName = useMemo(
-    () => stateOptions.find((s) => s.value === form?.state)?.label ?? 'To Do',
+    () => stateOptions.find((s) => s.value === form?.state)?.label ?? 'Not Started',
     [form?.state],
   );
+  const currentHealth = useMemo(
+    () => healthOptions.find((h) => h.value === form?.health) ?? healthOptions[0],
+    [form?.health],
+  );
+  const suggestedHealth = data?.suggested_health;
+  const suggestedLabel = healthOptions.find((h) => h.value === suggestedHealth);
 
   const goBack = () => navigate({ to: '/w/$slug/pm/objectives', params: { slug } });
 
@@ -740,6 +756,31 @@ export function ObjectiveDetailPage() {
                 renderTrigger={() => <span>{currentStateName}</span>}
               />
             </MetadataRow>
+
+            {/* Health */}
+            {form.state !== 'closed' && (
+            <MetadataRow icon={Heart} label="Health">
+              <div className="flex flex-col gap-1">
+                <SidebarPopoverSelect
+                  value={form.health}
+                  options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
+                  onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
+                  renderTrigger={() => (
+                    <span className={currentHealth.color}>{currentHealth.label}</span>
+                  )}
+                />
+                {suggestedLabel && suggestedHealth !== form.health && (
+                  <button
+                    type="button"
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left"
+                    onClick={() => updateField('health', suggestedHealth!, { health: suggestedHealth })}
+                  >
+                    Suggested: <span className={suggestedLabel.color}>{suggestedLabel.label}</span>
+                  </button>
+                )}
+              </div>
+            </MetadataRow>
+            )}
 
             {/* Teams */}
             <MetadataRow icon={Users} label="Teams">

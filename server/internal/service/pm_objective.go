@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -54,6 +55,7 @@ func (s *PMObjectiveService) List(ctx context.Context, workspaceID string, filte
 			return nil, err
 		}
 		if details != nil {
+			enrichSuggestedHealth(details)
 			result = append(result, *details)
 		}
 	}
@@ -69,6 +71,7 @@ func (s *PMObjectiveService) GetByID(ctx context.Context, id string) (*model.Obj
 	if obj == nil {
 		return nil, fmt.Errorf("objective not found")
 	}
+	enrichSuggestedHealth(obj)
 	return obj, nil
 }
 
@@ -86,12 +89,20 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 		return nil, fmt.Errorf("invalid objective_type")
 	}
 
-	state := model.PMObjectiveStateToDo
+	state := model.PMObjectiveStateNotStarted
 	if req.State != nil && *req.State != "" {
 		state = *req.State
 	}
 	if !isValidObjectiveState(state) {
 		return nil, fmt.Errorf("invalid state")
+	}
+
+	health := model.PMObjectiveHealthOnTrack
+	if req.Health != nil && *req.Health != "" {
+		health = *req.Health
+	}
+	if !isValidObjectiveHealth(health) {
+		return nil, fmt.Errorf("invalid health")
 	}
 
 	obj := &model.PMObjective{
@@ -102,6 +113,8 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 		State:            state,
 		PlannedStartDate: req.PlannedStartDate,
 		Deadline:         req.Deadline,
+		Health:           health,
+		HealthComment:    req.HealthComment,
 	}
 	if req.Position != nil {
 		obj.Position = *req.Position
@@ -141,7 +154,7 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 
 	_ = s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
-	return s.objectiveRepo.GetByID(ctx, obj.ID)
+	return s.GetByID(ctx, obj.ID)
 }
 
 // Update updates an objective.
@@ -176,6 +189,15 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 			return nil, fmt.Errorf("invalid state")
 		}
 		obj.State = *req.State
+	}
+	if req.Health != nil {
+		if !isValidObjectiveHealth(*req.Health) {
+			return nil, fmt.Errorf("invalid health")
+		}
+		obj.Health = *req.Health
+	}
+	if req.HealthComment != nil {
+		obj.HealthComment = req.HealthComment
 	}
 	if req.PlannedStartDate != nil {
 		obj.PlannedStartDate = req.PlannedStartDate
@@ -224,7 +246,7 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 
 	_ = s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
-	return s.objectiveRepo.GetByID(ctx, obj.ID)
+	return s.GetByID(ctx, obj.ID)
 }
 
 // Delete archives an objective.
@@ -477,9 +499,62 @@ func isValidObjectiveType(v string) bool {
 }
 
 func isValidObjectiveState(v string) bool {
-	return v == model.PMObjectiveStateToDo || v == model.PMObjectiveStateInProgress || v == model.PMObjectiveStateDone
+	return v == model.PMObjectiveStateNotStarted || v == model.PMObjectiveStateActive || v == model.PMObjectiveStateClosed
+}
+
+func isValidObjectiveHealth(v string) bool {
+	return v == model.PMObjectiveHealthOnTrack || v == model.PMObjectiveHealthAtRisk || v == model.PMObjectiveHealthOffTrack
 }
 
 func isValidKeyResultType(v string) bool {
 	return v == model.PMKeyResultTypeBoolean || v == model.PMKeyResultTypePercent || v == model.PMKeyResultTypeNumeric
+}
+
+// computeSuggestedHealth calculates health based on KR progress vs time elapsed.
+func computeSuggestedHealth(obj *model.ObjectiveWithDetails) string {
+	// Need both dates and at least one KR to compute
+	if obj.Objective.PlannedStartDate == nil || obj.Objective.Deadline == nil {
+		return model.PMObjectiveHealthOnTrack
+	}
+	if obj.Stats.KeyResultCount == 0 {
+		return model.PMObjectiveHealthOnTrack
+	}
+
+	now := time.Now()
+	start := *obj.Objective.PlannedStartDate
+	end := *obj.Objective.Deadline
+	totalDays := end.Sub(start).Hours() / 24
+	if totalDays <= 0 {
+		return model.PMObjectiveHealthOnTrack
+	}
+
+	// Past deadline with incomplete work
+	if now.After(end) && obj.Stats.KeyResultAvgPct < 100 {
+		return model.PMObjectiveHealthOffTrack
+	}
+
+	elapsedDays := now.Sub(start).Hours() / 24
+	if elapsedDays < 0 {
+		// Not started yet (before planned start)
+		return model.PMObjectiveHealthOnTrack
+	}
+
+	expectedPct := (elapsedDays / totalDays) * 100
+	if expectedPct > 100 {
+		expectedPct = 100
+	}
+	actualPct := obj.Stats.KeyResultAvgPct
+	gap := expectedPct - actualPct
+
+	if gap <= 10 {
+		return model.PMObjectiveHealthOnTrack
+	} else if gap <= 25 {
+		return model.PMObjectiveHealthAtRisk
+	}
+	return model.PMObjectiveHealthOffTrack
+}
+
+// enrichSuggestedHealth fills the SuggestedHealth field on a details object.
+func enrichSuggestedHealth(obj *model.ObjectiveWithDetails) {
+	obj.SuggestedHealth = computeSuggestedHealth(obj)
 }

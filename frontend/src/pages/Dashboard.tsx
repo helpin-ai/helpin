@@ -158,7 +158,6 @@ export default function Dashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Goals Overview</CardTitle>
-            <CardDescription>Company goals for the current quarter</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">

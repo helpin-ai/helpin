@@ -71,6 +71,7 @@ import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import type {
@@ -298,6 +299,7 @@ function StoryDetailPanelBody({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id));
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
@@ -621,8 +623,8 @@ function StoryDetailPanelBody({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={archiveStory} className="text-destructive focus:text-destructive">
-                <Archive className="mr-2 h-4 w-4" />
+              <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
+                <Archive className="mr-2 h-4 w-4 text-amber-500" />
                 Archive
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -1113,11 +1115,21 @@ function StoryDetailPanelBody({
 
       {/* ── Footer ──────────────────────────────────────────────── */}
       <div className="flex items-center justify-end border-t border-border/60 px-4 py-2 text-xs text-muted-foreground">
-        <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-destructive" onClick={archiveStory}>
+        <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-amber-600" onClick={() => setArchiveConfirmOpen(true)}>
           <Archive className="mr-1 h-3 w-3" />
           Archive
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={archiveConfirmOpen}
+        onOpenChange={setArchiveConfirmOpen}
+        title="Archive story"
+        description="This story will be hidden from the board and lists. You can restore it later from archived items."
+        confirmLabel="Archive"
+        variant="default"
+        onConfirm={archiveStory}
+      />
     </div>
   );
 }

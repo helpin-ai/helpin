@@ -7,7 +7,7 @@ import { rewardBonusService } from '@/lib/services/rewardBonusService';
 import { settingsService } from '@/lib/services/settingsService';
 import type { RewardBonusCalculation, RewardFinanceSettings, WorkspacePerson, WorkspaceTeam } from '@/lib/types';
 import { formatCurrencyUSD, formatPercentage } from '@/lib/formatters';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -141,8 +141,10 @@ export default function BonusDashboard() {
         {/* Employee table */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Employee Bonus Calculations</CardTitle>
-            <CardDescription>{calculations.length} employees</CardDescription>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">Employee Bonus Calculations</CardTitle>
+              <Badge variant="outline" className="text-xs font-normal">{calculations.length}</Badge>
+            </div>
           </CardHeader>
           <CardContent>
             {calculations.length === 0 ? (

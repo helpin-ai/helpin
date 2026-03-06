@@ -8,7 +8,7 @@ import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
 import { settingsService } from '@/lib/services/settingsService';
 import type { RewardSprint, RewardBonusCalculation, RewardIndividualCheck, WorkspaceSettings } from '@/lib/types';
 import { formatCurrencyUSD, formatPercentage } from '@/lib/formatters';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -163,7 +163,6 @@ export default function MyQuarter() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Sprint Scores</CardTitle>
-          <CardDescription>Your individual scoring results per sprint</CardDescription>
         </CardHeader>
         <CardContent>
           {sprints.length === 0 ? (

@@ -141,6 +141,11 @@ func main() {
 	}
 	log.Println("database migration complete")
 
+	// Migrate legacy objective states to lifecycle states + health (idempotent).
+	db.Exec("UPDATE pm_objectives SET state = 'not_started' WHERE state = 'to_do'")
+	db.Exec("UPDATE pm_objectives SET state = 'active' WHERE state IN ('in_progress', 'on_track', 'behind', 'at_risk')")
+	db.Exec("UPDATE pm_objectives SET state = 'closed' WHERE state = 'done'")
+
 	// Migrate existing workspaces to organizations (one-time, idempotent).
 	if err := repository.MigrateWorkspacesToOrganizations(db); err != nil {
 		log.Fatalf("failed to migrate workspaces to organizations: %v", err)

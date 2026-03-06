@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { cn } from '@/lib/utils';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Building2, Trash2, Users } from 'lucide-react';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { toast } from 'sonner';
 
 const ROLE_COLORS: Record<string, string> = {
@@ -27,6 +28,7 @@ export default function AccountSettings() {
   const { currentOrganization, setCurrentOrganization } = useOrganizationStore();
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [removeMemberConfirm, setRemoveMemberConfirm] = useState<{ userId: string; name: string } | null>(null);
   const [members, setMembers] = useState<MemberWithUser[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
 
@@ -75,9 +77,8 @@ export default function AccountSettings() {
     }
   };
 
-  const handleRemoveMember = async (userId: string, memberName: string) => {
+  const handleRemoveMember = async (userId: string) => {
     if (!orgId) return;
-    if (!confirm(`Remove ${memberName} from this organization?`)) return;
     const { error } = await organizationsService.removeMember(orgId, userId);
     if (error) {
       toast.error(error);
@@ -192,7 +193,7 @@ export default function AccountSettings() {
                             variant="ghost"
                             size="sm"
                             className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                            onClick={() => handleRemoveMember(member.user_id, member.full_name)}
+                            onClick={() => setRemoveMemberConfirm({ userId: member.user_id, name: member.full_name })}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -206,6 +207,16 @@ export default function AccountSettings() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={removeMemberConfirm !== null}
+        onOpenChange={(open) => { if (!open) setRemoveMemberConfirm(null); }}
+        title="Remove member"
+        description={`This will remove ${removeMemberConfirm?.name ?? 'this member'} from the organization. They will lose access to all workspaces in this organization.`}
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={() => { if (removeMemberConfirm) handleRemoveMember(removeMemberConfirm.userId); setRemoveMemberConfirm(null); }}
+      />
     </div>
   );
 }

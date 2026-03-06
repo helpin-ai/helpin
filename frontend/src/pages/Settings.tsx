@@ -47,70 +47,70 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   {
     id: 'members',
     label: 'Members',
-    description: 'Manage workspace members and invitations.',
+    description: '',
     icon: Users,
     group: 'Workspace',
   },
   {
     id: 'teams',
     label: 'Teams',
-    description: 'Create teams, assign members, and manage team-level PM settings.',
+    description: '',
     icon: Users,
     group: 'Workspace',
   },
   {
     id: 'workflows',
     label: 'Workflows',
-    description: 'Configure team workflows and ownership behavior.',
+    description: '',
     icon: GitBranch,
     group: 'Project Settings',
   },
   {
     id: 'workflowstates',
     label: 'Workflow States',
-    description: 'Manage state columns and rules within workflows.',
+    description: '',
     icon: ListTree,
     group: 'Project Settings',
   },
   {
     id: 'labels',
     label: 'Labels',
-    description: 'Create and manage labels for stories, epics, and sprints.',
+    description: '',
     icon: Tag,
     group: 'Project Settings',
   },
   {
     id: 'automations',
     label: 'Automations',
-    description: 'Automate epic transitions and sprint management.',
+    description: '',
     icon: RefreshCw,
     group: 'Project Settings',
   },
   {
     id: 'people',
     label: 'People',
-    description: 'Edit HR details, job roles, and compensation for workspace members.',
+    description: '',
     icon: UserPlus,
     group: 'Reward Settings',
   },
   {
     id: 'jobroles',
     label: 'Job Roles',
-    description: 'Configure role-based individual evaluation criteria.',
+    description: '',
     icon: Briefcase,
     group: 'Reward Settings',
   },
   {
     id: 'tiers',
     label: 'Bonus Tiers',
-    description: 'Set score bands and multipliers for payouts.',
+    description: '',
     icon: Award,
     group: 'Reward Settings',
   },
   {
     id: 'system',
     label: 'Reward Defaults',
-    description: 'Control reward calculation behavior and defaults.',
+    description: '',
     icon: Settings2,
     group: 'Reward Settings',
   },
@@ -545,9 +545,9 @@ function MembersTab({ workspaceId, editable }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-2">
             <CardTitle className="text-base">Members</CardTitle>
-            <CardDescription>{members.length} member{members.length !== 1 ? 's' : ''}</CardDescription>
+            <Badge variant="outline" className="text-xs font-normal">{members.length}</Badge>
           </div>
           {editable && (
             <Button size="sm" onClick={openInviteDialog}>
@@ -1692,9 +1692,9 @@ function PeopleTab({ people, editable, onRefresh }: {
   return (
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
-        <div>
+        <div className="flex items-center gap-2">
           <CardTitle className="text-base">People</CardTitle>
-          <CardDescription>{people.length} member{people.length !== 1 ? 's' : ''} — invite new members from the Members tab</CardDescription>
+          <Badge variant="outline" className="text-xs font-normal">{people.length}</Badge>
         </div>
       </CardHeader>
       <CardContent>
@@ -1828,7 +1828,6 @@ function JobRolesTab({ workspaceId, criteria, editable, onRefresh }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <CardTitle className="text-base">Job Role Criteria</CardTitle>
-        <CardDescription>Individual scoring criteria by job role</CardDescription>
       </CardHeader>
       <CardContent>
         {jobRoles.length === 0 ? (
@@ -1930,10 +1929,7 @@ function BonusTiersTab({ workspaceId, tiers, editable, onRefresh }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">Bonus Tiers</CardTitle>
-            <CardDescription>Configure A/B/C tier thresholds and multipliers</CardDescription>
-          </div>
+          <CardTitle className="text-base">Bonus Tiers</CardTitle>
           {editable && !editing && (
             <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
               <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
@@ -2021,8 +2017,7 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
   return (
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
-        <CardTitle className="text-base">System Settings</CardTitle>
-        <CardDescription>General workspace configuration</CardDescription>
+        <CardTitle className="text-base">Reward Defaults</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -2195,9 +2190,9 @@ function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-2">
             <CardTitle className="text-base">Workflows</CardTitle>
-            <CardDescription>{filteredWorkflows.length} workflow{filteredWorkflows.length !== 1 ? 's' : ''}</CardDescription>
+            <Badge variant="outline" className="text-xs font-normal">{filteredWorkflows.length}</Badge>
           </div>
           <div className="flex items-center gap-2">
             <Select value={teamFilter} onValueChange={setTeamFilter}>
@@ -2524,7 +2519,6 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <CardTitle className="text-base">Workflow States</CardTitle>
-        <CardDescription>Manage state columns grouped by backlog/unstarted/started/done.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {loading ? (

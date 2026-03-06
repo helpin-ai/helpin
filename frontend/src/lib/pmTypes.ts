@@ -549,7 +549,8 @@ export interface UpdateCommentRequest {
 // ── Objectives ──────────────────────────────────────────────────────
 
 export type ObjectiveType = 'tactical' | 'strategic';
-export type ObjectiveState = 'to_do' | 'in_progress' | 'done';
+export type ObjectiveState = 'not_started' | 'active' | 'closed';
+export type ObjectiveHealth = 'on_track' | 'at_risk' | 'off_track';
 export type KeyResultType = 'boolean' | 'percent' | 'numeric';
 
 export interface Objective {
@@ -561,6 +562,8 @@ export interface Objective {
   state: ObjectiveState;
   planned_start_date?: string;
   deadline?: string;
+  health: ObjectiveHealth;
+  health_comment?: string;
   position: number;
   archived: boolean;
   created_by?: string;
@@ -600,6 +603,7 @@ export interface ObjectiveWithDetails {
   key_results: KeyResult[];
   epics: EpicWithStats[];
   stats: ObjectiveStats;
+  suggested_health: ObjectiveHealth;
 }
 
 export interface CreateObjectiveRequest {
@@ -610,6 +614,8 @@ export interface CreateObjectiveRequest {
   state?: ObjectiveState;
   planned_start_date?: string;
   deadline?: string;
+  health?: ObjectiveHealth;
+  health_comment?: string;
   position?: number;
   team_ids?: string[];
   owner_ids?: string[];
@@ -624,6 +630,8 @@ export interface UpdateObjectiveRequest {
   state?: ObjectiveState;
   planned_start_date?: string;
   deadline?: string;
+  health?: ObjectiveHealth;
+  health_comment?: string;
   position?: number;
   archived?: boolean;
   team_ids?: string[];
