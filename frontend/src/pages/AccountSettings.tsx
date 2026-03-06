@@ -3,7 +3,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { useOrganizationStore } from '@/stores/organizationStore';
 import { organizationsService } from '@/lib/services/organizationsService';
 import type { MemberWithUser } from '@/lib/types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -99,22 +99,20 @@ export default function AccountSettings() {
     <div className="space-y-6 max-w-3xl">
       <div>
         <h2 className="text-xl font-semibold">Account Settings</h2>
-        <p className="text-sm text-muted-foreground">Manage your organization details and members.</p>
       </div>
 
-      {/* Organization Details */}
+      {/* Organization Name */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Building2 className="h-4 w-4" />
-            Organization Details
+            Organization
           </CardTitle>
-          <CardDescription>Update your organization name and settings.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSave} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="org-name">Organization Name</Label>
+              <Label htmlFor="org-name">Name</Label>
               <Input
                 id="org-name"
                 value={name}
@@ -122,11 +120,6 @@ export default function AccountSettings() {
                 disabled={!isAdminOrOwner}
                 required
               />
-            </div>
-            <div className="space-y-2">
-              <Label>Slug</Label>
-              <Input value={currentOrganization.slug} disabled />
-              <p className="text-xs text-muted-foreground">The slug cannot be changed after creation.</p>
             </div>
             {isAdminOrOwner && (
               <Button type="submit" disabled={saving || name === currentOrganization.name}>
@@ -137,16 +130,13 @@ export default function AccountSettings() {
         </CardContent>
       </Card>
 
-      {/* Organization Members */}
+      {/* Members */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            Organization Members
+            Members
           </CardTitle>
-          <CardDescription>
-            Members of your organization can be given access to workspaces within it.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           {loadingMembers ? (
