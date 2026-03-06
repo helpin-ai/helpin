@@ -97,7 +97,9 @@ func (r *PMAutomationRepository) Upsert(ctx context.Context, automation *model.P
 	}).Error; err != nil {
 		return fmt.Errorf("update automation: %w", err)
 	}
+	// Returning clause populates existing; copy timestamps back to automation
 	automation.CreatedAt = existing.CreatedAt
+	automation.UpdatedAt = existing.UpdatedAt
 	return nil
 }
 

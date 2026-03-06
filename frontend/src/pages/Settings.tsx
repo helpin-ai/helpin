@@ -2415,7 +2415,10 @@ function AutomationsTab({ workspaceId, teams }: {
 
     try {
       const res = await pmAutomationService.upsert(workspaceId, payload);
-      if (res.data) {
+      if (res.error) {
+        setAutomations(snapshot);
+        toast.error(res.error);
+      } else if (res.data) {
         // Replace temp/stale entry with server response
         setAutomations((prev) => {
           const idx = prev.findIndex((a) => a.automation_type === type && (opts?.teamId ? a.team_id === opts.teamId : !a.team_id));
@@ -2436,11 +2439,10 @@ function AutomationsTab({ workspaceId, teams }: {
   const removeAuto = async (type: AutomationType, teamId?: string) => {
     const snapshot = automations;
     setAutomations((prev) => prev.filter((a) => !(a.automation_type === type && (teamId ? a.team_id === teamId : !a.team_id))));
-    try {
-      await pmAutomationService.remove(workspaceId, type, teamId);
-    } catch {
+    const res = await pmAutomationService.remove(workspaceId, type, teamId);
+    if (res.error) {
       setAutomations(snapshot);
-      toast.error('Failed to remove automation');
+      toast.error(res.error);
     }
   };
 
