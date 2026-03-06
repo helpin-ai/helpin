@@ -18,13 +18,13 @@ type RunEngine struct {
 
 // RunnerQueueHealth summarizes the state of a shared Temporal task queue.
 type RunnerQueueHealth struct {
-	Name                  string     `json:"name"`
-	Concurrency           int        `json:"concurrency"`
-	QueuedRuns            int        `json:"queued_runs"`
-	RunningRuns           int        `json:"running_runs"`
-	AwaitingApprovalRuns  int        `json:"awaiting_approval_runs"`
-	ActiveRuns            int        `json:"active_runs"`
-	LatestHeartbeatAt     *time.Time `json:"latest_heartbeat_at,omitempty"`
+	Name                 string     `json:"name"`
+	Concurrency          int        `json:"concurrency"`
+	QueuedRuns           int        `json:"queued_runs"`
+	RunningRuns          int        `json:"running_runs"`
+	AwaitingApprovalRuns int        `json:"awaiting_approval_runs"`
+	ActiveRuns           int        `json:"active_runs"`
+	LatestHeartbeatAt    *time.Time `json:"latest_heartbeat_at,omitempty"`
 }
 
 // RunnerActiveRun summarizes an in-flight run visible to operators.
@@ -46,11 +46,11 @@ type RunnerActiveRun struct {
 
 // RunnerHealth is the operator-facing payload for shared runner pools.
 type RunnerHealth struct {
-	Namespace          string             `json:"namespace"`
-	TemporalConfigured bool               `json:"temporal_configured"`
-	GeneratedAt        time.Time          `json:"generated_at"`
+	Namespace          string              `json:"namespace"`
+	TemporalConfigured bool                `json:"temporal_configured"`
+	GeneratedAt        time.Time           `json:"generated_at"`
 	Queues             []RunnerQueueHealth `json:"queues"`
-	ActiveRuns         []RunnerActiveRun  `json:"active_runs"`
+	ActiveRuns         []RunnerActiveRun   `json:"active_runs"`
 }
 
 // NewRunEngine creates a Temporal-backed run engine.

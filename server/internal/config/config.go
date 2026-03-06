@@ -24,7 +24,8 @@ type Config struct {
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
 	AnthropicAPIKey string
 
-	// GitHub App (optional — required for shared-runner repo mutation)
+	// GitHub App (optional — required for shared-runner repo mutation).
+	// GITHUB_APP_PRIVATE_KEY should be provided as a base64-encoded PEM value.
 	GitHubAppID         string
 	GitHubAppSlug       string
 	GitHubAppPrivateKey string

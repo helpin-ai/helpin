@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -44,7 +45,7 @@ type Client struct {
 // NewClient returns a GitHub App client, or nil when config is incomplete.
 func NewClient(appID, privateKeyPEM string) (*Client, error) {
 	appID = strings.TrimSpace(appID)
-	privateKeyPEM = strings.ReplaceAll(strings.TrimSpace(privateKeyPEM), `\n`, "\n")
+	privateKeyPEM = strings.TrimSpace(privateKeyPEM)
 	if appID == "" || privateKeyPEM == "" {
 		return nil, nil
 	}
@@ -175,8 +176,8 @@ func (c *Client) GetInstallation(ctx context.Context, installationID string) (*I
 	defer resp.Body.Close()
 
 	var payload struct {
-		ID      int64 `json:"id"`
-		AppID   int64 `json:"app_id"`
+		ID      int64  `json:"id"`
+		AppID   int64  `json:"app_id"`
 		HTMLURL string `json:"html_url"`
 		Account struct {
 			Login string `json:"login"`
@@ -215,6 +216,8 @@ func (c *Client) createAppJWT() (string, error) {
 }
 
 func parsePrivateKey(privateKeyPEM string) (*rsa.PrivateKey, error) {
+	privateKeyPEM = normalizePrivateKeyPEM(privateKeyPEM)
+
 	block, _ := pem.Decode([]byte(privateKeyPEM))
 	if block == nil {
 		return nil, fmt.Errorf("invalid github app private key")
@@ -233,6 +236,44 @@ func parsePrivateKey(privateKeyPEM string) (*rsa.PrivateKey, error) {
 		return nil, fmt.Errorf("github app private key must be RSA, got %T", keyAny)
 	}
 	return key, nil
+}
+
+func normalizePrivateKeyPEM(privateKeyValue string) string {
+	privateKeyValue = strings.ReplaceAll(strings.TrimSpace(privateKeyValue), `\n`, "\n")
+	if privateKeyValue == "" || strings.Contains(privateKeyValue, "BEGIN ") {
+		return privateKeyValue
+	}
+
+	decoded, ok := decodeBase64PrivateKey(privateKeyValue)
+	if !ok {
+		return privateKeyValue
+	}
+
+	decodedValue := strings.ReplaceAll(strings.TrimSpace(string(decoded)), `\n`, "\n")
+	if strings.Contains(decodedValue, "BEGIN ") {
+		return decodedValue
+	}
+	return privateKeyValue
+}
+
+func decodeBase64PrivateKey(privateKeyValue string) ([]byte, bool) {
+	compact := strings.Join(strings.Fields(privateKeyValue), "")
+	if compact == "" {
+		return nil, false
+	}
+
+	for _, encoding := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		decoded, err := encoding.DecodeString(compact)
+		if err == nil {
+			return decoded, true
+		}
+	}
+	return nil, false
 }
 
 // InstallationIDString normalizes a numeric installation ID for storage.
