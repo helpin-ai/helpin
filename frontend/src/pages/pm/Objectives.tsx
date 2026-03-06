@@ -369,7 +369,7 @@ function ObjectiveCard({
                 <Hexagon className="h-2.5 w-2.5 shrink-0 text-violet-400" />
                 <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{e.epic.name}</span>
                 <div className="w-16 shrink-0">
-                  <Progress value={epicPct} className="h-[3px] bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+                  <Progress value={epicPct} className="h-1 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
                 </div>
                 <span className="w-6 text-right text-[10px] text-muted-foreground tabular-nums">{epicPct}%</span>
               </div>
