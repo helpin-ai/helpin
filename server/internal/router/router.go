@@ -156,6 +156,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Delete("/settings/teams/{id}/invitations/{invitationId}", h.Settings.DeleteTeamInvitation)
 			r.Get("/settings/teams/{id}/estimates", h.Settings.GetTeamEstimateSettings)
 			r.Put("/settings/teams/{id}/estimates", h.Settings.UpdateTeamEstimateSettings)
+			r.Get("/settings/teams/{id}/field-visibility", h.Settings.GetTeamFieldVisibility)
+			r.Put("/settings/teams/{id}/field-visibility", h.Settings.UpdateTeamFieldVisibility)
 			r.Post("/settings/people", h.Settings.CreatePerson)
 			r.Put("/settings/people/{id}", h.Settings.UpdatePerson)
 			r.Delete("/settings/people/{id}", h.Settings.DeletePerson)

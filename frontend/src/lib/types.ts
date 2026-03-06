@@ -176,6 +176,23 @@ export interface WorkspaceSettings {
   bonus_tiers: BonusTierConfig[];
   invitation_team_preassignments: InvitationTeamPreassignment[];
   team_estimate_settings: TeamEstimateSettings[];
+  team_field_visibility: TeamFieldVisibility[];
+}
+
+export interface TeamFieldVisibility {
+  id: string;
+  team_id: string;
+  priority: boolean;
+  story_type: boolean;
+  severity: boolean;
+  labels: boolean;
+  epic: boolean;
+  sprint: boolean;
+  estimate: boolean;
+  due_date: boolean;
+  blocked: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface InvitationTeamPreassignment {

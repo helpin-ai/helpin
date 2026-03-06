@@ -38,6 +38,7 @@ import type {
 } from '@/lib/pmTypes';
 import type { MemberWithUser, WorkspaceTeam } from '@/lib/types';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
@@ -110,6 +111,8 @@ export function StoryListView({
   externalStories,
   onOpenStory,
 }: StoryListViewProps) {
+  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(teamId));
+
   const isExternal = externalStories !== undefined;
   const [stories, setStories] = useState<Story[]>(externalStories ?? []);
   const [loading, setLoading] = useState(!isExternal);
@@ -451,10 +454,18 @@ export function StoryListView({
     [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, members, teams, epics, sprints, updateStoryField]
   );
 
-  const columnVisibility = useMemo(
-    () => Object.fromEntries(HIDDEN_GROUP_COLUMNS.map((c) => [c, false])),
-    [],
-  );
+  const columnVisibility = useMemo(() => {
+    const vis: Record<string, boolean> = {};
+    for (const c of HIDDEN_GROUP_COLUMNS) vis[c] = false;
+    if (!fieldVis.priority) { vis['priorityIcon'] = false; vis['priorityName'] = false; }
+    if (!fieldVis.severity) { vis['severityIcon'] = false; vis['severityName'] = false; }
+    if (!fieldVis.story_type) { vis['typeIcon'] = false; vis['typeName'] = false; }
+    if (!fieldVis.estimate) vis['estimate'] = false;
+    if (!fieldVis.epic) vis['epicName'] = false;
+    if (!fieldVis.sprint) vis['sprintName'] = false;
+    if (!fieldVis.due_date) vis['deadline'] = false;
+    return vis;
+  }, [fieldVis]);
 
   const grouping: GroupingState = useMemo(() => {
     const colId = GROUP_COLUMN_MAP[groupBy];
@@ -506,7 +517,16 @@ export function StoryListView({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {GROUP_BY_OPTIONS.map((opt) => (
+            {GROUP_BY_OPTIONS
+              .filter((opt) => {
+                if (opt.value === 'story_type') return fieldVis.story_type;
+                if (opt.value === 'priority') return fieldVis.priority;
+                if (opt.value === 'severity') return fieldVis.severity;
+                if (opt.value === 'epic') return fieldVis.epic;
+                if (opt.value === 'sprint') return fieldVis.sprint;
+                return true;
+              })
+              .map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>

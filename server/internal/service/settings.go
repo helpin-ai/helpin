@@ -228,6 +228,16 @@ func (s *SettingsService) UpdateTeamEstimateSettings(ctx context.Context, teamID
 	return s.settingsRepo.UpsertTeamEstimateSettings(ctx, teamID, req)
 }
 
+// GetTeamFieldVisibility returns field visibility settings for a team.
+func (s *SettingsService) GetTeamFieldVisibility(ctx context.Context, teamID string) (*model.PMTeamFieldVisibility, error) {
+	return s.settingsRepo.GetTeamFieldVisibility(ctx, teamID)
+}
+
+// UpdateTeamFieldVisibility creates or updates field visibility settings for a team.
+func (s *SettingsService) UpdateTeamFieldVisibility(ctx context.Context, teamID string, req model.UpdateTeamFieldVisibilityRequest) (*model.PMTeamFieldVisibility, error) {
+	return s.settingsRepo.UpsertTeamFieldVisibility(ctx, teamID, req)
+}
+
 // AddInvitationTeamPreassignment pre-assigns a pending invitation to a team.
 func (s *SettingsService) AddInvitationTeamPreassignment(ctx context.Context, teamID, invitationID string) (*model.InvitationTeamPreassignment, error) {
 	return s.settingsRepo.AddInvitationTeamPreassignment(ctx, invitationID, teamID)

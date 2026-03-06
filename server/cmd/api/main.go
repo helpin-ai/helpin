@@ -122,6 +122,7 @@ func main() {
 		&model.WorkspaceInvitation{},
 		&model.InvitationTeamPreassignment{},
 		&model.PMTeamEstimateSettings{},
+		&model.PMTeamFieldVisibility{},
 		&model.Agent{},
 		&model.AgentRun{},
 		&model.AgentRunArtifact{},

@@ -91,6 +91,12 @@ func (r *SettingsRepository) GetAll(ctx context.Context, workspaceID string) (*m
 	}
 	cfg.TeamEstimateSettings = estimateSettings
 
+	fieldVisibility, err := r.listTeamFieldVisibility(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	cfg.TeamFieldVisibility = fieldVisibility
+
 	return cfg, nil
 }
 
@@ -786,6 +792,125 @@ func (r *SettingsRepository) listTeamEstimateSettings(ctx context.Context, works
 		Find(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("list team estimate settings: %w", err)
+	}
+	return results, nil
+}
+
+// GetTeamFieldVisibility returns field visibility settings for a team.
+func (r *SettingsRepository) GetTeamFieldVisibility(ctx context.Context, teamID string) (*model.PMTeamFieldVisibility, error) {
+	s := &model.PMTeamFieldVisibility{}
+	err := r.db.WithContext(ctx).Where("team_id = ?", teamID).First(s).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get team field visibility: %w", err)
+	}
+	return s, nil
+}
+
+// UpsertTeamFieldVisibility creates or updates field visibility settings for a team.
+func (r *SettingsRepository) UpsertTeamFieldVisibility(ctx context.Context, teamID string, req model.UpdateTeamFieldVisibilityRequest) (*model.PMTeamFieldVisibility, error) {
+	existing, err := r.GetTeamFieldVisibility(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+
+	if existing == nil {
+		s := &model.PMTeamFieldVisibility{
+			TeamID:    teamID,
+			Priority:  true,
+			StoryType: true,
+			Severity:  true,
+			Labels:    true,
+			Epic:      true,
+			Sprint:    true,
+			Estimate:  true,
+			DueDate:   true,
+			Blocked:   true,
+		}
+		if req.Priority != nil {
+			s.Priority = *req.Priority
+		}
+		if req.StoryType != nil {
+			s.StoryType = *req.StoryType
+		}
+		if req.Severity != nil {
+			s.Severity = *req.Severity
+		}
+		if req.Labels != nil {
+			s.Labels = *req.Labels
+		}
+		if req.Epic != nil {
+			s.Epic = *req.Epic
+		}
+		if req.Sprint != nil {
+			s.Sprint = *req.Sprint
+		}
+		if req.Estimate != nil {
+			s.Estimate = *req.Estimate
+		}
+		if req.DueDate != nil {
+			s.DueDate = *req.DueDate
+		}
+		if req.Blocked != nil {
+			s.Blocked = *req.Blocked
+		}
+		if err := r.db.WithContext(ctx).Create(s).Error; err != nil {
+			return nil, fmt.Errorf("create team field visibility: %w", err)
+		}
+		return s, nil
+	}
+
+	updates := map[string]interface{}{}
+	if req.Priority != nil {
+		updates["priority"] = *req.Priority
+	}
+	if req.StoryType != nil {
+		updates["story_type"] = *req.StoryType
+	}
+	if req.Severity != nil {
+		updates["severity"] = *req.Severity
+	}
+	if req.Labels != nil {
+		updates["labels"] = *req.Labels
+	}
+	if req.Epic != nil {
+		updates["epic"] = *req.Epic
+	}
+	if req.Sprint != nil {
+		updates["sprint"] = *req.Sprint
+	}
+	if req.Estimate != nil {
+		updates["estimate"] = *req.Estimate
+	}
+	if req.DueDate != nil {
+		updates["due_date"] = *req.DueDate
+	}
+	if req.Blocked != nil {
+		updates["blocked"] = *req.Blocked
+	}
+
+	if len(updates) > 0 {
+		if err := r.db.WithContext(ctx).Model(&model.PMTeamFieldVisibility{}).Where("team_id = ?", teamID).Updates(updates).Error; err != nil {
+			return nil, fmt.Errorf("update team field visibility: %w", err)
+		}
+	}
+
+	return r.GetTeamFieldVisibility(ctx, teamID)
+}
+
+// listTeamFieldVisibility returns all field visibility settings for a workspace's teams.
+func (r *SettingsRepository) listTeamFieldVisibility(ctx context.Context, workspaceID string) ([]model.PMTeamFieldVisibility, error) {
+	var results []model.PMTeamFieldVisibility
+	err := r.db.WithContext(ctx).
+		Table("pm_team_field_visibility").
+		Joins("JOIN workspace_teams ON pm_team_field_visibility.team_id = workspace_teams.id").
+		Where("workspace_teams.workspace_id = ?", workspaceID).
+		Select("pm_team_field_visibility.*").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("list team field visibility: %w", err)
 	}
 	return results, nil
 }

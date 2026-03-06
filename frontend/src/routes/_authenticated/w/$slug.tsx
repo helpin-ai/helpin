@@ -4,6 +4,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useRewardQuarterStore } from '@/stores/quarterStore'
 import { useSessionStore } from '@/stores/sessionStore'
 import { useTeamEstimateStore } from '@/stores/teamEstimateStore'
+import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore'
+import { settingsService } from '@/lib/services/settingsService'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
@@ -34,7 +36,12 @@ function WorkspaceLayout() {
       await Promise.all([
         useRewardQuarterStore.getState().loadQuarters(ws.id),
         useSessionStore.getState().loadMembership(ws.id),
-        useTeamEstimateStore.getState().loadForWorkspace(ws.id),
+        settingsService.getAll(ws.id).then(({ data }) => {
+          if (data) {
+            useTeamEstimateStore.getState().setSettings(data.team_estimate_settings ?? []);
+            useTeamFieldVisibilityStore.getState().setSettings(data.team_field_visibility ?? []);
+          }
+        }),
       ])
       setLoading(false)
     }

@@ -4,9 +4,10 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { settingsService } from '@/lib/services/settingsService';
 import { useTeamEstimateStore } from '@/stores/teamEstimateStore';
+import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
-import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, EstimateScale } from '@/lib/types';
+import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { StateTypeIcon } from '@/lib/pmConstants';
@@ -25,7 +26,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn, getInitials } from '@/lib/utils';
-import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, GitBranch, Info, LayoutGrid, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, Info, LayoutGrid, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -137,6 +138,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
       if (data) {
         setSettings(data);
         useTeamEstimateStore.getState().setSettings(data.team_estimate_settings ?? []);
+        useTeamFieldVisibilityStore.getState().setSettings(data.team_field_visibility ?? []);
       }
     } finally {
       setLoading(false);
@@ -190,6 +192,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             userMemberships={settings.user_memberships}
             invitationPreassignments={settings.invitation_team_preassignments}
             teamEstimateSettings={settings.team_estimate_settings}
+            teamFieldVisibility={settings.team_field_visibility}
             editable={isAdmin()}
             onRefresh={load}
           />
@@ -634,14 +637,85 @@ function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
   );
 }
 
+type VisibilityFieldKey = keyof Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>;
+type FieldVisibilityGroup = 'Classification' | 'Planning' | 'Other';
+
+const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; group: FieldVisibilityGroup }[] = [
+  { key: 'priority', label: 'Priority', group: 'Classification' },
+  { key: 'story_type', label: 'Type', group: 'Classification' },
+  { key: 'severity', label: 'Severity', group: 'Classification' },
+  { key: 'epic', label: 'Epic', group: 'Planning' },
+  { key: 'sprint', label: 'Sprint', group: 'Planning' },
+  { key: 'estimate', label: 'Estimate', group: 'Planning' },
+  { key: 'labels', label: 'Labels', group: 'Other' },
+  { key: 'due_date', label: 'Due Date', group: 'Other' },
+  { key: 'blocked', label: 'Blocked', group: 'Other' },
+];
+
+function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
+  teamId: string;
+  initial: TeamFieldVisibility | null;
+  saving: boolean;
+  onSave: (data: Partial<Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>>) => void;
+}) {
+  const [fields, setFields] = useState<Record<VisibilityFieldKey, boolean>>(() => {
+    const defaults = {} as Record<VisibilityFieldKey, boolean>;
+    for (const f of FIELD_VISIBILITY_FIELDS) {
+      defaults[f.key] = initial ? initial[f.key] : true;
+    }
+    return defaults;
+  });
+
+  useEffect(() => {
+    const next = {} as Record<VisibilityFieldKey, boolean>;
+    for (const f of FIELD_VISIBILITY_FIELDS) {
+      next[f.key] = initial ? initial[f.key] : true;
+    }
+    setFields(next);
+  }, [initial, teamId]);
+
+  const groups = [...new Set(FIELD_VISIBILITY_FIELDS.map((f) => f.group))];
+
+  return (
+    <div className="space-y-5 py-2">
+      <p className="text-sm text-muted-foreground">
+        Toggle which metadata fields appear on stories for this team. State, Owner, Requester, and Team are always visible.
+      </p>
+      {groups.map((group) => (
+        <div key={group} className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{group}</p>
+          {FIELD_VISIBILITY_FIELDS.filter((f) => f.group === group).map((f) => (
+            <div key={f.key} className="flex items-center justify-between">
+              <p className="text-sm font-medium">{f.label}</p>
+              <Switch
+                checked={fields[f.key]}
+                onCheckedChange={(checked) => setFields((prev) => ({ ...prev, [f.key]: checked }))}
+              />
+            </div>
+          ))}
+        </div>
+      ))}
+      <DialogFooter>
+        <Button
+          disabled={saving}
+          onClick={() => onSave(fields)}
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
 /* ============ Teams Tab ============ */
 
-function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, editable, onRefresh }: {
+function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, teamFieldVisibility, editable, onRefresh }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
   userMemberships: TeamUserMembership[];
   invitationPreassignments: InvitationTeamPreassignment[];
   teamEstimateSettings: TeamEstimateSettings[];
+  teamFieldVisibility: TeamFieldVisibility[];
   editable: boolean;
   onRefresh: () => void | Promise<void>;
 }) {
@@ -658,6 +732,9 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
 
   const [estimateDialogOpen, setEstimateDialogOpen] = useState(false);
   const [estimateSaving, setEstimateSaving] = useState(false);
+
+  const [fieldVisDialogOpen, setFieldVisDialogOpen] = useState(false);
+  const [fieldVisSaving, setFieldVisSaving] = useState(false);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
@@ -841,6 +918,11 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     const estimateMeta = teamEstConfig?.enabled
       ? SCALE_LABELS[teamEstConfig.scale]
       : 'Disabled';
+    const teamVisConfig = teamFieldVisibility.find((s) => s.team_id === selectedTeam.id);
+    const visibleCount = teamVisConfig
+      ? FIELD_VISIBILITY_FIELDS.filter((f) => teamVisConfig[f.key]).length
+      : FIELD_VISIBILITY_FIELDS.length;
+    const fieldVisMeta = `${visibleCount} of ${FIELD_VISIBILITY_FIELDS.length} visible`;
     const settingsGroups: {
       label?: string;
       rows: { key: string; icon: LucideIcon; title: string; description: string; meta: string; action: () => void; disabled: boolean }[];
@@ -877,6 +959,15 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
             description: 'Configure estimate scale and options',
             meta: estimateMeta,
             action: () => setEstimateDialogOpen(true),
+            disabled: !editable,
+          },
+          {
+            key: 'field-visibility',
+            icon: Eye,
+            title: 'Field visibility',
+            description: 'Show or hide metadata fields for this team',
+            meta: fieldVisMeta,
+            action: () => setFieldVisDialogOpen(true),
             disabled: !editable,
           },
           {
@@ -1184,6 +1275,32 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
                 } else {
                   toast.success('Estimate settings updated');
                   setEstimateDialogOpen(false);
+                  await onRefresh();
+                }
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+
+        {/* Field Visibility Dialog */}
+        <Dialog open={fieldVisDialogOpen} onOpenChange={setFieldVisDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Field Visibility</DialogTitle>
+            </DialogHeader>
+            <FieldVisibilityForm
+              teamId={selectedTeam.id}
+              initial={teamVisConfig ?? null}
+              saving={fieldVisSaving}
+              onSave={async (data) => {
+                setFieldVisSaving(true);
+                const { error } = await settingsService.updateTeamFieldVisibility(selectedTeam.id, data);
+                setFieldVisSaving(false);
+                if (error) {
+                  toast.error(error);
+                } else {
+                  toast.success('Field visibility updated');
+                  setFieldVisDialogOpen(false);
                   await onRefresh();
                 }
               }}

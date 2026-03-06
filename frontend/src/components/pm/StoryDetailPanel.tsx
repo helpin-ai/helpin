@@ -69,6 +69,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -294,6 +295,7 @@ function StoryDetailPanelBody({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id));
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(storyDetail.story.updated_at);
@@ -853,6 +855,7 @@ function StoryDetailPanelBody({
             </MetadataRow>
 
             {/* Priority */}
+            {fieldVis.priority && (
             <MetadataRow icon={Gauge} label="Priority">
               <SidebarPopoverSelect
                 value={form.priority}
@@ -867,8 +870,10 @@ function StoryDetailPanelBody({
                 renderOption={(v) => <PriorityIcon priority={v as Priority} className="h-4 w-4 shrink-0" />}
               />
             </MetadataRow>
+            )}
 
             {/* Type */}
+            {fieldVis.story_type && (
             <MetadataRow icon={Hash} label="Type">
               <SidebarPopoverSelect
                 value={form.story_type}
@@ -883,6 +888,7 @@ function StoryDetailPanelBody({
                 renderOption={(v) => <StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" />}
               />
             </MetadataRow>
+            )}
 
             {/* Owner */}
             <MetadataRow icon={User} label="Owner">
@@ -933,6 +939,7 @@ function StoryDetailPanelBody({
             </MetadataRow>
 
             {/* Severity */}
+            {fieldVis.severity && (
             <MetadataRow icon={ShieldAlert} label="Severity">
               <SidebarPopoverSelect
                 value={form.severity}
@@ -947,8 +954,10 @@ function StoryDetailPanelBody({
                 renderOption={(v) => <SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" />}
               />
             </MetadataRow>
+            )}
 
             {/* Labels */}
+            {fieldVis.labels && (
             <MetadataRow icon={Tag} label="Labels">
               <LabelPicker
                 workspaceId={workspaceId}
@@ -963,8 +972,10 @@ function StoryDetailPanelBody({
                 }}
               />
             </MetadataRow>
+            )}
 
             {/* Epic */}
+            {fieldVis.epic && (
             <MetadataRow icon={Layers} label="Epic">
               <SidebarPopoverSelect
                 value={form.epic_id || '__none__'}
@@ -979,8 +990,10 @@ function StoryDetailPanelBody({
                 renderTrigger={() => <span>{currentEpicName}</span>}
               />
             </MetadataRow>
+            )}
 
             {/* Sprint */}
+            {fieldVis.sprint && (
             <MetadataRow icon={GitBranch} label="Sprint">
               <SidebarPopoverSelect
                 value={form.sprint_id || '__none__'}
@@ -995,8 +1008,10 @@ function StoryDetailPanelBody({
                 renderTrigger={() => <span>{currentSprintName}</span>}
               />
             </MetadataRow>
+            )}
 
             {/* Estimate */}
+            {fieldVis.estimate && (
             <MetadataRow icon={LayoutGrid} label="Estimate">
               <EstimatePicker
                 value={form.estimate}
@@ -1008,8 +1023,10 @@ function StoryDetailPanelBody({
                 }}
               />
             </MetadataRow>
+            )}
 
             {/* Due date */}
+            {fieldVis.due_date && (
             <MetadataRow icon={CalendarDays} label="Due date">
               <DatePicker
                 value={form.deadline}
@@ -1019,8 +1036,10 @@ function StoryDetailPanelBody({
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
+            )}
 
             {/* Blocked */}
+            {fieldVis.blocked && (
             <MetadataRow icon={ShieldAlert} label="Blocked">
               <div className="flex items-center gap-2">
                 <Switch
@@ -1035,6 +1054,7 @@ function StoryDetailPanelBody({
                 </span>
               </div>
             </MetadataRow>
+            )}
           </div>
         </aside>
       </div>

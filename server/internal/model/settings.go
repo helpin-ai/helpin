@@ -146,6 +146,38 @@ type UpdateTeamEstimateSettingsRequest struct {
 	CountUnestimatedAsOne *bool   `json:"count_unestimated_as_one"`
 }
 
+// PMTeamFieldVisibility stores per-team field visibility configuration.
+type PMTeamFieldVisibility struct {
+	ID        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	TeamID    string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex"`
+	Priority  bool      `json:"priority" gorm:"not null;default:true"`
+	StoryType bool      `json:"story_type" gorm:"not null;default:true"`
+	Severity  bool      `json:"severity" gorm:"not null;default:true"`
+	Labels    bool      `json:"labels" gorm:"not null;default:true"`
+	Epic      bool      `json:"epic" gorm:"not null;default:true"`
+	Sprint    bool      `json:"sprint" gorm:"not null;default:true"`
+	Estimate  bool      `json:"estimate" gorm:"not null;default:true"`
+	DueDate   bool      `json:"due_date" gorm:"not null;default:true"`
+	Blocked   bool      `json:"blocked" gorm:"not null;default:true"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (PMTeamFieldVisibility) TableName() string { return "pm_team_field_visibility" }
+
+// UpdateTeamFieldVisibilityRequest is the payload for updating team field visibility.
+type UpdateTeamFieldVisibilityRequest struct {
+	Priority  *bool `json:"priority"`
+	StoryType *bool `json:"story_type"`
+	Severity  *bool `json:"severity"`
+	Labels    *bool `json:"labels"`
+	Epic      *bool `json:"epic"`
+	Sprint    *bool `json:"sprint"`
+	Estimate  *bool `json:"estimate"`
+	DueDate   *bool `json:"due_date"`
+	Blocked   *bool `json:"blocked"`
+}
+
 // InvitationTeamPreassignment pre-assigns a pending invitation to a team.
 // When the invitation is accepted, the user is automatically added to the team.
 type InvitationTeamPreassignment struct {
@@ -169,6 +201,7 @@ type FullWorkspaceConfig struct {
 	BonusTiers                     []BonusTier                    `json:"bonus_tiers"`
 	InvitationTeamPreassignments   []InvitationTeamPreassignment  `json:"invitation_team_preassignments"`
 	TeamEstimateSettings           []PMTeamEstimateSettings       `json:"team_estimate_settings"`
+	TeamFieldVisibility            []PMTeamFieldVisibility        `json:"team_field_visibility"`
 }
 
 // CreateTeamRequest is the payload for creating a team.

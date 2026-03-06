@@ -318,6 +318,43 @@ func (h *SettingsHandler) UpdateTeamEstimateSettings(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, settings)
 }
 
+// GetTeamFieldVisibility handles GET /api/settings/teams/{id}/field-visibility.
+func (h *SettingsHandler) GetTeamFieldVisibility(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+
+	settings, err := h.settingsService.GetTeamFieldVisibility(r.Context(), teamID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if settings == nil {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, settings)
+}
+
+// UpdateTeamFieldVisibility handles PUT /api/settings/teams/{id}/field-visibility.
+func (h *SettingsHandler) UpdateTeamFieldVisibility(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+
+	var req model.UpdateTeamFieldVisibilityRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	settings, err := h.settingsService.UpdateTeamFieldVisibility(r.Context(), teamID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, settings)
+}
+
 // UpdateSystem handles PUT /api/settings/system.
 func (h *SettingsHandler) UpdateSystem(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.URL.Query().Get("workspace_id")

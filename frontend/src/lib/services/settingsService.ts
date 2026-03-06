@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, BonusTierConfig, JobRoleCriteria, InvitationTeamPreassignment, TeamEstimateSettings, EstimateScale } from '../types';
+import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, BonusTierConfig, JobRoleCriteria, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale } from '../types';
 
 interface RawWorkspaceSettings extends Omit<WorkspaceSettings, 'job_role_criteria'> {
   job_role_criteria?: JobRoleCriteria[];
@@ -25,6 +25,7 @@ const normalizeWorkspaceSettings = (raw: RawWorkspaceSettings): WorkspaceSetting
   bonus_tiers: raw.bonus_tiers ?? [],
   invitation_team_preassignments: raw.invitation_team_preassignments ?? [],
   team_estimate_settings: raw.team_estimate_settings ?? [],
+  team_field_visibility: raw.team_field_visibility ?? [],
 });
 
 export const settingsService = {
@@ -75,4 +76,8 @@ export const settingsService = {
     api.get<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates`),
   updateTeamEstimateSettings: (teamId: string, data: { enabled?: boolean; scale?: EstimateScale; extended?: boolean; allow_zero?: boolean; count_unestimated_as_one?: boolean }) =>
     api.put<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates`, data),
+  getTeamFieldVisibility: (teamId: string) =>
+    api.get<TeamFieldVisibility>(`/settings/teams/${teamId}/field-visibility`),
+  updateTeamFieldVisibility: (teamId: string, data: Partial<Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>>) =>
+    api.put<TeamFieldVisibility>(`/settings/teams/${teamId}/field-visibility`, data),
 };

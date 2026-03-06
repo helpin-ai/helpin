@@ -18,6 +18,7 @@ import { UserAvatar } from './UserAvatar';
 import type { Priority, Severity, Story, WorkflowState } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
+import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -81,6 +82,8 @@ export function StoryCard({
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
   const [stateOpen, setStateOpen] = useState(false);
+
+  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(story.team_id));
 
   const due = useMemo(() => {
     if (!story.deadline) return null;
@@ -197,6 +200,7 @@ export function StoryCard({
     >
       {/* Row 1: Story type + Epic + Priority */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {fieldVis.story_type && (
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="shrink-0">
@@ -205,12 +209,13 @@ export function StoryCard({
           </TooltipTrigger>
           <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>
         </Tooltip>
-        {story.epic_name && (
+        )}
+        {fieldVis.epic && story.epic_name && (
           <span className="truncate text-[11px] text-muted-foreground max-w-[160px]">{story.epic_name}</span>
         )}
 
         {/* Priority pill — clickable dropdown */}
-        {workspaceId ? (
+        {fieldVis.priority && (workspaceId ? (
           <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
             <Tooltip open={priorityOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -275,7 +280,7 @@ export function StoryCard({
             </TooltipTrigger>
             <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
           </Tooltip>
-        )}
+        ))}
       </div>
 
       {/* Row 2: Title */}
@@ -357,7 +362,7 @@ export function StoryCard({
           </Tooltip>
         ) : null}
 
-        {story.estimate != null && (
+        {fieldVis.estimate && story.estimate != null && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
@@ -369,7 +374,7 @@ export function StoryCard({
         )}
 
         {/* Severity pill — clickable dropdown */}
-        {severityCfg && workspaceId ? (
+        {fieldVis.severity && (severityCfg && workspaceId ? (
           <Popover open={severityOpen} onOpenChange={setSeverityOpen}>
             <Tooltip open={severityOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -430,9 +435,9 @@ export function StoryCard({
             </TooltipTrigger>
             <TooltipContent side="top">Severity: {severityCfg.label}</TooltipContent>
           </Tooltip>
-        ) : null}
+        ) : null)}
 
-        {story.blocked && (
+        {fieldVis.blocked && story.blocked && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400')}>
@@ -444,7 +449,7 @@ export function StoryCard({
           </Tooltip>
         )}
 
-        {due && (
+        {fieldVis.due_date && due && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(
