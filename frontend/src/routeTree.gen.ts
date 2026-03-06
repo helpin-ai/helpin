@@ -31,13 +31,15 @@ import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
 import { Route as AuthenticatedWSlugSettingsSectionRouteImport } from './routes/_authenticated/w/$slug/settings/$section'
 import { Route as AuthenticatedWSlugPmSupportRouteImport } from './routes/_authenticated/w/$slug/pm/support'
-import { Route as AuthenticatedWSlugPmStoriesRouteImport } from './routes/_authenticated/w/$slug/pm/stories'
 import { Route as AuthenticatedWSlugPmRoadmapRouteImport } from './routes/_authenticated/w/$slug/pm/roadmap'
 import { Route as AuthenticatedWSlugPmReportsRouteImport } from './routes/_authenticated/w/$slug/pm/reports'
+import { Route as AuthenticatedWSlugPmLabelsRouteImport } from './routes/_authenticated/w/$slug/pm/labels'
 import { Route as AuthenticatedWSlugPmAgentsRouteImport } from './routes/_authenticated/w/$slug/pm/agents'
+import { Route as AuthenticatedWSlugPmStoriesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/stories/index'
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
+import { Route as AuthenticatedWSlugPmStoriesStoryIdRouteImport } from './routes/_authenticated/w/$slug/pm/stories/$storyId'
 import { Route as AuthenticatedWSlugPmSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/$sprintId'
 import { Route as AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/$objectiveId'
 import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_authenticated/w/$slug/pm/epics/$epicId'
@@ -160,12 +162,6 @@ const AuthenticatedWSlugPmSupportRoute =
     path: '/pm/support',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
-const AuthenticatedWSlugPmStoriesRoute =
-  AuthenticatedWSlugPmStoriesRouteImport.update({
-    id: '/pm/stories',
-    path: '/pm/stories',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
 const AuthenticatedWSlugPmRoadmapRoute =
   AuthenticatedWSlugPmRoadmapRouteImport.update({
     id: '/pm/roadmap',
@@ -178,10 +174,22 @@ const AuthenticatedWSlugPmReportsRoute =
     path: '/pm/reports',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugPmLabelsRoute =
+  AuthenticatedWSlugPmLabelsRouteImport.update({
+    id: '/pm/labels',
+    path: '/pm/labels',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugPmAgentsRoute =
   AuthenticatedWSlugPmAgentsRouteImport.update({
     id: '/pm/agents',
     path: '/pm/agents',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugPmStoriesIndexRoute =
+  AuthenticatedWSlugPmStoriesIndexRouteImport.update({
+    id: '/pm/stories/',
+    path: '/pm/stories/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugPmSprintsIndexRoute =
@@ -200,6 +208,12 @@ const AuthenticatedWSlugPmEpicsIndexRoute =
   AuthenticatedWSlugPmEpicsIndexRouteImport.update({
     id: '/pm/epics/',
     path: '/pm/epics/',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugPmStoriesStoryIdRoute =
+  AuthenticatedWSlugPmStoriesStoryIdRouteImport.update({
+    id: '/pm/stories/$storyId',
+    path: '/pm/stories/$storyId',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugPmSprintsSprintIdRoute =
@@ -238,9 +252,9 @@ export interface FileRoutesByFullPath {
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
+  '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
   '/w/$slug/pm/roadmap': typeof AuthenticatedWSlugPmRoadmapRoute
-  '/w/$slug/pm/stories': typeof AuthenticatedWSlugPmStoriesRoute
   '/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -250,9 +264,11 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
+  '/w/$slug/pm/stories/$storyId': typeof AuthenticatedWSlugPmStoriesStoryIdRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
+  '/w/$slug/pm/stories/': typeof AuthenticatedWSlugPmStoriesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -270,9 +286,9 @@ export interface FileRoutesByTo {
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
+  '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
   '/w/$slug/pm/roadmap': typeof AuthenticatedWSlugPmRoadmapRoute
-  '/w/$slug/pm/stories': typeof AuthenticatedWSlugPmStoriesRoute
   '/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -282,9 +298,11 @@ export interface FileRoutesByTo {
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
+  '/w/$slug/pm/stories/$storyId': typeof AuthenticatedWSlugPmStoriesStoryIdRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints': typeof AuthenticatedWSlugPmSprintsIndexRoute
+  '/w/$slug/pm/stories': typeof AuthenticatedWSlugPmStoriesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -305,9 +323,9 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/_authenticated/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/_authenticated/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
+  '/_authenticated/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/_authenticated/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
   '/_authenticated/w/$slug/pm/roadmap': typeof AuthenticatedWSlugPmRoadmapRoute
-  '/_authenticated/w/$slug/pm/stories': typeof AuthenticatedWSlugPmStoriesRoute
   '/_authenticated/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
   '/_authenticated/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -317,9 +335,11 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/_authenticated/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/_authenticated/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
+  '/_authenticated/w/$slug/pm/stories/$storyId': typeof AuthenticatedWSlugPmStoriesStoryIdRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
+  '/_authenticated/w/$slug/pm/stories/': typeof AuthenticatedWSlugPmStoriesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -340,9 +360,9 @@ export interface FileRouteTypes {
     | '/w/$slug/team-goals'
     | '/w/$slug/'
     | '/w/$slug/pm/agents'
+    | '/w/$slug/pm/labels'
     | '/w/$slug/pm/reports'
     | '/w/$slug/pm/roadmap'
-    | '/w/$slug/pm/stories'
     | '/w/$slug/pm/support'
     | '/w/$slug/settings/$section'
     | '/w/$slug/sprints/$sprintId'
@@ -352,9 +372,11 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/epics/$epicId'
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
+    | '/w/$slug/pm/stories/$storyId'
     | '/w/$slug/pm/epics/'
     | '/w/$slug/pm/objectives/'
     | '/w/$slug/pm/sprints/'
+    | '/w/$slug/pm/stories/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -372,9 +394,9 @@ export interface FileRouteTypes {
     | '/w/$slug/team-goals'
     | '/w/$slug'
     | '/w/$slug/pm/agents'
+    | '/w/$slug/pm/labels'
     | '/w/$slug/pm/reports'
     | '/w/$slug/pm/roadmap'
-    | '/w/$slug/pm/stories'
     | '/w/$slug/pm/support'
     | '/w/$slug/settings/$section'
     | '/w/$slug/sprints/$sprintId'
@@ -384,9 +406,11 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/epics/$epicId'
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
+    | '/w/$slug/pm/stories/$storyId'
     | '/w/$slug/pm/epics'
     | '/w/$slug/pm/objectives'
     | '/w/$slug/pm/sprints'
+    | '/w/$slug/pm/stories'
   id:
     | '__root__'
     | '/'
@@ -406,9 +430,9 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/team-goals'
     | '/_authenticated/w/$slug/'
     | '/_authenticated/w/$slug/pm/agents'
+    | '/_authenticated/w/$slug/pm/labels'
     | '/_authenticated/w/$slug/pm/reports'
     | '/_authenticated/w/$slug/pm/roadmap'
-    | '/_authenticated/w/$slug/pm/stories'
     | '/_authenticated/w/$slug/pm/support'
     | '/_authenticated/w/$slug/settings/$section'
     | '/_authenticated/w/$slug/sprints/$sprintId'
@@ -418,9 +442,11 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/epics/$epicId'
     | '/_authenticated/w/$slug/pm/objectives/$objectiveId'
     | '/_authenticated/w/$slug/pm/sprints/$sprintId'
+    | '/_authenticated/w/$slug/pm/stories/$storyId'
     | '/_authenticated/w/$slug/pm/epics/'
     | '/_authenticated/w/$slug/pm/objectives/'
     | '/_authenticated/w/$slug/pm/sprints/'
+    | '/_authenticated/w/$slug/pm/stories/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -587,13 +613,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmSupportRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
-    '/_authenticated/w/$slug/pm/stories': {
-      id: '/_authenticated/w/$slug/pm/stories'
-      path: '/pm/stories'
-      fullPath: '/w/$slug/pm/stories'
-      preLoaderRoute: typeof AuthenticatedWSlugPmStoriesRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
     '/_authenticated/w/$slug/pm/roadmap': {
       id: '/_authenticated/w/$slug/pm/roadmap'
       path: '/pm/roadmap'
@@ -608,11 +627,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmReportsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/pm/labels': {
+      id: '/_authenticated/w/$slug/pm/labels'
+      path: '/pm/labels'
+      fullPath: '/w/$slug/pm/labels'
+      preLoaderRoute: typeof AuthenticatedWSlugPmLabelsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/pm/agents': {
       id: '/_authenticated/w/$slug/pm/agents'
       path: '/pm/agents'
       fullPath: '/w/$slug/pm/agents'
       preLoaderRoute: typeof AuthenticatedWSlugPmAgentsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/pm/stories/': {
+      id: '/_authenticated/w/$slug/pm/stories/'
+      path: '/pm/stories'
+      fullPath: '/w/$slug/pm/stories/'
+      preLoaderRoute: typeof AuthenticatedWSlugPmStoriesIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/pm/sprints/': {
@@ -634,6 +667,13 @@ declare module '@tanstack/react-router' {
       path: '/pm/epics'
       fullPath: '/w/$slug/pm/epics/'
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/pm/stories/$storyId': {
+      id: '/_authenticated/w/$slug/pm/stories/$storyId'
+      path: '/pm/stories/$storyId'
+      fullPath: '/w/$slug/pm/stories/$storyId'
+      preLoaderRoute: typeof AuthenticatedWSlugPmStoriesStoryIdRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/pm/sprints/$sprintId': {
@@ -670,9 +710,9 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugTeamGoalsRoute: typeof AuthenticatedWSlugTeamGoalsRoute
   AuthenticatedWSlugIndexRoute: typeof AuthenticatedWSlugIndexRoute
   AuthenticatedWSlugPmAgentsRoute: typeof AuthenticatedWSlugPmAgentsRoute
+  AuthenticatedWSlugPmLabelsRoute: typeof AuthenticatedWSlugPmLabelsRoute
   AuthenticatedWSlugPmReportsRoute: typeof AuthenticatedWSlugPmReportsRoute
   AuthenticatedWSlugPmRoadmapRoute: typeof AuthenticatedWSlugPmRoadmapRoute
-  AuthenticatedWSlugPmStoriesRoute: typeof AuthenticatedWSlugPmStoriesRoute
   AuthenticatedWSlugPmSupportRoute: typeof AuthenticatedWSlugPmSupportRoute
   AuthenticatedWSlugSettingsSectionRoute: typeof AuthenticatedWSlugSettingsSectionRoute
   AuthenticatedWSlugSprintsSprintIdRoute: typeof AuthenticatedWSlugSprintsSprintIdRoute
@@ -682,9 +722,11 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugPmEpicsEpicIdRoute: typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   AuthenticatedWSlugPmObjectivesObjectiveIdRoute: typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   AuthenticatedWSlugPmSprintsSprintIdRoute: typeof AuthenticatedWSlugPmSprintsSprintIdRoute
+  AuthenticatedWSlugPmStoriesStoryIdRoute: typeof AuthenticatedWSlugPmStoriesStoryIdRoute
   AuthenticatedWSlugPmEpicsIndexRoute: typeof AuthenticatedWSlugPmEpicsIndexRoute
   AuthenticatedWSlugPmObjectivesIndexRoute: typeof AuthenticatedWSlugPmObjectivesIndexRoute
   AuthenticatedWSlugPmSprintsIndexRoute: typeof AuthenticatedWSlugPmSprintsIndexRoute
+  AuthenticatedWSlugPmStoriesIndexRoute: typeof AuthenticatedWSlugPmStoriesIndexRoute
 }
 
 const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
@@ -697,9 +739,9 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugTeamGoalsRoute: AuthenticatedWSlugTeamGoalsRoute,
   AuthenticatedWSlugIndexRoute: AuthenticatedWSlugIndexRoute,
   AuthenticatedWSlugPmAgentsRoute: AuthenticatedWSlugPmAgentsRoute,
+  AuthenticatedWSlugPmLabelsRoute: AuthenticatedWSlugPmLabelsRoute,
   AuthenticatedWSlugPmReportsRoute: AuthenticatedWSlugPmReportsRoute,
   AuthenticatedWSlugPmRoadmapRoute: AuthenticatedWSlugPmRoadmapRoute,
-  AuthenticatedWSlugPmStoriesRoute: AuthenticatedWSlugPmStoriesRoute,
   AuthenticatedWSlugPmSupportRoute: AuthenticatedWSlugPmSupportRoute,
   AuthenticatedWSlugSettingsSectionRoute:
     AuthenticatedWSlugSettingsSectionRoute,
@@ -713,10 +755,13 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugPmObjectivesObjectiveIdRoute,
   AuthenticatedWSlugPmSprintsSprintIdRoute:
     AuthenticatedWSlugPmSprintsSprintIdRoute,
+  AuthenticatedWSlugPmStoriesStoryIdRoute:
+    AuthenticatedWSlugPmStoriesStoryIdRoute,
   AuthenticatedWSlugPmEpicsIndexRoute: AuthenticatedWSlugPmEpicsIndexRoute,
   AuthenticatedWSlugPmObjectivesIndexRoute:
     AuthenticatedWSlugPmObjectivesIndexRoute,
   AuthenticatedWSlugPmSprintsIndexRoute: AuthenticatedWSlugPmSprintsIndexRoute,
+  AuthenticatedWSlugPmStoriesIndexRoute: AuthenticatedWSlugPmStoriesIndexRoute,
 }
 
 const AuthenticatedWSlugRouteWithChildren =

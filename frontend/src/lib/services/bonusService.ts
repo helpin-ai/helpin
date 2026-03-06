@@ -1,19 +1,19 @@
 import { api } from '../api';
-import type { BonusCalculation, FinanceSettings } from '../types';
+import type { RewardBonusCalculation, RewardFinanceSettings } from '../types';
 
-export const bonusService = {
+export const rewardBonusService = {
   getCalculations: (workspaceId: string, quarterId: string) =>
-    api.get<BonusCalculation[]>(`/bonus/calculations?workspace_id=${workspaceId}&quarter_id=${quarterId}`),
-  saveCalculations: (calculations: Omit<BonusCalculation, 'id'>[]) =>
-    api.post('/bonus/calculations', { calculations }),
+    api.get<RewardBonusCalculation[]>(`/rewards/bonus/calculations?workspace_id=${workspaceId}&quarter_id=${quarterId}`),
+  saveCalculations: (calculations: Omit<RewardBonusCalculation, 'id'>[]) =>
+    api.post('/rewards/bonus/calculations', { calculations }),
   lock: (workspaceId: string, quarterId: string) =>
-    api.post('/bonus/lock', { workspace_id: workspaceId, quarter_id: quarterId }),
+    api.post('/rewards/bonus/lock', { workspace_id: workspaceId, quarter_id: quarterId }),
   unlock: (workspaceId: string, quarterId: string) =>
-    api.post('/bonus/unlock', { workspace_id: workspaceId, quarter_id: quarterId }),
+    api.post('/rewards/bonus/unlock', { workspace_id: workspaceId, quarter_id: quarterId }),
   getFinance: (workspaceId: string, quarterId: string) =>
-    api.get<FinanceSettings>(`/finance?workspace_id=${workspaceId}&quarter_id=${quarterId}`),
-  upsertFinance: (data: Partial<FinanceSettings>) =>
-    api.post<FinanceSettings>('/finance', data),
+    api.get<RewardFinanceSettings>(`/rewards/finance?workspace_id=${workspaceId}&quarter_id=${quarterId}`),
+  upsertFinance: (data: Partial<RewardFinanceSettings>) =>
+    api.post<RewardFinanceSettings>('/rewards/finance', data),
   getTeamSprintData: (sprintId: string) =>
-    api.get(`/bonus/team-sprint-data?sprint_id=${encodeURIComponent(sprintId)}`),
+    api.get(`/rewards/bonus/team-sprint-data?sprint_id=${encodeURIComponent(sprintId)}`),
 };

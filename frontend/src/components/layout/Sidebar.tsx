@@ -13,6 +13,7 @@ import {
   FileText,
   FolderKanban,
   GanttChart,
+  EllipsisVertical,
   Hexagon,
   Layers,
   LayoutDashboard,
@@ -23,6 +24,7 @@ import {
   Settings,
   Settings2,
   SquareKanban,
+  Tag,
   Target,
   User,
   UserPlus,
@@ -221,18 +223,30 @@ export function Sidebar() {
         label: 'My Account',
         items: [
           { link: `/w/${wsSlug}/settings/profile`, label: 'Profile', icon: User },
-          { link: `/w/${wsSlug}/settings/system`, label: 'General', icon: Settings2 },
         ],
       },
       {
-        label: 'Workspace Settings',
+        label: 'Workspace',
         items: [
           { link: `/w/${wsSlug}/settings/members`, label: 'Members', icon: Users },
           { link: `/w/${wsSlug}/settings/teams`, label: 'Teams', icon: Users },
-          { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
-          { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
+        ],
+      },
+      {
+        label: 'Project Settings',
+        items: [
           { link: `/w/${wsSlug}/settings/workflows`, label: 'Workflows', icon: FolderKanban },
           { link: `/w/${wsSlug}/settings/workflowstates`, label: 'Workflow States', icon: LayoutList },
+          { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
+          { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
+        ],
+      },
+      {
+        label: 'Reward Settings',
+        items: [
+          { link: `/w/${wsSlug}/settings/system`, label: 'General', icon: Settings2 },
+          { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
+          { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
           { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },
         ],
       },
@@ -255,6 +269,10 @@ export function Sidebar() {
 
   const isActive = (link: string) => {
     return location.pathname === link || location.pathname.startsWith(`${link}/`);
+  };
+
+  const isAllWorkSubActive = (subPath: string) => {
+    return isActive(`/w/${wsSlug}/pm/${subPath}`) && !activeTeamParam;
   };
 
   const isTeamSubActive = (teamId: string, subPath: string) => {
@@ -296,16 +314,16 @@ export function Sidebar() {
               <div className="mb-2 flex w-full">
                 <Button
                   size="sm"
-                  className="h-8 flex-1 rounded-r-none text-xs gap-1.5"
+                  className="h-7 flex-1 rounded-r-none text-xs gap-1.5"
                   onClick={() => openCreate(primaryCreate.key)}
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="h-3 w-3" />
                   {primaryCreate.label}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="sm" className="h-8 rounded-l-none border-l border-primary-foreground/20 px-1.5">
-                      <ChevronDown className="h-3.5 w-3.5" />
+                    <Button size="sm" className="h-7 rounded-l-none border-l border-primary-foreground/20 px-1.5">
+                      <ChevronDown className="h-3 w-3" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
@@ -334,7 +352,7 @@ export function Sidebar() {
                         asChild
                         tooltip={item.label}
                         isActive={isActive(item.link)}
-                        className="h-8 rounded-md px-2"
+                        className="h-8 rounded-md px-2 text-xs"
                       >
                         <a
                           href={item.link}
@@ -354,12 +372,59 @@ export function Sidebar() {
             ))}
 
             {/* ── Team-scoped navigation (projects rail only) ── */}
-            {activeRail === 'projects' && teams.length > 0 && (
+            {activeRail === 'projects' && (
               <SidebarGroup className="p-0 pb-3">
                 <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
                   Your Teams
                 </SidebarGroupLabel>
                 <SidebarMenu>
+                  {/* ── All Work (workspace-level, no team filter) ── */}
+                  <Collapsible.Root
+                    asChild
+                    open={expandedTeams.has('__all_work__')}
+                    onOpenChange={() => toggleTeam('__all_work__')}
+                  >
+                    <SidebarMenuItem>
+                      <Collapsible.Trigger asChild>
+                        <SidebarMenuButton className="h-8 rounded-md px-2">
+                          <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${expandedTeams.has('__all_work__') ? 'rotate-90' : ''}`} />
+                          <span className="truncate">All Work</span>
+                        </SidebarMenuButton>
+                      </Collapsible.Trigger>
+                      <Collapsible.Content>
+                        <SidebarMenuSub>
+                          {teamSubItems.map((sub) => {
+                            const link = `/w/${wsSlug}/pm/${sub.path}`;
+                            const active = isAllWorkSubActive(sub.path);
+                            return (
+                              <SidebarMenuSubItem key={sub.key}>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  size="sm"
+                                  isActive={active}
+                                >
+                                  <a
+                                    href={link}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      navigate({
+                                        to: `/w/$slug/pm/${sub.path}` as string,
+                                        params: { slug: wsSlug },
+                                      });
+                                    }}
+                                  >
+                                    <sub.icon className="h-3.5 w-3.5" />
+                                    <span>{sub.label}</span>
+                                  </a>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            );
+                          })}
+                        </SidebarMenuSub>
+                      </Collapsible.Content>
+                    </SidebarMenuItem>
+                  </Collapsible.Root>
+
                   {teams.map((team) => {
                     const isExpanded = expandedTeams.has(team.id);
                     return (
@@ -370,12 +435,30 @@ export function Sidebar() {
                         onOpenChange={() => toggleTeam(team.id)}
                       >
                         <SidebarMenuItem>
-                          <Collapsible.Trigger asChild>
-                            <SidebarMenuButton className="h-8 rounded-md px-2">
-                              <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                              <span className="truncate">{team.name}</span>
-                            </SidebarMenuButton>
-                          </Collapsible.Trigger>
+                          <div className="group/team relative flex items-center">
+                            <Collapsible.Trigger asChild>
+                              <SidebarMenuButton className="h-8 rounded-md px-2 flex-1">
+                                <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                <span className="truncate">{team.name}</span>
+                              </SidebarMenuButton>
+                            </Collapsible.Trigger>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/team:opacity-100 data-[state=open]:opacity-100"
+                                >
+                                  <EllipsisVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent side="right" align="start">
+                                <DropdownMenuItem onClick={() => navigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'teams' } })}>
+                                  <Settings className="h-4 w-4" />
+                                  Settings
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                           <Collapsible.Content>
                             <SidebarMenuSub>
                               {teamSubItems.map((sub) => {

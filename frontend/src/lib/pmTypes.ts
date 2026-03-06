@@ -51,6 +51,7 @@ export interface WorkflowWithStates {
 export interface Label {
   id: string;
   workspace_id: string;
+  team_id?: string;
   name: string;
   description?: string;
   color?: string;
@@ -193,6 +194,12 @@ export interface StoryStateColumn {
   stories: Story[];
   story_count: number;
   point_total: number;
+  has_more: boolean;
+}
+
+export interface ColumnStoriesResponse {
+  stories: Story[];
+  total: number;
 }
 
 export interface StoryStateCount {
@@ -295,14 +302,30 @@ export interface UpdateWorkflowStateRequest {
   is_default?: boolean;
 }
 
+export interface LabelStats {
+  story_count: number;
+  done_story_count: number;
+  total_points: number;
+  done_points: number;
+  epic_count: number;
+  done_epic_count: number;
+}
+
+export interface LabelWithStats {
+  label: Label;
+  stats: LabelStats;
+}
+
 export interface CreateLabelRequest {
   workspace_id: string;
+  team_id?: string;
   name: string;
   description?: string;
   color?: string;
 }
 
 export interface UpdateLabelRequest {
+  team_id?: string;
   name?: string;
   description?: string;
   color?: string;
@@ -622,6 +645,41 @@ export interface UpdateKeyResultRequest {
   current_value?: number;
   target_value?: number;
   position?: number;
+}
+
+// ── Automations ─────────────────────────────────────────────────────
+
+export type AutomationType = 'epic_auto_start' | 'epic_auto_complete' | 'sprint_auto_create' | 'sprint_move_unfinished';
+
+export interface PMAutomation {
+  id: string;
+  workspace_id: string;
+  automation_type: AutomationType;
+  enabled: boolean;
+  team_id?: string;
+  config_state_id?: string;
+  config_int?: number;
+  config_int2?: number;
+  config_int3?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertAutomationRequest {
+  workspace_id: string;
+  automation_type: AutomationType;
+  enabled: boolean;
+  team_id?: string;
+  config_state_id?: string;
+  config_int?: number;
+  config_int2?: number;
+  config_int3?: number;
+}
+
+export interface DeleteAutomationRequest {
+  workspace_id: string;
+  automation_type: AutomationType;
+  team_id?: string;
 }
 
 // ── Views (Spaces) ──────────────────────────────────────────────────

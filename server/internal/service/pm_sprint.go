@@ -14,13 +14,14 @@ import (
 // PMSprintService contains sprint business logic.
 type PMSprintService struct {
 	sprintRepo      *repository.PMSprintRepository
+	labelRepo       *repository.PMLabelRepository
 	activityService *PMActivityService
 	wsPublisher     *websocket.Publisher
 }
 
 // NewPMSprintService creates a new PMSprintService.
-func NewPMSprintService(sprintRepo *repository.PMSprintRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMSprintService {
-	return &PMSprintService{sprintRepo: sprintRepo, activityService: activityService, wsPublisher: wsPublisher}
+func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMSprintService {
+	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, activityService: activityService, wsPublisher: wsPublisher}
 }
 
 // List returns sprints with filters.
@@ -89,6 +90,9 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 		return nil, err
 	}
 	if len(req.LabelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+			return nil, err
+		}
 		if err := s.sprintRepo.ReplaceLabels(ctx, sprint.ID, req.LabelIDs); err != nil {
 			return nil, err
 		}
@@ -149,6 +153,9 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 		return nil, err
 	}
 	if req.LabelIDs != nil {
+		if err := validateLabelScope(ctx, s.labelRepo, sprint.WorkspaceID, req.LabelIDs, allowedTeamIDs(sprint.TeamID)); err != nil {
+			return nil, err
+		}
 		if err := s.sprintRepo.ReplaceLabels(ctx, sprint.ID, req.LabelIDs); err != nil {
 			return nil, err
 		}

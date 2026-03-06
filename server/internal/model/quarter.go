@@ -2,8 +2,8 @@ package model
 
 import "time"
 
-// Quarter represents a row in the quarters table.
-type Quarter struct {
+// RewardQuarter represents a row in the reward_quarters table.
+type RewardQuarter struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	Name        string    `json:"name" gorm:"not null"`
@@ -15,17 +15,17 @@ type Quarter struct {
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (Quarter) TableName() string { return "quarters" }
+func (RewardQuarter) TableName() string { return "reward_quarters" }
 
-// CreateQuarterRequest is the payload for POST /api/quarters.
-type CreateQuarterRequest struct {
+// CreateRewardQuarterRequest is the payload for POST /api/rewards/quarters.
+type CreateRewardQuarterRequest struct {
 	WorkspaceID string `json:"workspace_id"`
 	Name        string `json:"name"`
 	StartDate   string `json:"start_date"`
 	EndDate     string `json:"end_date"`
 }
 
-// UpdateQuarterStatusRequest is the payload for PATCH /api/quarters/{id}/status.
-type UpdateQuarterStatusRequest struct {
+// UpdateRewardQuarterStatusRequest is the payload for PATCH /api/rewards/quarters/{id}/status.
+type UpdateRewardQuarterStatusRequest struct {
 	Status string `json:"status"`
 }

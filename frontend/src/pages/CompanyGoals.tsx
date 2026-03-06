@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useQuarterStore } from '@/stores/quarterStore';
+import { useRewardQuarterStore } from '@/stores/quarterStore';
 import { useSessionStore } from '@/stores/sessionStore';
-import { goalsService } from '@/lib/services/goalsService';
+import { rewardGoalsService } from '@/lib/services/rewardGoalsService';
 import { settingsService } from '@/lib/services/settingsService';
-import type { CompanyGoal, WorkspaceTeam } from '@/lib/types';
+import type { RewardCompanyGoal, WorkspaceTeam } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,16 +22,16 @@ import { toast } from 'sonner';
 export default function CompanyGoals() {
   useTitle('Company Goals');
   const { currentWorkspace } = useWorkspaceStore();
-  const { currentQuarter } = useQuarterStore();
+  const { currentQuarter } = useRewardQuarterStore();
   const { canEdit } = useSessionStore();
-  const [goals, setGoals] = useState<CompanyGoal[]>([]);
+  const [goals, setGoals] = useState<RewardCompanyGoal[]>([]);
   const [teams, setTeams] = useState<WorkspaceTeam[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const load = async () => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
-    const q = useQuarterStore.getState().currentQuarter;
+    const q = useRewardQuarterStore.getState().currentQuarter;
     if (!ws?.id || !q?.id) {
       setGoals([]);
       setTeams([]);
@@ -41,7 +41,7 @@ export default function CompanyGoals() {
     setLoading(true);
     try {
       const [goalsRes, settingsRes] = await Promise.all([
-        goalsService.list(ws.id, q.id),
+        rewardGoalsService.list(ws.id, q.id),
         settingsService.getAll(ws.id),
       ]);
       if (goalsRes.data) setGoals(goalsRes.data);
@@ -113,7 +113,7 @@ export default function CompanyGoals() {
   );
 }
 
-function GoalCard({ goal, teams }: { goal: CompanyGoal; teams: WorkspaceTeam[] }) {
+function GoalCard({ goal, teams }: { goal: RewardCompanyGoal; teams: WorkspaceTeam[] }) {
   const [expanded, setExpanded] = useState(false);
 
   const progress = goal.goal_type === 'metric' && goal.target && goal.target > 0
@@ -209,7 +209,7 @@ function CreateGoalDialog({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const { error } = await goalsService.create({
+    const { error } = await rewardGoalsService.create({
       workspace_id: workspaceId,
       quarter_id: quarterId,
       title,

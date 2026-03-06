@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, BonusTierConfig, JobRoleCriteria } from '../types';
+import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, BonusTierConfig, JobRoleCriteria, InvitationTeamPreassignment, TeamEstimateSettings, EstimateScale } from '../types';
 
 interface RawWorkspaceSettings extends Omit<WorkspaceSettings, 'job_role_criteria'> {
   job_role_criteria?: JobRoleCriteria[];
@@ -19,9 +19,12 @@ const normalizeWorkspaceSettings = (raw: RawWorkspaceSettings): WorkspaceSetting
   teams: raw.teams ?? [],
   people: raw.people ?? [],
   memberships: raw.memberships ?? [],
+  user_memberships: raw.user_memberships ?? [],
   managers: raw.managers ?? [],
   job_role_criteria: raw.job_role_criteria ?? raw.job_roles ?? [],
   bonus_tiers: raw.bonus_tiers ?? [],
+  invitation_team_preassignments: raw.invitation_team_preassignments ?? [],
+  team_estimate_settings: raw.team_estimate_settings ?? [],
 });
 
 export const settingsService = {
@@ -40,11 +43,17 @@ export const settingsService = {
     return { data: null, error: primary.error ?? fallback.error };
   },
   initialize: (workspaceId: string) => api.post('/settings/initialize', { workspace_id: workspaceId }),
-  createTeam: (data: { workspace_id: string; name: string; description?: string; manager_id?: string }) =>
+  createTeam: (data: { workspace_id: string; name: string; handle?: string; description?: string; manager_id?: string }) =>
     api.post<WorkspaceTeam>('/settings/teams', data),
   updateTeam: (id: string, data: Partial<WorkspaceTeam>) =>
     api.put<WorkspaceTeam>(`/settings/teams/${id}`, data),
   deleteTeam: (id: string) => api.del(`/settings/teams/${id}`),
+  addTeamMember: (teamId: string, data: { user_id: string; role?: 'owner' | 'member' }) =>
+    api.post(`/settings/teams/${teamId}/members`, data),
+  updateTeamMember: (teamId: string, userId: string, data: { role?: 'owner' | 'member' }) =>
+    api.put(`/settings/teams/${teamId}/members/${userId}`, data),
+  removeTeamMember: (teamId: string, userId: string) =>
+    api.del(`/settings/teams/${teamId}/members/${userId}`),
   createPerson: (data: Omit<WorkspacePerson, 'id'>) =>
     api.post<WorkspacePerson>('/settings/people', data),
   updatePerson: (id: string, data: Partial<WorkspacePerson>) =>
@@ -58,4 +67,12 @@ export const settingsService = {
     api.del(`/settings/job-roles?workspace_id=${encodeURIComponent(workspaceId)}&job_role=${encodeURIComponent(jobRole)}`),
   updateSystem: (workspaceId: string, data: { team_weight?: number; sprint_duration_weeks?: number; notifications_enabled?: boolean; auto_calculate_bonuses?: boolean }) =>
     api.put(`/settings/system?workspace_id=${encodeURIComponent(workspaceId)}`, data),
+  addTeamInvitation: (teamId: string, invitationId: string) =>
+    api.post<InvitationTeamPreassignment>(`/settings/teams/${teamId}/invitations`, { invitation_id: invitationId }),
+  removeTeamInvitation: (teamId: string, invitationId: string) =>
+    api.del(`/settings/teams/${teamId}/invitations/${invitationId}`),
+  getTeamEstimateSettings: (teamId: string) =>
+    api.get<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates`),
+  updateTeamEstimateSettings: (teamId: string, data: { enabled?: boolean; scale?: EstimateScale; extended?: boolean; allow_zero?: boolean; count_unestimated_as_one?: boolean }) =>
+    api.put<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates`, data),
 };

@@ -31,7 +31,7 @@ export default function Workspaces() {
   // Auto-redirect to first workspace if user has exactly one.
   useEffect(() => {
     if (!loading && workspaces.length === 1) {
-      navigate({ to: '/w/$slug/dashboard', params: { slug: workspaces[0].slug } });
+      navigate({ to: '/w/$slug/pm/stories', params: { slug: workspaces[0].slug } });
     }
   }, [loading, workspaces, navigate]);
 

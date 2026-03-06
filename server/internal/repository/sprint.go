@@ -11,22 +11,22 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/model"
 )
 
-// SprintRepository handles database operations for the sprints table.
-type SprintRepository struct {
+// RewardSprintRepository handles database operations for the sprints table.
+type RewardSprintRepository struct {
 	db *gorm.DB
 }
 
-// NewSprintRepository creates a new SprintRepository.
-func NewSprintRepository(db *gorm.DB) *SprintRepository {
-	return &SprintRepository{db: db}
+// NewRewardSprintRepository creates a new RewardSprintRepository.
+func NewRewardSprintRepository(db *gorm.DB) *RewardSprintRepository {
+	return &RewardSprintRepository{db: db}
 }
 
 // BulkCreate inserts multiple sprints in a single transaction.
-func (r *SprintRepository) BulkCreate(ctx context.Context, sprints []model.Sprint) ([]model.Sprint, error) {
-	var created []model.Sprint
+func (r *RewardSprintRepository) BulkCreate(ctx context.Context, sprints []model.RewardSprint) ([]model.RewardSprint, error) {
+	var created []model.RewardSprint
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, s := range sprints {
-			out := model.Sprint{
+			out := model.RewardSprint{
 				QuarterID:    s.QuarterID,
 				WorkspaceID:  s.WorkspaceID,
 				SprintNumber: s.SprintNumber,
@@ -47,8 +47,8 @@ func (r *SprintRepository) BulkCreate(ctx context.Context, sprints []model.Sprin
 }
 
 // List returns all sprints for a quarter.
-func (r *SprintRepository) List(ctx context.Context, quarterID string) ([]model.Sprint, error) {
-	var sprints []model.Sprint
+func (r *RewardSprintRepository) List(ctx context.Context, quarterID string) ([]model.RewardSprint, error) {
+	var sprints []model.RewardSprint
 	err := r.db.WithContext(ctx).
 		Where("quarter_id = ?", quarterID).
 		Order("sprint_number ASC").
@@ -60,8 +60,8 @@ func (r *SprintRepository) List(ctx context.Context, quarterID string) ([]model.
 }
 
 // GetByID returns a sprint by its ID.
-func (r *SprintRepository) GetByID(ctx context.Context, id string) (*model.Sprint, error) {
-	s := &model.Sprint{}
+func (r *RewardSprintRepository) GetByID(ctx context.Context, id string) (*model.RewardSprint, error) {
+	s := &model.RewardSprint{}
 	err := r.db.WithContext(ctx).Where("id = ?", id).First(s).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -73,18 +73,18 @@ func (r *SprintRepository) GetByID(ctx context.Context, id string) (*model.Sprin
 }
 
 // Lock sets the sprint status to locked and records who locked it and when.
-func (r *SprintRepository) Lock(ctx context.Context, id, lockedBy string) (*model.Sprint, error) {
+func (r *RewardSprintRepository) Lock(ctx context.Context, id, lockedBy string) (*model.RewardSprint, error) {
 	now := time.Now()
 	updates := map[string]interface{}{
 		"status":    "locked",
 		"locked_at": now,
 		"locked_by": lockedBy,
 	}
-	if err := r.db.WithContext(ctx).Model(&model.Sprint{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&model.RewardSprint{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("lock sprint: %w", err)
 	}
 
-	s := &model.Sprint{}
+	s := &model.RewardSprint{}
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(s).Error; err != nil {
 		return nil, fmt.Errorf("lock sprint: %w", err)
 	}
@@ -92,17 +92,17 @@ func (r *SprintRepository) Lock(ctx context.Context, id, lockedBy string) (*mode
 }
 
 // Unlock removes the lock from a sprint.
-func (r *SprintRepository) Unlock(ctx context.Context, id string) (*model.Sprint, error) {
+func (r *RewardSprintRepository) Unlock(ctx context.Context, id string) (*model.RewardSprint, error) {
 	updates := map[string]interface{}{
 		"status":    "active",
 		"locked_at": nil,
 		"locked_by": nil,
 	}
-	if err := r.db.WithContext(ctx).Model(&model.Sprint{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&model.RewardSprint{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("unlock sprint: %w", err)
 	}
 
-	s := &model.Sprint{}
+	s := &model.RewardSprint{}
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(s).Error; err != nil {
 		return nil, fmt.Errorf("unlock sprint: %w", err)
 	}

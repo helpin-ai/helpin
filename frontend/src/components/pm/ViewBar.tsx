@@ -4,13 +4,11 @@ import {
   Eye,
   Globe,
   Lock,
-  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
   Plus,
   Save,
-  Search,
   Trash2,
   Undo2,
   X,
@@ -274,12 +272,10 @@ function ActiveViewMenu({
 function ViewsDropdown({
   workspaceId,
   currentUserId,
-  openViewIds,
   onOpenView,
 }: {
   workspaceId: string;
   currentUserId: string;
-  openViewIds: Set<string>;
   onOpenView: (view: PMView) => void;
 }) {
   const { views } = usePMBoardStore();
@@ -505,7 +501,6 @@ export function ViewBar({ workspaceId, currentUserId }: ViewBarProps) {
       <ViewsDropdown
         workspaceId={workspaceId}
         currentUserId={currentUserId}
-        openViewIds={openNonPinnedIds}
         onOpenView={handleOpenView}
       />
 

@@ -11,8 +11,12 @@ import {
   type Row,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronRight, Loader2, UserPlus } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Calendar } from '@/components/ui/calendar';
+import { format, parseISO } from 'date-fns';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import {
   PriorityIcon,
@@ -23,14 +27,21 @@ import {
   SEVERITY_CONFIG,
   STORY_TYPE_CONFIG,
 } from '@/lib/pmConstants';
+import { UserAvatar } from './UserAvatar';
 import type {
+  Priority,
+  Severity,
   Story,
   WorkflowWithStates,
   EpicWithStats,
   SprintWithStats,
 } from '@/lib/pmTypes';
 import type { MemberWithUser, WorkspaceTeam } from '@/lib/types';
+import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import type { BoardFilters } from '@/stores/pmBoardStore';
+
+const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
+const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 
 interface StoryListViewProps {
   workspaceId: string;
@@ -39,8 +50,10 @@ interface StoryListViewProps {
   members: MemberWithUser[];
   epics: EpicWithStats[];
   sprints: SprintWithStats[];
-  filters: BoardFilters;
-  teamId: string | null;
+  filters?: BoardFilters;
+  teamId?: string | null;
+  /** When provided, use these stories instead of fetching internally. */
+  externalStories?: Story[];
   onOpenStory: (story: Story) => void;
 }
 
@@ -80,6 +93,9 @@ const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
   team: 'teamName',
 };
 
+const HIDDEN_GROUP_COLUMNS = ['typeName', 'priorityName', 'severityName'];
+const LIST_PAGE_SIZE = 50;
+
 const columnHelper = createColumnHelper<Story>();
 
 export function StoryListView({
@@ -91,10 +107,15 @@ export function StoryListView({
   sprints,
   filters,
   teamId,
+  externalStories,
   onOpenStory,
 }: StoryListViewProps) {
-  const [stories, setStories] = useState<Story[]>([]);
-  const [loading, setLoading] = useState(true);
+  const isExternal = externalStories !== undefined;
+  const [stories, setStories] = useState<Story[]>(externalStories ?? []);
+  const [loading, setLoading] = useState(!isExternal);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [groupBy, setGroupBy] = useState<GroupByOption>('workflow_state');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -140,11 +161,14 @@ export function StoryListView({
     return map;
   }, [sprints]);
 
-  // Fetch stories
-  const fetchStories = useCallback(async () => {
-    setLoading(true);
+  // Fetch stories (skipped when externalStories is provided)
+  const fetchStories = useCallback(async (page = 1, append = false) => {
+    if (isExternal) return;
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
     const apiFilters: Record<string, string | number | boolean | undefined> = {
-      per_page: 500,
+      per_page: LIST_PAGE_SIZE,
+      page,
       workflow_id: workflow.workflow.id,
       archived: false,
       ...filters,
@@ -153,25 +177,81 @@ export function StoryListView({
 
     const res = await pmStoryService.list(workspaceId, apiFilters as Record<string, string>);
     if (res.data) {
-      setStories(res.data.data);
+      const incoming = res.data.data;
+      setStories((prev) => append ? [...prev, ...incoming] : incoming);
+      setHasMore(page < res.data.total_pages);
+      setCurrentPage(page);
     }
     setLoading(false);
-  }, [workspaceId, workflow.workflow.id, filters, teamId]);
+    setLoadingMore(false);
+  }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal]);
 
   useEffect(() => {
-    fetchStories();
-  }, [fetchStories]);
+    if (!isExternal) fetchStories(1, false);
+  }, [fetchStories, isExternal]);
 
-  // Listen for story events
+  const loadMore = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      fetchStories(currentPage + 1, true);
+    }
+  }, [fetchStories, currentPage, loadingMore, hasMore]);
+
+  // Sync external stories when they change
   useEffect(() => {
-    const handler = () => { fetchStories(); };
-    window.addEventListener('story-created', handler);
-    window.addEventListener('story-updated', handler);
-    return () => {
-      window.removeEventListener('story-created', handler);
-      window.removeEventListener('story-updated', handler);
+    if (isExternal && externalStories) setStories(externalStories);
+  }, [isExternal, externalStories]);
+
+  // Optimistic inline update with rollback on failure
+  const updateStoryField = useCallback(
+    async (storyId: string, patch: Partial<Story>) => {
+      let snapshot: Story[] = [];
+      setStories((current) => {
+        snapshot = current;
+        return current.map((s) => (s.id === storyId ? { ...s, ...patch } : s));
+      });
+      const { error } = await pmStoryService.update(workspaceId, storyId, patch);
+      if (error) setStories(snapshot);
+    },
+    [workspaceId],
+  );
+
+  // Listen for story events (only for self-fetching mode)
+  useEffect(() => {
+    if (isExternal) return;
+    const handleDeleted = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail;
+      const storyId = detail?.entity_id as string | undefined;
+      if (!storyId) return;
+      setStories((current) => current.filter((story) => story.id !== storyId));
     };
-  }, [fetchStories]);
+
+    const handleUpdated = async (event: Event) => {
+      const detail = (event as CustomEvent)?.detail;
+      const storyId = detail?.entity_id as string | undefined;
+      if (!storyId) return;
+
+      let shouldPatch = false;
+      setStories((current) => {
+        shouldPatch = current.some((story) => story.id === storyId);
+        return current;
+      });
+      if (!shouldPatch) return;
+
+      const res = await pmStoryService.get(workspaceId, storyId);
+      if (!res.data?.story) return;
+      setStories((current) =>
+        current.map((story) => (story.id === storyId ? res.data!.story : story)),
+      );
+    };
+
+    window.addEventListener('story-deleted', handleDeleted);
+    window.addEventListener('story-updated', handleUpdated);
+
+    return () => {
+      window.removeEventListener('story-deleted', handleDeleted);
+      window.removeEventListener('story-updated', handleUpdated);
+    };
+  }, [isExternal, workspaceId]);
 
   // Table columns
   const tableColumns = useMemo(
@@ -214,68 +294,67 @@ export function StoryListView({
         {
           id: 'stateName',
           header: 'State',
-          size: 130,
-          cell: (info) => {
-            const stateInfo = stateMap.get(info.row.original.workflow_state_id);
-            return (
-              <span className="flex items-center gap-1.5 text-xs">
-                {stateInfo && (
-                  <StateTypeIcon stateType={stateInfo.stateType as 'backlog' | 'unstarted' | 'started' | 'done'} className="h-3.5 w-3.5" />
-                )}
-                {info.getValue()}
-              </span>
-            );
-          },
+          size: 150,
+          cell: (info) => (
+            <InlineStateCell
+              story={info.row.original}
+              states={workflow.states}
+              stateMap={stateMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor('priority', {
         id: 'priorityIcon',
         header: 'Priority',
-        size: 90,
+        size: 110,
         enableGrouping: false,
-        cell: (info) => {
-          const p = info.getValue();
-          return (
-            <span className="flex items-center gap-1.5 text-xs">
-              <PriorityIcon priority={p} className="h-3.5 w-3.5" />
-              {PRIORITY_CONFIG[p].label}
-            </span>
-          );
-        },
+        cell: (info) => (
+          <InlinePriorityCell
+            story={info.row.original}
+            onUpdate={updateStoryField}
+          />
+        ),
       }),
       columnHelper.accessor('severity', {
         id: 'severityIcon',
         header: 'Severity',
-        size: 90,
+        size: 110,
         enableGrouping: false,
-        cell: (info) => {
-          const s = info.getValue();
-          if (s === 'none') return null;
-          return (
-            <span className="flex items-center gap-1.5 text-xs">
-              <SeverityIcon severity={s} className="h-3.5 w-3.5" />
-              {SEVERITY_CONFIG[s].label}
-            </span>
-          );
-        },
+        cell: (info) => (
+          <InlineSeverityCell
+            story={info.row.original}
+            onUpdate={updateStoryField}
+          />
+        ),
       }),
       columnHelper.accessor('estimate', {
         id: 'estimate',
         header: 'Estimate',
-        size: 70,
+        size: 80,
         enableGrouping: false,
-        cell: (info) => {
-          const v = info.getValue();
-          return v != null ? <span className="text-xs text-muted-foreground">{v} pts</span> : null;
-        },
+        cell: (info) => (
+          <InlineEstimateCell
+            story={info.row.original}
+            onUpdate={updateStoryField}
+          />
+        ),
       }),
       columnHelper.accessor(
         (row) => (row.owner_id ? memberMap.get(row.owner_id) ?? 'Unknown' : 'Unassigned'),
         {
           id: 'ownerName',
           header: 'Owner',
-          size: 130,
-          cell: (info) => <span className="truncate text-xs">{info.getValue()}</span>,
+          size: 150,
+          cell: (info) => (
+            <InlineOwnerCell
+              story={info.row.original}
+              members={members}
+              memberMap={memberMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor(
@@ -283,11 +362,15 @@ export function StoryListView({
         {
           id: 'teamName',
           header: 'Team',
-          size: 120,
-          cell: (info) => {
-            const v = info.getValue();
-            return v !== 'No Team' ? <span className="truncate text-xs">{v}</span> : null;
-          },
+          size: 130,
+          cell: (info) => (
+            <InlineTeamCell
+              story={info.row.original}
+              teams={teams}
+              teamMap={teamMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor(
@@ -295,11 +378,15 @@ export function StoryListView({
         {
           id: 'epicName',
           header: 'Epic',
-          size: 140,
-          cell: (info) => {
-            const v = info.getValue();
-            return v !== 'No Epic' ? <span className="truncate text-xs">{v}</span> : null;
-          },
+          size: 150,
+          cell: (info) => (
+            <InlineEpicCell
+              story={info.row.original}
+              epics={epics}
+              epicMap={epicMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor(
@@ -307,11 +394,15 @@ export function StoryListView({
         {
           id: 'sprintName',
           header: 'Sprint',
-          size: 130,
-          cell: (info) => {
-            const v = info.getValue();
-            return v !== 'No Sprint' ? <span className="truncate text-xs">{v}</span> : null;
-          },
+          size: 140,
+          cell: (info) => (
+            <InlineSprintCell
+              story={info.row.original}
+              sprints={sprints}
+              sprintMap={sprintMap}
+              onUpdate={updateStoryField}
+            />
+          ),
         }
       ),
       columnHelper.accessor(
@@ -347,27 +438,23 @@ export function StoryListView({
       columnHelper.accessor('deadline', {
         id: 'deadline',
         header: 'Deadline',
-        size: 100,
+        size: 120,
         enableGrouping: false,
-        cell: (info) => {
-          const v = info.getValue();
-          if (!v) return null;
-          const d = new Date(v);
-          const now = new Date();
-          const isOverdue = d < now;
-          return (
-            <span className={`text-xs ${isOverdue ? 'text-red-500' : 'text-muted-foreground'}`}>
-              {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
-          );
-        },
+        cell: (info) => (
+          <InlineDeadlineCell
+            story={info.row.original}
+            onUpdate={updateStoryField}
+          />
+        ),
       }),
     ],
-    [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory]
+    [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, members, teams, epics, sprints, updateStoryField]
   );
 
-  // Hidden columns (for grouping only)
-  const hiddenGroupColumns = ['typeName', 'priorityName', 'severityName'];
+  const columnVisibility = useMemo(
+    () => Object.fromEntries(HIDDEN_GROUP_COLUMNS.map((c) => [c, false])),
+    [],
+  );
 
   const grouping: GroupingState = useMemo(() => {
     const colId = GROUP_COLUMN_MAP[groupBy];
@@ -380,7 +467,7 @@ export function StoryListView({
     state: {
       grouping,
       expanded,
-      columnVisibility: Object.fromEntries(hiddenGroupColumns.map((c) => [c, false])),
+      columnVisibility,
     },
     onExpandedChange: setExpanded,
     getExpandedRowModel: getExpandedRowModel(),
@@ -412,7 +499,7 @@ export function StoryListView({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {/* Group By control */}
-      <div className="flex items-center gap-2 px-3">
+      <div className="flex items-center gap-2 px-3 pt-2">
         <span className="text-xs text-muted-foreground">Group by:</span>
         <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
           <SelectTrigger className="h-7 w-[160px] text-xs">
@@ -427,7 +514,7 @@ export function StoryListView({
           </SelectContent>
         </Select>
         <span className="text-xs text-muted-foreground">
-          {stories.length} {stories.length === 1 ? 'story' : 'stories'}
+          {stories.length} {stories.length === 1 ? 'story' : 'stories'}{hasMore ? '+' : ''}
         </span>
       </div>
 
@@ -462,7 +549,18 @@ export function StoryListView({
         </div>
 
         {/* Virtualized body */}
-        <div ref={parentRef} className="overflow-auto" style={{ height: 'calc(100% - 30px)' }}>
+        <div
+          ref={parentRef}
+          className="overflow-auto"
+          style={{ height: 'calc(100% - 30px)' }}
+          onScroll={(e) => {
+            if (isExternal || !hasMore || loadingMore) return;
+            const el = e.currentTarget;
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+              loadMore();
+            }
+          }}
+        >
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<Story>;
@@ -490,6 +588,12 @@ export function StoryListView({
               );
             })}
           </div>
+          {loadingMore && (
+            <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading more stories...
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -539,5 +643,557 @@ function DataRow({ row, onOpenStory }: { row: Row<Story>; onOpenStory: (story: S
         );
       })}
     </div>
+  );
+}
+
+// ── Inline editable cells ──────────────────────────────────────────
+
+function InlinePriorityCell({
+  story,
+  onUpdate,
+}: {
+  story: Story;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const p = story.priority;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          <PriorityIcon priority={p} className="h-3.5 w-3.5" />
+          {PRIORITY_CONFIG[p].label}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[180px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandGroup>
+                {ALL_PRIORITIES.map((pri) => {
+                  const cfg = PRIORITY_CONFIG[pri];
+                  return (
+                    <CommandItem
+                      key={pri}
+                      value={cfg.label}
+                      onSelect={() => {
+                        if (pri !== p) onUpdate(story.id, { priority: pri });
+                        setOpen(false);
+                      }}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <PriorityIcon priority={pri} className="h-3.5 w-3.5" />
+                      <span>{cfg.label}</span>
+                      {p === pri && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineStateCell({
+  story,
+  states,
+  stateMap,
+  onUpdate,
+}: {
+  story: Story;
+  states: WorkflowWithStates['states'];
+  stateMap: Map<string, { name: string; stateType: string }>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = stateMap.get(story.workflow_state_id);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {current && (
+            <StateTypeIcon stateType={current.stateType as 'backlog' | 'unstarted' | 'started' | 'done'} className="h-3.5 w-3.5" />
+          )}
+          {current?.name ?? 'Unknown'}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[200px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandGroup>
+                {states.map((s) => (
+                  <CommandItem
+                    key={s.id}
+                    value={s.name}
+                    onSelect={() => {
+                      if (s.id !== story.workflow_state_id)
+                        onUpdate(story.id, { workflow_state_id: s.id });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <StateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
+                    <span>{s.name}</span>
+                    {story.workflow_state_id === s.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineOwnerCell({
+  story,
+  members,
+  memberMap,
+  onUpdate,
+}: {
+  story: Story;
+  members: MemberWithUser[];
+  memberMap: Map<string, string>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const ownerName = story.owner_id ? memberMap.get(story.owner_id) ?? 'Unknown' : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {ownerName ? (
+            <>
+              <UserAvatar name={ownerName} className="h-4 w-4" />
+              <span className="truncate">{ownerName}</span>
+            </>
+          ) : (
+            <>
+              <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">Assign</span>
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[220px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search members..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No members found</CommandEmpty>
+              <CommandGroup>
+                {members.map((m) => (
+                  <CommandItem
+                    key={m.user_id}
+                    value={m.full_name || m.email}
+                    onSelect={() => {
+                      const newOwnerId = story.owner_id === m.user_id ? undefined : m.user_id;
+                      onUpdate(story.id, { owner_id: newOwnerId });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <UserAvatar name={m.full_name || m.email} className="h-5 w-5" />
+                    <span className="truncate">{m.full_name || m.email}</span>
+                    {story.owner_id === m.user_id && (
+                      <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineSeverityCell({
+  story,
+  onUpdate,
+}: {
+  story: Story;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const s = story.severity;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {s !== 'none' ? (
+            <>
+              <SeverityIcon severity={s} className="h-3.5 w-3.5" />
+              {SEVERITY_CONFIG[s].label}
+            </>
+          ) : (
+            <span className="text-muted-foreground">None</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[180px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandGroup>
+                {ALL_SEVERITIES.map((sev) => {
+                  const cfg = SEVERITY_CONFIG[sev];
+                  return (
+                    <CommandItem
+                      key={sev}
+                      value={cfg.label}
+                      onSelect={() => {
+                        if (sev !== s) onUpdate(story.id, { severity: sev });
+                        setOpen(false);
+                      }}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <SeverityIcon severity={sev} className="h-3.5 w-3.5" />
+                      <span>{cfg.label}</span>
+                      {s === sev && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineEstimateCell({
+  story,
+  onUpdate,
+}: {
+  story: Story;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <EstimatePicker
+        value={story.estimate?.toString() ?? ''}
+        teamId={story.team_id}
+        onChange={(_displayValue, apiValue) => {
+          const next = apiValue ?? null;
+          if (next !== story.estimate) {
+            onUpdate(story.id, { estimate: next as number });
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+function InlineTeamCell({
+  story,
+  teams,
+  teamMap,
+  onUpdate,
+}: {
+  story: Story;
+  teams: WorkspaceTeam[];
+  teamMap: Map<string, string>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const teamName = story.team_id ? teamMap.get(story.team_id) ?? 'Unknown' : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {teamName ? (
+            <span className="truncate">{teamName}</span>
+          ) : (
+            <span className="text-muted-foreground">No Team</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[200px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search teams..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No teams found</CommandEmpty>
+              <CommandGroup>
+                {teams.map((t) => (
+                  <CommandItem
+                    key={t.id}
+                    value={t.name}
+                    onSelect={() => {
+                      const newTeamId = story.team_id === t.id ? undefined : t.id;
+                      onUpdate(story.id, { team_id: newTeamId });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span className="truncate">{t.name}</span>
+                    {story.team_id === t.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineEpicCell({
+  story,
+  epics,
+  epicMap,
+  onUpdate,
+}: {
+  story: Story;
+  epics: EpicWithStats[];
+  epicMap: Map<string, string>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const epicName = story.epic_id ? epicMap.get(story.epic_id) ?? 'Unknown' : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {epicName ? (
+            <span className="truncate">{epicName}</span>
+          ) : (
+            <span className="text-muted-foreground">No Epic</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[220px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search epics..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No epics found</CommandEmpty>
+              <CommandGroup>
+                {epics.map((e) => (
+                  <CommandItem
+                    key={e.epic.id}
+                    value={e.epic.name}
+                    onSelect={() => {
+                      const newEpicId = story.epic_id === e.epic.id ? undefined : e.epic.id;
+                      onUpdate(story.id, { epic_id: newEpicId });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span className="truncate">{e.epic.name}</span>
+                    {story.epic_id === e.epic.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineSprintCell({
+  story,
+  sprints,
+  sprintMap,
+  onUpdate,
+}: {
+  story: Story;
+  sprints: SprintWithStats[];
+  sprintMap: Map<string, string>;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const sprintName = story.sprint_id ? sprintMap.get(story.sprint_id) ?? 'Unknown' : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {sprintName ? (
+            <span className="truncate">{sprintName}</span>
+          ) : (
+            <span className="text-muted-foreground">No Sprint</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[220px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search sprints..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No sprints found</CommandEmpty>
+              <CommandGroup>
+                {sprints.map((sp) => (
+                  <CommandItem
+                    key={sp.sprint.id}
+                    value={sp.sprint.name}
+                    onSelect={() => {
+                      const newSprintId = story.sprint_id === sp.sprint.id ? undefined : sp.sprint.id;
+                      onUpdate(story.id, { sprint_id: newSprintId });
+                      setOpen(false);
+                    }}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <span className="truncate">{sp.sprint.name}</span>
+                    {story.sprint_id === sp.sprint.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineDeadlineCell({
+  story,
+  onUpdate,
+}: {
+  story: Story;
+  onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const v = story.deadline;
+  const selected = v ? parseISO(v) : undefined;
+  const isOverdue = selected ? selected < new Date() : false;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {selected ? (
+            <>
+              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className={isOverdue ? 'text-red-500' : 'text-muted-foreground'}>
+                {format(selected, 'MMM d, yyyy')}
+              </span>
+            </>
+          ) : (
+            <>
+              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">No date</span>
+            </>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-auto p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Calendar
+            mode="single"
+            selected={selected}
+            defaultMonth={selected}
+            onSelect={(date) => {
+              onUpdate(story.id, { deadline: date ? format(date, 'yyyy-MM-dd') : undefined });
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      )}
+    </Popover>
   );
 }

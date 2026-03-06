@@ -98,7 +98,6 @@ export function ObjectivesPage() {
           <ObjectiveCard
             key={obj.objective.id}
             data={obj}
-            workspaceId={workspaceId!}
             onArchive={() => handleArchive(obj.objective.id)}
             onClick={() => navigate({ to: `/w/${workspace!.slug}/pm/objectives/${obj.objective.id}` } as any)}
           />
@@ -110,12 +109,10 @@ export function ObjectivesPage() {
 
 function ObjectiveCard({
   data,
-  workspaceId,
   onArchive,
   onClick,
 }: {
   data: ObjectiveWithDetails;
-  workspaceId: string;
   onArchive: () => void;
   onClick: () => void;
 }) {

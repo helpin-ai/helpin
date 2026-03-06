@@ -2,8 +2,8 @@ package model
 
 import "time"
 
-// IndividualCheck represents a row in the individual_checks table.
-type IndividualCheck struct {
+// RewardIndividualCheck represents a row in the reward_individual_checks table.
+type RewardIndividualCheck struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	SprintID    string    `json:"sprint_id" gorm:"type:uuid;not null;uniqueIndex:idx_check_sprint_emp_criteria"`
 	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
@@ -16,10 +16,10 @@ type IndividualCheck struct {
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (IndividualCheck) TableName() string { return "individual_checks" }
+func (RewardIndividualCheck) TableName() string { return "reward_individual_checks" }
 
-// UpsertCheckRequest is the payload for upserting an individual check.
-type UpsertCheckRequest struct {
+// UpsertRewardCheckRequest is the payload for upserting an individual check.
+type UpsertRewardCheckRequest struct {
 	SprintID    string  `json:"sprint_id"`
 	WorkspaceID string  `json:"workspace_id"`
 	EmployeeID  string  `json:"employee_id"`

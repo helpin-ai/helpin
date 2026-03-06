@@ -3,10 +3,10 @@ import { getRouteApi } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
-import { sprintsService } from '@/lib/services/sprintsService';
+import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
 import { settingsService } from '@/lib/services/settingsService';
-import { goalsService } from '@/lib/services/goalsService';
-import type { Sprint, SprintGoal, WorkspaceSettings, IndividualCheck } from '@/lib/types';
+import { rewardGoalsService } from '@/lib/services/rewardGoalsService';
+import type { RewardSprint, RewardSprintGoal, WorkspaceSettings, RewardIndividualCheck } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,10 +27,10 @@ export default function SprintDetail() {
   const { currentWorkspace } = useWorkspaceStore();
   useTitle(`Sprint ${sprintId}`);
   const { canEdit } = useSessionStore();
-  const [sprint, setSprint] = useState<Sprint | null>(null);
+  const [sprint, setSprint] = useState<RewardSprint | null>(null);
   const [wsSettings, setWsSettings] = useState<WorkspaceSettings | null>(null);
-  const [sprintGoals, setSprintGoals] = useState<SprintGoal[]>([]);
-  const [checks, setChecks] = useState<IndividualCheck[]>([]);
+  const [sprintGoals, setSprintGoals] = useState<RewardSprintGoal[]>([]);
+  const [checks, setChecks] = useState<RewardIndividualCheck[]>([]);
   const [loading, setLoading] = useState(true);
   const [addGoalOpen, setAddGoalOpen] = useState(false);
 
@@ -47,10 +47,10 @@ export default function SprintDetail() {
     setLoading(true);
     try {
       const [sprintRes, settingsRes, sprintGoalsRes, checksRes] = await Promise.all([
-        sprintsService.get(sprintId),
+        rewardSprintsService.get(sprintId),
         settingsService.getAll(ws.id),
-        goalsService.listSprintGoals(sprintId),
-        sprintsService.getIndividualChecks(sprintId, ws.id),
+        rewardGoalsService.listSprintGoals(sprintId),
+        rewardSprintsService.getIndividualChecks(sprintId, ws.id),
       ]);
       if (sprintRes.data) setSprint(sprintRes.data);
       if (settingsRes.data) setWsSettings(settingsRes.data);
@@ -67,7 +67,7 @@ export default function SprintDetail() {
 
   const handleCheckToggle = async (employeeId: string, criteriaId: string, current: boolean) => {
     if (!sprintId || !currentWorkspace?.id) return;
-    const { error } = await sprintsService.upsertIndividualCheck({
+    const { error } = await rewardSprintsService.upsertIndividualCheck({
       sprint_id: sprintId,
       workspace_id: currentWorkspace.id,
       employee_id: employeeId,
@@ -96,9 +96,9 @@ export default function SprintDetail() {
     }
   };
 
-  const handleGoalDoneToggle = async (goal: SprintGoal) => {
+  const handleGoalDoneToggle = async (goal: RewardSprintGoal) => {
     if (!canEdit() || sprint?.status === 'locked') return;
-    const { error, data } = await goalsService.upsertSprintGoal({
+    const { error, data } = await rewardGoalsService.upsertSprintGoal({
       sprint_id: goal.sprint_id,
       team_id: goal.team_id,
       title: goal.title,
@@ -308,7 +308,7 @@ function AddSprintGoalDialog({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const { error } = await goalsService.upsertSprintGoal({
+    const { error } = await rewardGoalsService.upsertSprintGoal({
       sprint_id: sprintId,
       team_id: teamId,
       title,

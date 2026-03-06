@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useQuarterStore } from '@/stores/quarterStore';
+import { useRewardQuarterStore } from '@/stores/quarterStore';
 import { useSessionStore } from '@/stores/sessionStore';
-import { sprintsService } from '@/lib/services/sprintsService';
-import type { Sprint } from '@/lib/types';
+import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
+import type { RewardSprint } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { Calendar, Lock, Unlock } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 
-const statusVariant = (status: Sprint['status']): 'default' | 'secondary' | 'outline' | 'destructive' => {
+const statusVariant = (status: RewardSprint['status']): 'default' | 'secondary' | 'outline' | 'destructive' => {
   switch (status) {
     case 'active': return 'default';
     case 'completed': return 'secondary';
@@ -27,13 +27,13 @@ export default function Sprints() {
   useTitle('Sprints');
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
-  const { currentQuarter } = useQuarterStore();
+  const { currentQuarter } = useRewardQuarterStore();
   const { isAdmin } = useSessionStore();
-  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [sprints, setSprints] = useState<RewardSprint[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    const q = useQuarterStore.getState().currentQuarter;
+    const q = useRewardQuarterStore.getState().currentQuarter;
     if (!q?.id) {
       setSprints([]);
       setLoading(false);
@@ -41,7 +41,7 @@ export default function Sprints() {
     }
     setLoading(true);
     try {
-      const { data } = await sprintsService.list(q.id);
+      const { data } = await rewardSprintsService.list(q.id);
       if (data) setSprints(data.sort((a, b) => a.sprint_number - b.sprint_number));
     } finally {
       setLoading(false);
@@ -51,13 +51,13 @@ export default function Sprints() {
   useEffect(() => { load(); }, [currentQuarter?.id]);
 
   const handleLock = async (sprintId: string) => {
-    const { error } = await sprintsService.lock(sprintId);
+    const { error } = await rewardSprintsService.lock(sprintId);
     if (error) toast.error(error);
     else { toast.success('Sprint locked'); load(); }
   };
 
   const handleUnlock = async (sprintId: string) => {
-    const { error } = await sprintsService.unlock(sprintId);
+    const { error } = await rewardSprintsService.unlock(sprintId);
     if (error) toast.error(error);
     else { toast.success('Sprint unlocked'); load(); }
   };

@@ -20,11 +20,26 @@ func NewPMLabelService(labelRepo *repository.PMLabelRepository) *PMLabelService 
 }
 
 // ListByWorkspace lists labels by workspace.
-func (s *PMLabelService) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.PMLabel, error) {
+func (s *PMLabelService) ListByWorkspace(ctx context.Context, workspaceID string, teamID *string, includeShared bool) ([]model.PMLabel, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.labelRepo.ListByWorkspace(ctx, workspaceID)
+	return s.labelRepo.ListByWorkspace(ctx, workspaceID, repository.PMLabelListOptions{
+		TeamID:        teamID,
+		IncludeShared: includeShared,
+	})
+}
+
+// ListWithStats returns labels with story/epic completion stats.
+func (s *PMLabelService) ListWithStats(ctx context.Context, workspaceID string, teamID *string, includeShared bool, archived *bool) ([]model.LabelWithStats, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.labelRepo.ListWithStats(ctx, workspaceID, repository.PMLabelListOptions{
+		TeamID:        teamID,
+		IncludeShared: includeShared,
+		Archived:      archived,
+	})
 }
 
 // Create creates a label after uniqueness validation.
@@ -33,16 +48,18 @@ func (s *PMLabelService) Create(ctx context.Context, req model.CreateLabelReques
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
 	name := strings.TrimSpace(req.Name)
-	existing, err := s.labelRepo.GetByName(ctx, req.WorkspaceID, name)
+	teamID := normalizeOptionalID(req.TeamID)
+	existing, err := s.labelRepo.GetByName(ctx, req.WorkspaceID, teamID, name)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
-		return nil, fmt.Errorf("label name already exists in workspace")
+		return nil, fmt.Errorf("label name already exists in this scope")
 	}
 
 	label := &model.PMLabel{
 		WorkspaceID: req.WorkspaceID,
+		TeamID:      teamID,
 		Name:        name,
 		Description: req.Description,
 		Color:       req.Color,
@@ -63,21 +80,36 @@ func (s *PMLabelService) Update(ctx context.Context, id string, req model.Update
 		return nil, fmt.Errorf("label not found")
 	}
 
+	scopeChanged := false
+	if req.TeamID != nil {
+		label.TeamID = normalizeOptionalID(req.TeamID)
+		scopeChanged = true
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
 			return nil, fmt.Errorf("name cannot be empty")
 		}
 		if !strings.EqualFold(name, label.Name) {
-			existing, err := s.labelRepo.GetByName(ctx, label.WorkspaceID, name)
+			existing, err := s.labelRepo.GetByName(ctx, label.WorkspaceID, label.TeamID, name)
 			if err != nil {
 				return nil, err
 			}
 			if existing != nil && existing.ID != label.ID {
-				return nil, fmt.Errorf("label name already exists in workspace")
+				return nil, fmt.Errorf("label name already exists in this scope")
 			}
 		}
 		label.Name = name
+		scopeChanged = false
+	}
+	if scopeChanged {
+		existing, err := s.labelRepo.GetByName(ctx, label.WorkspaceID, label.TeamID, label.Name)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil && existing.ID != label.ID {
+			return nil, fmt.Errorf("label name already exists in this scope")
+		}
 	}
 	if req.Description != nil {
 		label.Description = req.Description
@@ -113,7 +145,7 @@ func (s *PMLabelService) SeedDefaults(ctx context.Context, workspaceID string) e
 	}
 
 	for _, def := range defaults {
-		existing, err := s.labelRepo.GetByName(ctx, workspaceID, def.Name)
+		existing, err := s.labelRepo.GetByName(ctx, workspaceID, nil, def.Name)
 		if err != nil {
 			return err
 		}
@@ -131,4 +163,15 @@ func (s *PMLabelService) SeedDefaults(ctx context.Context, workspaceID string) e
 		}
 	}
 	return nil
+}
+
+func normalizeOptionalID(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }

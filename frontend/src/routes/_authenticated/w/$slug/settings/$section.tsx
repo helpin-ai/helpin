@@ -4,18 +4,20 @@ import Profile from '@/pages/Profile'
 
 type SettingsSearch = {
   workflow?: string
+  team?: string
 }
 
 export const Route = createFileRoute('/_authenticated/w/$slug/settings/$section')({
   component: SettingsSectionRoute,
   validateSearch: (search: Record<string, unknown>): SettingsSearch => ({
     workflow: typeof search.workflow === 'string' ? search.workflow : undefined,
+    team: typeof search.team === 'string' ? search.team : undefined,
   }),
 })
 
 function SettingsSectionRoute() {
   const { slug, section } = Route.useParams()
-  const { workflow } = Route.useSearch()
+  const { workflow, team } = Route.useSearch()
 
   if (section === 'profile') {
     return (
@@ -31,7 +33,7 @@ function SettingsSectionRoute() {
 
   return (
     <div className="h-full overflow-auto p-4 md:p-6">
-      <Settings section={section} initialWorkflowId={workflow} />
+      <Settings section={section} initialWorkflowId={workflow} initialTeamId={team} />
     </div>
   )
 }

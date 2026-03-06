@@ -8,18 +8,18 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/repository"
 )
 
-// GoalService handles goal business logic.
-type GoalService struct {
-	goalRepo *repository.GoalRepository
+// RewardGoalService handles goal business logic.
+type RewardGoalService struct {
+	goalRepo *repository.RewardGoalRepository
 }
 
-// NewGoalService creates a new GoalService.
-func NewGoalService(goalRepo *repository.GoalRepository) *GoalService {
-	return &GoalService{goalRepo: goalRepo}
+// NewRewardGoalService creates a new RewardGoalService.
+func NewRewardGoalService(goalRepo *repository.RewardGoalRepository) *RewardGoalService {
+	return &RewardGoalService{goalRepo: goalRepo}
 }
 
 // Create creates a new company goal with team contributions.
-func (s *GoalService) Create(ctx context.Context, req model.CreateGoalRequest, createdBy string) (*model.CompanyGoalWithContributions, error) {
+func (s *RewardGoalService) Create(ctx context.Context, req model.CreateRewardGoalRequest, createdBy string) (*model.RewardCompanyGoalWithContributions, error) {
 	if req.WorkspaceID == "" || req.QuarterID == "" || req.Title == "" || req.GoalType == "" {
 		return nil, fmt.Errorf("workspace_id, quarter_id, title, and goal_type are required")
 	}
@@ -27,12 +27,12 @@ func (s *GoalService) Create(ctx context.Context, req model.CreateGoalRequest, c
 }
 
 // List returns all company goals with team contributions for a workspace/quarter.
-func (s *GoalService) List(ctx context.Context, workspaceID, quarterID string) ([]model.CompanyGoalWithContributions, error) {
+func (s *RewardGoalService) List(ctx context.Context, workspaceID, quarterID string) ([]model.RewardCompanyGoalWithContributions, error) {
 	return s.goalRepo.ListCompanyGoals(ctx, workspaceID, quarterID)
 }
 
 // UpsertSprintGoal creates or updates a sprint goal.
-func (s *GoalService) UpsertSprintGoal(ctx context.Context, req model.UpsertSprintGoalRequest) (*model.SprintGoal, error) {
+func (s *RewardGoalService) UpsertSprintGoal(ctx context.Context, req model.UpsertRewardSprintGoalRequest) (*model.RewardSprintGoal, error) {
 	if req.SprintID == "" || req.TeamID == "" || req.Title == "" {
 		return nil, fmt.Errorf("sprint_id, team_id, and title are required")
 	}
@@ -40,6 +40,6 @@ func (s *GoalService) UpsertSprintGoal(ctx context.Context, req model.UpsertSpri
 }
 
 // ListSprintGoals returns sprint goals for a sprint, optionally filtered by team.
-func (s *GoalService) ListSprintGoals(ctx context.Context, sprintID string, teamID *string) ([]model.SprintGoal, error) {
+func (s *RewardGoalService) ListSprintGoals(ctx context.Context, sprintID string, teamID *string) ([]model.RewardSprintGoal, error) {
 	return s.goalRepo.ListSprintGoals(ctx, sprintID, teamID)
 }

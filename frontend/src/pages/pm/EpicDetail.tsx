@@ -19,11 +19,16 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
+import { StoryListView } from '@/components/pm/StoryListView';
+import { StoryDetailPanel } from '@/components/pm/StoryDetailPanel';
 import { pmEpicService } from '@/lib/services/pmEpicService';
+import { pmSprintService } from '@/lib/services/pmSprintService';
+import { pmStoryService } from '@/lib/services/pmStoryService';
 import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import type { EpicWithStats, EpicHealth, Story, UpdateEpicRequest } from '@/lib/pmTypes';
+import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import type { EpicWithStats, EpicHealth, Story, SprintWithStats, UpdateEpicRequest } from '@/lib/pmTypes';
 import { EpicOrchestrationPanel } from '@/components/pm/EpicOrchestrationPanel';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
@@ -131,9 +136,13 @@ export function EpicDetailPage() {
 
   const epicStates = usePMWorkflowStore((s) => s.epicStates);
   const loadEpicStates = usePMWorkflowStore((s) => s.loadEpicStates);
+  const workflows = usePMWorkflowStore((s) => s.workflows);
+  const loadWorkflows = usePMWorkflowStore((s) => s.loadWorkflows);
 
   const [epic, setEpic] = useState<EpicWithStats | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
+  const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
+  const [allSprints, setAllSprints] = useState<SprintWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -143,6 +152,12 @@ export function EpicDetailPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const { teams, people, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
+  const { members } = useWorkspaceMembers(workspaceId);
+
+  // Story detail panel
+  const [selectedStory, setSelectedStory] = useState<Awaited<ReturnType<typeof pmStoryService.get>>['data'] | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 
@@ -150,10 +165,13 @@ export function EpicDetailPage() {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
-    const [epicRes, storiesRes] = await Promise.all([
+    const [epicRes, storiesRes, , , epicsRes, sprintsRes] = await Promise.all([
       pmEpicService.get(workspaceId, epicId),
       pmEpicService.listStories(workspaceId, epicId),
       loadEpicStates(workspaceId),
+      loadWorkflows(workspaceId),
+      pmEpicService.list(workspaceId, { archived: false }),
+      pmSprintService.list(workspaceId, { archived: false }),
     ]);
     if (epicRes.error || !epicRes.data) {
       setError(epicRes.error ?? 'Epic not found');
@@ -163,13 +181,15 @@ export function EpicDetailPage() {
     setEpic(epicRes.data);
     setForm(buildForm(epicRes.data));
     setStories(storiesRes.data ?? []);
+    setAllEpics(epicsRes.data ?? []);
+    setAllSprints(sprintsRes.data ?? []);
     setLoading(false);
-  }, [workspaceId, epicId, loadEpicStates]);
+  }, [workspaceId, epicId, loadEpicStates, loadWorkflows]);
 
-  // Load epic data
+  // Load epic data + reference data
   useEffect(() => {
     fetchData();
-  }, [workspaceId, epicId, loadEpicStates]);
+  }, [fetchData]);
 
   // Auto-save debounce
   useEffect(() => {
@@ -216,11 +236,12 @@ export function EpicDetailPage() {
     [form?.team_id, findTeamName],
   );
 
+  const workflow = workflows[0] ?? null;
+
   // Resources: unique people from story owners + epic team members
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
-    // Add story owners
     for (const story of stories) {
       if (story.owner_id) {
         const person = people.find((p) => p.id === story.owner_id);
@@ -228,7 +249,6 @@ export function EpicDetailPage() {
       }
     }
 
-    // Add team members if epic has a team
     if (form?.team_id) {
       for (const member of getTeamMembers(form.team_id)) {
         if (!personMap.has(member.id)) {
@@ -239,6 +259,19 @@ export function EpicDetailPage() {
 
     return Array.from(personMap.values());
   }, [stories, people, form?.team_id, getTeamMembers]);
+
+  const openStory = useCallback(
+    async (story: Story) => {
+      if (!workspaceId) return;
+      setSelectedStory(null);
+      setDetailLoading(true);
+      setDetailOpen(true);
+      const detail = await pmStoryService.get(workspaceId, story.id);
+      setDetailLoading(false);
+      if (detail.data) setSelectedStory(detail.data);
+    },
+    [workspaceId],
+  );
 
   const goBack = () => navigate({ to: '/w/$slug/pm/epics', params: { slug } });
 
@@ -313,6 +346,7 @@ export function EpicDetailPage() {
               onChange={(html) => updateField('description', html, { description: html })}
               placeholder="Add a description..."
               className="border-transparent shadow-none"
+              teams={teams}
             />
           </div>
 
@@ -353,18 +387,26 @@ export function EpicDetailPage() {
 
           {/* Stories */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stories</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Stories ({stories.length})
+            </h3>
             {stories.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No stories linked yet.</p>
-            ) : (
-              <div className="mt-3 space-y-1">
-                {stories.map((story) => (
-                  <article key={story.id} className="rounded-md border border-border/70 px-3 py-2 text-sm">
-                    <p className="font-medium">TP-{story.display_id} · {story.name}</p>
-                    <p className="text-xs text-muted-foreground">{story.priority} priority · {story.story_type}</p>
-                  </article>
-                ))}
+            ) : workflow ? (
+              <div className="mt-3 -mx-3">
+                <StoryListView
+                  workspaceId={workspaceId!}
+                  workflow={workflow}
+                  teams={teams}
+                  members={members}
+                  epics={allEpics}
+                  sprints={allSprints}
+                  externalStories={stories}
+                  onOpenStory={openStory}
+                />
               </div>
+            ) : (
+              <p className="mt-3 text-sm text-muted-foreground">Loading workflow...</p>
             )}
           </div>
 
@@ -471,6 +513,29 @@ export function EpicDetailPage() {
           )}
         </aside>
       </div>
+
+      {/* Story Detail Panel */}
+      {workspaceId && workflow && (
+        <StoryDetailPanel
+          workspaceId={workspaceId}
+          storyDetail={selectedStory}
+          open={detailOpen}
+          loading={detailLoading}
+          onOpenChange={setDetailOpen}
+          states={workflow.states}
+          onStoryUpdated={async (updated) => {
+            setSelectedStory(updated);
+            const res = await pmEpicService.listStories(workspaceId, epicId);
+            if (res.data) setStories(res.data);
+          }}
+          onStoryArchived={() => {
+            setDetailOpen(false);
+            pmEpicService.listStories(workspaceId!, epicId).then((res) => {
+              if (res.data) setStories(res.data);
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

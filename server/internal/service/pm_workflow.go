@@ -46,12 +46,19 @@ func (s *PMWorkflowService) GetByID(ctx context.Context, id string) (*model.Work
 	return wf, nil
 }
 
-// ListEpicStates returns epic workflow states for workspace.
+// ListEpicStates returns epic workflow states for workspace, seeding defaults if none exist.
 func (s *PMWorkflowService) ListEpicStates(ctx context.Context, workspaceID string) ([]model.PMEpicWorkflowState, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.workflowRepo.ListEpicStates(ctx, workspaceID)
+	states, err := s.workflowRepo.ListEpicStates(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if len(states) == 0 {
+		return s.workflowRepo.SeedDefaultEpicStates(ctx, workspaceID)
+	}
+	return states, nil
 }
 
 // Create creates a workflow and seeds base states.
@@ -399,7 +406,7 @@ func (s *PMWorkflowService) seedDefaultLabels(ctx context.Context, workspaceID s
 	}
 
 	for _, def := range defaults {
-		existing, err := s.labelRepo.GetByName(ctx, workspaceID, def.Name)
+		existing, err := s.labelRepo.GetByName(ctx, workspaceID, nil, def.Name)
 		if err != nil {
 			return err
 		}

@@ -55,6 +55,12 @@ func (r *SettingsRepository) GetAll(ctx context.Context, workspaceID string) (*m
 	}
 	cfg.Memberships = memberships
 
+	userMemberships, err := r.listUserMemberships(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	cfg.UserMemberships = userMemberships
+
 	managers, err := r.listManagers(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -72,6 +78,18 @@ func (r *SettingsRepository) GetAll(ctx context.Context, workspaceID string) (*m
 		return nil, err
 	}
 	cfg.BonusTiers = tiers
+
+	preassignments, err := r.listInvitationTeamPreassignments(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	cfg.InvitationTeamPreassignments = preassignments
+
+	estimateSettings, err := r.listTeamEstimateSettings(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	cfg.TeamEstimateSettings = estimateSettings
 
 	return cfg, nil
 }
@@ -117,6 +135,21 @@ func (r *SettingsRepository) listMemberships(ctx context.Context, workspaceID st
 		Find(&memberships).Error
 	if err != nil {
 		return nil, fmt.Errorf("list memberships: %w", err)
+	}
+	return memberships, nil
+}
+
+func (r *SettingsRepository) listUserMemberships(ctx context.Context, workspaceID string) ([]model.TeamUserMembership, error) {
+	var memberships []model.TeamUserMembership
+	err := r.db.WithContext(ctx).
+		Table("team_user_memberships").
+		Joins("JOIN workspace_teams ON team_user_memberships.team_id = workspace_teams.id").
+		Where("workspace_teams.workspace_id = ?", workspaceID).
+		Order("team_user_memberships.team_id, team_user_memberships.user_id").
+		Select("team_user_memberships.*").
+		Find(&memberships).Error
+	if err != nil {
+		return nil, fmt.Errorf("list user memberships: %w", err)
 	}
 	return memberships, nil
 }
@@ -171,6 +204,7 @@ func (r *SettingsRepository) CreateTeam(ctx context.Context, req model.CreateTea
 	t := &model.WorkspaceTeam{
 		WorkspaceID: req.WorkspaceID,
 		Name:        req.Name,
+		Handle:      req.Handle,
 		Description: req.Description,
 		ManagerID:   req.ManagerID,
 	}
@@ -185,6 +219,9 @@ func (r *SettingsRepository) UpdateTeam(ctx context.Context, id string, req mode
 	updates := map[string]interface{}{}
 	if req.Name != nil {
 		updates["name"] = *req.Name
+	}
+	if req.Handle != nil {
+		updates["handle"] = *req.Handle
 	}
 	if req.Description != nil {
 		updates["description"] = *req.Description
@@ -206,8 +243,185 @@ func (r *SettingsRepository) UpdateTeam(ctx context.Context, id string, req mode
 
 // DeleteTeam removes a team by ID.
 func (r *SettingsRepository) DeleteTeam(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.WorkspaceTeam{}).Error; err != nil {
-		return fmt.Errorf("delete team: %w", err)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("team_id = ?", id).Delete(&model.TeamMembership{}).Error; err != nil {
+			return fmt.Errorf("delete person team memberships: %w", err)
+		}
+		if err := tx.Where("team_id = ?", id).Delete(&model.TeamUserMembership{}).Error; err != nil {
+			return fmt.Errorf("delete user team memberships: %w", err)
+		}
+		if err := tx.Where("id = ?", id).Delete(&model.WorkspaceTeam{}).Error; err != nil {
+			return fmt.Errorf("delete team: %w", err)
+		}
+		return nil
+	})
+}
+
+// GetTeamByID loads a team by ID.
+func (r *SettingsRepository) GetTeamByID(ctx context.Context, id string) (*model.WorkspaceTeam, error) {
+	team := &model.WorkspaceTeam{}
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(team).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get team: %w", err)
+	}
+	return team, nil
+}
+
+// GetTeamByHandle loads a team by workspace/handle.
+func (r *SettingsRepository) GetTeamByHandle(ctx context.Context, workspaceID, handle string) (*model.WorkspaceTeam, error) {
+	team := &model.WorkspaceTeam{}
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND LOWER(handle) = LOWER(?)", workspaceID, handle).
+		First(team).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get team by handle: %w", err)
+	}
+	return team, nil
+}
+
+// AddTeamUserMembership adds or updates a workspace member's team membership.
+func (r *SettingsRepository) AddTeamUserMembership(ctx context.Context, teamID, userID, role string) (*model.TeamUserMembership, error) {
+	var membership *model.TeamUserMembership
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		team, err := r.getTeamByIDTx(tx, teamID)
+		if err != nil {
+			return err
+		}
+		if team == nil {
+			return fmt.Errorf("team not found")
+		}
+
+		var count int64
+		if err := tx.Model(&model.WorkspaceMember{}).
+			Where("workspace_id = ? AND user_id = ?", team.WorkspaceID, userID).
+			Count(&count).Error; err != nil {
+			return fmt.Errorf("check workspace membership: %w", err)
+		}
+		if count == 0 {
+			return fmt.Errorf("user is not a member of this workspace")
+		}
+
+		entry := &model.TeamUserMembership{
+			TeamID: teamID,
+			UserID: userID,
+			Role:   role,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "team_id"}, {Name: "user_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"role", "updated_at"}),
+		}).Create(entry).Error; err != nil {
+			return fmt.Errorf("add team user membership: %w", err)
+		}
+
+		if err := r.syncPersonMembershipForUserTx(tx, team.WorkspaceID, teamID, userID, true); err != nil {
+			return err
+		}
+
+		fetched := &model.TeamUserMembership{}
+		if err := tx.Where("team_id = ? AND user_id = ?", teamID, userID).First(fetched).Error; err != nil {
+			return fmt.Errorf("fetch team user membership: %w", err)
+		}
+		membership = fetched
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return membership, nil
+}
+
+// UpdateTeamUserMembership updates role for an existing team membership.
+func (r *SettingsRepository) UpdateTeamUserMembership(ctx context.Context, teamID, userID string, req model.UpdateTeamMemberRequest) (*model.TeamUserMembership, error) {
+	membership := &model.TeamUserMembership{}
+	updates := map[string]interface{}{}
+	if req.Role != nil {
+		updates["role"] = *req.Role
+	}
+	if len(updates) == 0 {
+		var err error
+		membership, err = r.GetTeamUserMembership(ctx, teamID, userID)
+		return membership, err
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.TeamUserMembership{}).
+		Where("team_id = ? AND user_id = ?", teamID, userID).
+		Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("update team user membership: %w", err)
+	}
+	return r.GetTeamUserMembership(ctx, teamID, userID)
+}
+
+// GetTeamUserMembership loads a specific team membership.
+func (r *SettingsRepository) GetTeamUserMembership(ctx context.Context, teamID, userID string) (*model.TeamUserMembership, error) {
+	membership := &model.TeamUserMembership{}
+	err := r.db.WithContext(ctx).
+		Where("team_id = ? AND user_id = ?", teamID, userID).
+		First(membership).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get team user membership: %w", err)
+	}
+	return membership, nil
+}
+
+// RemoveTeamUserMembership removes a user's team membership.
+func (r *SettingsRepository) RemoveTeamUserMembership(ctx context.Context, teamID, userID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		team, err := r.getTeamByIDTx(tx, teamID)
+		if err != nil {
+			return err
+		}
+		if team == nil {
+			return fmt.Errorf("team not found")
+		}
+
+		if err := tx.Where("team_id = ? AND user_id = ?", teamID, userID).Delete(&model.TeamUserMembership{}).Error; err != nil {
+			return fmt.Errorf("remove team user membership: %w", err)
+		}
+		if err := r.syncPersonMembershipForUserTx(tx, team.WorkspaceID, teamID, userID, false); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func (r *SettingsRepository) getTeamByIDTx(tx *gorm.DB, id string) (*model.WorkspaceTeam, error) {
+	team := &model.WorkspaceTeam{}
+	err := tx.Where("id = ?", id).First(team).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get team: %w", err)
+	}
+	return team, nil
+}
+
+// Keep the legacy person-based team memberships aligned when a user-backed membership changes.
+func (r *SettingsRepository) syncPersonMembershipForUserTx(tx *gorm.DB, workspaceID, teamID, userID string, add bool) error {
+	var people []model.WorkspacePerson
+	if err := tx.Where("workspace_id = ? AND user_id = ?", workspaceID, userID).Find(&people).Error; err != nil {
+		return fmt.Errorf("find workspace people by user: %w", err)
+	}
+	for _, person := range people {
+		if add {
+			entry := &model.TeamMembership{TeamID: teamID, PersonID: person.ID}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(entry).Error; err != nil {
+				return fmt.Errorf("sync person team membership: %w", err)
+			}
+			continue
+		}
+		if err := tx.Where("team_id = ? AND person_id = ?", teamID, person.ID).Delete(&model.TeamMembership{}).Error; err != nil {
+			return fmt.Errorf("remove synced person team membership: %w", err)
+		}
 	}
 	return nil
 }
@@ -449,4 +663,141 @@ func (r *SettingsRepository) UpdateSystem(ctx context.Context, workspaceID strin
 		return nil, fmt.Errorf("update system settings: %w", err)
 	}
 	return s, nil
+}
+
+// listInvitationTeamPreassignments returns all preassignments for a workspace's teams.
+func (r *SettingsRepository) listInvitationTeamPreassignments(ctx context.Context, workspaceID string) ([]model.InvitationTeamPreassignment, error) {
+	var results []model.InvitationTeamPreassignment
+	err := r.db.WithContext(ctx).
+		Table("invitation_team_preassignments").
+		Joins("JOIN workspace_teams ON invitation_team_preassignments.team_id = workspace_teams.id").
+		Where("workspace_teams.workspace_id = ?", workspaceID).
+		Select("invitation_team_preassignments.*").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("list invitation team preassignments: %w", err)
+	}
+	return results, nil
+}
+
+// AddInvitationTeamPreassignment creates a preassignment.
+func (r *SettingsRepository) AddInvitationTeamPreassignment(ctx context.Context, invitationID, teamID string) (*model.InvitationTeamPreassignment, error) {
+	entry := &model.InvitationTeamPreassignment{
+		InvitationID: invitationID,
+		TeamID:       teamID,
+	}
+	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "invitation_id"}, {Name: "team_id"}},
+		DoNothing: true,
+	}).Create(entry).Error; err != nil {
+		return nil, fmt.Errorf("add invitation team preassignment: %w", err)
+	}
+	return entry, nil
+}
+
+// RemoveInvitationTeamPreassignment removes a preassignment.
+func (r *SettingsRepository) RemoveInvitationTeamPreassignment(ctx context.Context, invitationID, teamID string) error {
+	result := r.db.WithContext(ctx).
+		Where("invitation_id = ? AND team_id = ?", invitationID, teamID).
+		Delete(&model.InvitationTeamPreassignment{})
+	if result.Error != nil {
+		return fmt.Errorf("remove invitation team preassignment: %w", result.Error)
+	}
+	return nil
+}
+
+// GetTeamEstimateSettings returns estimate settings for a team.
+func (r *SettingsRepository) GetTeamEstimateSettings(ctx context.Context, teamID string) (*model.PMTeamEstimateSettings, error) {
+	s := &model.PMTeamEstimateSettings{}
+	err := r.db.WithContext(ctx).Where("team_id = ?", teamID).First(s).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get team estimate settings: %w", err)
+	}
+	return s, nil
+}
+
+// UpsertTeamEstimateSettings creates or updates estimate settings for a team.
+func (r *SettingsRepository) UpsertTeamEstimateSettings(ctx context.Context, teamID string, req model.UpdateTeamEstimateSettingsRequest) (*model.PMTeamEstimateSettings, error) {
+	existing, err := r.GetTeamEstimateSettings(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+
+	if existing == nil {
+		s := &model.PMTeamEstimateSettings{TeamID: teamID}
+		if req.Enabled != nil {
+			s.Enabled = *req.Enabled
+		}
+		if req.Scale != nil {
+			s.Scale = *req.Scale
+		}
+		if req.Extended != nil {
+			s.Extended = *req.Extended
+		}
+		if req.AllowZero != nil {
+			s.AllowZero = *req.AllowZero
+		}
+		if req.CountUnestimatedAsOne != nil {
+			s.CountUnestimatedAsOne = *req.CountUnestimatedAsOne
+		}
+		if err := r.db.WithContext(ctx).Create(s).Error; err != nil {
+			return nil, fmt.Errorf("create team estimate settings: %w", err)
+		}
+		return s, nil
+	}
+
+	updates := map[string]interface{}{}
+	if req.Enabled != nil {
+		updates["enabled"] = *req.Enabled
+	}
+	if req.Scale != nil {
+		updates["scale"] = *req.Scale
+	}
+	if req.Extended != nil {
+		updates["extended"] = *req.Extended
+	}
+	if req.AllowZero != nil {
+		updates["allow_zero"] = *req.AllowZero
+	}
+	if req.CountUnestimatedAsOne != nil {
+		updates["count_unestimated_as_one"] = *req.CountUnestimatedAsOne
+	}
+
+	if len(updates) > 0 {
+		if err := r.db.WithContext(ctx).Model(&model.PMTeamEstimateSettings{}).Where("team_id = ?", teamID).Updates(updates).Error; err != nil {
+			return nil, fmt.Errorf("update team estimate settings: %w", err)
+		}
+	}
+
+	return r.GetTeamEstimateSettings(ctx, teamID)
+}
+
+// listTeamEstimateSettings returns all estimate settings for a workspace's teams.
+func (r *SettingsRepository) listTeamEstimateSettings(ctx context.Context, workspaceID string) ([]model.PMTeamEstimateSettings, error) {
+	var results []model.PMTeamEstimateSettings
+	err := r.db.WithContext(ctx).
+		Table("pm_team_estimate_settings").
+		Joins("JOIN workspace_teams ON pm_team_estimate_settings.team_id = workspace_teams.id").
+		Where("workspace_teams.workspace_id = ?", workspaceID).
+		Select("pm_team_estimate_settings.*").
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("list team estimate settings: %w", err)
+	}
+	return results, nil
+}
+
+// GetInvitationTeamPreassignmentsByInvitation returns all team preassignments for an invitation.
+func (r *SettingsRepository) GetInvitationTeamPreassignmentsByInvitation(ctx context.Context, invitationID string) ([]model.InvitationTeamPreassignment, error) {
+	var results []model.InvitationTeamPreassignment
+	err := r.db.WithContext(ctx).
+		Where("invitation_id = ?", invitationID).
+		Find(&results).Error
+	if err != nil {
+		return nil, fmt.Errorf("get invitation team preassignments: %w", err)
+	}
+	return results, nil
 }

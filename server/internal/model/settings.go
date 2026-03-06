@@ -20,8 +20,9 @@ func (WorkspaceSettings) TableName() string { return "workspace_settings" }
 // WorkspaceTeam represents a row in the workspace_teams table.
 type WorkspaceTeam struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_workspace_team_handle,priority:1"`
 	Name        string    `json:"name" gorm:"not null"`
+	Handle      *string   `json:"handle" gorm:"uniqueIndex:idx_workspace_team_handle,priority:2"`
 	Description *string   `json:"description"`
 	ManagerID   *string   `json:"manager_id" gorm:"type:uuid"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
@@ -61,6 +62,18 @@ type TeamMembership struct {
 }
 
 func (TeamMembership) TableName() string { return "team_memberships" }
+
+// TeamUserMembership links an authenticated workspace member to a team.
+type TeamUserMembership struct {
+	ID        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	TeamID    string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex:idx_team_user_membership_unique"`
+	UserID    string    `json:"user_id" gorm:"type:uuid;not null;uniqueIndex:idx_team_user_membership_unique"`
+	Role      string    `json:"role" gorm:"not null;default:'member'"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (TeamUserMembership) TableName() string { return "team_user_memberships" }
 
 // WorkspaceManager represents a row in the workspace_managers table.
 type WorkspaceManager struct {
@@ -109,21 +122,60 @@ type BonusTier struct {
 
 func (BonusTier) TableName() string { return "bonus_tiers" }
 
+// PMTeamEstimateSettings stores per-team estimate configuration.
+type PMTeamEstimateSettings struct {
+	ID                    string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	TeamID                string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex"`
+	Enabled               bool      `json:"enabled" gorm:"not null;default:false"`
+	Scale                 string    `json:"scale" gorm:"not null;default:'linear'"`
+	Extended              bool      `json:"extended" gorm:"not null;default:false"`
+	AllowZero             bool      `json:"allow_zero" gorm:"not null;default:false"`
+	CountUnestimatedAsOne bool      `json:"count_unestimated_as_one" gorm:"not null;default:true"`
+	CreatedAt             time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt             time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (PMTeamEstimateSettings) TableName() string { return "pm_team_estimate_settings" }
+
+// UpdateTeamEstimateSettingsRequest is the payload for updating team estimate settings.
+type UpdateTeamEstimateSettingsRequest struct {
+	Enabled               *bool   `json:"enabled"`
+	Scale                 *string `json:"scale"`
+	Extended              *bool   `json:"extended"`
+	AllowZero             *bool   `json:"allow_zero"`
+	CountUnestimatedAsOne *bool   `json:"count_unestimated_as_one"`
+}
+
+// InvitationTeamPreassignment pre-assigns a pending invitation to a team.
+// When the invitation is accepted, the user is automatically added to the team.
+type InvitationTeamPreassignment struct {
+	ID           string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	InvitationID string    `json:"invitation_id" gorm:"type:uuid;not null;uniqueIndex:idx_itp_inv_team"`
+	TeamID       string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex:idx_itp_inv_team;index"`
+	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (InvitationTeamPreassignment) TableName() string { return "invitation_team_preassignments" }
+
 // FullWorkspaceConfig aggregates all settings for a workspace.
 type FullWorkspaceConfig struct {
-	Settings    *WorkspaceSettings `json:"settings"`
-	Teams       []WorkspaceTeam    `json:"teams"`
-	People      []WorkspacePerson  `json:"people"`
-	Memberships []TeamMembership   `json:"memberships"`
-	Managers    []WorkspaceManager `json:"managers"`
-	JobRoles    []JobRoleCriteria  `json:"job_roles"`
-	BonusTiers  []BonusTier        `json:"bonus_tiers"`
+	Settings                       *WorkspaceSettings             `json:"settings"`
+	Teams                          []WorkspaceTeam                `json:"teams"`
+	People                         []WorkspacePerson              `json:"people"`
+	Memberships                    []TeamMembership               `json:"memberships"`
+	UserMemberships                []TeamUserMembership           `json:"user_memberships"`
+	Managers                       []WorkspaceManager             `json:"managers"`
+	JobRoles                       []JobRoleCriteria              `json:"job_roles"`
+	BonusTiers                     []BonusTier                    `json:"bonus_tiers"`
+	InvitationTeamPreassignments   []InvitationTeamPreassignment  `json:"invitation_team_preassignments"`
+	TeamEstimateSettings           []PMTeamEstimateSettings       `json:"team_estimate_settings"`
 }
 
 // CreateTeamRequest is the payload for creating a team.
 type CreateTeamRequest struct {
 	WorkspaceID string  `json:"workspace_id"`
 	Name        string  `json:"name"`
+	Handle      *string `json:"handle"`
 	Description *string `json:"description"`
 	ManagerID   *string `json:"manager_id"`
 }
@@ -131,8 +183,20 @@ type CreateTeamRequest struct {
 // UpdateTeamRequest is the payload for updating a team.
 type UpdateTeamRequest struct {
 	Name        *string `json:"name"`
+	Handle      *string `json:"handle"`
 	Description *string `json:"description"`
 	ManagerID   *string `json:"manager_id"`
+}
+
+// AddTeamMemberRequest is the payload for adding a workspace member to a team.
+type AddTeamMemberRequest struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
+}
+
+// UpdateTeamMemberRequest is the payload for updating a team membership.
+type UpdateTeamMemberRequest struct {
+	Role *string `json:"role"`
 }
 
 // CreatePersonRequest is the payload for creating a person.

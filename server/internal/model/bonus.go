@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// BonusCalculation represents a row in the quarterly_bonus_calculations table.
-type BonusCalculation struct {
+// RewardBonusCalculation represents a row in the reward_bonus_calculations table.
+type RewardBonusCalculation struct {
 	ID                 string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID        string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_bonus_calc_ws_qtr_emp"`
 	QuarterID          string          `json:"quarter_id" gorm:"type:uuid;not null;uniqueIndex:idx_bonus_calc_ws_qtr_emp"`
@@ -27,10 +27,10 @@ type BonusCalculation struct {
 	UpdatedAt          time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (BonusCalculation) TableName() string { return "quarterly_bonus_calculations" }
+func (RewardBonusCalculation) TableName() string { return "reward_bonus_calculations" }
 
-// FinanceSettings represents a row in the quarterly_finance_settings table.
-type FinanceSettings struct {
+// RewardFinanceSettings represents a row in the reward_finance_settings table.
+type RewardFinanceSettings struct {
 	ID                  string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID         string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_finance_ws_qtr"`
 	QuarterID           string          `json:"quarter_id" gorm:"type:uuid;not null;uniqueIndex:idx_finance_ws_qtr"`
@@ -51,10 +51,10 @@ type FinanceSettings struct {
 	UpdatedAt           time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (FinanceSettings) TableName() string { return "quarterly_finance_settings" }
+func (RewardFinanceSettings) TableName() string { return "reward_finance_settings" }
 
-// BonusAuditLog represents a row in the bonus_audit_log table.
-type BonusAuditLog struct {
+// RewardAuditLog represents a row in the reward_audit_log table.
+type RewardAuditLog struct {
 	ID              string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	QuarterID       string          `json:"quarter_id" gorm:"type:uuid;not null;index"`
@@ -70,17 +70,17 @@ type BonusAuditLog struct {
 	PerformedAt     time.Time       `json:"performed_at" gorm:"autoCreateTime"`
 }
 
-func (BonusAuditLog) TableName() string { return "bonus_audit_log" }
+func (RewardAuditLog) TableName() string { return "reward_audit_log" }
 
-// SaveCalculationsRequest is the payload for saving bonus calculations.
-type SaveCalculationsRequest struct {
-	WorkspaceID  string             `json:"workspace_id"`
-	QuarterID    string             `json:"quarter_id"`
-	Calculations []BonusCalculation `json:"calculations"`
+// SaveRewardCalculationsRequest is the payload for saving bonus calculations.
+type SaveRewardCalculationsRequest struct {
+	WorkspaceID  string                   `json:"workspace_id"`
+	QuarterID    string                   `json:"quarter_id"`
+	Calculations []RewardBonusCalculation `json:"calculations"`
 }
 
-// UpsertFinanceRequest is the payload for upserting finance settings.
-type UpsertFinanceRequest struct {
+// UpsertRewardFinanceRequest is the payload for upserting finance settings.
+type UpsertRewardFinanceRequest struct {
 	WorkspaceID         string          `json:"workspace_id"`
 	QuarterID           string          `json:"quarter_id"`
 	MRRStart            float64         `json:"mrr_start"`
@@ -96,14 +96,14 @@ type UpsertFinanceRequest struct {
 	TotalBasicSalary    float64         `json:"total_basic_salary"`
 }
 
-// LockBonusRequest is the payload for locking bonus calculations.
-type LockBonusRequest struct {
+// LockRewardBonusRequest is the payload for locking bonus calculations.
+type LockRewardBonusRequest struct {
 	WorkspaceID string `json:"workspace_id"`
 	QuarterID   string `json:"quarter_id"`
 }
 
-// CreateAuditEntryRequest is the payload for creating a bonus audit log entry.
-type CreateAuditEntryRequest struct {
+// CreateRewardAuditEntryRequest is the payload for creating a reward audit log entry.
+type CreateRewardAuditEntryRequest struct {
 	WorkspaceID     string          `json:"workspace_id"`
 	QuarterID       string          `json:"quarter_id"`
 	Action          string          `json:"action"`

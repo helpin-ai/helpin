@@ -28,7 +28,7 @@ function getWSUrl(workspaceId: string): string {
 export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null)
   const retriesRef = useRef(0)
-  const timerRef = useRef<ReturnType<typeof setTimeout>>()
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
 
@@ -73,7 +73,7 @@ export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
     connect()
 
     return () => {
-      clearTimeout(timerRef.current)
+      clearTimeout(timerRef.current ?? undefined)
       if (wsRef.current) {
         wsRef.current.onclose = null // prevent reconnect on intentional close
         wsRef.current.close()

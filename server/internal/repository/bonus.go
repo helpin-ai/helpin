@@ -12,21 +12,21 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/model"
 )
 
-// BonusRepository handles database operations for bonus calculations, finance, and audit.
-type BonusRepository struct {
+// RewardBonusRepository handles database operations for bonus calculations, finance, and audit.
+type RewardBonusRepository struct {
 	db *gorm.DB
 }
 
-// NewBonusRepository creates a new BonusRepository.
-func NewBonusRepository(db *gorm.DB) *BonusRepository {
-	return &BonusRepository{db: db}
+// NewRewardBonusRepository creates a new RewardBonusRepository.
+func NewRewardBonusRepository(db *gorm.DB) *RewardBonusRepository {
+	return &RewardBonusRepository{db: db}
 }
 
 // SaveCalculations upserts a batch of bonus calculations.
-func (r *BonusRepository) SaveCalculations(ctx context.Context, calcs []model.BonusCalculation) error {
+func (r *RewardBonusRepository) SaveCalculations(ctx context.Context, calcs []model.RewardBonusCalculation) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, c := range calcs {
-			calc := model.BonusCalculation{
+			calc := model.RewardBonusCalculation{
 				WorkspaceID:        c.WorkspaceID,
 				QuarterID:          c.QuarterID,
 				EmployeeID:         c.EmployeeID,
@@ -59,8 +59,8 @@ func (r *BonusRepository) SaveCalculations(ctx context.Context, calcs []model.Bo
 }
 
 // GetCalculations returns all bonus calculations for a workspace/quarter.
-func (r *BonusRepository) GetCalculations(ctx context.Context, workspaceID, quarterID string) ([]model.BonusCalculation, error) {
-	var calcs []model.BonusCalculation
+func (r *RewardBonusRepository) GetCalculations(ctx context.Context, workspaceID, quarterID string) ([]model.RewardBonusCalculation, error) {
+	var calcs []model.RewardBonusCalculation
 	err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND quarter_id = ?", workspaceID, quarterID).
 		Order("employee_id").
@@ -72,10 +72,10 @@ func (r *BonusRepository) GetCalculations(ctx context.Context, workspaceID, quar
 }
 
 // Lock sets the locked_at timestamp on all calculations for a workspace/quarter.
-func (r *BonusRepository) Lock(ctx context.Context, workspaceID, quarterID string) error {
+func (r *RewardBonusRepository) Lock(ctx context.Context, workspaceID, quarterID string) error {
 	now := time.Now()
 	err := r.db.WithContext(ctx).
-		Model(&model.BonusCalculation{}).
+		Model(&model.RewardBonusCalculation{}).
 		Where("workspace_id = ? AND quarter_id = ?", workspaceID, quarterID).
 		Update("locked_at", now).Error
 	if err != nil {
@@ -85,9 +85,9 @@ func (r *BonusRepository) Lock(ctx context.Context, workspaceID, quarterID strin
 }
 
 // Unlock clears the locked_at timestamp on all calculations for a workspace/quarter.
-func (r *BonusRepository) Unlock(ctx context.Context, workspaceID, quarterID string) error {
+func (r *RewardBonusRepository) Unlock(ctx context.Context, workspaceID, quarterID string) error {
 	err := r.db.WithContext(ctx).
-		Model(&model.BonusCalculation{}).
+		Model(&model.RewardBonusCalculation{}).
 		Where("workspace_id = ? AND quarter_id = ?", workspaceID, quarterID).
 		Update("locked_at", nil).Error
 	if err != nil {
@@ -97,8 +97,8 @@ func (r *BonusRepository) Unlock(ctx context.Context, workspaceID, quarterID str
 }
 
 // UpsertFinance inserts or updates quarterly finance settings.
-func (r *BonusRepository) UpsertFinance(ctx context.Context, req model.UpsertFinanceRequest) (*model.FinanceSettings, error) {
-	fs := &model.FinanceSettings{
+func (r *RewardBonusRepository) UpsertFinance(ctx context.Context, req model.UpsertRewardFinanceRequest) (*model.RewardFinanceSettings, error) {
+	fs := &model.RewardFinanceSettings{
 		WorkspaceID:         req.WorkspaceID,
 		QuarterID:           req.QuarterID,
 		MRRStart:            req.MRRStart,
@@ -127,7 +127,7 @@ func (r *BonusRepository) UpsertFinance(ctx context.Context, req model.UpsertFin
 		return nil, fmt.Errorf("upsert finance: %w", err)
 	}
 	// Re-fetch to get correct ID and timestamps after upsert.
-	result := &model.FinanceSettings{}
+	result := &model.RewardFinanceSettings{}
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND quarter_id = ?", req.WorkspaceID, req.QuarterID).
 		First(result).Error; err != nil {
@@ -137,8 +137,8 @@ func (r *BonusRepository) UpsertFinance(ctx context.Context, req model.UpsertFin
 }
 
 // GetFinance returns the quarterly finance settings for a workspace/quarter.
-func (r *BonusRepository) GetFinance(ctx context.Context, workspaceID, quarterID string) (*model.FinanceSettings, error) {
-	fs := &model.FinanceSettings{}
+func (r *RewardBonusRepository) GetFinance(ctx context.Context, workspaceID, quarterID string) (*model.RewardFinanceSettings, error) {
+	fs := &model.RewardFinanceSettings{}
 	err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND quarter_id = ?", workspaceID, quarterID).
 		First(fs).Error
@@ -152,8 +152,8 @@ func (r *BonusRepository) GetFinance(ctx context.Context, workspaceID, quarterID
 }
 
 // CreateAuditEntry inserts a bonus audit log entry.
-func (r *BonusRepository) CreateAuditEntry(ctx context.Context, entry model.BonusAuditLog) (*model.BonusAuditLog, error) {
-	a := &model.BonusAuditLog{
+func (r *RewardBonusRepository) CreateAuditEntry(ctx context.Context, entry model.RewardAuditLog) (*model.RewardAuditLog, error) {
+	a := &model.RewardAuditLog{
 		WorkspaceID:     entry.WorkspaceID,
 		QuarterID:       entry.QuarterID,
 		Action:          entry.Action,
@@ -173,8 +173,8 @@ func (r *BonusRepository) CreateAuditEntry(ctx context.Context, entry model.Bonu
 }
 
 // ListAuditEntries returns audit log entries for a workspace/quarter.
-func (r *BonusRepository) ListAuditEntries(ctx context.Context, workspaceID, quarterID string) ([]model.BonusAuditLog, error) {
-	var entries []model.BonusAuditLog
+func (r *RewardBonusRepository) ListAuditEntries(ctx context.Context, workspaceID, quarterID string) ([]model.RewardAuditLog, error) {
+	var entries []model.RewardAuditLog
 	err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND quarter_id = ?", workspaceID, quarterID).
 		Order("performed_at DESC").

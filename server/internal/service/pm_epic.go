@@ -15,15 +15,17 @@ import (
 type PMEpicService struct {
 	epicRepo        *repository.PMEpicRepository
 	storyRepo       *repository.PMStoryRepository
+	labelRepo       *repository.PMLabelRepository
 	activityService *PMActivityService
 	wsPublisher     *websocket.Publisher
 }
 
 // NewPMEpicService creates a new PMEpicService.
-func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMEpicService {
+func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMEpicService {
 	return &PMEpicService{
 		epicRepo:        epicRepo,
 		storyRepo:       storyRepo,
+		labelRepo:       labelRepo,
 		activityService: activityService,
 		wsPublisher:     wsPublisher,
 	}
@@ -101,6 +103,9 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 		return nil, err
 	}
 	if len(req.LabelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+			return nil, err
+		}
 		if err := s.epicRepo.ReplaceLabels(ctx, epic.ID, req.LabelIDs); err != nil {
 			return nil, err
 		}
@@ -174,6 +179,9 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		return nil, err
 	}
 	if req.LabelIDs != nil {
+		if err := validateLabelScope(ctx, s.labelRepo, epic.WorkspaceID, req.LabelIDs, allowedTeamIDs(epic.TeamID)); err != nil {
+			return nil, err
+		}
 		if err := s.epicRepo.ReplaceLabels(ctx, epic.ID, req.LabelIDs); err != nil {
 			return nil, err
 		}
@@ -231,6 +239,9 @@ func (s *PMEpicService) AddLabel(ctx context.Context, epicID, labelID, actorID s
 	}
 	if epic == nil {
 		return fmt.Errorf("epic not found")
+	}
+	if err := validateLabelScope(ctx, s.labelRepo, epic.Epic.WorkspaceID, []string{labelID}, allowedTeamIDs(epic.Epic.TeamID)); err != nil {
+		return err
 	}
 	if err := s.epicRepo.AddLabel(ctx, epicID, labelID); err != nil {
 		return err

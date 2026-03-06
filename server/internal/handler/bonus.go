@@ -7,18 +7,18 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/service"
 )
 
-// BonusHandler handles bonus calculation HTTP requests.
-type BonusHandler struct {
-	bonusService *service.BonusService
+// RewardBonusHandler handles bonus calculation HTTP requests.
+type RewardBonusHandler struct {
+	bonusService *service.RewardBonusService
 }
 
-// NewBonusHandler creates a new BonusHandler.
-func NewBonusHandler(bonusService *service.BonusService) *BonusHandler {
-	return &BonusHandler{bonusService: bonusService}
+// NewRewardBonusHandler creates a new RewardBonusHandler.
+func NewRewardBonusHandler(bonusService *service.RewardBonusService) *RewardBonusHandler {
+	return &RewardBonusHandler{bonusService: bonusService}
 }
 
-// GetCalculations handles GET /api/bonus/calculations?workspace_id=xxx&quarter_id=xxx.
-func (h *BonusHandler) GetCalculations(w http.ResponseWriter, r *http.Request) {
+// GetCalculations handles GET /api/rewards/bonus/calculations?workspace_id=xxx&quarter_id=xxx.
+func (h *RewardBonusHandler) GetCalculations(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.URL.Query().Get("workspace_id")
 	quarterID := r.URL.Query().Get("quarter_id")
 	if workspaceID == "" || quarterID == "" {
@@ -32,15 +32,15 @@ func (h *BonusHandler) GetCalculations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if calcs == nil {
-		calcs = []model.BonusCalculation{}
+		calcs = []model.RewardBonusCalculation{}
 	}
 
 	writeJSON(w, http.StatusOK, calcs)
 }
 
-// SaveCalculations handles POST /api/bonus/calculations.
-func (h *BonusHandler) SaveCalculations(w http.ResponseWriter, r *http.Request) {
-	var req model.SaveCalculationsRequest
+// SaveCalculations handles POST /api/rewards/bonus/calculations.
+func (h *RewardBonusHandler) SaveCalculations(w http.ResponseWriter, r *http.Request) {
+	var req model.SaveRewardCalculationsRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -54,9 +54,9 @@ func (h *BonusHandler) SaveCalculations(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "calculations saved"})
 }
 
-// Lock handles POST /api/bonus/lock.
-func (h *BonusHandler) Lock(w http.ResponseWriter, r *http.Request) {
-	var req model.LockBonusRequest
+// Lock handles POST /api/rewards/bonus/lock.
+func (h *RewardBonusHandler) Lock(w http.ResponseWriter, r *http.Request) {
+	var req model.LockRewardBonusRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -70,9 +70,9 @@ func (h *BonusHandler) Lock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "bonus calculations locked"})
 }
 
-// Unlock handles POST /api/bonus/unlock.
-func (h *BonusHandler) Unlock(w http.ResponseWriter, r *http.Request) {
-	var req model.LockBonusRequest
+// Unlock handles POST /api/rewards/bonus/unlock.
+func (h *RewardBonusHandler) Unlock(w http.ResponseWriter, r *http.Request) {
+	var req model.LockRewardBonusRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -86,8 +86,8 @@ func (h *BonusHandler) Unlock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "bonus calculations unlocked"})
 }
 
-// GetTeamSprintData handles GET /api/bonus/team-sprint-data?sprint_id=xxx.
-func (h *BonusHandler) GetTeamSprintData(w http.ResponseWriter, r *http.Request) {
+// GetTeamSprintData handles GET /api/rewards/bonus/team-sprint-data?sprint_id=xxx.
+func (h *RewardBonusHandler) GetTeamSprintData(w http.ResponseWriter, r *http.Request) {
 	sprintID := r.URL.Query().Get("sprint_id")
 	if sprintID == "" {
 		writeError(w, http.StatusBadRequest, "sprint_id is required")
@@ -100,7 +100,7 @@ func (h *BonusHandler) GetTeamSprintData(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if data == nil {
-		data = []model.IndividualCheck{}
+		data = []model.RewardIndividualCheck{}
 	}
 
 	writeJSON(w, http.StatusOK, data)

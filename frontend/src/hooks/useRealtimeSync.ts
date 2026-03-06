@@ -1,15 +1,50 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useWebSocket, type WSEvent } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
+import { pmStoryService } from '@/lib/services/pmStoryService'
 
 const BOARD_ENTITIES = new Set(['story'])
 const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link'])
 
+/** Debounce window (ms) for batching rapid websocket events into a single board refresh. */
+const DEBOUNCE_MS = 200
+
 export function useRealtimeSync(workspaceId: string) {
-  const onEvent = useCallback((event: WSEvent) => {
-    // Story-level events → refresh the board
-    if (BOARD_ENTITIES.has(event.entity)) {
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleRefresh = useCallback(() => {
+    clearTimeout(debounceTimer.current ?? undefined)
+    debounceTimer.current = setTimeout(() => {
       usePMBoardStore.getState().refreshBoard()
+    }, DEBOUNCE_MS)
+  }, [])
+
+  const onEvent = useCallback((event: WSEvent) => {
+    // Story-level events → incremental patch when possible, debounced full refresh as fallback
+    if (BOARD_ENTITIES.has(event.entity)) {
+      const store = usePMBoardStore.getState()
+
+      if (event.action === 'deleted') {
+        // Delete can be patched locally without re-fetching
+        const patched = store.patchStory('deleted', event.entity_id)
+        if (!patched) scheduleRefresh()
+      } else {
+        // For created/updated/moved, fetch the updated story and patch it in
+        pmStoryService.get(workspaceId, event.entity_id).then((res) => {
+          if (res.data) {
+            const story = { ...res.data.story }
+            // Enrich with owner_name from StoryDetail owners for board display
+            if (story.owner_id && !story.owner_name && res.data.owners?.length) {
+              const owner = res.data.owners.find((o) => o.id === story.owner_id)
+              if (owner) story.owner_name = owner.full_name
+            }
+            const patched = store.patchStory(event.action, event.entity_id, story)
+            if (!patched) scheduleRefresh()
+          } else {
+            // Story might have been archived/deleted by the time we fetch.
+            scheduleRefresh()
+          }
+        })
+      }
     }
 
     // Dispatch custom DOM events for any component that listens
@@ -29,6 +64,10 @@ export function useRealtimeSync(workspaceId: string) {
         })
       )
     }
+  }, [scheduleRefresh, workspaceId])
+
+  useEffect(() => {
+    return () => { clearTimeout(debounceTimer.current ?? undefined) }
   }, [])
 
   useWebSocket({ workspaceId, onEvent })

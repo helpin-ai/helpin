@@ -1,13 +1,13 @@
 import { api } from '../api';
-import type { GoalDraft } from '../types';
+import type { RewardGoalDraft } from '../types';
 
-export const draftsService = {
+export const rewardDraftsService = {
   list: (workspaceId: string, quarterId: string) =>
-    api.get<GoalDraft[]>(`/drafts?workspace_id=${workspaceId}&quarter_id=${quarterId}`),
+    api.get<RewardGoalDraft[]>(`/rewards/drafts?workspace_id=${workspaceId}&quarter_id=${quarterId}`),
   create: (data: { workspace_id: string; quarter_id: string; draft_data: Record<string, unknown> }) =>
-    api.post<GoalDraft>('/drafts', data),
-  get: (id: string) => api.get<GoalDraft>(`/drafts/${id}`),
+    api.post<RewardGoalDraft>('/rewards/drafts', data),
+  get: (id: string) => api.get<RewardGoalDraft>(`/rewards/drafts/${id}`),
   update: (id: string, data: { draft_data?: Record<string, unknown>; status?: string }) =>
-    api.put<GoalDraft>(`/drafts/${id}`, data),
-  delete: (id: string) => api.del(`/drafts/${id}`),
+    api.put<RewardGoalDraft>(`/rewards/drafts/${id}`, data),
+  delete: (id: string) => api.del(`/rewards/drafts/${id}`),
 };

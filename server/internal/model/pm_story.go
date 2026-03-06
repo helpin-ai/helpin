@@ -206,6 +206,7 @@ type StoryStateColumn struct {
 	Stories    []BoardStory    `json:"stories"`
 	StoryCount int             `json:"story_count"`
 	PointTotal int             `json:"point_total"`
+	HasMore    bool            `json:"has_more"`
 }
 
 // StoryStateCount stores aggregate count per state.

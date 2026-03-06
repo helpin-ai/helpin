@@ -62,8 +62,9 @@ func main() {
 	// Ensure pgcrypto extension is available for gen_random_uuid().
 	db.Exec(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
 
-	// Drop legacy pm_epic_objectives table (replaced with composite PK version).
-	db.Exec("DROP TABLE IF EXISTS pm_epic_objectives")
+	if err := repository.MigrateLegacyRewardSchema(db); err != nil {
+		log.Fatalf("failed to migrate legacy reward schema: %v", err)
+	}
 
 	// Auto-migrate all models.
 	// The SQL migration files in server/migrations/ are kept as reference documentation.
@@ -75,19 +76,20 @@ func main() {
 		&model.WorkspaceTeam{},
 		&model.WorkspacePerson{},
 		&model.TeamMembership{},
+		&model.TeamUserMembership{},
 		&model.WorkspaceManager{},
 		&model.JobRoleCriteria{},
 		&model.BonusTier{},
-		&model.Quarter{},
-		&model.Sprint{},
-		&model.CompanyGoal{},
-		&model.GoalTeamContribution{},
-		&model.SprintGoal{},
-		&model.GoalDraft{},
-		&model.IndividualCheck{},
-		&model.BonusCalculation{},
-		&model.FinanceSettings{},
-		&model.BonusAuditLog{},
+		&model.RewardQuarter{},
+		&model.RewardSprint{},
+		&model.RewardCompanyGoal{},
+		&model.RewardGoalTeamContribution{},
+		&model.RewardSprintGoal{},
+		&model.RewardGoalDraft{},
+		&model.RewardIndividualCheck{},
+		&model.RewardBonusCalculation{},
+		&model.RewardFinanceSettings{},
+		&model.RewardAuditLog{},
 		&model.PMWorkflow{},
 		&model.PMWorkflowState{},
 		&model.PMEpicWorkflowState{},
@@ -112,7 +114,10 @@ func main() {
 		&model.PMChecklistItem{},
 		&model.PMExternalLink{},
 		&model.PMView{},
+		&model.PMAutomation{},
 		&model.WorkspaceInvitation{},
+		&model.InvitationTeamPreassignment{},
+		&model.PMTeamEstimateSettings{},
 		&model.Agent{},
 		&model.AgentRun{},
 		&model.AgentRunArtifact{},
@@ -156,13 +161,13 @@ func main() {
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
-	quarterRepo := repository.NewQuarterRepository(db)
-	sprintRepo := repository.NewSprintRepository(db)
-	goalRepo := repository.NewGoalRepository(db)
-	scoringRepo := repository.NewScoringRepository(db)
-	bonusRepo := repository.NewBonusRepository(db)
+	quarterRepo := repository.NewRewardQuarterRepository(db)
+	sprintRepo := repository.NewRewardSprintRepository(db)
+	goalRepo := repository.NewRewardGoalRepository(db)
+	scoringRepo := repository.NewRewardScoringRepository(db)
+	bonusRepo := repository.NewRewardBonusRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
-	draftRepo := repository.NewDraftRepository(db)
+	draftRepo := repository.NewRewardDraftRepository(db)
 	pmWorkflowRepo := repository.NewPMWorkflowRepository(db)
 	pmLabelRepo := repository.NewPMLabelRepository(db)
 	pmEpicRepo := repository.NewPMEpicRepository(db)
@@ -176,6 +181,7 @@ func main() {
 	pmChecklistItemRepo := repository.NewPMChecklistItemRepository(db)
 	pmExternalLinkRepo := repository.NewPMExternalLinkRepository(db)
 	pmViewRepo := repository.NewPMViewRepository(db)
+	pmAutomationRepo := repository.NewPMAutomationRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
@@ -195,12 +201,13 @@ func main() {
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
-	pmStoryService := service.NewPMStoryService(pmStoryRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
-	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmActivityService, wsPublisher)
-	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmActivityService, wsPublisher)
+	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
+	pmStoryService := service.NewPMStoryService(pmStoryRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService)
+	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, pmActivityService, wsPublisher)
+	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
-	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmActivityService, wsPublisher)
+	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmActivityService, wsPublisher)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, wsPublisher)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo)
@@ -219,13 +226,13 @@ func main() {
 	}
 
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
-	quarterService := service.NewQuarterService(quarterRepo, sprintRepo)
-	sprintService := service.NewSprintService(sprintRepo, scoringRepo)
-	goalService := service.NewGoalService(goalRepo)
-	bonusService := service.NewBonusService(bonusRepo, scoringRepo)
+	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
+	sprintService := service.NewRewardSprintService(sprintRepo, scoringRepo)
+	goalService := service.NewRewardGoalService(goalRepo)
+	bonusService := service.NewRewardBonusService(bonusRepo, scoringRepo)
 	settingsService := service.NewSettingsService(settingsRepo)
-	auditService := service.NewAuditService(bonusRepo)
-	draftService := service.NewDraftService(draftRepo)
+	auditService := service.NewRewardAuditService(bonusRepo)
+	draftService := service.NewRewardDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL)
 	orchestrationService := service.NewOrchestrationService(pmEpicRepo, pmStoryService, agentRepo, agentHandoffRepo, pmActivityService, wsPublisher, claudeClient)
 
@@ -234,14 +241,14 @@ func main() {
 		Health:          handler.NewHealthHandler(),
 		Auth:            handler.NewAuthHandler(authService),
 		Workspace:       handler.NewWorkspaceHandler(workspaceService),
-		Quarter:         handler.NewQuarterHandler(quarterService),
-		Sprint:          handler.NewSprintHandler(sprintService),
-		Goal:            handler.NewGoalHandler(goalService),
-		Bonus:           handler.NewBonusHandler(bonusService),
-		Finance:         handler.NewFinanceHandler(bonusService),
+		RewardQuarter:   handler.NewRewardQuarterHandler(quarterService),
+		RewardSprint:    handler.NewRewardSprintHandler(sprintService),
+		RewardGoal:      handler.NewRewardGoalHandler(goalService),
+		RewardBonus:     handler.NewRewardBonusHandler(bonusService),
+		RewardFinance:   handler.NewRewardFinanceHandler(bonusService),
 		Settings:        handler.NewSettingsHandler(settingsService),
-		Audit:           handler.NewAuditHandler(auditService),
-		Draft:           handler.NewDraftHandler(draftService),
+		RewardAudit:     handler.NewRewardAuditHandler(auditService),
+		RewardDraft:     handler.NewRewardDraftHandler(draftService),
 		Invite:          handler.NewInviteHandler(inviteService),
 		PMWorkflow:      handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMLabel:         handler.NewPMLabelHandler(pmLabelService),
@@ -255,6 +262,7 @@ func main() {
 		PMExternalLink:  handler.NewPMExternalLinkHandler(pmExternalLinkService),
 		PMView:          handler.NewPMViewHandler(pmViewService),
 		Search:          handler.NewSearchHandler(searchService),
+		PMAutomation:    handler.NewPMAutomationHandler(pmAutomationService),
 		Agent:           handler.NewAgentHandler(agentService),
 		Support:         handler.NewSupportHandler(supportService, agentService),
 		Widget:          handler.NewWidgetHandler(supportService),
@@ -264,6 +272,21 @@ func main() {
 
 	// Set up router.
 	r := router.New(handlers, jwtManager, cfg.CORSOrigin)
+
+	// Start background ticker for iteration automations.
+	automationDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				pmAutomationService.RunSprintAutomations(context.Background())
+			case <-automationDone:
+				return
+			}
+		}
+	}()
 
 	// Wrap router so /api/ws bypasses Chi middleware (Recoverer strips
 	// http.Hijacker which WebSocket upgrade requires).
@@ -303,6 +326,7 @@ func main() {
 
 	<-done
 	log.Println("server shutting down...")
+	close(automationDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

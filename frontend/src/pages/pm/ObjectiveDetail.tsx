@@ -608,6 +608,7 @@ export function ObjectiveDetailPage() {
               onChange={(html) => updateField('description', html, { description: html })}
               placeholder="Add a description..."
               className="border-transparent shadow-none"
+              teams={teams}
             />
           </div>
 

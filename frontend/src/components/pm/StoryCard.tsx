@@ -1,25 +1,68 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
   AlertTriangle,
   CalendarDays,
+  Check,
+  UserPlus,
 } from 'lucide-react';
 import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
-import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StoryTypeIcon } from '@/lib/pmConstants';
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
+import { pmStoryService } from '@/lib/services/pmStoryService';
 import { UserAvatar } from './UserAvatar';
-import type { Story } from '@/lib/pmTypes';
+import type { Priority, Severity, Story, WorkflowState } from '@/lib/pmTypes';
+import type { MemberWithUser } from '@/lib/types';
+import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
+
+// ── Shared constants ────────────────────────────────────────────────
+
+const pillBase = 'flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium';
+
+const PRIORITY_BORDER_COLOR: Record<Priority, string> = {
+  urgent: 'border-red-400 dark:border-red-600',
+  high: 'border-orange-400 dark:border-orange-600',
+  medium: 'border-amber-400 dark:border-amber-600',
+  low: 'border-sky-400 dark:border-sky-600',
+  none: 'border-border',
+};
+
+const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
+const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
+
+// ── Component ───────────────────────────────────────────────────────
 
 interface StoryCardProps {
   story: Story;
   onOpen: (story: Story) => void;
   isOverlay?: boolean;
   teamName?: string;
+  workspaceId?: string;
+  members?: MemberWithUser[];
+  states?: WorkflowState[];
+  onOwnerChanged?: (story: Story) => void;
+  onStoryMoved?: (storyId: string, fromStateId: string, toStateId: string) => void;
+  onPriorityChanged?: (story: Story) => void;
+  onSeverityChanged?: (story: Story) => void;
 }
 
-export function StoryCard({ story, onOpen, isOverlay = false, teamName }: StoryCardProps) {
+export function StoryCard({
+  story,
+  onOpen,
+  isOverlay = false,
+  teamName,
+  workspaceId,
+  members,
+  states,
+  onOwnerChanged,
+  onStoryMoved,
+  onPriorityChanged,
+  onSeverityChanged,
+}: StoryCardProps) {
   const {
     attributes,
     listeners,
@@ -33,6 +76,11 @@ export function StoryCard({ story, onOpen, isOverlay = false, teamName }: StoryC
     transform: CSS.Transform.toString(transform),
     transition,
   };
+
+  const [memberOpen, setMemberOpen] = useState(false);
+  const [priorityOpen, setPriorityOpen] = useState(false);
+  const [severityOpen, setSeverityOpen] = useState(false);
+  const [stateOpen, setStateOpen] = useState(false);
 
   const due = useMemo(() => {
     if (!story.deadline) return null;
@@ -52,6 +100,79 @@ export function StoryCard({ story, onOpen, isOverlay = false, teamName }: StoryC
     ? SEVERITY_CONFIG[story.severity]
     : null;
 
+  const priorityCfg = PRIORITY_CONFIG[story.priority];
+  const storyTypeCfg = STORY_TYPE_CONFIG[story.story_type];
+  const currentState = states?.find((s) => s.id === story.workflow_state_id);
+
+  const handleAssignOwner = useCallback(
+    async (member: MemberWithUser) => {
+      if (!workspaceId) return;
+      const newOwnerId = story.owner_id === member.user_id ? undefined : member.user_id;
+      try {
+        const result = await pmStoryService.update(workspaceId, story.id, { owner_id: newOwnerId });
+        if (result.data?.story) {
+          onOwnerChanged?.(result.data.story);
+        }
+      } catch {
+        // Board will show stale data until next refresh
+      }
+      setMemberOpen(false);
+    },
+    [workspaceId, story.id, story.owner_id, onOwnerChanged],
+  );
+
+  const handleChangePriority = useCallback(
+    async (priority: Priority) => {
+      if (!workspaceId || priority === story.priority) {
+        setPriorityOpen(false);
+        return;
+      }
+      try {
+        const result = await pmStoryService.update(workspaceId, story.id, { priority });
+        if (result.data?.story) {
+          onPriorityChanged?.(result.data.story);
+        }
+      } catch {
+        // Board will show stale data until next refresh
+      }
+      setPriorityOpen(false);
+    },
+    [workspaceId, story.id, story.priority, onPriorityChanged],
+  );
+
+  const handleChangeSeverity = useCallback(
+    async (severity: Severity) => {
+      if (!workspaceId || severity === story.severity) {
+        setSeverityOpen(false);
+        return;
+      }
+      try {
+        const result = await pmStoryService.update(workspaceId, story.id, { severity });
+        if (result.data?.story) {
+          onSeverityChanged?.(result.data.story);
+        }
+      } catch {
+        // Board will show stale data until next refresh
+      }
+      setSeverityOpen(false);
+    },
+    [workspaceId, story.id, story.severity, onSeverityChanged],
+  );
+
+  const handleChangeState = useCallback(
+    (stateId: string) => {
+      if (stateId === story.workflow_state_id) {
+        setStateOpen(false);
+        return;
+      }
+      onStoryMoved?.(story.id, story.workflow_state_id, stateId);
+      setStateOpen(false);
+    },
+    [story.id, story.workflow_state_id, onStoryMoved],
+  );
+
+  const titleIsLong = story.name.length > 60;
+
   return (
     <article
       ref={setNodeRef}
@@ -68,67 +189,368 @@ export function StoryCard({ story, onOpen, isOverlay = false, teamName }: StoryC
         }
       }}
       className={cn(
-        'group cursor-pointer rounded-md border border-border/60 bg-background px-3 py-2.5 transition-colors',
-        'hover:bg-accent/40',
-        isDragging && 'opacity-60',
-        isOverlay && 'ring-1 ring-primary/30'
+        'group cursor-pointer rounded-lg border border-border/60 bg-background p-3 shadow-sm transition-all',
+        'hover:border-border hover:shadow-md',
+        isDragging && 'opacity-50',
+        isOverlay && 'ring-1 ring-primary/30 shadow-lg',
       )}
     >
+      {/* Row 1: Story type + Epic + Priority */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <StoryTypeIcon storyType={story.story_type} className="h-3.5 w-3.5" />
-        <span className="font-medium text-foreground">TP-{story.display_id}</span>
-        <span className="ml-auto" title={`Priority: ${story.priority}`}>
-          <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
-        </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="shrink-0">
+              <StoryTypeIcon storyType={story.story_type} className="h-3.5 w-3.5" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>
+        </Tooltip>
+        {story.epic_name && (
+          <span className="truncate text-[11px] text-muted-foreground max-w-[160px]">{story.epic_name}</span>
+        )}
+
+        {/* Priority pill — clickable dropdown */}
+        {workspaceId ? (
+          <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
+            <Tooltip open={priorityOpen ? false : undefined}>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      'ml-auto flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 transition-colors hover:bg-muted',
+                      PRIORITY_BORDER_COLOR[story.priority],
+                    )}
+                    onClick={(e) => { e.stopPropagation(); setPriorityOpen(true); }}
+                  >
+                    <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
+            </Tooltip>
+            {priorityOpen && (
+              <PopoverContent
+                className="w-[180px] p-0"
+                align="end"
+                side="bottom"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Command>
+                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+                    <CommandGroup>
+                      {ALL_PRIORITIES.map((p) => {
+                        const cfg = PRIORITY_CONFIG[p];
+                        return (
+                          <CommandItem
+                            key={p}
+                            value={cfg.label}
+                            onSelect={() => handleChangePriority(p)}
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            <PriorityIcon priority={p} className="h-3.5 w-3.5" />
+                            <span>{cfg.label}</span>
+                            {story.priority === p && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            )}
+          </Popover>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(
+                'ml-auto flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
+                PRIORITY_BORDER_COLOR[story.priority],
+              )}>
+                <PriorityIcon priority={story.priority} className="h-3.5 w-3.5" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
-      <h4 className="mt-1.5 line-clamp-2 text-sm font-semibold leading-snug">
-        {story.name}
-      </h4>
+      {/* Row 2: Title */}
+      {titleIsLong ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <h4 className="mt-1.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
+              {story.name}
+            </h4>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-[300px]">{story.name}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <h4 className="mt-1.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
+          {story.name}
+        </h4>
+      )}
 
-      <div className="mt-2 flex items-center gap-2 text-xs">
+      {/* Row 3: Property pills */}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {/* State pill — clickable dropdown */}
+        {currentState && states && states.length > 0 && onStoryMoved ? (
+          <Popover open={stateOpen} onOpenChange={setStateOpen}>
+            <Tooltip open={stateOpen ? false : undefined}>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground transition-colors hover:bg-muted')}
+                    onClick={(e) => { e.stopPropagation(); setStateOpen(true); }}
+                  >
+                    <StateTypeIcon stateType={currentState.state_type} className="h-3 w-3" />
+                    {currentState.name}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">State: {currentState.name}</TooltipContent>
+            </Tooltip>
+            {stateOpen && (
+              <PopoverContent
+                className="w-[200px] p-0"
+                align="start"
+                side="bottom"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Command>
+                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+                    <CommandGroup>
+                      {states.map((s) => (
+                        <CommandItem
+                          key={s.id}
+                          value={s.name}
+                          onSelect={() => handleChangeState(s.id)}
+                          className="flex items-center gap-2 text-xs"
+                        >
+                          <StateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
+                          <span>{s.name}</span>
+                          {story.workflow_state_id === s.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            )}
+          </Popover>
+        ) : currentState ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
+                <StateTypeIcon stateType={currentState.state_type} className="h-3 w-3" />
+                {currentState.name}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">State: {currentState.name}</TooltipContent>
+          </Tooltip>
+        ) : null}
+
         {story.estimate != null && (
-          <Badge variant="secondary" className="h-5 rounded-full px-2 text-[10px]">
-            {story.estimate} pts
-          </Badge>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
+                {formatEstimateDisplay(story.estimate, story.team_id)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">Estimate: {formatEstimateDisplay(story.estimate, story.team_id)}</TooltipContent>
+          </Tooltip>
         )}
 
-        {severityCfg && (
-          <Badge variant="outline" className={cn('h-5 rounded-full px-2 text-[10px] font-medium', severityCfg.color)}>
-            <SeverityIcon severity={story.severity} className="h-3 w-3" />
-            {severityCfg.label}
-          </Badge>
-        )}
+        {/* Severity pill — clickable dropdown */}
+        {severityCfg && workspaceId ? (
+          <Popover open={severityOpen} onOpenChange={setSeverityOpen}>
+            <Tooltip open={severityOpen ? false : undefined}>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(pillBase, 'border-border bg-muted/50 transition-colors hover:bg-muted', severityCfg.color)}
+                    onClick={(e) => { e.stopPropagation(); setSeverityOpen(true); }}
+                  >
+                    <SeverityIcon severity={story.severity} className="h-3 w-3" />
+                    {severityCfg.label}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">Severity: {severityCfg.label}</TooltipContent>
+            </Tooltip>
+            {severityOpen && (
+              <PopoverContent
+                className="w-[180px] p-0"
+                align="start"
+                side="bottom"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Command>
+                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+                    <CommandGroup>
+                      {ALL_SEVERITIES.map((sev) => {
+                        const cfg = SEVERITY_CONFIG[sev];
+                        return (
+                          <CommandItem
+                            key={sev}
+                            value={cfg.label}
+                            onSelect={() => handleChangeSeverity(sev)}
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            <SeverityIcon severity={sev} className="h-3.5 w-3.5" />
+                            <span>{cfg.label}</span>
+                            {story.severity === sev && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            )}
+          </Popover>
+        ) : severityCfg ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(pillBase, 'border-border bg-muted/50', severityCfg.color)}>
+                <SeverityIcon severity={story.severity} className="h-3 w-3" />
+                {severityCfg.label}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">Severity: {severityCfg.label}</TooltipContent>
+          </Tooltip>
+        ) : null}
 
         {story.blocked && (
-          <Badge variant="destructive" className="h-5 rounded-full px-2 text-[10px]">
-            <AlertTriangle className="h-3 w-3" />
-            Blocked
-          </Badge>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(pillBase, 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400')}>
+                <AlertTriangle className="h-3 w-3" />
+                Blocked
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">This story is blocked</TooltipContent>
+          </Tooltip>
         )}
 
-        <UserAvatar name={story.owner_name} className="ml-auto h-5 w-5" />
+        {due && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(
+                pillBase,
+                due.overdue
+                  ? 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400'
+                  : due.approaching
+                    ? 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400'
+                    : 'border-border bg-muted/50 text-muted-foreground',
+              )}>
+                <CalendarDays className="h-3 w-3 shrink-0" />
+                {due.label}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              {due.overdue ? 'Overdue' : due.approaching ? 'Due soon' : 'Due date'}: {due.label}
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+      {/* Row 4: Footer - team, assignee */}
+      <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {teamName && (
-            <Badge variant="outline" className="h-4 shrink-0 rounded px-1.5 text-[9px] font-medium">
-              {teamName}
-            </Badge>
-          )}
-          {story.epic_name && (
-            <span className="truncate max-w-[70%]">{story.epic_name}</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
+                  {teamName}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">Team: {teamName}</TooltipContent>
+            </Tooltip>
           )}
         </div>
-        {due && (
-          <span className={cn(
-            'inline-flex items-center gap-1',
-            (due.overdue || due.approaching) && 'text-red-600 font-medium'
-          )}>
-            <CalendarDays className="h-3 w-3" />
-            {due.label}
-          </span>
+
+        {/* Assignee avatar / assign button */}
+        {members && workspaceId ? (
+          <Popover open={memberOpen} onOpenChange={setMemberOpen}>
+            <Tooltip open={memberOpen ? false : undefined}>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-full transition-opacity hover:opacity-80"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMemberOpen(true);
+                    }}
+                  >
+                    {story.owner_name ? (
+                      <UserAvatar name={story.owner_name} className="h-5 w-5" />
+                    ) : (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
+                        <UserPlus className="h-2.5 w-2.5" />
+                      </span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">{story.owner_name || 'Assign member'}</TooltipContent>
+            </Tooltip>
+            {memberOpen && (
+              <PopoverContent
+                className="w-[220px] p-0"
+                align="end"
+                side="bottom"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Command>
+                  <CommandInput placeholder="Search members..." className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                      No members found
+                    </CommandEmpty>
+                    <CommandGroup>
+                      {members.map((m) => (
+                        <CommandItem
+                          key={m.user_id}
+                          value={m.full_name || m.email}
+                          onSelect={() => handleAssignOwner(m)}
+                          className="flex items-center gap-2 text-xs"
+                        >
+                          <UserAvatar name={m.full_name || m.email} className="h-5 w-5" />
+                          <span className="truncate">{m.full_name || m.email}</span>
+                          {story.owner_id === m.user_id && (
+                            <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                          )}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            )}
+          </Popover>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0">
+                <UserAvatar name={story.owner_name} className="h-5 w-5" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">{story.owner_name || 'Unassigned'}</TooltipContent>
+          </Tooltip>
         )}
       </div>
     </article>

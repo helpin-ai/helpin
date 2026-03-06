@@ -300,7 +300,8 @@ func (r *PMStoryRepository) ReplaceLabels(ctx context.Context, storyID string, l
 }
 
 // ListByWorkflowState returns board columns grouped by workflow state with optional filters.
-func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters) ([]model.StoryStateColumn, error) {
+// perStateLimit controls how many stories are returned per column (0 = unlimited).
+func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters, perStateLimit int) ([]model.StoryStateColumn, error) {
 	var states []model.PMWorkflowState
 	if err := r.db.WithContext(ctx).
 		Where("workflow_id = ?", workflowID).
@@ -309,73 +310,117 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		return nil, fmt.Errorf("list board states: %w", err)
 	}
 
-	// Fetch all stories for the workflow in a single query.
 	stateIDs := make([]string, len(states))
 	for i, s := range states {
 		stateIDs[i] = s.ID
 	}
 
-	var allStories []model.PMStory
-	storyQuery := r.db.WithContext(ctx).
+	baseQuery := r.db.WithContext(ctx).
+		Model(&model.PMStory{}).
 		Where("workflow_state_id IN ? AND archived = false", stateIDs)
-	if filters.TeamID != nil && *filters.TeamID != "" {
-		storyQuery = storyQuery.Where("team_id = ?", *filters.TeamID)
+	baseQuery = r.applyBoardFilters(baseQuery, filters)
+
+	var aggregateRows []struct {
+		StateID    string `gorm:"column:state_id"`
+		StoryCount int    `gorm:"column:story_count"`
+		PointTotal int    `gorm:"column:point_total"`
 	}
-	if filters.Priority != nil && *filters.Priority != "" {
-		vals := strings.Split(*filters.Priority, ",")
-		storyQuery = storyQuery.Where("priority IN ?", vals)
-	}
-	if filters.StoryType != nil && *filters.StoryType != "" {
-		vals := strings.Split(*filters.StoryType, ",")
-		storyQuery = storyQuery.Where("story_type IN ?", vals)
-	}
-	if filters.EpicID != nil && *filters.EpicID != "" {
-		vals := strings.Split(*filters.EpicID, ",")
-		storyQuery = storyQuery.Where("epic_id IN ?", vals)
-	}
-	if filters.SprintID != nil && *filters.SprintID != "" {
-		vals := strings.Split(*filters.SprintID, ",")
-		storyQuery = storyQuery.Where("sprint_id IN ?", vals)
-	}
-	if filters.OwnerID != nil && *filters.OwnerID != "" {
-		vals := strings.Split(*filters.OwnerID, ",")
-		storyQuery = storyQuery.Where("owner_id IN ?", vals)
-	}
-	if filters.RequesterID != nil && *filters.RequesterID != "" {
-		vals := strings.Split(*filters.RequesterID, ",")
-		storyQuery = storyQuery.Where("requester_id IN ?", vals)
-	}
-	if filters.Severity != nil && *filters.Severity != "" {
-		vals := strings.Split(*filters.Severity, ",")
-		storyQuery = storyQuery.Where("severity IN ?", vals)
-	}
-	if filters.Blocked != nil && *filters.Blocked != "" {
-		storyQuery = storyQuery.Where("blocked = ?", *filters.Blocked == "true")
-	}
-	if filters.UpdatedAfter != nil && *filters.UpdatedAfter != "" {
-		t, err := time.Parse(time.RFC3339, *filters.UpdatedAfter)
-		if err == nil {
-			storyQuery = storyQuery.Where("pm_stories.updated_at >= ?", t)
-		}
-	}
-	if filters.LabelID != nil && *filters.LabelID != "" {
-		vals := strings.Split(*filters.LabelID, ",")
-		storyQuery = storyQuery.
-			Joins("JOIN pm_story_labels psl ON psl.story_id = pm_stories.id").
-			Where("psl.label_id IN ?", vals)
-	}
-	if err := storyQuery.
-		Order("position ASC, updated_at DESC").
-		Find(&allStories).Error; err != nil {
-		return nil, fmt.Errorf("list board stories: %w", err)
+	if err := baseQuery.
+		Select("pm_stories.workflow_state_id AS state_id, COUNT(pm_stories.id) AS story_count, COALESCE(SUM(pm_stories.estimate), 0) AS point_total").
+		Group("pm_stories.workflow_state_id").
+		Scan(&aggregateRows).Error; err != nil {
+		return nil, fmt.Errorf("list board aggregates: %w", err)
 	}
 
-	// Group stories by state and collect unique IDs for batch lookups.
-	storiesByState := map[string][]model.PMStory{}
+	type aggregateMeta struct {
+		storyCount int
+		pointTotal int
+	}
+	aggregates := map[string]aggregateMeta{}
+	for _, row := range aggregateRows {
+		aggregates[row.StateID] = aggregateMeta{storyCount: row.StoryCount, pointTotal: row.PointTotal}
+	}
+
+	type columnMeta struct {
+		totalCount int
+		pointTotal int
+		hasMore    bool
+		visible    []model.PMStory
+	}
+	metas := make([]columnMeta, len(states))
 	epicIDs := map[string]struct{}{}
 	ownerIDs := map[string]struct{}{}
-	for _, s := range allStories {
-		storiesByState[s.WorkflowStateID] = append(storiesByState[s.WorkflowStateID], s)
+	for i, state := range states {
+		query := r.db.WithContext(ctx).
+			Where("workflow_state_id = ? AND archived = false", state.ID)
+		query = r.applyBoardFilters(query, filters)
+		query = query.Order("position ASC, updated_at DESC")
+		if perStateLimit > 0 {
+			query = query.Limit(perStateLimit)
+		}
+
+		var visibleStories []model.PMStory
+		if err := query.Find(&visibleStories).Error; err != nil {
+			return nil, fmt.Errorf("list board column stories: %w", err)
+		}
+
+		for _, s := range visibleStories {
+			if s.EpicID != nil {
+				epicIDs[*s.EpicID] = struct{}{}
+			}
+			if s.OwnerID != nil {
+				ownerIDs[*s.OwnerID] = struct{}{}
+			}
+		}
+
+		aggregate := aggregates[state.ID]
+		metas[i] = columnMeta{
+			totalCount: aggregate.storyCount,
+			pointTotal: aggregate.pointTotal,
+			hasMore:    aggregate.storyCount > len(visibleStories),
+			visible:    visibleStories,
+		}
+	}
+
+	epicNameMap := r.batchEpicNames(ctx, epicIDs)
+	ownerNameMap := r.batchOwnerNames(ctx, ownerIDs)
+
+	columns := make([]model.StoryStateColumn, 0, len(states))
+	for i, state := range states {
+		m := metas[i]
+		columns = append(columns, model.StoryStateColumn{
+			State:      state,
+			Stories:    r.enrichBoardStories(m.visible, epicNameMap, ownerNameMap),
+			StoryCount: m.totalCount,
+			PointTotal: m.pointTotal,
+			HasMore:    m.hasMore,
+		})
+	}
+	return columns, nil
+}
+
+// ListColumnStories returns a page of stories for a single workflow state, enriched for board display.
+func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+	storyQuery := r.db.WithContext(ctx).
+		Where("workflow_state_id = ? AND archived = false", stateID)
+	storyQuery = r.applyBoardFilters(storyQuery, filters)
+
+	var total int64
+	if err := storyQuery.Model(&model.PMStory{}).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count column stories: %w", err)
+	}
+
+	var stories []model.PMStory
+	if err := storyQuery.
+		Order("position ASC, updated_at DESC").
+		Offset(offset).Limit(limit).
+		Find(&stories).Error; err != nil {
+		return nil, 0, fmt.Errorf("list column stories: %w", err)
+	}
+
+	epicIDs := map[string]struct{}{}
+	ownerIDs := map[string]struct{}{}
+	for _, s := range stories {
 		if s.EpicID != nil {
 			epicIDs[*s.EpicID] = struct{}{}
 		}
@@ -383,76 +428,125 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 			ownerIDs[*s.OwnerID] = struct{}{}
 		}
 	}
+	epicNameMap := r.batchEpicNames(ctx, epicIDs)
+	ownerNameMap := r.batchOwnerNames(ctx, ownerIDs)
+	return r.enrichBoardStories(stories, epicNameMap, ownerNameMap), int(total), nil
+}
 
-	// Batch-lookup epic names.
+// enrichBoardStories maps epic/owner names onto raw stories for board display.
+func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicNameMap, ownerNameMap map[string]string) []model.BoardStory {
+	result := make([]model.BoardStory, 0, len(stories))
+	for _, story := range stories {
+		bs := model.BoardStory{PMStory: story}
+		if story.EpicID != nil {
+			if name, ok := epicNameMap[*story.EpicID]; ok {
+				bs.EpicName = &name
+			}
+		}
+		if story.OwnerID != nil {
+			if name, ok := ownerNameMap[*story.OwnerID]; ok {
+				bs.OwnerName = &name
+			}
+		}
+		result = append(result, bs)
+	}
+	return result
+}
+
+// applyBoardFilters adds board-specific WHERE clauses to a query (shared between ListByWorkflowState and ListColumnStories).
+func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryFilters) *gorm.DB {
+	if filters.TeamID != nil && *filters.TeamID != "" {
+		q = q.Where("team_id = ?", *filters.TeamID)
+	}
+	if filters.Priority != nil && *filters.Priority != "" {
+		vals := strings.Split(*filters.Priority, ",")
+		q = q.Where("priority IN ?", vals)
+	}
+	if filters.StoryType != nil && *filters.StoryType != "" {
+		vals := strings.Split(*filters.StoryType, ",")
+		q = q.Where("story_type IN ?", vals)
+	}
+	if filters.EpicID != nil && *filters.EpicID != "" {
+		vals := strings.Split(*filters.EpicID, ",")
+		q = q.Where("epic_id IN ?", vals)
+	}
+	if filters.SprintID != nil && *filters.SprintID != "" {
+		vals := strings.Split(*filters.SprintID, ",")
+		q = q.Where("sprint_id IN ?", vals)
+	}
+	if filters.OwnerID != nil && *filters.OwnerID != "" {
+		vals := strings.Split(*filters.OwnerID, ",")
+		q = q.Where("owner_id IN ?", vals)
+	}
+	if filters.RequesterID != nil && *filters.RequesterID != "" {
+		vals := strings.Split(*filters.RequesterID, ",")
+		q = q.Where("requester_id IN ?", vals)
+	}
+	if filters.Severity != nil && *filters.Severity != "" {
+		vals := strings.Split(*filters.Severity, ",")
+		q = q.Where("severity IN ?", vals)
+	}
+	if filters.Blocked != nil && *filters.Blocked != "" {
+		q = q.Where("blocked = ?", *filters.Blocked == "true")
+	}
+	if filters.UpdatedAfter != nil && *filters.UpdatedAfter != "" {
+		t, err := time.Parse(time.RFC3339, *filters.UpdatedAfter)
+		if err == nil {
+			q = q.Where("pm_stories.updated_at >= ?", t)
+		}
+	}
+	if filters.LabelID != nil && *filters.LabelID != "" {
+		vals := strings.Split(*filters.LabelID, ",")
+		q = q.Joins("JOIN pm_story_labels psl ON psl.story_id = pm_stories.id").
+			Where("psl.label_id IN ?", vals)
+	}
+	return q
+}
+
+// batchEpicNames looks up epic names by IDs.
+func (r *PMStoryRepository) batchEpicNames(ctx context.Context, epicIDs map[string]struct{}) map[string]string {
 	epicNameMap := map[string]string{}
-	if len(epicIDs) > 0 {
-		ids := make([]string, 0, len(epicIDs))
-		for id := range epicIDs {
-			ids = append(ids, id)
-		}
-		var rows []struct {
-			ID   string
-			Name string
-		}
-		if err := r.db.WithContext(ctx).Table("pm_epics").Select("id, name").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
-			return nil, fmt.Errorf("batch lookup epic names: %w", err)
-		}
-		for _, row := range rows {
-			epicNameMap[row.ID] = row.Name
-		}
+	if len(epicIDs) == 0 {
+		return epicNameMap
 	}
+	ids := make([]string, 0, len(epicIDs))
+	for id := range epicIDs {
+		ids = append(ids, id)
+	}
+	var rows []struct {
+		ID   string
+		Name string
+	}
+	if err := r.db.WithContext(ctx).Table("pm_epics").Select("id, name").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return epicNameMap
+	}
+	for _, row := range rows {
+		epicNameMap[row.ID] = row.Name
+	}
+	return epicNameMap
+}
 
-	// Batch-lookup owner names.
+// batchOwnerNames looks up user full names by IDs.
+func (r *PMStoryRepository) batchOwnerNames(ctx context.Context, ownerIDs map[string]struct{}) map[string]string {
 	ownerNameMap := map[string]string{}
-	if len(ownerIDs) > 0 {
-		ids := make([]string, 0, len(ownerIDs))
-		for id := range ownerIDs {
-			ids = append(ids, id)
-		}
-		var rows []struct {
-			ID       string
-			FullName string `gorm:"column:full_name"`
-		}
-		if err := r.db.WithContext(ctx).Table("users").Select("id, full_name").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
-			return nil, fmt.Errorf("batch lookup owner names: %w", err)
-		}
-		for _, row := range rows {
-			ownerNameMap[row.ID] = row.FullName
-		}
+	if len(ownerIDs) == 0 {
+		return ownerNameMap
 	}
-
-	// Build enriched board stories.
-	columns := make([]model.StoryStateColumn, 0, len(states))
-	for _, state := range states {
-		stateStories := storiesByState[state.ID]
-		boardStories := make([]model.BoardStory, 0, len(stateStories))
-		pointTotal := 0
-		for _, story := range stateStories {
-			bs := model.BoardStory{PMStory: story}
-			if story.EpicID != nil {
-				if name, ok := epicNameMap[*story.EpicID]; ok {
-					bs.EpicName = &name
-				}
-			}
-			if story.OwnerID != nil {
-				if name, ok := ownerNameMap[*story.OwnerID]; ok {
-					bs.OwnerName = &name
-				}
-			}
-			if story.Estimate != nil {
-				pointTotal += *story.Estimate
-			}
-			boardStories = append(boardStories, bs)
-		}
-		columns = append(columns, model.StoryStateColumn{
-			State:      state,
-			Stories:    boardStories,
-			StoryCount: len(boardStories),
-			PointTotal: pointTotal,
-		})
+	ids := make([]string, 0, len(ownerIDs))
+	for id := range ownerIDs {
+		ids = append(ids, id)
 	}
-	return columns, nil
+	var rows []struct {
+		ID       string
+		FullName string `gorm:"column:full_name"`
+	}
+	if err := r.db.WithContext(ctx).Table("users").Select("id, full_name").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return ownerNameMap
+	}
+	for _, row := range rows {
+		ownerNameMap[row.ID] = row.FullName
+	}
+	return ownerNameMap
 }
 
 // CountByState returns story counts grouped by state for a workflow.
@@ -525,6 +619,17 @@ func (r *PMStoryRepository) UpdateStartedCompleted(ctx context.Context, storyID 
 		Where("id = ?", storyID).
 		Updates(updates).Error; err != nil {
 		return fmt.Errorf("update story started/completed: %w", err)
+	}
+	return nil
+}
+
+// UpdateSprintID updates only the sprint_id field of a story.
+func (r *PMStoryRepository) UpdateSprintID(ctx context.Context, storyID string, sprintID *string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMStory{}).
+		Where("id = ?", storyID).
+		Update("sprint_id", sprintID).Error; err != nil {
+		return fmt.Errorf("update story sprint_id: %w", err)
 	}
 	return nil
 }

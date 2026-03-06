@@ -11,19 +11,19 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/model"
 )
 
-// DraftRepository handles database operations for goal_drafts.
-type DraftRepository struct {
+// RewardDraftRepository handles database operations for goal_drafts.
+type RewardDraftRepository struct {
 	db *gorm.DB
 }
 
-// NewDraftRepository creates a new DraftRepository.
-func NewDraftRepository(db *gorm.DB) *DraftRepository {
-	return &DraftRepository{db: db}
+// NewRewardDraftRepository creates a new RewardDraftRepository.
+func NewRewardDraftRepository(db *gorm.DB) *RewardDraftRepository {
+	return &RewardDraftRepository{db: db}
 }
 
 // Create inserts a new goal draft.
-func (r *DraftRepository) Create(ctx context.Context, workspaceID, quarterID string, createdBy string, draftData json.RawMessage) (*model.GoalDraft, error) {
-	d := &model.GoalDraft{
+func (r *RewardDraftRepository) Create(ctx context.Context, workspaceID, quarterID string, createdBy string, draftData json.RawMessage) (*model.RewardGoalDraft, error) {
+	d := &model.RewardGoalDraft{
 		WorkspaceID: workspaceID,
 		QuarterID:   quarterID,
 		CreatedBy:   &createdBy,
@@ -36,8 +36,8 @@ func (r *DraftRepository) Create(ctx context.Context, workspaceID, quarterID str
 }
 
 // List returns all goal drafts for a workspace/quarter.
-func (r *DraftRepository) List(ctx context.Context, workspaceID, quarterID string) ([]model.GoalDraft, error) {
-	var drafts []model.GoalDraft
+func (r *RewardDraftRepository) List(ctx context.Context, workspaceID, quarterID string) ([]model.RewardGoalDraft, error) {
+	var drafts []model.RewardGoalDraft
 	err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND quarter_id = ?", workspaceID, quarterID).
 		Order("created_at DESC").
@@ -49,8 +49,8 @@ func (r *DraftRepository) List(ctx context.Context, workspaceID, quarterID strin
 }
 
 // Get returns a single goal draft by ID.
-func (r *DraftRepository) Get(ctx context.Context, id string) (*model.GoalDraft, error) {
-	d := &model.GoalDraft{}
+func (r *RewardDraftRepository) Get(ctx context.Context, id string) (*model.RewardGoalDraft, error) {
+	d := &model.RewardGoalDraft{}
 	err := r.db.WithContext(ctx).Where("id = ?", id).First(d).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -62,7 +62,7 @@ func (r *DraftRepository) Get(ctx context.Context, id string) (*model.GoalDraft,
 }
 
 // Update modifies a draft's data and/or status.
-func (r *DraftRepository) Update(ctx context.Context, id string, draftData json.RawMessage, status *string) (*model.GoalDraft, error) {
+func (r *RewardDraftRepository) Update(ctx context.Context, id string, draftData json.RawMessage, status *string) (*model.RewardGoalDraft, error) {
 	updates := map[string]interface{}{}
 	if draftData != nil {
 		updates["draft_data"] = draftData
@@ -71,11 +71,11 @@ func (r *DraftRepository) Update(ctx context.Context, id string, draftData json.
 		updates["status"] = *status
 	}
 
-	if err := r.db.WithContext(ctx).Model(&model.GoalDraft{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&model.RewardGoalDraft{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("update draft: %w", err)
 	}
 
-	d := &model.GoalDraft{}
+	d := &model.RewardGoalDraft{}
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(d).Error; err != nil {
 		return nil, fmt.Errorf("update draft: %w", err)
 	}
@@ -83,8 +83,8 @@ func (r *DraftRepository) Update(ctx context.Context, id string, draftData json.
 }
 
 // Delete removes a draft by ID.
-func (r *DraftRepository) Delete(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.GoalDraft{}).Error; err != nil {
+func (r *RewardDraftRepository) Delete(ctx context.Context, id string) error {
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.RewardGoalDraft{}).Error; err != nil {
 		return fmt.Errorf("delete draft: %w", err)
 	}
 	return nil

@@ -1,6 +1,7 @@
 import { api } from '../api';
 import type {
   ActivityLogEntry,
+  ColumnStoriesResponse,
   CreateStoryRequest,
   MoveStoryRequest,
   PaginatedResponse,
@@ -56,17 +57,40 @@ export const pmStoryService = {
   listBoard: (
     workspaceId: string,
     workflowId: string,
-    filters?: Record<string, string | undefined>
+    filters?: Record<string, string | undefined>,
+    perStateLimit?: number
   ) => {
     const params = new URLSearchParams();
     params.set('workspace_id', workspaceId);
     params.set('workflow_id', workflowId);
+    if (perStateLimit && perStateLimit > 0) {
+      params.set('per_state_limit', String(perStateLimit));
+    }
     if (filters) {
       Object.entries(filters).forEach(([key, value]) => {
         if (value) params.set(key, value);
       });
     }
     return api.get<StoryStateColumn[]>(`/pm/stories/board?${params.toString()}`);
+  },
+  listBoardColumn: (
+    workspaceId: string,
+    stateId: string,
+    offset: number,
+    limit: number,
+    filters?: Record<string, string | undefined>
+  ) => {
+    const params = new URLSearchParams();
+    params.set('workspace_id', workspaceId);
+    params.set('state_id', stateId);
+    params.set('offset', String(offset));
+    params.set('limit', String(limit));
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+      });
+    }
+    return api.get<ColumnStoriesResponse>(`/pm/stories/board/column?${params.toString()}`);
   },
   countByState: (workspaceId: string, workflowId: string) =>
     api.get<StoryStateCount[]>(`/pm/stories/counts?${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
@@ -100,6 +124,18 @@ export const pmStoryService = {
     api.post(`/pm/stories/${id}/labels?${qs(workspaceId)}`, payload),
   removeLabel: (workspaceId: string, id: string, labelId: string) =>
     api.del(`/pm/stories/${id}/labels/${labelId}?${qs(workspaceId)}`),
+  syncLabels: (workspaceId: string, storyId: string, currentIds: string[], nextIds: string[]) => {
+    const current = new Set(currentIds);
+    const next = new Set(nextIds);
+    return Promise.all([
+      ...nextIds.filter((id) => !current.has(id)).map((id) =>
+        api.post(`/pm/stories/${storyId}/labels?${qs(workspaceId)}`, { label_id: id }),
+      ),
+      ...[...current].filter((id) => !next.has(id)).map((id) =>
+        api.del(`/pm/stories/${storyId}/labels/${id}?${qs(workspaceId)}`),
+      ),
+    ]);
+  },
   listActivity: (workspaceId: string, id: string, page = 1, perPage = 50) =>
     api.get<PaginatedResponse<ActivityLogEntry[]>>(
       `/pm/stories/${id}/activity?${qs(workspaceId)}&page=${page}&per_page=${perPage}`

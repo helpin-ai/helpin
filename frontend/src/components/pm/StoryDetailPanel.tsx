@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
   Archive,
@@ -14,6 +15,7 @@ import {
   LayoutGrid,
   Link2,
   Loader2,
+  Maximize2,
   MoreHorizontal,
   Paperclip,
   Pencil,
@@ -36,8 +38,6 @@ import {
   StoryTypeIcon,
 } from '@/lib/pmConstants';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -62,10 +62,13 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
+import { LabelPicker } from '@/components/pm/LabelPicker';
 import { useAuthStore } from '@/stores/authStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
+import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -284,6 +287,8 @@ function StoryDetailPanelBody({
   onStoryUpdated: (story: StoryDetail) => void;
   onStoryArchived: (storyId: string) => void;
 }) {
+  const navigate = useNavigate();
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [form, setForm] = useState<FormState>(() => buildFormState(storyDetail));
   const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -313,7 +318,7 @@ function StoryDetailPanelBody({
 
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
-  const [_labels, _setLabels] = useState<Label[]>([]);
+  const [allLabels, setAllLabels] = useState<Label[]>([]);
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
@@ -381,7 +386,7 @@ function StoryDetailPanelBody({
       ]);
       setEpics(epicsRes.data ?? []);
       setSprints(sprintsRes.data ?? []);
-      _setLabels(labelsRes.data ?? []);
+      setAllLabels(labelsRes.data ?? []);
     })();
   }, [workspaceId]);
 
@@ -528,6 +533,19 @@ function StoryDetailPanelBody({
 
   const storyLabels = storyDetail.labels ?? [];
 
+  useEffect(() => {
+    if (!form) return;
+    const validLabelIds = storyLabels
+      .filter((label) => !label.team_id || (form.team_id ? label.team_id === form.team_id : false))
+      .map((label) => label.id);
+    if (validLabelIds.length === storyLabels.length) return;
+    void (async () => {
+      await pmStoryService.syncLabels(workspaceId, storyDetail.story.id, storyLabels.map((label) => label.id), validLabelIds);
+      const res = await pmStoryService.get(workspaceId, storyDetail.story.id);
+      if (res.data) onStoryUpdated(res.data);
+    })();
+  }, [form?.team_id, onStoryUpdated, storyDetail.story.id, storyLabels, workspaceId]);
+
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
@@ -535,6 +553,23 @@ function StoryDetailPanelBody({
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
           <X className="h-4 w-4" />
         </Button>
+        {workspace && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            title="Open full page"
+            onClick={() => {
+              onOpenChange(false);
+              navigate({
+                to: '/w/$slug/pm/stories/$storyId',
+                params: { slug: workspace.slug, storyId: storyDetail.story.id },
+              });
+            }}
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
@@ -589,6 +624,7 @@ function StoryDetailPanelBody({
               placeholder="Add a description..."
               className="border-transparent shadow-none"
               uploadConfig={{ workspaceId, entityType: 'story', entityId: storyDetail.story.id }}
+              teams={teams}
             />
           </div>
 
@@ -914,17 +950,18 @@ function StoryDetailPanelBody({
 
             {/* Labels */}
             <MetadataRow icon={Tag} label="Labels">
-              {storyLabels.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {storyLabels.map((l) => (
-                    <Badge key={l.id} variant="secondary" className="px-1.5 py-0 text-[10px]">
-                      {l.name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-xs text-muted-foreground">None</span>
-              )}
+              <LabelPicker
+                workspaceId={workspaceId}
+                teamId={form.team_id || undefined}
+                labels={allLabels}
+                selectedLabelIds={storyLabels.map((l) => l.id)}
+                onLabelsChange={setAllLabels}
+                onChange={async (labelIds) => {
+                  await pmStoryService.syncLabels(workspaceId, storyDetail.story.id, storyLabels.map((l) => l.id), labelIds);
+                  const res = await pmStoryService.get(workspaceId, storyDetail.story.id);
+                  if (res.data) onStoryUpdated(res.data);
+                }}
+              />
             </MetadataRow>
 
             {/* Epic */}
@@ -961,31 +998,15 @@ function StoryDetailPanelBody({
 
             {/* Estimate */}
             <MetadataRow icon={LayoutGrid} label="Estimate">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-                  >
-                    {form.estimate ? `${form.estimate} pts` : 'None'}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-36 p-3" align="start">
-                  <Input
-                    type="number"
-                    min={0}
-                    placeholder="Points"
-                    className="h-8 text-sm"
-                    value={form.estimate}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      updateField('estimate', next, {
-                        estimate: next === '' ? undefined : Number(next),
-                      });
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
+              <EstimatePicker
+                value={form.estimate}
+                teamId={form.team_id}
+                onChange={(displayValue, apiValue) => {
+                  updateField('estimate', displayValue, {
+                    estimate: apiValue,
+                  });
+                }}
+              />
             </MetadataRow>
 
             {/* Due date */}

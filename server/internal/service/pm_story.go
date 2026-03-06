@@ -13,19 +13,23 @@ import (
 
 // PMStoryService contains story business logic.
 type PMStoryService struct {
-	storyRepo       *repository.PMStoryRepository
-	workflowRepo    *repository.PMWorkflowRepository
-	activityService *PMActivityService
-	wsPublisher     *websocket.Publisher
+	storyRepo         *repository.PMStoryRepository
+	workflowRepo      *repository.PMWorkflowRepository
+	labelRepo         *repository.PMLabelRepository
+	activityService   *PMActivityService
+	wsPublisher       *websocket.Publisher
+	automationService *PMAutomationService
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *repository.PMWorkflowRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService) *PMStoryService {
 	return &PMStoryService{
-		storyRepo:       storyRepo,
-		workflowRepo:    workflowRepo,
-		activityService: activityService,
-		wsPublisher:     wsPublisher,
+		storyRepo:         storyRepo,
+		workflowRepo:      workflowRepo,
+		labelRepo:         labelRepo,
+		activityService:   activityService,
+		wsPublisher:       wsPublisher,
+		automationService: automationService,
 	}
 }
 
@@ -147,7 +151,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		WorkflowID:      workflowID,
 		WorkflowStateID: stateID,
 		EpicID:          req.EpicID,
-		SprintID:     req.SprintID,
+		SprintID:        req.SprintID,
 		TeamID:          req.TeamID,
 		OwnerID:         req.OwnerID,
 		RequesterID:     requesterID,
@@ -194,6 +198,9 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	}
 
 	labelIDs := dedupeIDs(req.LabelIDs)
+	if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, labelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+		return nil, err
+	}
 	for _, labelID := range labelIDs {
 		if err := s.storyRepo.AddLabel(ctx, story.ID, labelID); err != nil {
 			return nil, err
@@ -202,6 +209,10 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 
 	if err := s.storyRepo.UpdateStartedCompleted(ctx, story.ID); err != nil {
 		return nil, err
+	}
+
+	if s.automationService != nil {
+		s.automationService.OnStoryStateChange(ctx, story, story.WorkflowStateID)
 	}
 
 	createdAction := "created this story"
@@ -364,7 +375,11 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		}
 	}
 	if req.LabelIDs != nil {
-		if err := s.storyRepo.ReplaceLabels(ctx, current.ID, dedupeIDs(req.LabelIDs)); err != nil {
+		labelIDs := dedupeIDs(req.LabelIDs)
+		if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, labelIDs, allowedTeamIDs(current.TeamID)); err != nil {
+			return nil, err
+		}
+		if err := s.storyRepo.ReplaceLabels(ctx, current.ID, labelIDs); err != nil {
 			return nil, err
 		}
 	}
@@ -372,6 +387,9 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	if stateChanged {
 		if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 			return nil, err
+		}
+		if s.automationService != nil {
+			s.automationService.OnStoryStateChange(ctx, current, current.WorkflowStateID)
 		}
 	}
 
@@ -456,6 +474,9 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	}
 	if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 		return nil, err
+	}
+	if s.automationService != nil {
+		s.automationService.OnStoryStateChange(ctx, current, req.StateID)
 	}
 	newStateName := req.StateID
 	if st, _ := s.workflowRepo.GetStateByID(ctx, req.StateID); st != nil {
@@ -573,6 +594,9 @@ func (s *PMStoryService) AddLabel(ctx context.Context, storyID, labelID, actorID
 	if current == nil {
 		return fmt.Errorf("story not found")
 	}
+	if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, []string{labelID}, allowedTeamIDs(current.TeamID)); err != nil {
+		return err
+	}
 	if err := s.storyRepo.AddLabel(ctx, storyID, labelID); err != nil {
 		return err
 	}
@@ -599,11 +623,23 @@ func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, acto
 }
 
 // ListByWorkflowState returns board columns for a workflow with optional filters.
-func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters) ([]model.StoryStateColumn, error) {
+// perStateLimit controls how many stories per column (0 = unlimited).
+func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters, perStateLimit int) ([]model.StoryStateColumn, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
-	return s.storyRepo.ListByWorkflowState(ctx, workflowID, filters)
+	return s.storyRepo.ListByWorkflowState(ctx, workflowID, filters, perStateLimit)
+}
+
+// ListColumnStories returns a page of stories for a single board column.
+func (s *PMStoryService) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+	if stateID == "" {
+		return nil, 0, fmt.Errorf("state_id is required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.storyRepo.ListColumnStories(ctx, stateID, filters, offset, limit)
 }
 
 // CountByState returns state-level story counts for a workflow.

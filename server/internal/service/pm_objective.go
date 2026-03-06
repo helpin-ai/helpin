@@ -15,6 +15,7 @@ import (
 type PMObjectiveService struct {
 	objectiveRepo *repository.PMObjectiveRepository
 	krRepo        *repository.PMKeyResultRepository
+	labelRepo     *repository.PMLabelRepository
 	activitySvc   *PMActivityService
 	wsPublisher   *websocket.Publisher
 }
@@ -23,12 +24,14 @@ type PMObjectiveService struct {
 func NewPMObjectiveService(
 	objectiveRepo *repository.PMObjectiveRepository,
 	krRepo *repository.PMKeyResultRepository,
+	labelRepo *repository.PMLabelRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 ) *PMObjectiveService {
 	return &PMObjectiveService{
 		objectiveRepo: objectiveRepo,
 		krRepo:        krRepo,
+		labelRepo:     labelRepo,
 		activitySvc:   activitySvc,
 		wsPublisher:   wsPublisher,
 	}
@@ -123,6 +126,9 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 		}
 	}
 	if len(req.LabelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, req.TeamIDs); err != nil {
+			return nil, err
+		}
 		if err := s.objectiveRepo.ReplaceLabels(ctx, obj.ID, req.LabelIDs); err != nil {
 			return nil, err
 		}
@@ -199,6 +205,13 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 		}
 	}
 	if req.LabelIDs != nil {
+		teamIDs := current.Teams
+		if req.TeamIDs != nil {
+			teamIDs = req.TeamIDs
+		}
+		if err := validateLabelScope(ctx, s.labelRepo, obj.WorkspaceID, req.LabelIDs, teamIDs); err != nil {
+			return nil, err
+		}
 		if err := s.objectiveRepo.ReplaceLabels(ctx, obj.ID, req.LabelIDs); err != nil {
 			return nil, err
 		}

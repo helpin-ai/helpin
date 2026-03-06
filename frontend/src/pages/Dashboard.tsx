@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useQuarterStore } from '@/stores/quarterStore';
+import { useRewardQuarterStore } from '@/stores/quarterStore';
 import { useAuthStore } from '@/stores/authStore';
-import { goalsService } from '@/lib/services/goalsService';
-import { sprintsService } from '@/lib/services/sprintsService';
+import { rewardGoalsService } from '@/lib/services/rewardGoalsService';
+import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
 import { settingsService } from '@/lib/services/settingsService';
-import type { CompanyGoal, Sprint, WorkspaceSettings } from '@/lib/types';
+import type { RewardCompanyGoal, RewardSprint, WorkspaceSettings } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -18,16 +18,16 @@ export default function Dashboard() {
   useTitle('Dashboard');
   const { user } = useAuthStore();
   const { currentWorkspace } = useWorkspaceStore();
-  const { currentQuarter } = useQuarterStore();
-  const [goals, setGoals] = useState<CompanyGoal[]>([]);
-  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const { currentQuarter } = useRewardQuarterStore();
+  const [goals, setGoals] = useState<RewardCompanyGoal[]>([]);
+  const [sprints, setSprints] = useState<RewardSprint[]>([]);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       const ws = useWorkspaceStore.getState().currentWorkspace;
-      const q = useQuarterStore.getState().currentQuarter;
+      const q = useRewardQuarterStore.getState().currentQuarter;
       if (!ws?.id) {
         setGoals([]);
         setSprints([]);
@@ -48,8 +48,8 @@ export default function Dashboard() {
         }
 
         const [goalsRes, sprintsRes, settingsRes] = await Promise.all([
-          goalsService.list(ws.id, q.id),
-          sprintsService.list(q.id),
+          rewardGoalsService.list(ws.id, q.id),
+          rewardSprintsService.list(q.id),
           settingsService.getAll(ws.id),
         ]);
         if (goalsRes.data) setGoals(goalsRes.data);

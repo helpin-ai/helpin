@@ -1,0 +1,105 @@
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
+import { useTeamEstimateStore } from '@/stores/teamEstimateStore';
+import { getEstimateOptions, formatEstimateValue } from '@/lib/estimateScales';
+
+interface EstimatePickerProps {
+  value: string;
+  teamId?: string | null;
+  onChange: (displayValue: string, apiValue: number | undefined) => void;
+  className?: string;
+}
+
+export function EstimatePicker({ value, teamId, onChange, className }: EstimatePickerProps) {
+  const config = useTeamEstimateStore((s) => s.getForTeam(teamId));
+
+  // If team has estimate settings enabled, use scale-aware picker
+  if (config?.enabled) {
+    const options = getEstimateOptions(config.scale, config.extended, config.allow_zero);
+    const numValue = value === '' ? undefined : Number(value);
+    const displayLabel = formatEstimateValue(numValue, config.scale);
+
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer',
+              className,
+            )}
+          >
+            {displayLabel}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-2" align="start">
+          <div className="flex flex-col gap-0.5">
+            <button
+              type="button"
+              className={cn(
+                'rounded-md px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                value === '' && 'bg-accent font-medium',
+              )}
+              onClick={() => onChange('', undefined)}
+            >
+              None
+            </button>
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                  numValue === opt.value && 'bg-accent font-medium',
+                )}
+                onClick={() => onChange(String(opt.value), opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
+  // Fallback: free-form number input (no team config or disabled)
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer',
+            className,
+          )}
+        >
+          {value ? `${value} pts` : 'None'}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-36 p-3" align="start">
+        <Input
+          type="number"
+          min={0}
+          placeholder="Points"
+          className="h-8 text-sm"
+          value={value}
+          onChange={(e) => {
+            const next = e.target.value;
+            onChange(next, next === '' ? undefined : Number(next));
+          }}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function formatEstimateDisplay(value: number | undefined | null, teamId: string | undefined | null): string {
+  const config = useTeamEstimateStore.getState().getForTeam(teamId);
+  if (config?.enabled) {
+    return formatEstimateValue(value, config.scale);
+  }
+  if (value == null) return '';
+  return `${value} pts`;
+}

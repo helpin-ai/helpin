@@ -8,18 +8,18 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/repository"
 )
 
-// DraftService handles goal draft business logic.
-type DraftService struct {
-	draftRepo *repository.DraftRepository
+// RewardDraftService handles goal draft business logic.
+type RewardDraftService struct {
+	draftRepo *repository.RewardDraftRepository
 }
 
-// NewDraftService creates a new DraftService.
-func NewDraftService(draftRepo *repository.DraftRepository) *DraftService {
-	return &DraftService{draftRepo: draftRepo}
+// NewRewardDraftService creates a new RewardDraftService.
+func NewRewardDraftService(draftRepo *repository.RewardDraftRepository) *RewardDraftService {
+	return &RewardDraftService{draftRepo: draftRepo}
 }
 
 // Create creates a new goal draft.
-func (s *DraftService) Create(ctx context.Context, req model.CreateDraftRequest, createdBy string) (*model.GoalDraft, error) {
+func (s *RewardDraftService) Create(ctx context.Context, req model.CreateRewardDraftRequest, createdBy string) (*model.RewardGoalDraft, error) {
 	if req.WorkspaceID == "" || req.QuarterID == "" {
 		return nil, fmt.Errorf("workspace_id and quarter_id are required")
 	}
@@ -27,12 +27,12 @@ func (s *DraftService) Create(ctx context.Context, req model.CreateDraftRequest,
 }
 
 // List returns all drafts for a workspace/quarter.
-func (s *DraftService) List(ctx context.Context, workspaceID, quarterID string) ([]model.GoalDraft, error) {
+func (s *RewardDraftService) List(ctx context.Context, workspaceID, quarterID string) ([]model.RewardGoalDraft, error) {
 	return s.draftRepo.List(ctx, workspaceID, quarterID)
 }
 
 // Get returns a single draft.
-func (s *DraftService) Get(ctx context.Context, id string) (*model.GoalDraft, error) {
+func (s *RewardDraftService) Get(ctx context.Context, id string) (*model.RewardGoalDraft, error) {
 	d, err := s.draftRepo.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -44,11 +44,11 @@ func (s *DraftService) Get(ctx context.Context, id string) (*model.GoalDraft, er
 }
 
 // Update modifies a draft.
-func (s *DraftService) Update(ctx context.Context, id string, req model.UpdateDraftRequest) (*model.GoalDraft, error) {
+func (s *RewardDraftService) Update(ctx context.Context, id string, req model.UpdateRewardDraftRequest) (*model.RewardGoalDraft, error) {
 	return s.draftRepo.Update(ctx, id, req.DraftData, req.Status)
 }
 
 // Delete removes a draft.
-func (s *DraftService) Delete(ctx context.Context, id string) error {
+func (s *RewardDraftService) Delete(ctx context.Context, id string) error {
 	return s.draftRepo.Delete(ctx, id)
 }

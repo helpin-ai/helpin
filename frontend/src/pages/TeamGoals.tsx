@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useQuarterStore } from '@/stores/quarterStore';
-import { goalsService } from '@/lib/services/goalsService';
+import { useRewardQuarterStore } from '@/stores/quarterStore';
+import { rewardGoalsService } from '@/lib/services/rewardGoalsService';
 import { settingsService } from '@/lib/services/settingsService';
-import { sprintsService } from '@/lib/services/sprintsService';
-import type { CompanyGoal, WorkspaceTeam, Sprint } from '@/lib/types';
+import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
+import type { RewardCompanyGoal, WorkspaceTeam, RewardSprint } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -15,7 +15,7 @@ import { Users } from 'lucide-react';
 interface TeamGoalSummary {
   team: WorkspaceTeam;
   contributions: {
-    goal: CompanyGoal;
+    goal: RewardCompanyGoal;
     contributionPct: number;
     targetValue?: number;
     currentValue?: number;
@@ -26,16 +26,16 @@ interface TeamGoalSummary {
 export default function TeamGoals() {
   useTitle('Team Goals');
   const { currentWorkspace } = useWorkspaceStore();
-  const { currentQuarter } = useQuarterStore();
-  const [goals, setGoals] = useState<CompanyGoal[]>([]);
+  const { currentQuarter } = useRewardQuarterStore();
+  const [goals, setGoals] = useState<RewardCompanyGoal[]>([]);
   const [teams, setTeams] = useState<WorkspaceTeam[]>([]);
-  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [sprints, setSprints] = useState<RewardSprint[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       const ws = useWorkspaceStore.getState().currentWorkspace;
-      const q = useQuarterStore.getState().currentQuarter;
+      const q = useRewardQuarterStore.getState().currentQuarter;
       if (!ws?.id || !q?.id) {
         setGoals([]);
         setTeams([]);
@@ -47,9 +47,9 @@ export default function TeamGoals() {
       setLoading(true);
       try {
         const [goalsRes, settingsRes, sprintsRes] = await Promise.all([
-          goalsService.list(ws.id, q.id),
+          rewardGoalsService.list(ws.id, q.id),
           settingsService.getAll(ws.id),
-          sprintsService.list(q.id),
+          rewardSprintsService.list(q.id),
         ]);
         if (goalsRes.data) setGoals(goalsRes.data);
         if (settingsRes.data) setTeams(settingsRes.data.teams);
