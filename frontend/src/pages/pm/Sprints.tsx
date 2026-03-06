@@ -114,7 +114,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           const entry = info.row.original;
           return (
             <div className="flex items-center gap-2">
-              <Progress value={pct(entry)} className="h-1.5 w-16" />
+              <Progress value={pct(entry)} className="h-1.5 w-16 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
               <span className="text-xs text-muted-foreground">{pct(entry)}%</span>
             </div>
           );

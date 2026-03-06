@@ -30,7 +30,7 @@ type PMStory struct {
 	WorkflowID      string     `json:"workflow_id" gorm:"type:uuid;not null;index"`
 	WorkflowStateID string     `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
 	EpicID          *string    `json:"epic_id" gorm:"type:uuid;index"`
-	SprintID     *string    `json:"sprint_id" gorm:"type:uuid;index"`
+	SprintID        *string    `json:"sprint_id" gorm:"type:uuid;index"`
 	TeamID          *string    `json:"team_id" gorm:"type:uuid;index"`
 	OwnerID         *string    `json:"owner_id" gorm:"type:uuid;index"`
 	RequesterID     *string    `json:"requester_id" gorm:"type:uuid"`
@@ -87,7 +87,7 @@ func (PMStoryLabel) TableName() string { return "pm_story_labels" }
 type PMStoryFilters struct {
 	TeamID          *string
 	EpicID          *string
-	SprintID     *string
+	SprintID        *string
 	WorkflowID      *string
 	WorkflowStateID *string
 	StoryType       *string
@@ -116,7 +116,7 @@ type CreateStoryRequest struct {
 	WorkflowID      string     `json:"workflow_id"`
 	WorkflowStateID string     `json:"workflow_state_id"`
 	EpicID          *string    `json:"epic_id"`
-	SprintID     *string    `json:"sprint_id"`
+	SprintID        *string    `json:"sprint_id"`
 	TeamID          *string    `json:"team_id"`
 	OwnerID         *string    `json:"owner_id"`
 	RequesterID     *string    `json:"requester_id"`
@@ -142,7 +142,7 @@ type UpdateStoryRequest struct {
 	WorkflowID      *string    `json:"workflow_id"`
 	WorkflowStateID *string    `json:"workflow_state_id"`
 	EpicID          *string    `json:"epic_id"`
-	SprintID     *string    `json:"sprint_id"`
+	SprintID        *string    `json:"sprint_id"`
 	TeamID          *string    `json:"team_id"`
 	OwnerID         *string    `json:"owner_id"`
 	RequesterID     *string    `json:"requester_id"`
@@ -203,13 +203,28 @@ type BoardStory struct {
 	Labels    []PMLabel `json:"labels"`
 }
 
+// StoryGroup is a labeled bucket of stories inside a board column.
+type StoryGroup struct {
+	Key     string       `json:"key"`
+	Label   string       `json:"label"`
+	Stories []BoardStory `json:"stories"`
+}
+
 // StoryStateColumn is the data shape used for board columns.
 type StoryStateColumn struct {
-	State      PMWorkflowState `json:"state"`
-	Stories    []BoardStory    `json:"stories"`
-	StoryCount int             `json:"story_count"`
-	PointTotal int             `json:"point_total"`
-	HasMore    bool            `json:"has_more"`
+	State       PMWorkflowState `json:"state"`
+	Stories     []BoardStory    `json:"stories"`
+	StoryGroups []StoryGroup    `json:"story_groups,omitempty"`
+	StoryCount  int             `json:"story_count"`
+	PointTotal  int             `json:"point_total"`
+	HasMore     bool            `json:"has_more"`
+}
+
+// ColumnStoriesResponse is the paginated payload for a single board column.
+type ColumnStoriesResponse struct {
+	Stories     []BoardStory `json:"stories"`
+	StoryGroups []StoryGroup `json:"story_groups,omitempty"`
+	Total       int          `json:"total"`
 }
 
 // StoryStateCount stores aggregate count per state.

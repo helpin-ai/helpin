@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,25 @@ type PMImportService struct {
 	db            *gorm.DB
 	workspaceRepo *repository.WorkspaceRepository
 	workflowRepo  *repository.PMWorkflowRepository
+}
+
+var shortcutImportLabelColors = []string{
+	"#3b82f6",
+	"#16a34a",
+	"#ec4899",
+	"#64748b",
+	"#ef4444",
+	"#f97316",
+	"#eab308",
+	"#14b8a6",
+	"#8b5cf6",
+	"#6366f1",
+	"#06b6d4",
+	"#d946ef",
+	"#84cc16",
+	"#f43f5e",
+	"#0ea5e9",
+	"#a855f7",
 }
 
 func NewPMImportService(db *gorm.DB, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository) *PMImportService {
@@ -515,6 +535,12 @@ func (s *PMImportService) ensureLabels(ctx context.Context, tx *gorm.DB, workspa
 	}
 	labelMap := map[string]string{}
 	for _, label := range existing {
+		if label.Color == nil || strings.TrimSpace(*label.Color) == "" {
+			color := shortcutImportLabelColor(label.Name)
+			if err := tx.WithContext(ctx).Model(&model.PMLabel{}).Where("id = ?", label.ID).Update("color", *color).Error; err != nil {
+				return nil, 0, fmt.Errorf("backfill label color: %w", err)
+			}
+		}
 		labelMap[normalizeShortcutName(label.Name)] = label.ID
 	}
 	created := 0
@@ -522,7 +548,7 @@ func (s *PMImportService) ensureLabels(ctx context.Context, tx *gorm.DB, workspa
 		if _, ok := labelMap[key]; ok {
 			continue
 		}
-		label := model.PMLabel{WorkspaceID: workspaceID, Name: name}
+		label := model.PMLabel{WorkspaceID: workspaceID, Name: name, Color: shortcutImportLabelColor(name)}
 		if err := tx.WithContext(ctx).Create(&label).Error; err != nil {
 			return nil, 0, fmt.Errorf("create label: %w", err)
 		}
@@ -530,6 +556,16 @@ func (s *PMImportService) ensureLabels(ctx context.Context, tx *gorm.DB, workspa
 		created++
 	}
 	return labelMap, created, nil
+}
+
+func shortcutImportLabelColor(name string) *string {
+	if len(shortcutImportLabelColors) == 0 {
+		return nil
+	}
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(normalizeShortcutName(name)))
+	color := shortcutImportLabelColors[hasher.Sum32()%uint32(len(shortcutImportLabelColors))]
+	return &color
 }
 
 func (s *PMImportService) ensureObjectives(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow) (map[string]string, int, error) {

@@ -3,7 +3,9 @@ import type {
   CreateStoryRequest,
   PMView,
   Story,
+  StoryGroup,
   StoryStateColumn,
+  StateType,
   WorkflowWithStates,
 } from '@/lib/pmTypes';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
@@ -16,7 +18,7 @@ export type BoardFilters = Record<string, string | undefined>;
 /** Default number of stories loaded per column on initial board fetch. */
 const PER_STATE_LIMIT = 50;
 
-/** Number of additional stories fetched per "load more" click. */
+/** Number of additional stories fetched when a column nears the bottom. */
 const COLUMN_PAGE_SIZE = 50;
 
 interface MovePayload {
@@ -71,14 +73,29 @@ const cloneColumns = (columns: StoryStateColumn[]) =>
   columns.map((column) => ({
     ...column,
     stories: [...column.stories],
+    story_groups: column.story_groups?.map((group) => ({
+      ...group,
+      stories: [...group.stories],
+    })) ?? [],
   }));
 
-const compareStories = (a: Story, b: Story) => {
+const groupedStateType: StateType = 'done';
+
+const compareStories = (a: Story, b: Story, stateType?: StateType) => {
+  if (stateType === groupedStateType) {
+    const aSortKey = a.completed_at ?? a.moved_at ?? a.updated_at;
+    const bSortKey = b.completed_at ?? b.moved_at ?? b.updated_at;
+    if (aSortKey !== bSortKey) return bSortKey.localeCompare(aSortKey);
+    const updatedCmp = b.updated_at.localeCompare(a.updated_at);
+    if (updatedCmp !== 0) return updatedCmp;
+  }
   if (a.position !== b.position) return a.position - b.position;
   return b.updated_at.localeCompare(a.updated_at);
 };
 
-const sortStories = (stories: Story[]) => [...stories].sort(compareStories);
+const sortStories = (stories: Story[], stateType?: StateType) => [...stories].sort((a, b) => compareStories(a, b, stateType));
+
+const isGroupedColumn = (column: Pick<StoryStateColumn, 'state'>) => column.state.state_type === groupedStateType;
 
 const storyMatchesFilters = (story: Story, teamId: string | null, filters: BoardFilters) => {
   const matchesCsv = (actual: string | undefined, value: string | undefined) => {
@@ -114,6 +131,51 @@ const removeLoadedStory = (column: StoryStateColumn, storyId: string) => {
   return removed ?? null;
 };
 
+const replaceGroupedStory = (column: StoryStateColumn, story: Story) => {
+  if (!column.story_groups?.length) return false;
+  let replaced = false;
+  column.story_groups = column.story_groups.map((group) => {
+    const storyIndex = group.stories.findIndex((candidate) => candidate.id === story.id);
+    if (storyIndex === -1) return group;
+    const stories = [...group.stories];
+    stories[storyIndex] = story;
+    replaced = true;
+    return { ...group, stories };
+  });
+  return replaced;
+};
+
+const mergeStoryGroups = (existing: StoryGroup[] | undefined, incoming: StoryGroup[] | undefined) => {
+  if (!incoming?.length) return existing ?? [];
+  if (!existing?.length) {
+    return incoming.map((group) => ({ ...group, stories: [...group.stories] }));
+  }
+
+  const merged = existing.map((group) => ({
+    ...group,
+    stories: [...group.stories],
+  }));
+  const groupIndexByKey = new Map(merged.map((group, index) => [group.key, index]));
+
+  for (const nextGroup of incoming) {
+    const existingIndex = groupIndexByKey.get(nextGroup.key);
+    if (existingIndex === undefined) {
+      groupIndexByKey.set(nextGroup.key, merged.length);
+      merged.push({ ...nextGroup, stories: [...nextGroup.stories] });
+      continue;
+    }
+
+    const existingGroup = merged[existingIndex];
+    const existingIds = new Set(existingGroup.stories.map((story) => story.id));
+    existingGroup.stories = [
+      ...existingGroup.stories,
+      ...nextGroup.stories.filter((story) => !existingIds.has(story.id)),
+    ];
+  }
+
+  return merged;
+};
+
 /** Preserve board-enriched display fields (owner_name, epic_name) from existing story when IDs match. */
 const mergeEnrichedFields = (incoming: Story, existing: Story): Story => ({
   ...incoming,
@@ -125,7 +187,7 @@ const upsertLoadedStory = (column: StoryStateColumn, story: Story) => {
   const nextStories = sortStories([
     ...column.stories.filter((candidate) => candidate.id !== story.id),
     story,
-  ]);
+  ], column.state.state_type);
   column.stories = nextStories;
 };
 
@@ -280,7 +342,10 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       // Deduplicate: only add stories not already loaded
       const existingIds = new Set(target.stories.map((s) => s.id));
       const newStories = res.data!.stories.filter((s) => !existingIds.has(s.id));
-      target.stories = sortStories([...target.stories, ...newStories]);
+      target.stories = sortStories([...target.stories, ...newStories], target.state.state_type);
+      if (isGroupedColumn(target)) {
+        target.story_groups = mergeStoryGroups(target.story_groups, res.data!.story_groups);
+      }
       target.has_more = target.stories.length < res.data!.total;
 
       return { columns: cols, columnLoading: doneLoading };
@@ -300,6 +365,13 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
 
       if (action === 'deleted') {
         for (const col of columns) {
+          if (isGroupedColumn(col)) {
+            if (col.stories.some((candidate) => candidate.id === storyId)) {
+              patched = false;
+              return state;
+            }
+            continue;
+          }
           const removed = removeLoadedStory(col, storyId);
           if (removed) {
             updateColumnTotals(col, -1, -(removed.estimate ?? 0));
@@ -317,6 +389,10 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       if (action === 'created') {
         const target = columns.find((c) => c.state.id === story.workflow_state_id);
         if (!target) return state;
+        if (isGroupedColumn(target)) {
+          patched = false;
+          return state;
+        }
         if (!matchesFilters) {
           patched = true;
           return state;
@@ -353,6 +429,10 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       const existingEstimate = existing?.estimate ?? 0;
 
       if (!matchesFilters) {
+        if (isGroupedColumn(fromCol)) {
+          patched = false;
+          return state;
+        }
         const removed = removeLoadedStory(fromCol, storyId);
         if (!removed) return state;
         updateColumnTotals(fromCol, -1, -(removed.estimate ?? 0));
@@ -361,11 +441,23 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       }
 
       if (fromCol.state.id === story.workflow_state_id) {
+        if (isGroupedColumn(fromCol)) {
+          fromCol.stories[fromIdx] = mergeEnrichedFields(story, existing);
+          replaceGroupedStory(fromCol, fromCol.stories[fromIdx]);
+          updateColumnTotals(fromCol, 0, (story.estimate ?? 0) - existingEstimate);
+          patched = true;
+          return { columns };
+        }
         fromCol.stories[fromIdx] = mergeEnrichedFields(story, existing);
-        fromCol.stories = sortStories(fromCol.stories);
+        fromCol.stories = sortStories(fromCol.stories, fromCol.state.state_type);
         updateColumnTotals(fromCol, 0, (story.estimate ?? 0) - existingEstimate);
         patched = true;
         return { columns };
+      }
+
+      if (isGroupedColumn(fromCol)) {
+        patched = false;
+        return state;
       }
 
       const removed = removeLoadedStory(fromCol, storyId);
@@ -374,6 +466,10 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
 
       const toCol = columns.find((c) => c.state.id === story.workflow_state_id);
       if (!toCol) return { columns };
+      if (isGroupedColumn(toCol)) {
+        patched = false;
+        return state;
+      }
 
       const merged = mergeEnrichedFields(story, removed);
       updateColumnTotals(toCol, 1, story.estimate ?? 0);
@@ -401,12 +497,17 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       const columns = cloneColumns(state.columns);
       const targetIndex = columns.findIndex((column) => column.state.id === story.workflow_state_id);
       if (targetIndex === -1) return state;
+      if (isGroupedColumn(columns[targetIndex])) return state;
       updateColumnTotals(columns[targetIndex], 1, story.estimate ?? 0);
       if (!columns[targetIndex].has_more || columns[targetIndex].stories.length < PER_STATE_LIMIT) {
         upsertLoadedStory(columns[targetIndex], story);
       }
       return { columns };
     });
+    const targetColumn = get().columns.find((column) => column.state.id === story.workflow_state_id);
+    if (targetColumn && isGroupedColumn(targetColumn)) {
+      await get().refreshBoard();
+    }
     return story;
   },
 
@@ -415,7 +516,11 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     const currentColumns = get().columns;
     const fromCurrent = currentColumns.find((column) => column.state.id === fromStateId);
     const toCurrent = currentColumns.find((column) => column.state.id === toStateId);
-    const canOptimisticallyReconcile = !!fromCurrent && !!toCurrent && !fromCurrent.has_more && !toCurrent.has_more;
+    const canOptimisticallyReconcile = !!fromCurrent && !!toCurrent &&
+      !fromCurrent.has_more &&
+      !toCurrent.has_more &&
+      !isGroupedColumn(fromCurrent) &&
+      !isGroupedColumn(toCurrent);
 
     if (canOptimisticallyReconcile) {
       set((state) => {
@@ -433,14 +538,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
         moving.workflow_state_id = toStateId;
         if (fromStateId === toStateId) {
           fromCol.stories.splice(toIndex, 0, moving);
-          fromCol.stories = sortStories(fromCol.stories);
+          fromCol.stories = sortStories(fromCol.stories, fromCol.state.state_type);
           return { columns };
         }
 
         updateColumnTotals(fromCol, -1, -(moving.estimate ?? 0));
         updateColumnTotals(toCol, 1, moving.estimate ?? 0);
         toCol.stories.splice(toIndex, 0, moving);
-        toCol.stories = sortStories(toCol.stories);
+        toCol.stories = sortStories(toCol.stories, toCol.state.state_type);
         return { columns };
       });
     }
@@ -474,7 +579,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
           const idx = target.stories.findIndex((candidate) => candidate.id === storyId);
           if (idx >= 0) {
             target.stories[idx] = updatedStory;
-            target.stories = sortStories(target.stories);
+            target.stories = sortStories(target.stories, target.state.state_type);
           }
           return { columns };
         });

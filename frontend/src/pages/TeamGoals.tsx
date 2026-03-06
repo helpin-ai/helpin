@@ -107,7 +107,7 @@ export default function TeamGoals() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Progress value={sprints.length > 0 ? (completedSprintCount / sprints.length) * 100 : 0} className="h-2" />
+          <Progress value={sprints.length > 0 ? (completedSprintCount / sprints.length) * 100 : 0} className="h-2 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
         </CardContent>
       </Card>
 
@@ -160,7 +160,7 @@ export default function TeamGoals() {
                                 <span>{currentValue ?? 0} / {targetValue}{goal.unit ? ` ${goal.unit}` : ''}</span>
                                 <span>{progress}%</span>
                               </div>
-                              <Progress value={progress} className="h-1.5" />
+                              <Progress value={progress} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
                             </div>
                           )}
                         </div>

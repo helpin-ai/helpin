@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -15,7 +15,7 @@ import { BarChart3, Columns2, LayoutList, Loader2, Maximize2, Minimize2, Plus, S
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { CreateStoryRequest, Story, StoryStateColumn, WorkflowState, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { CreateStoryRequest, Story, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
@@ -46,17 +46,37 @@ interface ColumnProps {
   findTeamName: (teamId: string | undefined) => string | undefined;
   workspaceId: string;
   members: MemberWithUser[];
-  states: WorkflowState[];
   onOwnerChanged: (story: Story) => void;
-  onStoryMoved: (storyId: string, fromStateId: string, toStateId: string) => void;
   onPriorityChanged: (story: Story) => void;
   onSeverityChanged: (story: Story) => void;
   onLoadMore: (stateId: string) => void;
   isLoadingMore: boolean;
 }
 
-function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, states, onOwnerChanged, onStoryMoved, onPriorityChanged, onSeverityChanged, onLoadMore, isLoadingMore }: ColumnProps) {
+function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, onOwnerChanged, onPriorityChanged, onSeverityChanged, onLoadMore, isLoadingMore }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const groupedStories = column.state.state_type === 'done' ? column.story_groups ?? [] : [];
+
+  useEffect(() => {
+    if (!column.has_more || isLoadingMore || !scrollRef.current || !loadMoreRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          onLoadMore(column.state.id);
+        }
+      },
+      {
+        root: scrollRef.current,
+        rootMargin: '0px 0px 160px 0px',
+      },
+    );
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [column.has_more, column.state.id, column.stories.length, isLoadingMore, onLoadMore]);
 
   if (collapsed) {
     return (
@@ -117,39 +137,66 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
 
       <SortableContext items={column.stories.map((story) => story.id)} strategy={verticalListSortingStrategy}>
         <div
-          ref={setNodeRef}
+          ref={(node) => {
+            setNodeRef(node);
+            scrollRef.current = node;
+          }}
           className={`min-h-0 flex-1 space-y-2 overflow-y-auto p-2 transition-colors ${
             isOver ? 'bg-primary/5' : ''
           }`}
         >
-          {column.stories.map((story) => (
-            <StoryCard
-              key={story.id}
-              story={story}
-              onOpen={onOpen}
-              teamName={findTeamName(story.team_id)}
-              workspaceId={workspaceId}
-              members={members}
-              onOwnerChanged={onOwnerChanged}
-              onPriorityChanged={onPriorityChanged}
-              onSeverityChanged={onSeverityChanged}
-            />
-          ))}
+          {groupedStories.length > 0 ? (
+            groupedStories.map((group) => (
+              <div key={group.key} className="space-y-2">
+                <div className="rounded-md bg-muted px-3 py-1 text-center text-xs font-semibold text-muted-foreground">
+                  {group.label}
+                </div>
+                {group.stories.map((story) => (
+                  <StoryCard
+                    key={story.id}
+                    story={story}
+                    onOpen={onOpen}
+                    teamName={findTeamName(story.team_id)}
+                    workspaceId={workspaceId}
+                    members={members}
+                    onOwnerChanged={onOwnerChanged}
+                    onPriorityChanged={onPriorityChanged}
+                    onSeverityChanged={onSeverityChanged}
+                  />
+                ))}
+              </div>
+            ))
+          ) : (
+            column.stories.map((story) => (
+              <StoryCard
+                key={story.id}
+                story={story}
+                onOpen={onOpen}
+                teamName={findTeamName(story.team_id)}
+                workspaceId={workspaceId}
+                members={members}
+                onOwnerChanged={onOwnerChanged}
+                onPriorityChanged={onPriorityChanged}
+                onSeverityChanged={onSeverityChanged}
+              />
+            ))
+          )}
 
-          {column.has_more && (
-            <Button
-              variant="ghost"
-              className="w-full justify-center text-xs text-muted-foreground"
-              onClick={() => onLoadMore(column.state.id)}
-              disabled={isLoadingMore}
+          {column.has_more ? (
+            <div
+              ref={loadMoreRef}
+              className="flex h-8 items-center justify-center text-xs text-muted-foreground"
             >
               {isLoadingMore ? (
-                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Loading...</>
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Loading more...
+                </>
               ) : (
-                <>Load more ({column.story_count - column.stories.length} remaining)</>
+                <span>{column.story_count - column.stories.length} remaining</span>
               )}
-            </Button>
-          )}
+            </div>
+          ) : null}
 
           <Button
             variant="ghost"
@@ -387,19 +434,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     }
   }, [patchStory, refreshBoard, members]);
 
-  const handleStoryMoved = useCallback(
-    (storyId: string, fromStateId: string, toStateId: string) => {
-      moveStory({
-        workspaceId,
-        storyId,
-        fromStateId,
-        toStateId,
-        toIndex: 0,
-      });
-    },
-    [workspaceId, moveStory],
-  );
-
   return (
     <StoryFilterProvider
       members={members}
@@ -496,9 +530,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   findTeamName={storeTeamId ? () => undefined : findTeamName}
                   workspaceId={workspaceId}
                   members={members}
-                  states={workflow?.states ?? []}
                   onOwnerChanged={handleStoryPatched}
-                  onStoryMoved={handleStoryMoved}
                   onPriorityChanged={handleStoryPatched}
                   onSeverityChanged={handleStoryPatched}
                   onLoadMore={loadMoreColumn}

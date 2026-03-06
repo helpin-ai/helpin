@@ -227,7 +227,7 @@ export function ObjectivesPage() {
       </div>
 
       {filtered.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3 max-w-5xl">
+        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3 max-w-6xl">
           {filtered.map((obj) => (
             <ObjectiveCard
               key={obj.objective.id}
@@ -296,7 +296,7 @@ function ObjectiveCard({
           <span className={`mt-[2px] shrink-0 ${isStrategic ? 'text-violet-500' : 'text-blue-500'}`}>
             {isStrategic ? <Crosshair className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
           </span>
-          <p className="min-w-0 flex-1 text-[13px] font-semibold text-foreground leading-tight line-clamp-2">{objective.name}</p>
+          <p className="min-w-0 flex-1 text-sm font-semibold text-foreground leading-snug line-clamp-2">{objective.name}</p>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -320,17 +320,17 @@ function ObjectiveCard({
 
         {/* Meta row */}
         <div className="mt-2 mb-3 flex items-center justify-between">
-          <span className={`rounded-full px-1.5 py-[2px] text-[10px] font-medium leading-none ${stateCfg.badge}`}>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${stateCfg.badge}`}>
             {stateCfg.label}
           </span>
           {objective.state !== 'closed' && (
-            <span className={`rounded-full px-1.5 py-[2px] text-[10px] font-medium leading-none ${health.className}`}>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${health.className}`}>
               {health.label}
             </span>
           )}
           {dateLabel && (
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <CalendarDays className="h-2.5 w-2.5" />
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <CalendarDays className="h-3 w-3" />
               {dateLabel}
             </span>
           )}
@@ -339,19 +339,19 @@ function ObjectiveCard({
 
       {/* Progress bars */}
       {(hasKr || hasEpics) && (
-        <div className="mx-3.5 py-2.5 border-t border-border/40 grid grid-cols-[1fr_80px_28px] items-center gap-x-2 gap-y-2">
+        <div className="mx-3.5 py-2.5 border-t border-border/40 grid grid-cols-[1fr_80px_32px] items-center gap-x-2 gap-y-2">
           {hasKr && (
             <>
-              <span className="text-[10px] text-muted-foreground">KR Progress</span>
+              <span className="text-[11px] text-muted-foreground">KR Progress</span>
               <Progress value={krProgress} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
-              <span className="text-[11px] font-medium tabular-nums text-right">{krProgress}%</span>
+              <span className="text-xs font-medium tabular-nums text-right">{krProgress}%</span>
             </>
           )}
           {hasEpics && (
             <>
-              <span className="text-[10px] text-muted-foreground">Epic Progress</span>
+              <span className="text-[11px] text-muted-foreground">Epic Progress</span>
               <Progress value={epicProgress} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
-              <span className="text-[11px] font-medium tabular-nums text-right">{epicProgress}%</span>
+              <span className="text-xs font-medium tabular-nums text-right">{epicProgress}%</span>
             </>
           )}
         </div>
@@ -366,12 +366,12 @@ function ObjectiveCard({
               : 0;
             return (
               <div key={e.epic.id} className="flex items-center gap-1.5 py-0.5">
-                <Hexagon className="h-2.5 w-2.5 shrink-0 text-violet-400" />
-                <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{e.epic.name}</span>
+                <Hexagon className="h-3 w-3 shrink-0 text-violet-400" />
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{e.epic.name}</span>
                 <div className="w-16 shrink-0">
                   <Progress value={epicPct} className="h-1 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
                 </div>
-                <span className="w-6 text-right text-[10px] text-muted-foreground tabular-nums">{epicPct}%</span>
+                <span className="w-7 text-right text-[11px] text-muted-foreground tabular-nums">{epicPct}%</span>
               </div>
             );
           })}

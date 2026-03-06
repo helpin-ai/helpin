@@ -18,9 +18,68 @@ type PMStoryRepository struct {
 	db *gorm.DB
 }
 
+const boardDoneGroupThisWeekLabel = "This Week"
+
 // NewPMStoryRepository creates a new PMStoryRepository.
 func NewPMStoryRepository(db *gorm.DB) *PMStoryRepository {
 	return &PMStoryRepository{db: db}
+}
+
+func boardStoryOrderClause(stateType string) string {
+	if stateType == "done" {
+		return "COALESCE(completed_at, moved_at, updated_at) DESC, updated_at DESC, position ASC"
+	}
+	return "position ASC, updated_at DESC"
+}
+
+func boardStoryGroupDate(story model.PMStory) time.Time {
+	if story.CompletedAt != nil {
+		return story.CompletedAt.UTC()
+	}
+	if story.MovedAt != nil {
+		return story.MovedAt.UTC()
+	}
+	return story.UpdatedAt.UTC()
+}
+
+func startOfBoardWeek(t time.Time) time.Time {
+	utc := t.UTC()
+	offset := (int(utc.Weekday()) + 6) % 7
+	return time.Date(utc.Year(), utc.Month(), utc.Day()-offset, 0, 0, 0, 0, time.UTC)
+}
+
+func buildDoneStoryGroups(stories []model.BoardStory, now time.Time) []model.StoryGroup {
+	if len(stories) == 0 {
+		return nil
+	}
+
+	currentWeekStart := startOfBoardWeek(now)
+	groups := make([]model.StoryGroup, 0, len(stories))
+	groupIndexByKey := make(map[string]int, len(stories))
+
+	for _, story := range stories {
+		weekStart := startOfBoardWeek(boardStoryGroupDate(story.PMStory))
+		key := weekStart.Format("2006-01-02")
+		label := "Week of " + weekStart.Format("Jan 2, 2006")
+		if weekStart.Equal(currentWeekStart) {
+			label = boardDoneGroupThisWeekLabel
+		}
+
+		index, ok := groupIndexByKey[key]
+		if !ok {
+			index = len(groups)
+			groupIndexByKey[key] = index
+			groups = append(groups, model.StoryGroup{
+				Key:     key,
+				Label:   label,
+				Stories: []model.BoardStory{},
+			})
+		}
+
+		groups[index].Stories = append(groups[index].Stories, story)
+	}
+
+	return groups
 }
 
 // List returns stories with filters and pagination.
@@ -354,7 +413,7 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		query := r.db.WithContext(ctx).
 			Where("workflow_state_id = ? AND archived = false", state.ID)
 		query = r.applyBoardFilters(query, filters)
-		query = query.Order("position ASC, updated_at DESC")
+		query = query.Order(boardStoryOrderClause(state.StateType))
 		if perStateLimit > 0 {
 			query = query.Limit(perStateLimit)
 		}
@@ -389,37 +448,55 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		for _, s := range m.visible {
 			colStories = append(colStories, enrichedMap[s.ID])
 		}
+		var storyGroups []model.StoryGroup
+		if state.StateType == "done" {
+			storyGroups = buildDoneStoryGroups(colStories, time.Now().UTC())
+		}
 		columns = append(columns, model.StoryStateColumn{
-			State:      state,
-			Stories:    colStories,
-			StoryCount: m.totalCount,
-			PointTotal: m.pointTotal,
-			HasMore:    m.hasMore,
+			State:       state,
+			Stories:     colStories,
+			StoryGroups: storyGroups,
+			StoryCount:  m.totalCount,
+			PointTotal:  m.pointTotal,
+			HasMore:     m.hasMore,
 		})
 	}
 	return columns, nil
 }
 
 // ListColumnStories returns a page of stories for a single workflow state, enriched for board display.
-func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, []model.StoryGroup, int, error) {
+	var state model.PMWorkflowState
+	if err := r.db.WithContext(ctx).Where("id = ?", stateID).First(&state).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, 0, fmt.Errorf("workflow state not found")
+		}
+		return nil, nil, 0, fmt.Errorf("get workflow state: %w", err)
+	}
+
 	storyQuery := r.db.WithContext(ctx).
 		Where("workflow_state_id = ? AND archived = false", stateID)
 	storyQuery = r.applyBoardFilters(storyQuery, filters)
 
 	var total int64
 	if err := storyQuery.Model(&model.PMStory{}).Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("count column stories: %w", err)
+		return nil, nil, 0, fmt.Errorf("count column stories: %w", err)
 	}
 
 	var stories []model.PMStory
 	if err := storyQuery.
-		Order("position ASC, updated_at DESC").
+		Order(boardStoryOrderClause(state.StateType)).
 		Offset(offset).Limit(limit).
 		Find(&stories).Error; err != nil {
-		return nil, 0, fmt.Errorf("list column stories: %w", err)
+		return nil, nil, 0, fmt.Errorf("list column stories: %w", err)
 	}
 
-	return r.collectAndEnrich(ctx, stories), int(total), nil
+	enriched := r.collectAndEnrich(ctx, stories)
+	var storyGroups []model.StoryGroup
+	if state.StateType == "done" {
+		storyGroups = buildDoneStoryGroups(enriched, time.Now().UTC())
+	}
+	return enriched, storyGroups, int(total), nil
 }
 
 // collectAndEnrich collects related IDs from stories, batch-loads names/labels, and returns enriched BoardStory slices.

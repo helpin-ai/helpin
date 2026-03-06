@@ -149,7 +149,7 @@ function GoalCard({ goal, teams }: { goal: RewardCompanyGoal; teams: WorkspaceTe
               </span>
               <span className="font-medium">{progress}%</span>
             </div>
-            <Progress value={progress} className="h-2" />
+            <Progress value={progress} className="h-2 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
             {goal.baseline != null && (
               <p className="text-xs text-muted-foreground">Baseline: {goal.baseline}{goal.unit ? ` ${goal.unit}` : ''}</p>
             )}

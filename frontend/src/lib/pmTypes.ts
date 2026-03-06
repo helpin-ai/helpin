@@ -196,13 +196,21 @@ export interface StoryDetail {
 export interface StoryStateColumn {
   state: WorkflowState;
   stories: Story[];
+  story_groups?: StoryGroup[];
   story_count: number;
   point_total: number;
   has_more: boolean;
 }
 
+export interface StoryGroup {
+  key: string;
+  label: string;
+  stories: Story[];
+}
+
 export interface ColumnStoriesResponse {
   stories: Story[];
+  story_groups?: StoryGroup[];
   total: number;
 }
 

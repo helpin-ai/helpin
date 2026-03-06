@@ -193,7 +193,7 @@ export default function MyQuarter() {
                         )}
                       </div>
                     </div>
-                    {total > 0 && <Progress value={pct} className="h-1.5" />}
+                    {total > 0 && <Progress value={pct} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />}
                   </div>
                 );
               })}

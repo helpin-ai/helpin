@@ -637,6 +637,19 @@ func assertImportState(t *testing.T, db *gorm.DB, workspaceID string) {
 		t.Fatal("expected multi-team epic to have null team")
 	}
 
+	var labels []model.PMLabel
+	if err := db.Where("workspace_id = ?", workspaceID).Find(&labels).Error; err != nil {
+		t.Fatalf("load labels: %v", err)
+	}
+	if len(labels) != 4 {
+		t.Fatalf("expected 4 imported labels, got %d", len(labels))
+	}
+	for _, label := range labels {
+		if label.Color == nil || strings.TrimSpace(*label.Color) == "" {
+			t.Fatalf("expected imported label %q to have a color", label.Name)
+		}
+	}
+
 	var ownerLinks int64
 	if err := db.Model(&model.PMStoryOwner{}).Count(&ownerLinks).Error; err != nil {
 		t.Fatalf("count owner links: %v", err)

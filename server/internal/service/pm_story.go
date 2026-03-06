@@ -632,9 +632,9 @@ func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID str
 }
 
 // ListColumnStories returns a page of stories for a single board column.
-func (s *PMStoryService) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+func (s *PMStoryService) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, []model.StoryGroup, int, error) {
 	if stateID == "" {
-		return nil, 0, fmt.Errorf("state_id is required")
+		return nil, nil, 0, fmt.Errorf("state_id is required")
 	}
 	if limit <= 0 {
 		limit = 50

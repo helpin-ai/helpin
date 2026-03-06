@@ -341,7 +341,7 @@ function KeyResultRow({
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground tabular-nums">{Math.round(kr.progress)}%</span>
           <div className="w-24">
-            <Progress value={kr.progress} className="h-1.5" />
+            <Progress value={kr.progress} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
           </div>
           {!readOnly && (
             <button
@@ -921,7 +921,7 @@ export function ObjectiveDetailPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
                           <div className="w-24">
-                            <Progress value={pct} className="h-1.5" />
+                            <Progress value={pct} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
                           </div>
                           {canEdit() && (
                             <button

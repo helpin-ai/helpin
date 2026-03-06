@@ -36,7 +36,7 @@ func (h *PMStoryHandler) List(w http.ResponseWriter, r *http.Request) {
 	filters := model.PMStoryFilters{
 		TeamID:          queryStringPtr(r, "team_id"),
 		EpicID:          queryStringPtr(r, "epic_id"),
-		SprintID:     queryStringPtr(r, "sprint_id"),
+		SprintID:        queryStringPtr(r, "sprint_id"),
 		WorkflowID:      queryStringPtr(r, "workflow_id"),
 		WorkflowStateID: queryStringPtr(r, "state_id"),
 		StoryType:       queryStringPtr(r, "story_type"),
@@ -99,7 +99,7 @@ func (h *PMStoryHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request)
 	filters := boardFilters(r)
 	offset := queryInt(r, "offset", 0)
 	limit := queryInt(r, "limit", 50)
-	stories, total, err := h.storyService.ListColumnStories(r.Context(), stateID, filters, offset, limit)
+	stories, storyGroups, total, err := h.storyService.ListColumnStories(r.Context(), stateID, filters, offset, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -107,9 +107,13 @@ func (h *PMStoryHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request)
 	if stories == nil {
 		stories = []model.BoardStory{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"stories": stories,
-		"total":   total,
+	if storyGroups == nil {
+		storyGroups = []model.StoryGroup{}
+	}
+	writeJSON(w, http.StatusOK, model.ColumnStoriesResponse{
+		Stories:     stories,
+		StoryGroups: storyGroups,
+		Total:       total,
 	})
 }
 
