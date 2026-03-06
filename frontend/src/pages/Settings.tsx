@@ -443,6 +443,9 @@ function GeneralTab({ workspaceId, editable }: {
               </div>
             </PopoverContent>
           </Popover>
+          <p className="text-xs text-muted-foreground">
+            Current date and time: <span className="font-medium text-foreground">{currentTime}</span>
+          </p>
         </div>
 
         {editable && (
