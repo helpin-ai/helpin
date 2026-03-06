@@ -495,7 +495,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                     setCreateOpen(true);
                   }}
                   onOpen={openStory}
-                  findTeamName={findTeamName}
+                  findTeamName={storeTeamId ? () => undefined : findTeamName}
                   workspaceId={workspaceId}
                   members={members}
                   states={workflow?.states ?? []}
@@ -511,7 +511,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           </div>
 
           <DragOverlay>
-            {activeStory ? <StoryCard story={activeStory} onOpen={() => {}} isOverlay teamName={findTeamName(activeStory.team_id)} /> : null}
+            {activeStory ? <StoryCard story={activeStory} onOpen={() => {}} isOverlay teamName={storeTeamId ? undefined : findTeamName(activeStory.team_id)} /> : null}
           </DragOverlay>
         </DndContext>
       ) : null}

@@ -22,12 +22,13 @@ func NewWorkspaceRepository(db *gorm.DB) *WorkspaceRepository {
 }
 
 // Create inserts a new workspace.
-func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID string, description *string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID string, description *string, timezone string) (*model.Workspace, error) {
 	ws := &model.Workspace{
 		Name:        name,
 		Slug:        slug,
 		OwnerID:     ownerID,
 		Description: description,
+		Timezone:    timezone,
 	}
 	if err := r.db.WithContext(ctx).Create(ws).Error; err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
@@ -40,7 +41,7 @@ func (r *WorkspaceRepository) List(ctx context.Context, userID string) ([]model.
 	var results []model.WorkspaceWithRole
 	err := r.db.WithContext(ctx).
 		Table("workspaces w").
-		Select("w.id, w.name, w.slug, w.owner_id, w.description, w.created_at, w.updated_at, wm.role").
+		Select("w.id, w.name, w.slug, w.owner_id, w.description, w.timezone, w.created_at, w.updated_at, wm.role").
 		Joins("JOIN workspace_members wm ON w.id = wm.workspace_id").
 		Where("wm.user_id = ?", userID).
 		Order("w.created_at DESC").
@@ -78,13 +79,16 @@ func (r *WorkspaceRepository) GetBySlug(ctx context.Context, slug string) (*mode
 }
 
 // Update modifies workspace fields.
-func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description *string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}
 	if name != nil {
 		updates["name"] = *name
 	}
 	if description != nil {
 		updates["description"] = *description
+	}
+	if timezone != nil {
+		updates["timezone"] = *timezone
 	}
 
 	if err := r.db.WithContext(ctx).Model(&model.Workspace{}).Where("id = ?", id).Updates(updates).Error; err != nil {

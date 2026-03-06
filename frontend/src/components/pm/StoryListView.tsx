@@ -464,8 +464,9 @@ export function StoryListView({
     if (!fieldVis.epic) vis['epicName'] = false;
     if (!fieldVis.sprint) vis['sprintName'] = false;
     if (!fieldVis.due_date) vis['deadline'] = false;
+    if (teamId) vis['teamName'] = false;
     return vis;
-  }, [fieldVis]);
+  }, [fieldVis, teamId]);
 
   const grouping: GroupingState = useMemo(() => {
     const colId = GROUP_COLUMN_MAP[groupBy];

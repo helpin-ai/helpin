@@ -228,6 +228,7 @@ export function Sidebar() {
       {
         label: 'Workspace',
         items: [
+          { link: `/w/${wsSlug}/settings/general`, label: 'General', icon: Settings2 },
           { link: `/w/${wsSlug}/settings/members`, label: 'Members', icon: Users },
           { link: `/w/${wsSlug}/settings/teams`, label: 'Teams', icon: Users },
         ],
@@ -244,7 +245,7 @@ export function Sidebar() {
       {
         label: 'Reward Settings',
         items: [
-          { link: `/w/${wsSlug}/settings/system`, label: 'General', icon: Settings2 },
+          { link: `/w/${wsSlug}/settings/system`, label: 'Reward Defaults', icon: Settings2 },
           { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
           { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
           { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },

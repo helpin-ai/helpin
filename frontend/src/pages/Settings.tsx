@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -25,15 +25,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
-import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, Info, LayoutGrid, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, Globe, Info, LayoutGrid, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'system';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'system';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
+  {
+    id: 'general',
+    label: 'General',
+    description: 'Workspace name, description, and timezone.',
+    icon: Settings2,
+    group: 'Workspace',
+  },
   {
     id: 'members',
     label: 'Members',
@@ -99,8 +107,8 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   },
   {
     id: 'system',
-    label: 'General',
-    description: 'Control global workspace behavior and defaults.',
+    label: 'Reward Defaults',
+    description: 'Control reward calculation behavior and defaults.',
     icon: Settings2,
     group: 'Reward Settings',
   },
@@ -177,6 +185,13 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
 
   const renderSection = () => {
     switch (section) {
+      case 'general':
+        return (
+          <GeneralTab
+            workspaceId={workspaceId}
+            editable={isAdmin()}
+          />
+        );
       case 'members':
         return (
           <MembersTab
@@ -268,6 +283,177 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
       )}
       {renderSection()}
     </div>
+  );
+}
+
+/* ============ General Tab ============ */
+
+const TIMEZONE_LIST: { id: string; offset: string; searchKey: string }[] = (() => {
+  const names = Intl.supportedValuesOf('timeZone');
+  const now = new Date();
+  return names.map((tz) => {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' });
+    const parts = fmt.formatToParts(now);
+    const gmtStr = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
+    const offset = gmtStr === 'GMT' ? 'UTC+00:00' : gmtStr.replace('GMT', 'UTC');
+    return { id: tz, offset, searchKey: `${tz} ${offset}`.toLowerCase() };
+  });
+})();
+
+function GeneralTab({ workspaceId, editable }: {
+  workspaceId: string;
+  editable: boolean;
+}) {
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const [name, setName] = useState(workspace?.name ?? '');
+  const [description, setDescription] = useState(workspace?.description ?? '');
+  const [timezone, setTimezone] = useState(workspace?.timezone ?? 'UTC');
+  const [saving, setSaving] = useState(false);
+  const [tzSearch, setTzSearch] = useState('');
+
+  useEffect(() => {
+    setName(workspace?.name ?? '');
+    setDescription(workspace?.description ?? '');
+    setTimezone(workspace?.timezone ?? 'UTC');
+  }, [workspace?.id, workspace?.updated_at]);
+
+  const selectedTz = useMemo(() => TIMEZONE_LIST.find((tz) => tz.id === timezone), [timezone]);
+
+  const formatNow = useCallback(() =>
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+      hour12: true,
+    }).format(new Date()),
+    [timezone],
+  );
+  const [currentTime, setCurrentTime] = useState(formatNow);
+  useEffect(() => {
+    setCurrentTime(formatNow());
+    const id = setInterval(() => setCurrentTime(formatNow()), 60_000);
+    return () => clearInterval(id);
+  }, [formatNow]);
+
+  const filteredTimezones = useMemo(() => {
+    if (!tzSearch) return TIMEZONE_LIST;
+    const q = tzSearch.toLowerCase();
+    return TIMEZONE_LIST.filter((tz) => tz.searchKey.includes(q));
+  }, [tzSearch]);
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      toast.error('Workspace name is required');
+      return;
+    }
+    setSaving(true);
+    const { data, error } = await workspacesService.update(workspaceId, {
+      name: name.trim(),
+      description: description.trim() || undefined,
+      timezone,
+    });
+    setSaving(false);
+    if (error) {
+      toast.error(error);
+    } else {
+      toast.success('Workspace updated');
+      if (data) {
+        useWorkspaceStore.getState().setCurrentWorkspace(data);
+      }
+    }
+  };
+
+  return (
+    <Card className={LINEAR_CARD_CLASS}>
+      <CardHeader>
+        <CardTitle>Workspace Settings</CardTitle>
+        <CardDescription>Manage your workspace name, description, and timezone.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="ws-name">Workspace Name</Label>
+          <Input
+            id="ws-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={!editable}
+            placeholder="My Workspace"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="ws-desc">Description</Label>
+          <Textarea
+            id="ws-desc"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={!editable}
+            placeholder="A brief description of this workspace"
+            rows={3}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="ws-tz">Timezone</Label>
+          <p className="text-xs text-muted-foreground">
+            Used for sprint boundaries, due dates, and reporting. All members see the same deadlines.
+          </p>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="w-full justify-between font-normal" disabled={!editable}>
+                <span className="flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                  {timezone}
+                  {selectedTz && <span className="text-muted-foreground">({selectedTz.offset})</span>}
+                </span>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[320px] p-0" align="start">
+              <div className="p-2 border-b">
+                <div className="flex items-center gap-2 px-2">
+                  <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <input
+                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    placeholder="Search timezones..."
+                    value={tzSearch}
+                    onChange={(e) => setTzSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="max-h-[280px] overflow-y-auto p-1">
+                {filteredTimezones.length === 0 ? (
+                  <p className="py-4 text-center text-xs text-muted-foreground">No timezones found</p>
+                ) : (
+                  filteredTimezones.map((tz) => (
+                    <button
+                      key={tz.id}
+                      type="button"
+                      className={cn(
+                        'w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent flex items-center justify-between',
+                        tz.id === timezone && 'bg-accent font-medium',
+                      )}
+                      onClick={() => { setTimezone(tz.id); setTzSearch(''); }}
+                    >
+                      <span>{tz.id}</span>
+                      <span className="text-xs text-muted-foreground ml-2 shrink-0">{tz.offset}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {editable && (
+          <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

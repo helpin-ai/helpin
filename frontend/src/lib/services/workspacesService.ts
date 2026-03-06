@@ -3,7 +3,7 @@ import type { Workspace, WorkspaceMember, MemberWithUser } from '../types';
 
 export const workspacesService = {
   list: () => api.get<Workspace[]>('/workspaces'),
-  create: (data: { name: string; slug: string; description?: string }) =>
+  create: (data: { name: string; slug: string; description?: string; timezone?: string }) =>
     api.post<Workspace>('/workspaces', data),
   getBySlug: (slug: string) => api.get<Workspace>(`/workspaces/by-slug/${slug}`),
   update: (id: string, data: Partial<Workspace>) =>
