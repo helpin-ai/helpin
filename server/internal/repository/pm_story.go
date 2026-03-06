@@ -687,13 +687,34 @@ func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PM
 		}
 	}
 
+	var objectiveName *string
+	var objectiveID *string
+	if story.EpicID != nil {
+		var obj struct {
+			ID   string
+			Name string
+		}
+		if err := r.db.WithContext(ctx).
+			Table("pm_objectives o").
+			Select("o.id, o.name").
+			Joins("JOIN pm_epic_objectives eo ON eo.objective_id = o.id").
+			Where("eo.epic_id = ?", *story.EpicID).
+			Limit(1).
+			Scan(&obj).Error; err == nil && obj.ID != "" {
+			objectiveName = &obj.Name
+			objectiveID = &obj.ID
+		}
+	}
+
 	return &model.StoryDetail{
 		Story:         story,
 		Owners:        owners,
 		Followers:     followers,
 		Labels:        labels,
 		EpicName:      epicName,
-		SprintName: sprintName,
+		SprintName:    sprintName,
+		ObjectiveName: objectiveName,
+		ObjectiveID:   objectiveID,
 		State:         &state,
 	}, nil
 }

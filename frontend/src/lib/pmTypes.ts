@@ -186,6 +186,8 @@ export interface StoryDetail {
   labels: Label[];
   epic_name?: string;
   sprint_name?: string;
+  objective_name?: string;
+  objective_id?: string;
   state?: WorkflowState;
 }
 

@@ -11,6 +11,7 @@ import {
   Gauge,
   GitBranch,
   Hash,
+  Hexagon,
   Layers,
   LayoutGrid,
   Link2,
@@ -23,6 +24,7 @@ import {
   ShieldAlert,
   Star,
   Tag,
+  Target,
   Trash2,
   User,
   Users,
@@ -552,28 +554,21 @@ function StoryDetailPanelBody({
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
-          <X className="h-4 w-4" />
-        </Button>
-        {workspace && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0"
-            title="Open full page"
-            onClick={() => {
-              onOpenChange(false);
-              navigate({
-                to: '/w/$slug/pm/stories/$storyId',
-                params: { slug: workspace.slug, storyId: storyDetail.story.id },
-              });
-            }}
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
-
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+          {storyDetail.objective_name && (
+            <>
+              <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+              <span className="shrink-0 max-w-[160px] truncate">{storyDetail.objective_name}</span>
+              <ChevronRight className="h-3 w-3 shrink-0" />
+            </>
+          )}
+          {storyDetail.epic_name && (
+            <>
+              <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+              <span className="shrink-0 max-w-[160px] truncate">{storyDetail.epic_name}</span>
+              <ChevronRight className="h-3 w-3 shrink-0" />
+            </>
+          )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
           <span className="shrink-0 font-medium text-foreground/80">TP-{storyDetail.story.display_id}</span>
           <ChevronRight className="h-3 w-3 shrink-0" />
@@ -601,6 +596,26 @@ function StoryDetailPanelBody({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {workspace && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              title="Open full page"
+              onClick={() => {
+                onOpenChange(false);
+                navigate({
+                  to: '/w/$slug/pm/stories/$storyId',
+                  params: { slug: workspace.slug, storyId: storyDetail.story.id },
+                });
+              }}
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 

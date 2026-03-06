@@ -189,7 +189,9 @@ type StoryDetail struct {
 	Followers     []User           `json:"followers"`
 	Labels        []PMLabel        `json:"labels"`
 	EpicName      *string          `json:"epic_name"`
-	SprintName *string          `json:"sprint_name"`
+	SprintName    *string          `json:"sprint_name"`
+	ObjectiveName *string          `json:"objective_name"`
+	ObjectiveID   *string          `json:"objective_id"`
 	State         *PMWorkflowState `json:"state"`
 }
 
