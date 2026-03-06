@@ -50,9 +50,11 @@ interface ColumnProps {
   onOwnerChanged: () => void;
   onStoryMoved: (storyId: string, fromStateId: string, toStateId: string) => void;
   onPriorityChanged: () => void;
+  onLoadMore: (stateId: string) => void;
+  isLoadingMore: boolean;
 }
 
-function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, states, onOwnerChanged, onStoryMoved, onPriorityChanged }: ColumnProps) {
+function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, states, onOwnerChanged, onStoryMoved, onPriorityChanged, onLoadMore, isLoadingMore }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
 
   if (collapsed) {
@@ -134,6 +136,21 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
             />
           ))}
 
+          {column.has_more && (
+            <Button
+              variant="ghost"
+              className="w-full justify-center text-xs text-muted-foreground"
+              onClick={() => onLoadMore(column.state.id)}
+              disabled={isLoadingMore}
+            >
+              {isLoadingMore ? (
+                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Loading...</>
+              ) : (
+                <>Load more ({column.story_count - column.stories.length} remaining)</>
+              )}
+            </Button>
+          )}
+
           <Button
             variant="ghost"
             className="w-full justify-start text-xs text-muted-foreground"
@@ -157,6 +174,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     error,
     teamId: storeTeamId,
     filters,
+    columnLoading,
     loadBoard,
     setWorkflow,
     setTeamFilter,
@@ -164,6 +182,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     createStory,
     moveStory,
     refreshBoard,
+    loadMoreColumn,
     loadViews,
   } = usePMBoardStore();
 
@@ -476,6 +495,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   onOwnerChanged={handleOwnerChanged}
                   onStoryMoved={handleStoryMoved}
                   onPriorityChanged={handlePriorityChanged}
+                  onLoadMore={loadMoreColumn}
+                  isLoadingMore={!!columnLoading[column.state.id]}
                 />
               ))}
             </div>

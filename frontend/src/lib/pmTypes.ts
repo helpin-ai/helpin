@@ -192,6 +192,12 @@ export interface StoryStateColumn {
   stories: Story[];
   story_count: number;
   point_total: number;
+  has_more: boolean;
+}
+
+export interface ColumnStoriesResponse {
+  stories: Story[];
+  total: number;
 }
 
 export interface StoryStateCount {

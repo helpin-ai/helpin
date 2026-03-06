@@ -13,6 +13,12 @@ import { getDefaultViews, isDefaultView } from '@/lib/pmDefaultViews';
 
 export type BoardFilters = Record<string, string | undefined>;
 
+/** Default number of stories loaded per column on initial board fetch. */
+const PER_STATE_LIMIT = 50;
+
+/** Number of additional stories fetched per "load more" click. */
+const COLUMN_PAGE_SIZE = 50;
+
 interface MovePayload {
   workspaceId: string;
   storyId: string;
@@ -31,6 +37,9 @@ interface PMBoardState {
   teamId: string | null;
   filters: BoardFilters;
 
+  /** Map of state IDs currently loading more stories. */
+  columnLoading: Record<string, boolean>;
+
   // View state
   views: PMView[];
   activeViewId: string | null;
@@ -43,6 +52,10 @@ interface PMBoardState {
   refreshBoard: () => Promise<void>;
   createStory: (payload: CreateStoryRequest) => Promise<Story | null>;
   moveStory: (payload: MovePayload) => Promise<void>;
+  loadMoreColumn: (stateId: string) => Promise<void>;
+
+  /** Incremental patch: add, update, remove, or move a single story in the board state. */
+  patchStory: (action: 'created' | 'updated' | 'deleted' | 'moved', storyId: string, story?: Story) => void;
 
   // View actions
   loadViews: (workspaceId: string, currentUserId: string) => Promise<void>;
@@ -70,11 +83,17 @@ const recalcColumn = (column: StoryStateColumn): StoryStateColumn => ({
   point_total: column.stories.reduce((sum, story) => sum + (story.estimate ?? 0), 0),
 });
 
+const sumPoints = (stories: Story[]) =>
+  stories.reduce((sum, s) => sum + (s.estimate ?? 0), 0);
+
 const buildApiFilters = (teamId: string | null, filters: BoardFilters): Record<string, string | undefined> => {
   const result: Record<string, string | undefined> = { ...filters };
   if (teamId) result.team_id = teamId;
   return result;
 };
+
+const sortColumns = (data: StoryStateColumn[]) =>
+  [...data].sort((a, b) => a.state.position - b.state.position);
 
 // ── localStorage helpers for user preferences ─────────────────────────
 const WORKFLOW_KEY = (wsId: string) => `pm_workflow_${wsId}`;
@@ -102,6 +121,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   error: null,
   teamId: null,
   filters: {},
+  columnLoading: {},
 
   // View state
   views: [],
@@ -128,15 +148,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     }
 
     const { teamId, filters } = get();
-    const boardRes = await pmStoryService.listBoard(workspaceId, selected.workflow.id, buildApiFilters(teamId, filters));
+    const boardRes = await pmStoryService.listBoard(workspaceId, selected.workflow.id, buildApiFilters(teamId, filters), PER_STATE_LIMIT);
     if (boardRes.error || !boardRes.data) {
       set({ loading: false, error: boardRes.error ?? 'Failed to load board', workflows: workflowRes.data, workflow: selected });
       return;
     }
 
-    const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
     saveWorkflowId(workspaceId, selected.workflow.id);
-    set({ workflows: workflowRes.data, workflow: selected, columns: sorted, loading: false });
+    set({ workflows: workflowRes.data, workflow: selected, columns: sortColumns(boardRes.data), loading: false });
   },
 
   setWorkflow: async (workflowId) => {
@@ -151,13 +170,12 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     const { workspaceId, workflow, filters } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters));
+    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters), PER_STATE_LIMIT);
     if (boardRes.error || !boardRes.data) {
       set({ error: boardRes.error ?? 'Failed to filter board' });
       return;
     }
-    const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
-    set({ columns: sorted });
+    set({ columns: sortColumns(boardRes.data) });
   },
 
   setFilters: async (filters) => {
@@ -165,26 +183,127 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     const { workspaceId, workflow, teamId } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters));
+    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters), PER_STATE_LIMIT);
     if (boardRes.error || !boardRes.data) {
       set({ error: boardRes.error ?? 'Failed to filter board' });
       return;
     }
-    const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
-    set({ columns: sorted });
+    set({ columns: sortColumns(boardRes.data) });
   },
 
   refreshBoard: async () => {
     const { workspaceId, workflow, teamId, filters } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters));
+    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters), PER_STATE_LIMIT);
     if (boardRes.error || !boardRes.data) {
       set({ error: boardRes.error ?? 'Failed to refresh board' });
       return;
     }
-    const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
-    set({ columns: sorted });
+    set({ columns: sortColumns(boardRes.data) });
+  },
+
+  loadMoreColumn: async (stateId: string) => {
+    const { workspaceId, teamId, filters, columns, columnLoading } = get();
+    if (!workspaceId || columnLoading[stateId]) return;
+
+    const column = columns.find((c) => c.state.id === stateId);
+    if (!column || !column.has_more) return;
+
+    set({ columnLoading: { ...columnLoading, [stateId]: true } });
+
+    const offset = column.stories.length;
+    const res = await pmStoryService.listBoardColumn(
+      workspaceId,
+      stateId,
+      offset,
+      COLUMN_PAGE_SIZE,
+      buildApiFilters(teamId, filters),
+    );
+
+    const { [stateId]: _, ...doneLoading } = get().columnLoading;
+
+    if (res.error || !res.data) {
+      set({ columnLoading: doneLoading, error: res.error ?? 'Failed to load more stories' });
+      return;
+    }
+
+    set((state) => {
+      const cols = cloneColumns(state.columns);
+      const target = cols.find((c) => c.state.id === stateId);
+      if (!target) return { columnLoading: doneLoading };
+
+      // Deduplicate: only add stories not already loaded
+      const existingIds = new Set(target.stories.map((s) => s.id));
+      const newStories = res.data!.stories.filter((s) => !existingIds.has(s.id));
+      target.stories.push(...newStories);
+      target.has_more = target.stories.length < res.data!.total;
+
+      return { columns: cols, columnLoading: doneLoading };
+    });
+  },
+
+  patchStory: (action, storyId, story) => {
+    set((state) => {
+      const columns = cloneColumns(state.columns);
+
+      if (action === 'deleted') {
+        for (const col of columns) {
+          const idx = col.stories.findIndex((s) => s.id === storyId);
+          if (idx >= 0) {
+            col.stories.splice(idx, 1);
+            col.story_count = Math.max(0, col.story_count - 1);
+            col.point_total = sumPoints(col.stories);
+            return { columns };
+          }
+        }
+        return state;
+      }
+
+      if (!story) return state;
+
+      if (action === 'created') {
+        const target = columns.find((c) => c.state.id === story.workflow_state_id);
+        if (!target) return state;
+        if (!target.stories.some((s) => s.id === storyId)) {
+          target.stories.push(story);
+          target.story_count += 1;
+          target.point_total = sumPoints(target.stories);
+        }
+        return { columns };
+      }
+
+      // updated / moved — find the story in columns, update in-place or move between columns
+      let fromCol: StoryStateColumn | undefined;
+      let fromIdx = -1;
+      for (const col of columns) {
+        const idx = col.stories.findIndex((s) => s.id === storyId);
+        if (idx >= 0) {
+          fromCol = col;
+          fromIdx = idx;
+          break;
+        }
+      }
+
+      if (fromCol && fromIdx >= 0) {
+        if (fromCol.state.id === story.workflow_state_id) {
+          fromCol.stories[fromIdx] = story;
+          fromCol.point_total = sumPoints(fromCol.stories);
+        } else {
+          fromCol.stories.splice(fromIdx, 1);
+          fromCol.story_count = Math.max(0, fromCol.story_count - 1);
+          fromCol.point_total = sumPoints(fromCol.stories);
+          const toCol = columns.find((c) => c.state.id === story.workflow_state_id);
+          if (toCol) {
+            toCol.stories.push(story);
+            toCol.story_count += 1;
+            toCol.point_total = sumPoints(toCol.stories);
+          }
+        }
+      }
+
+      return { columns };
+    });
   },
 
   createStory: async (payload) => {
@@ -307,13 +426,12 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     const { workspaceId, workflow, teamId } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters)).then((boardRes) => {
+    pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters), PER_STATE_LIMIT).then((boardRes) => {
       if (boardRes.error || !boardRes.data) {
         set({ error: boardRes.error ?? 'Failed to apply view' });
         return;
       }
-      const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
-      set({ columns: sorted });
+      set({ columns: sortColumns(boardRes.data) });
     });
   },
 
@@ -359,10 +477,9 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     const { workspaceId, workflow, teamId } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, savedViewFilters)).then((boardRes) => {
+    pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, savedViewFilters), PER_STATE_LIMIT).then((boardRes) => {
       if (boardRes.error || !boardRes.data) return;
-      const sorted = [...boardRes.data].sort((a, b) => a.state.position - b.state.position);
-      set({ columns: sorted });
+      set({ columns: sortColumns(boardRes.data) });
     });
   },
 

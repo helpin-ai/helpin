@@ -623,11 +623,23 @@ func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, acto
 }
 
 // ListByWorkflowState returns board columns for a workflow with optional filters.
-func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters) ([]model.StoryStateColumn, error) {
+// perStateLimit controls how many stories per column (0 = unlimited).
+func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID string, filters model.PMStoryFilters, perStateLimit int) ([]model.StoryStateColumn, error) {
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
-	return s.storyRepo.ListByWorkflowState(ctx, workflowID, filters)
+	return s.storyRepo.ListByWorkflowState(ctx, workflowID, filters, perStateLimit)
+}
+
+// ListColumnStories returns a page of stories for a single board column.
+func (s *PMStoryService) ListColumnStories(ctx context.Context, stateID string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+	if stateID == "" {
+		return nil, 0, fmt.Errorf("state_id is required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.storyRepo.ListColumnStories(ctx, stateID, filters, offset, limit)
 }
 
 // CountByState returns state-level story counts for a workflow.

@@ -95,6 +95,7 @@ const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
 };
 
 const HIDDEN_GROUP_COLUMNS = ['typeName', 'priorityName', 'severityName'];
+const LIST_PAGE_SIZE = 50;
 
 const columnHelper = createColumnHelper<Story>();
 
@@ -113,6 +114,9 @@ export function StoryListView({
   const isExternal = externalStories !== undefined;
   const [stories, setStories] = useState<Story[]>(externalStories ?? []);
   const [loading, setLoading] = useState(!isExternal);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [groupBy, setGroupBy] = useState<GroupByOption>('workflow_state');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -159,11 +163,13 @@ export function StoryListView({
   }, [sprints]);
 
   // Fetch stories (skipped when externalStories is provided)
-  const fetchStories = useCallback(async () => {
+  const fetchStories = useCallback(async (page = 1, append = false) => {
     if (isExternal) return;
-    setLoading(true);
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
     const apiFilters: Record<string, string | number | boolean | undefined> = {
-      per_page: 500,
+      per_page: LIST_PAGE_SIZE,
+      page,
       workflow_id: workflow.workflow.id,
       archived: false,
       ...filters,
@@ -172,14 +178,24 @@ export function StoryListView({
 
     const res = await pmStoryService.list(workspaceId, apiFilters as Record<string, string>);
     if (res.data) {
-      setStories(res.data.data);
+      const incoming = res.data.data;
+      setStories((prev) => append ? [...prev, ...incoming] : incoming);
+      setHasMore(page < res.data.total_pages);
+      setCurrentPage(page);
     }
     setLoading(false);
+    setLoadingMore(false);
   }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal]);
 
   useEffect(() => {
-    if (!isExternal) fetchStories();
+    if (!isExternal) fetchStories(1, false);
   }, [fetchStories, isExternal]);
+
+  const loadMore = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      fetchStories(currentPage + 1, true);
+    }
+  }, [fetchStories, currentPage, loadingMore, hasMore]);
 
   // Sync external stories when they change
   useEffect(() => {
@@ -203,7 +219,7 @@ export function StoryListView({
   // Listen for story events (only for self-fetching mode)
   useEffect(() => {
     if (isExternal) return;
-    const handler = () => { fetchStories(); };
+    const handler = () => { fetchStories(1, false); };
     window.addEventListener('story-created', handler);
     window.addEventListener('story-updated', handler);
     return () => {
@@ -473,7 +489,7 @@ export function StoryListView({
           </SelectContent>
         </Select>
         <span className="text-xs text-muted-foreground">
-          {stories.length} {stories.length === 1 ? 'story' : 'stories'}
+          {stories.length} {stories.length === 1 ? 'story' : 'stories'}{hasMore ? '+' : ''}
         </span>
       </div>
 
@@ -508,7 +524,18 @@ export function StoryListView({
         </div>
 
         {/* Virtualized body */}
-        <div ref={parentRef} className="overflow-auto" style={{ height: 'calc(100% - 30px)' }}>
+        <div
+          ref={parentRef}
+          className="overflow-auto"
+          style={{ height: 'calc(100% - 30px)' }}
+          onScroll={(e) => {
+            if (isExternal || !hasMore || loadingMore) return;
+            const el = e.currentTarget;
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+              loadMore();
+            }
+          }}
+        >
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<Story>;
@@ -536,6 +563,12 @@ export function StoryListView({
               );
             })}
           </div>
+          {loadingMore && (
+            <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading more stories...
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -204,6 +204,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Get("/stories", h.PMStory.List)
 				r.Post("/stories", h.PMStory.Create)
 				r.Get("/stories/board", h.PMStory.ListBoard)
+				r.Get("/stories/board/column", h.PMStory.ListBoardColumn)
 				r.Get("/stories/counts", h.PMStory.CountByState)
 				r.Get("/stories/display/{displayID}", h.PMStory.GetByDisplayID)
 				r.Get("/stories/{id}", h.PMStory.Get)

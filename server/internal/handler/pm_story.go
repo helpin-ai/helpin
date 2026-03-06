@@ -69,27 +69,16 @@ func (h *PMStoryHandler) List(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListBoard handles GET /api/pm/stories/board?workflow_id=...&team_id=...
+// ListBoard handles GET /api/pm/stories/board?workflow_id=...&team_id=...&per_state_limit=...
 func (h *PMStoryHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 	workflowID := r.URL.Query().Get("workflow_id")
 	if workflowID == "" {
 		writeError(w, http.StatusBadRequest, "workflow_id is required")
 		return
 	}
-	filters := model.PMStoryFilters{
-		TeamID:      queryStringPtr(r, "team_id"),
-		Priority:    queryStringPtr(r, "priority"),
-		Severity:    queryStringPtr(r, "severity"),
-		StoryType:   queryStringPtr(r, "story_type"),
-		EpicID:      queryStringPtr(r, "epic_id"),
-		SprintID: queryStringPtr(r, "sprint_id"),
-		LabelID:     queryStringPtr(r, "label_id"),
-		OwnerID:     queryStringPtr(r, "owner_id"),
-		RequesterID: queryStringPtr(r, "requester_id"),
-		Blocked:      queryStringPtr(r, "blocked"),
-		UpdatedAfter: queryStringPtr(r, "updated_after"),
-	}
-	columns, err := h.storyService.ListByWorkflowState(r.Context(), workflowID, filters)
+	filters := boardFilters(r)
+	perStateLimit := queryInt(r, "per_state_limit", 0)
+	columns, err := h.storyService.ListByWorkflowState(r.Context(), workflowID, filters, perStateLimit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -98,6 +87,46 @@ func (h *PMStoryHandler) ListBoard(w http.ResponseWriter, r *http.Request) {
 		columns = []model.StoryStateColumn{}
 	}
 	writeJSON(w, http.StatusOK, columns)
+}
+
+// ListBoardColumn handles GET /api/pm/stories/board/column?state_id=...&offset=...&limit=...
+func (h *PMStoryHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request) {
+	stateID := r.URL.Query().Get("state_id")
+	if stateID == "" {
+		writeError(w, http.StatusBadRequest, "state_id is required")
+		return
+	}
+	filters := boardFilters(r)
+	offset := queryInt(r, "offset", 0)
+	limit := queryInt(r, "limit", 50)
+	stories, total, err := h.storyService.ListColumnStories(r.Context(), stateID, filters, offset, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if stories == nil {
+		stories = []model.BoardStory{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"stories": stories,
+		"total":   total,
+	})
+}
+
+func boardFilters(r *http.Request) model.PMStoryFilters {
+	return model.PMStoryFilters{
+		TeamID:       queryStringPtr(r, "team_id"),
+		Priority:     queryStringPtr(r, "priority"),
+		Severity:     queryStringPtr(r, "severity"),
+		StoryType:    queryStringPtr(r, "story_type"),
+		EpicID:       queryStringPtr(r, "epic_id"),
+		SprintID:     queryStringPtr(r, "sprint_id"),
+		LabelID:      queryStringPtr(r, "label_id"),
+		OwnerID:      queryStringPtr(r, "owner_id"),
+		RequesterID:  queryStringPtr(r, "requester_id"),
+		Blocked:      queryStringPtr(r, "blocked"),
+		UpdatedAfter: queryStringPtr(r, "updated_after"),
+	}
 }
 
 // CountByState handles GET /api/pm/stories/counts?workflow_id=...
