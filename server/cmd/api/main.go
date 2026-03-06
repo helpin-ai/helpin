@@ -66,6 +66,10 @@ func main() {
 		log.Fatalf("failed to migrate legacy reward schema: %v", err)
 	}
 
+	if err := repository.MigrateAgentRunTargets(db); err != nil {
+		log.Fatalf("failed to migrate agent run targets: %v", err)
+	}
+
 	// Auto-migrate all models.
 	// The SQL migration files in server/migrations/ are kept as reference documentation.
 	if err := db.AutoMigrate(
