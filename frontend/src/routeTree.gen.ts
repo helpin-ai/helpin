@@ -20,6 +20,7 @@ import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
+import { Route as AuthenticatedWSlugSupportRouteImport } from './routes/_authenticated/w/$slug/support'
 import { Route as AuthenticatedWSlugMyQuarterRouteImport } from './routes/_authenticated/w/$slug/my-quarter'
 import { Route as AuthenticatedWSlugGoalsRouteImport } from './routes/_authenticated/w/$slug/goals'
 import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authenticated/w/$slug/docs'
@@ -99,6 +100,12 @@ const AuthenticatedWSlugTasksRoute = AuthenticatedWSlugTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => AuthenticatedWSlugRoute,
 } as any)
+const AuthenticatedWSlugSupportRoute =
+  AuthenticatedWSlugSupportRouteImport.update({
+    id: '/support',
+    path: '/support',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugMyQuarterRoute =
   AuthenticatedWSlugMyQuarterRouteImport.update({
     id: '/my-quarter',
@@ -248,6 +255,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsRoute
   '/w/$slug/goals': typeof AuthenticatedWSlugGoalsRoute
   '/w/$slug/my-quarter': typeof AuthenticatedWSlugMyQuarterRoute
+  '/w/$slug/support': typeof AuthenticatedWSlugSupportRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
@@ -282,6 +290,7 @@ export interface FileRoutesByTo {
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsRoute
   '/w/$slug/goals': typeof AuthenticatedWSlugGoalsRoute
   '/w/$slug/my-quarter': typeof AuthenticatedWSlugMyQuarterRoute
+  '/w/$slug/support': typeof AuthenticatedWSlugSupportRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
@@ -319,6 +328,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/docs': typeof AuthenticatedWSlugDocsRoute
   '/_authenticated/w/$slug/goals': typeof AuthenticatedWSlugGoalsRoute
   '/_authenticated/w/$slug/my-quarter': typeof AuthenticatedWSlugMyQuarterRoute
+  '/_authenticated/w/$slug/support': typeof AuthenticatedWSlugSupportRoute
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/_authenticated/w/$slug/': typeof AuthenticatedWSlugIndexRoute
@@ -356,6 +366,7 @@ export interface FileRouteTypes {
     | '/w/$slug/docs'
     | '/w/$slug/goals'
     | '/w/$slug/my-quarter'
+    | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug/'
@@ -390,6 +401,7 @@ export interface FileRouteTypes {
     | '/w/$slug/docs'
     | '/w/$slug/goals'
     | '/w/$slug/my-quarter'
+    | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug'
@@ -426,6 +438,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/docs'
     | '/_authenticated/w/$slug/goals'
     | '/_authenticated/w/$slug/my-quarter'
+    | '/_authenticated/w/$slug/support'
     | '/_authenticated/w/$slug/tasks'
     | '/_authenticated/w/$slug/team-goals'
     | '/_authenticated/w/$slug/'
@@ -534,6 +547,13 @@ declare module '@tanstack/react-router' {
       path: '/tasks'
       fullPath: '/w/$slug/tasks'
       preLoaderRoute: typeof AuthenticatedWSlugTasksRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/support': {
+      id: '/_authenticated/w/$slug/support'
+      path: '/support'
+      fullPath: '/w/$slug/support'
+      preLoaderRoute: typeof AuthenticatedWSlugSupportRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/my-quarter': {
@@ -706,6 +726,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugDocsRoute: typeof AuthenticatedWSlugDocsRoute
   AuthenticatedWSlugGoalsRoute: typeof AuthenticatedWSlugGoalsRoute
   AuthenticatedWSlugMyQuarterRoute: typeof AuthenticatedWSlugMyQuarterRoute
+  AuthenticatedWSlugSupportRoute: typeof AuthenticatedWSlugSupportRoute
   AuthenticatedWSlugTasksRoute: typeof AuthenticatedWSlugTasksRoute
   AuthenticatedWSlugTeamGoalsRoute: typeof AuthenticatedWSlugTeamGoalsRoute
   AuthenticatedWSlugIndexRoute: typeof AuthenticatedWSlugIndexRoute
@@ -735,6 +756,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugDocsRoute: AuthenticatedWSlugDocsRoute,
   AuthenticatedWSlugGoalsRoute: AuthenticatedWSlugGoalsRoute,
   AuthenticatedWSlugMyQuarterRoute: AuthenticatedWSlugMyQuarterRoute,
+  AuthenticatedWSlugSupportRoute: AuthenticatedWSlugSupportRoute,
   AuthenticatedWSlugTasksRoute: AuthenticatedWSlugTasksRoute,
   AuthenticatedWSlugTeamGoalsRoute: AuthenticatedWSlugTeamGoalsRoute,
   AuthenticatedWSlugIndexRoute: AuthenticatedWSlugIndexRoute,

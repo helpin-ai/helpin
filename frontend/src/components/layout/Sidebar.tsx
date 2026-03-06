@@ -13,6 +13,7 @@ import {
   FileText,
   FolderKanban,
   GanttChart,
+  Globe,
   EllipsisVertical,
   Hexagon,
   Layers,
@@ -68,7 +69,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-type RailId = 'projects' | 'rewards' | 'docs' | 'settings';
+type RailId = 'projects' | 'support' | 'rewards' | 'docs' | 'settings';
 
 type RailItem = {
   id: RailId;
@@ -78,6 +79,7 @@ type RailItem = {
 };
 
 function deriveActiveRail(pathname: string): RailId {
+  if (pathname.includes('/support')) return 'support';
   if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
   if (pathname.includes('/docs')) return 'docs';
   if (pathname.includes('/settings')) return 'settings';
@@ -182,6 +184,7 @@ export function Sidebar() {
 
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/stories` },
+    { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
     { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
@@ -196,7 +199,14 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },
           { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
-          { link: `/w/${wsSlug}/pm/support`, label: 'Support', icon: MessageSquare },
+        ],
+      },
+    ],
+    support: [
+      {
+        label: '',
+        items: [
+          { link: `/w/${wsSlug}/support`, label: 'All Tickets', icon: MessageSquare },
         ],
       },
     ],
@@ -248,6 +258,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/workflowstates`, label: 'Workflow States', icon: LayoutList },
           { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
           { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
+          { link: `/w/${wsSlug}/settings/delivery`, label: 'Delivery', icon: Globe },
         ],
       },
       {

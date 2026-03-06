@@ -1,0 +1,264 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-worker-engineer
+  namespace: helpin
+  labels:
+    app: helpin-temporal-worker
+    pool: engineer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-temporal-worker
+      pool: engineer
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-worker
+        env: prod
+        pool: engineer
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: agent-engineer
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-worker-planner
+  namespace: helpin
+  labels:
+    app: helpin-temporal-worker
+    pool: planner
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: helpin-temporal-worker
+      pool: planner
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-worker
+        env: prod
+        pool: planner
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: agent-planner
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-worker-reviewer
+  namespace: helpin
+  labels:
+    app: helpin-temporal-worker
+    pool: reviewer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: helpin-temporal-worker
+      pool: reviewer
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-worker
+        env: prod
+        pool: reviewer
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: agent-reviewer
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-worker-support
+  namespace: helpin
+  labels:
+    app: helpin-temporal-worker
+    pool: support
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-temporal-worker
+      pool: support
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-worker
+        env: prod
+        pool: support
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: agent-support
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-worker-automation
+  namespace: helpin
+  labels:
+    app: helpin-temporal-worker
+    pool: automation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-temporal-worker
+      pool: automation
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-worker
+        env: prod
+        pool: automation
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: automation-default
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

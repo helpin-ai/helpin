@@ -49,6 +49,7 @@ Each run gets:
 - heartbeat updates written back to `agent_runs`
 
 The current implementation uses shared runners, not one container or pod per run.
+The legacy `agent_jobs` poller has been removed. Temporal workflows are the only supported execution path.
 
 ## Agent Kinds
 
@@ -148,6 +149,89 @@ Current behavior:
 - webhook processing resolves the workspace from the installation ID and verifies the shared secret
 
 Legacy PAT persistence remains only for migration compatibility and should not be used for new setups.
+
+### GitHub App setup checklist
+
+For a working install flow, configure the GitHub App with:
+
+- `Homepage URL`: the frontend base URL, for example `http://65.109.173.49:5173`
+- `Setup URL`: the backend callback endpoint, for example `http://65.109.173.49:8080/api/git/github/callback`
+- `Callback URL`: the same backend callback endpoint is acceptable, but the install return path depends on `Setup URL`
+- `Webhook URL`: the backend webhook endpoint, for example `http://65.109.173.49:8080/api/git/webhook`
+
+Recommended repository permissions:
+
+- `Contents`: `Read and write`
+- `Pull requests`: `Read and write`
+- `Metadata`: `Read-only`
+
+Current webhook subscriptions used by Helpin:
+
+- `Push`
+- `Pull request`
+
+Install flow notes:
+
+- Saving the GitHub App settings page does not redirect back to Helpin
+- The redirect back to Helpin only happens when the install is started from `Project Settings > Delivery`
+- The install completion path depends on the GitHub App `Setup URL`
+
+## Deployment Model
+
+Shared runners are deployed as queue-specific Temporal worker pools.
+
+Current deployment shape:
+
+- `agent-engineer`: isolated low-concurrency pool
+- `agent-planner`: shared planning pool
+- `agent-reviewer`: shared validation pool
+- `agent-support`: support pool
+- `automation-default`: default automation pool
+
+Operational defaults:
+
+- worker pods run as non-root
+- root filesystem is read-only
+- `/tmp` is mounted as writable scratch space
+- capabilities are dropped
+- `TEMPORAL_WORKER_QUEUES` can pin a deployment to one or more queues
+
+### Runtime processes
+
+The API server and Temporal worker are separate processes.
+
+Local development usually runs:
+
+- API server: `go run ./cmd/api`
+- Temporal worker: `go run ./cmd/temporal-worker`
+
+Optional worker queue pinning:
+
+- `TEMPORAL_WORKER_QUEUES=agent-engineer go run ./cmd/temporal-worker`
+- `TEMPORAL_WORKER_QUEUES=agent-planner go run ./cmd/temporal-worker`
+- `TEMPORAL_WORKER_QUEUES=agent-reviewer go run ./cmd/temporal-worker`
+- `TEMPORAL_WORKER_QUEUES=agent-support go run ./cmd/temporal-worker`
+- `TEMPORAL_WORKER_QUEUES=automation-default go run ./cmd/temporal-worker`
+
+Required runtime environment variables:
+
+- API:
+  - `DATABASE_URL`
+  - `JWT_SECRET`
+  - `TEMPORAL_ADDRESS`
+  - `TEMPORAL_NAMESPACE`
+  - `APP_BASE_URL`
+  - `GITHUB_APP_ID`
+  - `GITHUB_APP_SLUG`
+  - `GITHUB_APP_PRIVATE_KEY` as base64-encoded PEM
+- Worker:
+  - `DATABASE_URL`
+  - `JWT_SECRET`
+  - `TEMPORAL_ADDRESS`
+  - `TEMPORAL_NAMESPACE`
+  - `GITHUB_APP_ID`
+  - `GITHUB_APP_PRIVATE_KEY` as base64-encoded PEM
+  - `ANTHROPIC_API_KEY` for LLM-backed runs
 
 ## Story Run Flow
 
@@ -311,13 +395,9 @@ Current UI support:
   - artifacts
   - approval and cancellation actions
 - Settings:
-  - GitHub App install flow
-  - GitHub integration list
-  - repository catalog selection
-  - repository sync
+  - Project Settings > Delivery:
+    GitHub App install flow, integration list, repository catalog selection, repository sync, runner queue visibility, and active run health
   - team delivery defaults
-  - runner queue visibility
-  - active run health
 
 ## What Is Not Implemented Yet
 

@@ -35,7 +35,7 @@ import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/esti
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'system';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'delivery' | 'system';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -85,6 +85,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Automations',
     description: 'Automate epic transitions and sprint management.',
     icon: RefreshCw,
+    group: 'Project Settings',
+  },
+  {
+    id: 'delivery',
+    label: 'Delivery',
+    description: 'Connect GitHub, curate repositories, and monitor shared runner pools.',
+    icon: Globe,
     group: 'Project Settings',
   },
   {
@@ -249,6 +256,13 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             config={settings.settings}
             editable={isAdmin()}
             onRefresh={load}
+          />
+        );
+      case 'delivery':
+        return (
+          <ProjectDeliveryTab
+            workspaceId={workspaceId}
+            editable={isAdmin()}
           />
         );
       case 'workflows':
@@ -2201,17 +2215,6 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
   const [notifications, setNotifications] = useState(config.notifications_enabled);
   const [autoCalc, setAutoCalc] = useState(config.auto_calculate_bonuses);
   const [saving, setSaving] = useState(false);
-  const [integrations, setIntegrations] = useState<GitIntegration[]>([]);
-  const [repositories, setRepositories] = useState<GitRepository[]>([]);
-  const [runnerHealth, setRunnerHealth] = useState<RunnerHealth | null>(null);
-  const [syncingIntegrationId, setSyncingIntegrationId] = useState<string | null>(null);
-  const [installingGitHubApp, setInstallingGitHubApp] = useState(false);
-  const [integrationDialogOpen, setIntegrationDialogOpen] = useState(false);
-  const [creatingIntegration, setCreatingIntegration] = useState(false);
-  const [integrationName, setIntegrationName] = useState('');
-  const [accountLogin, setAccountLogin] = useState('');
-  const [installationId, setInstallationId] = useState('');
-  const [baseUrl, setBaseURL] = useState('');
 
   useEffect(() => {
     setSprintDuration(config.sprint_duration_weeks);
@@ -2219,42 +2222,6 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
     setNotifications(config.notifications_enabled);
     setAutoCalc(config.auto_calculate_bonuses);
   }, [config]);
-
-  const loadGitStatus = async () => {
-    const [integrationsRes, reposRes, runnerRes] = await Promise.all([
-      gitService.listIntegrations(workspaceId),
-      gitService.listRepositories(workspaceId, { all: true }),
-      agentService.getRunnerHealth(workspaceId),
-    ]);
-    setIntegrations(integrationsRes.data ?? []);
-    setRepositories(reposRes.data ?? []);
-    setRunnerHealth(runnerRes.data ?? null);
-  };
-
-  useEffect(() => {
-    loadGitStatus();
-  }, [workspaceId]);
-
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const status = url.searchParams.get('github_app');
-    const message = url.searchParams.get('github_message');
-    if (!status) return;
-
-    if (status === 'connected') {
-      toast.success(message || 'GitHub App connected');
-    } else {
-      toast.error(message || 'GitHub App connection failed');
-    }
-
-    url.searchParams.delete('github_app');
-    url.searchParams.delete('github_message');
-    url.searchParams.delete('integration_id');
-    url.searchParams.delete('repo_count');
-    const nextQuery = url.searchParams.toString();
-    window.history.replaceState({}, '', `${url.pathname}${nextQuery ? `?${nextQuery}` : ''}${url.hash}`);
-    void loadGitStatus();
-  }, [workspaceId]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -2329,7 +2296,90 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
 
+function ProjectDeliveryTab({ workspaceId, editable }: {
+  workspaceId: string;
+  editable: boolean;
+}) {
+  const [integrations, setIntegrations] = useState<GitIntegration[]>([]);
+  const [repositories, setRepositories] = useState<GitRepository[]>([]);
+  const [runnerHealth, setRunnerHealth] = useState<RunnerHealth | null>(null);
+  const [syncingIntegrationId, setSyncingIntegrationId] = useState<string | null>(null);
+  const [installingGitHubApp, setInstallingGitHubApp] = useState(false);
+  const [installActionError, setInstallActionError] = useState<string | null>(null);
+  const [integrationDialogOpen, setIntegrationDialogOpen] = useState(false);
+  const [creatingIntegration, setCreatingIntegration] = useState(false);
+  const [integrationName, setIntegrationName] = useState('');
+  const [accountLogin, setAccountLogin] = useState('');
+  const [installationId, setInstallationId] = useState('');
+  const [baseUrl, setBaseURL] = useState('');
+
+  const loadGitStatus = useCallback(async () => {
+    const [integrationsRes, reposRes, runnerRes] = await Promise.all([
+      gitService.listIntegrations(workspaceId),
+      gitService.listRepositories(workspaceId, { all: true }),
+      agentService.getRunnerHealth(workspaceId),
+    ]);
+    setIntegrations(integrationsRes.data ?? []);
+    setRepositories(reposRes.data ?? []);
+    setRunnerHealth(runnerRes.data ?? null);
+  }, [workspaceId]);
+
+  useEffect(() => {
+    void loadGitStatus();
+  }, [loadGitStatus]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const status = url.searchParams.get('github_app');
+    const message = url.searchParams.get('github_message');
+    if (!status) return;
+
+    if (status === 'connected') {
+      setInstallActionError(null);
+      toast.success(message || 'GitHub App connected');
+    } else {
+      toast.error(message || 'GitHub App connection failed');
+    }
+
+    url.searchParams.delete('github_app');
+    url.searchParams.delete('github_message');
+    url.searchParams.delete('integration_id');
+    url.searchParams.delete('repo_count');
+    const nextQuery = url.searchParams.toString();
+    window.history.replaceState({}, '', `${url.pathname}${nextQuery ? `?${nextQuery}` : ''}${url.hash}`);
+    void loadGitStatus();
+  }, [loadGitStatus]);
+
+  const installGuidance = useMemo(() => {
+    if (!installActionError) return null;
+    const normalized = installActionError.toLowerCase();
+    if (normalized.includes('github app onboarding is not configured')) {
+      return {
+        title: 'GitHub App server setup required',
+        description: 'The API server is missing GitHub App configuration, so it cannot generate the install URL yet.',
+        details: ['GITHUB_APP_ID', 'GITHUB_APP_SLUG', 'GITHUB_APP_PRIVATE_KEY (base64 PEM)', 'APP_BASE_URL'],
+      };
+    }
+    if (normalized.includes('workspace_id is required')) {
+      return {
+        title: 'Workspace context is missing',
+        description: 'The request did not include a workspace ID. Refresh the page and try again from the workspace settings route.',
+        details: [] as string[],
+      };
+    }
+    return {
+      title: 'GitHub App install failed',
+      description: installActionError,
+      details: [] as string[],
+    };
+  }, [installActionError]);
+
+  return (
+    <div className="space-y-6">
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
           <CardTitle className="text-base">GitHub & Runners</CardTitle>
@@ -2375,11 +2425,14 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
                     variant="outline"
                     disabled={installingGitHubApp}
                     onClick={async () => {
+                      setInstallActionError(null);
                       setInstallingGitHubApp(true);
                       const { data, error } = await gitService.getGitHubInstallURL(workspaceId);
                       setInstallingGitHubApp(false);
                       if (error || !data?.install_url) {
-                        toast.error(error || 'GitHub App install URL is not available');
+                        const message = error || 'GitHub App install URL is not available';
+                        setInstallActionError(message);
+                        toast.error(message);
                         return;
                       }
                       window.location.assign(data.install_url);
@@ -2395,6 +2448,29 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
               ) : null}
             </div>
           </div>
+
+          {installGuidance ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              <div className="flex items-center gap-2">
+                <Badge variant="destructive">Setup required</Badge>
+                <p className="font-medium">{installGuidance.title}</p>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">{installGuidance.description}</p>
+              {installGuidance.details.length ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Required envs: {installGuidance.details.map((item, index) => (
+                    <span key={item}>
+                      <code className="rounded bg-background px-1 py-0.5 text-xs">{item}</code>
+                      {index < installGuidance.details.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </p>
+              ) : null}
+              {installActionError && installActionError !== installGuidance.description ? (
+                <p className="mt-2 text-xs text-muted-foreground">Backend response: {installActionError}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           {integrations.length === 0 ? (
             <p className="text-sm text-muted-foreground">
