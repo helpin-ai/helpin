@@ -546,17 +546,29 @@ export function StoryDetailPage() {
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          {storyDetail.objective_name && (
+          {storyDetail.objective_name && storyDetail.objective_id && (
             <>
               <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-              <span className="shrink-0 max-w-[160px] truncate">{storyDetail.objective_name}</span>
+              <button
+                type="button"
+                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                onClick={() => navigate({ to: '/w/$slug/pm/objectives/$objectiveId', params: { slug, objectiveId: storyDetail.objective_id! } })}
+              >
+                {storyDetail.objective_name}
+              </button>
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
           )}
-          {storyDetail.epic_name && (
+          {storyDetail.epic_name && storyDetail.story.epic_id && (
             <>
               <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-              <span className="shrink-0 max-w-[160px] truncate">{storyDetail.epic_name}</span>
+              <button
+                type="button"
+                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                onClick={() => navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: storyDetail.story.epic_id! } })}
+              >
+                {storyDetail.epic_name}
+              </button>
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
           )}
