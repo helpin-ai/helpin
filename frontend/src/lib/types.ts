@@ -177,6 +177,7 @@ export interface WorkspaceSettings {
   invitation_team_preassignments: InvitationTeamPreassignment[];
   team_estimate_settings: TeamEstimateSettings[];
   team_field_visibility: TeamFieldVisibility[];
+  team_repo_defaults: TeamRepoDefault[];
 }
 
 export interface TeamFieldVisibility {
@@ -212,6 +213,19 @@ export interface TeamEstimateSettings {
   extended: boolean;
   allow_zero: boolean;
   count_unestimated_as_one: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamRepoDefault {
+  id: string;
+  team_id: string;
+  repository_id: string;
+  base_branch: string;
+  branch_template: string;
+  auto_sync_states: boolean;
+  review_state_id?: string;
+  done_state_id?: string;
   created_at: string;
   updated_at: string;
 }

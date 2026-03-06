@@ -1,107 +1,97 @@
-# Helpin: Agents & Automation Guide
+# Helpin: Agents And Automation
 
 ## Overview
 
-Helpin treats agents as workflow participants inside the product, not as the product itself.
+Helpin treats agents as workflow participants inside the PM and support systems. Helpin owns:
 
-Helpin owns:
-
-- work items
 - assignments
 - run lifecycle
 - approvals
 - handoffs
 - artifacts
-- links between tickets, stories, branches, and PRs
+- story delivery targets
+- branch and PR history
 
-Runtime adapters own execution details such as model calls, terminal access, and backend-specific skills.
+Execution happens through shared Temporal worker pools. Temporal owns retries, cancellation, approval waits, and handoff signaling. Shared runners own the actual tool loop and repo workspace.
 
 ## Core Model
 
 | Concept | Meaning |
 |---|---|
-| `agent` | A registered automation participant in a workspace |
-| `agent_run` | A single isolated execution against one target |
-| `target_type` / `target_id` | The canonical run target: story, support ticket, or another future work item |
-| `artifact` | A traceable run output such as logs, diffs, test output, or draft handoff notes |
-| `handoff` | An explicit transition from an agent to another agent or to a human |
-| `approval_state` | Whether a run result requires human approval before final publication |
+| `agent` | A workspace-scoped human or LLM participant |
+| `agent_run` | A single execution against one target |
+| `target_type` / `target_id` | Canonical run target: story or support ticket |
+| `story_delivery_target` | The current repo lane for a story |
+| `story_git_link` | Historical branch, commit, and PR output for a story |
+| `artifact` | A stored run output such as logs, diffs, or PR metadata |
+| `handoff` | Explicit transfer from one agent to another agent or a human |
 
-## Product Principles
+## Runtime Model
 
-- One active executor per work item by default.
-- Multi-agent collaboration happens through explicit handoffs or separate child work items, not concurrent swarms on the same story or ticket.
-- Human review is a first-class boundary.
-- Agent configuration is policy-based through capability profiles rather than ad hoc tool lists.
+### Orchestration
 
-## Team Members And Agents
+- One Temporal workflow per `agent_run`
+- Shared task queues by capability:
+  - `agent-engineer`
+  - `agent-planner`
+  - `agent-reviewer`
+  - `agent-support`
+  - `automation-default`
+- Approval and handoff happen through workflow signals
 
-| | Team Members | Agents |
-|---|---|---|
-| What they are | Real users invited to the workspace | Workflow participants registered in Helpin |
-| Authentication | Email/password + JWT | No direct login |
-| Primary purpose | Human collaboration and review | Planned or automated execution |
-| Can be assigned | Yes | Yes |
-| Can execute runs | Humans work outside the worker | Only `llm` agents can execute runs |
-| Human representation | Native user account | Optional `human` agent using `backing_user_id` |
+### Execution
+
+Each run gets:
+
+- a fresh temp workspace
+- a repo clone when the profile requires one
+- a capability-profile tool policy
+- heartbeat updates written back to `agent_runs`
+
+The current implementation uses shared runners, not one container or pod per run.
 
 ## Agent Kinds
 
-- `llm`: executable runtime-backed agents
-- `human`: non-executable human proxies used for assignment and handoff flows
+- `llm`: executable agents
+- `human`: assignment and handoff only, never executed
 
-## Recommended Roles
+## Runtime Kinds
 
-Helpin is designed around a small role set:
-
-- `orchestrator`
-- `engineer`
-- `reviewer_tester`
-- `support`
-- `human_proxy`
-
-Custom labels are still allowed, but the product does not model a 5-10 agent swarm as the primary workflow.
-
-## Agent Configuration
-
-Each agent stores:
-
-- `runtime_kind`
-- `capability_profile`
-- `skills`
-- `trigger_mode`
-- `backing_user_id` for human proxies
-- model and system prompt for `llm` agents
-
-### Runtime Kinds
-
-Schema values:
+Supported schema values:
 
 - `native_claude`
 - `claude_code`
 - `openclaw`
 - `zeroclaw`
 
-Current execution support:
+Current backend support:
 
 - `native_claude`: implemented
-- `claude_code`: implemented through the runtime adapter path and currently routed through the same Claude worker loop
-- `openclaw`: reserved, not wired yet
-- `zeroclaw`: reserved, not wired yet
+- `claude_code`: implemented through the same shared executor path
+- `openclaw`: reserved, not implemented
+- `zeroclaw`: reserved, not implemented
 
-### Capability Profiles
-
-Capability profiles control what a run can do. The worker enforces the profile and only exposes the allowed tools for that profile.
+## Capability Profiles
 
 Current profiles:
 
 - `engineer`
+- `planner`
 - `reviewer_tester`
 - `support`
 - `orchestrator`
 - `human_proxy`
 
-### Trigger Modes
+Profile intent:
+
+- `engineer`: repo mutation, commit, push, PR creation
+- `planner`: read-heavy planning and PRD generation, no repo mutation
+- `reviewer_tester`: read-heavy validation and test execution
+- `support`: ticket triage and draft replies with approval boundary
+- `orchestrator`: epic decomposition flow
+- `human_proxy`: explicit handoff target only
+
+## Trigger Modes
 
 - `manual`
 - `auto_on_assignment`
@@ -109,124 +99,105 @@ Current profiles:
 
 Current behavior:
 
-- story assignment supports `auto_on_assignment`
-- support assignment is manual today
+- human agents never execute
+- story assignment supports `manual` and `auto_on_assignment`
+- `auto_on_assignment` only starts when the story has a valid delivery target if the profile requires a repo
+- support runs are still manual today
 
-## Story Workflow
+## Story Delivery Model
 
-### Assign An Agent
+Stories now separate planning state from Git delivery state.
 
-Assigning an agent to a story updates `assigned_agent_id`.
+### Team defaults
 
-If the assigned agent is:
+Each team can define:
 
-- `human`: ownership/handoff only, no run starts
-- `llm` with `trigger_mode = manual`: no run starts
-- `llm` with `trigger_mode = auto_on_assignment`: a run is created automatically
+- default repository
+- base branch
+- branch template
+- optional workflow-state mapping for PR-open and PR-merged events
 
-### Run An Agent
+### Story delivery target
 
-Running a story agent creates:
+Each story can override or inherit:
 
-- an `agent_run`
-- an `agent_job`
+- repository
+- base branch
+- working branch
+- delivery state
+- active PR metadata
 
-The run stores:
+### Branch naming
 
-- `target_type = story`
-- `target_id = {story_id}`
-- legacy `story_id` for compatibility
-- `runtime_kind`
-- `approval_state`
+Default branch template:
 
-### Story Run Execution
+```text
+tp-{display_id}-{slug}
+```
 
-The worker:
+## GitHub Integration Model
 
-1. claims the queued job
-2. resolves the runtime adapter
-3. loads story context and checklist items
-4. optionally clones the linked repository
-5. applies the capability profile and repository command policy
-6. executes the tool loop
-7. persists artifacts and final run state
-
-## Support Workflow
-
-### Assign An Agent
-
-Support tickets can be assigned an agent through `assigned_agent_id`.
-
-Assignment alone does not send customer replies.
-
-### Run Support Agent
-
-`POST /api/support/tickets/{id}/run-agent` creates a ticket-targeted run with:
-
-- `target_type = support_ticket`
-- `target_id = {ticket_id}`
-- legacy `ticket_id` for compatibility
-
-The support capability profile allows the agent to:
-
-- inspect ticket messages
-- update ticket status
-- draft a customer or internal reply
-
-### Approval Boundary
-
-Support replies are drafted during the run and stored for review.
-
-Customer-visible publication requires human approval via:
-
-- `POST /api/pm/agent-runs/{id}/approve`
-
-Approval publishes the drafted support message into the ticket thread.
-
-## Epic Orchestration
-
-Epic orchestration remains a human-confirmed planning flow.
+Helpin uses GitHub App installations for repo mutation workflows.
 
 Current behavior:
 
-- assign an orchestrator agent to the epic
-- call the orchestration endpoint
-- receive a proposed story list
-- edit or remove proposals
-- confirm creation
+- integrations are stored per workspace
+- repository catalogs are synced from the app installation
+- worker activities mint short-lived installation tokens
+- authenticated remotes are not written into `.git/config`
+- webhook processing resolves the workspace from the installation ID and verifies the shared secret
 
-Important note:
+Legacy PAT persistence remains only for migration compatibility and should not be used for new setups.
 
-- orchestration is currently a direct JSON-generation flow, not a general multi-agent planner runtime
+## Story Run Flow
 
-## Agent Runs
+Practical flow:
 
-### Run Status
+1. Create an agent
+2. Create a story
+3. Configure or inherit the story delivery target
+4. Assign the agent
+5. Run the agent, or let `auto_on_assignment` trigger it
+
+Execution flow:
+
+1. API creates `agent_run`
+2. Temporal workflow starts
+3. prepare activity resolves repo and branch state
+4. execute activity runs the tool loop in a shared runner
+5. artifacts and run status update live
+6. PR and push events update delivery state and history
+
+## Support Run Flow
+
+Support runs are still target-based agent runs, but without story delivery.
+
+Current behavior:
+
+- assignment does not execute anything
+- running a support agent creates a support-ticket-targeted `agent_run`
+- draft replies are stored in `output_summary`
+- approval publishes the draft to the support thread
+
+## Run Status
 
 - `queued`
 - `running`
+- `awaiting_approval`
 - `completed`
 - `failed`
 - `cancelled`
 
-### Approval Status
+## Approval Status
 
 - `not_required`
 - `pending`
 - `approved`
 - `rejected`
 
-### Run Controls
-
-Implemented endpoints:
-
-- `POST /api/pm/agent-runs/{id}/cancel`
-- `POST /api/pm/agent-runs/{id}/approve`
-- `POST /api/pm/agent-runs/{id}/handoff`
-
 ## Artifacts
 
-Helpin standardizes run artifacts as:
+Current artifact types:
 
 - `conversation_log`
 - `tool_log`
@@ -237,64 +208,20 @@ Helpin standardizes run artifacts as:
 - `file_bundle`
 - `handoff_note`
 
-Notes:
-
-- `test_report` is produced when the worker sees test-like command execution
-- `pr_metadata` is produced when a PR is opened through the git tool
-- `handoff_note` is created when a run records an explicit handoff
-
-## Worker Architecture
-
-The worker remains a separate deployment from the API server.
-
-Flow:
-
-```text
-API server
-  -> agent_runs / agent_jobs
-  -> PostgreSQL
-  -> worker
-  -> artifacts + run updates
-  -> websocket events
-  -> frontend
-```
-
-### Runtime Adapters
-
-The worker resolves a runtime adapter by `runtime_kind`.
-
-Current adapter path:
-
-- `native_claude`
-- `claude_code`
-
-Reserved but not yet implemented:
-
-- `openclaw`
-- `zeroclaw`
-
 ## Repository Policy
 
-`WORKFLOW.md` in the repo root can still constrain execution:
+`WORKFLOW.md` in the repo root can still narrow command policy:
 
 ```yaml
 ---
 max_iterations: 50
 timeout_minutes: 30
 allowed_commands: [go, npm, make, git]
-handoff_state: "human_review"
+handoff_state: human_review
 ---
 ```
 
-The worker intersects repository command policy with the agent capability profile.
-
-## Runtime Profiles API
-
-Implemented:
-
-- `GET /api/pm/runtime-profiles?workspace_id=`
-
-This returns the capability profiles Helpin knows how to enforce.
+The worker intersects repository policy with the capability profile.
 
 ## API Reference
 
@@ -305,6 +232,7 @@ This returns the capability profiles Helpin knows how to enforce.
 | GET | `/api/pm/agents?workspace_id=` | List agents |
 | POST | `/api/pm/agents?workspace_id=` | Create agent |
 | GET | `/api/pm/runtime-profiles?workspace_id=` | List runtime profiles |
+| GET | `/api/pm/runner-health?workspace_id=` | Get shared runner queue and active-run health |
 | GET | `/api/pm/agents/{id}?workspace_id=` | Get agent |
 | PUT | `/api/pm/agents/{id}?workspace_id=` | Update agent |
 | DELETE | `/api/pm/agents/{id}?workspace_id=` | Delete agent |
@@ -322,6 +250,15 @@ This returns the capability profiles Helpin knows how to enforce.
 | POST | `/api/pm/agent-runs/{id}/approve?workspace_id=` | Approve run result |
 | POST | `/api/pm/agent-runs/{id}/handoff?workspace_id=` | Record handoff |
 
+### Story Delivery
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/pm/stories/{id}/delivery-target?workspace_id=` | Get current delivery target |
+| PUT | `/api/pm/stories/{id}/delivery-target?workspace_id=` | Update story delivery target |
+| GET | `/api/pm/stories/{id}/git-links?workspace_id=` | List historical git links |
+| POST | `/api/pm/stories/{id}/create-branch?workspace_id=` | Legacy branch setup endpoint |
+
 ### Support
 
 | Method | Endpoint | Description |
@@ -336,19 +273,66 @@ This returns the capability profiles Helpin knows how to enforce.
 | POST | `/api/support/tickets/{id}/run-agent?workspace_id=` | Run support agent |
 | POST | `/api/support/tickets/{id}/link-story?workspace_id=` | Link ticket to story |
 
+### Git
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/git/integrations?workspace_id=` | List git integrations |
+| GET | `/api/git/github/install-url?workspace_id=` | Get GitHub App install URL |
+| GET | `/api/git/github/callback` | Public GitHub App install callback |
+| POST | `/api/git/integrations?workspace_id=` | Create git integration |
+| POST | `/api/git/integrations/{id}/sync?workspace_id=` | Sync repositories from installation |
+| GET | `/api/git/repositories?workspace_id=` | List synced repositories |
+| PUT | `/api/git/repositories/{id}?workspace_id=` | Update repository catalog selection |
+| POST | `/api/git/webhook` | Public webhook endpoint |
+
+### Team Delivery Defaults
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/settings/teams/{id}/repo-default` | Get team repo default |
+| PUT | `/api/settings/teams/{id}/repo-default` | Update team repo default |
+
+## Frontend Surfaces
+
+Current UI support:
+
+- story detail `Delivery` block for:
+  - agent picker
+  - repository selector
+  - base branch
+  - branch preview
+  - PR status
+  - manual run action
+- `Agent Runs` panel for:
+  - runner pool
+  - execution stage
+  - repo snapshot
+  - artifacts
+  - approval and cancellation actions
+- Settings:
+  - GitHub App install flow
+  - GitHub integration list
+  - repository catalog selection
+  - repository sync
+  - team delivery defaults
+  - runner queue visibility
+  - active run health
+
 ## What Is Not Implemented Yet
 
 - true OpenClaw execution backend
 - true ZeroClaw execution backend
-- concurrent multi-agent execution on the same work item
 - generic document-targeted agent runs
 - automatic support-agent execution on assignment
-- a dedicated reviewer/tester UI flow beyond the shared run model
+- a dedicated reviewer/tester UI beyond the shared run panel
 
 ## Recommended Usage
 
 - Use `orchestrator` for epic decomposition.
-- Use `engineer` for story implementation and PR generation.
+- Use `planner` for PRDs, planning, and repo-aware analysis without mutation.
+- Use `engineer` for implementation, branching, commits, and PRs.
+- Use `reviewer_tester` for validation and read-heavy QA runs.
 - Use `support` for ticket triage and draft replies.
 - Use `human_proxy` to represent explicit human ownership or handoff targets.
-- Prefer explicit handoffs over adding more specialized agents to the product model.
+- Prefer explicit handoffs over adding many specialized agents to the product model.

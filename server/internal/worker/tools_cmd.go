@@ -39,19 +39,21 @@ var defaultAllowedCommands = map[string]bool{
 
 func toolRunCommand(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
-		Command string `json:"command"`
+		Program string   `json:"program"`
+		Args    []string `json:"args"`
+		Command string   `json:"command"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
 
-	if params.Command == "" {
-		return "", fmt.Errorf("command is required")
+	program, args, err := normalizeCommand(params.Program, params.Args, params.Command)
+	if err != nil {
+		return "", err
 	}
 
 	// Extract first word to check against whitelist.
-	parts := strings.Fields(params.Command)
-	base := parts[0]
+	base := program
 	// Handle path prefixes like ./node_modules/.bin/...
 	if strings.Contains(base, "/") {
 		base = base[strings.LastIndex(base, "/")+1:]
@@ -84,7 +86,7 @@ func toolRunCommand(ctx *ExecutionContext, input json.RawMessage) (string, error
 	cmdCtx, cancel := context.WithTimeout(ctx.Context, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, "sh", "-c", params.Command)
+	cmd := exec.CommandContext(cmdCtx, program, args...)
 	cmd.Dir = ctx.WorkDir
 
 	output, err := cmd.CombinedOutput()
@@ -106,4 +108,24 @@ func allowedList(m map[string]bool) []string {
 		list = append(list, k)
 	}
 	return list
+}
+
+func normalizeCommand(program string, args []string, command string) (string, []string, error) {
+	if strings.TrimSpace(program) != "" {
+		return strings.TrimSpace(program), args, nil
+	}
+
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return "", nil, fmt.Errorf("program is required")
+	}
+	if strings.ContainsAny(command, "|&;<>()`$") {
+		return "", nil, fmt.Errorf("shell operators are not allowed; use program + args")
+	}
+
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return "", nil, fmt.Errorf("program is required")
+	}
+	return parts[0], parts[1:], nil
 }

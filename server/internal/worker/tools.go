@@ -74,15 +74,29 @@ func NewToolRegistry() *ToolRegistry {
 	}, toolSearchFiles)
 
 	// Command tools
-	r.register("run_command", "Run a shell command in the workspace directory. Only whitelisted commands are allowed.", map[string]interface{}{
+	r.register("run_command", "Run an allowlisted command in the workspace directory. Prefer program + args; shell syntax is not supported.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
+			"program": map[string]interface{}{
+				"type":        "string",
+				"description": "The executable name (for example: go, npm, git)",
+			},
+			"args": map[string]interface{}{
+				"type":        "array",
+				"description": "Command arguments as a JSON string array",
+				"items": map[string]interface{}{
+					"type": "string",
+				},
+			},
 			"command": map[string]interface{}{
 				"type":        "string",
-				"description": "The shell command to execute",
+				"description": "Deprecated compatibility field. Plain commands only; shell operators are rejected.",
 			},
 		},
-		"required": []string{"command"},
+		"anyOf": []map[string]interface{}{
+			{"required": []string{"program"}},
+			{"required": []string{"command"}},
+		},
 	}, toolRunCommand)
 
 	// Git tools

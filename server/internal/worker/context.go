@@ -22,13 +22,19 @@ type ExecutionContext struct {
 	Story               *model.PMStory
 	Ticket              *model.SupportTicket
 	GitIntegration      *model.GitIntegration
+	GitAccessToken      string
 	Repo                string // e.g. "owner/repo"
+	BaseBranch          string
+	WorkingBranch       string
 	Config              *WorkflowConfig
 	RuntimeProfile      model.RuntimeProfile
 	AllowedTools        map[string]bool
 	Services            *ServiceBridge
 	PendingSupportDraft *SupportDraftReply
 	LatestPRMetadata    *PRMetadata
+	Heartbeat           func(stage string) error
+	OnGitPush           func(branch, sha string) error
+	OnPROpen            func(metadata PRMetadata, title string) error
 }
 
 // WorkflowConfig holds settings from WORKFLOW.md or defaults.

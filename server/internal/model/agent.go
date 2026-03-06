@@ -45,6 +45,17 @@ type AgentRun struct {
 	ApprovalState     string          `json:"approval_state" gorm:"not null;default:'not_required'"`
 	TriggeredByUserID *string         `json:"triggered_by_user_id" gorm:"type:uuid"`
 	Status            string          `json:"status" gorm:"not null;default:'queued'"`
+	WorkflowID        *string         `json:"workflow_id"`
+	WorkflowRunID     *string         `json:"workflow_run_id"`
+	TaskQueue         *string         `json:"task_queue"`
+	RunnerPool        *string         `json:"runner_pool"`
+	RepositoryID      *string         `json:"repository_id" gorm:"type:uuid;index"`
+	RepoFullName      *string         `json:"repo_full_name"`
+	BaseBranch        *string         `json:"base_branch"`
+	WorkingBranch     *string         `json:"working_branch"`
+	DeliveryTargetID  *string         `json:"delivery_target_id" gorm:"type:uuid;index"`
+	ExecutionStage    *string         `json:"execution_stage"`
+	LastHeartbeatAt   *time.Time      `json:"last_heartbeat_at"`
 	Input             json.RawMessage `json:"input" gorm:"type:jsonb;not null;default:'{}'"`
 	OutputSummary     json.RawMessage `json:"output_summary" gorm:"type:jsonb;not null;default:'{}'"`
 	TokensUsed        int             `json:"tokens_used" gorm:"not null;default:0"`
@@ -135,4 +146,5 @@ type RuntimeProfile struct {
 	AllowedTools     []string `json:"allowed_tools"`
 	AllowedCommands  []string `json:"allowed_commands"`
 	ApprovalRequired bool     `json:"approval_required"`
+	RequiresRepo     bool     `json:"requires_repo"`
 }

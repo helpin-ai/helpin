@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -27,6 +28,7 @@ func toolCreateBranch(ctx *ExecutionContext, input json.RawMessage) (string, err
 	if err != nil {
 		return "", fmt.Errorf("create branch: %s", out)
 	}
+	ctx.WorkingBranch = params.Name
 	return fmt.Sprintf("Created and switched to branch %q", params.Name), nil
 }
 
@@ -56,6 +58,7 @@ func toolCommitAndPush(ctx *ExecutionContext, input json.RawMessage) (string, er
 		return "", fmt.Errorf("get branch: %s", branch)
 	}
 	branch = strings.TrimSpace(branch)
+	ctx.WorkingBranch = branch
 
 	if out, err := runGit(ctx, "push", "-u", "origin", branch); err != nil {
 		return "", fmt.Errorf("git push: %s", out)
@@ -63,6 +66,9 @@ func toolCommitAndPush(ctx *ExecutionContext, input json.RawMessage) (string, er
 
 	sha, _ := runGit(ctx, "rev-parse", "HEAD")
 	sha = strings.TrimSpace(sha)
+	if ctx.OnGitPush != nil {
+		_ = ctx.OnGitPush(branch, sha)
+	}
 	return fmt.Sprintf("Committed and pushed to %s (SHA: %s)", branch, sha), nil
 }
 
@@ -76,6 +82,9 @@ func toolOpenPR(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
 
+	if params.BaseBranch == "" {
+		params.BaseBranch = ctx.BaseBranch
+	}
 	if params.BaseBranch == "" {
 		params.BaseBranch = "main"
 	}
@@ -120,7 +129,11 @@ func createGitHubPR(ctx *ExecutionContext, title, body, head, base string) (stri
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+ctx.GitIntegration.AccessToken)
+	token := ctx.GitAccessToken
+	if token == "" && ctx.GitIntegration != nil {
+		token = ctx.GitIntegration.AccessToken
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
 
@@ -147,6 +160,9 @@ func createGitHubPR(ctx *ExecutionContext, title, body, head, base string) (stri
 		Head:     head,
 		Base:     base,
 	}
+	if ctx.OnPROpen != nil {
+		_ = ctx.OnPROpen(*ctx.LatestPRMetadata, title)
+	}
 	return fmt.Sprintf("PR #%d created: %s", int(prNumber), prURL), nil
 }
 
@@ -154,9 +170,31 @@ func runGit(ctx *ExecutionContext, args ...string) (string, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx.Context, 60*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, "git", args...)
+	cmdArgs := append(gitAuthArgs(ctx), args...)
+	cmd := exec.CommandContext(cmdCtx, "git", cmdArgs...)
 	cmd.Dir = ctx.WorkDir
 
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func gitAuthArgs(ctx *ExecutionContext) []string {
+	token := ctx.GitAccessToken
+	if token == "" && ctx.GitIntegration != nil {
+		token = ctx.GitIntegration.AccessToken
+	}
+	if token == "" || ctx.GitIntegration == nil {
+		return nil
+	}
+
+	switch ctx.GitIntegration.Provider {
+	case "github":
+		auth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+		return []string{"-c", "http.extraheader=Authorization: Basic " + auth}
+	case "gitlab":
+		auth := base64.StdEncoding.EncodeToString([]byte("oauth2:" + token))
+		return []string{"-c", "http.extraheader=Authorization: Basic " + auth}
+	default:
+		return nil
+	}
 }

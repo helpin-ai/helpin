@@ -238,6 +238,27 @@ func (s *SettingsService) UpdateTeamFieldVisibility(ctx context.Context, teamID 
 	return s.settingsRepo.UpsertTeamFieldVisibility(ctx, teamID, req)
 }
 
+// GetTeamRepoDefault returns the delivery repo default for a team.
+func (s *SettingsService) GetTeamRepoDefault(ctx context.Context, teamID string) (*model.PMTeamRepoDefault, error) {
+	return s.settingsRepo.GetTeamRepoDefault(ctx, teamID)
+}
+
+// UpdateTeamRepoDefault creates or updates the delivery repo default for a team.
+func (s *SettingsService) UpdateTeamRepoDefault(ctx context.Context, teamID string, req model.UpdateTeamRepoDefaultRequest) (*model.PMTeamRepoDefault, error) {
+	if strings.TrimSpace(req.RepositoryID) == "" {
+		return nil, fmt.Errorf("repository_id is required")
+	}
+	if req.BaseBranch != nil {
+		trimmed := strings.TrimSpace(*req.BaseBranch)
+		req.BaseBranch = &trimmed
+	}
+	if req.BranchTemplate != nil {
+		trimmed := strings.TrimSpace(*req.BranchTemplate)
+		req.BranchTemplate = &trimmed
+	}
+	return s.settingsRepo.UpsertTeamRepoDefault(ctx, teamID, req)
+}
+
 // AddInvitationTeamPreassignment pre-assigns a pending invitation to a team.
 func (s *SettingsService) AddInvitationTeamPreassignment(ctx context.Context, teamID, invitationID string) (*model.InvitationTeamPreassignment, error) {
 	return s.settingsRepo.AddInvitationTeamPreassignment(ctx, invitationID, teamID)

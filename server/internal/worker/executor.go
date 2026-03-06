@@ -94,6 +94,10 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 	defer cancel()
 
 	for iteration := 0; iteration < config.MaxIterations; iteration++ {
+		if execCtx.Heartbeat != nil {
+			_ = execCtx.Heartbeat(fmt.Sprintf("iteration_%d", iteration+1))
+		}
+
 		// Check cancellation.
 		select {
 		case <-ctx.Done():
@@ -155,6 +159,9 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 		var toolResults []ContentBlock
 		for _, block := range resp.Content {
 			if block.Type == "tool_use" {
+				if execCtx.Heartbeat != nil {
+					_ = execCtx.Heartbeat("tool_" + block.Name)
+				}
 				hasToolUse = true
 				log.Printf("[run=%s] tool_use: %s", run.ID[:8], block.Name)
 
@@ -259,12 +266,17 @@ func truncate(s string, maxLen int) string {
 
 func looksLikeTestCommand(input json.RawMessage) bool {
 	var params struct {
-		Command string `json:"command"`
+		Program string   `json:"program"`
+		Args    []string `json:"args"`
+		Command string   `json:"command"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return false
 	}
-	command := strings.ToLower(params.Command)
+	command := strings.ToLower(strings.TrimSpace(params.Command))
+	if params.Program != "" {
+		command = strings.ToLower(strings.TrimSpace(params.Program) + " " + strings.Join(params.Args, " "))
+	}
 	return strings.Contains(command, " test") || strings.HasPrefix(command, "test ") || strings.Contains(command, "go test") || strings.Contains(command, "npm test") || strings.Contains(command, "cargo test")
 }
 

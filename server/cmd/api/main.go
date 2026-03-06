@@ -11,18 +11,21 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/handler"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/router"
 	"github.com/helpin-ai/helpin/server/internal/service"
 	"github.com/helpin-ai/helpin/server/internal/storage"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
 	"github.com/helpin-ai/helpin/server/internal/worker"
 )
@@ -131,8 +134,10 @@ func main() {
 		&model.SupportWidgetInstallation{},
 		&model.SupportWidgetSession{},
 		&model.GitIntegration{},
+		&model.GitRepository{},
+		&model.PMTeamRepoDefault{},
+		&model.StoryDeliveryTarget{},
 		&model.StoryGitLink{},
-		&model.AgentJob{},
 		&model.AgentHandoff{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
@@ -197,8 +202,9 @@ func main() {
 	widgetInstallRepo := repository.NewWidgetInstallationRepository(db)
 	widgetSessionRepo := repository.NewWidgetSessionRepository(db)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
+	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
+	storyDeliveryTargetRepo := repository.NewStoryDeliveryTargetRepository(db)
 	storyGitLinkRepo := repository.NewStoryGitLinkRepository(db)
-	agentJobRepo := repository.NewAgentJobRepository(db)
 	agentHandoffRepo := repository.NewAgentHandoffRepository(db)
 
 	// Initialize services.
@@ -217,9 +223,54 @@ func main() {
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo)
 	searchService := service.NewSearchService(searchRepo)
-	agentService := service.NewAgentService(agentRepo, agentRunRepo, agentRunArtifactRepo, agentJobRepo, pmStoryRepo, supportTicketRepo, supportMessageRepo, agentHandoffRepo, pmActivityService, wsPublisher)
 	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher)
-	gitService := service.NewGitService(gitIntegrationRepo, storyGitLinkRepo, pmActivityService, wsPublisher)
+
+	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
+	if err != nil {
+		log.Fatalf("failed to initialize github app client: %v", err)
+	}
+
+	var temporalClient tclient.Client
+	temporalClient, err = tclient.Dial(tclient.Options{
+		HostPort:  cfg.TemporalAddress,
+		Namespace: cfg.TemporalNamespace,
+	})
+	if err != nil {
+		log.Printf("Temporal unavailable at %s (namespace=%s): %v", cfg.TemporalAddress, cfg.TemporalNamespace, err)
+	} else {
+		defer temporalClient.Close()
+		log.Printf("Temporal configured at %s (namespace=%s)", cfg.TemporalAddress, cfg.TemporalNamespace)
+	}
+	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
+
+	gitService := service.NewGitService(
+		gitIntegrationRepo,
+		gitRepositoryRepo,
+		storyGitLinkRepo,
+		storyDeliveryTargetRepo,
+		settingsRepo,
+		workspaceRepo,
+		pmStoryRepo,
+		pmActivityService,
+		wsPublisher,
+		githubAppClient,
+		cfg.AppBaseURL,
+		cfg.GitHubAppSlug,
+		cfg.JWTSecret,
+	)
+	agentService := service.NewAgentService(
+		agentRepo,
+		agentRunRepo,
+		agentRunArtifactRepo,
+		pmStoryRepo,
+		supportTicketRepo,
+		supportMessageRepo,
+		agentHandoffRepo,
+		runEngine,
+		gitService,
+		pmActivityService,
+		wsPublisher,
+	)
 
 	// Initialize Claude client for orchestration (optional).
 	var claudeClient *worker.ClaudeClient

@@ -97,6 +97,12 @@ func (r *SettingsRepository) GetAll(ctx context.Context, workspaceID string) (*m
 	}
 	cfg.TeamFieldVisibility = fieldVisibility
 
+	teamRepoDefaults, err := r.listTeamRepoDefaults(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	cfg.TeamRepoDefaults = teamRepoDefaults
+
 	return cfg, nil
 }
 
@@ -289,6 +295,68 @@ func (r *SettingsRepository) GetTeamByHandle(ctx context.Context, workspaceID, h
 		return nil, fmt.Errorf("get team by handle: %w", err)
 	}
 	return team, nil
+}
+
+func (r *SettingsRepository) listTeamRepoDefaults(ctx context.Context, workspaceID string) ([]model.PMTeamRepoDefault, error) {
+	var defaults []model.PMTeamRepoDefault
+	err := r.db.WithContext(ctx).
+		Table("pm_team_repo_defaults").
+		Joins("JOIN workspace_teams ON pm_team_repo_defaults.team_id = workspace_teams.id").
+		Where("workspace_teams.workspace_id = ?", workspaceID).
+		Order("workspace_teams.name").
+		Select("pm_team_repo_defaults.*").
+		Find(&defaults).Error
+	if err != nil {
+		return nil, fmt.Errorf("list team repo defaults: %w", err)
+	}
+	return defaults, nil
+}
+
+// GetTeamRepoDefault returns the repo default for a team.
+func (r *SettingsRepository) GetTeamRepoDefault(ctx context.Context, teamID string) (*model.PMTeamRepoDefault, error) {
+	var cfg model.PMTeamRepoDefault
+	if err := r.db.WithContext(ctx).Where("team_id = ?", teamID).First(&cfg).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get team repo default: %w", err)
+	}
+	return &cfg, nil
+}
+
+// UpsertTeamRepoDefault creates or updates the repo default for a team.
+func (r *SettingsRepository) UpsertTeamRepoDefault(ctx context.Context, teamID string, req model.UpdateTeamRepoDefaultRequest) (*model.PMTeamRepoDefault, error) {
+	cfg, err := r.GetTeamRepoDefault(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		cfg = &model.PMTeamRepoDefault{
+			TeamID:         teamID,
+			RepositoryID:   req.RepositoryID,
+			BaseBranch:     "main",
+			BranchTemplate: "tp-{display_id}-{slug}",
+			AutoSyncStates: true,
+		}
+	}
+
+	cfg.RepositoryID = req.RepositoryID
+	if req.BaseBranch != nil && *req.BaseBranch != "" {
+		cfg.BaseBranch = *req.BaseBranch
+	}
+	if req.BranchTemplate != nil && *req.BranchTemplate != "" {
+		cfg.BranchTemplate = *req.BranchTemplate
+	}
+	if req.AutoSyncStates != nil {
+		cfg.AutoSyncStates = *req.AutoSyncStates
+	}
+	cfg.ReviewStateID = req.ReviewStateID
+	cfg.DoneStateID = req.DoneStateID
+
+	if err := r.db.WithContext(ctx).Save(cfg).Error; err != nil {
+		return nil, fmt.Errorf("upsert team repo default: %w", err)
+	}
+	return cfg, nil
 }
 
 // AddTeamUserMembership adds or updates a workspace member's team membership.
