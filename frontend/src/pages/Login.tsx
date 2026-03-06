@@ -38,7 +38,7 @@ export default function Login() {
     const { data: workspaces } = await workspacesService.list();
     setLoading(false);
     if (workspaces && workspaces.length > 0) {
-      navigate({ to: '/w/$slug/stories', params: { slug: workspaces[0].slug } });
+      navigate({ to: '/w/$slug/pm/stories', params: { slug: workspaces[0].slug } });
     } else {
       navigate({ to: '/workspaces' });
     }

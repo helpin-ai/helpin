@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -47,9 +47,9 @@ interface ColumnProps {
   workspaceId: string;
   members: MemberWithUser[];
   states: WorkflowState[];
-  onOwnerChanged: () => void;
+  onOwnerChanged: (story: Story) => void;
   onStoryMoved: (storyId: string, fromStateId: string, toStateId: string) => void;
-  onPriorityChanged: () => void;
+  onPriorityChanged: (story: Story) => void;
   onLoadMore: (stateId: string) => void;
   isLoadingMore: boolean;
 }
@@ -181,6 +181,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     setFilters,
     createStory,
     moveStory,
+    patchStory,
     refreshBoard,
     loadMoreColumn,
     loadViews,
@@ -374,9 +375,12 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     [createStory]
   );
 
-  const handleOwnerChanged = useCallback(() => {
-    refreshBoard();
-  }, [refreshBoard]);
+  const handleStoryPatched = useCallback((story: Story) => {
+    const patched = patchStory('updated', story.id, story);
+    if (!patched) {
+      refreshBoard();
+    }
+  }, [patchStory, refreshBoard]);
 
   const handleStoryMoved = useCallback(
     (storyId: string, fromStateId: string, toStateId: string) => {
@@ -390,10 +394,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     },
     [workspaceId, moveStory],
   );
-
-  const handlePriorityChanged = useCallback(() => {
-    refreshBoard();
-  }, [refreshBoard]);
 
   return (
     <StoryFilterProvider
@@ -492,9 +492,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   workspaceId={workspaceId}
                   members={members}
                   states={workflow?.states ?? []}
-                  onOwnerChanged={handleOwnerChanged}
+                  onOwnerChanged={handleStoryPatched}
                   onStoryMoved={handleStoryMoved}
-                  onPriorityChanged={handlePriorityChanged}
+                  onPriorityChanged={handleStoryPatched}
                   onLoadMore={loadMoreColumn}
                   isLoadingMore={!!columnLoading[column.state.id]}
                 />
@@ -542,12 +542,18 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         states={workflow?.states ?? []}
         onStoryUpdated={(updated) => {
           setSelectedStory(updated);
-          refreshBoard();
+          const patched = patchStory('updated', updated.story.id, updated.story);
+          if (!patched) {
+            refreshBoard();
+          }
         }}
         onStoryArchived={() => {
           setDetailOpen(false);
           setSelectedStory(null);
-          refreshBoard();
+          const patched = patchStory('deleted', selectedStory?.story.id ?? '');
+          if (!patched) {
+            refreshBoard();
+          }
         }}
       />
     </div>

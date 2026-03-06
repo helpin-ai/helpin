@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   CalendarDays,
-  Crosshair,
   Hash,
   Heart,
   Loader2,
-  Target,
   User,
   Users,
   X,

@@ -59,15 +59,6 @@ export function ResizableImageComponent({ node, updateAttributes, selected }: No
     setCurrentHeight(`${newHeight}px`);
   }, []);
 
-  const handleResizeEnd = useCallback(() => {
-    setIsResizing(false);
-    // Persist to node attributes
-    updateAttributes({
-      width: currentWidth,
-      height: currentHeight,
-    });
-  }, [currentWidth, currentHeight, updateAttributes]);
-
   // We need a ref-based version for the cleanup
   const currentSizeRef = useRef({ width: currentWidth, height: currentHeight });
   currentSizeRef.current = { width: currentWidth, height: currentHeight };

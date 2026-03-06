@@ -310,29 +310,37 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		return nil, fmt.Errorf("list board states: %w", err)
 	}
 
-	// Fetch all stories for the workflow in a single query.
 	stateIDs := make([]string, len(states))
 	for i, s := range states {
 		stateIDs[i] = s.ID
 	}
 
-	var allStories []model.PMStory
-	storyQuery := r.db.WithContext(ctx).
+	baseQuery := r.db.WithContext(ctx).
+		Model(&model.PMStory{}).
 		Where("workflow_state_id IN ? AND archived = false", stateIDs)
-	storyQuery = r.applyBoardFilters(storyQuery, filters)
-	if err := storyQuery.
-		Order("position ASC, updated_at DESC").
-		Find(&allStories).Error; err != nil {
-		return nil, fmt.Errorf("list board stories: %w", err)
+	baseQuery = r.applyBoardFilters(baseQuery, filters)
+
+	var aggregateRows []struct {
+		StateID    string `gorm:"column:state_id"`
+		StoryCount int    `gorm:"column:story_count"`
+		PointTotal int    `gorm:"column:point_total"`
+	}
+	if err := baseQuery.
+		Select("pm_stories.workflow_state_id AS state_id, COUNT(pm_stories.id) AS story_count, COALESCE(SUM(pm_stories.estimate), 0) AS point_total").
+		Group("pm_stories.workflow_state_id").
+		Scan(&aggregateRows).Error; err != nil {
+		return nil, fmt.Errorf("list board aggregates: %w", err)
 	}
 
-	// Group stories by state.
-	storiesByState := map[string][]model.PMStory{}
-	for _, s := range allStories {
-		storiesByState[s.WorkflowStateID] = append(storiesByState[s.WorkflowStateID], s)
+	type aggregateMeta struct {
+		storyCount int
+		pointTotal int
+	}
+	aggregates := map[string]aggregateMeta{}
+	for _, row := range aggregateRows {
+		aggregates[row.StateID] = aggregateMeta{storyCount: row.StoryCount, pointTotal: row.PointTotal}
 	}
 
-	// Slice per-state and compute totals, then collect IDs only from visible stories.
 	type columnMeta struct {
 		totalCount int
 		pointTotal int
@@ -343,20 +351,20 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 	epicIDs := map[string]struct{}{}
 	ownerIDs := map[string]struct{}{}
 	for i, state := range states {
-		stories := storiesByState[state.ID]
-		totalCount := len(stories)
-		pointTotal := 0
-		for _, s := range stories {
-			if s.Estimate != nil {
-				pointTotal += *s.Estimate
-			}
+		query := r.db.WithContext(ctx).
+			Where("workflow_state_id = ? AND archived = false", state.ID)
+		query = r.applyBoardFilters(query, filters)
+		query = query.Order("position ASC, updated_at DESC")
+		if perStateLimit > 0 {
+			query = query.Limit(perStateLimit)
 		}
-		hasMore := false
-		if perStateLimit > 0 && len(stories) > perStateLimit {
-			stories = stories[:perStateLimit]
-			hasMore = true
+
+		var visibleStories []model.PMStory
+		if err := query.Find(&visibleStories).Error; err != nil {
+			return nil, fmt.Errorf("list board column stories: %w", err)
 		}
-		for _, s := range stories {
+
+		for _, s := range visibleStories {
 			if s.EpicID != nil {
 				epicIDs[*s.EpicID] = struct{}{}
 			}
@@ -364,7 +372,14 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 				ownerIDs[*s.OwnerID] = struct{}{}
 			}
 		}
-		metas[i] = columnMeta{totalCount: totalCount, pointTotal: pointTotal, hasMore: hasMore, visible: stories}
+
+		aggregate := aggregates[state.ID]
+		metas[i] = columnMeta{
+			totalCount: aggregate.storyCount,
+			pointTotal: aggregate.pointTotal,
+			hasMore:    aggregate.storyCount > len(visibleStories),
+			visible:    visibleStories,
+		}
 	}
 
 	epicNameMap := r.batchEpicNames(ctx, epicIDs)

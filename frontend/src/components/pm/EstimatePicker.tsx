@@ -3,7 +3,6 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useTeamEstimateStore } from '@/stores/teamEstimateStore';
 import { getEstimateOptions, formatEstimateValue } from '@/lib/estimateScales';
-import type { EstimateScale } from '@/lib/types';
 
 interface EstimatePickerProps {
   value: string;

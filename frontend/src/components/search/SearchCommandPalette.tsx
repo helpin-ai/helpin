@@ -43,8 +43,8 @@ export function SearchCommandPalette({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResponse>(EMPTY);
   const [searching, setSearching] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
-  const abortRef = useRef<AbortController>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Reset state when dialog closes
   useEffect(() => {
@@ -64,7 +64,7 @@ export function SearchCommandPalette({
     }
 
     setSearching(true);
-    clearTimeout(timerRef.current);
+    clearTimeout(timerRef.current ?? undefined);
     abortRef.current?.abort();
 
     timerRef.current = setTimeout(async () => {
@@ -81,7 +81,7 @@ export function SearchCommandPalette({
     }, 400);
 
     return () => {
-      clearTimeout(timerRef.current);
+      clearTimeout(timerRef.current ?? undefined);
       abortRef.current?.abort();
     };
   }, [query, workspace?.id]);
@@ -102,11 +102,7 @@ export function SearchCommandPalette({
       onOpenChange(false);
       switch (type) {
         case 'story':
-          navigate({
-            to: '/w/$slug/pm/stories',
-            params: { slug },
-            search: { story: `TP-${item.display_id}` },
-          });
+          window.location.assign(`/w/${slug}/pm/stories?story=TP-${item.display_id}`);
           break;
         case 'epic':
           navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: item.id } });

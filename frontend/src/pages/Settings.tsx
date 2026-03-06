@@ -549,7 +549,6 @@ function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
   }, [initial, teamId]);
 
   const scaleOptions = getEstimateOptions(scale, extended, allowZero);
-  const preview = scaleOptions.map((o) => o.label).join(', ');
 
   return (
     <div className="space-y-5 py-2">

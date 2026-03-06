@@ -43,9 +43,9 @@ interface StoryCardProps {
   workspaceId?: string;
   members?: MemberWithUser[];
   states?: WorkflowState[];
-  onOwnerChanged?: () => void;
+  onOwnerChanged?: (story: Story) => void;
   onStoryMoved?: (storyId: string, fromStateId: string, toStateId: string) => void;
-  onPriorityChanged?: () => void;
+  onPriorityChanged?: (story: Story) => void;
 }
 
 export function StoryCard({
@@ -105,8 +105,10 @@ export function StoryCard({
       if (!workspaceId) return;
       const newOwnerId = story.owner_id === member.user_id ? undefined : member.user_id;
       try {
-        await pmStoryService.update(workspaceId, story.id, { owner_id: newOwnerId });
-        onOwnerChanged?.();
+        const result = await pmStoryService.update(workspaceId, story.id, { owner_id: newOwnerId });
+        if (result.data?.story) {
+          onOwnerChanged?.(result.data.story);
+        }
       } catch {
         // Board will show stale data until next refresh
       }
@@ -122,8 +124,10 @@ export function StoryCard({
         return;
       }
       try {
-        await pmStoryService.update(workspaceId, story.id, { priority });
-        onPriorityChanged?.();
+        const result = await pmStoryService.update(workspaceId, story.id, { priority });
+        if (result.data?.story) {
+          onPriorityChanged?.(result.data.story);
+        }
       } catch {
         // Board will show stale data until next refresh
       }

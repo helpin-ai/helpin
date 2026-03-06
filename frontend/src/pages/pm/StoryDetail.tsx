@@ -326,7 +326,7 @@ export function StoryDetailPage() {
   // ── Reload helpers (for real-time events) ───────────────────────
   const reloadComments = useCallback(async () => {
     if (!workspaceId) return;
-    const res = await pmCommentService.list(workspaceId, storyId);
+    const res = await pmCommentService.list(workspaceId, 'story', storyId);
     setComments(res.data ?? []);
   }, [workspaceId, storyId]);
 

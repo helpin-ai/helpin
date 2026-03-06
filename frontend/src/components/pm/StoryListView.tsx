@@ -12,7 +12,6 @@ import {
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { CalendarDays, Check, ChevronDown, ChevronRight, Loader2, UserPlus } from 'lucide-react';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -219,14 +218,40 @@ export function StoryListView({
   // Listen for story events (only for self-fetching mode)
   useEffect(() => {
     if (isExternal) return;
-    const handler = () => { fetchStories(1, false); };
-    window.addEventListener('story-created', handler);
-    window.addEventListener('story-updated', handler);
-    return () => {
-      window.removeEventListener('story-created', handler);
-      window.removeEventListener('story-updated', handler);
+    const handleDeleted = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail;
+      const storyId = detail?.entity_id as string | undefined;
+      if (!storyId) return;
+      setStories((current) => current.filter((story) => story.id !== storyId));
     };
-  }, [fetchStories, isExternal]);
+
+    const handleUpdated = async (event: Event) => {
+      const detail = (event as CustomEvent)?.detail;
+      const storyId = detail?.entity_id as string | undefined;
+      if (!storyId) return;
+
+      let shouldPatch = false;
+      setStories((current) => {
+        shouldPatch = current.some((story) => story.id === storyId);
+        return current;
+      });
+      if (!shouldPatch) return;
+
+      const res = await pmStoryService.get(workspaceId, storyId);
+      if (!res.data?.story) return;
+      setStories((current) =>
+        current.map((story) => (story.id === storyId ? res.data!.story : story)),
+      );
+    };
+
+    window.addEventListener('story-deleted', handleDeleted);
+    window.addEventListener('story-updated', handleUpdated);
+
+    return () => {
+      window.removeEventListener('story-deleted', handleDeleted);
+      window.removeEventListener('story-updated', handleUpdated);
+    };
+  }, [isExternal, workspaceId]);
 
   // Table columns
   const tableColumns = useMemo(

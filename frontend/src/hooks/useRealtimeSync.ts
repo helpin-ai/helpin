@@ -10,7 +10,13 @@ const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'exte
 const DEBOUNCE_MS = 200
 
 export function useRealtimeSync(workspaceId: string) {
-  const debounceTimer = useRef<ReturnType<typeof setTimeout>>()
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleRefresh = useCallback(() => {
+    clearTimeout(debounceTimer.current ?? undefined)
+    debounceTimer.current = setTimeout(() => {
+      usePMBoardStore.getState().refreshBoard()
+    }, DEBOUNCE_MS)
+  }, [])
 
   const onEvent = useCallback((event: WSEvent) => {
     // Story-level events → incremental patch when possible, debounced full refresh as fallback
@@ -19,18 +25,17 @@ export function useRealtimeSync(workspaceId: string) {
 
       if (event.action === 'deleted') {
         // Delete can be patched locally without re-fetching
-        store.patchStory('deleted', event.entity_id)
+        const patched = store.patchStory('deleted', event.entity_id)
+        if (!patched) scheduleRefresh()
       } else {
         // For created/updated/moved, fetch the updated story and patch it in
         pmStoryService.get(workspaceId, event.entity_id).then((res) => {
           if (res.data) {
-            store.patchStory(event.action, event.entity_id, res.data.story)
+            const patched = store.patchStory(event.action, event.entity_id, res.data.story)
+            if (!patched) scheduleRefresh()
           } else {
-            // Story might have been archived/deleted by the time we fetch — schedule debounced refresh
-            clearTimeout(debounceTimer.current)
-            debounceTimer.current = setTimeout(() => {
-              usePMBoardStore.getState().refreshBoard()
-            }, DEBOUNCE_MS)
+            // Story might have been archived/deleted by the time we fetch.
+            scheduleRefresh()
           }
         })
       }
@@ -53,10 +58,10 @@ export function useRealtimeSync(workspaceId: string) {
         })
       )
     }
-  }, [workspaceId])
+  }, [scheduleRefresh, workspaceId])
 
   useEffect(() => {
-    return () => { clearTimeout(debounceTimer.current) }
+    return () => { clearTimeout(debounceTimer.current ?? undefined) }
   }, [])
 
   useWebSocket({ workspaceId, onEvent })
