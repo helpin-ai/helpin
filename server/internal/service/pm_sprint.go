@@ -78,8 +78,8 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 		WorkspaceID: req.WorkspaceID,
 		Name:        strings.TrimSpace(req.Name),
 		Description: req.Description,
-		StartDate:   req.StartDate,
-		EndDate:     req.EndDate,
+		StartDate:   &req.StartDate,
+		EndDate:     &req.EndDate,
 		TeamID:      req.TeamID,
 	}
 	if actorID != "" {
@@ -125,10 +125,10 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 		sprint.Description = req.Description
 	}
 	if req.StartDate != nil {
-		sprint.StartDate = *req.StartDate
+		sprint.StartDate = req.StartDate
 	}
 	if req.EndDate != nil {
-		sprint.EndDate = *req.EndDate
+		sprint.EndDate = req.EndDate
 	}
 	if req.TeamID != nil {
 		sprint.TeamID = req.TeamID
@@ -137,11 +137,14 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 		sprint.Archived = *req.Archived
 	}
 
-	if !sprint.EndDate.After(sprint.StartDate) {
+	if sprint.StartDate == nil || sprint.EndDate == nil {
+		return nil, fmt.Errorf("start_date and end_date are required")
+	}
+	if !sprint.EndDate.After(*sprint.StartDate) {
 		return nil, fmt.Errorf("end_date must be after start_date")
 	}
 	excludeID := id
-	overlap, err := s.sprintRepo.HasDateOverlap(ctx, sprint.WorkspaceID, sprint.TeamID, sprint.StartDate, sprint.EndDate, &excludeID)
+	overlap, err := s.sprintRepo.HasDateOverlap(ctx, sprint.WorkspaceID, sprint.TeamID, *sprint.StartDate, *sprint.EndDate, &excludeID)
 	if err != nil {
 		return nil, err
 	}

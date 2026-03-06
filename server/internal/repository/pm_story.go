@@ -306,7 +306,7 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 	var states []model.PMWorkflowState
 	if err := r.db.WithContext(ctx).
 		Where("workflow_id = ?", workflowID).
-		Order("position ASC").
+		Order("CASE state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, position ASC").
 		Find(&states).Error; err != nil {
 		return nil, fmt.Errorf("list board states: %w", err)
 	}
@@ -596,7 +596,7 @@ func (r *PMStoryRepository) CountByState(ctx context.Context, workflowID string)
 		Joins("LEFT JOIN pm_stories s ON s.workflow_state_id = ws.id AND s.archived = false").
 		Where("ws.workflow_id = ?", workflowID).
 		Group("ws.id, ws.name, ws.state_type, ws.position").
-		Order("ws.position ASC").
+		Order("CASE ws.state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, ws.position ASC").
 		Scan(&counts).Error; err != nil {
 		return nil, fmt.Errorf("count stories by state: %w", err)
 	}

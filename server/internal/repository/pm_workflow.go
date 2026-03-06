@@ -273,7 +273,7 @@ func (r *PMWorkflowRepository) listStates(ctx context.Context, workflowID string
 	var states []model.PMWorkflowState
 	if err := r.db.WithContext(ctx).
 		Where("workflow_id = ?", workflowID).
-		Order("position ASC").
+		Order("CASE state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, position ASC").
 		Find(&states).Error; err != nil {
 		return nil, fmt.Errorf("list workflow states: %w", err)
 	}

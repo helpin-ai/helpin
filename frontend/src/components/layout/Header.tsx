@@ -106,6 +106,7 @@ export function Header() {
       workflows: "Workflows",
       workflowstates: "Workflow States",
       tiers: "Bonus Tiers",
+      import: "Import / Export",
     };
 
     if (section === "pm") {

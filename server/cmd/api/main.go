@@ -73,6 +73,10 @@ func main() {
 		log.Fatalf("failed to migrate agent run targets: %v", err)
 	}
 
+	if err := repository.MigratePMImportSchema(db); err != nil {
+		log.Fatalf("failed to migrate pm import schema: %v", err)
+	}
+
 	// Auto-migrate all models.
 	// The SQL migration files in server/migrations/ are kept as reference documentation.
 	if err := db.AutoMigrate(
@@ -141,6 +145,7 @@ func main() {
 		&model.StoryDeliveryTarget{},
 		&model.StoryGitLink{},
 		&model.AgentHandoff{},
+		&model.PMImportJob{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -231,10 +236,11 @@ func main() {
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
-	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmActivityService, wsPublisher)
+	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, wsPublisher)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo)
+	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo)
 	searchService := service.NewSearchService(searchRepo)
 	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher)
 
@@ -322,6 +328,7 @@ func main() {
 		RewardDraft:     handler.NewRewardDraftHandler(draftService),
 		Invite:          handler.NewInviteHandler(inviteService),
 		PMWorkflow:      handler.NewPMWorkflowHandler(pmWorkflowService),
+		PMImport:        handler.NewPMImportHandler(pmImportService),
 		PMLabel:         handler.NewPMLabelHandler(pmLabelService),
 		PMEpic:          handler.NewPMEpicHandler(pmEpicService),
 		PMSprint:        handler.NewPMSprintHandler(pmSprintService),

@@ -17,6 +17,7 @@ import {
   Globe,
   EllipsisVertical,
   Hexagon,
+  Import,
   Layers,
   LayoutDashboard,
   MessageSquare,
@@ -261,6 +262,12 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
           { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/delivery`, label: 'Delivery', icon: Globe },
+        ],
+      },
+      {
+        label: 'Data',
+        items: [
+          { link: `/w/${wsSlug}/settings/import`, label: 'Import / Export', icon: Import },
         ],
       },
       {

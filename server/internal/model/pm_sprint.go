@@ -10,18 +10,19 @@ const (
 
 // PMSprint represents a sprint planning period.
 type PMSprint struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name        string    `json:"name" gorm:"not null"`
-	Description *string   `json:"description"`
-	StartDate   time.Time `json:"start_date" gorm:"type:date;not null"`
-	EndDate     time.Time `json:"end_date" gorm:"type:date;not null"`
-	Status      string    `json:"status" gorm:"->"`
-	TeamID      *string   `json:"team_id" gorm:"type:uuid;index"`
-	Archived    bool      `json:"archived" gorm:"not null;default:false"`
-	CreatedBy   *string   `json:"created_by" gorm:"type:uuid"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name        string     `json:"name" gorm:"not null"`
+	Description *string    `json:"description"`
+	ExternalID  *string    `json:"external_id" gorm:"index"`
+	StartDate   *time.Time `json:"start_date" gorm:"type:date"`
+	EndDate     *time.Time `json:"end_date" gorm:"type:date"`
+	Status      string     `json:"status" gorm:"->"`
+	TeamID      *string    `json:"team_id" gorm:"type:uuid;index"`
+	Archived    bool       `json:"archived" gorm:"not null;default:false"`
+	CreatedBy   *string    `json:"created_by" gorm:"type:uuid"`
+	CreatedAt   time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMSprint) TableName() string { return "pm_sprints" }

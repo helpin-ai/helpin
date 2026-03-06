@@ -1,0 +1,65 @@
+package service
+
+import (
+	"testing"
+	"time"
+)
+
+func TestParseShortcutChecklist(t *testing.T) {
+	items := parseShortcutChecklist("[X] Done task;[ ] Todo task;plain task")
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(items))
+	}
+	if !items[0].Completed || items[0].Text != "Done task" {
+		t.Fatalf("unexpected first item: %+v", items[0])
+	}
+	if items[1].Completed || items[1].Text != "Todo task" {
+		t.Fatalf("unexpected second item: %+v", items[1])
+	}
+	if items[2].Completed || items[2].Text != "plain task" {
+		t.Fatalf("unexpected third item: %+v", items[2])
+	}
+}
+
+func TestInferShortcutSprintDatesWeekRange(t *testing.T) {
+	start, end := inferShortcutSprintDates("Dev Team: Week 4-5, 2026", nil)
+	if start == nil || end == nil {
+		t.Fatal("expected parsed dates")
+	}
+	if got := start.Format("2006-01-02"); got != "2026-01-19" {
+		t.Fatalf("unexpected start date: %s", got)
+	}
+	if got := end.Format("2006-01-02"); got != "2026-02-01" {
+		t.Fatalf("unexpected end date: %s", got)
+	}
+}
+
+func TestInferShortcutSprintDatesMonthRangeUsesAnchorYear(t *testing.T) {
+	rows := []shortcutCSVRow{
+		{
+			CreatedAt: "2025/11/08 10:00:00",
+			UTCOffset: "+00:00",
+		},
+	}
+	start, end := inferShortcutSprintDates("Nov 7 - Nov 21", rows)
+	if start == nil || end == nil {
+		t.Fatal("expected parsed dates")
+	}
+	if got := start.Format("2006-01-02"); got != "2025-11-07" {
+		t.Fatalf("unexpected start date: %s", got)
+	}
+	if got := end.Format("2006-01-02"); got != "2025-11-21" {
+		t.Fatalf("unexpected end date: %s", got)
+	}
+}
+
+func TestParseShortcutTimestampWithUTCOffset(t *testing.T) {
+	ts := parseShortcutTimestamp("2026/03/04 22:18:07", "+05:00")
+	if ts == nil {
+		t.Fatal("expected timestamp")
+	}
+	expected := time.Date(2026, time.March, 4, 17, 18, 7, 0, time.UTC)
+	if !ts.Equal(expected) {
+		t.Fatalf("unexpected timestamp: got %s want %s", ts.UTC().Format(time.RFC3339), expected.Format(time.RFC3339))
+	}
+}

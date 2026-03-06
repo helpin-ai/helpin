@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { ShortcutImportWizard } from '@/components/pm/ShortcutImportWizard';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -31,13 +32,13 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, GitPullRequest, Globe, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'delivery' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'delivery' | 'import' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -95,6 +96,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     description: 'Connect GitHub, curate repositories, and monitor shared runner pools.',
     icon: Globe,
     group: 'Project Settings',
+  },
+  {
+    id: 'import',
+    label: 'Import / Export',
+    description: 'Import data from Shortcut and other project management tools.',
+    icon: Import,
+    group: 'Data',
   },
   {
     id: 'people',
@@ -288,6 +296,8 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return <LabelsSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
       case 'automations':
         return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} />;
+      case 'import':
+        return <ImportTab workspaceId={workspaceId} />;
       default:
         return null;
     }
@@ -3795,4 +3805,16 @@ function AutomationsTab({ workspaceId, teams }: {
       </Card>
     </div>
   );
+}
+
+/* ============ Import Tab ============ */
+
+function ImportTab({ workspaceId }: { workspaceId: string }) {
+  const [members, setMembers] = useState<MemberWithUser[]>([]);
+  useEffect(() => {
+    workspacesService.listMembers(workspaceId).then(({ data }) => {
+      if (data) setMembers(data);
+    });
+  }, [workspaceId]);
+  return <ShortcutImportWizard workspaceId={workspaceId} members={members} />;
 }

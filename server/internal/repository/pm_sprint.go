@@ -32,7 +32,7 @@ func (r *PMSprintRepository) List(ctx context.Context, workspaceID string, filte
 	}
 
 	var sprints []model.PMSprint
-	if err := query.Order("start_date DESC").Find(&sprints).Error; err != nil {
+	if err := query.Order("COALESCE(start_date, created_at) DESC").Find(&sprints).Error; err != nil {
 		return nil, fmt.Errorf("list sprints: %w", err)
 	}
 
@@ -40,8 +40,9 @@ func (r *PMSprintRepository) List(ctx context.Context, workspaceID string, filte
 		filtered := make([]model.PMSprint, 0, len(sprints))
 		now := time.Now().UTC()
 		for _, it := range sprints {
-			if computeSprintStatus(it.StartDate, it.EndDate, now) == *filters.Status {
-				it.Status = *filters.Status
+			status := computeSprintStatus(it.StartDate, it.EndDate, now)
+			if status == *filters.Status {
+				it.Status = status
 				filtered = append(filtered, it)
 			}
 		}
@@ -111,7 +112,7 @@ func (r *PMSprintRepository) Delete(ctx context.Context, id string) error {
 func (r *PMSprintRepository) GetCurrentSprint(ctx context.Context, workspaceID string, teamID *string) (*model.PMSprint, error) {
 	nowDate := time.Now().UTC().Format("2006-01-02")
 	query := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND archived = false AND start_date <= ? AND end_date >= ?", workspaceID, nowDate, nowDate)
+		Where("workspace_id = ? AND archived = false AND start_date IS NOT NULL AND end_date IS NOT NULL AND start_date <= ? AND end_date >= ?", workspaceID, nowDate, nowDate)
 	if teamID != nil && *teamID != "" {
 		query = query.Where("team_id = ?", *teamID)
 	}
@@ -189,6 +190,7 @@ func (r *PMSprintRepository) HasDateOverlap(ctx context.Context, workspaceID str
 	query := r.db.WithContext(ctx).
 		Model(&model.PMSprint{}).
 		Where("workspace_id = ? AND archived = false", workspaceID).
+		Where("start_date IS NOT NULL AND end_date IS NOT NULL").
 		Where("start_date < ? AND end_date > ?", endDate.Format("2006-01-02"), startDate.Format("2006-01-02"))
 
 	if teamID != nil && *teamID != "" {
@@ -221,7 +223,10 @@ func (r *PMSprintRepository) listLabels(ctx context.Context, sprintID string) ([
 	return labels, nil
 }
 
-func computeSprintStatus(startDate, endDate time.Time, now time.Time) string {
+func computeSprintStatus(startDate, endDate *time.Time, now time.Time) string {
+	if startDate == nil || endDate == nil {
+		return model.PMSprintStatusUnstarted
+	}
 	current := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	start := time.Date(startDate.Year(), startDate.Month(), startDate.Day(), 0, 0, 0, 0, time.UTC)
 	end := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 0, 0, 0, 0, time.UTC)

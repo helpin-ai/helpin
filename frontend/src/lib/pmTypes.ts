@@ -106,8 +106,8 @@ export interface PMSprint {
   workspace_id: string;
   name: string;
   description?: string;
-  start_date: string;
-  end_date: string;
+  start_date: string | null;
+  end_date: string | null;
   status: SprintStatus;
   team_id?: string;
   archived: boolean;
@@ -582,6 +582,8 @@ export interface KeyResult {
   target_value: number;
   progress: number;
   note?: string;
+  note_updated_by?: string;
+  note_updated_at?: string;
   position: number;
   updated_by?: string;
   created_at: string;

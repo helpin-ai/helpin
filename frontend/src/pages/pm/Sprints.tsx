@@ -150,23 +150,29 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
         id: 'start_date',
         header: 'Start date',
         size: 110,
-        cell: (info) => (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <CalendarDays className="h-3.5 w-3.5" />
-            <span>{format(parseISO(info.row.original.sprint.start_date), 'MMM d')}</span>
-          </div>
-        ),
+        cell: (info) => {
+          const d = info.row.original.sprint.start_date;
+          return d ? (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" />
+              <span>{format(parseISO(d), 'MMM d')}</span>
+            </div>
+          ) : <Minus className="h-3.5 w-3.5 text-muted-foreground" />;
+        },
       }),
       columnHelper.display({
         id: 'end_date',
         header: 'End date',
         size: 110,
-        cell: (info) => (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <CalendarDays className="h-3.5 w-3.5" />
-            <span>{format(parseISO(info.row.original.sprint.end_date), 'MMM d')}</span>
-          </div>
-        ),
+        cell: (info) => {
+          const d = info.row.original.sprint.end_date;
+          return d ? (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" />
+              <span>{format(parseISO(d), 'MMM d')}</span>
+            </div>
+          ) : <Minus className="h-3.5 w-3.5 text-muted-foreground" />;
+        },
       }),
     ],
     [findTeamName]
@@ -301,9 +307,13 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
                   <span>{entry.stats.done_story_count}/{entry.stats.story_count} stories</span>
                   <span>{entry.stats.done_points}/{entry.stats.total_points} pts</span>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {format(parseISO(entry.sprint.start_date), 'MMM d')} - {format(parseISO(entry.sprint.end_date), 'MMM d, yyyy')}
-                </p>
+                {entry.sprint.start_date && entry.sprint.end_date ? (
+                  <p className="text-xs text-muted-foreground">
+                    {format(parseISO(entry.sprint.start_date), 'MMM d')} - {format(parseISO(entry.sprint.end_date), 'MMM d, yyyy')}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No dates set</p>
+                )}
               </CardContent>
             </Card>
           ))}

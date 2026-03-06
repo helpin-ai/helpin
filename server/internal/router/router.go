@@ -26,6 +26,7 @@ type Handlers struct {
 	RewardDraft     *handler.RewardDraftHandler
 	Invite          *handler.InviteHandler
 	PMWorkflow      *handler.PMWorkflowHandler
+	PMImport        *handler.PMImportHandler
 	PMLabel         *handler.PMLabelHandler
 	PMEpic          *handler.PMEpicHandler
 	PMSprint        *handler.PMSprintHandler
@@ -118,6 +119,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Get("/workspaces/{id}/my-role", h.Workspace.GetMyRole)
 			r.Get("/workspaces/{id}/my-membership", h.Workspace.GetMyMembership)
 			r.Get("/workspaces/{id}/members", h.Workspace.ListMembers)
+			r.Post("/workspaces/{id}/import/shortcut/preview", h.PMImport.PreviewShortcut)
+			r.Post("/workspaces/{id}/import/shortcut/execute", h.PMImport.ExecuteShortcut)
+			r.Get("/workspaces/{id}/import/shortcut/status/{importId}", h.PMImport.ShortcutStatus)
 
 			// Rewards module
 			r.Route("/rewards", func(r chi.Router) {
