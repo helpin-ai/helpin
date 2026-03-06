@@ -54,6 +54,7 @@ interface CreateStoryModalProps {
   workspaceId: string;
   workflow: WorkflowWithStates;
   initialStateId: string;
+  initialTeamId?: string;
   onCreate: (payload: CreateStoryRequest) => Promise<void>;
 }
 
@@ -155,6 +156,7 @@ export function CreateStoryModal({
   workspaceId,
   workflow,
   initialStateId,
+  initialTeamId,
   onCreate,
 }: CreateStoryModalProps) {
   const [form, setForm] = useState(defaultState);
@@ -173,10 +175,10 @@ export function CreateStoryModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm({ ...defaultState, owner_id: currentUserId });
+    setForm({ ...defaultState, owner_id: currentUserId, team_id: initialTeamId ?? '' });
     setStateId(initialStateId);
     setError(null);
-  }, [open, initialStateId, currentUserId]);
+  }, [open, initialStateId, initialTeamId, currentUserId]);
 
   useEffect(() => {
     if (!open) return;

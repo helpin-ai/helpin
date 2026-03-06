@@ -61,6 +61,7 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
 
 function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const [workflow, setWorkflow] = useState<WorkflowWithStates | null>(null);
+  const initialTeamId = useGlobalCreateStore((s) => s.initialTeamId);
 
   useEffect(() => {
     // Try board store first (already loaded if on stories page)
@@ -83,6 +84,7 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
       workspaceId={workspaceId}
       workflow={workflow}
       initialStateId={workflow.states[0]?.id ?? ''}
+      initialTeamId={initialTeamId}
       onCreate={async (payload) => {
         const { error } = await pmStoryService.create(payload);
         if (error) throw new Error(error);

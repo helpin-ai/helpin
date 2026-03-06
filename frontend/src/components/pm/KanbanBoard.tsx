@@ -537,6 +537,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           workspaceId={workspaceId}
           workflow={workflow}
           initialStateId={createStateId || workflow.states[0]?.id || ''}
+          initialTeamId={storeTeamId ?? undefined}
           onCreate={handleCreate}
         />
       ) : null}
