@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
@@ -45,6 +45,7 @@ export default function Workspaces() {
   const { workspaces, loading, loadWorkspaces } = useWorkspaceStore();
   const { organizations, currentOrganization, loading: orgsLoading, loadOrganizations, setCurrentOrganization } = useOrganizationStore();
   const navigate = useNavigate();
+  const { create } = useSearch({ from: '/_authenticated/workspaces' });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [orgDialogOpen, setOrgDialogOpen] = useState(false);
   const [name, setName] = useState('');
@@ -67,12 +68,12 @@ export default function Workspaces() {
     }
   }, [currentOrganization, loadWorkspaces]);
 
-  // Auto-redirect to first workspace if user has exactly one.
+  // Auto-open create dialog when navigated with ?create=true
   useEffect(() => {
-    if (!loading && !orgsLoading && workspaces.length === 1) {
-      navigate({ to: '/w/$slug/pm/stories', params: { slug: workspaces[0].slug } });
+    if (create && currentOrganization && !orgsLoading) {
+      setDialogOpen(true);
     }
-  }, [loading, orgsLoading, workspaces, navigate]);
+  }, [create, currentOrganization, orgsLoading]);
 
   const handleNameChange = (val: string) => {
     setName(val);

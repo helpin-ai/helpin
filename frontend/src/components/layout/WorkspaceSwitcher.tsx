@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
-import { Building2, Check, ChevronsUpDown, ExternalLink } from 'lucide-react';
+import { Building2, Check, ChevronsUpDown, Plus } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
 import type { Workspace } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
@@ -74,23 +73,13 @@ export function WorkspaceSwitcher() {
             side={isMobile ? 'bottom' : 'right'}
             sideOffset={4}
           >
-            <div className="flex items-center gap-2 p-2">
+            <div className="p-2">
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Filter workspaces"
                 className="h-8"
               />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  navigate({ to: '/workspaces' });
-                  setOpen(false);
-                }}
-              >
-                <ExternalLink className="h-4 w-4" />
-              </Button>
             </div>
             <Separator />
             <div className="max-h-[320px] overflow-auto p-1">
@@ -118,6 +107,30 @@ export function WorkspaceSwitcher() {
                   );
                 })
               )}
+            </div>
+            <Separator />
+            <div className="grid grid-cols-2 gap-1.5 p-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  navigate({ to: '/workspaces' });
+                  setOpen(false);
+                }}
+                className="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-accent transition-colors"
+              >
+                View All
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  navigate({ to: '/workspaces', search: { create: true } });
+                  setOpen(false);
+                }}
+                className="flex items-center justify-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Create
+              </button>
             </div>
           </PopoverContent>
         </Popover>
