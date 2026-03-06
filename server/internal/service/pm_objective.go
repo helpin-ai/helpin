@@ -394,6 +394,8 @@ func (s *PMObjectiveService) CreateKeyResult(ctx context.Context, objectiveID st
 		InitialValue: req.InitialValue,
 		CurrentValue: req.CurrentValue,
 		TargetValue:  req.TargetValue,
+		Note:         req.Note,
+		UpdatedBy:    optionalActor(actorID),
 	}
 	if req.Position != nil {
 		kr.Position = *req.Position
@@ -441,10 +443,14 @@ func (s *PMObjectiveService) UpdateKeyResult(ctx context.Context, id string, req
 	if req.TargetValue != nil {
 		kr.TargetValue = *req.TargetValue
 	}
+	if req.Note != nil {
+		kr.Note = req.Note
+	}
 	if req.Position != nil {
 		kr.Position = *req.Position
 	}
 	kr.Progress = computeKeyResultProgress(kr)
+	kr.UpdatedBy = optionalActor(actorID)
 
 	if err := s.krRepo.Update(ctx, kr); err != nil {
 		return nil, err

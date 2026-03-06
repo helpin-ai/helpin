@@ -50,7 +50,9 @@ type PMKeyResult struct {
 	CurrentValue float64   `json:"current_value" gorm:"not null;default:0"`
 	TargetValue  float64   `json:"target_value" gorm:"not null;default:100"`
 	Progress     float64   `json:"progress" gorm:"not null;default:0"`
+	Note         *string   `json:"note"`
 	Position     int       `json:"position" gorm:"not null;default:0"`
+	UpdatedBy    *string   `json:"updated_by" gorm:"type:uuid"`
 	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt    time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -134,6 +136,7 @@ type CreateKeyResultRequest struct {
 	InitialValue float64 `json:"initial_value"`
 	CurrentValue float64 `json:"current_value"`
 	TargetValue  float64 `json:"target_value"`
+	Note         *string `json:"note"`
 	Position     *int    `json:"position"`
 }
 
@@ -143,6 +146,7 @@ type UpdateKeyResultRequest struct {
 	InitialValue *float64 `json:"initial_value"`
 	CurrentValue *float64 `json:"current_value"`
 	TargetValue  *float64 `json:"target_value"`
+	Note         *string  `json:"note"`
 	Position     *int     `json:"position"`
 }
 

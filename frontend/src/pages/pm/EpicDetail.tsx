@@ -228,11 +228,12 @@ export function EpicDetailPage() {
     return Math.round((epic.stats.done_story_count / epic.stats.story_count) * 100);
   }, [epic]);
 
+  const defaultEpicState = epicStates.find((s) => s.is_default) ?? epicStates[0];
   const currentEpicState = useMemo(
-    () => epicStates.find((s) => s.id === form?.epic_state_id),
-    [epicStates, form?.epic_state_id],
+    () => epicStates.find((s) => s.id === form?.epic_state_id) ?? defaultEpicState,
+    [epicStates, form?.epic_state_id, defaultEpicState],
   );
-  const currentStateName = currentEpicState?.name ?? 'No state';
+  const currentStateName = currentEpicState?.name ?? '';
   const currentStateColor = currentEpicState ? STATE_TYPE_ICON_CONFIG[currentEpicState.state_type as StateType]?.color : '';
 
   const currentTeamName = useMemo(
@@ -423,14 +424,10 @@ export function EpicDetailPage() {
             {/* State */}
             <MetadataRow icon={Hash} label="State">
               <SidebarPopoverSelect
-                value={form.epic_state_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'No state' },
-                  ...epicStates.map((s) => ({ value: s.id, label: s.name, className: STATE_TYPE_ICON_CONFIG[s.state_type as StateType]?.color })),
-                ]}
+                value={form.epic_state_id || defaultEpicState?.id || ''}
+                options={epicStates.map((s) => ({ value: s.id, label: s.name, className: STATE_TYPE_ICON_CONFIG[s.state_type as StateType]?.color }))}
                 onChange={(v) => {
-                  const val = v === '__none__' ? '' : v;
-                  updateField('epic_state_id', val, { epic_state_id: val || undefined });
+                  updateField('epic_state_id', v, { epic_state_id: v });
                 }}
                 renderTrigger={() => <span className={currentStateColor}>{currentStateName}</span>}
               />

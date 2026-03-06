@@ -27,15 +27,11 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import type { SprintWithStats, SprintStatus, Story, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
+import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/sprints/$sprintId');
 
 const statusOptions: SprintStatus[] = ['unstarted', 'started', 'done'];
-const statusConfig: Record<SprintStatus, { label: string; color: string }> = {
-  unstarted: { label: 'Unstarted', color: 'text-muted-foreground' },
-  started: { label: 'Started', color: 'text-blue-600' },
-  done: { label: 'Done', color: 'text-green-600' },
-};
 
 // ── Sidebar Popover Select ─────────────────────────────────────────
 
@@ -394,11 +390,11 @@ export function SprintDetailPage() {
             <MetadataRow icon={RefreshCw} label="Status">
               <SidebarPopoverSelect
                 value={sprint.sprint.status}
-                options={statusOptions.map((s) => ({ value: s, label: statusConfig[s].label, className: statusConfig[s].color }))}
+                options={statusOptions.map((s) => ({ value: s, label: SPRINT_STATUS_CONFIG[s].label, className: SPRINT_STATUS_CONFIG[s].color }))}
                 onChange={() => {/* status is computed server-side */}}
                 renderTrigger={() => (
-                  <span className={statusConfig[sprint.sprint.status]?.color}>
-                    {statusConfig[sprint.sprint.status]?.label}
+                  <span className={SPRINT_STATUS_CONFIG[sprint.sprint.status]?.color}>
+                    {SPRINT_STATUS_CONFIG[sprint.sprint.status]?.label}
                   </span>
                 )}
               />

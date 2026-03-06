@@ -13,7 +13,8 @@ import { pmSprintService } from '@/lib/services/pmSprintService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import type { SprintWithStats } from '@/lib/pmTypes';
+import type { SprintStatus, SprintWithStats } from '@/lib/pmTypes';
+import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 
 const ALL_PROPERTIES = [
   { key: 'status', label: 'Status' },
@@ -86,11 +87,14 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
         id: 'status',
         header: 'Status',
         size: 100,
-        cell: (info) => (
-          <span className="text-xs capitalize text-muted-foreground">
-            {info.row.original.sprint.status}
-          </span>
-        ),
+        cell: (info) => {
+          const cfg = SPRINT_STATUS_CONFIG[info.row.original.sprint.status as SprintStatus];
+          return (
+            <span className={`text-xs ${cfg?.color ?? 'text-muted-foreground'}`}>
+              {cfg?.label ?? info.row.original.sprint.status}
+            </span>
+          );
+        },
       }),
       columnHelper.display({
         id: 'team',
@@ -281,7 +285,9 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">{entry.sprint.name}</CardTitle>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Status: {entry.sprint.status}</span>
+                  <span className={SPRINT_STATUS_CONFIG[entry.sprint.status as SprintStatus]?.color}>
+                    {SPRINT_STATUS_CONFIG[entry.sprint.status as SprintStatus]?.label ?? entry.sprint.status}
+                  </span>
                   {findTeamName(entry.sprint.team_id) && (
                     <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
                       {findTeamName(entry.sprint.team_id)}

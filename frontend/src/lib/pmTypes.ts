@@ -581,7 +581,9 @@ export interface KeyResult {
   current_value: number;
   target_value: number;
   progress: number;
+  note?: string;
   position: number;
+  updated_by?: string;
   created_at: string;
   updated_at: string;
 }
@@ -647,6 +649,7 @@ export interface CreateKeyResultRequest {
   initial_value?: number;
   current_value?: number;
   target_value?: number;
+  note?: string;
   position?: number;
 }
 
@@ -656,6 +659,7 @@ export interface UpdateKeyResultRequest {
   initial_value?: number;
   current_value?: number;
   target_value?: number;
+  note?: string;
   position?: number;
 }
 

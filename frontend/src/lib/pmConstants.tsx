@@ -15,7 +15,7 @@ import {
   TriangleAlert,
   Wrench,
 } from 'lucide-react';
-import type { Priority, Severity, StateType, StoryType } from './pmTypes';
+import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, StoryType } from './pmTypes';
 
 // ── Priority icons & colors ────────────────────────────────────────
 
@@ -89,6 +89,52 @@ export function StateTypeIcon({
   const Icon = config.icon;
   return <Icon className={`${className} ${config.color}`} />;
 }
+
+// ── Sprint status config ──────────────────────────────────────────
+
+export const SPRINT_STATUS_CONFIG: Record<
+  SprintStatus,
+  { label: string; color: string; badge: string }
+> = {
+  unstarted: {
+    label: 'Not Started',
+    color: 'text-zinc-400',
+    badge: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800/30 dark:text-zinc-400',
+  },
+  started: {
+    label: 'In Progress',
+    color: 'text-amber-500',
+    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  },
+  done: {
+    label: 'Done',
+    color: 'text-green-500',
+    badge: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  },
+};
+
+// ── Objective state config ─────────────────────────────────────────
+
+export const OBJECTIVE_STATE_CONFIG: Record<
+  ObjectiveState,
+  { label: string; color: string; badge: string }
+> = {
+  not_started: {
+    label: 'Not Started',
+    color: 'text-zinc-400',
+    badge: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800/30 dark:text-zinc-400',
+  },
+  active: {
+    label: 'In Progress',
+    color: 'text-amber-500',
+    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  },
+  closed: {
+    label: 'Done',
+    color: 'text-green-500',
+    badge: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  },
+};
 
 // ── Story type icons & colors ──────────────────────────────────────
 

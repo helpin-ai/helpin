@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { differenceInDays, format, formatDistanceToNow, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
 import {
   ArrowLeft,
   CalendarDays,
-  ChevronRight,
   Crosshair,
   Hash,
   Heart,
   Hexagon,
+  Info,
   Loader2,
   Plus,
   Target,
@@ -19,9 +20,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
@@ -40,6 +42,7 @@ import type {
   ObjectiveWithDetails,
   UpdateObjectiveRequest,
 } from '@/lib/pmTypes';
+import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 
 function mergeOwnerOptions(members: MemberWithUser[], people: WorkspacePerson[]) {
   const seen = new Set<string>();
@@ -63,11 +66,9 @@ function mergeOwnerOptions(members: MemberWithUser[], people: WorkspacePerson[])
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/objectives/$objectiveId');
 
-const stateOptions: { value: ObjectiveState; label: string; className: string }[] = [
-  { value: 'not_started', label: 'Not Started', className: 'text-muted-foreground' },
-  { value: 'active', label: 'Active', className: 'text-blue-600 dark:text-blue-400' },
-  { value: 'closed', label: 'Closed', className: 'text-gray-500 dark:text-gray-400' },
-];
+const stateOptions: { value: ObjectiveState; label: string; className: string }[] = (
+  Object.entries(OBJECTIVE_STATE_CONFIG) as [ObjectiveState, typeof OBJECTIVE_STATE_CONFIG[ObjectiveState]][]
+).map(([value, cfg]) => ({ value, label: cfg.label, className: cfg.color }));
 
 const healthOptions: { value: ObjectiveHealth; label: string; color: string }[] = [
   { value: 'on_track', label: 'On Track', color: 'text-green-600' },
@@ -206,17 +207,21 @@ function MultiValueList({
 function KeyResultRow({
   kr,
   workspaceId,
+  memberMap,
   onUpdate,
   onDelete,
 }: {
   kr: KeyResult;
   workspaceId: string;
+  memberMap: Map<string, string>;
   onUpdate: (updated: KeyResult) => void;
   onDelete: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(kr.name);
   const [currentValue, setCurrentValue] = useState(String(kr.current_value));
+  const [editingNote, setEditingNote] = useState(false);
+  const [note, setNote] = useState(kr.note ?? '');
 
   const saveValue = async () => {
     const val = parseFloat(currentValue);
@@ -228,47 +233,72 @@ function KeyResultRow({
   const saveName = async () => {
     if (name.trim() === kr.name || !name.trim()) {
       setName(kr.name);
-      setEditing(false);
+      setEditingName(false);
       return;
     }
     const { data } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, { name: name.trim() });
     if (data) onUpdate(data);
-    setEditing(false);
+    setEditingName(false);
   };
 
+  const saveNote = async () => {
+    const trimmed = note.trim();
+    if (trimmed === (kr.note ?? '')) {
+      setEditingNote(false);
+      return;
+    }
+    const { data } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, { note: trimmed });
+    if (data) onUpdate(data);
+    setEditingNote(false);
+  };
+
+  const lastUpdated = formatDistanceToNow(parseISO(kr.updated_at), { addSuffix: true });
+  const updatedByName = kr.updated_by ? memberMap.get(kr.updated_by) : undefined;
+
   return (
-    <div className="group flex items-center gap-3 rounded-md border border-border/60 px-3 py-2">
-      <div className="min-w-0 flex-1">
-        {editing ? (
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={saveName}
-            onKeyDown={(e) => e.key === 'Enter' && saveName()}
-            className="w-full bg-transparent text-sm font-medium focus:outline-none"
-            autoFocus
-          />
-        ) : (
+    <div className="group rounded-md border border-border/60 px-3 py-2.5">
+      {/* Row 1: Name + progress + actions */}
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          {editingName ? (
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={saveName}
+              onKeyDown={(e) => e.key === 'Enter' && saveName()}
+              className="w-full bg-transparent text-sm font-medium focus:outline-none"
+              autoFocus
+            />
+          ) : (
+            <button
+              type="button"
+              className="text-sm font-medium text-foreground hover:underline cursor-pointer text-left"
+              onClick={() => setEditingName(true)}
+            >
+              {kr.name}
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-20">
+            <Progress value={kr.progress} className="h-1.5" />
+          </div>
+          <span className="w-8 text-right text-xs text-muted-foreground">{Math.round(kr.progress)}%</span>
           <button
             type="button"
-            className="text-sm font-medium text-foreground hover:underline cursor-pointer text-left"
-            onClick={() => setEditing(true)}
+            className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
+            onClick={onDelete}
           >
-            {kr.name}
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
-        )}
-        <div className="mt-1 flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground uppercase">{kr.result_type}</span>
-          {kr.result_type !== 'boolean' && (
-            <span className="text-[10px] text-muted-foreground">
-              {kr.initial_value} → {kr.target_value}
-            </span>
-          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* Row 2: Current value update + type badge */}
+      <div className="mt-2 flex items-center gap-2">
+        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">{kr.result_type}</span>
         {kr.result_type === 'boolean' ? (
           <button
             type="button"
@@ -286,26 +316,55 @@ function KeyResultRow({
             {kr.progress >= 100 ? 'Done' : 'Not done'}
           </button>
         ) : (
-          <input
-            type="number"
-            value={currentValue}
-            onChange={(e) => setCurrentValue(e.target.value)}
-            onBlur={saveValue}
-            onKeyDown={(e) => e.key === 'Enter' && saveValue()}
-            className="w-16 rounded border border-border/60 bg-transparent px-1.5 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary"
-          />
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>{kr.initial_value}</span>
+            <span>→</span>
+            <input
+              type="number"
+              value={currentValue}
+              onChange={(e) => setCurrentValue(e.target.value)}
+              onBlur={saveValue}
+              onKeyDown={(e) => e.key === 'Enter' && saveValue()}
+              title="Current value — edit to update progress"
+              className="w-16 rounded border border-border bg-transparent px-1.5 py-0.5 text-xs text-center font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span>→ {kr.target_value}</span>
+          </div>
         )}
-        <div className="w-20">
-          <Progress value={kr.progress} className="h-1.5" />
-        </div>
-        <span className="w-8 text-right text-xs text-muted-foreground">{Math.round(kr.progress)}%</span>
-        <button
-          type="button"
-          className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
-          onClick={onDelete}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+      </div>
+
+      {/* Row 3: Note */}
+      <div className="mt-1.5">
+        {editingNote ? (
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onBlur={saveNote}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveNote();
+              if (e.key === 'Escape') { setNote(kr.note ?? ''); setEditingNote(false); }
+            }}
+            placeholder="Add a note..."
+            className="w-full rounded border border-border/60 bg-transparent px-2 py-1 text-xs text-muted-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary"
+            autoFocus
+          />
+        ) : (
+          <button
+            type="button"
+            className={`w-full text-left rounded px-2 py-1 text-xs cursor-pointer hover:bg-muted/50 ${
+              kr.note ? 'text-muted-foreground' : 'text-muted-foreground/40'
+            }`}
+            onClick={() => setEditingNote(true)}
+          >
+            {kr.note || 'Add a note...'}
+          </button>
+        )}
+      </div>
+
+      {/* Row 4: Updated by + time */}
+      <div className="mt-1.5 text-[10px] text-muted-foreground/60">
+        {updatedByName ? `Updated by ${updatedByName} ${lastUpdated}` : `Updated ${lastUpdated}`}
       </div>
     </div>
   );
@@ -337,9 +396,9 @@ function LinkEpicPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="text-xs">
+        <Button variant="outline" size="sm" className="h-7 text-xs">
           <Plus className="mr-1 h-3 w-3" />
-          Link Epic
+          Add Epics
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-1" align="start">
@@ -405,12 +464,20 @@ export function ObjectiveDetailPage() {
   const { teams, people } = useWorkspaceTeams(workspaceId);
   const { members } = useWorkspaceMembers(workspaceId);
   const ownerOptions = mergeOwnerOptions(members, people);
+  const memberMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const o of ownerOptions) map.set(o.id, o.name);
+    return map;
+  }, [ownerOptions]);
 
   useTitle(form?.name ? `${form.name} — Objective` : 'Objective');
 
-  // ── New key result form state
+  // ── Key result modal state
+  const [krModalOpen, setKrModalOpen] = useState(false);
   const [newKrName, setNewKrName] = useState('');
-  const [newKrType, setNewKrType] = useState<KeyResultType>('boolean');
+  const [newKrType, setNewKrType] = useState<KeyResultType>('percent');
+  const [newKrStart, setNewKrStart] = useState('0');
+  const [newKrTarget, setNewKrTarget] = useState('100');
 
   // Load data
   const loadData = useCallback(async () => {
@@ -484,14 +551,22 @@ export function ObjectiveDetailPage() {
   // Key result handlers
   const handleCreateKeyResult = async () => {
     if (!workspaceId || !data || !newKrName.trim()) return;
+    const startVal = parseFloat(newKrStart) || 0;
+    const targetVal = newKrType === 'boolean' ? 1 : (parseFloat(newKrTarget) || 100);
     const { data: kr } = await pmObjectiveService.createKeyResult(workspaceId, data.objective.id, {
       name: newKrName.trim(),
       result_type: newKrType,
-      target_value: newKrType === 'boolean' ? 1 : 100,
+      initial_value: startVal,
+      current_value: startVal,
+      target_value: targetVal,
     });
     if (kr) {
       setData((prev) => prev ? { ...prev, key_results: [...prev.key_results, kr] } : prev);
       setNewKrName('');
+      setNewKrType('percent');
+      setNewKrStart('0');
+      setNewKrTarget('100');
+      setKrModalOpen(false);
     }
   };
 
@@ -607,11 +682,9 @@ export function ObjectiveDetailPage() {
           {isStrategic
             ? <Crosshair className="h-3.5 w-3.5 shrink-0 text-violet-500" />
             : <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />}
-          <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
-            Objectives
-          </button>
-          <ChevronRight className="h-3 w-3 shrink-0" />
-          <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
+          <span className="text-xs font-medium uppercase tracking-wide">
+            {isStrategic ? 'Strategic' : 'Tactical'} Objective
+          </span>
         </div>
 
         <div className="ml-auto flex items-center gap-1">
@@ -622,106 +695,181 @@ export function ObjectiveDetailPage() {
       {/* ── Two-column layout ───────────────────────────────────── */}
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]">
         {/* ── Left column ────────────────────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 py-6">
-          {/* Title */}
-          <input
-            type="text"
-            aria-label="Objective title"
-            value={form.name}
-            onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-            className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-            placeholder="Untitled"
-          />
-
-          {/* Description */}
-          <div className="mt-4">
-            <TiptapEditor
-              content={form.description}
-              onChange={(html) => updateField('description', html, { description: html })}
-              placeholder="Add a description..."
-              className="border-transparent shadow-none"
-              teams={teams}
+        <div className="min-h-0 overflow-y-auto px-8 py-8">
+          {/* ── Objective Header Card ──────────────────────────── */}
+          <div className="rounded-lg border border-border/60 p-6">
+            <input
+              type="text"
+              aria-label="Objective title"
+              value={form.name}
+              onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
+              className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+              placeholder="Untitled"
             />
+            <div className="mt-3">
+              <TiptapEditor
+                content={form.description}
+                onChange={(html) => updateField('description', html, { description: html })}
+                placeholder="Add a description..."
+                className="border-transparent shadow-none"
+                teams={teams}
+              />
+            </div>
           </div>
 
-          <Separator className="my-6" />
-
-          {/* Key Results section */}
-          <div>
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Key Results</h3>
-              {data.key_results.length > 0 && (
-                <span className="text-xs text-muted-foreground">{krAvgProgress}% avg progress</span>
-              )}
+          {/* ── Progress Summary ────────────────────────────────── */}
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-foreground">Progress Summary</h3>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Heart className="h-3.5 w-3.5" />
+                <span>Health:</span>
+                <SidebarPopoverSelect
+                  value={form.health}
+                  options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
+                  onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
+                  renderTrigger={() => (
+                    <span className={currentHealth.color}>{currentHealth.label}</span>
+                  )}
+                />
+              </div>
             </div>
-            {data.key_results.length > 0 && (
-              <div className="mt-3 space-y-2">
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* Epic Progress Card */}
+              <div className="rounded-lg border border-border/60 p-5">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Hexagon className="h-4 w-4 text-violet-500" />
+                  Epic Progress
+                </div>
+                <div className="mt-3">
+                  <span className="text-3xl font-bold">{epicProgress}%</span>
+                  <span className="ml-1.5 text-sm text-muted-foreground">Complete</span>
+                </div>
+                <Progress value={epicProgress} className="mt-3 h-2.5" />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Last updated {data.epics.length > 0 ? formatDistanceToNow(parseISO(data.epics.reduce((latest, e) => e.epic.updated_at > latest ? e.epic.updated_at : latest, data.epics[0].epic.updated_at)), { addSuffix: true }) : 'never'}
+                </p>
+              </div>
+
+              {/* Target Date Card */}
+              <div className="rounded-lg border border-border/60 p-5">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <CalendarDays className="h-4 w-4 text-blue-500" />
+                  Target Date
+                </div>
+                <div className="mt-3">
+                  {form.deadline ? (
+                    <>
+                      <span className="text-3xl font-bold">{format(parseISO(form.deadline), 'MMM d,')}</span>
+                      <span className="ml-1.5 text-lg text-muted-foreground">{format(parseISO(form.deadline), 'yyyy')}</span>
+                    </>
+                  ) : (
+                    <span className="text-lg text-muted-foreground">No target date</span>
+                  )}
+                </div>
+                {form.deadline && (() => {
+                  const start = form.planned_start_date ? parseISO(form.planned_start_date) : data.objective.created_at ? parseISO(data.objective.created_at) : new Date();
+                  const end = parseISO(form.deadline);
+                  const now = new Date();
+                  const totalDays = Math.max(differenceInDays(end, start), 1);
+                  const elapsed = Math.max(differenceInDays(now, start), 0);
+                  const timePct = Math.min(Math.round((elapsed / totalDays) * 100), 100);
+                  const daysLeft = differenceInDays(end, now);
+                  return (
+                    <>
+                      <Progress value={timePct} className="mt-3 h-2.5" />
+                      <p className={`mt-2 text-xs ${daysLeft <= 7 ? 'text-red-500 font-medium' : daysLeft <= 14 ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                        {daysLeft > 0
+                          ? `Time remaining: ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`
+                          : daysLeft === 0 ? 'Due today' : `${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? 's' : ''} overdue`}
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Progress insight */}
+            {data.key_results.length > 0 && Math.abs(epicProgress - krAvgProgress) >= 20 && (
+              <p className="mt-3 rounded-lg border border-border/60 p-3 text-xs text-muted-foreground">
+                {epicProgress > krAvgProgress
+                  ? `${epicProgress}% of work is done but only ${krAvgProgress}% of outcomes achieved — results may be lagging behind effort.`
+                  : `${krAvgProgress}% of outcomes achieved with ${epicProgress}% of work done — good outcome efficiency.`}
+              </p>
+            )}
+          </div>
+
+          {/* ── Key Results ─────────────────────────────────────── */}
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-foreground">Key Results</h3>
+              <div className="flex items-center gap-2">
+                {data.key_results.length > 0 && (
+                  <span className="text-xs text-muted-foreground">{krAvgProgress}% outcome progress</span>
+                )}
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setKrModalOpen(true)}>
+                  <Plus className="mr-1 h-3 w-3" />
+                  Add Key Results
+                </Button>
+              </div>
+            </div>
+            {data.key_results.length > 0 ? (
+              <div className="space-y-2">
                 {data.key_results.map((kr) => (
                   <KeyResultRow
                     key={kr.id}
                     kr={kr}
                     workspaceId={workspaceId!}
+                    memberMap={memberMap}
                     onUpdate={handleUpdateKeyResult}
                     onDelete={() => handleDeleteKeyResult(kr.id)}
                   />
                 ))}
               </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border/60 p-6 text-center">
+                <p className="text-sm text-muted-foreground">No key results yet</p>
+                <p className="mt-1 text-xs text-muted-foreground/60">Add key results to track outcome progress</p>
+              </div>
             )}
-
-            {/* Add Key Result */}
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                type="text"
-                value={newKrName}
-                onChange={(e) => setNewKrName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreateKeyResult()}
-                placeholder="Add a key result..."
-                className="flex-1 rounded-md border border-border/60 bg-transparent px-3 py-1.5 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-              <Select value={newKrType} onValueChange={(v) => setNewKrType(v as KeyResultType)}>
-                <SelectTrigger className="h-8 w-28 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="boolean">Boolean</SelectItem>
-                  <SelectItem value="percent">Percent</SelectItem>
-                  <SelectItem value="numeric">Numeric</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button size="sm" onClick={handleCreateKeyResult} disabled={!newKrName.trim()}>
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            </div>
           </div>
 
-          <Separator className="my-6" />
-
-          {/* Linked Epics section */}
-          <div>
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Linked Epics</h3>
-              <span className="text-xs text-muted-foreground">{epicProgress}% progress</span>
+          {/* ── Epics ───────────────────────────────────────────── */}
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-foreground">Epics</h3>
+              <LinkEpicPopover
+                workspaceId={workspaceId!}
+                linkedEpicIds={data.epics.map((e) => e.epic.id)}
+                onLink={handleLinkEpic}
+              />
             </div>
 
-            {data.epics.length > 0 && (
-              <div className="mt-3 space-y-2">
+            {data.epics.length > 0 ? (
+              <div className="space-y-2">
                 {data.epics.map((e) => {
                   const pct = e.stats.story_count > 0
                     ? Math.round((e.stats.done_story_count / e.stats.story_count) * 100)
                     : 0;
+                  const epicState = e.epic.completed ? 'Done' : e.epic.started ? 'In Progress' : 'Not Started';
+                  const epicStateColor = e.epic.completed ? 'text-green-500' : e.epic.started ? 'text-amber-500' : 'text-zinc-400';
+                  const epicUpdated = formatDistanceToNow(parseISO(e.epic.updated_at), { addSuffix: true });
                   return (
-                    <div key={e.epic.id} className="group flex items-center gap-3 rounded-md border border-border/60 px-3 py-2">
+                    <div key={e.epic.id} className="group flex items-center gap-3 rounded-lg border border-border/60 px-4 py-3">
                       <Hexagon className="h-4 w-4 shrink-0 text-violet-500" />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{e.epic.name}</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          {e.stats.done_story_count}/{e.stats.story_count} stories done
-                        </p>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          <span className={epicStateColor}>{epicState.toLowerCase()}</span>
+                          <span className="text-muted-foreground/40">·</span>
+                          <span>Updated {epicUpdated}</span>
+                        </div>
                       </div>
-                      <div className="w-20">
+                      <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
+                      <div className="w-24">
                         <Progress value={pct} className="h-1.5" />
                       </div>
-                      <span className="w-8 text-right text-xs text-muted-foreground">{pct}%</span>
                       <button
                         type="button"
                         className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
@@ -733,35 +881,11 @@ export function ObjectiveDetailPage() {
                   );
                 })}
               </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border/60 p-8 text-center">
+                <p className="text-sm text-muted-foreground">No epics linked yet</p>
+              </div>
             )}
-
-            <div className="mt-3">
-              <LinkEpicPopover
-                workspaceId={workspaceId!}
-                linkedEpicIds={data.epics.map((e) => e.epic.id)}
-                onLink={handleLinkEpic}
-              />
-            </div>
-          </div>
-
-          <Separator className="my-6" />
-
-          {/* Progress summary */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Key Result Progress</span>
-                <span>{krAvgProgress}%</span>
-              </div>
-              <Progress value={krAvgProgress} />
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Epic Progress</span>
-                <span>{epicProgress}%</span>
-              </div>
-              <Progress value={epicProgress} />
-            </div>
           </div>
         </div>
 
@@ -863,6 +987,100 @@ export function ObjectiveDetailPage() {
           )}
         </aside>
       </div>
+
+      {/* ── Add Key Result Modal ─────────────────────────────────── */}
+      <Dialog open={krModalOpen} onOpenChange={setKrModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Key Result</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Name</label>
+              <input
+                type="text"
+                value={newKrName}
+                onChange={(e) => setNewKrName(e.target.value)}
+                placeholder="e.g., Increase activation rate"
+                className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                autoFocus
+              />
+            </div>
+            <div className={`grid gap-3 ${newKrType === 'boolean' ? 'grid-cols-1' : 'grid-cols-3'}`}>
+              <div>
+                <div className="flex items-center gap-1">
+                  <label className="text-xs font-medium text-muted-foreground">Measure as</label>
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-3 w-3 text-muted-foreground/60 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[220px] text-xs">
+                        <p className="font-medium mb-1">Measurement types:</p>
+                        <p><strong>Boolean</strong> — Done / Not done</p>
+                        <p><strong>Percent</strong> — 0–100%</p>
+                        <p><strong>Numeric</strong> — Custom range (e.g. 0→50 users)</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Select value={newKrType} onValueChange={(v) => {
+                  setNewKrType(v as KeyResultType);
+                  if (v === 'boolean') { setNewKrStart('0'); setNewKrTarget('1'); }
+                  else if (v === 'percent') { setNewKrStart('0'); setNewKrTarget('100'); }
+                }}>
+                  <SelectTrigger className="mt-1 h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="percent">Percent</SelectItem>
+                    <SelectItem value="numeric">Numeric</SelectItem>
+                    <SelectItem value="boolean">Boolean</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {newKrType !== 'boolean' && (
+                <>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Starting value</label>
+                    <div className="relative mt-1">
+                      <input
+                        type="number"
+                        value={newKrStart}
+                        onChange={(e) => setNewKrStart(e.target.value)}
+                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      {newKrType === 'percent' && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Target value</label>
+                    <div className="relative mt-1">
+                      <input
+                        type="number"
+                        value={newKrTarget}
+                        onChange={(e) => setNewKrTarget(e.target.value)}
+                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      {newKrType === 'percent' && (
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setKrModalOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleCreateKeyResult} disabled={!newKrName.trim()}>
+              Add Key Result
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

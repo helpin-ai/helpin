@@ -20,15 +20,10 @@ import {
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
-import type { ObjectiveWithDetails } from '@/lib/pmTypes';
+import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
+import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { Archive } from 'lucide-react';
-
-const stateConfig: Record<string, { label: string; className: string }> = {
-  not_started: { label: 'Not Started', className: 'bg-muted text-muted-foreground' },
-  active: { label: 'Active', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  closed: { label: 'Closed', className: 'bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400' },
-};
 
 const healthConfig: Record<string, { label: string; className: string }> = {
   on_track: { label: 'On Track', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
@@ -127,7 +122,7 @@ function ObjectiveCard({
   const { objective, stats, epics } = data;
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const isStrategic = objective.objective_type === 'strategic';
-  const stateCfg = stateConfig[objective.state] ?? stateConfig.not_started;
+  const stateCfg = OBJECTIVE_STATE_CONFIG[objective.state as ObjectiveState] ?? OBJECTIVE_STATE_CONFIG.not_started;
 
   const krProgress = Math.round(stats.key_result_avg_pct);
   const epicProgress = Math.round(stats.epic_progress_pct);
@@ -177,26 +172,36 @@ function ObjectiveCard({
       </div>
 
       {/* Progress bars */}
-      <div className="mt-3 grid grid-cols-2 gap-4">
-        <div>
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-            <span>Key Result Progress</span>
-            <span>{krProgress}%</span>
+      {stats.key_result_count > 0 ? (
+        <div className="mt-3 grid grid-cols-2 gap-4">
+          <div>
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+              <span>Outcome Progress</span>
+              <span>{krProgress}%</span>
+            </div>
+            <Progress value={krProgress} className="h-1.5" />
           </div>
-          <Progress value={krProgress} className="h-1.5" />
+          <div>
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+              <span>Execution Progress</span>
+              <span>{epicProgress}%</span>
+            </div>
+            <Progress value={epicProgress} className="h-1.5" />
+          </div>
         </div>
-        <div>
+      ) : (
+        <div className="mt-3">
           <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-            <span>Epic Progress</span>
+            <span>Progress</span>
             <span>{epicProgress}%</span>
           </div>
           <Progress value={epicProgress} className="h-1.5" />
         </div>
-      </div>
+      )}
 
       {/* State + health + date row */}
       <div className="mt-3 flex items-center gap-2 text-xs">
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${stateCfg.className}`}>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${stateCfg.badge}`}>
           {stateCfg.label}
         </span>
         {objective.state !== 'closed' && (

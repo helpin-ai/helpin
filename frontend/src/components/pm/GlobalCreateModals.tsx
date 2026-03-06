@@ -27,6 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { EpicHealth, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
 import type { MemberWithUser, WorkspacePerson } from '@/lib/types';
+import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 
 /** Merge workspace members (user accounts) and settings people into one deduplicated list. */
 function mergeOwnerOptions(members: MemberWithUser[], people: WorkspacePerson[]) {
@@ -403,11 +404,9 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
 
 // ── Objective dialog ──────────────────────────────────────────────────
 
-const objectiveStateOptions: { value: ObjectiveState; label: string }[] = [
-  { value: 'not_started', label: 'Not Started' },
-  { value: 'active', label: 'Active' },
-  { value: 'closed', label: 'Closed' },
-];
+const objectiveStateOptions: { value: ObjectiveState; label: string }[] = (
+  Object.entries(OBJECTIVE_STATE_CONFIG) as [ObjectiveState, typeof OBJECTIVE_STATE_CONFIG[ObjectiveState]][]
+).map(([value, cfg]) => ({ value, label: cfg.label }));
 
 function MultiSelectPopover({
   items,
