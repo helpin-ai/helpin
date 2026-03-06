@@ -44,6 +44,8 @@ import { LabelPicker } from "@/components/pm/LabelPicker";
 import { EstimatePicker } from "@/components/pm/EstimatePicker";
 import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
 import { useWorkspaceMembers } from "@/hooks/useWorkspaceMembers";
+import { useTeamFieldVisibilityStore } from "@/stores/teamFieldVisibilityStore";
+import { useSessionStore } from "@/stores/sessionStore";
 import { DatePicker } from "@/components/ui/date-picker";
 
 interface CreateStoryModalProps {
@@ -166,13 +168,15 @@ export function CreateStoryModal({
   const [labels, setLabels] = useState<Label[]>([]);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members } = useWorkspaceMembers(workspaceId);
+  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id || null));
+  const currentUserId = useSessionStore((s) => s.membership?.user_id ?? '');
 
   useEffect(() => {
     if (!open) return;
-    setForm(defaultState);
+    setForm({ ...defaultState, owner_id: currentUserId });
     setStateId(initialStateId);
     setError(null);
-  }, [open, initialStateId]);
+  }, [open, initialStateId, currentUserId]);
 
   useEffect(() => {
     if (!open) return;
@@ -382,6 +386,7 @@ export function CreateStoryModal({
                 </MetadataRow>
 
                 {/* Priority */}
+                {fieldVis.priority && (
                 <MetadataRow icon={Gauge} label="Priority">
                   <SidebarPopoverSelect
                     value={form.priority}
@@ -398,8 +403,10 @@ export function CreateStoryModal({
                     renderOption={(v) => <PriorityIcon priority={v as Priority} className="h-4 w-4 shrink-0" />}
                   />
                 </MetadataRow>
+                )}
 
                 {/* Type */}
+                {fieldVis.story_type && (
                 <MetadataRow icon={Hash} label="Type">
                   <SidebarPopoverSelect
                     value={form.story_type}
@@ -416,6 +423,7 @@ export function CreateStoryModal({
                     renderOption={(v) => <StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" />}
                   />
                 </MetadataRow>
+                )}
 
                 {/* Owner */}
                 <MetadataRow icon={User} label="Owner">
@@ -454,6 +462,7 @@ export function CreateStoryModal({
                 </MetadataRow>
 
                 {/* Severity */}
+                {fieldVis.severity && (
                 <MetadataRow icon={AlertTriangle} label="Severity">
                   <SidebarPopoverSelect
                     value={form.severity}
@@ -470,6 +479,7 @@ export function CreateStoryModal({
                     renderOption={(v) => <SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" />}
                   />
                 </MetadataRow>
+                )}
 
                 {/* Team */}
                 {teams.length > 0 && (
@@ -492,6 +502,7 @@ export function CreateStoryModal({
                 )}
 
                 {/* Epic */}
+                {fieldVis.epic && (
                 <MetadataRow icon={Layers} label="Epic">
                   <SidebarPopoverSelect
                     value={form.epic_id || "__none__"}
@@ -508,8 +519,10 @@ export function CreateStoryModal({
                     renderTrigger={() => <span>{currentEpicName}</span>}
                   />
                 </MetadataRow>
+                )}
 
                 {/* Sprint */}
+                {fieldVis.sprint && (
                 <MetadataRow icon={GitBranch} label="Sprint">
                   <SidebarPopoverSelect
                     value={form.sprint_id || "__none__"}
@@ -526,8 +539,10 @@ export function CreateStoryModal({
                     renderTrigger={() => <span>{currentSprintName}</span>}
                   />
                 </MetadataRow>
+                )}
 
                 {/* Estimate */}
+                {fieldVis.estimate && (
                 <MetadataRow icon={LayoutGrid} label="Estimate">
                   <EstimatePicker
                     value={form.estimate}
@@ -537,8 +552,10 @@ export function CreateStoryModal({
                     }
                   />
                 </MetadataRow>
+                )}
 
                 {/* Due date */}
+                {fieldVis.due_date && (
                 <MetadataRow icon={CalendarDays} label="Due date">
                   <DatePicker
                     value={form.deadline}
@@ -548,8 +565,10 @@ export function CreateStoryModal({
                     className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
                   />
                 </MetadataRow>
+                )}
 
                 {/* Labels */}
+                {fieldVis.labels && (
                 <MetadataRow icon={Tag} label="Labels">
                   <LabelPicker
                     workspaceId={workspaceId}
@@ -560,6 +579,7 @@ export function CreateStoryModal({
                     onChange={(ids) => setForm((prev) => ({ ...prev, label_ids: ids }))}
                   />
                 </MetadataRow>
+                )}
               </div>
             </aside>
           </div>
