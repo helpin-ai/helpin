@@ -13,6 +13,7 @@ import {
   Gauge,
   GitBranch,
   Hash,
+  Hexagon,
   Layers,
   LayoutGrid,
   Link2,
@@ -23,6 +24,7 @@ import {
   Send,
   ShieldAlert,
   Tag,
+  Target,
   Trash2,
   User,
   Users,
@@ -544,11 +546,21 @@ export function StoryDetailPage() {
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+          {storyDetail.objective_name && (
+            <>
+              <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+              <span className="shrink-0 max-w-[160px] truncate">{storyDetail.objective_name}</span>
+              <ChevronRight className="h-3 w-3 shrink-0" />
+            </>
+          )}
+          {storyDetail.epic_name && (
+            <>
+              <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+              <span className="shrink-0 max-w-[160px] truncate">{storyDetail.epic_name}</span>
+              <ChevronRight className="h-3 w-3 shrink-0" />
+            </>
+          )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
-            Stories
-          </button>
-          <ChevronRight className="h-3 w-3 shrink-0" />
           <span className="shrink-0 font-medium text-foreground/80">TP-{storyDetail.story.display_id}</span>
           <ChevronRight className="h-3 w-3 shrink-0" />
           <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
