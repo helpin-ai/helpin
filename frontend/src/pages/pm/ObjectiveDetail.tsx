@@ -63,10 +63,10 @@ function mergeOwnerOptions(members: MemberWithUser[], people: WorkspacePerson[])
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/objectives/$objectiveId');
 
-const stateOptions: { value: ObjectiveState; label: string }[] = [
-  { value: 'not_started', label: 'Not Started' },
-  { value: 'active', label: 'Active' },
-  { value: 'closed', label: 'Closed' },
+const stateOptions: { value: ObjectiveState; label: string; className: string }[] = [
+  { value: 'not_started', label: 'Not Started', className: 'text-muted-foreground' },
+  { value: 'active', label: 'Active', className: 'text-blue-600 dark:text-blue-400' },
+  { value: 'closed', label: 'Closed', className: 'text-gray-500 dark:text-gray-400' },
 ];
 
 const healthOptions: { value: ObjectiveHealth; label: string; color: string }[] = [
@@ -554,8 +554,8 @@ export function ObjectiveDetailPage() {
 
   // Derived
   const isStrategic = form?.objective_type === 'strategic';
-  const currentStateName = useMemo(
-    () => stateOptions.find((s) => s.value === form?.state)?.label ?? 'Not Started',
+  const currentState = useMemo(
+    () => stateOptions.find((s) => s.value === form?.state) ?? stateOptions[0],
     [form?.state],
   );
   const currentHealth = useMemo(
@@ -776,7 +776,7 @@ export function ObjectiveDetailPage() {
                 value={form.state}
                 options={stateOptions}
                 onChange={(v) => updateField('state', v as ObjectiveState, { state: v as ObjectiveState })}
-                renderTrigger={() => <span>{currentStateName}</span>}
+                renderTrigger={() => <span className={currentState.className}>{currentState.label}</span>}
               />
             </MetadataRow>
 

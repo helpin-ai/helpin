@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Bot, GitBranch, GitPullRequest, Loader2, Play, UserRoundCog } from 'lucide-react';
+import { AlertCircle, Bot, ChevronRight, GitBranch, GitPullRequest, Loader2, Play, Save, UserRoundCog, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -23,9 +24,20 @@ import type {
 } from '@/lib/pmTypes';
 
 const PR_STATUS_COLORS: Record<string, string> = {
-  open: 'bg-green-500/15 text-green-700 border-green-500/30',
-  merged: 'bg-sky-500/15 text-sky-700 border-sky-500/30',
-  closed: 'bg-zinc-500/15 text-zinc-700 border-zinc-500/30',
+  open: 'bg-green-100 text-green-700 border-green-500/30 dark:bg-green-900/30 dark:text-green-400',
+  merged: 'bg-sky-100 text-sky-700 border-sky-500/30 dark:bg-sky-900/30 dark:text-sky-400',
+  closed: 'bg-zinc-100 text-zinc-600 border-zinc-500/30 dark:bg-zinc-800/30 dark:text-zinc-400',
+};
+
+const DELIVERY_STATE_CONFIG: Record<string, { label: string; className: string }> = {
+  idle: { label: 'Idle', className: 'bg-muted text-muted-foreground' },
+  queued: { label: 'Queued', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  running: { label: 'Running', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  awaiting_approval: { label: 'Awaiting Approval', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  pr_open: { label: 'PR Open', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  pr_merged: { label: 'PR Merged', className: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
+  completed: { label: 'Completed', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  failed: { label: 'Failed', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
 };
 
 interface Props {
@@ -45,6 +57,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [savingTarget, setSavingTarget] = useState(false);
   const [triggeringRun, setTriggeringRun] = useState(false);
+  const [expanded, setExpanded] = useState<boolean | null>(null);
 
   useEffect(() => {
     setSelectedAgentId(storyDetail.story.assigned_agent_id ?? '');
@@ -107,6 +120,11 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
   const requiresRepo = Boolean(selectedAgent && selectedAgent.agent_kind === 'llm' && requiresRepoProfile(selectedAgent.capability_profile));
   const hasDeliveryTarget = Boolean(repositoryId && baseBranch.trim());
   const branchPreview = target?.working_branch || buildBranchPreview(storyDetail.story.display_id, storyDetail.story.name);
+
+  const isConfigured = Boolean(storyDetail.story.assigned_agent_id || target?.repository_id);
+
+  // Auto-expand when configured, collapse when not — but only on initial load
+  const isExpanded = expanded ?? isConfigured;
 
   const refreshStory = async () => {
     const { data, error } = await pmStoryService.get(workspaceId, storyDetail.story.id);
@@ -175,194 +193,221 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
 
   if (loading) {
     return (
-      <div className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="mt-6 flex items-center gap-2 py-3 text-xs text-muted-foreground">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        Loading delivery setup...
+        Loading delivery...
       </div>
     );
   }
 
-  return (
-    <div className="mt-6 rounded-xl border border-border/70 bg-card/70 p-4">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">Delivery</h3>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Pick the execution agent and the repository lane this story should ship through.
-          </p>
-        </div>
-        {target?.delivery_state && (
-          <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-            {target.delivery_state.replace(/_/g, ' ')}
-          </Badge>
-        )}
-      </div>
+  const deliveryStateCfg = target?.delivery_state
+    ? (DELIVERY_STATE_CONFIG[target.delivery_state] ?? { label: target.delivery_state.replace(/_/g, ' '), className: 'bg-muted text-muted-foreground' })
+    : null;
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Agent
-          </label>
-          <Select value={selectedAgentId || undefined} onValueChange={setSelectedAgentId}>
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Choose agent" />
-            </SelectTrigger>
-            <SelectContent>
-              {agents.map((agent) => (
-                <SelectItem key={agent.id} value={agent.id}>
-                  <div className="flex items-center gap-2">
-                    {agent.agent_kind === 'human' ? (
-                      <UserRoundCog className="h-3.5 w-3.5 text-muted-foreground" />
-                    ) : (
-                      <Bot className="h-3.5 w-3.5 text-muted-foreground" />
-                    )}
-                    <span>{agent.name}</span>
-                    <span className="text-muted-foreground">· {agent.capability_profile}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedAgent && (
-            <p className="text-[11px] text-muted-foreground">
-              {selectedAgent.agent_kind === 'human'
-                ? 'Human agents are assignment-only and do not execute code.'
-                : selectedAgent.trigger_mode === 'auto_on_assignment'
-                  ? 'This agent starts automatically after assignment once the delivery target is valid.'
-                  : 'This agent runs manually after assignment.'}
-            </p>
+  return (
+    <div className="mt-6 rounded-lg border border-border/70 bg-card">
+      {/* Header — always visible, clickable to toggle */}
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/30 cursor-pointer"
+        onClick={() => setExpanded(!isExpanded)}
+      >
+        <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-sm font-semibold">Delivery</span>
+        {!isConfigured && !isExpanded && (
+          <span className="text-xs text-muted-foreground">Not configured</span>
+        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {deliveryStateCfg && (
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${deliveryStateCfg.className}`}>
+              {deliveryStateCfg.label}
+            </span>
           )}
         </div>
+      </button>
 
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Repository
-          </label>
-          <Select value={repositoryId || undefined} onValueChange={setRepositoryId}>
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Choose repository" />
-            </SelectTrigger>
-            <SelectContent>
-              {repositories.map((repository) => (
-                <SelectItem key={repository.id} value={repository.id}>
-                  {repository.full_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-[11px] text-muted-foreground">
-            Team defaults prefill this. Story delivery can override it.
-          </p>
-        </div>
+      {isExpanded && (
+        <>
+          <Separator />
 
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Base Branch
-          </label>
-          <Input
-            value={baseBranch}
-            onChange={(event) => setBaseBranch(event.target.value)}
-            placeholder={selectedRepository?.default_branch || 'main'}
-            className="h-9"
-          />
-        </div>
+          {/* Form */}
+          <div className="space-y-3 px-3 py-3">
+            <p className="text-xs text-muted-foreground">
+              Pick the execution agent and the repository lane this story should ship through.
+            </p>
 
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Working Branch
-          </label>
-          <div className="flex h-9 items-center rounded-md border border-border/70 bg-muted/30 px-3 text-sm">
-            <span className="truncate font-mono text-xs">{branchPreview}</span>
-          </div>
-        </div>
-      </div>
-
-      {selectedAgent && selectedAgent.agent_kind === 'llm' && requiresRepo && !hasDeliveryTarget && (
-        <Alert className="mt-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Repository required</AlertTitle>
-          <AlertDescription>
-            This agent profile needs a delivery target before it can run. Choose a repository and base branch, then save delivery.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {selectedAgent?.agent_kind === 'human' && (
-        <Alert className="mt-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Human handoff</AlertTitle>
-          <AlertDescription>
-            Human agents are tracked as assignees only. No run will be started from this panel.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleSaveDelivery}
-          disabled={savingTarget || !repositoryId}
-        >
-          {savingTarget ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-          Save Delivery
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleAssignAgent}
-          disabled={savingAssignment || !selectedAgentId}
-        >
-          {savingAssignment ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-          Assign Agent
-        </Button>
-        {selectedAgent?.agent_kind === 'llm' && selectedAgent.trigger_mode === 'manual' && (
-          <Button
-            size="sm"
-            onClick={handleRunNow}
-            disabled={triggeringRun || (requiresRepo && !hasDeliveryTarget)}
-          >
-            {triggeringRun ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}
-            Run Now
-          </Button>
-        )}
-      </div>
-
-      {(target?.active_pr_url || target?.last_commit_sha || target?.repo_full_name) && (
-        <div className="mt-4 grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-xs md:grid-cols-3">
-          <div>
-            <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Repository</p>
-            <p className="font-medium">{target?.repo_full_name || selectedRepository?.full_name || 'Unconfigured'}</p>
-          </div>
-          <div>
-            <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Last Commit</p>
-            <p className="font-mono">{target?.last_commit_sha ? target.last_commit_sha.slice(0, 7) : 'No commits yet'}</p>
-          </div>
-          <div>
-            <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">Pull Request</p>
-            {target?.active_pr_url ? (
-              <a
-                href={target.active_pr_url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 text-primary hover:underline"
-              >
-                <GitPullRequest className="h-3.5 w-3.5" />
-                <span>#{target.active_pr_number}</span>
-                {target.active_pr_status && (
-                  <Badge variant="outline" className={`text-[10px] ${PR_STATUS_COLORS[target.active_pr_status] ?? ''}`}>
-                    {target.active_pr_status}
-                  </Badge>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Agent
+                </label>
+                <Select value={selectedAgentId || undefined} onValueChange={setSelectedAgentId}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Choose agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <div className="flex items-center gap-2">
+                          {agent.agent_kind === 'human' ? (
+                            <UserRoundCog className="h-3 w-3 text-muted-foreground" />
+                          ) : (
+                            <Bot className="h-3 w-3 text-muted-foreground" />
+                          )}
+                          <span>{agent.name}</span>
+                          <span className="text-muted-foreground">· {agent.capability_profile}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedAgent && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {selectedAgent.agent_kind === 'human'
+                      ? 'Human agents are assignment-only and do not execute code.'
+                      : selectedAgent.trigger_mode === 'auto_on_assignment'
+                        ? 'Starts automatically after assignment.'
+                        : 'Runs manually after assignment.'}
+                  </p>
                 )}
-              </a>
-            ) : (
-              <p className="text-muted-foreground">No PR yet</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Repository
+                </label>
+                <Select value={repositoryId || undefined} onValueChange={setRepositoryId}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Choose repository" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {repositories.map((repository) => (
+                      <SelectItem key={repository.id} value={repository.id}>
+                        {repository.full_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Team defaults prefill this. Story delivery can override it.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Base Branch
+                </label>
+                <Input
+                  value={baseBranch}
+                  onChange={(event) => setBaseBranch(event.target.value)}
+                  placeholder={selectedRepository?.default_branch || 'main'}
+                  className="h-8 text-sm"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Working Branch
+                </label>
+                <div className="flex h-8 items-center rounded-md border border-border/70 bg-muted/30 px-2.5 text-sm">
+                  <span className="truncate font-mono">{branchPreview}</span>
+                </div>
+              </div>
+            </div>
+
+            {selectedAgent && selectedAgent.agent_kind === 'llm' && requiresRepo && !hasDeliveryTarget && (
+              <Alert variant="destructive" className="border-amber-500/30 bg-amber-50 text-amber-800 dark:bg-amber-900/10 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle className="text-xs">Repository required</AlertTitle>
+                <AlertDescription className="text-[11px] text-amber-700 dark:text-amber-400/80">
+                  Choose a repository and base branch, then save.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {selectedAgent?.agent_kind === 'human' && (
+              <Alert>
+                <UserRoundCog className="h-4 w-4" />
+                <AlertTitle className="text-xs">Human handoff</AlertTitle>
+                <AlertDescription className="text-xs">
+                  Human agents are tracked as assignees only. No run will be started.
+                </AlertDescription>
+              </Alert>
             )}
           </div>
-        </div>
+
+          {/* Actions */}
+          <Separator />
+          <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={handleSaveDelivery}
+              disabled={savingTarget || !repositoryId}
+            >
+              {savingTarget ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+              Save
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={handleAssignAgent}
+              disabled={savingAssignment || !selectedAgentId}
+            >
+              {savingAssignment ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}
+              Assign
+            </Button>
+            {selectedAgent?.agent_kind === 'llm' && selectedAgent.trigger_mode === 'manual' && (
+              <Button
+                size="xs"
+                onClick={handleRunNow}
+                disabled={triggeringRun || (requiresRepo && !hasDeliveryTarget)}
+              >
+                {triggeringRun ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                Run Now
+              </Button>
+            )}
+          </div>
+
+          {/* Summary */}
+          {(target?.active_pr_url || target?.last_commit_sha || target?.repo_full_name) && (
+            <>
+              <Separator />
+              <div className="grid gap-3 px-3 py-2.5 text-xs md:grid-cols-3">
+                <div>
+                  <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Repository</p>
+                  <p className="text-xs font-medium">{target?.repo_full_name || selectedRepository?.full_name || 'Unconfigured'}</p>
+                </div>
+                <div>
+                  <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Last Commit</p>
+                  <p className="font-mono text-xs">{target?.last_commit_sha ? target.last_commit_sha.slice(0, 7) : <span className="text-muted-foreground">None</span>}</p>
+                </div>
+                <div>
+                  <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pull Request</p>
+                  {target?.active_pr_url ? (
+                    <a
+                      href={target.active_pr_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+                    >
+                      <GitPullRequest className="h-3 w-3" />
+                      <span>#{target.active_pr_number}</span>
+                      {target.active_pr_status && (
+                        <Badge variant="outline" className={`text-[9px] ${PR_STATUS_COLORS[target.active_pr_status] ?? ''}`}>
+                          {target.active_pr_status}
+                        </Badge>
+                      )}
+                    </a>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No PR yet</span>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </>
       )}
     </div>
   );

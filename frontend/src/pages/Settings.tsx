@@ -31,7 +31,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, GitPullRequest, Globe, Info, LayoutGrid, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, GitPullRequest, Globe, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -2415,146 +2416,197 @@ function ProjectDeliveryTab({ workspaceId, editable }: {
           <CardTitle className="text-base">GitHub & Runners</CardTitle>
           <CardDescription>Connected delivery integrations, repository sync, and shared runner queues</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-6">
+          {/* Stats overview */}
           <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-lg border border-border/60 p-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Integrations</p>
+              <div className="flex items-center gap-2">
+                <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Integrations</p>
+              </div>
               <p className="mt-2 text-2xl font-semibold">{integrations.length}</p>
             </div>
             <div className="rounded-lg border border-border/60 p-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Repositories</p>
+              <div className="flex items-center gap-2">
+                <GitPullRequest className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Repositories</p>
+              </div>
               <p className="mt-2 text-2xl font-semibold">{repositories.length}</p>
             </div>
             <div className="rounded-lg border border-border/60 p-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Runner Queues</p>
+              <div className="flex items-center gap-2">
+                <Server className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Runner Queues</p>
+              </div>
               <p className="mt-2 text-2xl font-semibold">{runnerHealth?.queues?.length ?? 0}</p>
               {runnerHealth?.namespace && (
                 <p className="mt-1 text-xs text-muted-foreground">Namespace: {runnerHealth.namespace}</p>
               )}
             </div>
             <div className="rounded-lg border border-border/60 p-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Active Runs</p>
+              <div className="flex items-center gap-2">
+                <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active Runs</p>
+              </div>
               <p className="mt-2 text-2xl font-semibold">{runnerHealth?.active_runs?.length ?? 0}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {runnerHealth?.temporal_configured ? 'Temporal connected' : 'Temporal not configured'}
+                <span className={runnerHealth?.temporal_configured
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-muted-foreground'
+                }>
+                  {runnerHealth?.temporal_configured ? 'Temporal connected' : 'Temporal not configured'}
+                </span>
               </p>
             </div>
           </div>
 
-          <div className="rounded-lg border border-border/60 p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="font-medium">GitHub App onboarding</p>
-                <p className="text-sm text-muted-foreground">
-                  Install the workspace GitHub App, then return here for automatic integration creation and repository sync.
-                </p>
-              </div>
-              {editable ? (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    disabled={installingGitHubApp}
-                    onClick={async () => {
-                      setInstallActionError(null);
-                      setInstallingGitHubApp(true);
-                      const { data, error } = await gitService.getGitHubInstallURL(workspaceId);
-                      setInstallingGitHubApp(false);
-                      if (error || !data?.install_url) {
-                        const message = error || 'GitHub App install URL is not available';
-                        setInstallActionError(message);
-                        toast.error(message);
-                        return;
-                      }
-                      window.location.assign(data.install_url);
-                    }}
-                  >
-                    {installingGitHubApp ? 'Opening GitHub...' : 'Install GitHub App'}
-                  </Button>
-                  <Button variant="ghost" onClick={() => setIntegrationDialogOpen(true)}>
-                    <Plus className="mr-1 h-4 w-4" />
-                    Manual registration
-                  </Button>
-                </div>
-              ) : null}
+          <Separator />
+
+          {/* GitHub App Onboarding */}
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
+              <h4 className="text-sm font-semibold">GitHub App</h4>
             </div>
+            <div className="rounded-lg border border-border/60 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="font-medium">Install or connect</p>
+                  <p className="text-sm text-muted-foreground">
+                    Install the workspace GitHub App, then return here for automatic integration creation and repository sync.
+                  </p>
+                </div>
+                {editable ? (
+                  <div className="flex flex-shrink-0 flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={installingGitHubApp}
+                      className="gap-1.5"
+                      onClick={async () => {
+                        setInstallActionError(null);
+                        setInstallingGitHubApp(true);
+                        const { data, error } = await gitService.getGitHubInstallURL(workspaceId);
+                        setInstallingGitHubApp(false);
+                        if (error || !data?.install_url) {
+                          const message = error || 'GitHub App install URL is not available';
+                          setInstallActionError(message);
+                          toast.error(message);
+                          return;
+                        }
+                        window.location.assign(data.install_url);
+                      }}
+                    >
+                      {installingGitHubApp ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      {installingGitHubApp ? 'Opening GitHub...' : 'Install GitHub App'}
+                    </Button>
+                    <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setIntegrationDialogOpen(true)}>
+                      <Plus className="h-3.5 w-3.5" />
+                      Manual registration
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {installGuidance ? (
+              <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                <div className="flex items-center gap-2">
+                  <Badge variant="destructive">Setup required</Badge>
+                  <p className="font-medium">{installGuidance.title}</p>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">{installGuidance.description}</p>
+                {installGuidance.details.length ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Required envs: {installGuidance.details.map((item, index) => (
+                      <span key={item}>
+                        <code className="rounded bg-background px-1 py-0.5 text-xs">{item}</code>
+                        {index < installGuidance.details.length - 1 ? ', ' : ''}
+                      </span>
+                    ))}
+                  </p>
+                ) : null}
+                {installActionError && installActionError !== installGuidance.description ? (
+                  <p className="mt-2 text-xs text-muted-foreground">Backend response: {installActionError}</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Integrations list */}
+            {integrations.length === 0 ? (
+              <div className="mt-3 rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                No GitHub integrations connected yet.
+              </div>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {integrations.map((integration) => (
+                  <div key={integration.id} className="flex flex-col gap-3 rounded-lg border border-border/60 p-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{integration.display_name}</p>
+                        <Badge
+                          variant="outline"
+                          className={integration.active
+                            ? 'border-green-500/30 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            : ''
+                          }
+                        >
+                          {integration.active ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {integration.provider}
+                        {integration.account_login ? ` · ${integration.account_login}` : ''}
+                        {integration.installation_id ? ` · installation ${integration.installation_id}` : ''}
+                        {integration.last_synced_at ? ` · synced ${new Date(integration.last_synced_at).toLocaleString()}` : ''}
+                      </p>
+                      {integration.last_sync_error && (
+                        <p className="mt-1 text-xs text-destructive">{integration.last_sync_error}</p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={syncingIntegrationId === integration.id}
+                      onClick={async () => {
+                        setSyncingIntegrationId(integration.id);
+                        const { error } = await gitService.syncRepositories(workspaceId, integration.id);
+                        setSyncingIntegrationId(null);
+                        if (error) {
+                          toast.error(error);
+                          return;
+                        }
+                        toast.success('Repositories synced');
+                        await loadGitStatus();
+                      }}
+                    >
+                      {syncingIntegrationId === integration.id
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <RefreshCw className="h-3.5 w-3.5" />
+                      }
+                      {syncingIntegrationId === integration.id ? 'Syncing...' : 'Sync'}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {installGuidance ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-              <div className="flex items-center gap-2">
-                <Badge variant="destructive">Setup required</Badge>
-                <p className="font-medium">{installGuidance.title}</p>
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">{installGuidance.description}</p>
-              {installGuidance.details.length ? (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Required envs: {installGuidance.details.map((item, index) => (
-                    <span key={item}>
-                      <code className="rounded bg-background px-1 py-0.5 text-xs">{item}</code>
-                      {index < installGuidance.details.length - 1 ? ', ' : ''}
-                    </span>
-                  ))}
-                </p>
-              ) : null}
-              {installActionError && installActionError !== installGuidance.description ? (
-                <p className="mt-2 text-xs text-muted-foreground">Backend response: {installActionError}</p>
-              ) : null}
-            </div>
-          ) : null}
+          <Separator />
 
-          {integrations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No GitHub integrations are connected yet. Install the GitHub App above, or use the manual registration fallback if you already have an installation ID.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {integrations.map((integration) => (
-                <div key={integration.id} className="flex flex-col gap-3 rounded-lg border border-border/60 p-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{integration.display_name}</p>
-                      <Badge variant={integration.active ? 'outline' : 'secondary'}>
-                        {integration.active ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {integration.provider}
-                      {integration.account_login ? ` · ${integration.account_login}` : ''}
-                      {integration.installation_id ? ` · installation ${integration.installation_id}` : ''}
-                      {integration.last_synced_at ? ` · synced ${new Date(integration.last_synced_at).toLocaleString()}` : ''}
-                    </p>
-                    {integration.last_sync_error && (
-                      <p className="mt-1 text-xs text-destructive">{integration.last_sync_error}</p>
-                    )}
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={syncingIntegrationId === integration.id}
-                    onClick={async () => {
-                      setSyncingIntegrationId(integration.id);
-                      const { error } = await gitService.syncRepositories(workspaceId, integration.id);
-                      setSyncingIntegrationId(null);
-                      if (error) {
-                        toast.error(error);
-                        return;
-                      }
-                      toast.success('Repositories synced');
-                      await loadGitStatus();
-                    }}
-                  >
-                    {syncingIntegrationId === integration.id ? 'Syncing...' : 'Sync repositories'}
-                  </Button>
-                </div>
-              ))}
+          {/* Repository Catalog */}
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <GitPullRequest className="h-4 w-4 text-muted-foreground" />
+              <h4 className="text-sm font-semibold">Repository Catalog</h4>
+              {repositories.length > 0 && (
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {repositories.length}
+                </span>
+              )}
             </div>
-          )}
-
-          <div className="space-y-3">
-            <div>
-              <p className="font-medium">Repository catalog</p>
-              <p className="text-sm text-muted-foreground">Choose which synced repositories are available to teams and story delivery targets.</p>
-            </div>
+            <p className="mb-3 text-xs text-muted-foreground">Choose which synced repositories are available to teams and story delivery targets.</p>
             {repositories.length ? (
               <div className="space-y-2">
                 {repositories.map((repo) => (
@@ -2563,15 +2615,15 @@ function ProjectDeliveryTab({ workspaceId, editable }: {
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-medium">{repo.full_name}</p>
-                          <Badge variant="outline">{repo.private ? 'Private' : 'Public'}</Badge>
-                          {repo.archived ? <Badge variant="secondary">Archived</Badge> : null}
+                          <Badge variant="outline" className="text-[10px]">{repo.private ? 'Private' : 'Public'}</Badge>
+                          {repo.archived ? <Badge variant="secondary" className="text-[10px]">Archived</Badge> : null}
                         </div>
-                        <p className="text-sm text-muted-foreground">Default branch: {repo.default_branch}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          <span className="font-mono">{repo.default_branch}</span>
+                        </p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="text-right text-xs text-muted-foreground">
-                          <p>Stories can target this repo</p>
-                        </div>
+                        <span className="text-xs text-muted-foreground">Available for delivery</span>
                         <Switch
                           checked={repo.selected}
                           disabled={!editable || repo.archived}
@@ -2591,52 +2643,69 @@ function ProjectDeliveryTab({ workspaceId, editable }: {
                 ))}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+              <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
                 No repositories have been synced yet.
               </div>
             )}
           </div>
 
+          {/* Runner Queues */}
           {runnerHealth?.queues?.length ? (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {runnerHealth.queues.map((queue) => (
-                <div key={queue.name} className="rounded-lg border border-border/60 p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-medium">{queue.name}</p>
-                    <Badge variant="outline">x{queue.concurrency}</Badge>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">Queued</p>
-                      <p className="font-medium">{queue.queued_runs}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Running</p>
-                      <p className="font-medium">{queue.running_runs}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Awaiting approval</p>
-                      <p className="font-medium">{queue.awaiting_approval_runs}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Latest heartbeat</p>
-                      <p className="font-medium text-xs">
-                        {queue.latest_heartbeat_at ? new Date(queue.latest_heartbeat_at).toLocaleTimeString() : 'n/a'}
-                      </p>
-                    </div>
-                  </div>
+            <>
+              <Separator />
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <Server className="h-4 w-4 text-muted-foreground" />
+                  <h4 className="text-sm font-semibold">Runner Queues</h4>
                 </div>
-              ))}
-            </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {runnerHealth.queues.map((queue) => (
+                    <div key={queue.name} className="rounded-lg border border-border/60 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium">{queue.name}</p>
+                        <Badge variant="outline" className="text-[10px]">x{queue.concurrency}</Badge>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Queued</p>
+                          <p className="mt-0.5 text-sm font-medium">{queue.queued_runs}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Running</p>
+                          <p className="mt-0.5 text-sm font-medium">{queue.running_runs}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Awaiting approval</p>
+                          <p className="mt-0.5 text-sm font-medium">{queue.awaiting_approval_runs}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Heartbeat</p>
+                          <p className="mt-0.5 text-sm font-medium">
+                            {queue.latest_heartbeat_at ? new Date(queue.latest_heartbeat_at).toLocaleTimeString() : 'n/a'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
           ) : null}
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">In-flight runs</p>
-                <p className="text-sm text-muted-foreground">Queued, running, and approval-pending runs in this workspace.</p>
-              </div>
+          <Separator />
+
+          {/* In-flight Runs */}
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <Zap className="h-4 w-4 text-muted-foreground" />
+              <h4 className="text-sm font-semibold">In-flight Runs</h4>
+              {(runnerHealth?.active_runs?.length ?? 0) > 0 && (
+                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                  {runnerHealth!.active_runs.length}
+                </span>
+              )}
             </div>
+            <p className="mb-3 text-xs text-muted-foreground">Queued, running, and approval-pending runs in this workspace.</p>
             {runnerHealth?.active_runs?.length ? (
               <div className="space-y-2">
                 {runnerHealth.active_runs.map((run) => (
@@ -2644,17 +2713,25 @@ function ProjectDeliveryTab({ workspaceId, editable }: {
                     <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="font-medium">{run.task_queue}</p>
-                          <Badge variant={run.stale ? 'destructive' : 'outline'}>{run.status}</Badge>
-                          {run.execution_stage ? <Badge variant="secondary">{run.execution_stage}</Badge> : null}
+                          <p className="text-sm font-medium">{run.task_queue}</p>
+                          <Badge
+                            variant={run.stale ? 'destructive' : 'outline'}
+                            className={!run.stale && run.status === 'running'
+                              ? 'border-blue-500/30 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : ''
+                            }
+                          >
+                            {run.status}
+                          </Badge>
+                          {run.execution_stage ? <Badge variant="secondary" className="text-[10px]">{run.execution_stage}</Badge> : null}
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {run.target_type} · {run.target_id}
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {run.target_type} · <span className="font-mono">{run.target_id.slice(0, 8)}</span>
                           {run.workflow_id ? ` · ${run.workflow_id}` : ''}
                         </p>
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        <p>Started: {run.started_at ? new Date(run.started_at).toLocaleString() : 'Not started'}</p>
+                      <div className="text-xs text-muted-foreground">
+                        <p>Started: {run.started_at ? new Date(run.started_at).toLocaleString() : 'Pending'}</p>
                         <p>Heartbeat: {run.last_heartbeat_at ? new Date(run.last_heartbeat_at).toLocaleString() : 'n/a'}</p>
                       </div>
                     </div>
@@ -2662,8 +2739,9 @@ function ProjectDeliveryTab({ workspaceId, editable }: {
                 ))}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
-                No in-flight runs right now.
+              <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+                <Zap className="mx-auto h-8 w-8 text-muted-foreground/30" />
+                <p className="mt-2 text-sm text-muted-foreground">No in-flight runs right now.</p>
               </div>
             )}
           </div>

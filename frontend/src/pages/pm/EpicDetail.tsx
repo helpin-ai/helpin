@@ -28,7 +28,8 @@ import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
-import type { EpicWithStats, EpicHealth, Story, SprintWithStats, UpdateEpicRequest } from '@/lib/pmTypes';
+import type { EpicWithStats, EpicHealth, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { EpicOrchestrationPanel } from '@/components/pm/EpicOrchestrationPanel';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 
@@ -227,10 +228,12 @@ export function EpicDetailPage() {
     return Math.round((epic.stats.done_story_count / epic.stats.story_count) * 100);
   }, [epic]);
 
-  const currentStateName = useMemo(
-    () => epicStates.find((s) => s.id === form?.epic_state_id)?.name ?? 'No state',
+  const currentEpicState = useMemo(
+    () => epicStates.find((s) => s.id === form?.epic_state_id),
     [epicStates, form?.epic_state_id],
   );
+  const currentStateName = currentEpicState?.name ?? 'No state';
+  const currentStateColor = currentEpicState ? STATE_TYPE_ICON_CONFIG[currentEpicState.state_type as StateType]?.color : '';
 
   const currentTeamName = useMemo(
     () => (form?.team_id ? findTeamName(form.team_id) ?? 'No team' : 'No team'),
@@ -423,13 +426,13 @@ export function EpicDetailPage() {
                 value={form.epic_state_id || '__none__'}
                 options={[
                   { value: '__none__', label: 'No state' },
-                  ...epicStates.map((s) => ({ value: s.id, label: s.name })),
+                  ...epicStates.map((s) => ({ value: s.id, label: s.name, className: STATE_TYPE_ICON_CONFIG[s.state_type as StateType]?.color })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('epic_state_id', val, { epic_state_id: val || undefined });
                 }}
-                renderTrigger={() => <span>{currentStateName}</span>}
+                renderTrigger={() => <span className={currentStateColor}>{currentStateName}</span>}
               />
             </MetadataRow>
 
