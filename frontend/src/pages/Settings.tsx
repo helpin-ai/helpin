@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -518,24 +519,10 @@ function MembersTab({ workspaceId, editable }: {
     }
   };
 
-  const handleCopyLink = async (joinUrl: string) => {
-    try {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(joinUrl);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = joinUrl;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
-      toast.success('Invite link copied to clipboard');
-    } catch {
-      toast.error('Failed to copy link');
-    }
+  const { copy: copyToClipboard } = useCopyToClipboard();
+  const handleCopyLink = (joinUrl: string) => {
+    copyToClipboard(joinUrl);
+    toast.success('Invite link copied to clipboard');
   };
 
   const handleResend = async (id: string) => {

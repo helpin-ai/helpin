@@ -7,7 +7,6 @@ import {
   Check,
   CheckSquare,
   ChevronRight,
-  Copy,
   Gauge,
   GitBranch,
   Hash,
@@ -22,7 +21,6 @@ import {
   Pencil,
   Send,
   ShieldAlert,
-  Star,
   Tag,
   Target,
   Trash2,
@@ -71,6 +69,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import type {
   ActivityLogEntry,
@@ -296,7 +295,7 @@ function StoryDetailPanelBody({
   const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id));
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
@@ -496,13 +495,7 @@ function StoryDetailPanelBody({
   };
 
   // ── Copy link ──────────────────────────────────────────────────
-  const copyLink = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('story', `TP-${storyDetail.story.display_id}`);
-    navigator.clipboard.writeText(url.toString());
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2000);
-  };
+  const copyLink = () => copyText(window.location.href);
 
   // ── Derived data ───────────────────────────────────────────────
   const currentState = useMemo(
@@ -576,9 +569,16 @@ function StoryDetailPanelBody({
         </div>
 
         <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-7 w-7">
-            <Star className="h-3.5 w-3.5" />
-          </Button>
+          {linkCopied ? (
+            <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
+              <Check className="h-3.5 w-3.5" />
+              Copied!
+            </span>
+          ) : (
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={copyLink} title="Copy link">
+              <Link2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7">
@@ -586,10 +586,6 @@ function StoryDetailPanelBody({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={copyLink}>
-                <Link2 className="mr-2 h-4 w-4" />
-                Copy link
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={archiveStory} className="text-destructive focus:text-destructive">
                 <Archive className="mr-2 h-4 w-4" />
                 Archive
@@ -841,12 +837,9 @@ function StoryDetailPanelBody({
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
-          {/* Story ID + copy */}
-          <div className="mb-4 flex items-center justify-between">
+          {/* Story ID */}
+          <div className="mb-4">
             <span className="text-sm font-semibold text-foreground">TP-{storyDetail.story.display_id}</span>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={copyLink}>
-              {linkCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-            </Button>
           </div>
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">

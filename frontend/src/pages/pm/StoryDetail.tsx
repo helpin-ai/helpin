@@ -64,6 +64,7 @@ import { LabelPicker } from '@/components/pm/LabelPicker';
 import { useAuthStore } from '@/stores/authStore';
 import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import type {
@@ -256,7 +257,7 @@ export function StoryDetailPage() {
   const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -460,11 +461,7 @@ export function StoryDetailPage() {
   };
 
   // ── Copy link ───────────────────────────────────────────────────
-  const copyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2000);
-  };
+  const copyLink = () => copyText(window.location.href);
 
   // ── Derived data ────────────────────────────────────────────────
   const currentState = useMemo(
