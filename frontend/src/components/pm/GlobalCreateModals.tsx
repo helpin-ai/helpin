@@ -404,9 +404,9 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
 // ── Objective dialog ──────────────────────────────────────────────────
 
 const objectiveStateOptions: { value: ObjectiveState; label: string }[] = [
-  { value: 'to_do', label: 'To Do' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'done', label: 'Done' },
+  { value: 'not_started', label: 'Not Started' },
+  { value: 'active', label: 'Active' },
+  { value: 'closed', label: 'Closed' },
 ];
 
 function MultiSelectPopover({
@@ -475,7 +475,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
     name: '',
     description: '',
     objectiveType: 'tactical' as ObjectiveType,
-    state: 'to_do' as ObjectiveState,
+    state: 'not_started' as ObjectiveState,
     teamIds: [] as string[],
     ownerIds: [] as string[],
     startDate: '',

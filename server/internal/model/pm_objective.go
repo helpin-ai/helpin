@@ -6,9 +6,13 @@ const (
 	PMObjectiveTypeTactical  = "tactical"
 	PMObjectiveTypeStrategic = "strategic"
 
-	PMObjectiveStateToDo       = "to_do"
-	PMObjectiveStateInProgress = "in_progress"
-	PMObjectiveStateDone       = "done"
+	PMObjectiveStateNotStarted = "not_started"
+	PMObjectiveStateActive     = "active"
+	PMObjectiveStateClosed     = "closed"
+
+	PMObjectiveHealthOnTrack  = "on_track"
+	PMObjectiveHealthAtRisk   = "at_risk"
+	PMObjectiveHealthOffTrack = "off_track"
 
 	PMKeyResultTypeBoolean = "boolean"
 	PMKeyResultTypePercent = "percent"
@@ -22,9 +26,11 @@ type PMObjective struct {
 	Name             string     `json:"name" gorm:"not null"`
 	Description      *string    `json:"description"`
 	ObjectiveType    string     `json:"objective_type" gorm:"not null;default:'tactical'"`
-	State            string     `json:"state" gorm:"not null;default:'to_do'"`
+	State            string     `json:"state" gorm:"not null;default:'not_started'"`
 	PlannedStartDate *time.Time `json:"planned_start_date" gorm:"type:date"`
 	Deadline         *time.Time `json:"deadline" gorm:"type:date"`
+	Health           string     `json:"health" gorm:"not null;default:'on_track'"`
+	HealthComment    *string    `json:"health_comment"`
 	Position         int        `json:"position" gorm:"not null;default:0"`
 	Archived         bool       `json:"archived" gorm:"not null;default:false"`
 	CreatedBy        *string    `json:"created_by" gorm:"type:uuid"`
@@ -96,6 +102,8 @@ type CreateObjectiveRequest struct {
 	State            *string    `json:"state"`
 	PlannedStartDate *time.Time `json:"planned_start_date"`
 	Deadline         *time.Time `json:"deadline"`
+	Health           *string    `json:"health"`
+	HealthComment    *string    `json:"health_comment"`
 	Position         *int       `json:"position"`
 	TeamIDs          []string   `json:"team_ids"`
 	OwnerIDs         []string   `json:"owner_ids"`
@@ -110,6 +118,8 @@ type UpdateObjectiveRequest struct {
 	State            *string    `json:"state"`
 	PlannedStartDate *time.Time `json:"planned_start_date"`
 	Deadline         *time.Time `json:"deadline"`
+	Health           *string    `json:"health"`
+	HealthComment    *string    `json:"health_comment"`
 	Position         *int       `json:"position"`
 	Archived         *bool      `json:"archived"`
 	TeamIDs          []string   `json:"team_ids"`
@@ -149,11 +159,12 @@ type PMObjectiveStats struct {
 }
 
 type ObjectiveWithDetails struct {
-	Objective  PMObjective      `json:"objective"`
-	Teams      []string         `json:"teams"`
-	Owners     []string         `json:"owners"`
-	Labels     []PMLabel        `json:"labels"`
-	KeyResults []PMKeyResult    `json:"key_results"`
-	Epics      []EpicWithStats  `json:"epics"`
-	Stats      PMObjectiveStats `json:"stats"`
+	Objective       PMObjective      `json:"objective"`
+	Teams           []string         `json:"teams"`
+	Owners          []string         `json:"owners"`
+	Labels          []PMLabel        `json:"labels"`
+	KeyResults      []PMKeyResult    `json:"key_results"`
+	Epics           []EpicWithStats  `json:"epics"`
+	Stats           PMObjectiveStats `json:"stats"`
+	SuggestedHealth string           `json:"suggested_health"`
 }

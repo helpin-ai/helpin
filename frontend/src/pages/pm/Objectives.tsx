@@ -21,11 +21,19 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import type { ObjectiveWithDetails } from '@/lib/pmTypes';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { Archive } from 'lucide-react';
 
 const stateConfig: Record<string, { label: string; className: string }> = {
-  to_do: { label: 'To Do', className: 'bg-muted text-muted-foreground' },
-  in_progress: { label: 'In Progress', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  done: { label: 'Done', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  not_started: { label: 'Not Started', className: 'bg-muted text-muted-foreground' },
+  active: { label: 'Active', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  closed: { label: 'Closed', className: 'bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400' },
+};
+
+const healthConfig: Record<string, { label: string; className: string }> = {
+  on_track: { label: 'On Track', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  at_risk: { label: 'At Risk', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  off_track: { label: 'Off Track', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
 };
 
 export function ObjectivesPage() {
@@ -117,8 +125,9 @@ function ObjectiveCard({
   onClick: () => void;
 }) {
   const { objective, stats, epics } = data;
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const isStrategic = objective.objective_type === 'strategic';
-  const stateCfg = stateConfig[objective.state] ?? stateConfig.to_do;
+  const stateCfg = stateConfig[objective.state] ?? stateConfig.active;
 
   const krProgress = Math.round(stats.key_result_avg_pct);
   const epicProgress = Math.round(stats.epic_progress_pct);
@@ -159,7 +168,10 @@ function ObjectiveCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={onClick}>Edit</DropdownMenuItem>
-            <DropdownMenuItem onClick={onArchive} variant="destructive">Archive</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
+              <Archive className="mr-2 h-4 w-4 text-amber-500" />
+              Archive
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -182,11 +194,16 @@ function ObjectiveCard({
         </div>
       </div>
 
-      {/* State + date row */}
+      {/* State + health + date row */}
       <div className="mt-3 flex items-center gap-2 text-xs">
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${stateCfg.className}`}>
           {stateCfg.label}
         </span>
+        {objective.state !== 'closed' && (
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${(healthConfig[objective.health] ?? healthConfig.on_track).className}`}>
+            {(healthConfig[objective.health] ?? healthConfig.on_track).label}
+          </span>
+        )}
         {dateRange && (
           <span className="flex items-center gap-1 text-muted-foreground">
             <CalendarDays className="h-3 w-3" />
@@ -218,6 +235,15 @@ function ObjectiveCard({
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={archiveConfirmOpen}
+        onOpenChange={setArchiveConfirmOpen}
+        title="Archive objective"
+        description="This objective will be hidden from the list. You can restore it later from archived items."
+        confirmLabel="Archive"
+        variant="default"
+        onConfirm={onArchive}
+      />
     </article>
   );
 }

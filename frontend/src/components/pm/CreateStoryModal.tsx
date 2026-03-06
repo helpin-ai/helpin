@@ -427,6 +427,9 @@ export function CreateStoryModal({
                 </MetadataRow>
                 )}
 
+                {/* ── People ── */}
+                <div className="col-span-3 h-px bg-border/40 my-1" />
+
                 {/* Owner */}
                 <MetadataRow icon={User} label="Owner">
                   <SidebarPopoverSelect
@@ -463,6 +466,29 @@ export function CreateStoryModal({
                   />
                 </MetadataRow>
 
+                {/* Team */}
+                {teams.length > 0 && (
+                  <MetadataRow icon={Users} label="Team">
+                    <SidebarPopoverSelect
+                      value={form.team_id || "__none__"}
+                      options={[
+                        { value: "__none__", label: "No team" },
+                        ...teams.map((t) => ({ value: t.id, label: t.name })),
+                      ]}
+                      onChange={(value) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          team_id: value === "__none__" ? "" : value,
+                        }))
+                      }
+                      renderTrigger={() => <span>{currentTeamName}</span>}
+                    />
+                  </MetadataRow>
+                )}
+
+                {/* ── Classification ── */}
+                {(fieldVis.severity || fieldVis.labels) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+
                 {/* Severity */}
                 {fieldVis.severity && (
                 <MetadataRow icon={AlertTriangle} label="Severity">
@@ -483,25 +509,22 @@ export function CreateStoryModal({
                 </MetadataRow>
                 )}
 
-                {/* Team */}
-                {teams.length > 0 && (
-                  <MetadataRow icon={Users} label="Team">
-                    <SidebarPopoverSelect
-                      value={form.team_id || "__none__"}
-                      options={[
-                        { value: "__none__", label: "No team" },
-                        ...teams.map((t) => ({ value: t.id, label: t.name })),
-                      ]}
-                      onChange={(value) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          team_id: value === "__none__" ? "" : value,
-                        }))
-                      }
-                      renderTrigger={() => <span>{currentTeamName}</span>}
-                    />
-                  </MetadataRow>
+                {/* Labels */}
+                {fieldVis.labels && (
+                <MetadataRow icon={Tag} label="Labels">
+                  <LabelPicker
+                    workspaceId={workspaceId}
+                    teamId={form.team_id || undefined}
+                    labels={labels}
+                    selectedLabelIds={form.label_ids}
+                    onLabelsChange={setLabels}
+                    onChange={(ids) => setForm((prev) => ({ ...prev, label_ids: ids }))}
+                  />
+                </MetadataRow>
                 )}
+
+                {/* ── Planning ── */}
+                {(fieldVis.epic || fieldVis.sprint || fieldVis.estimate || fieldVis.due_date) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Epic */}
                 {fieldVis.epic && (
@@ -565,20 +588,6 @@ export function CreateStoryModal({
                     placeholder="None"
                     disablePast
                     className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
-                  />
-                </MetadataRow>
-                )}
-
-                {/* Labels */}
-                {fieldVis.labels && (
-                <MetadataRow icon={Tag} label="Labels">
-                  <LabelPicker
-                    workspaceId={workspaceId}
-                    teamId={form.team_id || undefined}
-                    labels={labels}
-                    selectedLabelIds={form.label_ids}
-                    onLabelsChange={setLabels}
-                    onChange={(ids) => setForm((prev) => ({ ...prev, label_ids: ids }))}
                   />
                 </MetadataRow>
                 )}

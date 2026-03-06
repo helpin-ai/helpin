@@ -30,60 +30,61 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, GitPullRequest, Globe, Info, LayoutGrid, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'delivery' | 'system';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'delivery' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
     id: 'general',
     label: 'General',
-    description: 'Workspace name, description, and timezone.',
+    description: '',
     icon: Settings2,
     group: 'Workspace',
   },
   {
     id: 'members',
     label: 'Members',
-    description: 'Manage workspace members and invitations.',
+    description: '',
     icon: Users,
     group: 'Workspace',
   },
   {
     id: 'teams',
     label: 'Teams',
-    description: 'Create teams, assign members, and manage team-level PM settings.',
+    description: '',
     icon: Users,
     group: 'Workspace',
   },
   {
     id: 'workflows',
     label: 'Workflows',
-    description: 'Configure team workflows and ownership behavior.',
+    description: '',
     icon: GitBranch,
     group: 'Project Settings',
   },
   {
     id: 'workflowstates',
     label: 'Workflow States',
-    description: 'Manage state columns and rules within workflows.',
+    description: '',
     icon: ListTree,
     group: 'Project Settings',
   },
   {
     id: 'labels',
     label: 'Labels',
-    description: 'Create and manage labels for stories, epics, and sprints.',
+    description: '',
     icon: Tag,
     group: 'Project Settings',
   },
   {
     id: 'automations',
     label: 'Automations',
-    description: 'Automate epic transitions and sprint management.',
+    description: '',
     icon: RefreshCw,
     group: 'Project Settings',
   },
@@ -97,35 +98,35 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   {
     id: 'people',
     label: 'People',
-    description: 'Edit HR details, job roles, and compensation for workspace members.',
+    description: '',
     icon: UserPlus,
     group: 'Reward Settings',
   },
   {
     id: 'jobroles',
     label: 'Job Roles',
-    description: 'Configure role-based individual evaluation criteria.',
+    description: '',
     icon: Briefcase,
     group: 'Reward Settings',
   },
   {
     id: 'tiers',
     label: 'Bonus Tiers',
-    description: 'Set score bands and multipliers for payouts.',
+    description: '',
     icon: Award,
     group: 'Reward Settings',
   },
   {
     id: 'system',
     label: 'Reward Defaults',
-    description: 'Control reward calculation behavior and defaults.',
+    description: '',
     icon: Settings2,
     group: 'Reward Settings',
   },
 ];
 
 export const isSettingsSection = (value: string): value is SettingsSection =>
-  SETTINGS_SECTIONS.some((section) => section.id === value);
+  SETTINGS_SECTIONS.some((section) => section.id === value) || value === 'account';
 
 const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
 
@@ -296,7 +297,9 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
       {section !== 'teams' && (
         <div>
           <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
-          <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
+          {sectionMeta.description && (
+            <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
+          )}
         </div>
       )}
       {renderSection()}
@@ -384,8 +387,7 @@ function GeneralTab({ workspaceId, editable }: {
   return (
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
-        <CardTitle>Workspace Settings</CardTitle>
-        <CardDescription>Manage your workspace name, description, and timezone.</CardDescription>
+        <CardTitle>General</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
@@ -560,9 +562,9 @@ function MembersTab({ workspaceId, editable }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-2">
             <CardTitle className="text-base">Members</CardTitle>
-            <CardDescription>{members.length} member{members.length !== 1 ? 's' : ''}</CardDescription>
+            <Badge variant="outline" className="text-xs font-normal">{members.length}</Badge>
           </div>
           {editable && (
             <Button size="sm" onClick={openInviteDialog}>
@@ -1094,6 +1096,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedRole, setSelectedRole] = useState<'owner' | 'member'>('member');
   const [savingMember, setSavingMember] = useState(false);
+  const [deleteTeamConfirm, setDeleteTeamConfirm] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -1432,7 +1435,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
                     <Users className="h-4 w-4 mr-1" />
                     Add member
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleDelete(selectedTeam.id)}>
+                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTeamConfirm(selectedTeam.id)}>
                     <Trash2 className="h-4 w-4 mr-1" />
                     Delete
                   </Button>
@@ -1886,6 +1889,16 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTeamConfirm !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTeamConfirm(null); }}
+        title="Delete team"
+        description="This will permanently delete the team and remove all member assignments. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteTeamConfirm) handleDelete(deleteTeamConfirm); setDeleteTeamConfirm(null); }}
+      />
     </>
   );
 }
@@ -1903,6 +1916,7 @@ function PeopleTab({ people, editable, onRefresh }: {
   const [jobRole, setJobRole] = useState('');
   const [salary, setSalary] = useState('0');
   const [saving, setSaving] = useState(false);
+  const [deletePersonConfirm, setDeletePersonConfirm] = useState<string | null>(null);
 
   const openEdit = (p: WorkspacePerson) => {
     setEditPerson(p);
@@ -1931,9 +1945,9 @@ function PeopleTab({ people, editable, onRefresh }: {
   return (
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
-        <div>
+        <div className="flex items-center gap-2">
           <CardTitle className="text-base">People</CardTitle>
-          <CardDescription>{people.length} member{people.length !== 1 ? 's' : ''} — invite new members from the Members tab</CardDescription>
+          <Badge variant="outline" className="text-xs font-normal">{people.length}</Badge>
         </div>
       </CardHeader>
       <CardContent>
@@ -1970,7 +1984,7 @@ function PeopleTab({ people, editable, onRefresh }: {
                           <Button size="icon" variant="ghost" onClick={() => openEdit(p)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button size="icon" variant="ghost" onClick={() => handleDelete(p.id)}>
+                          <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeletePersonConfirm(p.id)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
@@ -2026,6 +2040,16 @@ function PeopleTab({ people, editable, onRefresh }: {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deletePersonConfirm !== null}
+        onOpenChange={(open) => { if (!open) setDeletePersonConfirm(null); }}
+        title="Delete person"
+        description="This will permanently remove this person from the workspace. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deletePersonConfirm) handleDelete(deletePersonConfirm); setDeletePersonConfirm(null); }}
+      />
     </Card>
   );
 }
@@ -2045,6 +2069,7 @@ function JobRolesTab({ workspaceId, criteria, editable, onRefresh }: {
     return acc;
   }, {});
   const jobRoles = Object.keys(grouped).sort();
+  const [deleteRoleConfirm, setDeleteRoleConfirm] = useState<string | null>(null);
 
   const handleDeleteRole = async (jobRole: string) => {
     const { error } = await settingsService.deleteJobRole(workspaceId, jobRole);
@@ -2056,7 +2081,6 @@ function JobRolesTab({ workspaceId, criteria, editable, onRefresh }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <CardTitle className="text-base">Job Role Criteria</CardTitle>
-        <CardDescription>Individual scoring criteria by job role</CardDescription>
       </CardHeader>
       <CardContent>
         {jobRoles.length === 0 ? (
@@ -2072,7 +2096,7 @@ function JobRolesTab({ workspaceId, criteria, editable, onRefresh }: {
                       {grouped[role].length} criteria
                     </Badge>
                     {editable && (
-                      <Button size="icon" variant="ghost" onClick={() => handleDeleteRole(role)}>
+                      <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeleteRoleConfirm(role)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     )}
@@ -2096,6 +2120,16 @@ function JobRolesTab({ workspaceId, criteria, editable, onRefresh }: {
           </div>
         )}
       </CardContent>
+
+      <ConfirmDialog
+        open={deleteRoleConfirm !== null}
+        onOpenChange={(open) => { if (!open) setDeleteRoleConfirm(null); }}
+        title="Delete job role criteria"
+        description={`This will permanently delete all criteria for "${deleteRoleConfirm}". This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteRoleConfirm) handleDeleteRole(deleteRoleConfirm); setDeleteRoleConfirm(null); }}
+      />
     </Card>
   );
 }
@@ -2148,10 +2182,7 @@ function BonusTiersTab({ workspaceId, tiers, editable, onRefresh }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">Bonus Tiers</CardTitle>
-            <CardDescription>Configure A/B/C tier thresholds and multipliers</CardDescription>
-          </div>
+          <CardTitle className="text-base">Bonus Tiers</CardTitle>
           {editable && !editing && (
             <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
               <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
@@ -2240,8 +2271,7 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
     <div className="space-y-6">
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
-          <CardTitle className="text-base">System Settings</CardTitle>
-          <CardDescription>General workspace configuration</CardDescription>
+          <CardTitle className="text-base">Reward Defaults</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -2745,6 +2775,7 @@ function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
   const [teamID, setTeamID] = useState<string>('none');
   const [autoAssignOwner, setAutoAssignOwner] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleteWorkflowConfirm, setDeleteWorkflowConfirm] = useState<string | null>(null);
 
   const loadWorkflows = async () => {
     setLoading(true);
@@ -2839,9 +2870,9 @@ function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-2">
             <CardTitle className="text-base">Workflows</CardTitle>
-            <CardDescription>{filteredWorkflows.length} workflow{filteredWorkflows.length !== 1 ? 's' : ''}</CardDescription>
+            <Badge variant="outline" className="text-xs font-normal">{filteredWorkflows.length}</Badge>
           </div>
           <div className="flex items-center gap-2">
             <Select value={teamFilter} onValueChange={setTeamFilter}>
@@ -2918,7 +2949,7 @@ function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
                     <Button size="icon" variant="ghost" onClick={() => openEdit(workflow)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button size="icon" variant="ghost" onClick={() => handleDelete(workflow.workflow.id)}>
+                    <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeleteWorkflowConfirm(workflow.workflow.id)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -2971,6 +3002,16 @@ function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteWorkflowConfirm !== null}
+        onOpenChange={(open) => { if (!open) setDeleteWorkflowConfirm(null); }}
+        title="Delete workflow"
+        description="This will permanently delete the workflow and all its states. Stories using this workflow will need to be reassigned. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteWorkflowConfirm) handleDelete(deleteWorkflowConfirm); setDeleteWorkflowConfirm(null); }}
+      />
     </Card>
   );
 }
@@ -3002,6 +3043,7 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
   const [stateColor, setStateColor] = useState('');
   const [stateWIP, setStateWIP] = useState('');
   const [stateDefault, setStateDefault] = useState(false);
+  const [deleteStateConfirm, setDeleteStateConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadWorkflows = async () => {
@@ -3157,7 +3199,6 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
     <Card className={LINEAR_CARD_CLASS}>
       <CardHeader>
         <CardTitle className="text-base">Workflow States</CardTitle>
-        <CardDescription>Manage state columns grouped by backlog/unstarted/started/done.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {loading ? (
@@ -3310,7 +3351,7 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
             <DialogFooter className="justify-between">
               <div>
                 {editState && editable && (
-                  <Button type="button" variant="ghost" className="text-destructive" onClick={handleDeleteState}>
+                  <Button type="button" variant="ghost" className="text-destructive" onClick={() => setDeleteStateConfirm(true)}>
                     <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete State
                   </Button>
                 )}
@@ -3323,6 +3364,16 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteStateConfirm}
+        onOpenChange={setDeleteStateConfirm}
+        title="Delete workflow state"
+        description="This will permanently delete this state. Stories in this state will need to be moved to another state. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { handleDeleteState(); setDeleteStateConfirm(false); }}
+      />
     </Card>
   );
 }

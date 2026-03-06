@@ -77,6 +77,8 @@ func main() {
 	// The SQL migration files in server/migrations/ are kept as reference documentation.
 	if err := db.AutoMigrate(
 		&model.User{},
+		&model.Organization{},
+		&model.OrganizationMember{},
 		&model.Workspace{},
 		&model.WorkspaceMember{},
 		&model.WorkspaceSettings{},
@@ -144,6 +146,16 @@ func main() {
 	}
 	log.Println("database migration complete")
 
+	// Migrate legacy objective states to lifecycle states + health (idempotent).
+	db.Exec("UPDATE pm_objectives SET state = 'not_started' WHERE state = 'to_do'")
+	db.Exec("UPDATE pm_objectives SET state = 'active' WHERE state IN ('in_progress', 'on_track', 'behind', 'at_risk')")
+	db.Exec("UPDATE pm_objectives SET state = 'closed' WHERE state = 'done'")
+
+	// Migrate existing workspaces to organizations (one-time, idempotent).
+	if err := repository.MigrateWorkspacesToOrganizations(db); err != nil {
+		log.Fatalf("failed to migrate workspaces to organizations: %v", err)
+	}
+
 	// Initialize email client (nil if not configured).
 	emailClient := email.NewClient(cfg.PostmarkServerToken, cfg.PostmarkFromEmail)
 	if emailClient != nil {
@@ -170,6 +182,7 @@ func main() {
 
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
+	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	quarterRepo := repository.NewRewardQuarterRepository(db)
 	sprintRepo := repository.NewRewardSprintRepository(db)
@@ -281,6 +294,7 @@ func main() {
 		log.Println("Anthropic API not configured — orchestration disabled")
 	}
 
+	orgService := service.NewOrganizationService(orgRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
 	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
 	sprintService := service.NewRewardSprintService(sprintRepo, scoringRepo)
@@ -296,6 +310,7 @@ func main() {
 	handlers := router.Handlers{
 		Health:          handler.NewHealthHandler(),
 		Auth:            handler.NewAuthHandler(authService),
+		Organization:    handler.NewOrganizationHandler(orgService),
 		Workspace:       handler.NewWorkspaceHandler(workspaceService),
 		RewardQuarter:   handler.NewRewardQuarterHandler(quarterService),
 		RewardSprint:    handler.NewRewardSprintHandler(sprintService),

@@ -21,6 +21,13 @@ type PaginatedResponse struct {
 	TotalPages int         `json:"total_pages,omitempty"`
 }
 
+// Role constants shared across organizations and workspaces.
+const (
+	RoleOwner  = "owner"
+	RoleAdmin  = "admin"
+	RoleMember = "member"
+)
+
 // Timestamps holds common timestamp fields.
 type Timestamps struct {
 	CreatedAt time.Time `json:"created_at"`

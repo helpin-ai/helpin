@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Bot, Plus } from 'lucide-react';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { agentService } from '@/lib/services/agentService';
@@ -148,6 +149,7 @@ export function AgentsPage() {
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [form, setForm] = useState<AgentFormData>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
@@ -473,7 +475,7 @@ export function AgentsPage() {
                     variant="destructive"
                     size="sm"
                     disabled={saving}
-                    onClick={handleDelete}
+                    onClick={() => setDeleteConfirmOpen(true)}
                   >
                     Delete
                   </Button>
@@ -499,6 +501,16 @@ export function AgentsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete agent"
+        description="This will permanently delete this agent and all its configuration. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

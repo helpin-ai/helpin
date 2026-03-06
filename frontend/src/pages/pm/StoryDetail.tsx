@@ -21,6 +21,7 @@ import {
   MoreHorizontal,
   Paperclip,
   Pencil,
+  RefreshCw,
   Send,
   ShieldAlert,
   Tag,
@@ -63,6 +64,8 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { LabelPicker } from '@/components/pm/LabelPicker';
+import { SaveIndicator } from '@/components/pm/SaveIndicator';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAuthStore } from '@/stores/authStore';
 import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -260,6 +263,7 @@ export function StoryDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -572,22 +576,25 @@ export function StoryDetailPage() {
               <ChevronRight className="h-3 w-3 shrink-0" />
             </>
           )}
+          {currentSprintName !== 'No sprint' && form.sprint_id && (
+            <>
+              <RefreshCw className="h-3.5 w-3.5 shrink-0 text-green-500" />
+              <button
+                type="button"
+                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                onClick={() => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug, sprintId: form.sprint_id! } })}
+              >
+                {currentSprintName}
+              </button>
+              <ChevronRight className="h-3 w-3 shrink-0" />
+            </>
+          )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground/80">TP-{storyDetail.story.display_id}</span>
-          <ChevronRight className="h-3 w-3 shrink-0" />
-          <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
+          <span className="shrink-0 font-medium text-foreground">TP-{storyDetail.story.display_id}</span>
         </div>
 
-        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-          {saving ? (
-            <span className="inline-flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Saving...
-            </span>
-          ) : (
-            <span>All changes saved</span>
-          )}
-          {saveError && <span className="ml-2 text-destructive">{saveError}</span>}
+        <div className="ml-auto flex items-center gap-1">
+          <SaveIndicator saving={saving} error={saveError} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7 ml-2">
@@ -599,8 +606,8 @@ export function StoryDetailPage() {
                 <Link2 className="mr-2 h-4 w-4" />
                 {linkCopied ? 'Copied!' : 'Copy link'}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={archiveStory} className="text-destructive focus:text-destructive">
-                <Archive className="mr-2 h-4 w-4" />
+              <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
+                <Archive className="mr-2 h-4 w-4 text-amber-500" />
                 Archive
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -879,6 +886,9 @@ export function StoryDetailPage() {
               />
             </MetadataRow>
 
+            {/* ── People ── */}
+            <div className="col-span-3 h-px bg-border/40 my-1" />
+
             {/* Owner */}
             <MetadataRow icon={User} label="Owner">
               <SidebarPopoverSelect
@@ -927,6 +937,9 @@ export function StoryDetailPage() {
               />
             </MetadataRow>
 
+            {/* ── Classification ── */}
+            <div className="col-span-3 h-px bg-border/40 my-1" />
+
             {/* Severity */}
             <MetadataRow icon={ShieldAlert} label="Severity">
               <SidebarPopoverSelect
@@ -961,6 +974,9 @@ export function StoryDetailPage() {
                 }}
               />
             </MetadataRow>
+
+            {/* ── Planning ── */}
+            <div className="col-span-3 h-px bg-border/40 my-1" />
 
             {/* Epic */}
             <MetadataRow icon={Layers} label="Epic">
@@ -1052,6 +1068,16 @@ export function StoryDetailPage() {
           </div>
         </aside>
       </div>
+
+      <ConfirmDialog
+        open={archiveConfirmOpen}
+        onOpenChange={setArchiveConfirmOpen}
+        title="Archive story"
+        description="This story will be hidden from the board and lists. You can restore it later from archived items."
+        confirmLabel="Archive"
+        variant="default"
+        onConfirm={archiveStory}
+      />
     </div>
   );
 }

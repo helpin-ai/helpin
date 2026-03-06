@@ -23,7 +23,8 @@ func NewWorkspaceHandler(workspaceService *service.WorkspaceService) *WorkspaceH
 // List handles GET /api/workspaces.
 func (h *WorkspaceHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
-	workspaces, err := h.workspaceService.List(r.Context(), userID)
+	organizationID := r.URL.Query().Get("organization_id")
+	workspaces, err := h.workspaceService.List(r.Context(), userID, organizationID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -14,6 +14,7 @@ import (
 type Handlers struct {
 	Health          *handler.HealthHandler
 	Auth            *handler.AuthHandler
+	Organization    *handler.OrganizationHandler
 	Workspace       *handler.WorkspaceHandler
 	RewardQuarter   *handler.RewardQuarterHandler
 	RewardSprint    *handler.RewardSprintHandler
@@ -96,6 +97,17 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			// Auth / profile
 			r.Get("/auth/me", h.Auth.Me)
 			r.Put("/auth/me", h.Auth.UpdateProfile)
+
+			// Organizations
+			r.Get("/organizations", h.Organization.List)
+			r.Post("/organizations", h.Organization.Create)
+			r.Get("/organizations/{id}", h.Organization.Get)
+			r.Put("/organizations/{id}", h.Organization.Update)
+			r.Delete("/organizations/{id}", h.Organization.Delete)
+			r.Get("/organizations/{id}/members", h.Organization.ListMembers)
+			r.Post("/organizations/{id}/members", h.Organization.AddMember)
+			r.Put("/organizations/{id}/members/{userId}", h.Organization.UpdateMember)
+			r.Delete("/organizations/{id}/members/{userId}", h.Organization.RemoveMember)
 
 			// Workspaces
 			r.Get("/workspaces", h.Workspace.List)

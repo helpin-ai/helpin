@@ -186,8 +186,10 @@ export default function SprintDetail() {
               return (
                 <Card key={team.id}>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">{team.name}</CardTitle>
-                    <CardDescription>{teamGoals.length} sprint goal{teamGoals.length !== 1 ? 's' : ''}</CardDescription>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-base">{team.name}</CardTitle>
+                      <Badge variant="outline" className="text-xs font-normal">{teamGoals.length}</Badge>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     {teamGoals.length === 0 ? (
