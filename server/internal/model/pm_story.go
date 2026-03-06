@@ -198,8 +198,9 @@ type StoryDetail struct {
 // BoardStory is a story enriched with relation names for board display.
 type BoardStory struct {
 	PMStory
-	EpicName  *string `json:"epic_name,omitempty"`
-	OwnerName *string `json:"owner_name,omitempty"`
+	EpicName  *string   `json:"epic_name,omitempty"`
+	OwnerName *string   `json:"owner_name,omitempty"`
+	Labels    []PMLabel `json:"labels"`
 }
 
 // StoryStateColumn is the data shape used for board columns.

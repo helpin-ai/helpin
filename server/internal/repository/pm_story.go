@@ -24,7 +24,7 @@ func NewPMStoryRepository(db *gorm.DB) *PMStoryRepository {
 }
 
 // List returns stories with filters and pagination.
-func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.PMStory, int64, error) {
+func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.PMStory{}).Where("workspace_id = ?", workspaceID)
 
 	if filters.TeamID != nil && *filters.TeamID != "" {
@@ -85,7 +85,8 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 	if err := query.Order("updated_at DESC").Offset((page - 1) * perPage).Limit(perPage).Find(&stories).Error; err != nil {
 		return nil, 0, fmt.Errorf("list stories: %w", err)
 	}
-	return stories, total, nil
+
+	return r.collectAndEnrich(ctx, stories), total, nil
 }
 
 // GetByID returns a story detail payload.
@@ -348,8 +349,7 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		visible    []model.PMStory
 	}
 	metas := make([]columnMeta, len(states))
-	epicIDs := map[string]struct{}{}
-	ownerIDs := map[string]struct{}{}
+	var allStories []model.PMStory
 	for i, state := range states {
 		query := r.db.WithContext(ctx).
 			Where("workflow_state_id = ? AND archived = false", state.ID)
@@ -364,14 +364,7 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 			return nil, fmt.Errorf("list board column stories: %w", err)
 		}
 
-		for _, s := range visibleStories {
-			if s.EpicID != nil {
-				epicIDs[*s.EpicID] = struct{}{}
-			}
-			if s.OwnerID != nil {
-				ownerIDs[*s.OwnerID] = struct{}{}
-			}
-		}
+		allStories = append(allStories, visibleStories...)
 
 		aggregate := aggregates[state.ID]
 		metas[i] = columnMeta{
@@ -382,15 +375,23 @@ func (r *PMStoryRepository) ListByWorkflowState(ctx context.Context, workflowID 
 		}
 	}
 
-	epicNameMap := r.batchEpicNames(ctx, epicIDs)
-	ownerNameMap := r.batchOwnerNames(ctx, ownerIDs)
+	enriched := r.collectAndEnrich(ctx, allStories)
+	// Build a map from story ID → BoardStory for column assembly
+	enrichedMap := make(map[string]model.BoardStory, len(enriched))
+	for _, bs := range enriched {
+		enrichedMap[bs.ID] = bs
+	}
 
 	columns := make([]model.StoryStateColumn, 0, len(states))
 	for i, state := range states {
 		m := metas[i]
+		colStories := make([]model.BoardStory, 0, len(m.visible))
+		for _, s := range m.visible {
+			colStories = append(colStories, enrichedMap[s.ID])
+		}
 		columns = append(columns, model.StoryStateColumn{
 			State:      state,
-			Stories:    r.enrichBoardStories(m.visible, epicNameMap, ownerNameMap),
+			Stories:    colStories,
 			StoryCount: m.totalCount,
 			PointTotal: m.pointTotal,
 			HasMore:    m.hasMore,
@@ -418,9 +419,16 @@ func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID strin
 		return nil, 0, fmt.Errorf("list column stories: %w", err)
 	}
 
+	return r.collectAndEnrich(ctx, stories), int(total), nil
+}
+
+// collectAndEnrich collects related IDs from stories, batch-loads names/labels, and returns enriched BoardStory slices.
+func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []model.PMStory) []model.BoardStory {
 	epicIDs := map[string]struct{}{}
 	ownerIDs := map[string]struct{}{}
-	for _, s := range stories {
+	storyIDs := make([]string, len(stories))
+	for i, s := range stories {
+		storyIDs[i] = s.ID
 		if s.EpicID != nil {
 			epicIDs[*s.EpicID] = struct{}{}
 		}
@@ -430,14 +438,15 @@ func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID strin
 	}
 	epicNameMap := r.batchEpicNames(ctx, epicIDs)
 	ownerNameMap := r.batchOwnerNames(ctx, ownerIDs)
-	return r.enrichBoardStories(stories, epicNameMap, ownerNameMap), int(total), nil
+	labelMap := r.batchStoryLabels(ctx, storyIDs)
+	return r.enrichBoardStories(stories, epicNameMap, ownerNameMap, labelMap)
 }
 
-// enrichBoardStories maps epic/owner names onto raw stories for board display.
-func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicNameMap, ownerNameMap map[string]string) []model.BoardStory {
+// enrichBoardStories maps epic/owner names and labels onto raw stories for board display.
+func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicNameMap, ownerNameMap map[string]string, labelMap map[string][]model.PMLabel) []model.BoardStory {
 	result := make([]model.BoardStory, 0, len(stories))
 	for _, story := range stories {
-		bs := model.BoardStory{PMStory: story}
+		bs := model.BoardStory{PMStory: story, Labels: []model.PMLabel{}}
 		if story.EpicID != nil {
 			if name, ok := epicNameMap[*story.EpicID]; ok {
 				bs.EpicName = &name
@@ -447,6 +456,9 @@ func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicName
 			if name, ok := ownerNameMap[*story.OwnerID]; ok {
 				bs.OwnerName = &name
 			}
+		}
+		if labels, ok := labelMap[story.ID]; ok {
+			bs.Labels = labels
 		}
 		result = append(result, bs)
 	}
@@ -547,6 +559,32 @@ func (r *PMStoryRepository) batchOwnerNames(ctx context.Context, ownerIDs map[st
 		ownerNameMap[row.ID] = row.FullName
 	}
 	return ownerNameMap
+}
+
+// batchStoryLabels loads labels for a set of story IDs, keyed by story ID.
+func (r *PMStoryRepository) batchStoryLabels(ctx context.Context, storyIDs []string) map[string][]model.PMLabel {
+	result := map[string][]model.PMLabel{}
+	if len(storyIDs) == 0 {
+		return result
+	}
+	var rows []struct {
+		model.PMLabel
+		StoryID string `gorm:"column:story_id"`
+	}
+	if err := r.db.WithContext(ctx).
+		Table("pm_labels").
+		Select("pm_labels.*, pm_story_labels.story_id").
+		Joins("JOIN pm_story_labels ON pm_story_labels.label_id = pm_labels.id").
+		Where("pm_story_labels.story_id IN ?", storyIDs).
+		Order("pm_labels.name ASC").
+		Scan(&rows).Error; err != nil {
+		return result
+	}
+	for _, row := range rows {
+		label := row.PMLabel
+		result[row.StoryID] = append(result[row.StoryID], label)
+	}
+	return result
 }
 
 // CountByState returns story counts grouped by state for a workflow.

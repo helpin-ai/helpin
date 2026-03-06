@@ -29,6 +29,7 @@ import {
 } from '@/lib/pmConstants';
 import { UserAvatar } from './UserAvatar';
 import type {
+  Label,
   Priority,
   Severity,
   Story,
@@ -38,6 +39,7 @@ import type {
 } from '@/lib/pmTypes';
 import type { MemberWithUser, WorkspaceTeam } from '@/lib/types';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 
@@ -449,6 +451,13 @@ export function StoryListView({
             onUpdate={updateStoryField}
           />
         ),
+      }),
+      columnHelper.display({
+        id: 'labels',
+        header: 'Labels',
+        size: 180,
+        enableGrouping: false,
+        cell: (info) => <InlineLabelsCell labels={info.row.original.labels} />,
       }),
     ],
     [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, members, teams, epics, sprints, updateStoryField]
@@ -1216,5 +1225,16 @@ function InlineDeadlineCell({
         </PopoverContent>
       )}
     </Popover>
+  );
+}
+
+function InlineLabelsCell({ labels }: { labels?: Label[] }) {
+  if (!labels || labels.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {labels.map((label) => (
+        <LabelBadge key={label.id} label={label} />
+      ))}
+    </div>
   );
 }
