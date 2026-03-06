@@ -78,6 +78,7 @@ export interface Epic {
   health: EpicHealth;
   health_comment?: string;
   archived: boolean;
+  orchestrator_agent_id?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -153,6 +154,7 @@ export interface Story {
   blocked: boolean;
   blocker?: string;
   archived: boolean;
+  assigned_agent_id?: string;
   template_id?: string;
   external_id?: string;
   created_at: string;
@@ -650,4 +652,266 @@ export interface UpdateViewRequest {
   is_shared?: boolean;
   is_pinned?: boolean;
   position?: number;
+}
+
+// ── Agents ──────────────────────────────────────────────────────────
+
+export type AgentKind = 'human' | 'llm';
+export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
+export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type AgentRuntimeKind = 'native_claude' | 'claude_code' | 'openclaw' | 'zeroclaw';
+export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
+export type AgentTargetType = 'story' | 'support_ticket' | 'epic_review' | 'document';
+export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
+
+export interface Agent {
+  id: string;
+  workspace_id: string;
+  name: string;
+  agent_kind: AgentKind;
+  role: string;
+  status: AgentStatus;
+  backing_user_id?: string;
+  runtime_kind: AgentRuntimeKind;
+  capability_profile: string;
+  skills: string[];
+  trigger_mode: AgentTriggerMode;
+  model?: string;
+  system_prompt?: string;
+  tools: unknown[];
+  monthly_token_budget?: number;
+  tokens_used_this_month: number;
+  active_story_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentRun {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  story_id?: string;
+  ticket_id?: string;
+  target_type: AgentTargetType;
+  target_id: string;
+  runtime_kind: AgentRuntimeKind;
+  parent_run_id?: string;
+  handoff_state?: string;
+  approval_state: AgentApprovalState;
+  triggered_by_user_id?: string;
+  status: AgentRunStatus;
+  input: Record<string, unknown>;
+  output_summary: Record<string, unknown>;
+  tokens_used: number;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentRunArtifact {
+  id: string;
+  workspace_id: string;
+  run_id: string;
+  artifact_type: string;
+  format: string;
+  storage_mode: string;
+  inline_content?: string;
+  object_key?: string;
+  metadata: Record<string, unknown>;
+  sequence_no: number;
+  created_at: string;
+}
+
+export interface CreateAgentRequest {
+  workspace_id: string;
+  name: string;
+  agent_kind: AgentKind;
+  role: string;
+  backing_user_id?: string;
+  runtime_kind?: AgentRuntimeKind;
+  capability_profile?: string;
+  skills?: string[];
+  trigger_mode?: AgentTriggerMode;
+  model?: string;
+  system_prompt?: string;
+  tools?: unknown[];
+  monthly_token_budget?: number;
+}
+
+export interface UpdateAgentRequest {
+  name?: string;
+  role?: string;
+  status?: AgentStatus;
+  backing_user_id?: string;
+  runtime_kind?: AgentRuntimeKind;
+  capability_profile?: string;
+  skills?: string[];
+  trigger_mode?: AgentTriggerMode;
+  model?: string;
+  system_prompt?: string;
+  tools?: unknown[];
+  monthly_token_budget?: number;
+  active_story_id?: string;
+}
+
+export interface AssignAgentRequest {
+  agent_id: string;
+}
+
+export interface ApproveAgentRunRequest {
+  send_message?: boolean;
+}
+
+export interface HandoffAgentRunRequest {
+  to_agent_id?: string;
+  to_user_id?: string;
+  handoff_state?: string;
+  reason: string;
+  context?: Record<string, unknown>;
+}
+
+export interface RuntimeProfile {
+  name: string;
+  runtime_kind: AgentRuntimeKind;
+  description: string;
+  allowed_tools: string[];
+  allowed_commands: string[];
+  approval_required: boolean;
+}
+
+// ── Support ─────────────────────────────────────────────────────────
+
+export type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed';
+export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type TicketSource = 'widget' | 'internal' | 'email' | 'api';
+export type MessageSenderType = 'customer' | 'user' | 'agent';
+
+export interface SupportTicket {
+  id: string;
+  workspace_id: string;
+  display_id: number;
+  subject: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  customer_name?: string;
+  customer_email?: string;
+  opened_by_user_id?: string;
+  assigned_agent_id?: string;
+  linked_story_id?: string;
+  source: TicketSource;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportMessage {
+  id: string;
+  workspace_id: string;
+  ticket_id: string;
+  sender_type: MessageSenderType;
+  sender_user_id?: string;
+  sender_agent_id?: string;
+  sender_display_name?: string;
+  content: string;
+  is_internal: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateTicketRequest {
+  subject: string;
+  priority?: TicketPriority;
+  customer_name?: string;
+  customer_email?: string;
+  source?: TicketSource;
+}
+
+export interface CreateMessageRequest {
+  content: string;
+  is_internal?: boolean;
+}
+
+export interface LinkStoryRequest {
+  story_id: string;
+}
+
+export interface AssignTicketAgentRequest {
+  agent_id: string;
+}
+
+// ── Git Integration ─────────────────────────────────────────────────
+
+export interface GitIntegration {
+  id: string;
+  workspace_id: string;
+  provider: string;
+  display_name: string;
+  base_url?: string;
+  installation_id?: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoryGitLink {
+  id: string;
+  workspace_id: string;
+  story_id: string;
+  integration_id: string;
+  provider: string;
+  repo: string;
+  branch?: string;
+  pr_number?: number;
+  pr_url?: string;
+  pr_status?: string;
+  commit_sha?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGitIntegrationRequest {
+  provider: string;
+  display_name: string;
+  base_url?: string;
+  installation_id?: string;
+  access_token?: string;
+}
+
+export interface CreateBranchRequest {
+  integration_id: string;
+  repo: string;
+  branch_name: string;
+}
+
+// ── Orchestration ──────────────────────────────────────────────────
+
+export interface ProposedStory {
+  name: string;
+  description: string;
+  story_type: string;
+  estimate?: number;
+  assign_agent_id?: string;
+}
+
+export interface OrchestrationProposal {
+  epic_id: string;
+  summary: string;
+  proposed_stories: ProposedStory[];
+  tokens_used: number;
+}
+
+export interface AgentHandoff {
+  id: string;
+  workspace_id: string;
+  from_agent_id?: string;
+  to_agent_id?: string;
+  to_user_id?: string;
+  story_id?: string;
+  epic_id?: string;
+  run_id?: string;
+  handoff_type: string;
+  reason: string;
+  context: Record<string, unknown>;
+  created_at: string;
 }

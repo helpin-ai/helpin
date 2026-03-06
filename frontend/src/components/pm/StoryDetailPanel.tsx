@@ -52,6 +52,8 @@ import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
 import { ChecklistItems } from '@/components/pm/ChecklistItems';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
+import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
+import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
 import { getInitials } from '@/lib/utils';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
@@ -650,6 +652,16 @@ function StoryDetailPanelBody({
               entityId={storyDetail.story.id}
             />
           </div>
+
+          {/* Git Links */}
+          <StoryGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId} />
+
+          {/* Agent Runs */}
+          <AgentRunPanel
+            storyId={storyDetail.story.id}
+            workspaceId={workspaceId}
+            assignedAgentId={storyDetail.story.assigned_agent_id}
+          />
 
           {/* Separator */}
           <Separator className="my-6" />

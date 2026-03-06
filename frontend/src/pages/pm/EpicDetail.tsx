@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
@@ -24,6 +24,7 @@ import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import type { EpicWithStats, EpicHealth, Story, UpdateEpicRequest } from '@/lib/pmTypes';
+import { EpicOrchestrationPanel } from '@/components/pm/EpicOrchestrationPanel';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -145,27 +146,29 @@ export function EpicDetailPage() {
 
   useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 
+  const fetchData = useCallback(async () => {
+    if (!workspaceId) return;
+    setLoading(true);
+    setError(null);
+    const [epicRes, storiesRes] = await Promise.all([
+      pmEpicService.get(workspaceId, epicId),
+      pmEpicService.listStories(workspaceId, epicId),
+      loadEpicStates(workspaceId),
+    ]);
+    if (epicRes.error || !epicRes.data) {
+      setError(epicRes.error ?? 'Epic not found');
+      setLoading(false);
+      return;
+    }
+    setEpic(epicRes.data);
+    setForm(buildForm(epicRes.data));
+    setStories(storiesRes.data ?? []);
+    setLoading(false);
+  }, [workspaceId, epicId, loadEpicStates]);
+
   // Load epic data
   useEffect(() => {
-    if (!workspaceId) return;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      const [epicRes, storiesRes] = await Promise.all([
-        pmEpicService.get(workspaceId, epicId),
-        pmEpicService.listStories(workspaceId, epicId),
-        loadEpicStates(workspaceId),
-      ]);
-      if (epicRes.error || !epicRes.data) {
-        setError(epicRes.error ?? 'Epic not found');
-        setLoading(false);
-        return;
-      }
-      setEpic(epicRes.data);
-      setForm(buildForm(epicRes.data));
-      setStories(storiesRes.data ?? []);
-      setLoading(false);
-    })();
+    fetchData();
   }, [workspaceId, epicId, loadEpicStates]);
 
   // Auto-save debounce
@@ -364,6 +367,14 @@ export function EpicDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Orchestration */}
+          <EpicOrchestrationPanel
+            epicId={epicId}
+            workspaceId={workspaceId}
+            orchestratorAgentId={epic.epic.orchestrator_agent_id}
+            onStoriesCreated={() => fetchData()}
+          />
         </div>
 
         {/* ── Right column — metadata sidebar ────────────────────── */}

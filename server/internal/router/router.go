@@ -12,30 +12,35 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
-	Health      *handler.HealthHandler
-	Auth        *handler.AuthHandler
-	Workspace   *handler.WorkspaceHandler
-	Quarter     *handler.QuarterHandler
-	Sprint      *handler.SprintHandler
-	Goal        *handler.GoalHandler
-	Bonus       *handler.BonusHandler
-	Finance     *handler.FinanceHandler
-	Settings    *handler.SettingsHandler
-	Audit       *handler.AuditHandler
-	Draft       *handler.DraftHandler
-	Invite      *handler.InviteHandler
-	PMWorkflow  *handler.PMWorkflowHandler
-	PMLabel     *handler.PMLabelHandler
-	PMEpic      *handler.PMEpicHandler
-	PMSprint *handler.PMSprintHandler
-	PMStory     *handler.PMStoryHandler
-	PMComment    *handler.PMCommentHandler
-	PMAttachment *handler.PMAttachmentHandler
-	PMObjective      *handler.PMObjectiveHandler
-	PMChecklistItem  *handler.PMChecklistItemHandler
-	PMExternalLink   *handler.PMExternalLinkHandler
-	PMView           *handler.PMViewHandler
-	Search           *handler.SearchHandler
+	Health          *handler.HealthHandler
+	Auth            *handler.AuthHandler
+	Workspace       *handler.WorkspaceHandler
+	Quarter         *handler.QuarterHandler
+	Sprint          *handler.SprintHandler
+	Goal            *handler.GoalHandler
+	Bonus           *handler.BonusHandler
+	Finance         *handler.FinanceHandler
+	Settings        *handler.SettingsHandler
+	Audit           *handler.AuditHandler
+	Draft           *handler.DraftHandler
+	Invite          *handler.InviteHandler
+	PMWorkflow      *handler.PMWorkflowHandler
+	PMLabel         *handler.PMLabelHandler
+	PMEpic          *handler.PMEpicHandler
+	PMSprint        *handler.PMSprintHandler
+	PMStory         *handler.PMStoryHandler
+	PMComment       *handler.PMCommentHandler
+	PMAttachment    *handler.PMAttachmentHandler
+	PMObjective     *handler.PMObjectiveHandler
+	PMChecklistItem *handler.PMChecklistItemHandler
+	PMExternalLink  *handler.PMExternalLinkHandler
+	PMView          *handler.PMViewHandler
+	Search          *handler.SearchHandler
+	Agent           *handler.AgentHandler
+	Support         *handler.SupportHandler
+	Widget          *handler.WidgetHandler
+	Git             *handler.GitHandler
+	Orchestration   *handler.OrchestrationHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -63,6 +68,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Get("/health", h.Health.Check)
 		r.Get("/invitations/info", h.Invite.GetInfo)
+
+		// ---- Public git webhook (no JWT) ----
+		r.Post("/git/webhook", h.Git.Webhook)
+
+		// ---- Public widget routes (no JWT, open CORS) ----
+		r.Route("/widget/support", func(r chi.Router) {
+			r.Use(cors.Handler(cors.Options{
+				AllowedOrigins:   []string{"*"},
+				AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+				AllowedHeaders:   []string{"Content-Type"},
+				AllowCredentials: false,
+				MaxAge:           3600,
+			}))
+			r.Get("/config", h.Widget.GetConfig)
+			r.Post("/session", h.Widget.CreateSession)
+			r.Post("/messages", h.Widget.SendMessage)
+			r.Get("/messages", h.Widget.GetMessages)
+		})
 
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
@@ -144,10 +167,32 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Post("/invitations/{id}/resend", h.Invite.Resend)
 			r.Delete("/invitations/{id}", h.Invite.Revoke)
 
+			// Git integrations
+			r.Route("/git", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Get("/integrations", h.Git.ListIntegrations)
+				r.Post("/integrations", h.Git.CreateIntegration)
+			})
+
 			// Search
 			r.Route("/search", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Get("/", h.Search.Search)
+			})
+
+			// Support module
+			r.Route("/support", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+
+				r.Get("/tickets", h.Support.ListTickets)
+				r.Post("/tickets", h.Support.CreateTicket)
+				r.Get("/tickets/{id}", h.Support.GetTicket)
+				r.Put("/tickets/{id}/status", h.Support.UpdateTicketStatus)
+				r.Get("/tickets/{id}/messages", h.Support.ListMessages)
+				r.Post("/tickets/{id}/messages", h.Support.CreateMessage)
+				r.Post("/tickets/{id}/link-story", h.Support.LinkStory)
+				r.Post("/tickets/{id}/assign-agent", h.Support.AssignAgent)
+				r.Post("/tickets/{id}/run-agent", h.Support.RunAgent)
 			})
 
 			// PM module
@@ -186,6 +231,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Delete("/epics/{id}", h.PMEpic.Delete)
 				r.Get("/epics/{id}/stories", h.PMEpic.ListStories)
 				r.Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
+				r.Post("/epics/{id}/orchestrate", h.Orchestration.Orchestrate)
+				r.Post("/epics/{id}/orchestrate/confirm", h.Orchestration.ConfirmOrchestration)
+				r.Post("/epics/{id}/assign-orchestrator", h.Orchestration.AssignOrchestrator)
 
 				// Sprints (PM)
 				r.Get("/sprints", h.PMSprint.List)
@@ -213,6 +261,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Post("/stories/{id}/labels", h.PMStory.AddLabel)
 				r.Delete("/stories/{id}/labels/{labelId}", h.PMStory.RemoveLabel)
 				r.Get("/stories/{id}/activity", h.PMStory.ListActivity)
+				r.Get("/stories/{id}/git-links", h.Git.GetStoryGitLinks)
+				r.Post("/stories/{id}/create-branch", h.Git.CreateBranch)
 
 				// Comments
 				r.Get("/comments", h.PMComment.List)
@@ -253,6 +303,22 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Post("/stories/{id}/links", h.PMExternalLink.Create)
 				r.Put("/links/{id}", h.PMExternalLink.Update)
 				r.Delete("/links/{id}", h.PMExternalLink.Delete)
+
+				// Agents
+				r.Get("/agents", h.Agent.ListAgents)
+				r.Post("/agents", h.Agent.CreateAgent)
+				r.Get("/runtime-profiles", h.Agent.ListRuntimeProfiles)
+				r.Get("/agents/{id}", h.Agent.GetAgent)
+				r.Put("/agents/{id}", h.Agent.UpdateAgent)
+				r.Delete("/agents/{id}", h.Agent.DeleteAgent)
+				r.Get("/agents/{id}/runs", h.Agent.ListAgentRuns)
+				r.Post("/stories/{id}/assign-agent", h.Agent.AssignAgentToStory)
+				r.Post("/stories/{id}/run-agent", h.Agent.RunAgent)
+				r.Get("/agent-runs/{id}", h.Agent.GetAgentRun)
+				r.Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
+				r.Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)
+				r.Post("/agent-runs/{id}/approve", h.Agent.ApproveRun)
+				r.Post("/agent-runs/{id}/handoff", h.Agent.HandoffRun)
 			})
 		})
 	})

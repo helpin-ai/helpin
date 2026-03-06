@@ -28,9 +28,10 @@ type PMEpic struct {
 	Health           string     `json:"health" gorm:"not null;default:'on_track'"`
 	HealthComment    *string    `json:"health_comment"`
 	Archived         bool       `json:"archived" gorm:"not null;default:false"`
-	CreatedBy        *string    `json:"created_by" gorm:"type:uuid"`
-	CreatedAt        time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	OrchestratorAgentID *string  `json:"orchestrator_agent_id" gorm:"type:uuid;index"`
+	CreatedBy           *string  `json:"created_by" gorm:"type:uuid"`
+	CreatedAt           time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt           time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMEpic) TableName() string { return "pm_epics" }

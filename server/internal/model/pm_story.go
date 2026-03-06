@@ -47,6 +47,7 @@ type PMStory struct {
 	Blocked         bool       `json:"blocked" gorm:"not null;default:false"`
 	Blocker         *string    `json:"blocker"`
 	Archived        bool       `json:"archived" gorm:"not null;default:false"`
+	AssignedAgentID *string    `json:"assigned_agent_id" gorm:"type:uuid;index"`
 	TemplateID      *string    `json:"template_id"`
 	ExternalID      *string    `json:"external_id"`
 	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`

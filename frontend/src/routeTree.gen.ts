@@ -30,9 +30,11 @@ import { Route as AuthenticatedWSlugSettingsIndexRouteImport } from './routes/_a
 import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authenticated/w/$slug/pm/index'
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
 import { Route as AuthenticatedWSlugSettingsSectionRouteImport } from './routes/_authenticated/w/$slug/settings/$section'
+import { Route as AuthenticatedWSlugPmSupportRouteImport } from './routes/_authenticated/w/$slug/pm/support'
 import { Route as AuthenticatedWSlugPmStoriesRouteImport } from './routes/_authenticated/w/$slug/pm/stories'
 import { Route as AuthenticatedWSlugPmRoadmapRouteImport } from './routes/_authenticated/w/$slug/pm/roadmap'
 import { Route as AuthenticatedWSlugPmReportsRouteImport } from './routes/_authenticated/w/$slug/pm/reports'
+import { Route as AuthenticatedWSlugPmAgentsRouteImport } from './routes/_authenticated/w/$slug/pm/agents'
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
@@ -152,6 +154,12 @@ const AuthenticatedWSlugSettingsSectionRoute =
     path: '/settings/$section',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugPmSupportRoute =
+  AuthenticatedWSlugPmSupportRouteImport.update({
+    id: '/pm/support',
+    path: '/pm/support',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugPmStoriesRoute =
   AuthenticatedWSlugPmStoriesRouteImport.update({
     id: '/pm/stories',
@@ -168,6 +176,12 @@ const AuthenticatedWSlugPmReportsRoute =
   AuthenticatedWSlugPmReportsRouteImport.update({
     id: '/pm/reports',
     path: '/pm/reports',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugPmAgentsRoute =
+  AuthenticatedWSlugPmAgentsRouteImport.update({
+    id: '/pm/agents',
+    path: '/pm/agents',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugPmSprintsIndexRoute =
@@ -223,9 +237,11 @@ export interface FileRoutesByFullPath {
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
+  '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
   '/w/$slug/pm/roadmap': typeof AuthenticatedWSlugPmRoadmapRoute
   '/w/$slug/pm/stories': typeof AuthenticatedWSlugPmStoriesRoute
+  '/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/pm/': typeof AuthenticatedWSlugPmIndexRoute
@@ -253,9 +269,11 @@ export interface FileRoutesByTo {
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
+  '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
   '/w/$slug/pm/roadmap': typeof AuthenticatedWSlugPmRoadmapRoute
   '/w/$slug/pm/stories': typeof AuthenticatedWSlugPmStoriesRoute
+  '/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/pm': typeof AuthenticatedWSlugPmIndexRoute
@@ -286,9 +304,11 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/_authenticated/w/$slug/': typeof AuthenticatedWSlugIndexRoute
+  '/_authenticated/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
   '/_authenticated/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
   '/_authenticated/w/$slug/pm/roadmap': typeof AuthenticatedWSlugPmRoadmapRoute
   '/_authenticated/w/$slug/pm/stories': typeof AuthenticatedWSlugPmStoriesRoute
+  '/_authenticated/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
   '/_authenticated/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/_authenticated/w/$slug/pm/': typeof AuthenticatedWSlugPmIndexRoute
@@ -319,9 +339,11 @@ export interface FileRouteTypes {
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug/'
+    | '/w/$slug/pm/agents'
     | '/w/$slug/pm/reports'
     | '/w/$slug/pm/roadmap'
     | '/w/$slug/pm/stories'
+    | '/w/$slug/pm/support'
     | '/w/$slug/settings/$section'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/pm/'
@@ -349,9 +371,11 @@ export interface FileRouteTypes {
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug'
+    | '/w/$slug/pm/agents'
     | '/w/$slug/pm/reports'
     | '/w/$slug/pm/roadmap'
     | '/w/$slug/pm/stories'
+    | '/w/$slug/pm/support'
     | '/w/$slug/settings/$section'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/pm'
@@ -381,9 +405,11 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/tasks'
     | '/_authenticated/w/$slug/team-goals'
     | '/_authenticated/w/$slug/'
+    | '/_authenticated/w/$slug/pm/agents'
     | '/_authenticated/w/$slug/pm/reports'
     | '/_authenticated/w/$slug/pm/roadmap'
     | '/_authenticated/w/$slug/pm/stories'
+    | '/_authenticated/w/$slug/pm/support'
     | '/_authenticated/w/$slug/settings/$section'
     | '/_authenticated/w/$slug/sprints/$sprintId'
     | '/_authenticated/w/$slug/pm/'
@@ -554,6 +580,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsSectionRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/pm/support': {
+      id: '/_authenticated/w/$slug/pm/support'
+      path: '/pm/support'
+      fullPath: '/w/$slug/pm/support'
+      preLoaderRoute: typeof AuthenticatedWSlugPmSupportRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/pm/stories': {
       id: '/_authenticated/w/$slug/pm/stories'
       path: '/pm/stories'
@@ -573,6 +606,13 @@ declare module '@tanstack/react-router' {
       path: '/pm/reports'
       fullPath: '/w/$slug/pm/reports'
       preLoaderRoute: typeof AuthenticatedWSlugPmReportsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/pm/agents': {
+      id: '/_authenticated/w/$slug/pm/agents'
+      path: '/pm/agents'
+      fullPath: '/w/$slug/pm/agents'
+      preLoaderRoute: typeof AuthenticatedWSlugPmAgentsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/pm/sprints/': {
@@ -629,9 +669,11 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugTasksRoute: typeof AuthenticatedWSlugTasksRoute
   AuthenticatedWSlugTeamGoalsRoute: typeof AuthenticatedWSlugTeamGoalsRoute
   AuthenticatedWSlugIndexRoute: typeof AuthenticatedWSlugIndexRoute
+  AuthenticatedWSlugPmAgentsRoute: typeof AuthenticatedWSlugPmAgentsRoute
   AuthenticatedWSlugPmReportsRoute: typeof AuthenticatedWSlugPmReportsRoute
   AuthenticatedWSlugPmRoadmapRoute: typeof AuthenticatedWSlugPmRoadmapRoute
   AuthenticatedWSlugPmStoriesRoute: typeof AuthenticatedWSlugPmStoriesRoute
+  AuthenticatedWSlugPmSupportRoute: typeof AuthenticatedWSlugPmSupportRoute
   AuthenticatedWSlugSettingsSectionRoute: typeof AuthenticatedWSlugSettingsSectionRoute
   AuthenticatedWSlugSprintsSprintIdRoute: typeof AuthenticatedWSlugSprintsSprintIdRoute
   AuthenticatedWSlugPmIndexRoute: typeof AuthenticatedWSlugPmIndexRoute
@@ -654,9 +696,11 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugTasksRoute: AuthenticatedWSlugTasksRoute,
   AuthenticatedWSlugTeamGoalsRoute: AuthenticatedWSlugTeamGoalsRoute,
   AuthenticatedWSlugIndexRoute: AuthenticatedWSlugIndexRoute,
+  AuthenticatedWSlugPmAgentsRoute: AuthenticatedWSlugPmAgentsRoute,
   AuthenticatedWSlugPmReportsRoute: AuthenticatedWSlugPmReportsRoute,
   AuthenticatedWSlugPmRoadmapRoute: AuthenticatedWSlugPmRoadmapRoute,
   AuthenticatedWSlugPmStoriesRoute: AuthenticatedWSlugPmStoriesRoute,
+  AuthenticatedWSlugPmSupportRoute: AuthenticatedWSlugPmSupportRoute,
   AuthenticatedWSlugSettingsSectionRoute:
     AuthenticatedWSlugSettingsSectionRoute,
   AuthenticatedWSlugSprintsSprintIdRoute:

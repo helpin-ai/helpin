@@ -24,6 +24,7 @@ import (
 	"github.com/d4interactive/teampulse/server/internal/service"
 	"github.com/d4interactive/teampulse/server/internal/storage"
 	ws "github.com/d4interactive/teampulse/server/internal/websocket"
+	"github.com/d4interactive/teampulse/server/internal/worker"
 )
 
 func main() {
@@ -112,6 +113,17 @@ func main() {
 		&model.PMExternalLink{},
 		&model.PMView{},
 		&model.WorkspaceInvitation{},
+		&model.Agent{},
+		&model.AgentRun{},
+		&model.AgentRunArtifact{},
+		&model.SupportTicket{},
+		&model.SupportMessage{},
+		&model.SupportWidgetInstallation{},
+		&model.SupportWidgetSession{},
+		&model.GitIntegration{},
+		&model.StoryGitLink{},
+		&model.AgentJob{},
+		&model.AgentHandoff{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -166,6 +178,17 @@ func main() {
 	pmViewRepo := repository.NewPMViewRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	agentRunRepo := repository.NewAgentRunRepository(db)
+	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
+	supportTicketRepo := repository.NewSupportTicketRepository(db)
+	supportMessageRepo := repository.NewSupportMessageRepository(db)
+	widgetInstallRepo := repository.NewWidgetInstallationRepository(db)
+	widgetSessionRepo := repository.NewWidgetSessionRepository(db)
+	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
+	storyGitLinkRepo := repository.NewStoryGitLinkRepository(db)
+	agentJobRepo := repository.NewAgentJobRepository(db)
+	agentHandoffRepo := repository.NewAgentHandoffRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -182,6 +205,18 @@ func main() {
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo)
 	searchService := service.NewSearchService(searchRepo)
+	agentService := service.NewAgentService(agentRepo, agentRunRepo, agentRunArtifactRepo, agentJobRepo, pmStoryRepo, supportTicketRepo, supportMessageRepo, agentHandoffRepo, pmActivityService, wsPublisher)
+	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher)
+	gitService := service.NewGitService(gitIntegrationRepo, storyGitLinkRepo, pmActivityService, wsPublisher)
+
+	// Initialize Claude client for orchestration (optional).
+	var claudeClient *worker.ClaudeClient
+	if cfg.AnthropicAPIKey != "" {
+		claudeClient = worker.NewClaudeClient(cfg.AnthropicAPIKey)
+		log.Println("Anthropic API configured — orchestration enabled")
+	} else {
+		log.Println("Anthropic API not configured — orchestration disabled")
+	}
 
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
 	quarterService := service.NewQuarterService(quarterRepo, sprintRepo)
@@ -192,33 +227,39 @@ func main() {
 	auditService := service.NewAuditService(bonusRepo)
 	draftService := service.NewDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL)
+	orchestrationService := service.NewOrchestrationService(pmEpicRepo, pmStoryService, agentRepo, agentHandoffRepo, pmActivityService, wsPublisher, claudeClient)
 
 	// Initialize handlers.
 	handlers := router.Handlers{
-		Health:      handler.NewHealthHandler(),
-		Auth:        handler.NewAuthHandler(authService),
-		Workspace:   handler.NewWorkspaceHandler(workspaceService),
-		Quarter:     handler.NewQuarterHandler(quarterService),
-		Sprint:      handler.NewSprintHandler(sprintService),
-		Goal:        handler.NewGoalHandler(goalService),
-		Bonus:       handler.NewBonusHandler(bonusService),
-		Finance:     handler.NewFinanceHandler(bonusService),
-		Settings:    handler.NewSettingsHandler(settingsService),
-		Audit:       handler.NewAuditHandler(auditService),
-		Draft:       handler.NewDraftHandler(draftService),
-		Invite:      handler.NewInviteHandler(inviteService),
-		PMWorkflow:  handler.NewPMWorkflowHandler(pmWorkflowService),
-		PMLabel:     handler.NewPMLabelHandler(pmLabelService),
-		PMEpic:      handler.NewPMEpicHandler(pmEpicService),
-		PMSprint: handler.NewPMSprintHandler(pmSprintService),
-		PMStory:     handler.NewPMStoryHandler(pmStoryService),
-		PMComment:    handler.NewPMCommentHandler(pmCommentService),
-		PMAttachment: handler.NewPMAttachmentHandler(pmAttachmentService),
-		PMObjective:      handler.NewPMObjectiveHandler(pmObjectiveService),
-		PMChecklistItem:  handler.NewPMChecklistItemHandler(pmChecklistItemService),
-		PMExternalLink:   handler.NewPMExternalLinkHandler(pmExternalLinkService),
-		PMView:           handler.NewPMViewHandler(pmViewService),
-		Search:           handler.NewSearchHandler(searchService),
+		Health:          handler.NewHealthHandler(),
+		Auth:            handler.NewAuthHandler(authService),
+		Workspace:       handler.NewWorkspaceHandler(workspaceService),
+		Quarter:         handler.NewQuarterHandler(quarterService),
+		Sprint:          handler.NewSprintHandler(sprintService),
+		Goal:            handler.NewGoalHandler(goalService),
+		Bonus:           handler.NewBonusHandler(bonusService),
+		Finance:         handler.NewFinanceHandler(bonusService),
+		Settings:        handler.NewSettingsHandler(settingsService),
+		Audit:           handler.NewAuditHandler(auditService),
+		Draft:           handler.NewDraftHandler(draftService),
+		Invite:          handler.NewInviteHandler(inviteService),
+		PMWorkflow:      handler.NewPMWorkflowHandler(pmWorkflowService),
+		PMLabel:         handler.NewPMLabelHandler(pmLabelService),
+		PMEpic:          handler.NewPMEpicHandler(pmEpicService),
+		PMSprint:        handler.NewPMSprintHandler(pmSprintService),
+		PMStory:         handler.NewPMStoryHandler(pmStoryService),
+		PMComment:       handler.NewPMCommentHandler(pmCommentService),
+		PMAttachment:    handler.NewPMAttachmentHandler(pmAttachmentService),
+		PMObjective:     handler.NewPMObjectiveHandler(pmObjectiveService),
+		PMChecklistItem: handler.NewPMChecklistItemHandler(pmChecklistItemService),
+		PMExternalLink:  handler.NewPMExternalLinkHandler(pmExternalLinkService),
+		PMView:          handler.NewPMViewHandler(pmViewService),
+		Search:          handler.NewSearchHandler(searchService),
+		Agent:           handler.NewAgentHandler(agentService),
+		Support:         handler.NewSupportHandler(supportService, agentService),
+		Widget:          handler.NewWidgetHandler(supportService),
+		Git:             handler.NewGitHandler(gitService),
+		Orchestration:   handler.NewOrchestrationHandler(orchestrationService),
 	}
 
 	// Set up router.

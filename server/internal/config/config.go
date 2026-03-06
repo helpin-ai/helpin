@@ -19,6 +19,9 @@ type Config struct {
 	AWSRegion          string
 	AWSEndpointURL     string // For MinIO / local dev
 
+	// Anthropic API (optional — agent/orchestration features disabled if not set)
+	AnthropicAPIKey string
+
 	// Postmark email (optional — email sending disabled if not set)
 	PostmarkServerToken string
 	PostmarkFromEmail   string
@@ -64,6 +67,7 @@ func Load() (*Config, error) {
 		AWSBucket:           os.Getenv("AWS_S3_BUCKET_NAME"),
 		AWSRegion:           os.Getenv("AWS_REGION"),
 		AWSEndpointURL:      os.Getenv("AWS_S3_ENDPOINT_URL"),
+		AnthropicAPIKey:     os.Getenv("ANTHROPIC_API_KEY"),
 		PostmarkServerToken: os.Getenv("POSTMARK_SERVER_TOKEN"),
 		PostmarkFromEmail:   os.Getenv("POSTMARK_FROM_EMAIL"),
 		AppBaseURL:          appBaseURL,
