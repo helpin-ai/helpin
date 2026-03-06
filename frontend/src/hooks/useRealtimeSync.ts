@@ -31,7 +31,13 @@ export function useRealtimeSync(workspaceId: string) {
         // For created/updated/moved, fetch the updated story and patch it in
         pmStoryService.get(workspaceId, event.entity_id).then((res) => {
           if (res.data) {
-            const patched = store.patchStory(event.action, event.entity_id, res.data.story)
+            const story = { ...res.data.story }
+            // Enrich with owner_name from StoryDetail owners for board display
+            if (story.owner_id && !story.owner_name && res.data.owners?.length) {
+              const owner = res.data.owners.find((o) => o.id === story.owner_id)
+              if (owner) story.owner_name = owner.full_name
+            }
+            const patched = store.patchStory(event.action, event.entity_id, story)
             if (!patched) scheduleRefresh()
           } else {
             // Story might have been archived/deleted by the time we fetch.

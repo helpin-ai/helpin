@@ -114,6 +114,13 @@ const removeLoadedStory = (column: StoryStateColumn, storyId: string) => {
   return removed ?? null;
 };
 
+/** Preserve board-enriched display fields (owner_name, epic_name) from existing story when IDs match. */
+const mergeEnrichedFields = (incoming: Story, existing: Story): Story => ({
+  ...incoming,
+  owner_name: incoming.owner_name ?? (incoming.owner_id === existing.owner_id ? existing.owner_name : undefined),
+  epic_name: incoming.epic_name ?? (incoming.epic_id === existing.epic_id ? existing.epic_name : undefined),
+});
+
 const upsertLoadedStory = (column: StoryStateColumn, story: Story) => {
   const nextStories = sortStories([
     ...column.stories.filter((candidate) => candidate.id !== story.id),
@@ -354,7 +361,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       }
 
       if (fromCol.state.id === story.workflow_state_id) {
-        fromCol.stories[fromIdx] = story;
+        fromCol.stories[fromIdx] = mergeEnrichedFields(story, existing);
         fromCol.stories = sortStories(fromCol.stories);
         updateColumnTotals(fromCol, 0, (story.estimate ?? 0) - existingEstimate);
         patched = true;
@@ -368,9 +375,10 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       const toCol = columns.find((c) => c.state.id === story.workflow_state_id);
       if (!toCol) return { columns };
 
+      const merged = mergeEnrichedFields(story, removed);
       updateColumnTotals(toCol, 1, story.estimate ?? 0);
       if (!toCol.has_more || toCol.stories.length < PER_STATE_LIMIT) {
-        upsertLoadedStory(toCol, story);
+        upsertLoadedStory(toCol, merged);
         patched = !toCol.has_more;
       } else {
         patched = false;

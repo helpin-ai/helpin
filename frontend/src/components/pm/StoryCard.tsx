@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { UserAvatar } from './UserAvatar';
-import type { Priority, Story, WorkflowState } from '@/lib/pmTypes';
+import type { Priority, Severity, Story, WorkflowState } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 
@@ -32,6 +32,7 @@ const PRIORITY_BORDER_COLOR: Record<Priority, string> = {
 };
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
+const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 
 // ── Component ───────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ interface StoryCardProps {
   onOwnerChanged?: (story: Story) => void;
   onStoryMoved?: (storyId: string, fromStateId: string, toStateId: string) => void;
   onPriorityChanged?: (story: Story) => void;
+  onSeverityChanged?: (story: Story) => void;
 }
 
 export function StoryCard({
@@ -59,6 +61,7 @@ export function StoryCard({
   onOwnerChanged,
   onStoryMoved,
   onPriorityChanged,
+  onSeverityChanged,
 }: StoryCardProps) {
   const {
     attributes,
@@ -76,6 +79,7 @@ export function StoryCard({
 
   const [memberOpen, setMemberOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
+  const [severityOpen, setSeverityOpen] = useState(false);
   const [stateOpen, setStateOpen] = useState(false);
 
   const due = useMemo(() => {
@@ -134,6 +138,25 @@ export function StoryCard({
       setPriorityOpen(false);
     },
     [workspaceId, story.id, story.priority, onPriorityChanged],
+  );
+
+  const handleChangeSeverity = useCallback(
+    async (severity: Severity) => {
+      if (!workspaceId || severity === story.severity) {
+        setSeverityOpen(false);
+        return;
+      }
+      try {
+        const result = await pmStoryService.update(workspaceId, story.id, { severity });
+        if (result.data?.story) {
+          onSeverityChanged?.(result.data.story);
+        }
+      } catch {
+        // Board will show stale data until next refresh
+      }
+      setSeverityOpen(false);
+    },
+    [workspaceId, story.id, story.severity, onSeverityChanged],
   );
 
   const handleChangeState = useCallback(
@@ -345,7 +368,59 @@ export function StoryCard({
           </Tooltip>
         )}
 
-        {severityCfg && (
+        {/* Severity pill — clickable dropdown */}
+        {severityCfg && workspaceId ? (
+          <Popover open={severityOpen} onOpenChange={setSeverityOpen}>
+            <Tooltip open={severityOpen ? false : undefined}>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(pillBase, 'border-border bg-muted/50 transition-colors hover:bg-muted', severityCfg.color)}
+                    onClick={(e) => { e.stopPropagation(); setSeverityOpen(true); }}
+                  >
+                    <SeverityIcon severity={story.severity} className="h-3 w-3" />
+                    {severityCfg.label}
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">Severity: {severityCfg.label}</TooltipContent>
+            </Tooltip>
+            {severityOpen && (
+              <PopoverContent
+                className="w-[180px] p-0"
+                align="start"
+                side="bottom"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Command>
+                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+                    <CommandGroup>
+                      {ALL_SEVERITIES.map((sev) => {
+                        const cfg = SEVERITY_CONFIG[sev];
+                        return (
+                          <CommandItem
+                            key={sev}
+                            value={cfg.label}
+                            onSelect={() => handleChangeSeverity(sev)}
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            <SeverityIcon severity={sev} className="h-3.5 w-3.5" />
+                            <span>{cfg.label}</span>
+                            {story.severity === sev && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            )}
+          </Popover>
+        ) : severityCfg ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-border bg-muted/50', severityCfg.color)}>
@@ -355,7 +430,7 @@ export function StoryCard({
             </TooltipTrigger>
             <TooltipContent side="top">Severity: {severityCfg.label}</TooltipContent>
           </Tooltip>
-        )}
+        ) : null}
 
         {story.blocked && (
           <Tooltip>

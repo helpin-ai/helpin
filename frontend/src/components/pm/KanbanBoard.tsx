@@ -50,11 +50,12 @@ interface ColumnProps {
   onOwnerChanged: (story: Story) => void;
   onStoryMoved: (storyId: string, fromStateId: string, toStateId: string) => void;
   onPriorityChanged: (story: Story) => void;
+  onSeverityChanged: (story: Story) => void;
   onLoadMore: (stateId: string) => void;
   isLoadingMore: boolean;
 }
 
-function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, states, onOwnerChanged, onStoryMoved, onPriorityChanged, onLoadMore, isLoadingMore }: ColumnProps) {
+function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, states, onOwnerChanged, onStoryMoved, onPriorityChanged, onSeverityChanged, onLoadMore, isLoadingMore }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
 
   if (collapsed) {
@@ -133,6 +134,7 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
               onOwnerChanged={onOwnerChanged}
               onStoryMoved={onStoryMoved}
               onPriorityChanged={onPriorityChanged}
+              onSeverityChanged={onSeverityChanged}
             />
           ))}
 
@@ -376,11 +378,16 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   );
 
   const handleStoryPatched = useCallback((story: Story) => {
+    // Enrich with owner_name for board display (update API doesn't include it)
+    if (story.owner_id && !story.owner_name) {
+      const member = members.find((m) => m.user_id === story.owner_id);
+      if (member) story = { ...story, owner_name: member.full_name || member.email };
+    }
     const patched = patchStory('updated', story.id, story);
     if (!patched) {
       refreshBoard();
     }
-  }, [patchStory, refreshBoard]);
+  }, [patchStory, refreshBoard, members]);
 
   const handleStoryMoved = useCallback(
     (storyId: string, fromStateId: string, toStateId: string) => {
@@ -495,6 +502,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   onOwnerChanged={handleStoryPatched}
                   onStoryMoved={handleStoryMoved}
                   onPriorityChanged={handleStoryPatched}
+                  onSeverityChanged={handleStoryPatched}
                   onLoadMore={loadMoreColumn}
                   isLoadingMore={!!columnLoading[column.state.id]}
                 />
@@ -542,7 +550,13 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         states={workflow?.states ?? []}
         onStoryUpdated={(updated) => {
           setSelectedStory(updated);
-          const patched = patchStory('updated', updated.story.id, updated.story);
+          const story = { ...updated.story };
+          // Enrich with owner_name from StoryDetail owners for board display
+          if (story.owner_id && !story.owner_name && updated.owners?.length) {
+            const owner = updated.owners.find((o) => o.id === story.owner_id);
+            if (owner) story.owner_name = owner.full_name;
+          }
+          const patched = patchStory('updated', story.id, story);
           if (!patched) {
             refreshBoard();
           }
