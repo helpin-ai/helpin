@@ -1,10 +1,10 @@
-# Teampulse: Agents & Automation Guide
+# Helpin: Agents & Automation Guide
 
 ## Overview
 
-Teampulse treats agents as workflow participants inside the product, not as the product itself.
+Helpin treats agents as workflow participants inside the product, not as the product itself.
 
-Teampulse owns:
+Helpin owns:
 
 - work items
 - assignments
@@ -38,7 +38,7 @@ Runtime adapters own execution details such as model calls, terminal access, and
 
 | | Team Members | Agents |
 |---|---|---|
-| What they are | Real users invited to the workspace | Workflow participants registered in Teampulse |
+| What they are | Real users invited to the workspace | Workflow participants registered in Helpin |
 | Authentication | Email/password + JWT | No direct login |
 | Primary purpose | Human collaboration and review | Planned or automated execution |
 | Can be assigned | Yes | Yes |
@@ -52,7 +52,7 @@ Runtime adapters own execution details such as model calls, terminal access, and
 
 ## Recommended Roles
 
-Teampulse is designed around a small role set:
+Helpin is designed around a small role set:
 
 - `orchestrator`
 - `engineer`
@@ -226,7 +226,7 @@ Implemented endpoints:
 
 ## Artifacts
 
-Teampulse standardizes run artifacts as:
+Helpin standardizes run artifacts as:
 
 - `conversation_log`
 - `tool_log`
@@ -294,7 +294,7 @@ Implemented:
 
 - `GET /api/pm/runtime-profiles?workspace_id=`
 
-This returns the capability profiles Teampulse knows how to enforce.
+This returns the capability profiles Helpin knows how to enforce.
 
 ## API Reference
 

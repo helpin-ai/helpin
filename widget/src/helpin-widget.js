@@ -1,19 +1,19 @@
 /**
- * Teampulse Support Chat Widget
+ * Helpin Support Chat Widget
  * Embeddable customer support chat — zero dependencies, Shadow DOM isolated.
  *
  * Usage:
- *   <script src="https://cdn.teampulse.io/widget/teampulse-widget.js"></script>
+ *   <script src="https://cdn.helpin.ai/widget/helpin-widget.js"></script>
  *   <script>
- *     TeampulseWidget.init({
+ *     HelpinWidget.init({
  *       widgetKey: "your-widget-key",
- *       apiUrl: "https://teampulse.example.com",
+ *       apiUrl: "https://helpin.example.com",
  *       position: "bottom-right",
  *       theme: "light",
  *       primaryColor: "#6C5CE7",
  *       greeting: "Hi there! How can we help you today?",
  *       preChatForm: true,
- *       companyName: "Teampulse",
+ *       companyName: "Helpin",
  *       soundEnabled: true
  *     });
  *   </script>
@@ -21,7 +21,7 @@
 (function () {
   "use strict";
 
-  if (window.TeampulseWidget && window.TeampulseWidget._initialized) return;
+  if (window.HelpinWidget && window.HelpinWidget._initialized) return;
 
   // ─── Notification Sound (base64 tiny blip) ───
   const NOTIFICATION_SOUND =
@@ -981,7 +981,7 @@
   }
 
   // ─── Widget Class ───
-  class TeampulseChat {
+  class HelpinChat {
     constructor(config) {
       this.config = Object.assign(
         {
@@ -992,7 +992,7 @@
           primaryColor: "#6C5CE7",
           greeting: "Hi there! How can we help you today?",
           preChatForm: true,
-          companyName: "Teampulse",
+          companyName: "Helpin",
           soundEnabled: true,
           placeholder: "Type a message...",
         },
@@ -1019,7 +1019,7 @@
     async _init() {
       // Create Shadow DOM host
       this.host = document.createElement("div");
-      this.host.id = "teampulse-widget-host";
+      this.host.id = "helpin-widget-host";
       this.shadow = this.host.attachShadow({ mode: "open" });
 
       // Inject styles
@@ -1184,7 +1184,7 @@
       // Footer
       const footer = document.createElement("div");
       footer.className = "tp-footer";
-      footer.innerHTML = `<a href="https://teampulse.io" target="_blank" rel="noopener noreferrer">Powered by Teampulse</a>`;
+      footer.innerHTML = `<a href="https://helpin.ai" target="_blank" rel="noopener noreferrer">Powered by Helpin</a>`;
 
       // Assemble chat view
       this.chatView.appendChild(this.messagesEl);
@@ -1530,26 +1530,26 @@
   }
 
   // ─── Public API ───
-  window.TeampulseWidget = {
+  window.HelpinWidget = {
     _initialized: false,
     _instance: null,
 
     init: function (config) {
       if (this._initialized) {
-        console.warn("TeampulseWidget: Already initialized.");
+        console.warn("HelpinWidget: Already initialized.");
         return;
       }
       if (!config || !config.widgetKey) {
-        console.error("TeampulseWidget: widgetKey is required.");
+        console.error("HelpinWidget: widgetKey is required.");
         return;
       }
       if (!config.apiUrl) {
-        console.error("TeampulseWidget: apiUrl is required.");
+        console.error("HelpinWidget: apiUrl is required.");
         return;
       }
 
       this._initialized = true;
-      this._instance = new TeampulseChat(config);
+      this._instance = new HelpinChat(config);
       return this._instance;
     },
 

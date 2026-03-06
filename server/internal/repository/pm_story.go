@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // PMStoryRepository handles DB operations for stories and relations.

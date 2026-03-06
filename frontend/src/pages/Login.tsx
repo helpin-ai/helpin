@@ -48,7 +48,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Sign in to Teampulse</CardTitle>
+          <CardTitle className="text-2xl">Sign in to Helpin</CardTitle>
           <CardDescription>Enter your credentials to continue</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

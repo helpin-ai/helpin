@@ -8,7 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // RewardDraftRepository handles database operations for goal_drafts.

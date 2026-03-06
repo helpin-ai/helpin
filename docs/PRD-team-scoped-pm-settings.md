@@ -1,13 +1,13 @@
 # PRD: Team-Scoped PM Settings, Team Mentions, And Team Labels
 
-**Product**: TeamPulse  
+**Product**: Helpin  
 **Date**: March 5, 2026  
 **Status**: Draft  
 **Owner**: Product / Engineering
 
 ## 1. Summary
 
-TeamPulse should move to a hybrid model:
+Helpin should move to a hybrid model:
 
 - workspace-scoped identity, membership, RBAC, security, and administration
 - team-scoped PM behavior, collaboration settings, and team identity
@@ -25,11 +25,11 @@ The goal is to make teams first-class operational units, similar to Linear, with
 
 ### What exists today
 
-- teams exist as `workspace_teams`: [settings.go](/root/teampulse/server/internal/model/settings.go:20)
-- team memberships exist, but are attached to `WorkspacePerson`, not authenticated workspace members: [settings.go](/root/teampulse/server/internal/model/settings.go:33), [settings.go](/root/teampulse/server/internal/model/settings.go:55)
-- workspace members exist separately in `workspace_members`: [workspace.go](/root/teampulse/server/internal/model/workspace.go:18)
-- PM labels are workspace-wide only: [pm_label.go](/root/teampulse/server/internal/model/pm_label.go:5)
-- the editor does not yet implement mention extensions or team handles: [tiptap-editor.tsx](/root/teampulse/frontend/src/components/ui/tiptap-editor.tsx:1)
+- teams exist as `workspace_teams`: [settings.go](/root/helpin/server/internal/model/settings.go:20)
+- team memberships exist, but are attached to `WorkspacePerson`, not authenticated workspace members: [settings.go](/root/helpin/server/internal/model/settings.go:33), [settings.go](/root/helpin/server/internal/model/settings.go:55)
+- workspace members exist separately in `workspace_members`: [workspace.go](/root/helpin/server/internal/model/workspace.go:18)
+- PM labels are workspace-wide only: [pm_label.go](/root/helpin/server/internal/model/pm_label.go:5)
+- the editor does not yet implement mention extensions or team handles: [tiptap-editor.tsx](/root/helpin/frontend/src/components/ui/tiptap-editor.tsx:1)
 
 ### Practical consequence
 
@@ -412,7 +412,7 @@ or:
 
 ## 18. Recommendation
 
-TeamPulse should follow Linear’s direction here.
+Helpin should follow Linear’s direction here.
 
 Not by making every setting team-scoped, but by making teams first-class PM configuration boundaries inside a workspace-scoped security model.
 

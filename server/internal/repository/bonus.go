@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // RewardBonusRepository handles database operations for bonus calculations, finance, and audit.

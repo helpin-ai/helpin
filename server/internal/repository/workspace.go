@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // WorkspaceRepository handles database operations for workspaces and workspace members.

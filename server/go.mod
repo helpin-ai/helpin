@@ -1,4 +1,4 @@
-module github.com/d4interactive/teampulse/server
+module github.com/helpin-ai/helpin/server
 
 go 1.24.3
 

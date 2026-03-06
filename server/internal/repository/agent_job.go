@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // AgentJobRepository handles DB operations for the agent job queue.

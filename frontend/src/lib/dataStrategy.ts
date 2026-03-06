@@ -42,11 +42,11 @@ function getWorkspaceInfo(workspaceId: string) {
     },
     'demo': {
       name: 'Demo Company',
-      description: 'Explore TeamPulse with comprehensive demo data'
+      description: 'Explore Helpin with comprehensive demo data'
     },
     'demo-demo-demo-demo-demolicious': {
       name: 'Demo Company',
-      description: 'Explore TeamPulse with comprehensive demo data'
+      description: 'Explore Helpin with comprehensive demo data'
     },
     '2': {
       name: 'Product B',

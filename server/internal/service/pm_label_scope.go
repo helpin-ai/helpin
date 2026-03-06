@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func validateLabelScope(ctx context.Context, labelRepo *repository.PMLabelRepository, workspaceID string, labelIDs []string, allowedTeamIDs []string) error {

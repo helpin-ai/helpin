@@ -127,8 +127,8 @@ func NewToolRegistry() *ToolRegistry {
 		"required": []string{"title", "body"},
 	}, toolOpenPR)
 
-	// Teampulse tools
-	r.register("add_story_comment", "Add a comment to the current story visible in Teampulse.", map[string]interface{}{
+	// Helpin tools
+	r.register("add_story_comment", "Add a comment to the current story visible in Helpin.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"content": map[string]interface{}{

@@ -41,7 +41,7 @@ As development progresses, add items here that:
 #### Import from Shortcut
 - **Priority**: P3
 - **Source**: PRD — Non-Goals (may be revisited)
-- **Description**: One-time import tool to migrate existing Shortcut data (stories, epics, iterations, labels, comments) into TeamPulse PM. Map Shortcut IDs to TeamPulse display IDs.
+- **Description**: One-time import tool to migrate existing Shortcut data (stories, epics, iterations, labels, comments) into Helpin PM. Map Shortcut IDs to Helpin display IDs.
 - **Status**: Open
 - **Phase**: Future
 - **Notes**: Only needed if team wants historical data. Manual transition may be sufficient.
@@ -123,7 +123,7 @@ As development progresses, add items here that:
 - **Description**: Create a mapping layer between PM iterations and bonus sprints. Allow PM completion metrics (stories completed, velocity) to feed into individual/team scoring. Design: `pm_bonus_mapping` table, computed views for scoring formulas, API bridge endpoints.
 - **Status**: Open
 - **Phase**: Post Phase 4 (dedicated integration phase)
-- **Notes**: This is the ultimate value proposition of having PM in TeamPulse. Plan carefully.
+- **Notes**: This is the ultimate value proposition of having PM in Helpin. Plan carefully.
 
 #### GitHub Actions Integration
 - **Priority**: P3

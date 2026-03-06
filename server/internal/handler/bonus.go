@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
-	"github.com/d4interactive/teampulse/server/internal/service"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 // RewardBonusHandler handles bonus calculation HTTP requests.

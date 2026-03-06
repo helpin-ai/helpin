@@ -1,15 +1,15 @@
 # Final RBAC Plan
 
-**Product**: TeamPulse  
+**Product**: Helpin  
 **Date**: March 6, 2026  
 **Status**: Final planning doc  
 **Supersedes**:
-- [PRD-rbac-members-and-roles.md](/root/teampulse/docs/PRD-rbac-members-and-roles.md)
-- [PRD-current-state-review-2026-03-05.md](/root/teampulse/docs/PRD-current-state-review-2026-03-05.md)
+- [PRD-rbac-members-and-roles.md](/root/helpin/docs/PRD-rbac-members-and-roles.md)
+- [PRD-current-state-review-2026-03-05.md](/root/helpin/docs/PRD-current-state-review-2026-03-05.md)
 
 ## 1. Decision
 
-TeamPulse does **not** have RBAC properly implemented today.
+Helpin does **not** have RBAC properly implemented today.
 
 What exists today is:
 
@@ -32,59 +32,59 @@ The implementation plan must therefore start with **authorization hardening of t
 ### Backend reality
 
 - Most protected routes only use JWT auth, not authorization:
-  - [router.go](/root/teampulse/server/internal/router/router.go#L68)
+  - [router.go](/root/helpin/server/internal/router/router.go#L68)
 - PM and search routes only require a client-supplied workspace ID:
-  - [router.go](/root/teampulse/server/internal/router/router.go#L151)
-  - [router.go](/root/teampulse/server/internal/router/router.go#L157)
-  - [workspace.go](/root/teampulse/server/internal/middleware/workspace.go#L5)
+  - [router.go](/root/helpin/server/internal/router/router.go#L151)
+  - [router.go](/root/helpin/server/internal/router/router.go#L157)
+  - [workspace.go](/root/helpin/server/internal/middleware/workspace.go#L5)
 - Workspace routes do not verify membership or role before returning/updating/deleting data:
-  - [workspace.go](/root/teampulse/server/internal/handler/workspace.go#L56)
-  - [workspace.go](/root/teampulse/server/internal/handler/workspace.go#L68)
-  - [workspace.go](/root/teampulse/server/internal/handler/workspace.go#L87)
-  - [workspace.go](/root/teampulse/server/internal/handler/workspace.go#L126)
+  - [workspace.go](/root/helpin/server/internal/handler/workspace.go#L56)
+  - [workspace.go](/root/helpin/server/internal/handler/workspace.go#L68)
+  - [workspace.go](/root/helpin/server/internal/handler/workspace.go#L87)
+  - [workspace.go](/root/helpin/server/internal/handler/workspace.go#L126)
 - Settings routes accept raw workspace IDs or team IDs and perform no actor authorization:
-  - [settings.go](/root/teampulse/server/internal/handler/settings.go#L23)
-  - [settings.go](/root/teampulse/server/internal/handler/settings.go#L57)
-  - [settings.go](/root/teampulse/server/internal/handler/settings.go#L75)
-  - [settings.go](/root/teampulse/server/internal/handler/settings.go#L94)
-  - [settings.go](/root/teampulse/server/internal/handler/settings.go#L233)
-  - [settings.go](/root/teampulse/server/internal/handler/settings.go#L321)
+  - [settings.go](/root/helpin/server/internal/handler/settings.go#L23)
+  - [settings.go](/root/helpin/server/internal/handler/settings.go#L57)
+  - [settings.go](/root/helpin/server/internal/handler/settings.go#L75)
+  - [settings.go](/root/helpin/server/internal/handler/settings.go#L94)
+  - [settings.go](/root/helpin/server/internal/handler/settings.go#L233)
+  - [settings.go](/root/helpin/server/internal/handler/settings.go#L321)
 - PM services still trust raw IDs for many entity reads and writes:
-  - [pm_story.go](/root/teampulse/server/internal/handler/pm_story.go#L140)
-  - [pm_story.go](/root/teampulse/server/internal/service/pm_story.go#L44)
-  - [pm_story.go](/root/teampulse/server/internal/repository/pm_story.go#L91)
-  - [pm_story.go](/root/teampulse/server/internal/repository/pm_story.go#L117)
-  - [pm_story.go](/root/teampulse/server/internal/repository/pm_story.go#L158)
-  - [pm_story.go](/root/teampulse/server/internal/repository/pm_story.go#L169)
+  - [pm_story.go](/root/helpin/server/internal/handler/pm_story.go#L140)
+  - [pm_story.go](/root/helpin/server/internal/service/pm_story.go#L44)
+  - [pm_story.go](/root/helpin/server/internal/repository/pm_story.go#L91)
+  - [pm_story.go](/root/helpin/server/internal/repository/pm_story.go#L117)
+  - [pm_story.go](/root/helpin/server/internal/repository/pm_story.go#L158)
+  - [pm_story.go](/root/helpin/server/internal/repository/pm_story.go#L169)
 - Board access is driven by `workflow_id` without workspace scoping:
-  - [pm_story.go](/root/teampulse/server/internal/handler/pm_story.go#L72)
-  - [pm_story.go](/root/teampulse/server/internal/repository/pm_story.go#L302)
+  - [pm_story.go](/root/helpin/server/internal/handler/pm_story.go#L72)
+  - [pm_story.go](/root/helpin/server/internal/repository/pm_story.go#L302)
 - Other PM repositories also fetch by raw ID:
-  - [pm_workflow.go](/root/teampulse/server/internal/repository/pm_workflow.go#L47)
-  - [pm_attachment.go](/root/teampulse/server/internal/repository/pm_attachment.go#L31)
+  - [pm_workflow.go](/root/helpin/server/internal/repository/pm_workflow.go#L47)
+  - [pm_attachment.go](/root/helpin/server/internal/repository/pm_attachment.go#L31)
 - WebSocket connections trust any supplied `workspace_id` after token validation:
-  - [handler.go](/root/teampulse/server/internal/websocket/handler.go#L23)
+  - [handler.go](/root/helpin/server/internal/websocket/handler.go#L23)
 
 ### Frontend reality
 
 - Frontend permission logic is local role checking only:
-  - [sessionStore.ts](/root/teampulse/frontend/src/stores/sessionStore.ts#L15)
+  - [sessionStore.ts](/root/helpin/frontend/src/stores/sessionStore.ts#L15)
 - Workspace selection is based on `getBySlug`, which currently exposes any workspace by slug:
-  - [workspaceStore.ts](/root/teampulse/frontend/src/stores/workspaceStore.ts#L35)
-  - [workspacesService.ts](/root/teampulse/frontend/src/lib/services/workspacesService.ts#L4)
+  - [workspaceStore.ts](/root/helpin/frontend/src/stores/workspaceStore.ts#L35)
+  - [workspacesService.ts](/root/helpin/frontend/src/lib/services/workspacesService.ts#L4)
 - Settings pages are loaded for any workspace once the route is entered, then editability is toggled in UI:
-  - [Settings.tsx](/root/teampulse/frontend/src/pages/Settings.tsx#L120)
-  - [Settings.tsx](/root/teampulse/frontend/src/pages/Settings.tsx#L176)
+  - [Settings.tsx](/root/helpin/frontend/src/pages/Settings.tsx#L120)
+  - [Settings.tsx](/root/helpin/frontend/src/pages/Settings.tsx#L176)
 - Settings navigation is shown unconditionally:
-  - [Sidebar.tsx](/root/teampulse/frontend/src/components/layout/Sidebar.tsx#L173)
-  - [Sidebar.tsx](/root/teampulse/frontend/src/components/layout/Sidebar.tsx#L217)
+  - [Sidebar.tsx](/root/helpin/frontend/src/components/layout/Sidebar.tsx#L173)
+  - [Sidebar.tsx](/root/helpin/frontend/src/components/layout/Sidebar.tsx#L217)
 - API clients pass `workspace_id` in query strings directly, which mirrors the backend trust problem:
-  - [api.ts](/root/teampulse/frontend/src/lib/api.ts#L10)
-  - [settingsService.ts](/root/teampulse/frontend/src/lib/services/settingsService.ts#L30)
-  - [pmStoryService.ts](/root/teampulse/frontend/src/lib/services/pmStoryService.ts#L32)
-  - [searchService.ts](/root/teampulse/frontend/src/lib/services/searchService.ts#L22)
+  - [api.ts](/root/helpin/frontend/src/lib/api.ts#L10)
+  - [settingsService.ts](/root/helpin/frontend/src/lib/services/settingsService.ts#L30)
+  - [pmStoryService.ts](/root/helpin/frontend/src/lib/services/pmStoryService.ts#L32)
+  - [searchService.ts](/root/helpin/frontend/src/lib/services/searchService.ts#L22)
 - WebSocket connects with arbitrary workspace ID from the client:
-  - [useWebSocket.ts](/root/teampulse/frontend/src/hooks/useWebSocket.ts#L19)
+  - [useWebSocket.ts](/root/helpin/frontend/src/hooks/useWebSocket.ts#L19)
 
 ## 3. Final Scope Decision
 
@@ -285,7 +285,7 @@ This should replace ad hoc frontend role inference over time.
 
 Current invite checks are the only real RBAC checks today:
 
-- [invite.go](/root/teampulse/server/internal/service/invite.go#L54)
+- [invite.go](/root/helpin/server/internal/service/invite.go#L54)
 
 Retain that behavior, but move it under centralized permission checks instead of hardcoding owner/admin logic in service methods.
 
@@ -317,7 +317,7 @@ Add table-driven tests for:
 
 Current frontend role helpers:
 
-- [sessionStore.ts](/root/teampulse/frontend/src/stores/sessionStore.ts#L15)
+- [sessionStore.ts](/root/helpin/frontend/src/stores/sessionStore.ts#L15)
 
 should be replaced by a store that loads backend-resolved permissions from `GET /api/workspaces/{id}/me`.
 
@@ -344,7 +344,7 @@ Profile remains public to any authenticated user in a workspace.
 
 Sidebar and other entry points should render from effective permissions, not from fixed nav definitions:
 
-- [Sidebar.tsx](/root/teampulse/frontend/src/components/layout/Sidebar.tsx#L173)
+- [Sidebar.tsx](/root/helpin/frontend/src/components/layout/Sidebar.tsx#L173)
 
 Examples:
 
@@ -356,7 +356,7 @@ Examples:
 
 Existing `editable={isAdmin()}` usage in settings:
 
-- [Settings.tsx](/root/teampulse/frontend/src/pages/Settings.tsx#L176)
+- [Settings.tsx](/root/helpin/frontend/src/pages/Settings.tsx#L176)
 
 should be migrated to `has(permission)` checks.
 
@@ -366,7 +366,7 @@ This remains useful for UX, but all backend endpoints must already reject unauth
 
 Frontend workspace bootstrap currently trusts workspace lookup by slug:
 
-- [workspaceStore.ts](/root/teampulse/frontend/src/stores/workspaceStore.ts#L35)
+- [workspaceStore.ts](/root/helpin/frontend/src/stores/workspaceStore.ts#L35)
 
 After backend hardening:
 

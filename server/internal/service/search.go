@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
-	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 type SearchService struct {

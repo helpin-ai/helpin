@@ -73,7 +73,7 @@ func (c *Client) SendEmail(to, subject, htmlBody, textBody string) error {
 
 // SendInviteEmail sends a workspace invitation email.
 func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string) error {
-	subject := fmt.Sprintf("%s invited you to join %s on Teampulse", inviterName, workspaceName)
+	subject := fmt.Sprintf("%s invited you to join %s on Helpin", inviterName, workspaceName)
 
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html>
@@ -82,7 +82,7 @@ func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string)
     <div style="padding: 32px 24px; text-align: center;">
       <h1 style="font-size: 20px; font-weight: 600; color: #18181b; margin: 0 0 8px;">You're invited to join</h1>
       <h2 style="font-size: 24px; font-weight: 700; color: #18181b; margin: 0 0 16px;">%s</h2>
-      <p style="color: #71717a; font-size: 14px; margin: 0 0 24px;">%s has invited you to collaborate on Teampulse.</p>
+      <p style="color: #71717a; font-size: 14px; margin: 0 0 24px;">%s has invited you to collaborate on Helpin.</p>
       <a href="%s" style="display: inline-block; background: #18181b; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 6px; font-size: 14px; font-weight: 500;">Join Workspace</a>
       <p style="color: #a1a1aa; font-size: 12px; margin: 24px 0 0;">This invitation expires in 7 days.</p>
     </div>
@@ -90,7 +90,7 @@ func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string)
 </body>
 </html>`, workspaceName, inviterName, joinURL)
 
-	textBody := fmt.Sprintf(`%s invited you to join %s on Teampulse.
+	textBody := fmt.Sprintf(`%s invited you to join %s on Helpin.
 
 Click the link below to join:
 %s

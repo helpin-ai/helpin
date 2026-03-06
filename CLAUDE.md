@@ -1,4 +1,4 @@
-# Teampulse
+# Helpin
 
 Internal performance-based quarterly bonus system.
 
@@ -36,5 +36,5 @@ docker compose up
 - `.github/workflows/` — CI/CD pipelines
 
 ## Branches
-- `develop` → Staging (stage.teampulse.d4interactive.io)
-- `main` → Production (teampulse.d4interactive.io)
+- `develop` → Staging (stage.helpin.ai)
+- `main` → Production (helpin.ai)

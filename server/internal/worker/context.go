@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // ExecutionContext holds all state for a single agent run execution.
@@ -50,7 +50,7 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 	}
 }
 
-// ServiceBridge provides access to Teampulse services from within tool execution.
+// ServiceBridge provides access to Helpin services from within tool execution.
 type ServiceBridge struct {
 	AddComment         func(ctx context.Context, workspaceID, storyID, agentID, content string) error
 	UpdateStoryState   func(ctx context.Context, workspaceID, storyID, stateID string) error

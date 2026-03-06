@@ -14,17 +14,17 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"github.com/d4interactive/teampulse/server/internal/auth"
-	"github.com/d4interactive/teampulse/server/internal/config"
-	"github.com/d4interactive/teampulse/server/internal/email"
-	"github.com/d4interactive/teampulse/server/internal/handler"
-	"github.com/d4interactive/teampulse/server/internal/model"
-	"github.com/d4interactive/teampulse/server/internal/repository"
-	"github.com/d4interactive/teampulse/server/internal/router"
-	"github.com/d4interactive/teampulse/server/internal/service"
-	"github.com/d4interactive/teampulse/server/internal/storage"
-	ws "github.com/d4interactive/teampulse/server/internal/websocket"
-	"github.com/d4interactive/teampulse/server/internal/worker"
+	"github.com/helpin-ai/helpin/server/internal/auth"
+	"github.com/helpin-ai/helpin/server/internal/config"
+	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/handler"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/router"
+	"github.com/helpin-ai/helpin/server/internal/service"
+	"github.com/helpin-ai/helpin/server/internal/storage"
+	ws "github.com/helpin-ai/helpin/server/internal/websocket"
+	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func main() {

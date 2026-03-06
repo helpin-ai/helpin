@@ -1,21 +1,21 @@
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: ingressroute-teampulse
-  namespace: teampulse
+  name: ingressroute-helpin
+  namespace: helpin
 spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`stage.teampulse.d4interactive.io`) && PathPrefix(`/api`)
+    - match: Host(`stage.helpin.ai`) && PathPrefix(`/api`)
       kind: Rule
       services:
-        - name: teampulse-server-svc
+        - name: helpin-server-svc
           port: 8080
-    - match: Host(`stage.teampulse.d4interactive.io`)
+    - match: Host(`stage.helpin.ai`)
       kind: Rule
       services:
-        - name: teampulse-frontend-svc
+        - name: helpin-frontend-svc
           port: 80
   tls:
-    secretName: cert-stage-teampulse-wildcard
+    secretName: cert-stage-helpin-wildcard

@@ -5,9 +5,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/d4interactive/teampulse/server/internal/middleware"
-	"github.com/d4interactive/teampulse/server/internal/model"
-	"github.com/d4interactive/teampulse/server/internal/service"
+	"github.com/helpin-ai/helpin/server/internal/middleware"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 // PMObjectiveHandler handles PM objective HTTP endpoints.

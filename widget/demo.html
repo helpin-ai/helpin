@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Teampulse Chat Widget Demo</title>
+  <title>Helpin Chat Widget Demo</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
 
@@ -260,7 +260,7 @@
 <body>
 
   <div class="hero">
-    <h1>Teampulse Chat Widget</h1>
+    <h1>Helpin Chat Widget</h1>
     <p>Embeddable customer support chat for your website. Configure below and see it live in the bottom-right corner.</p>
   </div>
 
@@ -333,12 +333,12 @@
 
       <div class="snippet" id="snippet-box">
         <button class="copy-btn" onclick="copySnippet()">Copy</button>
-        <span class="comment">&lt;!-- Teampulse Chat Widget --&gt;</span><br/>
-        <span class="tag">&lt;script</span> <span class="key">src</span>=<span class="string">"https://cdn.teampulse.io/widget/teampulse-widget.min.js"</span><span class="tag">&gt;&lt;/script&gt;</span><br/>
+        <span class="comment">&lt;!-- Helpin Chat Widget --&gt;</span><br/>
+        <span class="tag">&lt;script</span> <span class="key">src</span>=<span class="string">"https://cdn.helpin.ai/widget/helpin-widget.min.js"</span><span class="tag">&gt;&lt;/script&gt;</span><br/>
         <span class="tag">&lt;script&gt;</span><br/>
-        &nbsp;&nbsp;TeampulseWidget.init({<br/>
+        &nbsp;&nbsp;HelpinWidget.init({<br/>
         &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">widgetKey</span>: <span class="string">"your-widget-key"</span>,<br/>
-        &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">apiUrl</span>: <span class="string">"https://teampulse.yourapp.com"</span>,<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">apiUrl</span>: <span class="string">"https://helpin.yourapp.com"</span>,<br/>
         &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">companyName</span>: <span class="string">"Your Company"</span>,<br/>
         &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">primaryColor</span>: <span class="string">"#6C5CE7"</span>,<br/>
         &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">theme</span>: <span class="string">"light"</span>,<br/>
@@ -407,7 +407,7 @@
   </div>
 
   <!-- Load the widget source -->
-  <script src="./src/teampulse-widget.js"></script>
+  <script src="./src/helpin-widget.js"></script>
 
   <script>
     const launchBtn = document.getElementById('btn-launch');
@@ -416,8 +416,8 @@
 
     launchBtn.addEventListener('click', () => {
       // Destroy existing instance first
-      if (window.TeampulseWidget._initialized) {
-        window.TeampulseWidget.destroy();
+      if (window.HelpinWidget._initialized) {
+        window.HelpinWidget.destroy();
       }
 
       const config = {
@@ -432,7 +432,7 @@
         soundEnabled: true,
       };
 
-      window.TeampulseWidget.init(config);
+      window.HelpinWidget.init(config);
 
       statusEl.className = 'status active';
       statusEl.innerHTML = '<span class="status-dot"></span>Widget active';
@@ -441,7 +441,7 @@
     });
 
     destroyBtn.addEventListener('click', () => {
-      window.TeampulseWidget.destroy();
+      window.HelpinWidget.destroy();
       statusEl.className = 'status inactive';
       statusEl.innerHTML = '<span class="status-dot"></span>Widget destroyed';
       launchBtn.textContent = 'Launch Widget';
@@ -449,12 +449,12 @@
     });
 
     function copySnippet() {
-      const text = `<!-- Teampulse Chat Widget -->
-<script src="https://cdn.teampulse.io/widget/teampulse-widget.min.js"><\/script>
+      const text = `<!-- Helpin Chat Widget -->
+<script src="https://cdn.helpin.ai/widget/helpin-widget.min.js"><\/script>
 <script>
-  TeampulseWidget.init({
+  HelpinWidget.init({
     widgetKey: "your-widget-key",
-    apiUrl: "https://teampulse.yourapp.com",
+    apiUrl: "https://helpin.yourapp.com",
     companyName: "Your Company",
     primaryColor: "#6C5CE7",
     theme: "light",

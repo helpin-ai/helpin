@@ -3,7 +3,7 @@ package worker
 import (
 	"slices"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 var runtimeProfiles = []model.RuntimeProfile{

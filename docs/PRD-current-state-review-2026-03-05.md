@@ -1,13 +1,13 @@
 # Product Review And Remediation PRD
 
-**Product**: TeamPulse  
+**Product**: Helpin  
 **Review date**: March 5, 2026  
 **Reviewer**: Codex  
-**Scope**: Current repository state in `/root/teampulse`, including frontend, backend, PM module, and shared auth/workspace infrastructure
+**Scope**: Current repository state in `/root/helpin`, including frontend, backend, PM module, and shared auth/workspace infrastructure
 
 ## 1. Executive Summary
 
-TeamPulse has a substantial amount of product-management functionality implemented across both frontend and backend. Core CRUD surfaces exist for workflows, labels, stories, epics, sprints, objectives, comments, attachments, saved views, checklist items, external links, and automations. The reward/quarter/bonus platform is also present and compiles on the backend.
+Helpin has a substantial amount of product-management functionality implemented across both frontend and backend. Core CRUD surfaces exist for workflows, labels, stories, epics, sprints, objectives, comments, attachments, saved views, checklist items, external links, and automations. The reward/quarter/bonus platform is also present and compiles on the backend.
 
 The current codebase is **not release-ready** for the latest PM feature set. The largest problems are:
 
@@ -22,7 +22,7 @@ The current codebase is **not release-ready** for the latest PM feature set. The
 This review used:
 
 - Repository structure inspection across `frontend/`, `server/`, and `docs/`
-- API surface inspection through [router.go](/root/teampulse/server/internal/router/router.go:1)
+- API surface inspection through [router.go](/root/helpin/server/internal/router/router.go:1)
 - Frontend and backend source review of major implemented PM features
 - Validation runs on the current worktree:
   - `go test ./...`
@@ -30,7 +30,7 @@ This review used:
   - `npm run lint`
   - `npm test`
 
-Note: the worktree is currently dirty in [Settings.tsx](/root/teampulse/frontend/src/pages/Settings.tsx:1), [pm_automation.go](/root/teampulse/server/internal/service/pm_automation.go:1), and `docs/mattermost-integration.md`. Findings below describe the current state on disk.
+Note: the worktree is currently dirty in [Settings.tsx](/root/helpin/frontend/src/pages/Settings.tsx:1), [pm_automation.go](/root/helpin/server/internal/service/pm_automation.go:1), and `docs/mattermost-integration.md`. Findings below describe the current state on disk.
 
 ## 3. Validation Results
 
@@ -43,7 +43,7 @@ Note: the worktree is currently dirty in [Settings.tsx](/root/teampulse/frontend
 
 - `npm run build`: fails
 - `npm run lint`: fails with 85 errors and 6 warnings
-- `npm test`: fails because no `test` script exists in [frontend/package.json](/root/teampulse/frontend/package.json:6)
+- `npm test`: fails because no `test` script exists in [frontend/package.json](/root/helpin/frontend/package.json:6)
 
 ## 4. Implemented Feature Inventory
 
@@ -96,8 +96,8 @@ Note: the worktree is currently dirty in [Settings.tsx](/root/teampulse/frontend
 
 The API entrypoint unconditionally executes `DROP TABLE IF EXISTS pm_epic_objectives` before `AutoMigrate`, which recreates the same table name afterward. That means all objective-to-epic links are destroyed whenever the server restarts.
 
-- Evidence: [main.go](/root/teampulse/server/cmd/api/main.go:64)
-- Supporting model: [pm_epic.go](/root/teampulse/server/internal/model/pm_epic.go:39)
+- Evidence: [main.go](/root/helpin/server/cmd/api/main.go:64)
+- Supporting model: [pm_epic.go](/root/helpin/server/internal/model/pm_epic.go:39)
 
 **Impact**
 
@@ -118,10 +118,10 @@ The API entrypoint unconditionally executes `DROP TABLE IF EXISTS pm_epic_object
 
 PM and search routes only require a `workspace_id` header/query parameter, but they do not verify that the authenticated user belongs to that workspace. Several repositories also fetch records by raw entity ID without scoping to workspace, which makes cross-workspace access easier once an ID is known.
 
-- Routes only require workspace ID: [router.go](/root/teampulse/server/internal/router/router.go:149), [router.go](/root/teampulse/server/internal/router/router.go:155)
-- Middleware only copies `workspace_id` into context: [workspace.go](/root/teampulse/server/internal/middleware/workspace.go:5)
-- Story fetches are by raw ID: [pm_story.go](/root/teampulse/server/internal/repository/pm_story.go:91), [pm_story.go](/root/teampulse/server/internal/repository/pm_story.go:117)
-- Attachment fetch/list also ignore workspace scoping: [pm_attachment.go](/root/teampulse/server/internal/repository/pm_attachment.go:31), [pm_attachment.go](/root/teampulse/server/internal/repository/pm_attachment.go:43)
+- Routes only require workspace ID: [router.go](/root/helpin/server/internal/router/router.go:149), [router.go](/root/helpin/server/internal/router/router.go:155)
+- Middleware only copies `workspace_id` into context: [workspace.go](/root/helpin/server/internal/middleware/workspace.go:5)
+- Story fetches are by raw ID: [pm_story.go](/root/helpin/server/internal/repository/pm_story.go:91), [pm_story.go](/root/helpin/server/internal/repository/pm_story.go:117)
+- Attachment fetch/list also ignore workspace scoping: [pm_attachment.go](/root/helpin/server/internal/repository/pm_attachment.go:31), [pm_attachment.go](/root/helpin/server/internal/repository/pm_attachment.go:43)
 
 **Impact**
 
@@ -144,10 +144,10 @@ The frontend does not pass TypeScript build checks. The current failure set incl
 
 Representative failures:
 
-- Invalid post-login route target: [Login.tsx](/root/teampulse/frontend/src/pages/Login.tsx:41)
-- Search command palette writes unsupported search params and uses uninitialized refs: [SearchCommandPalette.tsx](/root/teampulse/frontend/src/components/search/SearchCommandPalette.tsx:46), [SearchCommandPalette.tsx](/root/teampulse/frontend/src/components/search/SearchCommandPalette.tsx:105)
-- Story detail calls comment service with the wrong arguments: [StoryDetail.tsx](/root/teampulse/frontend/src/pages/pm/StoryDetail.tsx:329), [pmCommentService.ts](/root/teampulse/frontend/src/lib/services/pmCommentService.ts:10)
-- WebSocket hook has invalid `useRef` initialization under current TS settings: [useWebSocket.ts](/root/teampulse/frontend/src/hooks/useWebSocket.ts:31)
+- Invalid post-login route target: [Login.tsx](/root/helpin/frontend/src/pages/Login.tsx:41)
+- Search command palette writes unsupported search params and uses uninitialized refs: [SearchCommandPalette.tsx](/root/helpin/frontend/src/components/search/SearchCommandPalette.tsx:46), [SearchCommandPalette.tsx](/root/helpin/frontend/src/components/search/SearchCommandPalette.tsx:105)
+- Story detail calls comment service with the wrong arguments: [StoryDetail.tsx](/root/helpin/frontend/src/pages/pm/StoryDetail.tsx:329), [pmCommentService.ts](/root/helpin/frontend/src/lib/services/pmCommentService.ts:10)
+- WebSocket hook has invalid `useRef` initialization under current TS settings: [useWebSocket.ts](/root/helpin/frontend/src/hooks/useWebSocket.ts:31)
 
 **Impact**
 
@@ -168,9 +168,9 @@ Representative failures:
 
 These routes are present but only render “Coming Soon” screens:
 
-- Reports: [reports.tsx](/root/teampulse/frontend/src/routes/_authenticated/w/$slug/pm/reports.tsx:1)
-- Roadmap: [roadmap.tsx](/root/teampulse/frontend/src/routes/_authenticated/w/$slug/pm/roadmap.tsx:1)
-- Docs: [docs.tsx](/root/teampulse/frontend/src/routes/_authenticated/w/$slug/docs.tsx:1)
+- Reports: [reports.tsx](/root/helpin/frontend/src/routes/_authenticated/w/$slug/pm/reports.tsx:1)
+- Roadmap: [roadmap.tsx](/root/helpin/frontend/src/routes/_authenticated/w/$slug/pm/roadmap.tsx:1)
+- Docs: [docs.tsx](/root/helpin/frontend/src/routes/_authenticated/w/$slug/docs.tsx:1)
 
 **Impact**
 
@@ -188,7 +188,7 @@ These routes are present but only render “Coming Soon” screens:
 **Severity**: High  
 **Area**: Engineering process
 
-- Frontend has no `test` script: [frontend/package.json](/root/teampulse/frontend/package.json:6)
+- Frontend has no `test` script: [frontend/package.json](/root/helpin/frontend/package.json:6)
 - Backend has no test packages in `go test ./...`
 - Lint baseline is failing across core PM components and pages
 
@@ -211,8 +211,8 @@ These routes are present but only render “Coming Soon” screens:
 
 Story creation computes `MAX(display_id) + 1` inside an application transaction rather than relying on a database sequence or row lock. Under concurrent requests for the same workspace, two inserts can calculate the same next ID and collide with the unique constraint.
 
-- Evidence: [pm_story.go](/root/teampulse/server/internal/repository/pm_story.go:129)
-- Supporting schema uniqueness: [013_pm_stories.sql](/root/teampulse/server/migrations/013_pm_stories.sql:35)
+- Evidence: [pm_story.go](/root/helpin/server/internal/repository/pm_story.go:129)
+- Supporting schema uniqueness: [013_pm_stories.sql](/root/helpin/server/migrations/013_pm_stories.sql:35)
 
 **Impact**
 
@@ -241,12 +241,12 @@ Those patterns are concentrated in board, story-detail, objective, label, attach
 
 The backend search service is structurally fine, but the frontend command palette is not ready. It currently breaks type-checking and uses a route search param that does not exist on the story listing route.
 
-- Backend service: [search.go](/root/teampulse/server/internal/service/search.go:1)
-- Frontend issue: [SearchCommandPalette.tsx](/root/teampulse/frontend/src/components/search/SearchCommandPalette.tsx:105)
+- Backend service: [search.go](/root/helpin/server/internal/service/search.go:1)
+- Frontend issue: [SearchCommandPalette.tsx](/root/helpin/frontend/src/components/search/SearchCommandPalette.tsx:105)
 
 ### 6.3 Startup schema strategy is operationally risky
 
-The backend relies on `AutoMigrate` during server boot for primary schema management instead of using the SQL migrations directory as the source of truth. The comment in [main.go](/root/teampulse/server/cmd/api/main.go:67) explicitly says the migration files are now “reference documentation.”
+The backend relies on `AutoMigrate` during server boot for primary schema management instead of using the SQL migrations directory as the source of truth. The comment in [main.go](/root/helpin/server/cmd/api/main.go:67) explicitly says the migration files are now “reference documentation.”
 
 That approach reduces migration discipline, obscures schema drift, and makes destructive changes easier to ship accidentally.
 
@@ -326,7 +326,7 @@ The PM backend is releasable only when:
 
 ### Safe claim after remediation
 
-After P0/P1 fixes, TeamPulse can credibly position the current PM module as:
+After P0/P1 fixes, Helpin can credibly position the current PM module as:
 
 - core work tracking
 - sprint planning

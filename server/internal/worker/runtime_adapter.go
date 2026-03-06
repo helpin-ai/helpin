@@ -3,7 +3,7 @@ package worker
 import (
 	"fmt"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // RuntimeAdapter executes an agent run for a specific runtime kind.

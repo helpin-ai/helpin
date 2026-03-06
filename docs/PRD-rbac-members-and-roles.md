@@ -1,16 +1,16 @@
 # PRD: RBAC For Members And Roles
 
-**Product**: TeamPulse  
+**Product**: Helpin  
 **Date**: March 5, 2026  
 **Status**: Draft  
 **Owner**: Product / Engineering  
-**Inspired by**: Linear member and role model, adapted for TeamPulse
+**Inspired by**: Linear member and role model, adapted for Helpin
 
 ## 1. Summary
 
-TeamPulse needs a formal RBAC system for workspace membership, member lifecycle, and team-scoped administration. Today the product already supports workspace roles in the shape of `owner`, `admin`, `manager`, `member`, and `viewer`, plus workspace invitations.
+Helpin needs a formal RBAC system for workspace membership, member lifecycle, and team-scoped administration. Today the product already supports workspace roles in the shape of `owner`, `admin`, `manager`, `member`, and `viewer`, plus workspace invitations.
 
-This PRD defines the next version of RBAC so TeamPulse can:
+This PRD defines the next version of RBAC so Helpin can:
 
 - manage members safely at workspace and team level
 - support suspended members and historical visibility
@@ -18,7 +18,7 @@ This PRD defines the next version of RBAC so TeamPulse can:
 - add guest users with team-scoped access
 - enforce permissions consistently across frontend, backend, and settings UI
 
-The design should feel familiar to teams coming from Linear, but should fit TeamPulse’s current architecture and terminology.
+The design should feel familiar to teams coming from Linear, but should fit Helpin’s current architecture and terminology.
 
 ## 2. Current State
 
@@ -40,16 +40,16 @@ The design should feel familiar to teams coming from Linear, but should fit Team
 
 ### Existing code references
 
-- Workspace member model: [workspace.go](/root/teampulse/server/internal/model/workspace.go:16)
-- Workspace member migration: [002_workspaces.sql](/root/teampulse/server/migrations/002_workspaces.sql:12)
-- Invitation model: [invitation.go](/root/teampulse/server/internal/model/invitation.go:5)
-- Invitation migration: [016_workspace_invitations.sql](/root/teampulse/server/migrations/016_workspace_invitations.sql:5)
-- Current frontend role type: [types.ts](/root/teampulse/frontend/src/lib/types.ts:21)
-- Current session helpers: [sessionStore.ts](/root/teampulse/frontend/src/stores/sessionStore.ts:1)
+- Workspace member model: [workspace.go](/root/helpin/server/internal/model/workspace.go:16)
+- Workspace member migration: [002_workspaces.sql](/root/helpin/server/migrations/002_workspaces.sql:12)
+- Invitation model: [invitation.go](/root/helpin/server/internal/model/invitation.go:5)
+- Invitation migration: [016_workspace_invitations.sql](/root/helpin/server/migrations/016_workspace_invitations.sql:5)
+- Current frontend role type: [types.ts](/root/helpin/frontend/src/lib/types.ts:21)
+- Current session helpers: [sessionStore.ts](/root/helpin/frontend/src/stores/sessionStore.ts:1)
 
 ## 3. Problem
 
-The current membership system is too shallow for the product TeamPulse is becoming.
+The current membership system is too shallow for the product Helpin is becoming.
 
 Current gaps:
 
@@ -84,7 +84,7 @@ Current gaps:
 
 ## 6.1 Workspace Roles
 
-TeamPulse will support these workspace-level roles:
+Helpin will support these workspace-level roles:
 
 | Role | Scope | Summary |
 |------|-------|---------|
@@ -120,7 +120,7 @@ Rules:
 
 - Workspace owners and admins are implicitly team owners for all teams they can access
 - Team creators become team owners by default
-- Team owners of a parent team can be treated as team owners of child teams if TeamPulse adds hierarchical teams
+- Team owners of a parent team can be treated as team owners of child teams if Helpin adds hierarchical teams
 - Guests cannot become team owners
 
 ### Team identity requirements
@@ -558,11 +558,11 @@ Frontend should hide or disable actions based on effective permission:
 
 ## 16. Compatibility Mapping
 
-| Current TeamPulse | New User-Facing Label | Notes |
+| Current Helpin | New User-Facing Label | Notes |
 |------------------|-----------------------|-------|
 | `owner` | Workspace Owner | Keep DB value if easier |
 | `admin` | Admin | No change |
-| `manager` | Manager | Keep as TeamPulse-specific role |
+| `manager` | Manager | Keep as Helpin-specific role |
 | `member` | Member | No change |
 | `viewer` | Viewer | Read-only |
 | n/a | Guest | New |

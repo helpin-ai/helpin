@@ -1,4 +1,4 @@
-# Product Requirements Document: TeamPulse Project Management Module
+# Product Requirements Document: Helpin Project Management Module
 
 **Version**: 1.0
 **Date**: March 3, 2026
@@ -49,7 +49,7 @@
 
 ## 1. Executive Summary
 
-TeamPulse is expanding from a performance-based quarterly bonus system to include a full-featured project management module. This module replaces Shortcut.com ($6,000/year), providing work tracking (stories, epics, iterations) integrated within the same platform where performance is evaluated.
+Helpin is expanding from a performance-based quarterly bonus system to include a full-featured project management module. This module replaces Shortcut.com ($6,000/year), providing work tracking (stories, epics, iterations) integrated within the same platform where performance is evaluated.
 
 **Key principle**: The PM module is built as **separate, independent tables** (prefixed with `pm_`) alongside the existing bonus system. No existing tables or features are modified. Future integration between PM data and bonus scoring will be handled via a mapping layer in a later phase.
 

@@ -1,6 +1,6 @@
 # Product Requirements Document: Stories Scale And Performance
 
-**Product**: TeamPulse PM Module  
+**Product**: Helpin PM Module  
 **Date**: March 5, 2026  
 **Status**: Draft  
 **Author**: Codex  
@@ -10,7 +10,7 @@
 
 ## 1. Executive Summary
 
-TeamPulse's current stories experience is functional for small to medium datasets, but it is not production-ready for large workspaces with 10,000+ stories.
+Helpin's current stories experience is functional for small to medium datasets, but it is not production-ready for large workspaces with 10,000+ stories.
 
 The current bottlenecks are structural:
 

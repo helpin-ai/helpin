@@ -5,9 +5,9 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
-	"github.com/d4interactive/teampulse/server/internal/auth"
-	"github.com/d4interactive/teampulse/server/internal/handler"
-	"github.com/d4interactive/teampulse/server/internal/middleware"
+	"github.com/helpin-ai/helpin/server/internal/auth"
+	"github.com/helpin-ai/helpin/server/internal/handler"
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 )
 
 // Handlers aggregates all HTTP handlers.

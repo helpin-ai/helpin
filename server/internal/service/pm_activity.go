@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
-	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // PMActivityService contains activity logging business logic.

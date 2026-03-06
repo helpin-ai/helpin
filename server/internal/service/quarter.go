@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
-	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // RewardQuarterService handles quarter business logic.

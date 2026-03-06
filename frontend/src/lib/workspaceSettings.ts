@@ -89,7 +89,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-1',
       name: 'Alex Chen',
-      email: 'alex@teampulse.com',
+      email: 'alex@helpin.ai',
       role: 'employee',
       job_role: 'Frontend Developer',
       base_salary: 0,
@@ -104,7 +104,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-2',
       name: 'Sarah Johnson',
-      email: 'sarah@teampulse.com',
+      email: 'sarah@helpin.ai',
       role: 'employee',
       job_role: 'QA Engineer',
       base_salary: 0,
@@ -119,7 +119,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-3',
       name: 'Michael Rodriguez',
-      email: 'michael@teampulse.com',
+      email: 'michael@helpin.ai',
       role: 'employee',
       job_role: 'UX Designer',
       base_salary: 0,
@@ -134,7 +134,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-4',
       name: 'Emily Davis',
-      email: 'emily@teampulse.com',
+      email: 'emily@helpin.ai',
       role: 'employee',
       job_role: 'Content Writer',
       base_salary: 0,
@@ -149,7 +149,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-5',
       name: 'David Kim',
-      email: 'david@teampulse.com',
+      email: 'david@helpin.ai',
       role: 'manager',
       job_role: 'Engineering Manager',
       base_salary: 0,
@@ -165,7 +165,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-6',
       name: 'Lisa Zhang',
-      email: 'lisa@teampulse.com',
+      email: 'lisa@helpin.ai',
       role: 'manager',
       job_role: 'Design Manager',
       base_salary: 0,
@@ -181,7 +181,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-7',
       name: 'Robert Taylor',
-      email: 'robert@teampulse.com',
+      email: 'robert@helpin.ai',
       role: 'executive',
       job_role: 'CTO',
       base_salary: 0,
@@ -195,7 +195,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-8',
       name: 'Maria Gonzalez',
-      email: 'maria@teampulse.com',
+      email: 'maria@helpin.ai',
       role: 'employee',
       job_role: 'SEO Specialist',
       base_salary: 0,
@@ -210,7 +210,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-9',
       name: 'James Wright',
-      email: 'james@teampulse.com',
+      email: 'james@helpin.ai',
       role: 'employee',
       job_role: 'Backend Developer',
       base_salary: 0,
@@ -225,7 +225,7 @@ export const generateMockWorkspaceSettings = (workspaceId: string, workspaceName
     {
       id: 'person-10',
       name: 'Sofia Patel',
-      email: 'sofia@teampulse.com',
+      email: 'sofia@helpin.ai',
       role: 'employee',
       job_role: 'Documentation Specialist',
       base_salary: 0,

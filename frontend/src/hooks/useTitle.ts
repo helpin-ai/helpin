@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-const BASE = 'Teampulse';
+const BASE = 'Helpin';
 
 export function useTitle(title?: string) {
   useEffect(() => {

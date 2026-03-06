@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // BuildSystemPrompt assembles the system prompt from agent config, story context, and WORKFLOW.md.
@@ -64,7 +64,7 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, ticket *model.S
 	if ticket != nil {
 		parts = append(parts, "- Customer-visible replies must be drafted for human approval before they are sent.")
 	}
-	parts = append(parts, "- Leave Teampulse artifacts and summaries in a state a human can review.")
+	parts = append(parts, "- Leave Helpin artifacts and summaries in a state a human can review.")
 
 	return strings.Join(parts, "\n")
 }

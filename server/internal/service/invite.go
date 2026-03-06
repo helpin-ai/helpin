@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/d4interactive/teampulse/server/internal/email"
-	"github.com/d4interactive/teampulse/server/internal/model"
-	"github.com/d4interactive/teampulse/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // InviteService handles invitation business logic.

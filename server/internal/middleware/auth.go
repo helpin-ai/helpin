@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/d4interactive/teampulse/server/internal/auth"
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/auth"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // RequireAuth is middleware that validates the Authorization header JWT and

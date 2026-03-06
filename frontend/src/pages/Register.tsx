@@ -40,7 +40,7 @@ export default function Register() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Create your account</CardTitle>
-          <CardDescription>Get started with Teampulse</CardDescription>
+          <CardDescription>Get started with Helpin</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">

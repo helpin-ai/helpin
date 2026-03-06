@@ -1,4 +1,4 @@
-// Consolidated Teampulse Types for Performance-Based Bonuses
+// Consolidated Helpin Types for Performance-Based Bonuses
 
 export interface CompanyGoal {
   id: string

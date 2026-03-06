@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/d4interactive/teampulse/server/internal/service"
+	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 type SearchHandler struct {

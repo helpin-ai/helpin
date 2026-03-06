@@ -1,13 +1,13 @@
 #!/bin/bash
-# Build the Teampulse Chat Widget
-# Produces a minified single-file bundle at dist/teampulse-widget.min.js
+# Build the Helpin Chat Widget
+# Produces a minified single-file bundle at dist/helpin-widget.min.js
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC="$SCRIPT_DIR/src/teampulse-widget.js"
+SRC="$SCRIPT_DIR/src/helpin-widget.js"
 DIST_DIR="$SCRIPT_DIR/dist"
-OUT="$DIST_DIR/teampulse-widget.min.js"
+OUT="$DIST_DIR/helpin-widget.min.js"
 
 mkdir -p "$DIST_DIR"
 

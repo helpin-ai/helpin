@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/d4interactive/teampulse/server/internal/middleware"
-	"github.com/d4interactive/teampulse/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/middleware"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 func getWorkspaceID(r *http.Request) string {

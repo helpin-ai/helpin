@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
-	"github.com/d4interactive/teampulse/server/internal/repository"
-	"github.com/d4interactive/teampulse/server/internal/storage"
-	"github.com/d4interactive/teampulse/server/internal/websocket"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 const maxFileSize = 10 * 1024 * 1024 // 10 MB

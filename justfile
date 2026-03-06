@@ -18,9 +18,9 @@ dev:
       wait -n $frontend_pid $backend_pid'
 
 dev-tmux:
-    tmux new-session -d -s teampulse -n dev 'cd server && go run ./cmd/api'
-    tmux split-window -h -t teampulse:dev 'cd frontend && npm run dev'
-    tmux attach -t teampulse
+    tmux new-session -d -s helpin -n dev 'cd server && go run ./cmd/api'
+    tmux split-window -h -t helpin:dev 'cd frontend && npm run dev'
+    tmux attach -t helpin
 
 build-server:
     cd server && go mod download && go build -o bin/api ./cmd/api

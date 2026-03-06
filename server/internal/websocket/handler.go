@@ -6,7 +6,7 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/d4interactive/teampulse/server/internal/auth"
+	"github.com/helpin-ai/helpin/server/internal/auth"
 )
 
 // Handler upgrades HTTP connections to WebSocket.

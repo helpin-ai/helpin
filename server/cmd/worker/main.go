@@ -14,10 +14,10 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"github.com/d4interactive/teampulse/server/internal/model"
-	"github.com/d4interactive/teampulse/server/internal/repository"
-	"github.com/d4interactive/teampulse/server/internal/websocket"
-	"github.com/d4interactive/teampulse/server/internal/worker"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
+	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func main() {

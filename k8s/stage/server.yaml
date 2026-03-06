@@ -1,29 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: teampulse-server
-  namespace: teampulse
+  name: helpin-server
+  namespace: helpin
   labels:
-    app: teampulse-server
+    app: helpin-server
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: teampulse-server
+      app: helpin-server
   template:
     metadata:
       labels:
-        app: teampulse-server
+        app: helpin-server
         env: stage
     spec:
       imagePullSecrets:
         - name: ghcr-pull-secret
       containers:
-        - name: teampulse-server
-          image: ghcr.io/d4interactive/teampulse/server:stage-latest
+        - name: helpin-server
+          image: ghcr.io/helpin-ai/helpin/server:stage-latest
           envFrom:
             - secretRef:
-                name: teampulse-secrets
+                name: helpin-secrets
           ports:
             - containerPort: 8080
           readinessProbe:
@@ -40,15 +40,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: teampulse-server-svc
-  namespace: teampulse
+  name: helpin-server-svc
+  namespace: helpin
   labels:
-    app: teampulse-server
+    app: helpin-server
 spec:
   ports:
-    - name: teampulse-server-port
+    - name: helpin-server-port
       port: 8080
       targetPort: 8080
   selector:
-    app: teampulse-server
+    app: helpin-server
   type: ClusterIP

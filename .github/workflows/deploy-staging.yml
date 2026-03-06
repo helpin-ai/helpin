@@ -5,7 +5,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/d4interactive/teampulse
+  IMAGE_PREFIX: ghcr.io/helpin-ai/helpin
 
 jobs:
   detect-changes:
@@ -65,7 +65,7 @@ jobs:
           context: ./frontend
           push: true
           build-args: |
-            VITE_API_URL=https://stage.teampulse.d4interactive.io/api
+            VITE_API_URL=https://stage.helpin.ai/api
           tags: |
             ${{ env.IMAGE_PREFIX }}/frontend:stage-${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}/frontend:stage-latest

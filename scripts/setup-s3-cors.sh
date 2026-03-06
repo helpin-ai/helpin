@@ -56,8 +56,8 @@ fi
 
 # ── Build allowed origins ──────────────────────────────────────
 ORIGINS=(
-  "https://teampulse.d4interactive.io"
-  "https://stage.teampulse.d4interactive.io"
+  "https://helpin.ai"
+  "https://stage.helpin.ai"
   "http://localhost:5173"
 )
 if [[ -n "$SERVER_IP" ]]; then

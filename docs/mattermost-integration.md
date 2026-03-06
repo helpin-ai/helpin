@@ -1,18 +1,18 @@
-# Mattermost Integration for TeamPulse -- Design Document
+# Mattermost Integration for Helpin -- Design Document
 
 ## Context
 
-TeamPulse needs a Mattermost integration similar to [Shortcut's Slack integration](https://www.shortcut.com/integrations/slack). Since TeamPulse uses self-hosted Mattermost, we can leverage Mattermost's Bot Accounts + REST API directly (no app marketplace needed). The integration connects project management activity in TeamPulse to team communication in Mattermost.
+Helpin needs a Mattermost integration similar to [Shortcut's Slack integration](https://www.shortcut.com/integrations/slack). Since Helpin uses self-hosted Mattermost, we can leverage Mattermost's Bot Accounts + REST API directly (no app marketplace needed). The integration connects project management activity in Helpin to team communication in Mattermost.
 
 ## How It Works (Self-Hosted Mattermost)
 
-**Approach**: TeamPulse acts as an API client to Mattermost. A Bot Account is created in Mattermost, and its Personal Access Token is stored in TeamPulse. The integration is **owned by a TeamPulse team**, not the whole workspace. TeamPulse then uses the Mattermost REST API (`/api/v4/*`) to:
+**Approach**: Helpin acts as an API client to Mattermost. A Bot Account is created in Mattermost, and its Personal Access Token is stored in Helpin. The integration is **owned by a Helpin team**, not the whole workspace. Helpin then uses the Mattermost REST API (`/api/v4/*`) to:
 - Post messages to channels (notifications)
 - Read channel lists (for config UI)
 - Send DMs to users (personal notifications)
 - Respond to slash commands and interactive messages (inbound)
 
-Because this deployment uses a **single Mattermost server**, each TeamPulse team stores the same Mattermost `server_url` in its own integration settings. That keeps ownership and permissions team-scoped while still supporting one shared Mattermost instance.
+Because this deployment uses a **single Mattermost server**, each Helpin team stores the same Mattermost `server_url` in its own integration settings. That keeps ownership and permissions team-scoped while still supporting one shared Mattermost instance.
 
 **No Mattermost plugins required** -- everything works via REST API + webhooks + slash commands, all available in self-hosted Mattermost (any version 5.x+).
 
@@ -21,7 +21,7 @@ Because this deployment uses a **single Mattermost server**, each TeamPulse team
 Instead of making direct HTTP calls to Mattermost (which are fire-and-forget and lost on failure), all outbound messages are routed through [River Queue](https://riverqueue.com/) -- a PostgreSQL-backed background job system for Go.
 
 **Why River Queue:**
-- **Same infrastructure** -- uses PostgreSQL + pgx, which TeamPulse already runs. No new services (Redis, RabbitMQ, etc.) needed.
+- **Same infrastructure** -- uses PostgreSQL + pgx, which Helpin already runs. No new services (Redis, RabbitMQ, etc.) needed.
 - **Reliable delivery** -- if Mattermost is down, jobs are retried automatically with exponential backoff.
 - **Rate control** -- worker concurrency limits prevent flooding Mattermost.
 - **Scheduling** -- Phase 5's daily digest is a scheduled job; River has native support for periodic/cron jobs.
@@ -59,11 +59,11 @@ This means `Hub.Broadcast()` returns instantly -- no risk of Mattermost HTTP lat
 1. Go to **Integrations > Bot Accounts** (from the main menu, not system console)
 2. Click **Add Bot Account**
 3. Fill in:
-   - **Username**: `teampulse-bot`
-   - **Display Name**: `TeamPulse`
-   - **Description**: `TeamPulse project management notifications`
+   - **Username**: `helpin-bot`
+   - **Display Name**: `Helpin`
+   - **Description**: `Helpin project management notifications`
    - **Role**: `Member` (sufficient for posting to channels)
-   - **Icon**: Upload a TeamPulse logo (optional)
+   - **Icon**: Upload a Helpin logo (optional)
 4. Click **Create Bot Account**
 5. **Copy the Access Token** -- this is shown only once. Store it securely.
 
@@ -75,7 +75,7 @@ This means `Hub.Broadcast()` returns instantly -- no risk of Mattermost HTTP lat
 ### Step 4: Add Bot to Channels
 1. In each Mattermost channel where you want notifications:
    - Click the channel name > **Add Members**
-   - Search for `teampulse-bot` and add it
+   - Search for `helpin-bot` and add it
 2. The bot must be a member of any channel it will post to
 
 ### Step 5: Enable Slash Commands (for Phase 2)
@@ -85,10 +85,10 @@ This means `Hub.Broadcast()` returns instantly -- no risk of Mattermost HTTP lat
 
 ### Step 6: Note Your Server URL
 - Your Mattermost server URL (e.g., `https://mattermost.yourcompany.com`)
-- Must be reachable from the TeamPulse server (network/firewall)
+- Must be reachable from the Helpin server (network/firewall)
 
-### Step 7: Configure in TeamPulse
-1. Navigate to **Settings > Teams > {Team}** in TeamPulse
+### Step 7: Configure in Helpin
+1. Navigate to **Settings > Teams > {Team}** in Helpin
 2. Open the **Mattermost** section for that team
 3. Enter the Mattermost Server URL
 4. Paste the Bot Access Token
@@ -105,7 +105,7 @@ The Team Settings UI should follow the same interaction model as the reference S
 
 ## Phase 1: Outgoing Notifications + Channel Linking
 
-**Value**: When stories/epics/comments change in TeamPulse, formatted messages auto-post to linked Mattermost channels. This is the highest-value, lowest-complexity feature.
+**Value**: When stories/epics/comments change in Helpin, formatted messages auto-post to linked Mattermost channels. This is the highest-value, lowest-complexity feature.
 
 ### Architecture
 
@@ -117,7 +117,7 @@ Hub.Broadcast(event)
   -> new: call registered EventListeners (MattermostNotifier)
 
 MattermostNotifier.OnEvent(event)
-  -> Resolves the TeamPulse team(s) for the entity using explicit model fields
+  -> Resolves the Helpin team(s) for the entity using explicit model fields
   -> Looks up team-owned integration config(s) (skip if none/disabled)
   -> Looks up channel links for that team
   -> Checks notification toggles for the entity type
@@ -136,7 +136,7 @@ River Worker (MattermostDeliveryWorker)
 
 File: `server/internal/model/mattermost.go`
 
-**MattermostIntegration** (one per TeamPulse team)
+**MattermostIntegration** (one per Helpin team)
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -233,11 +233,11 @@ River uses its own PostgreSQL tables (`river_job`, `river_leader`, etc.) created
 
 ### Team-Scoped Notification Routing
 
-Each TeamPulse team owns its own Mattermost integration and channel links. Routing is based on the entity's **explicit team fields**, not inferred indirectly from workflow state transitions.
+Each Helpin team owns its own Mattermost integration and channel links. Routing is based on the entity's **explicit team fields**, not inferred indirectly from workflow state transitions.
 
 **Example configuration:**
 
-| TeamPulse Team | Mattermost Channel | Story Created | Status Changed | Completed | Comments | Epic Created |
+| Helpin Team | Mattermost Channel | Story Created | Status Changed | Completed | Comments | Epic Created |
 |---|---|---|---|---|---|---|
 | Engineering | `#engineering` | on | on | on | on | on |
 | Customer Support | `#cs-updates` | on | off | on | on | off |
@@ -290,7 +290,7 @@ func (n *MattermostNotifier) resolveTargets(event Event) []DeliveryTarget:
 
 ### Settings Access Points
 
-Mattermost settings are primarily managed **inside each TeamPulse team**:
+Mattermost settings are primarily managed **inside each Helpin team**:
 
 1. **Per-team**: Settings > Teams > {Team} -- team owners can configure that team's Mattermost server URL, bot token, enabled flag, and channel links.
    The Team Settings view should include a connection card followed by a notification preferences list, so users can connect Mattermost and then choose which events the team wants to receive.
@@ -359,7 +359,7 @@ This keeps the integration clearly team-owned and gives users direct control ove
 ┌─────────────────────────────────
 │ [SC-42] Fix login timeout bug
 │ Type: bug | Priority: high | State: Backlog
-│ -> View in TeamPulse
+│ -> View in Helpin
 └─────────────────────────────────
 ```
 
@@ -367,14 +367,14 @@ This keeps the integration clearly team-owned and gives users direct control ove
 ```
 **John Doe** moved SC-42 from **Backlog** -> **In Progress**
 │ Fix login timeout bug
-│ -> View in TeamPulse
+│ -> View in Helpin
 ```
 
 **Comment added:**
 ```
 **Jane Smith** commented on SC-42
 │ "We should check the session refresh logic too"
-│ -> View in TeamPulse
+│ -> View in Helpin
 ```
 
 Color-coded by story type (blue=feature, red=bug, yellow=chore).
@@ -392,14 +392,14 @@ Color-coded by story type (blue=feature, red=bug, yellow=chore).
 
 ## Phase 2: Slash Commands (Inbound from Mattermost)
 
-**Value**: Users type `/teampulse create "Bug title" --type=bug` in Mattermost to create stories without leaving chat.
+**Value**: Users type `/helpin create "Bug title" --type=bug` in Mattermost to create stories without leaving chat.
 
 ### Mattermost Setup
 
 1. Go to **Integrations > Slash Commands > Add Slash Command**
 2. Configure:
-   - **Command Trigger Word**: `teampulse`
-   - **Request URL**: `https://teampulse.yourcompany.com/api/webhooks/mattermost/slash`
+   - **Command Trigger Word**: `helpin`
+   - **Request URL**: `https://helpin.yourcompany.com/api/webhooks/mattermost/slash`
    - **Request Method**: POST
    - **Token**: Copy this -- enter it as the webhook secret in that team's Mattermost settings
 3. Save
@@ -424,16 +424,16 @@ Slash commands POST to a public endpoint (no JWT). Authentication is via the Mat
 
 | Command | Action |
 |---------|--------|
-| `/teampulse create "title" [--type=bug] [--priority=high] [--team=Frontend]` | Create a story |
-| `/teampulse search <query>` | Find stories (returns top 5 with links) |
-| `/teampulse status SC-123` | Show story details as rich card |
-| `/teampulse link` | Link MM account to TeamPulse (sends one-time URL via DM) |
-| `/teampulse help` | List available commands |
+| `/helpin create "title" [--type=bug] [--priority=high] [--team=Frontend]` | Create a story |
+| `/helpin search <query>` | Find stories (returns top 5 with links) |
+| `/helpin status SC-123` | Show story details as rich card |
+| `/helpin link` | Link MM account to Helpin (sends one-time URL via DM) |
+| `/helpin help` | List available commands |
 
 ### Interactive Messages
 
 After story creation, the bot posts an interactive message with buttons:
-- **View Story** (link to TeamPulse)
+- **View Story** (link to Helpin)
 - **Set Priority** (dropdown: low/medium/high/urgent)
 - **Assign to Me** (auto-assigns the MM user if mapped)
 
@@ -441,9 +441,9 @@ Button clicks POST to `/api/webhooks/mattermost/interactive`.
 
 ### Account Linking Flow
 
-1. User types `/teampulse link` in Mattermost
-2. Bot sends the user a DM with a one-time URL: `https://teampulse.example.com/api/mattermost/link?code=<otp>&mm_user=<mm_id>&team=<team_id>`
-3. User clicks link -- browser opens, TeamPulse validates their JWT session
+1. User types `/helpin link` in Mattermost
+2. Bot sends the user a DM with a one-time URL: `https://helpin.example.com/api/mattermost/link?code=<otp>&mm_user=<mm_id>&team=<team_id>`
+3. User clicks link -- browser opens, Helpin validates their JWT session
 4. `MattermostUserMapping` record is created
 5. Bot confirms linkage via DM
 
@@ -459,17 +459,17 @@ Button clicks POST to `/api/webhooks/mattermost/interactive`.
 
 ## Phase 3: Link Unfurling (Rich Previews)
 
-**Value**: Paste a TeamPulse URL in Mattermost and get a rich preview card showing story details.
+**Value**: Paste a Helpin URL in Mattermost and get a rich preview card showing story details.
 
 ### How It Works
 
 **Option A -- Outgoing Webhook (simpler)**:
-1. Create an Outgoing Webhook in Mattermost that triggers on URLs matching `teampulse.yourcompany.com`
+1. Create an Outgoing Webhook in Mattermost that triggers on URLs matching `helpin.yourcompany.com`
 2. Webhook POSTs the message to `POST /api/webhooks/mattermost/unfurl`
 3. Handler parses the URL, fetches entity details, returns a rich attachment response
 
 **Option B -- Bot polling (fallback if webhooks are restricted)**:
-- Bot periodically checks for messages mentioning TeamPulse URLs via the Mattermost API
+- Bot periodically checks for messages mentioning Helpin URLs via the Mattermost API
 - Less real-time, but works without configuring outgoing webhooks
 
 ### URL Patterns Detected
@@ -498,7 +498,7 @@ Button clicks POST to `/api/webhooks/mattermost/interactive`.
 
 ## Phase 4: Bidirectional Comment Thread Sync
 
-**Value**: Comments on a story appear in a Mattermost thread, and replies in the thread create comments in TeamPulse.
+**Value**: Comments on a story appear in a Mattermost thread, and replies in the thread create comments in Helpin.
 
 ### New Database Model
 
@@ -517,20 +517,20 @@ Button clicks POST to `/api/webhooks/mattermost/interactive`.
 
 ### Sync Flow
 
-**TeamPulse -> Mattermost**:
+**Helpin -> Mattermost**:
 1. Phase 1 notifier already posts story creation messages
 2. When posting, store the returned post ID as the thread root in `MattermostThreadMapping`
 3. On subsequent comment events for that story, post as a reply to the root post (using `root_id` in Mattermost API)
 
-**Mattermost -> TeamPulse**:
+**Mattermost -> Helpin**:
 1. Outgoing webhook triggers on replies in threads where the root post is from the bot
 2. Handler looks up `MattermostThreadMapping` by `post_id`
-3. Resolves MM user to TeamPulse user via `MattermostUserMapping`
+3. Resolves MM user to Helpin user via `MattermostUserMapping`
 4. Calls `PMCommentService.Create` with the message body
 
 ### Deduplication
 
-- Events from TeamPulse carry `source: "teampulse"` in metadata
+- Events from Helpin carry `source: "helpin"` in metadata
 - Posts from Mattermost carry `source: "mattermost"` in comment metadata (JSONB)
 - Notifier skips events with `source: "mattermost"`
 - Webhook handler skips posts from the bot user ID
@@ -567,7 +567,7 @@ Sprint 12 Progress: 64% (ends Mar 14)
 
 ### Stand-Up Bot
 
-`/teampulse standup` in a channel:
+`/helpin standup` in a channel:
 1. Bot DMs each team member with standup questions
 2. Collects responses over a configured window (e.g., 15 min)
 3. Posts formatted summary to the team channel
@@ -607,7 +607,7 @@ Phase 1 ──────────────────────> Phas
 
 | Package | Purpose | Notes |
 |---------|---------|-------|
-| `github.com/riverqueue/river` | Background job queue | PostgreSQL-backed, uses pgx -- same driver TeamPulse already uses |
+| `github.com/riverqueue/river` | Background job queue | PostgreSQL-backed, uses pgx -- same driver Helpin already uses |
 | `github.com/riverqueue/river/riverdriver/riverpgxv5` | River's pgx v5 driver | Connects River to the existing pgx pool |
 
 River creates its own tables in PostgreSQL (`river_job`, `river_leader`, `river_migration`). One-time migration needed:
