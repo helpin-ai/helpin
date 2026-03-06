@@ -509,7 +509,14 @@ func shortcutImportTestCSV() string {
 		},
 		{
 			"id": "113165", "name": "Improve the report email subject", "type": "feature", "requester": "missing.requester@example.com",
-			"owners": "owner.one@example.com;missing.owner@example.com", "description": "Email improvements", "is_completed": "false",
+			"owners": "owner.one@example.com;missing.owner@example.com", "description": strings.Join([]string{
+				"**Email:** bod@hanzonation.com",
+				"**Plan:** premium-monthly",
+				"**Chat:** https://app.crisp.chat/website/e80c07ae-0687-4e09-b9dc-22ad3bdf27ff/inbox/session_c5c5c898-3776-4f93-b1af-5142bde046fc/",
+				"**Query** Seems like suddnely all data from my system is not showing?",
+				"",
+				"![image.png](https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png)",
+			}, "\n"), "is_completed": "false",
 			"created_at": "2026/03/04 22:18:07", "updated_at": "2026/03/04 22:19:55", "moved_at": "2026/03/04 22:18:07",
 			"labels": "feature-request;customer", "state": "Backlog", "epic_id": "107534", "epic": "Q1 - 2026 - Features and Bugs",
 			"iteration_id": "44783", "iteration": "Nov 7 - Nov 21", "utc_offset": "+05:00", "is_archived": "true",
@@ -565,6 +572,24 @@ func assertImportState(t *testing.T, db *gorm.DB, workspaceID string) {
 	}
 	if len(stories) != 4 {
 		t.Fatalf("expected 4 imported stories, got %d", len(stories))
+	}
+	var markdownStory *model.PMStory
+	for i := range stories {
+		if stories[i].ExternalID != nil && *stories[i].ExternalID == "113165" {
+			markdownStory = &stories[i]
+		}
+	}
+	if markdownStory == nil || markdownStory.Description == nil {
+		t.Fatal("expected imported markdown story description")
+	}
+	if !strings.Contains(*markdownStory.Description, "<strong>Email:</strong>") {
+		t.Fatalf("expected rendered bold markdown in story description, got %s", *markdownStory.Description)
+	}
+	if !strings.Contains(*markdownStory.Description, `<a href="https://app.crisp.chat/website/e80c07ae-0687-4e09-b9dc-22ad3bdf27ff/inbox/session_c5c5c898-3776-4f93-b1af-5142bde046fc/">`) {
+		t.Fatalf("expected rendered link in story description, got %s", *markdownStory.Description)
+	}
+	if !strings.Contains(*markdownStory.Description, `<img src="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png" alt="image.png">`) {
+		t.Fatalf("expected rendered image in story description, got %s", *markdownStory.Description)
 	}
 
 	var sprints []model.PMSprint

@@ -25,6 +25,7 @@ type PMObjective struct {
 	WorkspaceID      string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	Name             string     `json:"name" gorm:"not null"`
 	Description      *string    `json:"description"`
+	ExternalID       *string    `json:"external_id" gorm:"index"`
 	ObjectiveType    string     `json:"objective_type" gorm:"not null;default:'tactical'"`
 	State            string     `json:"state" gorm:"not null;default:'not_started'"`
 	PlannedStartDate *time.Time `json:"planned_start_date" gorm:"type:date"`
@@ -42,19 +43,21 @@ func (PMObjective) TableName() string { return "pm_objectives" }
 
 // PMKeyResult represents a key result belonging to an objective.
 type PMKeyResult struct {
-	ID           string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	ObjectiveID  string    `json:"objective_id" gorm:"type:uuid;not null;index"`
-	Name         string    `json:"name" gorm:"not null"`
-	ResultType   string    `json:"result_type" gorm:"not null;default:'boolean'"`
-	InitialValue float64   `json:"initial_value" gorm:"not null;default:0"`
-	CurrentValue float64   `json:"current_value" gorm:"not null;default:0"`
-	TargetValue  float64   `json:"target_value" gorm:"not null;default:100"`
-	Progress     float64   `json:"progress" gorm:"not null;default:0"`
-	Note         *string   `json:"note"`
-	Position     int       `json:"position" gorm:"not null;default:0"`
-	UpdatedBy    *string   `json:"updated_by" gorm:"type:uuid"`
-	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt    time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID            string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	ObjectiveID   string     `json:"objective_id" gorm:"type:uuid;not null;index"`
+	Name          string     `json:"name" gorm:"not null"`
+	ResultType    string     `json:"result_type" gorm:"not null;default:'boolean'"`
+	InitialValue  float64    `json:"initial_value" gorm:"not null;default:0"`
+	CurrentValue  float64    `json:"current_value" gorm:"not null;default:0"`
+	TargetValue   float64    `json:"target_value" gorm:"not null;default:100"`
+	Progress      float64    `json:"progress" gorm:"not null;default:0"`
+	Note          *string    `json:"note"`
+	NoteUpdatedBy *string    `json:"note_updated_by" gorm:"type:uuid"`
+	NoteUpdatedAt *time.Time `json:"note_updated_at"`
+	Position      int        `json:"position" gorm:"not null;default:0"`
+	UpdatedBy     *string    `json:"updated_by" gorm:"type:uuid"`
+	CreatedAt     time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMKeyResult) TableName() string { return "pm_key_results" }

@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { format, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
 import {
+  Archive,
   CalendarDays,
   Crosshair,
+  Filter,
   Hexagon,
   Loader2,
   MoreHorizontal,
   Target,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -17,19 +21,93 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { Archive } from 'lucide-react';
 
 const healthConfig: Record<string, { label: string; className: string }> = {
   on_track: { label: 'On Track', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
   at_risk: { label: 'At Risk', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
   off_track: { label: 'Off Track', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
 };
+
+const stateFilterOptions: { value: string; label: string }[] = [
+  { value: 'not_started', label: 'Not Started' },
+  { value: 'active', label: 'In Progress' },
+  { value: 'closed', label: 'Done' },
+];
+
+const typeFilterOptions: { value: string; label: string }[] = [
+  { value: 'strategic', label: 'Strategic' },
+  { value: 'tactical', label: 'Tactical' },
+];
+
+const healthFilterOptions: { value: string; label: string }[] = [
+  { value: 'on_track', label: 'On Track' },
+  { value: 'at_risk', label: 'At Risk' },
+  { value: 'off_track', label: 'Off Track' },
+];
+
+function FilterChip({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors cursor-pointer ${
+            value
+              ? 'border-primary/30 bg-primary/5 text-foreground'
+              : 'border-border/60 text-muted-foreground hover:bg-accent'
+          }`}
+        >
+          {selected ? selected.label : label}
+          {value && (
+            <span
+              className="ml-0.5 rounded-full hover:bg-accent p-0.5"
+              onClick={(e) => { e.stopPropagation(); onChange(''); }}
+            >
+              <X className="h-2.5 w-2.5" />
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-40 p-0.5" align="start">
+        <div className="flex flex-col">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`flex items-center rounded-sm px-2 py-1.5 text-xs transition-colors cursor-pointer ${
+                value === opt.value ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+              }`}
+              onClick={() => { onChange(value === opt.value ? '' : opt.value); setOpen(false); }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function ObjectivesPage() {
   useTitle('Objectives');
@@ -38,17 +116,29 @@ export function ObjectivesPage() {
   const workspaceId = workspace?.id;
   const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
+  const { teams } = useWorkspaceTeams(workspaceId);
 
   const [objectives, setObjectives] = useState<ObjectiveWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Filters
+  const [filterState, setFilterState] = useState('');
+  const [filterTeam, setFilterTeam] = useState('');
+  const [filterType, setFilterType] = useState('');
+  const [filterHealth, setFilterHealth] = useState('');
+
   const load = useCallback(async () => {
     if (!workspaceId) return;
     setLoading(true);
-    const { data } = await pmObjectiveService.list(workspaceId, { archived: false });
+    const { data } = await pmObjectiveService.list(workspaceId, {
+      archived: false,
+      state: filterState || undefined,
+      team_id: filterTeam || undefined,
+      objective_type: filterType || undefined,
+    });
     setObjectives(data ?? []);
     setLoading(false);
-  }, [workspaceId]);
+  }, [workspaceId, filterState, filterTeam, filterType]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -58,11 +148,31 @@ export function ObjectivesPage() {
     return () => window.removeEventListener('objective-created', handler);
   }, [load]);
 
+  // Health is client-side filtered (not in API)
+  const filtered = useMemo(() => {
+    if (!filterHealth) return objectives;
+    return objectives.filter((o) => o.objective.health === filterHealth);
+  }, [objectives, filterHealth]);
+
   const handleArchive = async (id: string) => {
     if (!workspaceId) return;
     await pmObjectiveService.remove(workspaceId, id);
     load();
   };
+
+  const activeFilterCount = [filterState, filterTeam, filterType, filterHealth].filter(Boolean).length;
+
+  const clearAllFilters = () => {
+    setFilterState('');
+    setFilterTeam('');
+    setFilterType('');
+    setFilterHealth('');
+  };
+
+  const teamOptions = useMemo(
+    () => teams.map((t) => ({ value: t.id, label: t.name })),
+    [teams],
+  );
 
   if (loading) {
     return (
@@ -72,7 +182,7 @@ export function ObjectivesPage() {
     );
   }
 
-  if (objectives.length === 0) {
+  if (objectives.length === 0 && !activeFilterCount) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <Target className="h-12 w-12 text-muted-foreground/40" />
@@ -96,18 +206,55 @@ export function ObjectivesPage() {
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
-        {objectives.map((obj) => (
-          <ObjectiveCard
-            key={obj.objective.id}
-            data={obj}
-            onArchive={() => handleArchive(obj.objective.id)}
-            onClick={() => navigate({ to: `/w/${workspace!.slug}/pm/objectives/${obj.objective.id}` } as any)}
-          />
-        ))}
+      {/* Filters */}
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
+        <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+        <FilterChip label="Status" options={stateFilterOptions} value={filterState} onChange={setFilterState} />
+        <FilterChip label="Health" options={healthFilterOptions} value={filterHealth} onChange={setFilterHealth} />
+        {teamOptions.length > 0 && (
+          <FilterChip label="Team" options={teamOptions} value={filterTeam} onChange={setFilterTeam} />
+        )}
+        <FilterChip label="Type" options={typeFilterOptions} value={filterType} onChange={setFilterType} />
+        {activeFilterCount > 0 && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground cursor-pointer ml-1"
+            onClick={clearAllFilters}
+          >
+            Clear all
+          </button>
+        )}
       </div>
+
+      {filtered.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3 max-w-5xl">
+          {filtered.map((obj) => (
+            <ObjectiveCard
+              key={obj.objective.id}
+              data={obj}
+              onArchive={() => handleArchive(obj.objective.id)}
+              onClick={() => navigate({ to: `/w/${workspace!.slug}/pm/objectives/${obj.objective.id}` } as any)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <p className="text-sm text-muted-foreground">No objectives match the current filters</p>
+          <button
+            type="button"
+            className="mt-2 text-xs text-primary hover:underline cursor-pointer"
+            onClick={clearAllFilters}
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
     </div>
   );
+}
+
+function formatDate(iso: string) {
+  try { return format(parseISO(iso.slice(0, 10)), 'MMM d'); } catch { return iso.slice(0, 10); }
 }
 
 function ObjectiveCard({
@@ -123,123 +270,117 @@ function ObjectiveCard({
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const isStrategic = objective.objective_type === 'strategic';
   const stateCfg = OBJECTIVE_STATE_CONFIG[objective.state as ObjectiveState] ?? OBJECTIVE_STATE_CONFIG.not_started;
+  const health = healthConfig[objective.health] ?? healthConfig.on_track;
 
   const krProgress = Math.round(stats.key_result_avg_pct);
   const epicProgress = Math.round(stats.epic_progress_pct);
+  const hasKr = stats.key_result_count > 0;
+  const hasEpics = epics.length > 0;
 
-  const dateRange = useMemo(() => {
-    const parts: string[] = [];
-    if (objective.planned_start_date) parts.push(objective.planned_start_date.slice(0, 10));
-    if (objective.deadline) parts.push(objective.deadline.slice(0, 10));
-    return parts.join(' → ');
+  const dateLabel = useMemo(() => {
+    if (objective.planned_start_date && objective.deadline)
+      return `${formatDate(objective.planned_start_date)} → ${formatDate(objective.deadline)}`;
+    if (objective.deadline) return `Due ${formatDate(objective.deadline)}`;
+    if (objective.planned_start_date) return `From ${formatDate(objective.planned_start_date)}`;
+    return '';
   }, [objective.planned_start_date, objective.deadline]);
 
   return (
-    <article className="rounded-lg border border-border/70 bg-card p-4 transition-shadow hover:shadow-sm">
-      {/* Type + Title row */}
-      <div className="flex items-start gap-2">
-        <div className={`mt-0.5 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-          isStrategic
-            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
-            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-        }`}>
-          {isStrategic ? <Crosshair className="h-3 w-3" /> : <Target className="h-3 w-3" />}
-          {isStrategic ? 'Strategic' : 'Tactical'}
+    <article
+      className="group flex flex-col rounded-lg border border-border/60 bg-card transition-all hover:shadow-sm hover:border-border cursor-pointer"
+      onClick={onClick}
+    >
+      {/* Header */}
+      <div className="p-3.5 pb-0">
+        <div className="flex items-start gap-2">
+          <span className={`mt-[2px] shrink-0 ${isStrategic ? 'text-violet-500' : 'text-blue-500'}`}>
+            {isStrategic ? <Crosshair className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
+          </span>
+          <p className="min-w-0 flex-1 text-[13px] font-semibold text-foreground leading-tight line-clamp-2">{objective.name}</p>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 -mt-0.5 -mr-1 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuItem onClick={onClick}>Edit</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
+                <Archive className="mr-2 h-4 w-4 text-amber-500" />
+                Archive
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <div className="min-w-0 flex-1">
-          <button
-            type="button"
-            className="text-sm font-semibold text-foreground hover:underline cursor-pointer text-left"
-            onClick={onClick}
-          >
-            {objective.name}
-          </button>
+
+        {/* Meta row */}
+        <div className="mt-2 mb-3 flex items-center justify-between">
+          <span className={`rounded-full px-1.5 py-[2px] text-[10px] font-medium leading-none ${stateCfg.badge}`}>
+            {stateCfg.label}
+          </span>
+          {objective.state !== 'closed' && (
+            <span className={`rounded-full px-1.5 py-[2px] text-[10px] font-medium leading-none ${health.className}`}>
+              {health.label}
+            </span>
+          )}
+          {dateLabel && (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <CalendarDays className="h-2.5 w-2.5" />
+              {dateLabel}
+            </span>
+          )}
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onClick}>Edit</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
-              <Archive className="mr-2 h-4 w-4 text-amber-500" />
-              Archive
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       {/* Progress bars */}
-      {stats.key_result_count > 0 ? (
-        <div className="mt-3 grid grid-cols-2 gap-4">
-          <div>
-            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-              <span>Outcome Progress</span>
-              <span>{krProgress}%</span>
-            </div>
-            <Progress value={krProgress} className="h-1.5" />
-          </div>
-          <div>
-            <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-              <span>Execution Progress</span>
-              <span>{epicProgress}%</span>
-            </div>
-            <Progress value={epicProgress} className="h-1.5" />
-          </div>
-        </div>
-      ) : (
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-            <span>Progress</span>
-            <span>{epicProgress}%</span>
-          </div>
-          <Progress value={epicProgress} className="h-1.5" />
+      {(hasKr || hasEpics) && (
+        <div className="mx-3.5 py-2.5 border-t border-border/40 grid grid-cols-[1fr_80px_28px] items-center gap-x-2 gap-y-2">
+          {hasKr && (
+            <>
+              <span className="text-[10px] text-muted-foreground">KR Progress</span>
+              <Progress value={krProgress} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+              <span className="text-[11px] font-medium tabular-nums text-right">{krProgress}%</span>
+            </>
+          )}
+          {hasEpics && (
+            <>
+              <span className="text-[10px] text-muted-foreground">Epic Progress</span>
+              <Progress value={epicProgress} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+              <span className="text-[11px] font-medium tabular-nums text-right">{epicProgress}%</span>
+            </>
+          )}
         </div>
       )}
 
-      {/* State + health + date row */}
-      <div className="mt-3 flex items-center gap-2 text-xs">
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${stateCfg.badge}`}>
-          {stateCfg.label}
-        </span>
-        {objective.state !== 'closed' && (
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${(healthConfig[objective.health] ?? healthConfig.on_track).className}`}>
-            {(healthConfig[objective.health] ?? healthConfig.on_track).label}
-          </span>
-        )}
-        {dateRange && (
-          <span className="flex items-center gap-1 text-muted-foreground">
-            <CalendarDays className="h-3 w-3" />
-            {dateRange}
-          </span>
-        )}
-      </div>
-
       {/* Linked epics */}
-      {epics.length > 0 && (
-        <div className="mt-3 space-y-1">
-          {epics.slice(0, 5).map((e) => {
+      {hasEpics && (
+        <div className="mx-3.5 pb-3 pt-2 border-t border-border/40 space-y-0.5">
+          {epics.slice(0, 4).map((e) => {
             const epicPct = e.stats.story_count > 0
               ? Math.round((e.stats.done_story_count / e.stats.story_count) * 100)
               : 0;
             return (
-              <div key={e.epic.id} className="flex items-center gap-2 text-xs">
-                <Hexagon className="h-3 w-3 shrink-0 text-violet-500" />
-                <span className="min-w-0 flex-1 truncate">{e.epic.name}</span>
-                <div className="w-16">
-                  <Progress value={epicPct} className="h-1" />
+              <div key={e.epic.id} className="flex items-center gap-1.5 py-0.5">
+                <Hexagon className="h-2.5 w-2.5 shrink-0 text-violet-400" />
+                <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{e.epic.name}</span>
+                <div className="w-16 shrink-0">
+                  <Progress value={epicPct} className="h-[3px] bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
                 </div>
-                <span className="w-8 text-right text-muted-foreground">{epicPct}%</span>
+                <span className="w-6 text-right text-[10px] text-muted-foreground tabular-nums">{epicPct}%</span>
               </div>
             );
           })}
-          {epics.length > 5 && (
-            <p className="text-[10px] text-muted-foreground">+{epics.length - 5} more</p>
+          {epics.length > 4 && (
+            <p className="text-[10px] text-muted-foreground pl-4">+{epics.length - 4} more</p>
           )}
         </div>
       )}
+
       <ConfirmDialog
         open={archiveConfirmOpen}
         onOpenChange={setArchiveConfirmOpen}

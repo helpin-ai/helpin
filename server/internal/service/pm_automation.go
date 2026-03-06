@@ -13,13 +13,13 @@ import (
 
 // PMAutomationService handles automation CRUD and trigger logic.
 type PMAutomationService struct {
-	automationRepo *repository.PMAutomationRepository
-	epicRepo       *repository.PMEpicRepository
-	storyRepo      *repository.PMStoryRepository
-	sprintRepo     *repository.PMSprintRepository
-	workflowRepo   *repository.PMWorkflowRepository
+	automationRepo  *repository.PMAutomationRepository
+	epicRepo        *repository.PMEpicRepository
+	storyRepo       *repository.PMStoryRepository
+	sprintRepo      *repository.PMSprintRepository
+	workflowRepo    *repository.PMWorkflowRepository
 	activityService *PMActivityService
-	wsPublisher    *websocket.Publisher
+	wsPublisher     *websocket.Publisher
 }
 
 // NewPMAutomationService creates a new PMAutomationService.
@@ -33,13 +33,13 @@ func NewPMAutomationService(
 	wsPublisher *websocket.Publisher,
 ) *PMAutomationService {
 	return &PMAutomationService{
-		automationRepo: automationRepo,
-		epicRepo:       epicRepo,
-		storyRepo:      storyRepo,
-		sprintRepo:     sprintRepo,
-		workflowRepo:   workflowRepo,
+		automationRepo:  automationRepo,
+		epicRepo:        epicRepo,
+		storyRepo:       storyRepo,
+		sprintRepo:      sprintRepo,
+		workflowRepo:    workflowRepo,
 		activityService: activityService,
-		wsPublisher:    wsPublisher,
+		wsPublisher:     wsPublisher,
 	}
 }
 
@@ -233,7 +233,10 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 			if sp.Archived {
 				continue
 			}
-			spEnd := toDay(sp.EndDate)
+			if sp.EndDate == nil {
+				continue
+			}
+			spEnd := toDay(*sp.EndDate)
 			if spEnd.After(now) || spEnd.Equal(now) {
 				futureCount++
 			}
@@ -276,8 +279,8 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 			sprint := &model.PMSprint{
 				WorkspaceID: cfg.WorkspaceID,
 				Name:        name,
-				StartDate:   nextStart,
-				EndDate:     endDate,
+				StartDate:   &nextStart,
+				EndDate:     &endDate,
 				TeamID:      &teamID,
 			}
 			if err := s.sprintRepo.Create(ctx, sprint); err != nil {
@@ -318,12 +321,12 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 		var nextSprint *model.PMSprint
 		for i := range sprints {
 			sp := &sprints[i]
-			if sp.Archived {
+			if sp.Archived || sp.EndDate == nil {
 				continue
 			}
-			spEnd := toDay(sp.EndDate)
+			spEnd := toDay(*sp.EndDate)
 			if spEnd.Before(today) && (spEnd.After(twoDaysAgo) || spEnd.Equal(twoDaysAgo)) {
-				if endedSprint == nil || spEnd.After(toDay(endedSprint.EndDate)) {
+				if endedSprint == nil || endedSprint.EndDate == nil || spEnd.After(toDay(*endedSprint.EndDate)) {
 					endedSprint = sp
 				}
 			}
@@ -334,15 +337,18 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 		}
 
 		// Find the next sprint (earliest start_date after endedSprint.EndDate)
-		endedEnd := toDay(endedSprint.EndDate)
+		if endedSprint.EndDate == nil {
+			continue
+		}
+		endedEnd := toDay(*endedSprint.EndDate)
 		for i := range sprints {
 			sp := &sprints[i]
-			if sp.Archived || sp.ID == endedSprint.ID {
+			if sp.Archived || sp.ID == endedSprint.ID || sp.StartDate == nil {
 				continue
 			}
-			spStart := toDay(sp.StartDate)
+			spStart := toDay(*sp.StartDate)
 			if spStart.After(endedEnd) {
-				if nextSprint == nil || spStart.Before(toDay(nextSprint.StartDate)) {
+				if nextSprint == nil || nextSprint.StartDate == nil || spStart.Before(toDay(*nextSprint.StartDate)) {
 					nextSprint = sp
 				}
 			}

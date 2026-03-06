@@ -771,7 +771,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 		}
 
 		maxDisplayID++
-		description := row.Description
+		description := normalizeShortcutDescription(row.Description)
 		var descriptionPtr *string
 		if strings.TrimSpace(description) != "" {
 			descriptionPtr = &description

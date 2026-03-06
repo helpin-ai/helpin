@@ -11,6 +11,7 @@ import {
   Hexagon,
   Info,
   Loader2,
+  Pencil,
   Plus,
   Target,
   Trash2,
@@ -29,9 +30,11 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useSessionStore } from '@/stores/sessionStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import type { MemberWithUser, WorkspacePerson } from '@/lib/types';
 import type {
   EpicWithStats,
@@ -149,12 +152,14 @@ function MultiValueList({
   onAdd,
   onRemove,
   placeholder,
+  readOnly,
 }: {
   items: string[];
   allOptions: { id: string; name: string }[];
   onAdd: (id: string) => void;
   onRemove: (id: string) => void;
   placeholder: string;
+  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const available = allOptions.filter((o) => !items.includes(o.id));
@@ -162,42 +167,49 @@ function MultiValueList({
 
   return (
     <div className="space-y-1">
+      {selected.length === 0 && readOnly && (
+        <span className="text-xs text-muted-foreground px-1.5 py-0.5">None</span>
+      )}
       {selected.map((item) => (
         <div key={item.id} className="flex items-center justify-between rounded-md bg-muted/50 px-2 py-0.5 text-xs">
           <span className="truncate">{item.name}</span>
-          <button type="button" className="text-muted-foreground hover:text-destructive cursor-pointer" onClick={() => onRemove(item.id)}>
-            <X className="h-3 w-3" />
-          </button>
+          {!readOnly && (
+            <button type="button" className="text-muted-foreground hover:text-destructive cursor-pointer" onClick={() => onRemove(item.id)}>
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
       ))}
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent cursor-pointer"
-          >
-            <Plus className="h-3 w-3" />
-            {placeholder}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-48 p-1" align="start">
-          <div className="flex max-h-48 flex-col overflow-y-auto">
-            {available.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer"
-                onClick={() => { onAdd(opt.id); setOpen(false); }}
-              >
-                <span className="truncate">{opt.name}</span>
-              </button>
-            ))}
-            {available.length === 0 && (
-              <p className="px-2 py-1.5 text-xs text-muted-foreground">No more options</p>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
+      {!readOnly && (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent cursor-pointer"
+            >
+              <Plus className="h-3 w-3" />
+              {placeholder}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-1" align="start">
+            <div className="flex max-h-48 flex-col overflow-y-auto">
+              {available.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer"
+                  onClick={() => { onAdd(opt.id); setOpen(false); }}
+                >
+                  <span className="truncate">{opt.name}</span>
+                </button>
+              ))}
+              {available.length === 0 && (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">No more options</p>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }
@@ -210,18 +222,21 @@ function KeyResultRow({
   memberMap,
   onUpdate,
   onDelete,
+  readOnly,
 }: {
   kr: KeyResult;
   workspaceId: string;
   memberMap: Map<string, string>;
   onUpdate: (updated: KeyResult) => void;
   onDelete: () => void;
+  readOnly?: boolean;
 }) {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(kr.name);
   const [currentValue, setCurrentValue] = useState(String(kr.current_value));
-  const [editingNote, setEditingNote] = useState(false);
-  const [note, setNote] = useState(kr.note ?? '');
+  // Sync local state when kr prop changes (after save)
+  useEffect(() => { setName(kr.name); }, [kr.name]);
+  useEffect(() => { setCurrentValue(String(kr.current_value)); }, [kr.current_value]);
 
   const saveValue = async () => {
     const val = parseFloat(currentValue);
@@ -231,6 +246,7 @@ function KeyResultRow({
   };
 
   const saveName = async () => {
+
     if (name.trim() === kr.name || !name.trim()) {
       setName(kr.name);
       setEditingName(false);
@@ -241,26 +257,15 @@ function KeyResultRow({
     setEditingName(false);
   };
 
-  const saveNote = async () => {
-    const trimmed = note.trim();
-    if (trimmed === (kr.note ?? '')) {
-      setEditingNote(false);
-      return;
-    }
-    const { data } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, { note: trimmed });
-    if (data) onUpdate(data);
-    setEditingNote(false);
-  };
 
   const lastUpdated = formatDistanceToNow(parseISO(kr.updated_at), { addSuffix: true });
   const updatedByName = kr.updated_by ? memberMap.get(kr.updated_by) : undefined;
 
   return (
-    <div className="group rounded-md border border-border/60 px-3 py-2.5">
-      {/* Row 1: Name + progress + actions */}
-      <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1">
-          {editingName ? (
+    <div className="group flex items-center gap-3 rounded-lg border border-border/60 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          {!readOnly && editingName ? (
             <input
               type="text"
               value={name}
@@ -270,101 +275,87 @@ function KeyResultRow({
               className="w-full bg-transparent text-sm font-medium focus:outline-none"
               autoFocus
             />
-          ) : (
+          ) : !readOnly ? (
             <button
               type="button"
-              className="text-sm font-medium text-foreground hover:underline cursor-pointer text-left"
+              className="text-sm font-medium text-foreground hover:underline cursor-pointer text-left truncate"
               onClick={() => setEditingName(true)}
             >
               {kr.name}
             </button>
+          ) : (
+            <span className="text-sm font-medium text-foreground text-left truncate">{kr.name}</span>
           )}
         </div>
-
-        <div className="flex items-center gap-2">
-          <div className="w-20">
-            <Progress value={kr.progress} className="h-1.5" />
-          </div>
-          <span className="w-8 text-right text-xs text-muted-foreground">{Math.round(kr.progress)}%</span>
-          <button
-            type="button"
-            className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
-            onClick={onDelete}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">{kr.result_type}</span>
+          {kr.result_type === 'boolean' ? (
+            readOnly ? (
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                kr.progress >= 100
+                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                  : 'bg-muted text-muted-foreground'
+              }`}>
+                {kr.progress >= 100 ? 'Done' : 'Not done'}
+              </span>
+            ) : (
+              <button
+                type="button"
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium cursor-pointer ${
+                  kr.progress >= 100
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-muted text-muted-foreground'
+                }`}
+                onClick={async () => {
+                  const newVal = kr.current_value >= kr.target_value ? 0 : kr.target_value;
+                  const { data } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, { current_value: newVal });
+                  if (data) onUpdate(data);
+                }}
+              >
+                {kr.progress >= 100 ? 'Done' : 'Not done'}
+              </button>
+            )
+          ) : (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span>{kr.initial_value}</span>
+              <span>→</span>
+              {readOnly ? (
+                <span className="w-14 text-center font-medium text-foreground">{kr.current_value}</span>
+              ) : (
+                <input
+                  type="number"
+                  value={currentValue}
+                  onChange={(e) => setCurrentValue(e.target.value)}
+                  onBlur={saveValue}
+                  onKeyDown={(e) => e.key === 'Enter' && saveValue()}
+                  title="Current value — edit to update progress"
+                  className="w-14 rounded border border-border bg-transparent px-1.5 py-0.5 text-[11px] text-center font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              )}
+              <span>→ {kr.target_value}</span>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Row 2: Current value update + type badge */}
-      <div className="mt-2 flex items-center gap-2">
-        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">{kr.result_type}</span>
-        {kr.result_type === 'boolean' ? (
-          <button
-            type="button"
-            className={`rounded-full px-2 py-0.5 text-[10px] font-medium cursor-pointer ${
-              kr.progress >= 100
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-muted text-muted-foreground'
-            }`}
-            onClick={async () => {
-              const newVal = kr.current_value >= kr.target_value ? 0 : kr.target_value;
-              const { data } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, { current_value: newVal });
-              if (data) onUpdate(data);
-            }}
-          >
-            {kr.progress >= 100 ? 'Done' : 'Not done'}
-          </button>
-        ) : (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>{kr.initial_value}</span>
-            <span>→</span>
-            <input
-              type="number"
-              value={currentValue}
-              onChange={(e) => setCurrentValue(e.target.value)}
-              onBlur={saveValue}
-              onKeyDown={(e) => e.key === 'Enter' && saveValue()}
-              title="Current value — edit to update progress"
-              className="w-16 rounded border border-border bg-transparent px-1.5 py-0.5 text-xs text-center font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <span>→ {kr.target_value}</span>
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground tabular-nums">{Math.round(kr.progress)}%</span>
+          <div className="w-24">
+            <Progress value={kr.progress} className="h-1.5" />
           </div>
-        )}
-      </div>
-
-      {/* Row 3: Note */}
-      <div className="mt-1.5">
-        {editingNote ? (
-          <input
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            onBlur={saveNote}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') saveNote();
-              if (e.key === 'Escape') { setNote(kr.note ?? ''); setEditingNote(false); }
-            }}
-            placeholder="Add a note..."
-            className="w-full rounded border border-border/60 bg-transparent px-2 py-1 text-xs text-muted-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary"
-            autoFocus
-          />
-        ) : (
-          <button
-            type="button"
-            className={`w-full text-left rounded px-2 py-1 text-xs cursor-pointer hover:bg-muted/50 ${
-              kr.note ? 'text-muted-foreground' : 'text-muted-foreground/40'
-            }`}
-            onClick={() => setEditingNote(true)}
-          >
-            {kr.note || 'Add a note...'}
-          </button>
-        )}
-      </div>
-
-      {/* Row 4: Updated by + time */}
-      <div className="mt-1.5 text-[10px] text-muted-foreground/60">
-        {updatedByName ? `Updated by ${updatedByName} ${lastUpdated}` : `Updated ${lastUpdated}`}
+          {!readOnly && (
+            <button
+              type="button"
+              className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        <span className={`text-[11px] text-muted-foreground ${readOnly ? '' : 'pr-6'}`}>
+          {updatedByName ? `${updatedByName}, ${lastUpdated}` : `Updated ${lastUpdated}`}
+        </span>
       </div>
     </div>
   );
@@ -450,6 +441,7 @@ export function ObjectiveDetailPage() {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
+  const { canEdit, isAdmin } = useSessionStore();
 
   const [data, setData] = useState<ObjectiveWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -478,6 +470,8 @@ export function ObjectiveDetailPage() {
   const [newKrType, setNewKrType] = useState<KeyResultType>('percent');
   const [newKrStart, setNewKrStart] = useState('0');
   const [newKrTarget, setNewKrTarget] = useState('100');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
 
   // Load data
   const loadData = useCallback(async () => {
@@ -698,22 +692,53 @@ export function ObjectiveDetailPage() {
         <div className="min-h-0 overflow-y-auto px-8 py-8">
           {/* ── Objective Header Card ──────────────────────────── */}
           <div className="rounded-lg border border-border/60 p-6">
-            <input
-              type="text"
-              aria-label="Objective title"
-              value={form.name}
-              onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-              className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-              placeholder="Untitled"
-            />
-            <div className="mt-3">
-              <TiptapEditor
-                content={form.description}
-                onChange={(html) => updateField('description', html, { description: html })}
-                placeholder="Add a description..."
-                className="border-transparent shadow-none"
-                teams={teams}
+            {canEdit() ? (
+              <input
+                type="text"
+                aria-label="Objective title"
+                value={form.name}
+                onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
+                className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                placeholder="Untitled"
               />
+            ) : (
+              <h1 className="text-2xl font-bold text-foreground">{form.name}</h1>
+            )}
+            <div className="mt-3">
+              {editingDescription ? (
+                <div>
+                  <TiptapEditor
+                    content={form.description}
+                    onChange={(html) => updateField('description', html, { description: html })}
+                    placeholder="Add a description..."
+                    className="border-transparent shadow-none"
+                    teams={teams}
+                  />
+                  <div className="mt-2 flex justify-end">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
+                      Done
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="group/desc relative">
+                  {form.description ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: form.description }} />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{canEdit() ? 'No description yet' : 'No description'}</p>
+                  )}
+                  {canEdit() && (
+                    <button
+                      type="button"
+                      className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                      onClick={() => setEditingDescription(true)}
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Edit description
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -724,14 +749,18 @@ export function ObjectiveDetailPage() {
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Heart className="h-3.5 w-3.5" />
                 <span>Health:</span>
-                <SidebarPopoverSelect
-                  value={form.health}
-                  options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
-                  onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
-                  renderTrigger={() => (
-                    <span className={currentHealth.color}>{currentHealth.label}</span>
-                  )}
-                />
+                {canEdit() ? (
+                  <SidebarPopoverSelect
+                    value={form.health}
+                    options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
+                    onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
+                    renderTrigger={() => (
+                      <span className={currentHealth.color}>{currentHealth.label}</span>
+                    )}
+                  />
+                ) : (
+                  <span className={currentHealth.color}>{currentHealth.label}</span>
+                )}
               </div>
             </div>
 
@@ -741,12 +770,22 @@ export function ObjectiveDetailPage() {
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <Hexagon className="h-4 w-4 text-violet-500" />
                   Epic Progress
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[240px] text-xs">
+                        Percentage of done stories across all linked epics: done stories ÷ total stories.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 <div className="mt-3">
                   <span className="text-3xl font-bold">{epicProgress}%</span>
                   <span className="ml-1.5 text-sm text-muted-foreground">Complete</span>
                 </div>
-                <Progress value={epicProgress} className="mt-3 h-2.5" />
+                <Progress value={epicProgress} className="mt-3 h-2.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
                 <p className="mt-2 text-xs text-muted-foreground">
                   Last updated {data.epics.length > 0 ? formatDistanceToNow(parseISO(data.epics.reduce((latest, e) => e.epic.updated_at > latest ? e.epic.updated_at : latest, data.epics[0].epic.updated_at)), { addSuffix: true }) : 'never'}
                 </p>
@@ -778,7 +817,7 @@ export function ObjectiveDetailPage() {
                   const daysLeft = differenceInDays(end, now);
                   return (
                     <>
-                      <Progress value={timePct} className="mt-3 h-2.5" />
+                      <Progress value={timePct} className="mt-3 h-2.5 bg-sky-500/15 [&>[data-slot=progress-indicator]]:bg-sky-500" />
                       <p className={`mt-2 text-xs ${daysLeft <= 7 ? 'text-red-500 font-medium' : daysLeft <= 14 ? 'text-amber-500' : 'text-muted-foreground'}`}>
                         {daysLeft > 0
                           ? `Time remaining: ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`
@@ -806,12 +845,23 @@ export function ObjectiveDetailPage() {
               <h3 className="text-sm font-semibold text-foreground">Key Results</h3>
               <div className="flex items-center gap-2">
                 {data.key_results.length > 0 && (
-                  <span className="text-xs text-muted-foreground">{krAvgProgress}% outcome progress</span>
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">{krAvgProgress}% outcome progress</span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[240px] text-xs">
+                        Average progress across all key results. Each key result's progress is: (current − initial) ÷ (target − initial).
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setKrModalOpen(true)}>
-                  <Plus className="mr-1 h-3 w-3" />
-                  Add Key Results
-                </Button>
+                {canEdit() && (
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setKrModalOpen(true)}>
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add Key Results
+                  </Button>
+                )}
               </div>
             </div>
             {data.key_results.length > 0 ? (
@@ -824,6 +874,7 @@ export function ObjectiveDetailPage() {
                     memberMap={memberMap}
                     onUpdate={handleUpdateKeyResult}
                     onDelete={() => handleDeleteKeyResult(kr.id)}
+                    readOnly={!canEdit()}
                   />
                 ))}
               </div>
@@ -839,11 +890,13 @@ export function ObjectiveDetailPage() {
           <div className="mt-8">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-foreground">Epics</h3>
-              <LinkEpicPopover
-                workspaceId={workspaceId!}
-                linkedEpicIds={data.epics.map((e) => e.epic.id)}
-                onLink={handleLinkEpic}
-              />
+              {canEdit() && (
+                <LinkEpicPopover
+                  workspaceId={workspaceId!}
+                  linkedEpicIds={data.epics.map((e) => e.epic.id)}
+                  onLink={handleLinkEpic}
+                />
+              )}
             </div>
 
             {data.epics.length > 0 ? (
@@ -862,21 +915,26 @@ export function ObjectiveDetailPage() {
                         <p className="text-sm font-medium truncate">{e.epic.name}</p>
                         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                           <span className={epicStateColor}>{epicState.toLowerCase()}</span>
-                          <span className="text-muted-foreground/40">·</span>
-                          <span>Updated {epicUpdated}</span>
                         </div>
                       </div>
-                      <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
-                      <div className="w-24">
-                        <Progress value={pct} className="h-1.5" />
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
+                          <div className="w-24">
+                            <Progress value={pct} className="h-1.5" />
+                          </div>
+                          {canEdit() && (
+                            <button
+                              type="button"
+                              className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
+                              onClick={() => handleUnlinkEpic(e.epic.id)}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        <span className={`text-[11px] text-muted-foreground ${canEdit() ? 'pr-6' : ''}`}>Updated {epicUpdated}</span>
                       </div>
-                      <button
-                        type="button"
-                        className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
-                        onClick={() => handleUnlinkEpic(e.epic.id)}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
                     </div>
                   );
                 })}
@@ -893,30 +951,38 @@ export function ObjectiveDetailPage() {
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
           <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
 
-          <div className="grid grid-cols-[16px_80px_1fr] items-start gap-x-2 gap-y-3">
+          <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* State */}
             <MetadataRow icon={Hash} label="State">
-              <SidebarPopoverSelect
-                value={form.state}
-                options={stateOptions}
-                onChange={(v) => updateField('state', v as ObjectiveState, { state: v as ObjectiveState })}
-                renderTrigger={() => <span className={currentState.className}>{currentState.label}</span>}
-              />
+              {canEdit() ? (
+                <SidebarPopoverSelect
+                  value={form.state}
+                  options={stateOptions}
+                  onChange={(v) => updateField('state', v as ObjectiveState, { state: v as ObjectiveState })}
+                  renderTrigger={() => <span className={currentState.className}>{currentState.label}</span>}
+                />
+              ) : (
+                <span className={`text-xs ${currentState.className}`}>{currentState.label}</span>
+              )}
             </MetadataRow>
 
             {/* Health */}
             {form.state !== 'closed' && (
             <MetadataRow icon={Heart} label="Health">
               <div className="flex flex-col gap-1">
-                <SidebarPopoverSelect
-                  value={form.health}
-                  options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
-                  onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
-                  renderTrigger={() => (
-                    <span className={currentHealth.color}>{currentHealth.label}</span>
-                  )}
-                />
-                {suggestedLabel && suggestedHealth !== form.health && (
+                {canEdit() ? (
+                  <SidebarPopoverSelect
+                    value={form.health}
+                    options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
+                    onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
+                    renderTrigger={() => (
+                      <span className={currentHealth.color}>{currentHealth.label}</span>
+                    )}
+                  />
+                ) : (
+                  <span className={`text-xs px-1.5 py-0.5 ${currentHealth.color}`}>{currentHealth.label}</span>
+                )}
+                {canEdit() && suggestedLabel && suggestedHealth !== form.health && (
                   <button
                     type="button"
                     className="text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left"
@@ -929,6 +995,9 @@ export function ObjectiveDetailPage() {
             </MetadataRow>
             )}
 
+            {/* ── People ── */}
+            <div className="col-span-3 h-px bg-border/40 my-1" />
+
             {/* Teams */}
             <MetadataRow icon={Users} label="Teams">
               <MultiValueList
@@ -937,6 +1006,7 @@ export function ObjectiveDetailPage() {
                 onAdd={handleAddTeam}
                 onRemove={handleRemoveTeam}
                 placeholder="Add team"
+                readOnly={!canEdit()}
               />
             </MetadataRow>
 
@@ -948,41 +1018,74 @@ export function ObjectiveDetailPage() {
                 onAdd={handleAddOwner}
                 onRemove={handleRemoveOwner}
                 placeholder="Add owner"
+                readOnly={!canEdit()}
               />
             </MetadataRow>
 
+            {/* ── Planning ── */}
+            <div className="col-span-3 h-px bg-border/40 my-1" />
+
             {/* Start Date */}
             <MetadataRow icon={CalendarDays} label="Start date">
-              <DatePicker
-                value={form.planned_start_date}
-                onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
-                placeholder="None"
-                className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
-              />
+              {canEdit() ? (
+                <DatePicker
+                  value={form.planned_start_date}
+                  onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
+                  placeholder="None"
+                  className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
+                />
+              ) : (
+                <span className="text-xs px-1.5 py-0.5">
+                  {form.planned_start_date ? format(parseISO(form.planned_start_date), 'MMM d, yyyy') : 'None'}
+                </span>
+              )}
             </MetadataRow>
 
             {/* Target Date */}
             <MetadataRow icon={CalendarDays} label="Target date">
-              <DatePicker
-                value={form.deadline}
-                onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
-                placeholder="None"
-                className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
-              />
+              {canEdit() ? (
+                <DatePicker
+                  value={form.deadline}
+                  onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
+                  placeholder="None"
+                  className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
+                />
+              ) : (
+                <span className="text-xs px-1.5 py-0.5">
+                  {form.deadline ? format(parseISO(form.deadline), 'MMM d, yyyy') : 'None'}
+                </span>
+              )}
             </MetadataRow>
+
+            {/* ── Classification ── */}
+            {data.labels && data.labels.length > 0 && (
+              <>
+                <div className="col-span-3 h-px bg-border/40 my-1" />
+                <MetadataRow icon={Info} label="Labels">
+                  <div className="flex flex-wrap gap-1">
+                    {data.labels.map((l) => (
+                      <span key={l.id} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+                        {l.name}
+                      </span>
+                    ))}
+                  </div>
+                </MetadataRow>
+              </>
+            )}
           </div>
 
-          {/* Labels */}
-          {data.labels && data.labels.length > 0 && (
-            <div className="mt-6">
-              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Labels</h4>
-              <div className="flex flex-wrap gap-1">
-                {data.labels.map((l) => (
-                  <span key={l.id} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
-                    {l.name}
-                  </span>
-                ))}
-              </div>
+          {/* Delete objective — admin only */}
+          {isAdmin() && (
+            <div className="mt-8 border-t border-border/40 pt-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                <Trash2 className="mr-1 h-3 w-3" />
+                Delete objective
+              </Button>
             </div>
           )}
         </aside>
@@ -1081,6 +1184,20 @@ export function ObjectiveDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete objective"
+        description="This objective and all its key results will be archived. This action cannot be easily undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={async () => {
+          if (!workspaceId || !data) return;
+          await pmObjectiveService.remove(workspaceId, data.objective.id);
+          goBack();
+        }}
+      />
     </div>
   );
 }

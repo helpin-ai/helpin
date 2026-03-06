@@ -17,6 +17,7 @@ type PMObjectiveService struct {
 	objectiveRepo *repository.PMObjectiveRepository
 	krRepo        *repository.PMKeyResultRepository
 	labelRepo     *repository.PMLabelRepository
+	workspaceRepo *repository.WorkspaceRepository
 	activitySvc   *PMActivityService
 	wsPublisher   *websocket.Publisher
 }
@@ -26,6 +27,7 @@ func NewPMObjectiveService(
 	objectiveRepo *repository.PMObjectiveRepository,
 	krRepo *repository.PMKeyResultRepository,
 	labelRepo *repository.PMLabelRepository,
+	workspaceRepo *repository.WorkspaceRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 ) *PMObjectiveService {
@@ -33,9 +35,40 @@ func NewPMObjectiveService(
 		objectiveRepo: objectiveRepo,
 		krRepo:        krRepo,
 		labelRepo:     labelRepo,
+		workspaceRepo: workspaceRepo,
 		activitySvc:   activitySvc,
 		wsPublisher:   wsPublisher,
 	}
+}
+
+// requireCanEdit checks that the actor has owner, admin, or manager role.
+func (s *PMObjectiveService) requireCanEdit(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" || actorID == "" {
+		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
+	}
+	role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if role != model.RoleOwner && role != model.RoleAdmin && role != model.RoleManager {
+		return &model.ErrForbidden{Message: "manager access or above required"}
+	}
+	return nil
+}
+
+// requireAdmin checks that the actor has owner or admin role.
+func (s *PMObjectiveService) requireAdmin(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" || actorID == "" {
+		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
+	}
+	role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if role != model.RoleOwner && role != model.RoleAdmin {
+		return &model.ErrForbidden{Message: "admin access or above required"}
+	}
+	return nil
 }
 
 // List returns objectives with details for a workspace.
@@ -79,6 +112,9 @@ func (s *PMObjectiveService) GetByID(ctx context.Context, id string) (*model.Obj
 func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjectiveRequest, actorID string) (*model.ObjectiveWithDetails, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
+	}
+	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 
 	objType := req.ObjectiveType
@@ -166,6 +202,9 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 	}
 	if current == nil {
 		return nil, fmt.Errorf("objective not found")
+	}
+	if err := s.requireCanEdit(ctx, current.Objective.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 	obj := current.Objective
 
@@ -260,6 +299,9 @@ func (s *PMObjectiveService) Delete(ctx context.Context, id string, actorID stri
 	if obj == nil {
 		return fmt.Errorf("objective not found")
 	}
+	if err := s.requireAdmin(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if err := s.objectiveRepo.Delete(ctx, id); err != nil {
 		return err
 	}
@@ -277,6 +319,9 @@ func (s *PMObjectiveService) AddTeam(ctx context.Context, objectiveID, teamID, a
 	if obj == nil {
 		return fmt.Errorf("objective not found")
 	}
+	if err := s.requireCanEdit(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if err := s.objectiveRepo.AddTeam(ctx, objectiveID, teamID); err != nil {
 		return err
 	}
@@ -292,6 +337,9 @@ func (s *PMObjectiveService) RemoveTeam(ctx context.Context, objectiveID, teamID
 	}
 	if obj == nil {
 		return fmt.Errorf("objective not found")
+	}
+	if err := s.requireCanEdit(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := s.objectiveRepo.RemoveTeam(ctx, objectiveID, teamID); err != nil {
 		return err
@@ -309,6 +357,9 @@ func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, userID, 
 	if obj == nil {
 		return fmt.Errorf("objective not found")
 	}
+	if err := s.requireCanEdit(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if err := s.objectiveRepo.AddOwner(ctx, objectiveID, userID); err != nil {
 		return err
 	}
@@ -324,6 +375,9 @@ func (s *PMObjectiveService) RemoveOwner(ctx context.Context, objectiveID, userI
 	}
 	if obj == nil {
 		return fmt.Errorf("objective not found")
+	}
+	if err := s.requireCanEdit(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := s.objectiveRepo.RemoveOwner(ctx, objectiveID, userID); err != nil {
 		return err
@@ -341,6 +395,9 @@ func (s *PMObjectiveService) AddEpic(ctx context.Context, objectiveID, epicID, a
 	if obj == nil {
 		return fmt.Errorf("objective not found")
 	}
+	if err := s.requireCanEdit(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if err := s.objectiveRepo.AddEpic(ctx, objectiveID, epicID); err != nil {
 		return err
 	}
@@ -356,6 +413,9 @@ func (s *PMObjectiveService) RemoveEpic(ctx context.Context, objectiveID, epicID
 	}
 	if obj == nil {
 		return fmt.Errorf("objective not found")
+	}
+	if err := s.requireCanEdit(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := s.objectiveRepo.RemoveEpic(ctx, objectiveID, epicID); err != nil {
 		return err
@@ -374,6 +434,9 @@ func (s *PMObjectiveService) CreateKeyResult(ctx context.Context, objectiveID st
 	}
 	if obj == nil {
 		return nil, fmt.Errorf("objective not found")
+	}
+	if err := s.requireCanEdit(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
@@ -397,6 +460,11 @@ func (s *PMObjectiveService) CreateKeyResult(ctx context.Context, objectiveID st
 		Note:         req.Note,
 		UpdatedBy:    optionalActor(actorID),
 	}
+	if req.Note != nil && *req.Note != "" {
+		now := time.Now()
+		kr.NoteUpdatedBy = optionalActor(actorID)
+		kr.NoteUpdatedAt = &now
+	}
 	if req.Position != nil {
 		kr.Position = *req.Position
 	}
@@ -419,6 +487,11 @@ func (s *PMObjectiveService) UpdateKeyResult(ctx context.Context, id string, req
 	}
 	if kr == nil {
 		return nil, fmt.Errorf("key result not found")
+	}
+	if parentObj, _ := s.objectiveRepo.GetByID(ctx, kr.ObjectiveID); parentObj != nil {
+		if err := s.requireCanEdit(ctx, parentObj.Objective.WorkspaceID, actorID); err != nil {
+			return nil, err
+		}
 	}
 
 	if req.Name != nil {
@@ -445,6 +518,9 @@ func (s *PMObjectiveService) UpdateKeyResult(ctx context.Context, id string, req
 	}
 	if req.Note != nil {
 		kr.Note = req.Note
+		now := time.Now()
+		kr.NoteUpdatedBy = optionalActor(actorID)
+		kr.NoteUpdatedAt = &now
 	}
 	if req.Position != nil {
 		kr.Position = *req.Position
@@ -469,6 +545,11 @@ func (s *PMObjectiveService) DeleteKeyResult(ctx context.Context, id string, act
 	}
 	if kr == nil {
 		return fmt.Errorf("key result not found")
+	}
+	if parentObj, _ := s.objectiveRepo.GetByID(ctx, kr.ObjectiveID); parentObj != nil {
+		if err := s.requireCanEdit(ctx, parentObj.Objective.WorkspaceID, actorID); err != nil {
+			return err
+		}
 	}
 	if err := s.krRepo.Delete(ctx, id); err != nil {
 		return err

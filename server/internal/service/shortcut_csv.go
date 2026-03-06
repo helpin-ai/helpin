@@ -9,9 +9,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
-)
 
-import "github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	gmhtml "github.com/yuin/goldmark/renderer/html"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+)
 
 const shortcutDescriptionLimit = 64 * 1024
 
@@ -79,6 +83,11 @@ var (
 	}
 	shortcutWeekRangeRe = regexp.MustCompile(`(?i)^(.+?:\s*)?week\s+(\d{1,2})-(\d{1,2}),\s*(\d{4})(?:-(\d{4}))?$`)
 	shortcutDateRangeRe = regexp.MustCompile(`(?i)^([A-Za-z]+)\s+(\d{1,2})\s*-\s*([A-Za-z]+)?\s*(\d{1,2})(?:,\s*(\d{4}))?$`)
+	shortcutHTMLTagRe   = regexp.MustCompile(`(?i)<(?:p|div|br|strong|em|ul|ol|li|blockquote|pre|code|a|img|h[1-6]|table)\b`)
+	shortcutMDToHTML    = goldmark.New(
+		goldmark.WithExtensions(extension.GFM),
+		goldmark.WithRendererOptions(gmhtml.WithHardWraps()),
+	)
 )
 
 func parseShortcutCSV(data []byte) (*shortcutDataset, error) {
@@ -246,6 +255,28 @@ func parseShortcutInt(raw string) *int {
 		return nil
 	}
 	return &n
+}
+
+func normalizeShortcutDescription(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if shortcutHTMLTagRe.MatchString(trimmed) {
+		return raw
+	}
+
+	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	var buf bytes.Buffer
+	if err := shortcutMDToHTML.Convert([]byte(normalized), &buf); err != nil {
+		return raw
+	}
+	rendered := strings.TrimSpace(buf.String())
+	if rendered == "" {
+		return ""
+	}
+	return rendered
 }
 
 func parseShortcutTimestamp(raw, utcOffset string) *time.Time {

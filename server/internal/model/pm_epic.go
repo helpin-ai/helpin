@@ -10,28 +10,29 @@ const (
 
 // PMEpic represents an epic.
 type PMEpic struct {
-	ID               string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID      string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name             string     `json:"name" gorm:"not null"`
-	Description      *string    `json:"description"`
-	EpicStateID      *string    `json:"epic_state_id" gorm:"type:uuid;index"`
-	OwnerID          *string    `json:"owner_id" gorm:"type:uuid;index"`
-	TeamID           *string    `json:"team_id" gorm:"type:uuid;index"`
-	PlannedStartDate *time.Time `json:"planned_start_date" gorm:"type:date"`
-	Deadline         *time.Time `json:"deadline" gorm:"type:date"`
-	Started          bool       `json:"started" gorm:"not null;default:false"`
-	StartedAt        *time.Time `json:"started_at"`
-	Completed        bool       `json:"completed" gorm:"not null;default:false"`
-	CompletedAt      *time.Time `json:"completed_at"`
-	Position         int        `json:"position" gorm:"not null;default:0"`
-	Color            *string    `json:"color"`
-	Health           string     `json:"health" gorm:"not null;default:'on_track'"`
-	HealthComment    *string    `json:"health_comment"`
-	Archived         bool       `json:"archived" gorm:"not null;default:false"`
-	OrchestratorAgentID *string  `json:"orchestrator_agent_id" gorm:"type:uuid;index"`
-	CreatedBy           *string  `json:"created_by" gorm:"type:uuid"`
-	CreatedAt           time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt           time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                  string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID         string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name                string     `json:"name" gorm:"not null"`
+	Description         *string    `json:"description"`
+	ExternalID          *string    `json:"external_id" gorm:"index"`
+	EpicStateID         *string    `json:"epic_state_id" gorm:"type:uuid;index"`
+	OwnerID             *string    `json:"owner_id" gorm:"type:uuid;index"`
+	TeamID              *string    `json:"team_id" gorm:"type:uuid;index"`
+	PlannedStartDate    *time.Time `json:"planned_start_date" gorm:"type:date"`
+	Deadline            *time.Time `json:"deadline" gorm:"type:date"`
+	Started             bool       `json:"started" gorm:"not null;default:false"`
+	StartedAt           *time.Time `json:"started_at"`
+	Completed           bool       `json:"completed" gorm:"not null;default:false"`
+	CompletedAt         *time.Time `json:"completed_at"`
+	Position            int        `json:"position" gorm:"not null;default:0"`
+	Color               *string    `json:"color"`
+	Health              string     `json:"health" gorm:"not null;default:'on_track'"`
+	HealthComment       *string    `json:"health_comment"`
+	Archived            bool       `json:"archived" gorm:"not null;default:false"`
+	OrchestratorAgentID *string    `json:"orchestrator_agent_id" gorm:"type:uuid;index"`
+	CreatedBy           *string    `json:"created_by" gorm:"type:uuid"`
+	CreatedAt           time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt           time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMEpic) TableName() string { return "pm_epics" }

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -61,5 +62,29 @@ func TestParseShortcutTimestampWithUTCOffset(t *testing.T) {
 	expected := time.Date(2026, time.March, 4, 17, 18, 7, 0, time.UTC)
 	if !ts.Equal(expected) {
 		t.Fatalf("unexpected timestamp: got %s want %s", ts.UTC().Format(time.RFC3339), expected.Format(time.RFC3339))
+	}
+}
+
+func TestNormalizeShortcutDescriptionMarkdownToHTML(t *testing.T) {
+	raw := strings.Join([]string{
+		"**Email:** bod@hanzonation.com",
+		"**Plan:** premium-monthly",
+		"**Chat:** https://app.crisp.chat/example",
+		"",
+		"![image.png](https://media.app.shortcut.com/example/image.png)",
+	}, "\n")
+
+	got := normalizeShortcutDescription(raw)
+	wantFragments := []string{
+		"<strong>Email:</strong>",
+		"<strong>Plan:</strong>",
+		`<a href="https://app.crisp.chat/example">https://app.crisp.chat/example</a>`,
+		`<img src="https://media.app.shortcut.com/example/image.png" alt="image.png">`,
+		"<br>",
+	}
+	for _, fragment := range wantFragments {
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("expected rendered HTML to contain %q, got %s", fragment, got)
+		}
 	}
 }

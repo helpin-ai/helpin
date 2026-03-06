@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -9,6 +10,14 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
+
+func objectiveErrorStatus(err error) int {
+	var forbidden *model.ErrForbidden
+	if errors.As(err, &forbidden) {
+		return http.StatusForbidden
+	}
+	return http.StatusBadRequest
+}
 
 // PMObjectiveHandler handles PM objective HTTP endpoints.
 type PMObjectiveHandler struct {
@@ -64,7 +73,7 @@ func (h *PMObjectiveHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	obj, err := h.objectiveService.Create(r.Context(), req, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, obj)
@@ -92,7 +101,7 @@ func (h *PMObjectiveHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	obj, err := h.objectiveService.Update(r.Context(), id, req, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, obj)
@@ -103,7 +112,7 @@ func (h *PMObjectiveHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	if err := h.objectiveService.Delete(r.Context(), id, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "objective archived"})
@@ -121,7 +130,7 @@ func (h *PMObjectiveHandler) AddTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.objectiveService.AddTeam(r.Context(), id, body.TeamID, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "team added"})
@@ -133,7 +142,7 @@ func (h *PMObjectiveHandler) RemoveTeam(w http.ResponseWriter, r *http.Request) 
 	id := chi.URLParam(r, "id")
 	teamID := chi.URLParam(r, "teamId")
 	if err := h.objectiveService.RemoveTeam(r.Context(), id, teamID, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "team removed"})
@@ -151,7 +160,7 @@ func (h *PMObjectiveHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.objectiveService.AddOwner(r.Context(), id, body.UserID, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "owner added"})
@@ -163,7 +172,7 @@ func (h *PMObjectiveHandler) RemoveOwner(w http.ResponseWriter, r *http.Request)
 	id := chi.URLParam(r, "id")
 	ownerID := chi.URLParam(r, "userId")
 	if err := h.objectiveService.RemoveOwner(r.Context(), id, ownerID, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "owner removed"})
@@ -181,7 +190,7 @@ func (h *PMObjectiveHandler) AddEpic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.objectiveService.AddEpic(r.Context(), id, body.EpicID, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "epic added"})
@@ -193,7 +202,7 @@ func (h *PMObjectiveHandler) RemoveEpic(w http.ResponseWriter, r *http.Request) 
 	id := chi.URLParam(r, "id")
 	epicID := chi.URLParam(r, "epicId")
 	if err := h.objectiveService.RemoveEpic(r.Context(), id, epicID, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "epic removed"})
@@ -210,7 +219,7 @@ func (h *PMObjectiveHandler) CreateKeyResult(w http.ResponseWriter, r *http.Requ
 	}
 	kr, err := h.objectiveService.CreateKeyResult(r.Context(), id, req, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, kr)
@@ -227,7 +236,7 @@ func (h *PMObjectiveHandler) UpdateKeyResult(w http.ResponseWriter, r *http.Requ
 	}
 	kr, err := h.objectiveService.UpdateKeyResult(r.Context(), id, req, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, kr)
@@ -238,7 +247,7 @@ func (h *PMObjectiveHandler) DeleteKeyResult(w http.ResponseWriter, r *http.Requ
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	if err := h.objectiveService.DeleteKeyResult(r.Context(), id, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "key result deleted"})
