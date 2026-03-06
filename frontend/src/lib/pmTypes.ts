@@ -98,6 +98,7 @@ export interface EpicWithStats {
   epic: Epic;
   labels: Label[];
   stats: EpicStats;
+  suggested_health: EpicHealth;
 }
 
 export interface PMSprint {

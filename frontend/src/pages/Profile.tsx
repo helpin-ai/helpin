@@ -32,8 +32,8 @@ export default function Profile() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold mb-6">Profile</h1>
+    <div className="space-y-4">
+      <h2 className="text-xl font-semibold">Profile</h2>
 
       <Card>
         <CardHeader>

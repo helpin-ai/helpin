@@ -97,7 +97,7 @@ export default function AccountSettings() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-4">
       <div>
         <h2 className="text-xl font-semibold">Account Settings</h2>
       </div>

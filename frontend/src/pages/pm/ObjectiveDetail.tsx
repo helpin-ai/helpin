@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
@@ -398,6 +398,7 @@ export function ObjectiveDetailPage() {
 
   const [form, setForm] = useState<FormState | null>(null);
   const [pendingPatch, setPendingPatch] = useState<UpdateObjectiveRequest>({});
+  const pendingPatchRef = useRef<UpdateObjectiveRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -435,14 +436,32 @@ export function ObjectiveDetailPage() {
     const timer = window.setTimeout(async () => {
       const patch = pendingPatch;
       setPendingPatch({});
+      pendingPatchRef.current = {};
       setSaving(true);
       const { data: updated, error: err } = await pmObjectiveService.update(workspaceId, data.objective.id, patch);
       if (err || !updated) {
         setSaveError(err ?? 'Failed to save');
-        setPendingPatch((current) => ({ ...patch, ...current }));
+        setPendingPatch((current) => {
+          const next = { ...patch, ...current };
+          pendingPatchRef.current = next;
+          return next;
+        });
       } else {
         setSaveError(null);
         setData(updated);
+        // Re-sync form from server, but don't overwrite fields the user edited during the save
+        const fresh = buildForm(updated);
+        const stillPending = pendingPatchRef.current;
+        setForm((current) => {
+          if (!current) return current;
+          const synced = { ...current };
+          for (const key of Object.keys(fresh) as (keyof FormState)[]) {
+            if (!(key in stillPending)) {
+              (synced as any)[key] = fresh[key];
+            }
+          }
+          return synced;
+        });
       }
       setSaving(false);
     }, 650);
@@ -450,7 +469,11 @@ export function ObjectiveDetailPage() {
   }, [workspaceId, data, pendingPatch, saving]);
 
   const queuePatch = (patch: UpdateObjectiveRequest) => {
-    setPendingPatch((current) => ({ ...current, ...patch }));
+    setPendingPatch((current) => {
+      const next = { ...current, ...patch };
+      pendingPatchRef.current = next;
+      return next;
+    });
   };
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateObjectiveRequest) => {

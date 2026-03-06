@@ -48,6 +48,7 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 			return nil, err
 		}
 		if withStats != nil {
+			enrichEpicSuggestedHealth(withStats)
 			result = append(result, *withStats)
 		}
 	}
@@ -63,6 +64,7 @@ func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWith
 	if epic == nil {
 		return nil, fmt.Errorf("epic not found")
 	}
+	enrichEpicSuggestedHealth(epic)
 	return epic, nil
 }
 
@@ -334,3 +336,52 @@ func optionalActor(actorID string) *string {
 }
 
 func stringPtr(value string) *string { return &value }
+
+// computeEpicSuggestedHealth calculates health based on story progress vs time elapsed.
+func computeEpicSuggestedHealth(epic *model.EpicWithStats) string {
+	if epic.Epic.PlannedStartDate == nil || epic.Epic.Deadline == nil {
+		return model.PMEpicHealthOnTrack
+	}
+	if epic.Stats.StoryCount == 0 {
+		return model.PMEpicHealthOnTrack
+	}
+
+	now := time.Now()
+	start := *epic.Epic.PlannedStartDate
+	end := *epic.Epic.Deadline
+	totalDays := end.Sub(start).Hours() / 24
+	if totalDays <= 0 {
+		return model.PMEpicHealthOnTrack
+	}
+
+	// Past deadline with incomplete work
+	if now.After(end) && epic.Stats.DoneStoryCount < epic.Stats.StoryCount {
+		return model.PMEpicHealthOffTrack
+	}
+
+	elapsedDays := now.Sub(start).Hours() / 24
+	if elapsedDays < 0 {
+		return model.PMEpicHealthOnTrack
+	}
+
+	expectedPct := (elapsedDays / totalDays) * 100
+	if expectedPct > 100 {
+		expectedPct = 100
+	}
+	actualPct := float64(0)
+	if epic.Stats.StoryCount > 0 {
+		actualPct = float64(epic.Stats.DoneStoryCount) / float64(epic.Stats.StoryCount) * 100
+	}
+	gap := expectedPct - actualPct
+
+	if gap <= 10 {
+		return model.PMEpicHealthOnTrack
+	} else if gap <= 25 {
+		return model.PMEpicHealthAtRisk
+	}
+	return model.PMEpicHealthOffTrack
+}
+
+func enrichEpicSuggestedHealth(epic *model.EpicWithStats) {
+	epic.SuggestedHealth = computeEpicSuggestedHealth(epic)
+}

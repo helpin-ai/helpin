@@ -114,7 +114,8 @@ type PMEpicStats struct {
 
 // EpicWithStats is an epic with computed progress metrics.
 type EpicWithStats struct {
-	Epic   PMEpic      `json:"epic"`
-	Labels []PMLabel   `json:"labels"`
-	Stats  PMEpicStats `json:"stats"`
+	Epic            PMEpic      `json:"epic"`
+	Labels          []PMLabel   `json:"labels"`
+	Stats           PMEpicStats `json:"stats"`
+	SuggestedHealth string      `json:"suggested_health"`
 }

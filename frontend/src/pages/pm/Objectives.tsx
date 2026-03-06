@@ -127,7 +127,7 @@ function ObjectiveCard({
   const { objective, stats, epics } = data;
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const isStrategic = objective.objective_type === 'strategic';
-  const stateCfg = stateConfig[objective.state] ?? stateConfig.active;
+  const stateCfg = stateConfig[objective.state] ?? stateConfig.not_started;
 
   const krProgress = Math.round(stats.key_result_avg_pct);
   const epicProgress = Math.round(stats.epic_progress_pct);

@@ -435,14 +435,25 @@ export function EpicDetailPage() {
 
             {/* Health */}
             <MetadataRow icon={Heart} label="Health">
-              <SidebarPopoverSelect
-                value={form.health}
-                options={healthOptions.map((h) => ({ value: h, label: healthConfig[h].label, className: healthConfig[h].color }))}
-                onChange={(v) => updateField('health', v as EpicHealth, { health: v as EpicHealth })}
-                renderTrigger={() => (
-                  <span className={healthConfig[form.health]?.color}>{healthConfig[form.health]?.label}</span>
+              <div className="flex flex-col gap-1">
+                <SidebarPopoverSelect
+                  value={form.health}
+                  options={healthOptions.map((h) => ({ value: h, label: healthConfig[h].label, className: healthConfig[h].color }))}
+                  onChange={(v) => updateField('health', v as EpicHealth, { health: v as EpicHealth })}
+                  renderTrigger={() => (
+                    <span className={healthConfig[form.health]?.color}>{healthConfig[form.health]?.label}</span>
+                  )}
+                />
+                {epic?.suggested_health && epic.suggested_health !== form.health && (
+                  <button
+                    type="button"
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left"
+                    onClick={() => updateField('health', epic.suggested_health as EpicHealth, { health: epic.suggested_health as EpicHealth })}
+                  >
+                    Suggested: <span className={healthConfig[epic.suggested_health]?.color}>{healthConfig[epic.suggested_health]?.label}</span>
+                  </button>
                 )}
-              />
+              </div>
             </MetadataRow>
 
             {/* Team */}
