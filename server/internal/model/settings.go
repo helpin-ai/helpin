@@ -191,17 +191,18 @@ func (InvitationTeamPreassignment) TableName() string { return "invitation_team_
 
 // FullWorkspaceConfig aggregates all settings for a workspace.
 type FullWorkspaceConfig struct {
-	Settings                       *WorkspaceSettings             `json:"settings"`
-	Teams                          []WorkspaceTeam                `json:"teams"`
-	People                         []WorkspacePerson              `json:"people"`
-	Memberships                    []TeamMembership               `json:"memberships"`
-	UserMemberships                []TeamUserMembership           `json:"user_memberships"`
-	Managers                       []WorkspaceManager             `json:"managers"`
-	JobRoles                       []JobRoleCriteria              `json:"job_roles"`
-	BonusTiers                     []BonusTier                    `json:"bonus_tiers"`
-	InvitationTeamPreassignments   []InvitationTeamPreassignment  `json:"invitation_team_preassignments"`
-	TeamEstimateSettings           []PMTeamEstimateSettings       `json:"team_estimate_settings"`
-	TeamFieldVisibility            []PMTeamFieldVisibility        `json:"team_field_visibility"`
+	Settings                     *WorkspaceSettings            `json:"settings"`
+	Teams                        []WorkspaceTeam               `json:"teams"`
+	People                       []WorkspacePerson             `json:"people"`
+	Memberships                  []TeamMembership              `json:"memberships"`
+	UserMemberships              []TeamUserMembership          `json:"user_memberships"`
+	Managers                     []WorkspaceManager            `json:"managers"`
+	JobRoles                     []JobRoleCriteria             `json:"job_roles"`
+	BonusTiers                   []BonusTier                   `json:"bonus_tiers"`
+	InvitationTeamPreassignments []InvitationTeamPreassignment `json:"invitation_team_preassignments"`
+	TeamEstimateSettings         []PMTeamEstimateSettings      `json:"team_estimate_settings"`
+	TeamFieldVisibility          []PMTeamFieldVisibility       `json:"team_field_visibility"`
+	TeamRepoDefaults             []PMTeamRepoDefault           `json:"team_repo_defaults"`
 }
 
 // CreateTeamRequest is the payload for creating a team.
@@ -219,6 +220,16 @@ type UpdateTeamRequest struct {
 	Handle      *string `json:"handle"`
 	Description *string `json:"description"`
 	ManagerID   *string `json:"manager_id"`
+}
+
+// UpdateTeamRepoDefaultRequest configures the delivery repository default for a team.
+type UpdateTeamRepoDefaultRequest struct {
+	RepositoryID   string  `json:"repository_id"`
+	BaseBranch     *string `json:"base_branch"`
+	BranchTemplate *string `json:"branch_template"`
+	AutoSyncStates *bool   `json:"auto_sync_states"`
+	ReviewStateID  *string `json:"review_state_id"`
+	DoneStateID    *string `json:"done_state_id"`
 }
 
 // AddTeamMemberRequest is the payload for adding a workspace member to a team.

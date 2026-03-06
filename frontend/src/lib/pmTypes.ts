@@ -728,7 +728,7 @@ export interface UpdateViewRequest {
 
 export type AgentKind = 'human' | 'llm';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
-export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'native_claude' | 'claude_code' | 'openclaw' | 'zeroclaw';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
 export type AgentTargetType = 'story' | 'support_ticket' | 'epic_review' | 'document';
@@ -770,6 +770,17 @@ export interface AgentRun {
   approval_state: AgentApprovalState;
   triggered_by_user_id?: string;
   status: AgentRunStatus;
+  workflow_id?: string;
+  workflow_run_id?: string;
+  task_queue?: string;
+  runner_pool?: string;
+  repository_id?: string;
+  repo_full_name?: string;
+  base_branch?: string;
+  working_branch?: string;
+  delivery_target_id?: string;
+  execution_stage?: string;
+  last_heartbeat_at?: string;
   input: Record<string, unknown>;
   output_summary: Record<string, unknown>;
   tokens_used: number;
@@ -849,6 +860,41 @@ export interface RuntimeProfile {
   allowed_tools: string[];
   allowed_commands: string[];
   approval_required: boolean;
+  requires_repo: boolean;
+}
+
+export interface RunnerHealth {
+  namespace?: string;
+  temporal_configured: boolean;
+  generated_at?: string;
+  queues: RunnerQueueHealth[];
+  active_runs: RunnerActiveRun[];
+}
+
+export interface RunnerQueueHealth {
+  name: string;
+  concurrency: number;
+  queued_runs: number;
+  running_runs: number;
+  awaiting_approval_runs: number;
+  active_runs: number;
+  latest_heartbeat_at?: string;
+}
+
+export interface RunnerActiveRun {
+  id: string;
+  agent_id: string;
+  target_type: string;
+  target_id: string;
+  status: AgentRunStatus;
+  task_queue: string;
+  runner_pool: string;
+  execution_stage?: string;
+  last_heartbeat_at?: string;
+  started_at?: string;
+  created_at: string;
+  workflow_id?: string;
+  stale: boolean;
 }
 
 // ── Support ─────────────────────────────────────────────────────────
@@ -917,9 +963,51 @@ export interface GitIntegration {
   workspace_id: string;
   provider: string;
   display_name: string;
+  credential_mode?: string;
+  account_login?: string;
   base_url?: string;
   installation_id?: string;
+  app_id?: string;
+  last_synced_at?: string;
+  last_sync_error?: string;
   active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitRepository {
+  id: string;
+  workspace_id: string;
+  integration_id: string;
+  provider: string;
+  external_id: string;
+  full_name: string;
+  default_branch: string;
+  permissions: Record<string, unknown>;
+  private: boolean;
+  archived: boolean;
+  selected: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoryDeliveryTarget {
+  id: string;
+  workspace_id: string;
+  story_id: string;
+  repository_id?: string;
+  repo_full_name?: string;
+  integration_id?: string;
+  base_branch?: string;
+  working_branch?: string;
+  delivery_state: string;
+  active_pr_number?: number;
+  active_pr_title?: string;
+  active_pr_url?: string;
+  active_pr_status?: string;
+  last_commit_sha?: string;
+  last_run_id?: string;
+  last_synced_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -929,10 +1017,13 @@ export interface StoryGitLink {
   workspace_id: string;
   story_id: string;
   integration_id: string;
+  repository_id?: string;
+  run_id?: string;
   provider: string;
   repo: string;
   branch?: string;
   pr_number?: number;
+  pr_title?: string;
   pr_url?: string;
   pr_status?: string;
   commit_sha?: string;
@@ -943,15 +1034,33 @@ export interface StoryGitLink {
 export interface CreateGitIntegrationRequest {
   provider: string;
   display_name: string;
+  credential_mode?: string;
+  account_login?: string;
   base_url?: string;
   installation_id?: string;
+  app_id?: string;
+  webhook_secret?: string;
   access_token?: string;
+}
+
+export interface GitHubInstallURLResponse {
+  install_url: string;
+}
+
+export interface UpdateGitRepositoryRequest {
+  selected: boolean;
 }
 
 export interface CreateBranchRequest {
   integration_id: string;
   repo: string;
   branch_name: string;
+}
+
+export interface UpdateStoryDeliveryTargetRequest {
+  repository_id?: string;
+  base_branch?: string;
+  working_branch?: string;
 }
 
 // ── Orchestration ──────────────────────────────────────────────────

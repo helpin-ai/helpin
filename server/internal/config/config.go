@@ -7,10 +7,12 @@ import (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	DatabaseURL string
-	JWTSecret   string
-	Port        string
-	CORSOrigin  string
+	DatabaseURL       string
+	JWTSecret         string
+	Port              string
+	CORSOrigin        string
+	TemporalAddress   string
+	TemporalNamespace string
 
 	// S3 / object storage (optional — attachments disabled if not set)
 	AWSAccessKeyID     string
@@ -21,6 +23,12 @@ type Config struct {
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
 	AnthropicAPIKey string
+
+	// GitHub App (optional — required for shared-runner repo mutation).
+	// GITHUB_APP_PRIVATE_KEY should be provided as a base64-encoded PEM value.
+	GitHubAppID         string
+	GitHubAppSlug       string
+	GitHubAppPrivateKey string
 
 	// Postmark email (optional — email sending disabled if not set)
 	PostmarkServerToken string
@@ -57,17 +65,32 @@ func Load() (*Config, error) {
 		appBaseURL = "http://localhost:5173"
 	}
 
+	temporalAddress := os.Getenv("TEMPORAL_ADDRESS")
+	if temporalAddress == "" {
+		temporalAddress = "localhost:7233"
+	}
+
+	temporalNamespace := os.Getenv("TEMPORAL_NAMESPACE")
+	if temporalNamespace == "" {
+		temporalNamespace = "default"
+	}
+
 	return &Config{
 		DatabaseURL:         dbURL,
 		JWTSecret:           jwtSecret,
 		Port:                port,
 		CORSOrigin:          corsOrigin,
+		TemporalAddress:     temporalAddress,
+		TemporalNamespace:   temporalNamespace,
 		AWSAccessKeyID:      os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:  os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		AWSBucket:           os.Getenv("AWS_S3_BUCKET_NAME"),
 		AWSRegion:           os.Getenv("AWS_REGION"),
 		AWSEndpointURL:      os.Getenv("AWS_S3_ENDPOINT_URL"),
 		AnthropicAPIKey:     os.Getenv("ANTHROPIC_API_KEY"),
+		GitHubAppID:         os.Getenv("GITHUB_APP_ID"),
+		GitHubAppSlug:       os.Getenv("GITHUB_APP_SLUG"),
+		GitHubAppPrivateKey: os.Getenv("GITHUB_APP_PRIVATE_KEY"),
 		PostmarkServerToken: os.Getenv("POSTMARK_SERVER_TOKEN"),
 		PostmarkFromEmail:   os.Getenv("POSTMARK_FROM_EMAIL"),
 		AppBaseURL:          appBaseURL,

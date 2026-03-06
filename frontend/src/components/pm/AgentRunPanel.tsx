@@ -16,6 +16,7 @@ interface Props {
 const STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   queued: { label: 'Queued', icon: <Clock className="h-3 w-3" />, variant: 'secondary' },
   running: { label: 'Running', icon: <Loader2 className="h-3 w-3 animate-spin" />, variant: 'default' },
+  awaiting_approval: { label: 'Awaiting approval', icon: <ShieldCheck className="h-3 w-3" />, variant: 'secondary' },
   completed: { label: 'Completed', icon: <CheckCircle2 className="h-3 w-3" />, variant: 'outline' },
   failed: { label: 'Failed', icon: <XCircle className="h-3 w-3" />, variant: 'destructive' },
   cancelled: { label: 'Cancelled', icon: <XCircle className="h-3 w-3" />, variant: 'secondary' },
@@ -68,7 +69,9 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
   }, [fetchRuns]);
 
   useEffect(() => {
-    const hasActive = runs.some((run) => run.status === 'queued' || run.status === 'running');
+    const hasActive = runs.some(
+      (run) => run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_approval',
+    );
     if (!hasActive) return;
     const interval = setInterval(fetchRuns, 5000);
     return () => clearInterval(interval);
@@ -167,9 +170,23 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                     <span>{run.runtime_kind}</span>
+                    {run.runner_pool && <span>pool: {run.runner_pool}</span>}
+                    {run.execution_stage && <span>stage: {run.execution_stage}</span>}
                     <span>approval: {run.approval_state}</span>
                     {run.handoff_state && <span>handoff: {run.handoff_state}</span>}
                   </div>
+                  {(run.repo_full_name || run.working_branch || run.base_branch || run.last_heartbeat_at) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+                      {run.repo_full_name && <span>repo: {run.repo_full_name}</span>}
+                      {run.base_branch && <span>base: {run.base_branch}</span>}
+                      {run.working_branch && <span>branch: {run.working_branch}</span>}
+                      {run.last_heartbeat_at && (
+                        <span>
+                          heartbeat {formatDistanceToNow(parseISO(run.last_heartbeat_at), { addSuffix: true })}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {run.error_message && (
                     <p className="mt-1 truncate text-destructive">{run.error_message}</p>
                   )}
@@ -178,7 +195,7 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
                 {isSelected && (
                   <div className="ml-3 mb-1 mt-2 space-y-1.5 border-l-2 border-border pl-3">
                     <div className="flex flex-wrap gap-2">
-                      {(run.status === 'queued' || run.status === 'running') && (
+                      {(run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_approval') && (
                         <Button
                           size="sm"
                           variant="outline"

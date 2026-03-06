@@ -3,8 +3,10 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -52,6 +54,160 @@ func (r *GitIntegrationRepository) Create(ctx context.Context, integration *mode
 func (r *GitIntegrationRepository) Update(ctx context.Context, integration *model.GitIntegration) error {
 	if err := r.db.WithContext(ctx).Save(integration).Error; err != nil {
 		return fmt.Errorf("update git integration: %w", err)
+	}
+	return nil
+}
+
+// GetByInstallationID returns the active integration for an app installation.
+func (r *GitIntegrationRepository) GetByInstallationID(ctx context.Context, provider, installationID string) (*model.GitIntegration, error) {
+	var integration model.GitIntegration
+	if err := r.db.WithContext(ctx).
+		Where("provider = ? AND installation_id = ? AND active = ?", provider, installationID, true).
+		First(&integration).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get integration by installation id: %w", err)
+	}
+	return &integration, nil
+}
+
+// GitRepositoryRepository handles DB operations for synced repositories.
+type GitRepositoryRepository struct {
+	db *gorm.DB
+}
+
+// NewGitRepositoryRepository creates a new GitRepositoryRepository.
+func NewGitRepositoryRepository(db *gorm.DB) *GitRepositoryRepository {
+	return &GitRepositoryRepository{db: db}
+}
+
+// List returns selected repositories for a workspace.
+func (r *GitRepositoryRepository) List(ctx context.Context, workspaceID string) ([]model.GitRepository, error) {
+	var repos []model.GitRepository
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND archived = ? AND selected = ?", workspaceID, false, true).
+		Order("full_name ASC").
+		Find(&repos).Error; err != nil {
+		return nil, fmt.Errorf("list git repositories: %w", err)
+	}
+	return repos, nil
+}
+
+// ListAll returns the full repository catalog for a workspace.
+func (r *GitRepositoryRepository) ListAll(ctx context.Context, workspaceID string) ([]model.GitRepository, error) {
+	var repos []model.GitRepository
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("archived ASC, selected DESC, full_name ASC").
+		Find(&repos).Error; err != nil {
+		return nil, fmt.Errorf("list all git repositories: %w", err)
+	}
+	return repos, nil
+}
+
+// GetByID loads a repository by ID.
+func (r *GitRepositoryRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.GitRepository, error) {
+	var repo model.GitRepository
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, id).First(&repo).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get git repository: %w", err)
+	}
+	return &repo, nil
+}
+
+// Update saves a repository record.
+func (r *GitRepositoryRepository) Update(ctx context.Context, repo *model.GitRepository) error {
+	if err := r.db.WithContext(ctx).Save(repo).Error; err != nil {
+		return fmt.Errorf("update git repository: %w", err)
+	}
+	return nil
+}
+
+// UpsertMany replaces the synced repository set for an integration.
+func (r *GitRepositoryRepository) UpsertMany(ctx context.Context, workspaceID, integrationID string, repos []model.GitRepository) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.GitRepository{}).
+			Where("workspace_id = ? AND integration_id = ?", workspaceID, integrationID).
+			Update("archived", true).Error; err != nil {
+			return fmt.Errorf("archive previous repos: %w", err)
+		}
+
+		for i := range repos {
+			repos[i].WorkspaceID = workspaceID
+			repos[i].IntegrationID = integrationID
+			repos[i].Archived = false
+			repos[i].UpdatedAt = now
+
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{
+					{Name: "workspace_id"},
+					{Name: "integration_id"},
+					{Name: "external_id"},
+				},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"provider",
+					"full_name",
+					"default_branch",
+					"permissions",
+					"private",
+					"archived",
+					"selected",
+					"updated_at",
+				}),
+			}).Create(&repos[i]).Error; err != nil {
+				return fmt.Errorf("upsert git repository: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// StoryDeliveryTargetRepository handles current delivery target state for stories.
+type StoryDeliveryTargetRepository struct {
+	db *gorm.DB
+}
+
+// NewStoryDeliveryTargetRepository creates a new StoryDeliveryTargetRepository.
+func NewStoryDeliveryTargetRepository(db *gorm.DB) *StoryDeliveryTargetRepository {
+	return &StoryDeliveryTargetRepository{db: db}
+}
+
+// GetByStory returns the delivery target for a story.
+func (r *StoryDeliveryTargetRepository) GetByStory(ctx context.Context, workspaceID, storyID string) (*model.StoryDeliveryTarget, error) {
+	var target model.StoryDeliveryTarget
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND story_id = ?", workspaceID, storyID).
+		First(&target).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get story delivery target: %w", err)
+	}
+	return &target, nil
+}
+
+// GetByID returns a delivery target by ID.
+func (r *StoryDeliveryTargetRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.StoryDeliveryTarget, error) {
+	var target model.StoryDeliveryTarget
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		First(&target).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get story delivery target: %w", err)
+	}
+	return &target, nil
+}
+
+// Save persists a delivery target.
+func (r *StoryDeliveryTargetRepository) Save(ctx context.Context, target *model.StoryDeliveryTarget) error {
+	if err := r.db.WithContext(ctx).Save(target).Error; err != nil {
+		return fmt.Errorf("save story delivery target: %w", err)
 	}
 	return nil
 }
@@ -111,6 +267,28 @@ func (r *StoryGitLinkRepository) Create(ctx context.Context, link *model.StoryGi
 func (r *StoryGitLinkRepository) Update(ctx context.Context, link *model.StoryGitLink) error {
 	if err := r.db.WithContext(ctx).Save(link).Error; err != nil {
 		return fmt.Errorf("update story git link: %w", err)
+	}
+	return nil
+}
+
+// UpsertByRunAndBranch ensures a historical git link exists for a run/branch tuple.
+func (r *StoryGitLinkRepository) UpsertByRunAndBranch(ctx context.Context, link *model.StoryGitLink) error {
+	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "workspace_id"}, {Name: "story_id"}, {Name: "repo"}, {Name: "branch"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"integration_id",
+			"repository_id",
+			"run_id",
+			"provider",
+			"pr_number",
+			"pr_title",
+			"pr_url",
+			"pr_status",
+			"commit_sha",
+			"updated_at",
+		}),
+	}).Create(link).Error; err != nil {
+		return fmt.Errorf("upsert story git link: %w", err)
 	}
 	return nil
 }

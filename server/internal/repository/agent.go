@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -125,7 +126,7 @@ func (r *AgentRunRepository) ListByTarget(ctx context.Context, workspaceID, targ
 func (r *AgentRunRepository) FindActiveByTarget(ctx context.Context, workspaceID, targetType, targetID string) (*model.AgentRun, error) {
 	var run model.AgentRun
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND target_type = ? AND target_id = ? AND status IN ?", workspaceID, targetType, targetID, []string{"queued", "running"}).
+		Where("workspace_id = ? AND target_type = ? AND target_id = ? AND status IN ?", workspaceID, targetType, targetID, []string{"queued", "running", "awaiting_approval"}).
 		Order("created_at DESC").
 		First(&run).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -136,10 +137,38 @@ func (r *AgentRunRepository) FindActiveByTarget(ctx context.Context, workspaceID
 	return &run, nil
 }
 
+// ListActive returns queued, running, or approval-pending runs in a workspace.
+func (r *AgentRunRepository) ListActive(ctx context.Context, workspaceID string, limit int) ([]model.AgentRun, error) {
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND status IN ?", workspaceID, []string{"queued", "running", "awaiting_approval"}).
+		Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	var runs []model.AgentRun
+	if err := query.Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list active agent runs: %w", err)
+	}
+	return runs, nil
+}
+
 // GetByID returns a single run.
 func (r *AgentRunRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.AgentRun, error) {
 	var run model.AgentRun
 	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, id).First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get agent run: %w", err)
+	}
+	return &run, nil
+}
+
+// GetByIDAny returns a run by ID without requiring the caller to know its workspace.
+func (r *AgentRunRepository) GetByIDAny(ctx context.Context, id string) (*model.AgentRun, error) {
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&run).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -160,6 +189,35 @@ func (r *AgentRunRepository) Create(ctx context.Context, run *model.AgentRun) er
 func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) error {
 	if err := r.db.WithContext(ctx).Save(run).Error; err != nil {
 		return fmt.Errorf("update agent run: %w", err)
+	}
+	return nil
+}
+
+// GetByWorkflowID returns a run by temporal workflow ID.
+func (r *AgentRunRepository) GetByWorkflowID(ctx context.Context, workflowID string) (*model.AgentRun, error) {
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).Where("workflow_id = ?", workflowID).First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get agent run by workflow id: %w", err)
+	}
+	return &run, nil
+}
+
+// UpdateStage updates workflow execution stage metadata for a run.
+func (r *AgentRunRepository) UpdateStage(ctx context.Context, workspaceID, runID, stage string, heartbeatAt *time.Time) error {
+	updates := map[string]any{
+		"execution_stage": stage,
+	}
+	if heartbeatAt != nil {
+		updates["last_heartbeat_at"] = heartbeatAt
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, runID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update agent run stage: %w", err)
 	}
 	return nil
 }

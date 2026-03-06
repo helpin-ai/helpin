@@ -406,7 +406,7 @@ export function EpicDetailPage() {
           {/* Orchestration */}
           <EpicOrchestrationPanel
             epicId={epicId}
-            workspaceId={workspaceId}
+            workspaceId={workspaceId!}
             orchestratorAgentId={epic.epic.orchestrator_agent_id}
             onStoriesCreated={() => fetchData()}
           />

@@ -52,8 +52,8 @@ export function EpicOrchestrationPanel({ epicId, workspaceId, orchestratorAgentI
     setProposal(null);
     try {
       const result = await agentService.orchestrateEpic(workspaceId, epicId, additionalContext);
-      setProposal(result);
-      setEditedStories(result.proposed_stories || []);
+      setProposal(result.data);
+      setEditedStories(result.data?.proposed_stories || []);
     } catch (err: any) {
       console.error('Orchestration failed:', err);
     } finally {

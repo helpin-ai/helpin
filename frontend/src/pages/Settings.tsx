@@ -4,17 +4,19 @@ import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { settingsService } from '@/lib/services/settingsService';
+import { gitService } from '@/lib/services/gitService';
+import { agentService } from '@/lib/services/agentService';
 import { useTeamEstimateStore } from '@/stores/teamEstimateStore';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
-import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale } from '@/lib/types';
+import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale, TeamRepoDefault } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import type { StateType, WorkflowState, WorkflowWithStates, EpicWorkflowState, PMAutomation, AutomationType } from '@/lib/pmTypes';
+import type { StateType, WorkflowState, WorkflowWithStates, EpicWorkflowState, PMAutomation, AutomationType, GitIntegration, GitRepository, RunnerHealth } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,12 +31,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, Globe, Info, LayoutGrid, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, GitPullRequest, Globe, Info, LayoutGrid, ListTree, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, UserPlus, Users, X, type LucideIcon } from 'lucide-react';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'delivery' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -84,6 +86,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Automations',
     description: '',
     icon: RefreshCw,
+    group: 'Project Settings',
+  },
+  {
+    id: 'delivery',
+    label: 'Delivery',
+    description: 'Connect GitHub, curate repositories, and monitor shared runner pools.',
+    icon: Globe,
     group: 'Project Settings',
   },
   {
@@ -210,6 +219,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             invitationPreassignments={settings.invitation_team_preassignments}
             teamEstimateSettings={settings.team_estimate_settings}
             teamFieldVisibility={settings.team_field_visibility}
+            teamRepoDefaults={settings.team_repo_defaults}
             editable={isAdmin()}
             onRefresh={load}
           />
@@ -247,6 +257,13 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             config={settings.settings}
             editable={isAdmin()}
             onRefresh={load}
+          />
+        );
+      case 'delivery':
+        return (
+          <ProjectDeliveryTab
+            workspaceId={workspaceId}
+            editable={isAdmin()}
           />
         );
       case 'workflows':
@@ -885,15 +902,167 @@ function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
   );
 }
 
+function TeamRepoDefaultForm({
+  initial,
+  repositories,
+  workflowStates,
+  loading,
+  saving,
+  onSave,
+}: {
+  initial: TeamRepoDefault | null;
+  repositories: GitRepository[];
+  workflowStates: WorkflowState[];
+  loading: boolean;
+  saving: boolean;
+  onSave: (payload: {
+    repository_id: string;
+    base_branch?: string;
+    branch_template?: string;
+    auto_sync_states?: boolean;
+    review_state_id?: string;
+    done_state_id?: string;
+  }) => void | Promise<void>;
+}) {
+  const [repositoryId, setRepositoryId] = useState(initial?.repository_id ?? '');
+  const [baseBranch, setBaseBranch] = useState(initial?.base_branch ?? '');
+  const [branchTemplate, setBranchTemplate] = useState(initial?.branch_template ?? 'tp-{display_id}-{slug}');
+  const [autoSyncStates, setAutoSyncStates] = useState(initial?.auto_sync_states ?? true);
+  const [reviewStateId, setReviewStateId] = useState(initial?.review_state_id ?? 'none');
+  const [doneStateId, setDoneStateId] = useState(initial?.done_state_id ?? 'none');
+
+  useEffect(() => {
+    setRepositoryId(initial?.repository_id ?? '');
+    setBaseBranch(initial?.base_branch ?? '');
+    setBranchTemplate(initial?.branch_template ?? 'tp-{display_id}-{slug}');
+    setAutoSyncStates(initial?.auto_sync_states ?? true);
+    setReviewStateId(initial?.review_state_id ?? 'none');
+    setDoneStateId(initial?.done_state_id ?? 'none');
+  }, [initial]);
+
+  const selectedRepository = repositories.find((repository) => repository.id === repositoryId) ?? null;
+
+  return (
+    <div className="space-y-5 py-2">
+      <p className="text-sm text-muted-foreground">
+        Stories on this team inherit these delivery defaults. Story detail can still override the repository or base branch.
+      </p>
+      <div className="space-y-2">
+        <Label>Repository</Label>
+        <Select value={repositoryId || undefined} onValueChange={setRepositoryId}>
+          <SelectTrigger>
+            <SelectValue placeholder={loading ? 'Loading repositories...' : 'Select repository'} />
+          </SelectTrigger>
+          <SelectContent>
+            {repositories.map((repository) => (
+              <SelectItem key={repository.id} value={repository.id}>
+                {repository.full_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedRepository && (
+          <p className="text-xs text-muted-foreground">
+            Default branch: {selectedRepository.default_branch}
+          </p>
+        )}
+      </div>
+      <div className="space-y-2">
+        <Label>Base branch</Label>
+        <Input
+          value={baseBranch}
+          onChange={(event) => setBaseBranch(event.target.value)}
+          placeholder={selectedRepository?.default_branch || 'main'}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Branch template</Label>
+        <Input
+          value={branchTemplate}
+          onChange={(event) => setBranchTemplate(event.target.value)}
+          placeholder="tp-{display_id}-{slug}"
+        />
+        <p className="text-xs text-muted-foreground">
+          Available tokens: {'{display_id}'} and {'{slug}'}.
+        </p>
+      </div>
+      <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+        <div>
+          <p className="text-sm font-medium">Auto-sync workflow state from PR events</p>
+          <p className="text-xs text-muted-foreground">
+            When enabled, pull request webhooks can move stories forward automatically.
+          </p>
+        </div>
+        <Switch checked={autoSyncStates} onCheckedChange={setAutoSyncStates} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label>PR opened state</Label>
+          <Select value={reviewStateId} onValueChange={setReviewStateId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose review state" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Do not map</SelectItem>
+              {workflowStates.map((state) => (
+                <SelectItem key={state.id} value={state.id}>
+                  {state.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>PR merged state</Label>
+          <Select value={doneStateId} onValueChange={setDoneStateId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose done state" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Do not map</SelectItem>
+              {workflowStates.map((state) => (
+                <SelectItem key={state.id} value={state.id}>
+                  {state.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {repositories.length === 0 && !loading && (
+        <p className="text-xs text-muted-foreground">
+          No repositories are synced yet. Connect GitHub and sync repositories before setting a team delivery default.
+        </p>
+      )}
+      <DialogFooter>
+        <Button
+          disabled={saving || !repositoryId}
+          onClick={() => onSave({
+            repository_id: repositoryId,
+            base_branch: baseBranch || selectedRepository?.default_branch || 'main',
+            branch_template: branchTemplate || 'tp-{display_id}-{slug}',
+            auto_sync_states: autoSyncStates,
+            review_state_id: reviewStateId !== 'none' ? reviewStateId : undefined,
+            done_state_id: doneStateId !== 'none' ? doneStateId : undefined,
+          })}
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
 /* ============ Teams Tab ============ */
 
-function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, teamFieldVisibility, editable, onRefresh }: {
+function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, teamFieldVisibility, teamRepoDefaults, editable, onRefresh }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
   userMemberships: TeamUserMembership[];
   invitationPreassignments: InvitationTeamPreassignment[];
   teamEstimateSettings: TeamEstimateSettings[];
   teamFieldVisibility: TeamFieldVisibility[];
+  teamRepoDefaults: TeamRepoDefault[];
   editable: boolean;
   onRefresh: () => void | Promise<void>;
 }) {
@@ -913,6 +1082,12 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
 
   const [fieldVisDialogOpen, setFieldVisDialogOpen] = useState(false);
   const [fieldVisSaving, setFieldVisSaving] = useState(false);
+
+  const [repoDialogOpen, setRepoDialogOpen] = useState(false);
+  const [repoSaving, setRepoSaving] = useState(false);
+  const [repositories, setRepositories] = useState<GitRepository[]>([]);
+  const [repositoriesLoading, setRepositoriesLoading] = useState(false);
+  const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
@@ -951,6 +1126,40 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     loadMembers();
     return () => { mounted = false; };
   }, [workspaceId, editable]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadRepositories = async () => {
+      setRepositoriesLoading(true);
+      const { data, error } = await gitService.listRepositories(workspaceId);
+      if (!mounted) return;
+      if (error) {
+        toast.error(error);
+        setRepositories([]);
+      } else {
+        setRepositories(data ?? []);
+      }
+      setRepositoriesLoading(false);
+    };
+    loadRepositories();
+    return () => { mounted = false; };
+  }, [workspaceId]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadWorkflows = async () => {
+      const { data, error } = await pmWorkflowService.list(workspaceId);
+      if (!mounted) return;
+      if (error) {
+        toast.error(error);
+        setWorkflows([]);
+      } else {
+        setWorkflows(data ?? []);
+      }
+    };
+    loadWorkflows();
+    return () => { mounted = false; };
+  }, [workspaceId]);
 
   const filteredTeams = [...teams]
     .filter((team) => {
@@ -1102,6 +1311,14 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
       ? FIELD_VISIBILITY_FIELDS.filter((f) => teamVisConfig[f.key]).length
       : FIELD_VISIBILITY_FIELDS.length;
     const fieldVisMeta = `${visibleCount} of ${FIELD_VISIBILITY_FIELDS.length} visible`;
+    const teamRepoDefault = teamRepoDefaults.find((config) => config.team_id === selectedTeam.id);
+    const repoRecord = repositories.find((repository) => repository.id === teamRepoDefault?.repository_id);
+    const teamWorkflowStates = workflows
+      .filter(({ workflow }) => !workflow.team_id || workflow.team_id === selectedTeam.id)
+      .flatMap(({ states }) => states);
+    const deliveryMeta = teamRepoDefault
+      ? `${repoRecord?.full_name ?? 'Repo selected'} · ${teamRepoDefault.base_branch}`
+      : 'Not configured';
     const settingsGroups: {
       label?: string;
       rows: { key: string; icon: LucideIcon; title: string; description: string; meta: string; action: () => void; disabled: boolean }[];
@@ -1131,6 +1348,15 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
       {
         label: 'Issues, projects, and docs',
         rows: [
+          {
+            key: 'delivery-defaults',
+            icon: GitPullRequest,
+            title: 'Delivery defaults',
+            description: 'Choose the team repository, base branch, and branch template',
+            meta: deliveryMeta,
+            action: () => setRepoDialogOpen(true),
+            disabled: !editable,
+          },
           {
             key: 'estimates',
             icon: LayoutGrid,
@@ -1480,6 +1706,33 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
                 } else {
                   toast.success('Field visibility updated');
                   setFieldVisDialogOpen(false);
+                  await onRefresh();
+                }
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={repoDialogOpen} onOpenChange={setRepoDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Delivery Defaults</DialogTitle>
+            </DialogHeader>
+            <TeamRepoDefaultForm
+              initial={teamRepoDefault ?? null}
+              repositories={repositories}
+              workflowStates={teamWorkflowStates}
+              loading={repositoriesLoading}
+              saving={repoSaving}
+              onSave={async (data) => {
+                setRepoSaving(true);
+                const { error } = await settingsService.updateTeamRepoDefault(selectedTeam.id, data);
+                setRepoSaving(false);
+                if (error) {
+                  toast.error(error);
+                } else {
+                  toast.success('Delivery defaults updated');
+                  setRepoDialogOpen(false);
                   await onRefresh();
                 }
               }}
@@ -2015,63 +2268,490 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
   };
 
   return (
-    <Card className={LINEAR_CARD_CLASS}>
-      <CardHeader>
-        <CardTitle className="text-base">Reward Defaults</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Sprint Duration (weeks)</Label>
-            <Input
-              type="number"
-              min="1"
-              max="4"
-              value={sprintDuration}
-              onChange={e => setSprintDuration(Number(e.target.value))}
-              disabled={!editable}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Team Weight (%)</Label>
-            <Input
-              type="number"
-              min="0"
-              max="100"
-              value={teamWeight}
-              onChange={e => setTeamWeight(Number(e.target.value))}
-              disabled={!editable}
-            />
-            <p className="text-xs text-muted-foreground">Individual weight: {100 - teamWeight}%</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>Notifications</Label>
-              <p className="text-xs text-muted-foreground">Send email notifications for sprint events</p>
+    <div className="space-y-6">
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">Reward Defaults</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Sprint Duration (weeks)</Label>
+              <Input
+                type="number"
+                min="1"
+                max="4"
+                value={sprintDuration}
+                onChange={e => setSprintDuration(Number(e.target.value))}
+                disabled={!editable}
+              />
             </div>
-            <Switch checked={notifications} onCheckedChange={setNotifications} disabled={!editable} />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>Auto-calculate Bonuses</Label>
-              <p className="text-xs text-muted-foreground">Automatically recalculate bonuses when scores change</p>
+            <div className="space-y-2">
+              <Label>Team Weight (%)</Label>
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                value={teamWeight}
+                onChange={e => setTeamWeight(Number(e.target.value))}
+                disabled={!editable}
+              />
+              <p className="text-xs text-muted-foreground">Individual weight: {100 - teamWeight}%</p>
             </div>
-            <Switch checked={autoCalc} onCheckedChange={setAutoCalc} disabled={!editable} />
           </div>
-        </div>
 
-        {editable && (
-          <div className="flex justify-end">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Save Settings'}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Notifications</Label>
+                <p className="text-xs text-muted-foreground">Send email notifications for sprint events</p>
+              </div>
+              <Switch checked={notifications} onCheckedChange={setNotifications} disabled={!editable} />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Auto-calculate Bonuses</Label>
+                <p className="text-xs text-muted-foreground">Automatically recalculate bonuses when scores change</p>
+              </div>
+              <Switch checked={autoCalc} onCheckedChange={setAutoCalc} disabled={!editable} />
+            </div>
+          </div>
+
+          {editable && (
+            <div className="flex justify-end">
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Save Settings'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ProjectDeliveryTab({ workspaceId, editable }: {
+  workspaceId: string;
+  editable: boolean;
+}) {
+  const [integrations, setIntegrations] = useState<GitIntegration[]>([]);
+  const [repositories, setRepositories] = useState<GitRepository[]>([]);
+  const [runnerHealth, setRunnerHealth] = useState<RunnerHealth | null>(null);
+  const [syncingIntegrationId, setSyncingIntegrationId] = useState<string | null>(null);
+  const [installingGitHubApp, setInstallingGitHubApp] = useState(false);
+  const [installActionError, setInstallActionError] = useState<string | null>(null);
+  const [integrationDialogOpen, setIntegrationDialogOpen] = useState(false);
+  const [creatingIntegration, setCreatingIntegration] = useState(false);
+  const [integrationName, setIntegrationName] = useState('');
+  const [accountLogin, setAccountLogin] = useState('');
+  const [installationId, setInstallationId] = useState('');
+  const [baseUrl, setBaseURL] = useState('');
+
+  const loadGitStatus = useCallback(async () => {
+    const [integrationsRes, reposRes, runnerRes] = await Promise.all([
+      gitService.listIntegrations(workspaceId),
+      gitService.listRepositories(workspaceId, { all: true }),
+      agentService.getRunnerHealth(workspaceId),
+    ]);
+    setIntegrations(integrationsRes.data ?? []);
+    setRepositories(reposRes.data ?? []);
+    setRunnerHealth(runnerRes.data ?? null);
+  }, [workspaceId]);
+
+  useEffect(() => {
+    void loadGitStatus();
+  }, [loadGitStatus]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const status = url.searchParams.get('github_app');
+    const message = url.searchParams.get('github_message');
+    if (!status) return;
+
+    if (status === 'connected') {
+      setInstallActionError(null);
+      toast.success(message || 'GitHub App connected');
+    } else {
+      toast.error(message || 'GitHub App connection failed');
+    }
+
+    url.searchParams.delete('github_app');
+    url.searchParams.delete('github_message');
+    url.searchParams.delete('integration_id');
+    url.searchParams.delete('repo_count');
+    const nextQuery = url.searchParams.toString();
+    window.history.replaceState({}, '', `${url.pathname}${nextQuery ? `?${nextQuery}` : ''}${url.hash}`);
+    void loadGitStatus();
+  }, [loadGitStatus]);
+
+  const installGuidance = useMemo(() => {
+    if (!installActionError) return null;
+    const normalized = installActionError.toLowerCase();
+    if (normalized.includes('github app onboarding is not configured')) {
+      return {
+        title: 'GitHub App server setup required',
+        description: 'The API server is missing GitHub App configuration, so it cannot generate the install URL yet.',
+        details: ['GITHUB_APP_ID', 'GITHUB_APP_SLUG', 'GITHUB_APP_PRIVATE_KEY (base64 PEM)', 'APP_BASE_URL'],
+      };
+    }
+    if (normalized.includes('workspace_id is required')) {
+      return {
+        title: 'Workspace context is missing',
+        description: 'The request did not include a workspace ID. Refresh the page and try again from the workspace settings route.',
+        details: [] as string[],
+      };
+    }
+    return {
+      title: 'GitHub App install failed',
+      description: installActionError,
+      details: [] as string[],
+    };
+  }, [installActionError]);
+
+  return (
+    <div className="space-y-6">
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">GitHub & Runners</CardTitle>
+          <CardDescription>Connected delivery integrations, repository sync, and shared runner queues</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="rounded-lg border border-border/60 p-4">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Integrations</p>
+              <p className="mt-2 text-2xl font-semibold">{integrations.length}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 p-4">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Repositories</p>
+              <p className="mt-2 text-2xl font-semibold">{repositories.length}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 p-4">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Runner Queues</p>
+              <p className="mt-2 text-2xl font-semibold">{runnerHealth?.queues?.length ?? 0}</p>
+              {runnerHealth?.namespace && (
+                <p className="mt-1 text-xs text-muted-foreground">Namespace: {runnerHealth.namespace}</p>
+              )}
+            </div>
+            <div className="rounded-lg border border-border/60 p-4">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Active Runs</p>
+              <p className="mt-2 text-2xl font-semibold">{runnerHealth?.active_runs?.length ?? 0}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {runnerHealth?.temporal_configured ? 'Temporal connected' : 'Temporal not configured'}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border/60 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium">GitHub App onboarding</p>
+                <p className="text-sm text-muted-foreground">
+                  Install the workspace GitHub App, then return here for automatic integration creation and repository sync.
+                </p>
+              </div>
+              {editable ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    disabled={installingGitHubApp}
+                    onClick={async () => {
+                      setInstallActionError(null);
+                      setInstallingGitHubApp(true);
+                      const { data, error } = await gitService.getGitHubInstallURL(workspaceId);
+                      setInstallingGitHubApp(false);
+                      if (error || !data?.install_url) {
+                        const message = error || 'GitHub App install URL is not available';
+                        setInstallActionError(message);
+                        toast.error(message);
+                        return;
+                      }
+                      window.location.assign(data.install_url);
+                    }}
+                  >
+                    {installingGitHubApp ? 'Opening GitHub...' : 'Install GitHub App'}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setIntegrationDialogOpen(true)}>
+                    <Plus className="mr-1 h-4 w-4" />
+                    Manual registration
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {installGuidance ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              <div className="flex items-center gap-2">
+                <Badge variant="destructive">Setup required</Badge>
+                <p className="font-medium">{installGuidance.title}</p>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">{installGuidance.description}</p>
+              {installGuidance.details.length ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Required envs: {installGuidance.details.map((item, index) => (
+                    <span key={item}>
+                      <code className="rounded bg-background px-1 py-0.5 text-xs">{item}</code>
+                      {index < installGuidance.details.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </p>
+              ) : null}
+              {installActionError && installActionError !== installGuidance.description ? (
+                <p className="mt-2 text-xs text-muted-foreground">Backend response: {installActionError}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {integrations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No GitHub integrations are connected yet. Install the GitHub App above, or use the manual registration fallback if you already have an installation ID.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {integrations.map((integration) => (
+                <div key={integration.id} className="flex flex-col gap-3 rounded-lg border border-border/60 p-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{integration.display_name}</p>
+                      <Badge variant={integration.active ? 'outline' : 'secondary'}>
+                        {integration.active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {integration.provider}
+                      {integration.account_login ? ` · ${integration.account_login}` : ''}
+                      {integration.installation_id ? ` · installation ${integration.installation_id}` : ''}
+                      {integration.last_synced_at ? ` · synced ${new Date(integration.last_synced_at).toLocaleString()}` : ''}
+                    </p>
+                    {integration.last_sync_error && (
+                      <p className="mt-1 text-xs text-destructive">{integration.last_sync_error}</p>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={syncingIntegrationId === integration.id}
+                    onClick={async () => {
+                      setSyncingIntegrationId(integration.id);
+                      const { error } = await gitService.syncRepositories(workspaceId, integration.id);
+                      setSyncingIntegrationId(null);
+                      if (error) {
+                        toast.error(error);
+                        return;
+                      }
+                      toast.success('Repositories synced');
+                      await loadGitStatus();
+                    }}
+                  >
+                    {syncingIntegrationId === integration.id ? 'Syncing...' : 'Sync repositories'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <div>
+              <p className="font-medium">Repository catalog</p>
+              <p className="text-sm text-muted-foreground">Choose which synced repositories are available to teams and story delivery targets.</p>
+            </div>
+            {repositories.length ? (
+              <div className="space-y-2">
+                {repositories.map((repo) => (
+                  <div key={repo.id} className="rounded-lg border border-border/60 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">{repo.full_name}</p>
+                          <Badge variant="outline">{repo.private ? 'Private' : 'Public'}</Badge>
+                          {repo.archived ? <Badge variant="secondary">Archived</Badge> : null}
+                        </div>
+                        <p className="text-sm text-muted-foreground">Default branch: {repo.default_branch}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right text-xs text-muted-foreground">
+                          <p>Stories can target this repo</p>
+                        </div>
+                        <Switch
+                          checked={repo.selected}
+                          disabled={!editable || repo.archived}
+                          onCheckedChange={async (checked) => {
+                            const { error } = await gitService.updateRepository(workspaceId, repo.id, { selected: checked });
+                            if (error) {
+                              toast.error(error);
+                              return;
+                            }
+                            toast.success(`${repo.full_name} ${checked ? 'enabled' : 'hidden'} for delivery`);
+                            await loadGitStatus();
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                No repositories have been synced yet.
+              </div>
+            )}
+          </div>
+
+          {runnerHealth?.queues?.length ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {runnerHealth.queues.map((queue) => (
+                <div key={queue.name} className="rounded-lg border border-border/60 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium">{queue.name}</p>
+                    <Badge variant="outline">x{queue.concurrency}</Badge>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Queued</p>
+                      <p className="font-medium">{queue.queued_runs}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Running</p>
+                      <p className="font-medium">{queue.running_runs}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Awaiting approval</p>
+                      <p className="font-medium">{queue.awaiting_approval_runs}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Latest heartbeat</p>
+                      <p className="font-medium text-xs">
+                        {queue.latest_heartbeat_at ? new Date(queue.latest_heartbeat_at).toLocaleTimeString() : 'n/a'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">In-flight runs</p>
+                <p className="text-sm text-muted-foreground">Queued, running, and approval-pending runs in this workspace.</p>
+              </div>
+            </div>
+            {runnerHealth?.active_runs?.length ? (
+              <div className="space-y-2">
+                {runnerHealth.active_runs.map((run) => (
+                  <div key={run.id} className="rounded-lg border border-border/60 p-4">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{run.task_queue}</p>
+                          <Badge variant={run.stale ? 'destructive' : 'outline'}>{run.status}</Badge>
+                          {run.execution_stage ? <Badge variant="secondary">{run.execution_stage}</Badge> : null}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {run.target_type} · {run.target_id}
+                          {run.workflow_id ? ` · ${run.workflow_id}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        <p>Started: {run.started_at ? new Date(run.started_at).toLocaleString() : 'Not started'}</p>
+                        <p>Heartbeat: {run.last_heartbeat_at ? new Date(run.last_heartbeat_at).toLocaleString() : 'n/a'}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                No in-flight runs right now.
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={integrationDialogOpen} onOpenChange={setIntegrationDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect GitHub App</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Fallback for environments where the install handshake is not available. Register a GitHub App installation manually so shared runners can mint short-lived installation tokens.
+            </p>
+            <div className="space-y-2">
+              <Label>Display name</Label>
+              <Input
+                value={integrationName}
+                onChange={(event) => setIntegrationName(event.target.value)}
+                placeholder="GitHub Production"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Account / org</Label>
+              <Input
+                value={accountLogin}
+                onChange={(event) => setAccountLogin(event.target.value)}
+                placeholder="acme-inc"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Installation ID</Label>
+              <Input
+                value={installationId}
+                onChange={(event) => setInstallationId(event.target.value)}
+                placeholder="12345678"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Base URL</Label>
+              <Input
+                value={baseUrl}
+                onChange={(event) => setBaseURL(event.target.value)}
+                placeholder="https://github.com"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIntegrationDialogOpen(false)}
+              disabled={creatingIntegration}
+            >
+              Cancel
             </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+            <Button
+              disabled={creatingIntegration || !integrationName.trim() || !installationId.trim()}
+              onClick={async () => {
+                setCreatingIntegration(true);
+                const { error } = await gitService.createIntegration(workspaceId, {
+                  provider: 'github',
+                  display_name: integrationName.trim(),
+                  credential_mode: 'github_app',
+                  account_login: accountLogin.trim() || undefined,
+                  installation_id: installationId.trim(),
+                  base_url: baseUrl.trim() || undefined,
+                });
+                setCreatingIntegration(false);
+                if (error) {
+                  toast.error(error);
+                  return;
+                }
+                toast.success('GitHub App integration connected');
+                setIntegrationDialogOpen(false);
+                setIntegrationName('');
+                setAccountLogin('');
+                setInstallationId('');
+                setBaseURL('');
+                await loadGitStatus();
+              }}
+            >
+              {creatingIntegration ? 'Connecting...' : 'Connect'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 

@@ -54,6 +54,7 @@ import { Attachments } from '@/components/pm/Attachments';
 import { ChecklistItems } from '@/components/pm/ChecklistItems';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
 import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
+import { StoryDeliveryPanel } from '@/components/pm/StoryDeliveryPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
 import { getInitials } from '@/lib/utils';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
@@ -738,6 +739,13 @@ function StoryDetailPanelBody({
               entityId={storyDetail.story.id}
             />
           </div>
+
+          {/* Delivery */}
+          <StoryDeliveryPanel
+            workspaceId={workspaceId}
+            storyDetail={storyDetail}
+            onStoryUpdated={onStoryUpdated}
+          />
 
           {/* Git Links */}
           <StoryGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId} />

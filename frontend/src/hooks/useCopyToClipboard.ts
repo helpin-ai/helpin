@@ -6,13 +6,15 @@ import { useCallback, useRef, useState } from 'react';
  */
 export function useCopyToClipboard(resetMs = 2000) {
   const [copied, setCopied] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const copy = useCallback(
     (text: string) => {
       const onSuccess = () => {
         setCopied(true);
-        clearTimeout(timeoutRef.current);
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
         timeoutRef.current = setTimeout(() => setCopied(false), resetMs);
       };
 

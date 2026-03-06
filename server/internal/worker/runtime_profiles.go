@@ -14,6 +14,16 @@ var runtimeProfiles = []model.RuntimeProfile{
 		AllowedTools:     []string{"read_file", "write_file", "list_directory", "search_files", "run_command", "create_branch", "commit_and_push", "open_pr", "add_story_comment", "update_story_state", "list_story_checklist"},
 		AllowedCommands:  []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "mkdir", "cp", "mv", "pwd", "python", "pip", "cargo", "rustc"},
 		ApprovalRequired: false,
+		RequiresRepo:     true,
+	},
+	{
+		Name:             "planner",
+		RuntimeKind:      "native_claude",
+		Description:      "Read-heavy planning and PRD generation with repository context but no mutation tools.",
+		AllowedTools:     []string{"read_file", "list_directory", "search_files", "run_command", "add_story_comment", "list_story_checklist"},
+		AllowedCommands:  []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo"},
+		ApprovalRequired: false,
+		RequiresRepo:     false,
 	},
 	{
 		Name:             "reviewer_tester",
@@ -22,6 +32,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 		AllowedTools:     []string{"read_file", "list_directory", "search_files", "run_command", "add_story_comment", "list_story_checklist"},
 		AllowedCommands:  []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo"},
 		ApprovalRequired: false,
+		RequiresRepo:     true,
 	},
 	{
 		Name:             "support",
@@ -30,6 +41,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 		AllowedTools:     []string{"list_ticket_messages", "draft_support_reply", "update_ticket_status"},
 		AllowedCommands:  []string{},
 		ApprovalRequired: true,
+		RequiresRepo:     false,
 	},
 	{
 		Name:             "orchestrator",
@@ -38,6 +50,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 		AllowedTools:     []string{},
 		AllowedCommands:  []string{},
 		ApprovalRequired: false,
+		RequiresRepo:     false,
 	},
 	{
 		Name:             "human_proxy",
@@ -46,6 +59,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 		AllowedTools:     []string{},
 		AllowedCommands:  []string{},
 		ApprovalRequired: false,
+		RequiresRepo:     false,
 	},
 }
 

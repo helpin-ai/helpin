@@ -1,14 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { SupportPage } from '@/pages/pm/Support';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/pm/support')({
-  component: SupportRoute,
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: '/w/$slug/support', params: { slug: params.slug } });
+  },
 });
-
-function SupportRoute() {
-  return (
-    <div className="h-full overflow-hidden">
-      <SupportPage />
-    </div>
-  );
-}

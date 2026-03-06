@@ -57,6 +57,12 @@ func (h *AgentHandler) ListRuntimeProfiles(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, h.agentService.ListRuntimeProfiles())
 }
 
+// GetRunnerHealth handles GET /api/pm/runner-health.
+func (h *AgentHandler) GetRunnerHealth(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	writeJSON(w, http.StatusOK, h.agentService.GetRunnerHealth(r.Context(), workspaceID))
+}
+
 // CreateAgent handles POST /api/pm/agents.
 func (h *AgentHandler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

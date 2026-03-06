@@ -16,8 +16,18 @@ spec:
         app: helpin-server
         env: stage
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       imagePullSecrets:
         - name: ghcr-pull-secret
+      volumes:
+        - name: tmp
+          emptyDir: {}
       containers:
         - name: helpin-server
           image: ghcr.io/helpin-ai/helpin/server:stage-latest
@@ -26,6 +36,15 @@ spec:
                 name: helpin-secrets
           ports:
             - containerPort: 8080
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           readinessProbe:
             httpGet:
               path: /api/health

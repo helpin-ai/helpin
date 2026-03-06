@@ -78,6 +78,7 @@ export function Header() {
       settings: "Settings",
       tasks: "Tasks",
       pm: "Projects",
+      support: "Support",
       docs: "Docs",
     };
 

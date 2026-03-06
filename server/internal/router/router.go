@@ -72,6 +72,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 		r.Get("/invitations/info", h.Invite.GetInfo)
 
 		// ---- Public git webhook (no JWT) ----
+		r.Get("/git/github/callback", h.Git.GitHubCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
 
 		// ---- Public widget routes (no JWT, open CORS) ----
@@ -170,6 +171,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Put("/settings/teams/{id}/estimates", h.Settings.UpdateTeamEstimateSettings)
 			r.Get("/settings/teams/{id}/field-visibility", h.Settings.GetTeamFieldVisibility)
 			r.Put("/settings/teams/{id}/field-visibility", h.Settings.UpdateTeamFieldVisibility)
+			r.Get("/settings/teams/{id}/repo-default", h.Settings.GetTeamRepoDefault)
+			r.Put("/settings/teams/{id}/repo-default", h.Settings.UpdateTeamRepoDefault)
 			r.Post("/settings/people", h.Settings.CreatePerson)
 			r.Put("/settings/people/{id}", h.Settings.UpdatePerson)
 			r.Delete("/settings/people/{id}", h.Settings.DeletePerson)
@@ -188,8 +191,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			// Git integrations
 			r.Route("/git", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
+				r.Get("/github/install-url", h.Git.GetGitHubInstallURL)
 				r.Get("/integrations", h.Git.ListIntegrations)
 				r.Post("/integrations", h.Git.CreateIntegration)
+				r.Post("/integrations/{id}/sync", h.Git.SyncRepositories)
+				r.Get("/repositories", h.Git.ListRepositories)
+				r.Put("/repositories/{id}", h.Git.UpdateRepository)
 			})
 
 			// Search
@@ -282,6 +289,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Delete("/stories/{id}/labels/{labelId}", h.PMStory.RemoveLabel)
 				r.Get("/stories/{id}/activity", h.PMStory.ListActivity)
 				r.Get("/stories/{id}/git-links", h.Git.GetStoryGitLinks)
+				r.Get("/stories/{id}/delivery-target", h.Git.GetStoryDeliveryTarget)
+				r.Put("/stories/{id}/delivery-target", h.Git.UpdateStoryDeliveryTarget)
 				r.Post("/stories/{id}/create-branch", h.Git.CreateBranch)
 
 				// Comments
@@ -333,6 +342,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Get("/agents", h.Agent.ListAgents)
 				r.Post("/agents", h.Agent.CreateAgent)
 				r.Get("/runtime-profiles", h.Agent.ListRuntimeProfiles)
+				r.Get("/runner-health", h.Agent.GetRunnerHealth)
 				r.Get("/agents/{id}", h.Agent.GetAgent)
 				r.Put("/agents/{id}", h.Agent.UpdateAgent)
 				r.Delete("/agents/{id}", h.Agent.DeleteAgent)

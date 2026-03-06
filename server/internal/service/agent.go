@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 	"github.com/helpin-ai/helpin/server/internal/worker"
 )
@@ -29,11 +31,12 @@ type AgentService struct {
 	agentRepo    *repository.AgentRepository
 	runRepo      *repository.AgentRunRepository
 	artifactRepo *repository.AgentRunArtifactRepository
-	jobRepo      *repository.AgentJobRepository
 	storyRepo    *repository.PMStoryRepository
 	ticketRepo   *repository.SupportTicketRepository
 	messageRepo  *repository.SupportMessageRepository
 	handoffRepo  *repository.AgentHandoffRepository
+	runEngine    *temporalapp.RunEngine
+	gitService   *GitService
 	activitySvc  *PMActivityService
 	wsPublisher  *websocket.Publisher
 }
@@ -43,11 +46,12 @@ func NewAgentService(
 	agentRepo *repository.AgentRepository,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
-	jobRepo *repository.AgentJobRepository,
 	storyRepo *repository.PMStoryRepository,
 	ticketRepo *repository.SupportTicketRepository,
 	messageRepo *repository.SupportMessageRepository,
 	handoffRepo *repository.AgentHandoffRepository,
+	runEngine *temporalapp.RunEngine,
+	gitService *GitService,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 ) *AgentService {
@@ -55,11 +59,12 @@ func NewAgentService(
 		agentRepo:    agentRepo,
 		runRepo:      runRepo,
 		artifactRepo: artifactRepo,
-		jobRepo:      jobRepo,
 		storyRepo:    storyRepo,
 		ticketRepo:   ticketRepo,
 		messageRepo:  messageRepo,
 		handoffRepo:  handoffRepo,
+		runEngine:    runEngine,
+		gitService:   gitService,
 		activitySvc:  activitySvc,
 		wsPublisher:  wsPublisher,
 	}
@@ -274,6 +279,9 @@ func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, stor
 
 	if agent.AgentKind == "llm" && agent.TriggerMode == "auto_on_assignment" {
 		if _, err := s.RunAgent(ctx, workspaceID, storyID, actorID); err != nil {
+			if errors.Is(err, ErrStoryDeliveryTargetRequired) {
+				return nil
+			}
 			return err
 		}
 	}
@@ -309,7 +317,7 @@ func (s *AgentService) ListRunArtifacts(ctx context.Context, workspaceID, runID 
 	return s.artifactRepo.ListByRun(ctx, workspaceID, runID)
 }
 
-// RunAgent creates a new story-targeted agent run and enqueues it.
+// RunAgent creates a new story-targeted agent run and starts its Temporal workflow.
 func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actorID string) (*model.AgentRun, error) {
 	story, err := s.storyRepo.GetRawByID(ctx, storyID)
 	if err != nil {
@@ -326,6 +334,11 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actor
 	if err != nil {
 		return nil, err
 	}
+	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
+	deliveryTarget, err := s.gitService.ResolveStoryDeliveryTargetForRun(ctx, workspaceID, storyID, profile)
+	if err != nil {
+		return nil, err
+	}
 
 	input, _ := json.Marshal(map[string]any{
 		"story_id": storyID,
@@ -334,11 +347,13 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actor
 	run, err := s.createRun(ctx, createRunParams{
 		workspaceID: workspaceID,
 		agent:       agent,
+		profile:     profile,
 		targetType:  "story",
 		targetID:    storyID,
 		storyID:     &storyID,
 		actorID:     actorID,
 		input:       input,
+		delivery:    deliveryTarget,
 	})
 	if err != nil {
 		return nil, err
@@ -350,7 +365,7 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actor
 	return run, nil
 }
 
-// RunTicketAgent creates a new ticket-targeted agent run and enqueues it.
+// RunTicketAgent creates a new ticket-targeted agent run and starts its Temporal workflow.
 func (s *AgentService) RunTicketAgent(ctx context.Context, workspaceID, ticketID, actorID string) (*model.AgentRun, error) {
 	ticket, err := s.ticketRepo.GetByID(ctx, workspaceID, ticketID)
 	if err != nil {
@@ -367,6 +382,7 @@ func (s *AgentService) RunTicketAgent(ctx context.Context, workspaceID, ticketID
 	if err != nil {
 		return nil, err
 	}
+	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
 
 	input, _ := json.Marshal(map[string]any{
 		"ticket_id": ticketID,
@@ -376,6 +392,7 @@ func (s *AgentService) RunTicketAgent(ctx context.Context, workspaceID, ticketID
 	run, err := s.createRun(ctx, createRunParams{
 		workspaceID: workspaceID,
 		agent:       agent,
+		profile:     profile,
 		targetType:  "support_ticket",
 		targetID:    ticketID,
 		ticketID:    &ticketID,
@@ -392,25 +409,24 @@ func (s *AgentService) RunTicketAgent(ctx context.Context, workspaceID, ticketID
 	return run, nil
 }
 
-// CancelRun cancels a queued or running agent run.
+// CancelRun cancels a queued, running, or approval-pending agent run.
 func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorID string) (*model.AgentRun, error) {
 	run, err := s.GetAgentRun(ctx, workspaceID, runID)
 	if err != nil {
 		return nil, err
 	}
-	if run.Status != "queued" && run.Status != "running" {
-		return nil, fmt.Errorf("only queued or running runs can be cancelled")
+	if run.Status != "queued" && run.Status != "running" && run.Status != "awaiting_approval" {
+		return nil, fmt.Errorf("only queued, running, or approval-pending runs can be cancelled")
 	}
 
 	now := time.Now()
 	run.Status = "cancelled"
 	run.CompletedAt = &now
+	run.ExecutionStage = strPtr("cancelled")
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
-	if s.jobRepo != nil {
-		_ = s.jobRepo.CompleteByRunID(ctx, run.ID)
-	}
+	_ = s.runEngine.CancelRun(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
 
 	_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 	s.publishRunEvent(run, actorID)
@@ -467,9 +483,16 @@ func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actor
 	}
 
 	run.ApprovalState = "approved"
+	if run.Status == "awaiting_approval" {
+		now := time.Now()
+		run.Status = "completed"
+		run.CompletedAt = &now
+		run.ExecutionStage = strPtr("approved")
+	}
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
+	_ = s.runEngine.SignalApprove(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
 	s.publishRunEvent(run, actorID)
 
 	return run, nil
@@ -519,6 +542,7 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
+	_ = s.runEngine.SignalHandoff(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), req)
 
 	payload, _ := json.MarshalIndent(map[string]any{
 		"reason":       req.Reason,
@@ -536,12 +560,14 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 type createRunParams struct {
 	workspaceID string
 	agent       *model.Agent
+	profile     model.RuntimeProfile
 	targetType  string
 	targetID    string
 	storyID     *string
 	ticketID    *string
 	actorID     string
 	input       []byte
+	delivery    *model.StoryDeliveryTarget
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
@@ -553,11 +579,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, fmt.Errorf("an agent run is already active for this %s", params.targetType)
 	}
 
-	profile := worker.GetRuntimeProfile(params.agent.CapabilityProfile)
 	approvalState := "not_required"
-	if profile.ApprovalRequired || params.targetType == "support_ticket" {
+	if params.profile.ApprovalRequired || params.targetType == "support_ticket" {
 		approvalState = "pending"
 	}
+	taskQueue := temporalapp.QueueForProfile(params.profile.Name)
 
 	run := &model.AgentRun{
 		WorkspaceID:       params.workspaceID,
@@ -570,23 +596,20 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		ApprovalState:     approvalState,
 		TriggeredByUserID: &params.actorID,
 		Status:            "queued",
+		TaskQueue:         &taskQueue,
+		RunnerPool:        &taskQueue,
 		Input:             json.RawMessage(params.input),
 		OutputSummary:     json.RawMessage("{}"),
 	}
+	if params.delivery != nil {
+		run.DeliveryTargetID = &params.delivery.ID
+		run.RepositoryID = params.delivery.RepositoryID
+		run.RepoFullName = params.delivery.RepoFullName
+		run.BaseBranch = params.delivery.BaseBranch
+		run.WorkingBranch = params.delivery.WorkingBranch
+	}
 	if err := s.runRepo.Create(ctx, run); err != nil {
 		return nil, err
-	}
-
-	if s.jobRepo != nil {
-		job := &model.AgentJob{
-			WorkspaceID: params.workspaceID,
-			RunID:       run.ID,
-			Status:      "pending",
-			MaxAttempts: 3,
-		}
-		if err := s.jobRepo.Create(ctx, job); err != nil {
-			return nil, fmt.Errorf("create job: %w", err)
-		}
 	}
 
 	params.agent.Status = "working"
@@ -596,6 +619,24 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		params.agent.ActiveStoryID = nil
 	}
 	_ = s.agentRepo.Update(ctx, params.agent)
+
+	workflowID, workflowRunID, err := s.runEngine.StartRun(ctx, run)
+	if err != nil {
+		errMsg := err.Error()
+		now := time.Now()
+		run.Status = "failed"
+		run.CompletedAt = &now
+		run.ErrorMessage = &errMsg
+		run.ExecutionStage = strPtr("failed_to_start")
+		_ = s.runRepo.Update(ctx, run)
+		_ = s.markAgentIdle(ctx, params.workspaceID, params.agent.ID)
+		return nil, err
+	}
+	run.WorkflowID = &workflowID
+	run.WorkflowRunID = &workflowRunID
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return nil, err
+	}
 
 	return run, nil
 }
@@ -622,6 +663,9 @@ func (s *AgentService) markAgentIdle(ctx context.Context, workspaceID, agentID s
 }
 
 func (s *AgentService) publishSimpleEvent(action, entity, entityID, workspaceID, actorID string) {
+	if s.wsPublisher == nil {
+		return
+	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      action,
 		Entity:      entity,
@@ -632,6 +676,9 @@ func (s *AgentService) publishSimpleEvent(action, entity, entityID, workspaceID,
 }
 
 func (s *AgentService) publishRunEvent(run *model.AgentRun, actorID string) {
+	if s.wsPublisher == nil {
+		return
+	}
 	event := websocket.Event{
 		Action:      "updated",
 		Entity:      "agent_run",
@@ -660,6 +707,8 @@ func (s *AgentService) saveArtifact(ctx context.Context, run *model.AgentRun, ar
 
 func defaultCapabilityProfileForRole(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "planner", "prd", "product":
+		return "planner"
 	case "support":
 		return "support"
 	case "reviewer", "reviewer_tester", "tester":
@@ -671,6 +720,79 @@ func defaultCapabilityProfileForRole(role string) string {
 	default:
 		return "engineer"
 	}
+}
+
+// GetRunnerHealth returns the configured shared runner pools and active runs for a workspace.
+func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) temporalapp.RunnerHealth {
+	if s.runEngine == nil {
+		return temporalapp.RunnerHealth{}
+	}
+
+	health := s.runEngine.Health()
+	if workspaceID == "" {
+		return health
+	}
+
+	activeRuns, err := s.runRepo.ListActive(ctx, workspaceID, 100)
+	if err != nil {
+		return health
+	}
+
+	queueIndex := make(map[string]int, len(health.Queues))
+	for idx, queue := range health.Queues {
+		queueIndex[queue.Name] = idx
+	}
+
+	now := time.Now()
+	for _, run := range activeRuns {
+		taskQueue := stringOrDefault(run.TaskQueue, temporalapp.QueueAutomation)
+		idx, ok := queueIndex[taskQueue]
+		if !ok {
+			health.Queues = append(health.Queues, temporalapp.RunnerQueueHealth{Name: taskQueue})
+			idx = len(health.Queues) - 1
+			queueIndex[taskQueue] = idx
+		}
+
+		queue := health.Queues[idx]
+		queue.ActiveRuns++
+		switch run.Status {
+		case "queued":
+			queue.QueuedRuns++
+		case "running":
+			queue.RunningRuns++
+		case "awaiting_approval":
+			queue.AwaitingApprovalRuns++
+		}
+		if run.LastHeartbeatAt != nil && (queue.LatestHeartbeatAt == nil || run.LastHeartbeatAt.After(*queue.LatestHeartbeatAt)) {
+			queue.LatestHeartbeatAt = run.LastHeartbeatAt
+		}
+		health.Queues[idx] = queue
+
+		stale := false
+		if run.Status == "running" {
+			stale = run.LastHeartbeatAt == nil || now.Sub(*run.LastHeartbeatAt) > 2*time.Minute
+		} else if run.Status == "queued" {
+			stale = now.Sub(run.CreatedAt) > 10*time.Minute
+		}
+
+		health.ActiveRuns = append(health.ActiveRuns, temporalapp.RunnerActiveRun{
+			ID:              run.ID,
+			AgentID:         run.AgentID,
+			TargetType:      run.TargetType,
+			TargetID:        run.TargetID,
+			Status:          run.Status,
+			TaskQueue:       taskQueue,
+			RunnerPool:      stringOrDefault(run.RunnerPool, taskQueue),
+			ExecutionStage:  run.ExecutionStage,
+			LastHeartbeatAt: run.LastHeartbeatAt,
+			StartedAt:       run.StartedAt,
+			CreatedAt:       run.CreatedAt,
+			WorkflowID:      run.WorkflowID,
+			Stale:           stale,
+		})
+	}
+
+	return health
 }
 
 func stringOrDefault(value *string, fallback string) string {
@@ -709,4 +831,11 @@ func validateTriggerMode(triggerMode string) error {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

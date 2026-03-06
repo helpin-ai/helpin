@@ -1,5 +1,16 @@
 import { api } from '../api';
-import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, BonusTierConfig, JobRoleCriteria, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale } from '../types';
+import type {
+  WorkspaceSettings,
+  WorkspaceTeam,
+  WorkspacePerson,
+  BonusTierConfig,
+  JobRoleCriteria,
+  InvitationTeamPreassignment,
+  TeamEstimateSettings,
+  TeamFieldVisibility,
+  EstimateScale,
+  TeamRepoDefault,
+} from '../types';
 
 interface RawWorkspaceSettings extends Omit<WorkspaceSettings, 'job_role_criteria'> {
   job_role_criteria?: JobRoleCriteria[];
@@ -26,6 +37,7 @@ const normalizeWorkspaceSettings = (raw: RawWorkspaceSettings): WorkspaceSetting
   invitation_team_preassignments: raw.invitation_team_preassignments ?? [],
   team_estimate_settings: raw.team_estimate_settings ?? [],
   team_field_visibility: raw.team_field_visibility ?? [],
+  team_repo_defaults: raw.team_repo_defaults ?? [],
 });
 
 export const settingsService = {
@@ -80,4 +92,17 @@ export const settingsService = {
     api.get<TeamFieldVisibility>(`/settings/teams/${teamId}/field-visibility`),
   updateTeamFieldVisibility: (teamId: string, data: Partial<Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>>) =>
     api.put<TeamFieldVisibility>(`/settings/teams/${teamId}/field-visibility`, data),
+  getTeamRepoDefault: (teamId: string) =>
+    api.get<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default`),
+  updateTeamRepoDefault: (
+    teamId: string,
+    data: {
+      repository_id: string;
+      base_branch?: string;
+      branch_template?: string;
+      auto_sync_states?: boolean;
+      review_state_id?: string;
+      done_state_id?: string;
+    },
+  ) => api.put<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default`, data),
 };
