@@ -18,6 +18,7 @@ import { UserAvatar } from './UserAvatar';
 import type { Priority, Severity, Story, WorkflowState } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
+import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 
 // ── Shared constants ────────────────────────────────────────────────
@@ -469,6 +470,11 @@ export function StoryCard({
             </TooltipContent>
           </Tooltip>
         )}
+
+        {/* Labels */}
+        {story.labels && story.labels.length > 0 && story.labels.map((label) => (
+          <LabelBadge key={label.id} label={label} />
+        ))}
       </div>
 
       {/* Row 4: Footer - team, assignee */}

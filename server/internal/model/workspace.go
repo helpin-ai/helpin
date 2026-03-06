@@ -9,6 +9,7 @@ type Workspace struct {
 	Slug        string    `json:"slug" gorm:"uniqueIndex;not null"`
 	OwnerID     string    `json:"owner_id" gorm:"type:uuid;not null"`
 	Description *string   `json:"description"`
+	Timezone    string    `json:"timezone" gorm:"not null;default:'UTC'"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -48,10 +49,12 @@ type CreateWorkspaceRequest struct {
 	Name        string  `json:"name"`
 	Slug        string  `json:"slug"`
 	Description *string `json:"description"`
+	Timezone    string  `json:"timezone"`
 }
 
 // UpdateWorkspaceRequest is the payload for PUT /api/workspaces/{id}.
 type UpdateWorkspaceRequest struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
+	Timezone    *string `json:"timezone"`
 }

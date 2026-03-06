@@ -43,7 +43,12 @@ export default function Workspaces() {
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     setCreating(true);
-    const { error } = await workspacesService.create({ name, slug, description: description || undefined });
+    const { error } = await workspacesService.create({
+      name,
+      slug,
+      description: description || undefined,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
     setCreating(false);
     if (error) {
       toast.error(error);

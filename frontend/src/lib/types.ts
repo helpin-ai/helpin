@@ -19,6 +19,7 @@ export interface Workspace {
   slug: string;
   owner_id: string;
   description?: string;
+  timezone: string;
   created_at: string;
   updated_at: string;
 }

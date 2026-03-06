@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { settingsService } from '@/lib/services/settingsService';
-import type { WorkspaceTeam, WorkspacePerson, TeamMembership } from '@/lib/types';
+import type { WorkspaceTeam, WorkspacePerson, TeamMembership, TeamUserMembership } from '@/lib/types';
 
 interface WorkspaceTeamsResult {
   teams: WorkspaceTeam[];
   people: WorkspacePerson[];
   memberships: TeamMembership[];
+  userMemberships: TeamUserMembership[];
   loading: boolean;
   getTeamMembers: (teamId: string) => WorkspacePerson[];
   findTeamName: (teamId: string | undefined) => string | undefined;
@@ -16,12 +17,14 @@ let cachedWorkspaceId: string | null = null;
 let cachedTeams: WorkspaceTeam[] = [];
 let cachedPeople: WorkspacePerson[] = [];
 let cachedMemberships: TeamMembership[] = [];
+let cachedUserMemberships: TeamUserMembership[] = [];
 let fetchPromise: Promise<void> | null = null;
 
 export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTeamsResult {
   const [teams, setTeams] = useState<WorkspaceTeam[]>(cachedWorkspaceId === workspaceId ? cachedTeams : []);
   const [people, setPeople] = useState<WorkspacePerson[]>(cachedWorkspaceId === workspaceId ? cachedPeople : []);
   const [memberships, setMemberships] = useState<TeamMembership[]>(cachedWorkspaceId === workspaceId ? cachedMemberships : []);
+  const [userMemberships, setUserMemberships] = useState<TeamUserMembership[]>(cachedWorkspaceId === workspaceId ? cachedUserMemberships : []);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -32,6 +35,7 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
       setTeams(cachedTeams);
       setPeople(cachedPeople);
       setMemberships(cachedMemberships);
+      setUserMemberships(cachedUserMemberships);
       return;
     }
 
@@ -46,6 +50,7 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
             cachedTeams = data.teams;
             cachedPeople = data.people;
             cachedMemberships = data.memberships;
+            cachedUserMemberships = data.user_memberships;
           }
         })();
       }
@@ -55,6 +60,7 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
       setTeams(cachedTeams);
       setPeople(cachedPeople);
       setMemberships(cachedMemberships);
+      setUserMemberships(cachedUserMemberships);
       setLoading(false);
     };
 
@@ -71,5 +77,5 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
     return teams.find((t) => t.id === teamId)?.name;
   };
 
-  return { teams, people, memberships, loading, getTeamMembers, findTeamName };
+  return { teams, people, memberships, userMemberships, loading, getTeamMembers, findTeamName };
 }

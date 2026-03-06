@@ -7,10 +7,10 @@ import {
   Check,
   CheckSquare,
   ChevronRight,
-  Copy,
   Gauge,
   GitBranch,
   Hash,
+  Hexagon,
   Layers,
   LayoutGrid,
   Link2,
@@ -21,8 +21,8 @@ import {
   Pencil,
   Send,
   ShieldAlert,
-  Star,
   Tag,
+  Target,
   Trash2,
   User,
   Users,
@@ -70,6 +70,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import type {
   ActivityLogEntry,
@@ -295,7 +296,7 @@ function StoryDetailPanelBody({
   const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id));
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
@@ -495,13 +496,7 @@ function StoryDetailPanelBody({
   };
 
   // ── Copy link ──────────────────────────────────────────────────
-  const copyLink = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('story', `TP-${storyDetail.story.display_id}`);
-    navigator.clipboard.writeText(url.toString());
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2000);
-  };
+  const copyLink = () => copyText(window.location.href);
 
   // ── Derived data ───────────────────────────────────────────────
   const currentState = useMemo(
@@ -553,28 +548,39 @@ function StoryDetailPanelBody({
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
-          <X className="h-4 w-4" />
-        </Button>
-        {workspace && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0"
-            title="Open full page"
-            onClick={() => {
-              onOpenChange(false);
-              navigate({
-                to: '/w/$slug/pm/stories/$storyId',
-                params: { slug: workspace.slug, storyId: storyDetail.story.id },
-              });
-            }}
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
-
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+          {storyDetail.objective_name && storyDetail.objective_id && workspace && (
+            <>
+              <Target className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+              <button
+                type="button"
+                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                onClick={() => {
+                  onOpenChange(false);
+                  navigate({ to: '/w/$slug/pm/objectives/$objectiveId', params: { slug: workspace.slug, objectiveId: storyDetail.objective_id! } });
+                }}
+              >
+                {storyDetail.objective_name}
+              </button>
+              <ChevronRight className="h-3 w-3 shrink-0" />
+            </>
+          )}
+          {storyDetail.epic_name && storyDetail.story.epic_id && workspace && (
+            <>
+              <Hexagon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+              <button
+                type="button"
+                className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
+                onClick={() => {
+                  onOpenChange(false);
+                  navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug: workspace.slug, epicId: storyDetail.story.epic_id! } });
+                }}
+              >
+                {storyDetail.epic_name}
+              </button>
+              <ChevronRight className="h-3 w-3 shrink-0" />
+            </>
+          )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
           <span className="shrink-0 font-medium text-foreground/80">TP-{storyDetail.story.display_id}</span>
           <ChevronRight className="h-3 w-3 shrink-0" />
@@ -582,9 +588,16 @@ function StoryDetailPanelBody({
         </div>
 
         <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-7 w-7">
-            <Star className="h-3.5 w-3.5" />
-          </Button>
+          {linkCopied ? (
+            <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
+              <Check className="h-3.5 w-3.5" />
+              Copied!
+            </span>
+          ) : (
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={copyLink} title="Copy link">
+              <Link2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7">
@@ -592,16 +605,32 @@ function StoryDetailPanelBody({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={copyLink}>
-                <Link2 className="mr-2 h-4 w-4" />
-                Copy link
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={archiveStory} className="text-destructive focus:text-destructive">
                 <Archive className="mr-2 h-4 w-4" />
                 Archive
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {workspace && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              title="Open full page"
+              onClick={() => {
+                onOpenChange(false);
+                navigate({
+                  to: '/w/$slug/pm/stories/$storyId',
+                  params: { slug: workspace.slug, storyId: storyDetail.story.id },
+                });
+              }}
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -834,12 +863,9 @@ function StoryDetailPanelBody({
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
-          {/* Story ID + copy */}
-          <div className="mb-4 flex items-center justify-between">
+          {/* Story ID */}
+          <div className="mb-4">
             <span className="text-sm font-semibold text-foreground">TP-{storyDetail.story.display_id}</span>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={copyLink}>
-              {linkCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-            </Button>
           </div>
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">

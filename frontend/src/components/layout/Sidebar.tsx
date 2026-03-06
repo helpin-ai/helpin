@@ -32,6 +32,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useSessionStore } from '@/stores/sessionStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { Button } from '@/components/ui/button';
@@ -116,8 +117,15 @@ export function Sidebar() {
   const workspaceId = currentWorkspace?.id;
   const activeRail = deriveActiveRail(location.pathname);
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
+  const isAdmin = useSessionStore((s) => s.isAdmin());
+  const currentUserId = useSessionStore((s) => s.membership?.user_id);
 
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams: allTeams, userMemberships } = useWorkspaceTeams(workspaceId);
+  const teams = useMemo(() => {
+    if (isAdmin) return allTeams;
+    const myTeamIds = new Set(userMemberships.filter((m) => m.user_id === currentUserId).map((m) => m.team_id));
+    return allTeams.filter((t) => myTeamIds.has(t.id));
+  }, [allTeams, userMemberships, currentUserId, isAdmin]);
 
   // ── Expanded teams state ──
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() =>
@@ -228,6 +236,7 @@ export function Sidebar() {
       {
         label: 'Workspace',
         items: [
+          { link: `/w/${wsSlug}/settings/general`, label: 'General', icon: Settings2 },
           { link: `/w/${wsSlug}/settings/members`, label: 'Members', icon: Users },
           { link: `/w/${wsSlug}/settings/teams`, label: 'Teams', icon: Users },
         ],
@@ -244,7 +253,7 @@ export function Sidebar() {
       {
         label: 'Reward Settings',
         items: [
-          { link: `/w/${wsSlug}/settings/system`, label: 'General', icon: Settings2 },
+          { link: `/w/${wsSlug}/settings/system`, label: 'Reward Defaults', icon: Settings2 },
           { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
           { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
           { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },
@@ -315,7 +324,7 @@ export function Sidebar() {
                 <Button
                   size="sm"
                   className="h-7 flex-1 rounded-r-none text-xs gap-1.5"
-                  onClick={() => openCreate(primaryCreate.key)}
+                  onClick={() => openCreate(primaryCreate.key, activeTeamParam ? { teamId: activeTeamParam } : undefined)}
                 >
                   <Plus className="h-3 w-3" />
                   {primaryCreate.label}
@@ -328,7 +337,7 @@ export function Sidebar() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     {secondaryOptions.map((opt) => (
-                      <DropdownMenuItem key={opt.key} onClick={() => openCreate(opt.key)}>
+                      <DropdownMenuItem key={opt.key} onClick={() => openCreate(opt.key, activeTeamParam ? { teamId: activeTeamParam } : undefined)}>
                         <opt.icon className="h-4 w-4" />
                         {opt.label}
                       </DropdownMenuItem>
@@ -378,7 +387,8 @@ export function Sidebar() {
                   Your Teams
                 </SidebarGroupLabel>
                 <SidebarMenu>
-                  {/* ── All Work (workspace-level, no team filter) ── */}
+                  {/* ── All Work (workspace-level, no team filter — admins only) ── */}
+                  {isAdmin && (
                   <Collapsible.Root
                     asChild
                     open={expandedTeams.has('__all_work__')}
@@ -424,6 +434,7 @@ export function Sidebar() {
                       </Collapsible.Content>
                     </SidebarMenuItem>
                   </Collapsible.Root>
+                  )}
 
                   {teams.map((team) => {
                     const isExpanded = expandedTeams.has(team.id);

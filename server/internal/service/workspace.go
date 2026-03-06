@@ -37,7 +37,7 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		return nil, fmt.Errorf("name and slug are required")
 	}
 
-	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, ownerID, req.Description)
+	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, ownerID, req.Description, req.Timezone)
 	if err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
 	}
@@ -90,7 +90,7 @@ func (s *WorkspaceService) GetByID(ctx context.Context, id string) (*model.Works
 
 // Update modifies a workspace.
 func (s *WorkspaceService) Update(ctx context.Context, id string, req model.UpdateWorkspaceRequest) (*model.Workspace, error) {
-	return s.workspaceRepo.Update(ctx, id, req.Name, req.Description)
+	return s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.Timezone)
 }
 
 // Delete removes a workspace.

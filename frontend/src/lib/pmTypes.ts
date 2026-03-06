@@ -160,9 +160,10 @@ export interface Story {
   external_id?: string;
   created_at: string;
   updated_at: string;
-  // Enriched by board endpoint
+  // Enriched by board/list endpoints
   epic_name?: string;
   owner_name?: string;
+  labels?: Label[];
 }
 
 export interface StoryDetail {
@@ -186,6 +187,8 @@ export interface StoryDetail {
   labels: Label[];
   epic_name?: string;
   sprint_name?: string;
+  objective_name?: string;
+  objective_id?: string;
   state?: WorkflowState;
 }
 

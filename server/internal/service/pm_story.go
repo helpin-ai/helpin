@@ -34,7 +34,7 @@ func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *re
 }
 
 // List returns stories with filters/pagination.
-func (s *PMStoryService) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.PMStory, int64, error) {
+func (s *PMStoryService) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
