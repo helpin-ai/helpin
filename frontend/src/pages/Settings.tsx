@@ -2519,7 +2519,7 @@ function AutomationsTab({ workspaceId, teams }: {
                 checked={autoStart?.enabled ?? false}
                 onCheckedChange={(checked) => {
                   const stateId = autoStart?.config_state_id ?? startedStates[0]?.id;
-                  if (!stateId) return;
+                  if (!stateId) { toast.error('No started epic state available. Please check your epic workflow states.'); return; }
                   upsert('epic_auto_start', checked, { configStateId: stateId });
                 }}
               />
@@ -2556,7 +2556,7 @@ function AutomationsTab({ workspaceId, teams }: {
                 checked={autoComplete?.enabled ?? false}
                 onCheckedChange={(checked) => {
                   const stateId = autoComplete?.config_state_id ?? doneStates[0]?.id;
-                  if (!stateId) return;
+                  if (!stateId) { toast.error('No done epic state available. Please check your epic workflow states.'); return; }
                   upsert('epic_auto_complete', checked, { configStateId: stateId });
                 }}
               />
