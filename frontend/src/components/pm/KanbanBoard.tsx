@@ -31,6 +31,8 @@ import { StoryDetailPanel } from './StoryDetailPanel';
 import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar } from './StoryFilters';
 import { StoryListView } from './StoryListView';
 import { ViewBar } from './ViewBar';
+import { BoardDisplayMenu } from './BoardDisplayMenu';
+import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 
 interface KanbanBoardProps {
   workspaceId: string;
@@ -237,6 +239,10 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const currentUser = useAuthStore((s) => s.user);
   const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
   const { members } = useWorkspaceMembers(workspaceId);
+  const showEmptyColumns = useBoardDisplayStore((s) => s.showEmptyColumns);
+  const initDisplay = useBoardDisplayStore((s) => s.init);
+
+  useEffect(() => { initDisplay(workspaceId); }, [workspaceId, initDisplay]);
 
   // Sync URL team param → store on mount / prop change
   useEffect(() => {
@@ -470,6 +476,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         <StoryFilterTrigger />
 
         <div className="ml-auto flex items-center gap-1">
+          <BoardDisplayMenu />
           <Button
             variant={viewMode === 'board' ? 'default' : 'ghost'}
             size="icon"
@@ -516,7 +523,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         >
           <div className="min-h-0 flex-1 overflow-x-auto">
             <div className="flex h-full min-w-full gap-3 pb-2">
-              {columns.map((column) => (
+              {columns.filter((column) => showEmptyColumns || column.story_count > 0).map((column) => (
                 <Column
                   key={column.state.id}
                   column={column}

@@ -20,6 +20,7 @@ import type { MemberWithUser } from '@/lib/types';
 import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
+import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -79,6 +80,18 @@ export function StoryCard({
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
   const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(story.team_id));
+  const displayProps = useBoardDisplayStore((s) => s.properties);
+  const vis = useMemo(() => ({
+    story_type: fieldVis.story_type && displayProps.story_type,
+    priority: fieldVis.priority && displayProps.priority,
+    severity: fieldVis.severity && displayProps.severity,
+    epic: fieldVis.epic && displayProps.epic,
+    labels: (fieldVis.labels ?? true) && displayProps.labels,
+    estimate: fieldVis.estimate && displayProps.estimate,
+    due_date: fieldVis.due_date && displayProps.due_date,
+    blocked: fieldVis.blocked && displayProps.blocked,
+    assignee: displayProps.assignee,
+  }), [fieldVis, displayProps]);
 
   const due = useMemo(() => {
     if (!story.deadline) return null;
@@ -181,7 +194,7 @@ export function StoryCard({
     >
       {/* Row 1: Story type + Epic + Team + Priority */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {fieldVis.story_type && (
+        {vis.story_type && (
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="shrink-0">
@@ -191,7 +204,7 @@ export function StoryCard({
           <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>
         </Tooltip>
         )}
-        {fieldVis.epic && story.epic_name && (
+        {vis.epic && story.epic_name && (
           <span className="truncate text-[11px] text-muted-foreground max-w-[120px]">{story.epic_name}</span>
         )}
 
@@ -209,7 +222,7 @@ export function StoryCard({
         )}
 
         {/* Priority pill — clickable dropdown */}
-        {fieldVis.priority && (workspaceId ? (
+        {vis.priority && (workspaceId ? (
           <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
             <Tooltip open={priorityOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -296,7 +309,7 @@ export function StoryCard({
       {/* Row 3: Property pills */}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {/* Severity pill — clickable dropdown */}
-        {fieldVis.severity && (severityCfg && workspaceId ? (
+        {vis.severity && (severityCfg && workspaceId ? (
           <Popover open={severityOpen} onOpenChange={setSeverityOpen}>
             <Tooltip open={severityOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -359,7 +372,7 @@ export function StoryCard({
           </Tooltip>
         ) : null)}
 
-        {fieldVis.blocked && story.blocked && (
+        {vis.blocked && story.blocked && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400')}>
@@ -372,14 +385,14 @@ export function StoryCard({
         )}
 
         {/* Labels */}
-        {story.labels && story.labels.length > 0 && story.labels.map((label) => (
+        {vis.labels && story.labels && story.labels.length > 0 && story.labels.map((label) => (
           <LabelBadge key={label.id} label={label} />
         ))}
       </div>
 
       {/* Row 4: Footer - due date, estimate + assignee */}
       <div className="mt-2 flex items-center gap-1.5">
-        {fieldVis.due_date && due && (
+        {vis.due_date && due && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(
@@ -399,7 +412,7 @@ export function StoryCard({
             </TooltipContent>
           </Tooltip>
         )}
-        {fieldVis.estimate && story.estimate != null && (
+        {vis.estimate && story.estimate != null && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
@@ -411,7 +424,7 @@ export function StoryCard({
         )}
         <span className="flex-1" />
         {/* Assignee avatar / assign button */}
-        {members && workspaceId ? (
+        {vis.assignee && (members && workspaceId ? (
           <Popover open={memberOpen} onOpenChange={setMemberOpen}>
             <Tooltip open={memberOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -480,7 +493,7 @@ export function StoryCard({
             </TooltipTrigger>
             <TooltipContent side="top">{story.owner_name || 'Unassigned'}</TooltipContent>
           </Tooltip>
-        )}
+        ))}
       </div>
     </article>
   );
