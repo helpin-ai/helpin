@@ -149,6 +149,26 @@ func (h *AgentHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, run)
 }
 
+// RunEpicAgent handles POST /api/pm/epics/{id}/run-agent.
+func (h *AgentHandler) RunEpicAgent(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	epicID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.OrchestrateRequest
+	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.RunEpicAgent(r.Context(), workspaceID, epicID, actorID, req.AdditionalContext)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, run)
+}
+
 // CancelRun handles POST /api/pm/agent-runs/{id}/cancel.
 func (h *AgentHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -231,6 +251,22 @@ func (h *AgentHandler) ListAgentRuns(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListEpicRuns handles GET /api/pm/epics/{id}/agent-runs.
+func (h *AgentHandler) ListEpicRuns(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	epicID := chi.URLParam(r, "id")
+
+	runs, err := h.agentService.ListTargetRuns(r.Context(), workspaceID, "epic", epicID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if runs == nil {
+		runs = []model.AgentRun{}
+	}
+	writeJSON(w, http.StatusOK, runs)
+}
+
 // GetAgentRun handles GET /api/pm/agent-runs/{id}.
 func (h *AgentHandler) GetAgentRun(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -258,4 +294,34 @@ func (h *AgentHandler) ListRunArtifacts(w http.ResponseWriter, r *http.Request) 
 		artifacts = []model.AgentRunArtifact{}
 	}
 	writeJSON(w, http.StatusOK, artifacts)
+}
+
+// ConfirmEpicRun handles POST /api/pm/agent-runs/{id}/confirm-orchestration.
+func (h *AgentHandler) ConfirmEpicRun(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	runID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.ConfirmOrchestrationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.GetAgentRun(r.Context(), workspaceID, runID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if run.TargetType != "epic" {
+		writeError(w, http.StatusBadRequest, "run is not an epic orchestration run")
+		return
+	}
+
+	stories, err := h.agentService.ConfirmEpicRun(r.Context(), workspaceID, run.TargetID, runID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, stories)
 }

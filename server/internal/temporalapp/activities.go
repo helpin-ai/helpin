@@ -27,6 +27,7 @@ type AgentRunActivities struct {
 	agentRepo     *repository.AgentRepository
 	artifactRepo  *repository.AgentRunArtifactRepository
 	storyRepo     *repository.PMStoryRepository
+	epicRepo      *repository.PMEpicRepository
 	ticketRepo    *repository.SupportTicketRepository
 	commentRepo   *repository.PMCommentRepository
 	checklistRepo *repository.PMChecklistItemRepository
@@ -46,6 +47,7 @@ func NewAgentRunActivities(
 	agentRepo *repository.AgentRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 	storyRepo *repository.PMStoryRepository,
+	epicRepo *repository.PMEpicRepository,
 	ticketRepo *repository.SupportTicketRepository,
 	commentRepo *repository.PMCommentRepository,
 	checklistRepo *repository.PMChecklistItemRepository,
@@ -63,6 +65,7 @@ func NewAgentRunActivities(
 		agentRepo:     agentRepo,
 		artifactRepo:  artifactRepo,
 		storyRepo:     storyRepo,
+		epicRepo:      epicRepo,
 		ticketRepo:    ticketRepo,
 		commentRepo:   commentRepo,
 		checklistRepo: checklistRepo,
@@ -81,6 +84,8 @@ type resolvedRunState struct {
 	run            *model.AgentRun
 	agent          *model.Agent
 	story          *model.PMStory
+	epic           *model.PMEpic
+	epicStories    []model.PMStory
 	ticket         *model.SupportTicket
 	profile        model.RuntimeProfile
 	deliveryTarget *model.StoryDeliveryTarget
@@ -153,25 +158,28 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 
 	bridge := a.serviceBridge()
 	execCtx := &workerpkg.ExecutionContext{
-		Context:        ctx,
-		WorkDir:        workDir,
-		WorkspaceID:    state.run.WorkspaceID,
-		AgentID:        state.run.AgentID,
-		RunID:          state.run.ID,
-		TargetType:     state.run.TargetType,
-		TargetID:       state.run.TargetID,
-		Agent:          state.agent,
-		Story:          state.story,
-		Ticket:         state.ticket,
-		GitIntegration: state.integration,
-		GitAccessToken: state.accessToken,
-		Repo:           repoFullName(state),
-		BaseBranch:     derefString(state.run.BaseBranch),
-		WorkingBranch:  derefString(state.run.WorkingBranch),
-		Config:         config,
-		RuntimeProfile: state.profile,
-		AllowedTools:   workerAllowedToolSet(state.profile),
-		Services:       bridge,
+		Context:             ctx,
+		WorkDir:             workDir,
+		WorkspaceID:         state.run.WorkspaceID,
+		AgentID:             state.run.AgentID,
+		RunID:               state.run.ID,
+		TargetType:          state.run.TargetType,
+		TargetID:            state.run.TargetID,
+		Agent:               state.agent,
+		Story:               state.story,
+		Epic:                state.epic,
+		EpicStories:         state.epicStories,
+		Ticket:              state.ticket,
+		GitIntegration:      state.integration,
+		GitAccessToken:      state.accessToken,
+		Repo:                repoFullName(state),
+		BaseBranch:          derefString(state.run.BaseBranch),
+		WorkingBranch:       derefString(state.run.WorkingBranch),
+		InitialInstructions: runInputAdditionalContext(state.run.Input),
+		Config:              config,
+		RuntimeProfile:      state.profile,
+		AllowedTools:        workerAllowedToolSet(state.profile),
+		Services:            bridge,
 		Heartbeat: func(stage string) error {
 			now := time.Now()
 			activity.RecordHeartbeat(ctx, stage)
@@ -325,6 +333,22 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 			return nil, fmt.Errorf("ticket not found")
 		}
 		state.ticket = ticket
+	}
+
+	if run.TargetType == "epic" {
+		epicWithStats, err := a.epicRepo.GetByID(ctx, run.TargetID)
+		if err != nil {
+			return nil, err
+		}
+		if epicWithStats == nil {
+			return nil, fmt.Errorf("epic not found")
+		}
+		state.epic = &epicWithStats.Epic
+		epicStories, err := a.epicRepo.ListStories(ctx, run.TargetID)
+		if err != nil {
+			return nil, err
+		}
+		state.epicStories = epicStories
 	}
 
 	return state, nil
@@ -752,6 +776,19 @@ func slugifyBranchToken(value string) string {
 func isEmptySummary(summary json.RawMessage) bool {
 	trimmed := strings.TrimSpace(string(summary))
 	return trimmed == "" || trimmed == "{}" || trimmed == "null"
+}
+
+func runInputAdditionalContext(input json.RawMessage) string {
+	if len(input) == 0 {
+		return ""
+	}
+	var payload struct {
+		AdditionalContext string `json:"additional_context"`
+	}
+	if err := json.Unmarshal(input, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.AdditionalContext)
 }
 
 func repoFullName(state *resolvedRunState) string {

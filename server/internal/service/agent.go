@@ -32,11 +32,13 @@ type AgentService struct {
 	runRepo      *repository.AgentRunRepository
 	artifactRepo *repository.AgentRunArtifactRepository
 	storyRepo    *repository.PMStoryRepository
+	epicRepo     *repository.PMEpicRepository
 	ticketRepo   *repository.SupportTicketRepository
 	messageRepo  *repository.SupportMessageRepository
 	handoffRepo  *repository.AgentHandoffRepository
 	runEngine    *temporalapp.RunEngine
 	gitService   *GitService
+	storyService *PMStoryService
 	activitySvc  *PMActivityService
 	wsPublisher  *websocket.Publisher
 }
@@ -47,11 +49,13 @@ func NewAgentService(
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 	storyRepo *repository.PMStoryRepository,
+	epicRepo *repository.PMEpicRepository,
 	ticketRepo *repository.SupportTicketRepository,
 	messageRepo *repository.SupportMessageRepository,
 	handoffRepo *repository.AgentHandoffRepository,
 	runEngine *temporalapp.RunEngine,
 	gitService *GitService,
+	storyService *PMStoryService,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 ) *AgentService {
@@ -60,11 +64,13 @@ func NewAgentService(
 		runRepo:      runRepo,
 		artifactRepo: artifactRepo,
 		storyRepo:    storyRepo,
+		epicRepo:     epicRepo,
 		ticketRepo:   ticketRepo,
 		messageRepo:  messageRepo,
 		handoffRepo:  handoffRepo,
 		runEngine:    runEngine,
 		gitService:   gitService,
+		storyService: storyService,
 		activitySvc:  activitySvc,
 		wsPublisher:  wsPublisher,
 	}
@@ -317,6 +323,17 @@ func (s *AgentService) ListRunArtifacts(ctx context.Context, workspaceID, runID 
 	return s.artifactRepo.ListByRun(ctx, workspaceID, runID)
 }
 
+// ListTargetRuns returns runs for a specific target object.
+func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetType, targetID string) ([]model.AgentRun, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if strings.TrimSpace(targetType) == "" || strings.TrimSpace(targetID) == "" {
+		return nil, fmt.Errorf("target_type and target_id are required")
+	}
+	return s.runRepo.ListByTarget(ctx, workspaceID, targetType, targetID)
+}
+
 // RunAgent creates a new story-targeted agent run and starts its Temporal workflow.
 func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actorID string) (*model.AgentRun, error) {
 	story, err := s.storyRepo.GetRawByID(ctx, storyID)
@@ -404,6 +421,53 @@ func (s *AgentService) RunTicketAgent(ctx context.Context, workspaceID, ticketID
 	}
 
 	_ = s.activitySvc.Log(ctx, workspaceID, "support_ticket", ticketID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+	s.publishRunEvent(run, actorID)
+
+	return run, nil
+}
+
+// RunEpicAgent creates a new epic-targeted orchestrator run and starts its Temporal workflow.
+func (s *AgentService) RunEpicAgent(ctx context.Context, workspaceID, epicID, actorID, additionalContext string) (*model.AgentRun, error) {
+	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, fmt.Errorf("get epic: %w", err)
+	}
+	if epicWithStats == nil {
+		return nil, fmt.Errorf("epic not found")
+	}
+	epic := &epicWithStats.Epic
+	if epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if epic.OrchestratorAgentID == nil || *epic.OrchestratorAgentID == "" {
+		return nil, fmt.Errorf("no orchestrator agent assigned to this epic")
+	}
+
+	agent, err := s.requireRunnableAgent(ctx, workspaceID, *epic.OrchestratorAgentID)
+	if err != nil {
+		return nil, err
+	}
+	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
+
+	input, _ := json.Marshal(map[string]any{
+		"epic_id":            epicID,
+		"additional_context": strings.TrimSpace(additionalContext),
+	})
+
+	run, err := s.createRun(ctx, createRunParams{
+		workspaceID: workspaceID,
+		agent:       agent,
+		profile:     profile,
+		targetType:  "epic",
+		targetID:    epicID,
+		actorID:     actorID,
+		input:       input,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_ = s.activitySvc.Log(ctx, workspaceID, "epic", epicID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
 	s.publishRunEvent(run, actorID)
 
 	return run, nil
@@ -555,6 +619,114 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 	s.publishRunEvent(run, actorID)
 
 	return run, nil
+}
+
+// ConfirmEpicRun creates stories from an orchestration proposal artifact and approves the run.
+func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, runID, actorID string, req model.ConfirmOrchestrationRequest) ([]model.PMStory, error) {
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run.TargetType != "epic" || run.TargetID != epicID {
+		return nil, fmt.Errorf("run does not belong to this epic")
+	}
+	if run.ApprovalState == "approved" {
+		return nil, fmt.Errorf("orchestration run has already been confirmed")
+	}
+	if run.ApprovalState != "pending" {
+		return nil, fmt.Errorf("run does not have a pending orchestration proposal")
+	}
+	if s.storyService == nil {
+		return nil, fmt.Errorf("story service is not configured")
+	}
+
+	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, fmt.Errorf("get epic: %w", err)
+	}
+	if epicWithStats == nil {
+		return nil, fmt.Errorf("epic not found")
+	}
+
+	if len(req.ProposedStories) == 0 {
+		return nil, fmt.Errorf("at least one proposed story is required")
+	}
+
+	created := make([]model.PMStory, 0, len(req.ProposedStories))
+	createdIDs := make([]string, 0, len(req.ProposedStories))
+	for idx, ps := range req.ProposedStories {
+		name := strings.TrimSpace(ps.Name)
+		if name == "" {
+			return nil, fmt.Errorf("proposed story %d is missing a name", idx+1)
+		}
+
+		storyType := strings.TrimSpace(ps.StoryType)
+		if storyType == "" {
+			storyType = "feature"
+		}
+
+		detail, err := s.storyService.Create(ctx, model.CreateStoryRequest{
+			WorkspaceID: workspaceID,
+			Name:        name,
+			Description: strPtr(strings.TrimSpace(ps.Description)),
+			StoryType:   storyType,
+			EpicID:      &epicID,
+			Estimate:    ps.Estimate,
+		}, actorID)
+		if err != nil {
+			return nil, fmt.Errorf("create story %d: %w", idx+1, err)
+		}
+
+		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" {
+			if err := s.AssignAgentToStory(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
+				return nil, fmt.Errorf("assign agent to story %q: %w", detail.Story.Name, err)
+			}
+		}
+
+		created = append(created, detail.Story)
+		createdIDs = append(createdIDs, detail.Story.ID)
+	}
+
+	handoffContext, _ := json.Marshal(map[string]any{
+		"created_story_ids":   createdIDs,
+		"created_story_count": len(created),
+		"epic_id":             epicID,
+		"run_id":              runID,
+	})
+	handoff := &model.AgentHandoff{
+		WorkspaceID: workspaceID,
+		FromAgentID: &run.AgentID,
+		EpicID:      &epicID,
+		RunID:       &run.ID,
+		HandoffType: "agent_to_human",
+		Reason:      fmt.Sprintf("Confirmed orchestration proposal and created %d stories", len(created)),
+		Context:     handoffContext,
+	}
+	_ = s.handoffRepo.Create(ctx, handoff)
+
+	outputSummary, _ := json.Marshal(map[string]any{
+		"created_story_count": len(created),
+		"created_story_ids":   createdIDs,
+	})
+	run.OutputSummary = outputSummary
+	run.ApprovalState = "approved"
+	if run.Status == "awaiting_approval" {
+		now := time.Now()
+		run.Status = "completed"
+		run.CompletedAt = &now
+		run.ExecutionStage = strPtr("approved")
+	}
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return nil, err
+	}
+
+	summary := fmt.Sprintf("Created %d stories from epic orchestration.", len(created))
+	_ = s.saveArtifact(ctx, run, "handoff_note", "markdown", summary, 999998)
+
+	_ = s.runEngine.SignalApprove(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
+	s.publishRunEvent(run, actorID)
+
+	return created, nil
 }
 
 type createRunParams struct {

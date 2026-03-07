@@ -20,12 +20,15 @@ type ExecutionContext struct {
 	TicketID            string
 	Agent               *model.Agent
 	Story               *model.PMStory
+	Epic                *model.PMEpic
+	EpicStories         []model.PMStory
 	Ticket              *model.SupportTicket
 	GitIntegration      *model.GitIntegration
 	GitAccessToken      string
 	Repo                string // e.g. "owner/repo"
 	BaseBranch          string
 	WorkingBranch       string
+	InitialInstructions string
 	Config              *WorkflowConfig
 	RuntimeProfile      model.RuntimeProfile
 	AllowedTools        map[string]bool

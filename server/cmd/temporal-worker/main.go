@@ -47,10 +47,7 @@ func main() {
 		log.Fatalf("failed to ping database: %v", err)
 	}
 
-	temporalClient, err := tclient.Dial(tclient.Options{
-		HostPort:  cfg.TemporalAddress,
-		Namespace: cfg.TemporalNamespace,
-	})
+	temporalClient, err := tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
 		log.Fatalf("failed to connect to Temporal: %v", err)
 	}
@@ -60,6 +57,7 @@ func main() {
 	agentRepo := repository.NewAgentRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	storyRepo := repository.NewPMStoryRepository(db)
+	epicRepo := repository.NewPMEpicRepository(db)
 	ticketRepo := repository.NewSupportTicketRepository(db)
 	commentRepo := repository.NewPMCommentRepository(db)
 	checklistRepo := repository.NewPMChecklistItemRepository(db)
@@ -80,6 +78,7 @@ func main() {
 		agentRepo,
 		artifactRepo,
 		storyRepo,
+		epicRepo,
 		ticketRepo,
 		commentRepo,
 		checklistRepo,

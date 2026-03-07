@@ -27,7 +27,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/storage"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func main() {
@@ -250,10 +249,7 @@ func main() {
 	}
 
 	var temporalClient tclient.Client
-	temporalClient, err = tclient.Dial(tclient.Options{
-		HostPort:  cfg.TemporalAddress,
-		Namespace: cfg.TemporalNamespace,
-	})
+	temporalClient, err = tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
 		log.Printf("Temporal unavailable at %s (namespace=%s): %v", cfg.TemporalAddress, cfg.TemporalNamespace, err)
 	} else {
@@ -282,23 +278,16 @@ func main() {
 		agentRunRepo,
 		agentRunArtifactRepo,
 		pmStoryRepo,
+		pmEpicRepo,
 		supportTicketRepo,
 		supportMessageRepo,
 		agentHandoffRepo,
 		runEngine,
 		gitService,
+		pmStoryService,
 		pmActivityService,
 		wsPublisher,
 	)
-
-	// Initialize Claude client for orchestration (optional).
-	var claudeClient *worker.ClaudeClient
-	if cfg.AnthropicAPIKey != "" {
-		claudeClient = worker.NewClaudeClient(cfg.AnthropicAPIKey)
-		log.Println("Anthropic API configured — orchestration enabled")
-	} else {
-		log.Println("Anthropic API not configured — orchestration disabled")
-	}
 
 	orgService := service.NewOrganizationService(orgRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
@@ -310,7 +299,7 @@ func main() {
 	auditService := service.NewRewardAuditService(bonusRepo)
 	draftService := service.NewRewardDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL)
-	orchestrationService := service.NewOrchestrationService(pmEpicRepo, pmStoryService, agentRepo, agentHandoffRepo, pmActivityService, wsPublisher, claudeClient)
+	orchestrationService := service.NewOrchestrationService(pmEpicRepo, agentRepo, pmActivityService, wsPublisher)
 
 	// Initialize handlers.
 	handlers := router.Handlers{

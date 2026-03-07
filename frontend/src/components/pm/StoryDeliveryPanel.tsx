@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Bot, ChevronRight, GitBranch, GitPullRequest, Loader2, Play, Save, UserRoundCog, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -50,7 +50,8 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
   const [agents, setAgents] = useState<Agent[]>([]);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [target, setTarget] = useState<StoryDeliveryTarget | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState(storyDetail.story.assigned_agent_id ?? '');
+  const assignedAgentId = storyDetail.story.assigned_agent_id ?? '';
+  const [selectedAgentId, setSelectedAgentId] = useState(assignedAgentId);
   const [repositoryId, setRepositoryId] = useState('');
   const [baseBranch, setBaseBranch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -58,10 +59,11 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
   const [savingTarget, setSavingTarget] = useState(false);
   const [triggeringRun, setTriggeringRun] = useState(false);
   const [expanded, setExpanded] = useState<boolean | null>(null);
+  const assignmentPromiseRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
-    setSelectedAgentId(storyDetail.story.assigned_agent_id ?? '');
-  }, [storyDetail.story.assigned_agent_id]);
+    setSelectedAgentId(assignedAgentId);
+  }, [assignedAgentId]);
 
   useEffect(() => {
     let mounted = true;
@@ -117,11 +119,15 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
     [repositories, repositoryId],
   );
 
+  const resolvedBaseBranch = baseBranch.trim() || selectedRepository?.default_branch || 'main';
   const requiresRepo = Boolean(selectedAgent && selectedAgent.agent_kind === 'llm' && requiresRepoProfile(selectedAgent.capability_profile));
-  const hasDeliveryTarget = Boolean(repositoryId && baseBranch.trim());
+  const hasDeliveryTarget = Boolean(repositoryId && resolvedBaseBranch);
   const branchPreview = target?.working_branch || buildBranchPreview(storyDetail.story.display_id, storyDetail.story.name);
-
-  const isConfigured = Boolean(storyDetail.story.assigned_agent_id || target?.repository_id);
+  const isConfigured = Boolean(assignedAgentId || target?.repository_id);
+  const agentSelectionSaved = selectedAgentId === assignedAgentId;
+  const deliveryTargetSaved =
+    repositoryId === (target?.repository_id ?? '') &&
+    (!repositoryId || resolvedBaseBranch === (target?.base_branch ?? ''));
 
   // Auto-expand when configured, collapse when not — but only on initial load
   const isExpanded = expanded ?? isConfigured;
@@ -137,50 +143,116 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
     }
   };
 
-  const handleSaveDelivery = async () => {
+  const refreshDeliveryTarget = async (syncInputs = false) => {
+    const targetRes = await gitService.getStoryDeliveryTarget(workspaceId, storyDetail.story.id);
+    if (targetRes.error) {
+      toast.error(targetRes.error);
+      return false;
+    }
+    const nextTarget = targetRes.data ?? null;
+    setTarget(nextTarget);
+    if (syncInputs) {
+      setRepositoryId(nextTarget?.repository_id ?? '');
+      setBaseBranch(nextTarget?.base_branch ?? '');
+    }
+    return true;
+  };
+
+  const persistDeliveryTarget = async (showSuccessToast: boolean) => {
     if (!repositoryId) {
       toast.error('Choose a repository first');
-      return;
+      return false;
     }
     setSavingTarget(true);
     const { data, error } = await gitService.updateStoryDeliveryTarget(workspaceId, storyDetail.story.id, {
       repository_id: repositoryId,
-      base_branch: baseBranch.trim() || selectedRepository?.default_branch || 'main',
+      base_branch: resolvedBaseBranch,
     });
     setSavingTarget(false);
     if (error) {
       toast.error(error);
-      return;
+      return false;
     }
     setTarget(data ?? null);
     if (data) {
       setRepositoryId(data.repository_id ?? repositoryId);
-      setBaseBranch(data.base_branch ?? baseBranch);
+      setBaseBranch(data.base_branch ?? resolvedBaseBranch);
+    } else {
+      setBaseBranch(resolvedBaseBranch);
     }
-    toast.success('Delivery target updated');
+    if (showSuccessToast) {
+      toast.success('Delivery target updated');
+    }
+    return true;
+  };
+
+  const ensureDeliveryTargetSaved = async (showSuccessToast: boolean) => {
+    if (!repositoryId) {
+      toast.error('Choose a repository first');
+      return false;
+    }
+    if (deliveryTargetSaved) {
+      return true;
+    }
+    return persistDeliveryTarget(showSuccessToast);
+  };
+
+  const ensureAgentAssigned = async (showSuccessToast: boolean) => {
+    if (!selectedAgentId) {
+      toast.error('Choose an agent first');
+      return false;
+    }
+    if (agentSelectionSaved) {
+      return true;
+    }
+    if (assignmentPromiseRef.current) {
+      return assignmentPromiseRef.current;
+    }
+
+    const assignmentPromise = (async () => {
+      setSavingAssignment(true);
+      const { error } = await agentService.assignToStory(workspaceId, storyDetail.story.id, selectedAgentId);
+      setSavingAssignment(false);
+      if (error) {
+        toast.error(error);
+        return false;
+      }
+      if (showSuccessToast) {
+        toast.success('Agent assigned');
+      }
+      await refreshStory();
+      await refreshDeliveryTarget();
+      return true;
+    })();
+
+    assignmentPromiseRef.current = assignmentPromise;
+    try {
+      return await assignmentPromise;
+    } finally {
+      assignmentPromiseRef.current = null;
+    }
+  };
+
+  const handleSaveDelivery = async () => {
+    await ensureDeliveryTargetSaved(true);
   };
 
   const handleAssignAgent = async () => {
-    if (!selectedAgentId) {
-      toast.error('Choose an agent first');
-      return;
-    }
-    setSavingAssignment(true);
-    const { error } = await agentService.assignToStory(workspaceId, storyDetail.story.id, selectedAgentId);
-    setSavingAssignment(false);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    toast.success('Agent assigned');
-    await refreshStory();
-    const targetRes = await gitService.getStoryDeliveryTarget(workspaceId, storyDetail.story.id);
-    if (!targetRes.error) {
-      setTarget(targetRes.data ?? null);
-    }
+    await ensureAgentAssigned(true);
   };
 
   const handleRunNow = async () => {
+    if (requiresRepo) {
+      const savedDelivery = await ensureDeliveryTargetSaved(false);
+      if (!savedDelivery) {
+        return;
+      }
+    }
+    const assigned = await ensureAgentAssigned(false);
+    if (!assigned) {
+      return;
+    }
+
     setTriggeringRun(true);
     const { error } = await agentService.runAgent(workspaceId, storyDetail.story.id);
     setTriggeringRun(false);
@@ -271,6 +343,11 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                         : 'Runs manually after assignment.'}
                   </p>
                 )}
+                {selectedAgentId && !agentSelectionSaved && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                    This agent change is not saved yet. Assign or Run Now will persist it.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -292,6 +369,11 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                 <p className="text-[11px] text-muted-foreground">
                   Team defaults prefill this. Story delivery can override it.
                 </p>
+                {repositoryId && !deliveryTargetSaved && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                    Repository changes are not saved yet. Save or Run Now will persist them.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -362,7 +444,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
               <Button
                 size="xs"
                 onClick={handleRunNow}
-                disabled={triggeringRun || (requiresRepo && !hasDeliveryTarget)}
+                disabled={triggeringRun || savingAssignment || savingTarget || (requiresRepo && !hasDeliveryTarget)}
               >
                 {triggeringRun ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                 Run Now

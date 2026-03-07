@@ -20,7 +20,7 @@ Execution happens through shared Temporal worker pools. Temporal owns retries, c
 |---|---|
 | `agent` | A workspace-scoped human or LLM participant |
 | `agent_run` | A single execution against one target |
-| `target_type` / `target_id` | Canonical run target: story or support ticket |
+| `target_type` / `target_id` | Canonical run target: story, epic, or support ticket |
 | `story_delivery_target` | The current repo lane for a story |
 | `story_git_link` | Historical branch, commit, and PR output for a story |
 | `artifact` | A stored run output such as logs, diffs, or PR metadata |
@@ -102,6 +102,7 @@ Current behavior:
 
 - human agents never execute
 - story assignment supports `manual` and `auto_on_assignment`
+- epic orchestrator runs are manual today
 - `auto_on_assignment` only starts when the story has a valid delivery target if the profile requires a repo
 - support runs are still manual today
 
@@ -220,6 +221,9 @@ Required runtime environment variables:
   - `JWT_SECRET`
   - `TEMPORAL_ADDRESS`
   - `TEMPORAL_NAMESPACE`
+  - `TEMPORAL_API_KEY` for Temporal Cloud
+  - `TEMPORAL_TLS_ENABLED` for TLS connections; automatically enabled when `TEMPORAL_API_KEY` is set
+  - `TEMPORAL_TLS_SERVER_NAME` optional override for TLS server name
   - `APP_BASE_URL`
   - `GITHUB_APP_ID`
   - `GITHUB_APP_SLUG`
@@ -229,6 +233,9 @@ Required runtime environment variables:
   - `JWT_SECRET`
   - `TEMPORAL_ADDRESS`
   - `TEMPORAL_NAMESPACE`
+  - `TEMPORAL_API_KEY` for Temporal Cloud
+  - `TEMPORAL_TLS_ENABLED` for TLS connections; automatically enabled when `TEMPORAL_API_KEY` is set
+  - `TEMPORAL_TLS_SERVER_NAME` optional override for TLS server name
   - `GITHUB_APP_ID`
   - `GITHUB_APP_PRIVATE_KEY` as base64-encoded PEM
   - `ANTHROPIC_API_KEY` for LLM-backed runs
@@ -251,6 +258,34 @@ Execution flow:
 4. execute activity runs the tool loop in a shared runner
 5. artifacts and run status update live
 6. PR and push events update delivery state and history
+
+## Epic Orchestration Flow
+
+Epic orchestration now uses the same `agent_run` and Temporal workflow model as story and support runs.
+
+Practical flow:
+
+1. Create an orchestrator agent
+2. Assign the orchestrator to an epic
+3. Start an epic agent run
+4. Review the proposal artifact
+5. Confirm the proposal to create stories
+
+Execution flow:
+
+1. API creates an epic-targeted `agent_run`
+2. Temporal workflow starts
+3. worker loads epic context and existing stories
+4. orchestrator runtime produces an `orchestration_proposal` artifact
+5. run waits in approval state for human review
+6. confirming the run creates stories and approves the run
+
+Current behavior:
+
+- the orchestrator produces planning output only
+- implementation work still happens on story-targeted runs
+- epic proposals are stored as artifacts and can be edited before story creation
+- confirmation can optionally assign agents to created stories
 
 ## Support Run Flow
 
@@ -327,11 +362,14 @@ The worker intersects repository policy with the capability profile.
 |---|---|---|
 | POST | `/api/pm/stories/{id}/assign-agent?workspace_id=` | Assign story agent |
 | POST | `/api/pm/stories/{id}/run-agent?workspace_id=` | Run story agent |
+| GET | `/api/pm/epics/{id}/agent-runs?workspace_id=` | List runs for epic orchestrator work |
+| POST | `/api/pm/epics/{id}/run-agent?workspace_id=` | Run epic orchestrator |
 | GET | `/api/pm/agents/{id}/runs?workspace_id=` | List runs for agent |
 | GET | `/api/pm/agent-runs/{id}?workspace_id=` | Get run |
 | GET | `/api/pm/agent-runs/{id}/artifacts?workspace_id=` | Get artifacts |
 | POST | `/api/pm/agent-runs/{id}/cancel?workspace_id=` | Cancel run |
 | POST | `/api/pm/agent-runs/{id}/approve?workspace_id=` | Approve run result |
+| POST | `/api/pm/agent-runs/{id}/confirm-orchestration?workspace_id=` | Create stories from an epic proposal and approve the run |
 | POST | `/api/pm/agent-runs/{id}/handoff?workspace_id=` | Record handoff |
 
 ### Story Delivery
@@ -394,6 +432,12 @@ Current UI support:
   - repo snapshot
   - artifacts
   - approval and cancellation actions
+- epic detail `Epic Orchestration` block for:
+  - orchestrator assignment
+  - epic run start
+  - run history
+  - proposal artifact review
+  - confirmation into story creation
 - Settings:
   - Project Settings > Delivery:
     GitHub App install flow, integration list, repository catalog selection, repository sync, runner queue visibility, and active run health
@@ -410,6 +454,7 @@ Current UI support:
 ## Recommended Usage
 
 - Use `orchestrator` for epic decomposition.
+- Let the orchestrator decompose epics into stories first; do not use it for implementation work.
 - Use `planner` for PRDs, planning, and repo-aware analysis without mutation.
 - Use `engineer` for implementation, branching, commits, and PRs.
 - Use `reviewer_tester` for validation and read-heavy QA runs.

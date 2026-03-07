@@ -12,8 +12,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-// BuildSystemPrompt assembles the system prompt from agent config, story context, and WORKFLOW.md.
-func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, ticket *model.SupportTicket, config *WorkflowConfig) string {
+// BuildSystemPrompt assembles the system prompt from agent config, target context, and WORKFLOW.md.
+func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PMEpic, ticket *model.SupportTicket, config *WorkflowConfig) string {
 	var parts []string
 
 	// Agent's own system prompt.
@@ -30,6 +30,14 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, ticket *model.S
 		if story.Description != nil && *story.Description != "" {
 			parts = append(parts, fmt.Sprintf("**Description**: %s", *story.Description))
 		}
+	}
+	if epic != nil {
+		parts = append(parts, "\n## Current Epic")
+		parts = append(parts, fmt.Sprintf("**Epic**: %s", epic.Name))
+		if epic.Description != nil && *epic.Description != "" {
+			parts = append(parts, fmt.Sprintf("**Description**: %s", *epic.Description))
+		}
+		parts = append(parts, `Respond with valid JSON in this shape: {"summary":"...","proposed_stories":[{"name":"...","description":"...","story_type":"feature|bug|chore","estimate":1,"assign_agent_id":"optional-agent-id"}]}.`)
 	}
 	if ticket != nil {
 		parts = append(parts, "\n## Current Support Ticket")
@@ -61,6 +69,11 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, ticket *model.S
 		parts = append(parts, "- Run tests after making changes when possible.")
 		parts = append(parts, "- Commit and push your changes when the task is complete.")
 	}
+	if epic != nil {
+		parts = append(parts, "- Propose implementation-ready stories, not vague project phases.")
+		parts = append(parts, "- Avoid duplicating or overlapping existing stories.")
+		parts = append(parts, "- Return JSON only, with no markdown fences.")
+	}
 	if ticket != nil {
 		parts = append(parts, "- Customer-visible replies must be drafted for human approval before they are sent.")
 	}
@@ -70,13 +83,37 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, ticket *model.S
 }
 
 // BuildUserPrompt creates the initial user message for the run.
-func BuildUserPrompt(story *model.PMStory, ticket *model.SupportTicket, ticketMessages []model.SupportMessage, checklist []model.PMChecklistItem) string {
+func BuildUserPrompt(
+	story *model.PMStory,
+	epic *model.PMEpic,
+	epicStories []model.PMStory,
+	ticket *model.SupportTicket,
+	ticketMessages []model.SupportMessage,
+	checklist []model.PMChecklistItem,
+	initialInstructions string,
+) string {
 	var parts []string
 
 	if story != nil {
 		parts = append(parts, fmt.Sprintf("Please work on the story: **%s**", story.Name))
 		if story.Description != nil && *story.Description != "" {
 			parts = append(parts, "\nDescription:\n"+*story.Description)
+		}
+	}
+	if epic != nil {
+		parts = append(parts, fmt.Sprintf("Please decompose epic: **%s**", epic.Name))
+		if epic.Description != nil && *epic.Description != "" {
+			parts = append(parts, "\nDescription:\n"+*epic.Description)
+		}
+		if len(epicStories) > 0 {
+			parts = append(parts, "\nExisting stories already linked to this epic:")
+			for _, story := range epicStories {
+				storyType := story.StoryType
+				if storyType == "" {
+					storyType = "feature"
+				}
+				parts = append(parts, fmt.Sprintf("- %s (type=%s)", story.Name, storyType))
+			}
 		}
 	}
 	if ticket != nil {
@@ -107,8 +144,14 @@ func BuildUserPrompt(story *model.PMStory, ticket *model.SupportTicket, ticketMe
 		}
 	}
 
+	if strings.TrimSpace(initialInstructions) != "" {
+		parts = append(parts, "\nAdditional instructions:\n"+strings.TrimSpace(initialInstructions))
+	}
+
 	if ticket != nil {
 		parts = append(parts, "\nPlease triage the issue, update the ticket status if needed, and draft a reply for human approval.")
+	} else if epic != nil {
+		parts = append(parts, "\nPropose a concise epic summary and a set of concrete, implementation-ready stories.")
 	} else {
 		parts = append(parts, "\nPlease complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.")
 	}

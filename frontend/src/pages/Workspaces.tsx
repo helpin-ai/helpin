@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useSearch } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
@@ -44,7 +44,6 @@ export default function Workspaces() {
   useTitle('Workspaces');
   const { workspaces, loading, loadWorkspaces } = useWorkspaceStore();
   const { organizations, currentOrganization, loading: orgsLoading, loadOrganizations, setCurrentOrganization } = useOrganizationStore();
-  const navigate = useNavigate();
   const { create } = useSearch({ from: '/_authenticated/workspaces' });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [orgDialogOpen, setOrgDialogOpen] = useState(false);

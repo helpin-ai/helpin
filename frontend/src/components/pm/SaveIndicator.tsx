@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 interface SaveIndicatorProps {
   saving: boolean;

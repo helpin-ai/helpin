@@ -745,7 +745,7 @@ export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'native_claude' | 'claude_code' | 'openclaw' | 'zeroclaw';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
-export type AgentTargetType = 'story' | 'support_ticket' | 'epic_review' | 'document';
+export type AgentTargetType = 'story' | 'support_ticket' | 'epic' | 'document';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
 
 export interface Agent {
@@ -803,6 +803,21 @@ export interface AgentRun {
   completed_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProposedStory {
+  name: string;
+  description: string;
+  story_type: string;
+  estimate?: number;
+  assign_agent_id?: string;
+}
+
+export interface OrchestrationProposal {
+  epic_id: string;
+  summary: string;
+  proposed_stories: ProposedStory[];
+  tokens_used: number;
 }
 
 export interface AgentRunArtifact {
@@ -1079,20 +1094,6 @@ export interface UpdateStoryDeliveryTargetRequest {
 
 // ── Orchestration ──────────────────────────────────────────────────
 
-export interface ProposedStory {
-  name: string;
-  description: string;
-  story_type: string;
-  estimate?: number;
-  assign_agent_id?: string;
-}
-
-export interface OrchestrationProposal {
-  epic_id: string;
-  summary: string;
-  proposed_stories: ProposedStory[];
-  tokens_used: number;
-}
 
 export interface AgentHandoff {
   id: string;

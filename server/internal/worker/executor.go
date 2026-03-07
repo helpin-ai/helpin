@@ -60,7 +60,7 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 	}
 
 	// Build prompts.
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Ticket, config)
+	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Ticket, config)
 
 	var checklist []model.PMChecklistItem
 	if execCtx.StoryID != "" && execCtx.Services != nil {
@@ -80,7 +80,15 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 		}
 	}
 
-	userPrompt := BuildUserPrompt(execCtx.Story, execCtx.Ticket, ticketMessages, checklist)
+	userPrompt := BuildUserPrompt(
+		execCtx.Story,
+		execCtx.Epic,
+		execCtx.EpicStories,
+		execCtx.Ticket,
+		ticketMessages,
+		checklist,
+		execCtx.InitialInstructions,
+	)
 
 	messages := []Message{
 		{Role: "user", Content: userPrompt},
@@ -215,6 +223,19 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 		})
 		run.OutputSummary = json.RawMessage(summary)
 		_ = e.runRepo.Update(ctx, run)
+	}
+
+	if execCtx.TargetType == "epic" && execCtx.Epic != nil {
+		proposal, err := extractOrchestrationProposal(messages, execCtx.Epic.ID, totalTokens)
+		if err != nil {
+			return err
+		}
+		payload, _ := json.Marshal(proposal)
+		run.OutputSummary = payload
+		_ = e.runRepo.Update(ctx, run)
+
+		seqNo++
+		e.saveArtifact(ctx, run, "orchestration_proposal", "json", string(payload), seqNo)
 	}
 
 	if execCtx.LatestPRMetadata != nil {

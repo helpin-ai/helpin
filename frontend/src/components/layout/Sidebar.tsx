@@ -148,7 +148,7 @@ export function Sidebar() {
 
   // ── Detect active team from URL search params ──
   const activeTeamParam = useMemo(() => {
-    const params = new URLSearchParams(location.search);
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     return params.get('team') ?? null;
   }, [location.search]);
 

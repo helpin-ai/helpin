@@ -48,5 +48,6 @@ type OrchestrationProposal struct {
 
 // ConfirmOrchestrationRequest confirms and creates the proposed stories.
 type ConfirmOrchestrationRequest struct {
+	RunID           string          `json:"run_id"`
 	ProposedStories []ProposedStory `json:"proposed_stories"`
 }

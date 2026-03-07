@@ -46,10 +46,10 @@ var runtimeProfiles = []model.RuntimeProfile{
 	{
 		Name:             "orchestrator",
 		RuntimeKind:      "native_claude",
-		Description:      "Epic planning and decomposition. Current implementation uses direct orchestration endpoints.",
+		Description:      "Epic planning and decomposition that produces reviewable orchestration proposals.",
 		AllowedTools:     []string{},
 		AllowedCommands:  []string{},
-		ApprovalRequired: false,
+		ApprovalRequired: true,
 		RequiresRepo:     false,
 	},
 	{

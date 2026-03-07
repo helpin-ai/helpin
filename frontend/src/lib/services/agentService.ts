@@ -5,7 +5,6 @@ import type {
   AgentRunArtifact,
   CreateAgentRequest,
   UpdateAgentRequest,
-  OrchestrationProposal,
   ProposedStory,
   RuntimeProfile,
   ApproveAgentRunRequest,
@@ -48,10 +47,12 @@ export const agentService = {
   handoffRun: (workspaceId: string, runId: string, payload: HandoffAgentRunRequest) =>
     api.post<AgentRun>(`/pm/agent-runs/${runId}/handoff${qs(workspaceId)}`, payload),
   // Orchestration
-  orchestrateEpic: (workspaceId: string, epicId: string, additionalContext?: string) =>
-    api.post<OrchestrationProposal>(`/pm/epics/${epicId}/orchestrate${qs(workspaceId)}`, { additional_context: additionalContext ?? '' }),
-  confirmOrchestration: (workspaceId: string, epicId: string, proposedStories: ProposedStory[]) =>
-    api.post(`/pm/epics/${epicId}/orchestrate/confirm${qs(workspaceId)}`, { proposed_stories: proposedStories }),
+  listEpicRuns: (workspaceId: string, epicId: string) =>
+    api.get<AgentRun[]>(`/pm/epics/${epicId}/agent-runs${qs(workspaceId)}`),
+  runEpicAgent: (workspaceId: string, epicId: string, additionalContext?: string) =>
+    api.post<AgentRun>(`/pm/epics/${epicId}/run-agent${qs(workspaceId)}`, { additional_context: additionalContext ?? '' }),
+  confirmOrchestrationRun: (workspaceId: string, runId: string, proposedStories: ProposedStory[]) =>
+    api.post(`/pm/agent-runs/${runId}/confirm-orchestration${qs(workspaceId)}`, { proposed_stories: proposedStories }),
   assignOrchestrator: (workspaceId: string, epicId: string, agentId: string) =>
     api.post(`/pm/epics/${epicId}/assign-orchestrator${qs(workspaceId)}`, { agent_id: agentId }),
 };

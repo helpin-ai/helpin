@@ -3,16 +3,20 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	DatabaseURL       string
-	JWTSecret         string
-	Port              string
-	CORSOrigin        string
-	TemporalAddress   string
-	TemporalNamespace string
+	DatabaseURL           string
+	JWTSecret             string
+	Port                  string
+	CORSOrigin            string
+	TemporalAddress       string
+	TemporalNamespace     string
+	TemporalAPIKey        string
+	TemporalTLSEnabled    bool
+	TemporalTLSServerName string
 
 	// S3 / object storage (optional — attachments disabled if not set)
 	AWSAccessKeyID     string
@@ -75,24 +79,42 @@ func Load() (*Config, error) {
 		temporalNamespace = "default"
 	}
 
+	temporalAPIKey := strings.TrimSpace(os.Getenv("TEMPORAL_API_KEY"))
+	temporalTLSEnabled := parseBoolEnv(os.Getenv("TEMPORAL_TLS_ENABLED"))
+	if temporalAPIKey != "" {
+		temporalTLSEnabled = true
+	}
+
 	return &Config{
-		DatabaseURL:         dbURL,
-		JWTSecret:           jwtSecret,
-		Port:                port,
-		CORSOrigin:          corsOrigin,
-		TemporalAddress:     temporalAddress,
-		TemporalNamespace:   temporalNamespace,
-		AWSAccessKeyID:      os.Getenv("AWS_ACCESS_KEY_ID"),
-		AWSSecretAccessKey:  os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		AWSBucket:           os.Getenv("AWS_S3_BUCKET_NAME"),
-		AWSRegion:           os.Getenv("AWS_REGION"),
-		AWSEndpointURL:      os.Getenv("AWS_S3_ENDPOINT_URL"),
-		AnthropicAPIKey:     os.Getenv("ANTHROPIC_API_KEY"),
-		GitHubAppID:         os.Getenv("GITHUB_APP_ID"),
-		GitHubAppSlug:       os.Getenv("GITHUB_APP_SLUG"),
-		GitHubAppPrivateKey: os.Getenv("GITHUB_APP_PRIVATE_KEY"),
-		PostmarkServerToken: os.Getenv("POSTMARK_SERVER_TOKEN"),
-		PostmarkFromEmail:   os.Getenv("POSTMARK_FROM_EMAIL"),
-		AppBaseURL:          appBaseURL,
+		DatabaseURL:           dbURL,
+		JWTSecret:             jwtSecret,
+		Port:                  port,
+		CORSOrigin:            corsOrigin,
+		TemporalAddress:       temporalAddress,
+		TemporalNamespace:     temporalNamespace,
+		TemporalAPIKey:        temporalAPIKey,
+		TemporalTLSEnabled:    temporalTLSEnabled,
+		TemporalTLSServerName: strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
+		AWSAccessKeyID:        os.Getenv("AWS_ACCESS_KEY_ID"),
+		AWSSecretAccessKey:    os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AWSBucket:             os.Getenv("AWS_S3_BUCKET_NAME"),
+		AWSRegion:             os.Getenv("AWS_REGION"),
+		AWSEndpointURL:        os.Getenv("AWS_S3_ENDPOINT_URL"),
+		AnthropicAPIKey:       os.Getenv("ANTHROPIC_API_KEY"),
+		GitHubAppID:           os.Getenv("GITHUB_APP_ID"),
+		GitHubAppSlug:         os.Getenv("GITHUB_APP_SLUG"),
+		GitHubAppPrivateKey:   os.Getenv("GITHUB_APP_PRIVATE_KEY"),
+		PostmarkServerToken:   os.Getenv("POSTMARK_SERVER_TOKEN"),
+		PostmarkFromEmail:     os.Getenv("POSTMARK_FROM_EMAIL"),
+		AppBaseURL:            appBaseURL,
 	}, nil
+}
+
+func parseBoolEnv(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
