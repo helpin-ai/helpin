@@ -35,6 +35,7 @@ export interface ShortcutUserMatch {
   email: string;
   matched_user_id: string | null;
   matched_name: string | null;
+  shortcut_name?: string | null;
 }
 
 export interface ShortcutImportPreviewResponse {
@@ -58,6 +59,7 @@ export interface ShortcutImportResult {
   checklist_items_created: number;
   owner_links_created: number;
   label_links_created: number;
+  comments_created: number;
   warnings: string[];
 }
 
@@ -136,9 +138,10 @@ function statusRequest<T>(path: string): Promise<{ data: T | null; error: string
 }
 
 export const pmImportService = {
-  previewShortcut: (workspaceId: string, file: File) => {
+  previewShortcut: (workspaceId: string, file: File, apiToken?: string) => {
     const form = new FormData();
     form.append('file', file);
+    if (apiToken) form.append('api_token', apiToken);
     return multipartRequest<ShortcutImportPreviewResponse>(
       `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/preview`,
       form,
@@ -151,12 +154,14 @@ export const pmImportService = {
     userMappings: Record<string, string>,
     workflowStateMappings: WorkflowStateMappingPayload[],
     options: { import_archived: boolean; import_completed: boolean },
+    apiToken?: string,
   ) => {
     const form = new FormData();
     form.append('file', file);
     form.append('user_mappings', JSON.stringify(userMappings));
     form.append('workflow_state_mappings', JSON.stringify(workflowStateMappings));
     form.append('options', JSON.stringify(options));
+    if (apiToken) form.append('api_token', apiToken);
     return multipartRequest<ShortcutImportExecuteResponse>(
       `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/execute`,
       form,

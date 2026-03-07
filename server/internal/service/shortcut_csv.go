@@ -444,6 +444,20 @@ func parseShortcutMonth(raw string) (time.Month, bool) {
 	return 0, false
 }
 
+func parseShortcutDateOnly(raw string) *time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	for _, layout := range []string{"2006-01-02", "2006/01/02"} {
+		ts, err := time.Parse(layout, raw)
+		if err == nil {
+			return &ts
+		}
+	}
+	return nil
+}
+
 func isoWeekStart(year, week int) time.Time {
 	jan4 := time.Date(year, time.January, 4, 0, 0, 0, 0, time.UTC)
 	weekday := int(jan4.Weekday())

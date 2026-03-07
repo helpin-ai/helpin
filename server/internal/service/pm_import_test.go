@@ -35,7 +35,7 @@ func TestPMImportServicePreviewShortcut(t *testing.T) {
 		t.Fatalf("seed existing story: %v", err)
 	}
 
-	resp, err := svc.PreviewShortcut(context.Background(), workspaceID, adminID, []byte(shortcutImportTestCSV()))
+	resp, err := svc.PreviewShortcut(context.Background(), workspaceID, adminID, []byte(shortcutImportTestCSV()), "")
 	if err != nil {
 		t.Fatalf("preview shortcut: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 		},
 	}
 
-	result, totalRows, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "")
+	result, totalRows, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "", "")
 	if err != nil {
 		t.Fatalf("execute shortcut import: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 
 	assertImportState(t, db, workspaceID)
 
-	secondResult, _, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "")
+	secondResult, _, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "", "")
 	if err != nil {
 		t.Fatalf("execute shortcut import second run: %v", err)
 	}

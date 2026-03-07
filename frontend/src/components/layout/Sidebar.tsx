@@ -309,7 +309,7 @@ export function Sidebar() {
   };
 
   return (
-    <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f7f7f8]">
+    <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f0f0f2]">
       <SidebarHeader className="border-b border-border/70 p-2">
         <WorkspaceSwitcher />
       </SidebarHeader>

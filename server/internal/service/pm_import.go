@@ -49,13 +49,24 @@ func NewPMImportService(db *gorm.DB, workspaceRepo *repository.WorkspaceReposito
 	}
 }
 
-func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, actorID string, csvData []byte) (*model.ShortcutImportPreviewResponse, error) {
+func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, actorID string, csvData []byte, apiToken string) (*model.ShortcutImportPreviewResponse, error) {
 	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
 		return nil, err
 	}
 	data, err := parseShortcutCSV(csvData)
 	if err != nil {
 		return nil, err
+	}
+
+	// If API token provided, validate and fetch member names for better matching
+	var apiEnrichment *shortcutAPIEnrichment
+	var apiWarnings []string
+	if apiToken != "" {
+		client := NewShortcutAPIClient(apiToken)
+		if err := client.ValidateToken(ctx); err != nil {
+			return nil, fmt.Errorf("Shortcut API token validation failed: %w", err)
+		}
+		apiEnrichment, apiWarnings = client.FetchEnrichment(ctx)
 	}
 
 	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
@@ -121,6 +132,11 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 			match.MatchedUserID = &member.UserID
 			match.MatchedName = &member.FullName
 		}
+		if apiEnrichment != nil {
+			if scMember, ok := apiEnrichment.MembersByEmail[email]; ok && scMember.Profile.Name != "" {
+				match.ShortcutName = &scMember.Profile.Name
+			}
+		}
 		users = append(users, match)
 	}
 
@@ -181,7 +197,7 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 		Users:     users,
 		Teams:     teams,
 		Workflows: workflows,
-		Warnings:  append([]string(nil), data.Warnings...),
+		Warnings:  append(append([]string(nil), data.Warnings...), apiWarnings...),
 	}, nil
 }
 
@@ -207,7 +223,7 @@ func (s *PMImportService) ExecuteShortcut(ctx context.Context, workspaceID, acto
 		return nil, fmt.Errorf("create import job: %w", err)
 	}
 
-	go s.runShortcutImport(job.ID, workspaceID, actorID, csvData, req)
+	go s.runShortcutImport(job.ID, workspaceID, actorID, csvData, req, req.APIToken)
 
 	return &model.ShortcutImportExecuteResponse{
 		ImportID: job.ID,
@@ -249,12 +265,16 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 	return resp, nil
 }
 
-func (s *PMImportService) runShortcutImport(jobID, workspaceID, actorID string, csvData []byte, req model.ShortcutImportExecuteRequest) {
+func (s *PMImportService) runShortcutImport(jobID, workspaceID, actorID string, csvData []byte, req model.ShortcutImportExecuteRequest, apiToken string) {
 	ctx := context.Background()
+	totalSteps := 8
+	if apiToken != "" {
+		totalSteps = 10 // +1 for enrichment fetch, +1 for comments
+	}
 	if err := s.updateJob(ctx, jobID, map[string]interface{}{
 		"status":             model.PMImportStatusProcessing,
 		"current_step":       "parse",
-		"steps_total":        8,
+		"steps_total":        totalSteps,
 		"updated_at":         time.Now().UTC(),
 		"entities_total":     0,
 		"entities_processed": 0,
@@ -262,7 +282,7 @@ func (s *PMImportService) runShortcutImport(jobID, workspaceID, actorID string, 
 		return
 	}
 
-	result, totalRows, err := s.executeShortcutImport(ctx, workspaceID, actorID, csvData, req, jobID)
+	result, totalRows, err := s.executeShortcutImport(ctx, workspaceID, actorID, csvData, req, jobID, apiToken)
 	if err != nil {
 		errText := err.Error()
 		_ = s.updateJob(ctx, jobID, map[string]interface{}{
@@ -281,7 +301,7 @@ func (s *PMImportService) runShortcutImport(jobID, workspaceID, actorID string, 
 		"total_rows":         totalRows,
 		"progress":           100,
 		"current_step":       "completed",
-		"steps_completed":    8,
+		"steps_completed":    totalSteps,
 		"entities_processed": totalRows,
 		"result":             &rawStr,
 		"completed_at":       &completed,
@@ -289,7 +309,7 @@ func (s *PMImportService) runShortcutImport(jobID, workspaceID, actorID string, 
 	})
 }
 
-func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID, actorID string, csvData []byte, req model.ShortcutImportExecuteRequest, jobID string) (*model.ShortcutImportResult, int, error) {
+func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID, actorID string, csvData []byte, req model.ShortcutImportExecuteRequest, jobID, apiToken string) (*model.ShortcutImportResult, int, error) {
 	data, err := parseShortcutCSV(csvData)
 	if err != nil {
 		return nil, 0, err
@@ -300,6 +320,24 @@ func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID
 		"entities_total": len(rows),
 		"updated_at":     time.Now().UTC(),
 	})
+
+	// Phase 1: Fetch enrichment data from Shortcut API (if token provided)
+	var apiClient *ShortcutAPIClient
+	var enrichment *shortcutAPIEnrichment
+	if apiToken != "" {
+		apiClient = NewShortcutAPIClient(apiToken)
+		_ = s.markStep(ctx, jobID, "api_enrichment", 0, 0)
+		var enrichWarnings []string
+		enrichment, enrichWarnings = apiClient.FetchEnrichment(ctx)
+		if len(enrichWarnings) > 0 {
+			_ = s.updateJob(ctx, jobID, map[string]interface{}{
+				"updated_at": time.Now().UTC(),
+			})
+			// warnings will be added to result below
+			_ = enrichWarnings // stored below
+		}
+		_ = s.markStep(ctx, jobID, "api_enrichment", 1, 0)
+	}
 
 	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
 	if err != nil {
@@ -315,8 +353,24 @@ func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID
 		}
 	}
 
+	// Build Shortcut member UUID → Helpin user ID map for comment author mapping
+	scMemberToUser := map[string]string{}
+	if enrichment != nil {
+		for _, scMember := range enrichment.MembersByEmail {
+			email := normalizeShortcutName(scMember.Profile.EmailAddress)
+			if uid, ok := userByEmail[email]; ok {
+				scMemberToUser[scMember.ID] = uid
+			}
+		}
+	}
+
 	result := &model.ShortcutImportResult{
 		Warnings: append([]string(nil), data.Warnings...),
+	}
+
+	stepOffset := 0
+	if apiToken != "" {
+		stepOffset = 1 // api_enrichment was step 1
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -325,7 +379,7 @@ func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID
 			return err
 		}
 		result.TeamsCreated = teamsCreated
-		_ = s.markStep(ctx, jobID, "teams", 1, 0)
+		_ = s.markStep(ctx, jobID, "teams", 1+stepOffset, 0)
 
 		workflowMap, stateMap, workflowsCreated, statesCreated, err := s.resolveWorkflowMappings(ctx, tx, workspaceID, req.WorkflowStateMappings)
 		if err != nil {
@@ -333,46 +387,55 @@ func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID
 		}
 		result.WorkflowsCreated = workflowsCreated
 		result.WorkflowStatesCreated = statesCreated
-		_ = s.markStep(ctx, jobID, "workflows", 2, 0)
+		_ = s.markStep(ctx, jobID, "workflows", 2+stepOffset, 0)
 
-		labelMap, labelsCreated, err := s.ensureLabels(ctx, tx, workspaceID, rows)
+		labelMap, labelsCreated, err := s.ensureLabels(ctx, tx, workspaceID, rows, enrichment)
 		if err != nil {
 			return err
 		}
 		result.LabelsCreated = labelsCreated
-		_ = s.markStep(ctx, jobID, "labels", 3, 0)
+		_ = s.markStep(ctx, jobID, "labels", 3+stepOffset, 0)
 
-		objectiveMap, objectivesCreated, err := s.ensureObjectives(ctx, tx, workspaceID, rows)
+		objectiveMap, objectivesCreated, err := s.ensureObjectives(ctx, tx, workspaceID, rows, enrichment)
 		if err != nil {
 			return err
 		}
 		result.ObjectivesCreated = objectivesCreated
-		_ = s.markStep(ctx, jobID, "objectives", 4, 0)
+		_ = s.markStep(ctx, jobID, "objectives", 4+stepOffset, 0)
 
-		epicMap, epicsCreated, err := s.ensureEpics(ctx, tx, workspaceID, rows, objectiveMap, labelMap, teamMap)
+		epicMap, epicsCreated, err := s.ensureEpics(ctx, tx, workspaceID, rows, objectiveMap, labelMap, teamMap, enrichment)
 		if err != nil {
 			return err
 		}
 		result.EpicsCreated = epicsCreated
-		_ = s.markStep(ctx, jobID, "epics", 5, 0)
+		_ = s.markStep(ctx, jobID, "epics", 5+stepOffset, 0)
 
-		sprintMap, sprintsCreated, sprintWarnings, err := s.ensureSprints(ctx, tx, workspaceID, rows, teamMap)
+		sprintMap, sprintsCreated, sprintWarnings, err := s.ensureSprints(ctx, tx, workspaceID, rows, teamMap, enrichment)
 		if err != nil {
 			return err
 		}
 		result.SprintsCreated = sprintsCreated
 		result.Warnings = append(result.Warnings, sprintWarnings...)
-		_ = s.markStep(ctx, jobID, "sprints", 6, 0)
+		_ = s.markStep(ctx, jobID, "sprints", 6+stepOffset, 0)
 
-		if err := s.createStories(ctx, tx, workspaceID, rows, workflowMap, stateMap, teamMap, userByEmail, epicMap, sprintMap, labelMap, result, jobID); err != nil {
+		if err := s.createStories(ctx, tx, workspaceID, rows, workflowMap, stateMap, teamMap, userByEmail, epicMap, sprintMap, labelMap, result, jobID, stepOffset); err != nil {
 			return err
 		}
-		_ = s.markStep(ctx, jobID, "stories", 7, len(rows))
+		_ = s.markStep(ctx, jobID, "stories", 7+stepOffset, len(rows))
 		return nil
 	})
 	if err != nil {
 		return nil, len(rows), err
 	}
+
+	// Phase 2: Import comments from Shortcut API (outside transaction, per-story)
+	if apiClient != nil {
+		_ = s.markStep(ctx, jobID, "comments", 8+stepOffset, len(rows))
+		commentsCreated, commentWarnings := s.importShortcutComments(ctx, apiClient, workspaceID, rows, scMemberToUser, jobID, 9+stepOffset)
+		result.CommentsCreated = commentsCreated
+		result.Warnings = append(result.Warnings, commentWarnings...)
+	}
+
 	return result, len(rows), nil
 }
 
@@ -522,13 +585,24 @@ func (s *PMImportService) resolveWorkflowMappings(ctx context.Context, tx *gorm.
 	return workflowMap, shortcutStateMap, workflowsCreated, statesCreated, nil
 }
 
-func (s *PMImportService) ensureLabels(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow) (map[string]string, int, error) {
+func (s *PMImportService) ensureLabels(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow, enrichment *shortcutAPIEnrichment) (map[string]string, int, error) {
 	needed := map[string]string{}
 	for _, row := range rows {
 		for _, label := range append(shortcutLabelNames(row.Labels), shortcutLabelNames(row.EpicLabels)...) {
 			needed[normalizeShortcutName(label)] = label
 		}
 	}
+
+	// Build name→color map from Shortcut API labels
+	apiLabelColors := map[string]string{}
+	if enrichment != nil {
+		for _, l := range enrichment.Labels {
+			if l.Color != "" {
+				apiLabelColors[normalizeShortcutName(l.Name)] = l.Color
+			}
+		}
+	}
+
 	var existing []model.PMLabel
 	if err := tx.WithContext(ctx).Where("workspace_id = ?", workspaceID).Find(&existing).Error; err != nil {
 		return nil, 0, fmt.Errorf("list labels: %w", err)
@@ -536,7 +610,7 @@ func (s *PMImportService) ensureLabels(ctx context.Context, tx *gorm.DB, workspa
 	labelMap := map[string]string{}
 	for _, label := range existing {
 		if label.Color == nil || strings.TrimSpace(*label.Color) == "" {
-			color := shortcutImportLabelColor(label.Name)
+			color := resolveShortcutLabelColor(label.Name, apiLabelColors)
 			if err := tx.WithContext(ctx).Model(&model.PMLabel{}).Where("id = ?", label.ID).Update("color", *color).Error; err != nil {
 				return nil, 0, fmt.Errorf("backfill label color: %w", err)
 			}
@@ -548,7 +622,7 @@ func (s *PMImportService) ensureLabels(ctx context.Context, tx *gorm.DB, workspa
 		if _, ok := labelMap[key]; ok {
 			continue
 		}
-		label := model.PMLabel{WorkspaceID: workspaceID, Name: name, Color: shortcutImportLabelColor(name)}
+		label := model.PMLabel{WorkspaceID: workspaceID, Name: name, Color: resolveShortcutLabelColor(name, apiLabelColors)}
 		if err := tx.WithContext(ctx).Create(&label).Error; err != nil {
 			return nil, 0, fmt.Errorf("create label: %w", err)
 		}
@@ -568,7 +642,14 @@ func shortcutImportLabelColor(name string) *string {
 	return &color
 }
 
-func (s *PMImportService) ensureObjectives(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow) (map[string]string, int, error) {
+func resolveShortcutLabelColor(name string, apiColors map[string]string) *string {
+	if c, ok := apiColors[normalizeShortcutName(name)]; ok && c != "" {
+		return &c
+	}
+	return shortcutImportLabelColor(name)
+}
+
+func (s *PMImportService) ensureObjectives(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow, enrichment *shortcutAPIEnrichment) (map[string]string, int, error) {
 	grouped := map[string]shortcutCSVRow{}
 	for _, row := range rows {
 		if row.ObjectiveID != "" {
@@ -604,6 +685,13 @@ func (s *PMImportService) ensureObjectives(ctx context.Context, tx *gorm.DB, wor
 			CreatedAt:        valueOrNow(parseShortcutTimestamp(row.ObjectiveCreatedAt, row.UTCOffset)),
 			UpdatedAt:        valueOrNow(parseShortcutTimestamp(row.ObjectiveCreatedAt, row.UTCOffset)),
 		}
+		// Enrich with description from API
+		if enrichment != nil {
+			if apiObj, ok := enrichment.Objectives[externalID]; ok && apiObj.Description != "" {
+				desc := normalizeShortcutDescription(apiObj.Description)
+				obj.Description = &desc
+			}
+		}
 		if err := tx.WithContext(ctx).Create(&obj).Error; err != nil {
 			return nil, 0, fmt.Errorf("create objective: %w", err)
 		}
@@ -613,7 +701,7 @@ func (s *PMImportService) ensureObjectives(ctx context.Context, tx *gorm.DB, wor
 	return existingMap, created, nil
 }
 
-func (s *PMImportService) ensureEpics(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow, objectiveMap, labelMap, teamMap map[string]string) (map[string]string, int, error) {
+func (s *PMImportService) ensureEpics(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow, objectiveMap, labelMap, teamMap map[string]string, enrichment *shortcutAPIEnrichment) (map[string]string, int, error) {
 	grouped := map[string][]shortcutCSVRow{}
 	for _, row := range rows {
 		if row.EpicID != "" {
@@ -672,6 +760,13 @@ func (s *PMImportService) ensureEpics(ctx context.Context, tx *gorm.DB, workspac
 		default:
 			epic.EpicStateID = startedStateID
 		}
+		// Enrich with description from API
+		if enrichment != nil {
+			if apiEpic, ok := enrichment.Epics[externalID]; ok && apiEpic.Description != "" {
+				desc := normalizeShortcutDescription(apiEpic.Description)
+				epic.Description = &desc
+			}
+		}
 		if err := tx.WithContext(ctx).Create(&epic).Error; err != nil {
 			return nil, 0, fmt.Errorf("create epic: %w", err)
 		}
@@ -729,7 +824,7 @@ func (s *PMImportService) ensureEpicWorkflowStates(ctx context.Context, tx *gorm
 	return states, nil
 }
 
-func (s *PMImportService) ensureSprints(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow, teamMap map[string]string) (map[string]string, int, []string, error) {
+func (s *PMImportService) ensureSprints(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow, teamMap map[string]string, enrichment *shortcutAPIEnrichment) (map[string]string, int, []string, error) {
 	grouped := map[string][]shortcutCSVRow{}
 	for _, row := range rows {
 		if row.IterationID != "" {
@@ -747,10 +842,22 @@ func (s *PMImportService) ensureSprints(ctx context.Context, tx *gorm.DB, worksp
 			continue
 		}
 		row := rowsForSprint[0]
-		startDate, endDate := inferShortcutSprintDates(row.Iteration, rowsForSprint)
+
+		// Prefer real dates from Shortcut API, fall back to name inference
+		var startDate, endDate *time.Time
+		if enrichment != nil {
+			if apiIter, ok := enrichment.Iterations[externalID]; ok {
+				startDate = parseShortcutDateOnly(apiIter.StartDate)
+				endDate = parseShortcutDateOnly(apiIter.EndDate)
+			}
+		}
+		if startDate == nil || endDate == nil {
+			startDate, endDate = inferShortcutSprintDates(row.Iteration, rowsForSprint)
+		}
 		if startDate == nil || endDate == nil {
 			nullDateCount++
 		}
+
 		teamID := consistentTeamID(rowsForSprint, teamMap)
 		ext := externalID
 		sprint := model.PMSprint{
@@ -777,7 +884,7 @@ func (s *PMImportService) ensureSprints(ctx context.Context, tx *gorm.DB, worksp
 	return existingMap, created, warnings, nil
 }
 
-func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow, workflowMap, stateMap, teamMap, userByEmail, epicMap, sprintMap, labelMap map[string]string, result *model.ShortcutImportResult, jobID string) error {
+func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, workspaceID string, rows []shortcutCSVRow, workflowMap, stateMap, teamMap, userByEmail, epicMap, sprintMap, labelMap map[string]string, result *model.ShortcutImportResult, jobID string, stepOffset int) error {
 	existingStories, err := s.lookupStoriesByExternalID(ctx, tx, workspaceID, mapKeys(storyExternalIDs(rows)))
 	if err != nil {
 		return err
@@ -795,7 +902,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 			result.StoriesSkipped++
 			processed++
 			if processed%100 == 0 {
-				_ = s.markStep(ctx, jobID, "stories", 7, processed)
+				_ = s.markStep(ctx, jobID, "stories", 7+stepOffset, processed)
 			}
 			continue
 		}
@@ -921,7 +1028,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 
 		processed++
 		if processed%100 == 0 {
-			_ = s.markStep(ctx, jobID, "stories", 7, processed)
+			_ = s.markStep(ctx, jobID, "stories", 7+stepOffset, processed)
 		}
 	}
 
@@ -940,6 +1047,146 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 		sort.Slice(pairs, func(i, j int) bool { return pairs[i].Count > pairs[j].Count })
 		for _, p := range pairs[:min(3, len(pairs))] {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("Owner email '%s' not mapped — %d owner links skipped", p.Email, p.Count))
+		}
+	}
+	return nil
+}
+
+func (s *PMImportService) importShortcutComments(ctx context.Context, client *ShortcutAPIClient, workspaceID string, rows []shortcutCSVRow, scMemberToUser map[string]string, jobID string, stepNum int) (int, []string) {
+	// Lookup existing stories by external ID so we can attach comments to the right story
+	var storyRows []struct {
+		ID         string
+		ExternalID string
+	}
+	externalIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.ID != "" {
+			externalIDs = append(externalIDs, row.ID)
+		}
+	}
+	if len(externalIDs) == 0 {
+		return 0, nil
+	}
+	if err := s.db.WithContext(ctx).
+		Model(&model.PMStory{}).
+		Select("id, external_id").
+		Where("workspace_id = ? AND external_id IN ?", workspaceID, externalIDs).
+		Scan(&storyRows).Error; err != nil {
+		return 0, []string{fmt.Sprintf("Failed to look up stories for comments: %s", err.Error())}
+	}
+	storyMap := make(map[string]string, len(storyRows)) // external_id → helpin story ID
+	for _, sr := range storyRows {
+		storyMap[sr.ExternalID] = sr.ID
+	}
+
+	commentsCreated := 0
+	var warnings []string
+	fetchErrors := 0
+	processed := 0
+
+	for _, row := range rows {
+		storyID, ok := storyMap[row.ID]
+		if !ok || row.ID == "" {
+			processed++
+			continue
+		}
+
+		comments, err := client.ListStoryComments(ctx, row.ID)
+		if err != nil {
+			fetchErrors++
+			if fetchErrors <= 3 {
+				warnings = append(warnings, fmt.Sprintf("Failed to fetch comments for story %s: %s", row.ID, err.Error()))
+			}
+			processed++
+			continue
+		}
+
+		// Two-pass: create top-level comments first, then replies (for parent_id mapping)
+		scCommentIDMap := map[int]string{} // Shortcut comment ID → Helpin comment ID
+
+		// Pass 1: top-level comments
+		for _, c := range comments {
+			if c.Deleted || c.ParentID != nil {
+				continue
+			}
+			body := normalizeShortcutDescription(c.Text)
+			if strings.TrimSpace(body) == "" {
+				continue
+			}
+			authorID := scMemberToUser[c.AuthorID]
+			if authorID == "" {
+				continue
+			}
+			comment := model.PMComment{
+				EntityType: "story",
+				EntityID:   storyID,
+				AuthorID:   authorID,
+				Body:       body,
+				CreatedAt:  valueOrNow(parseShortcutAPITimestamp(c.CreatedAt)),
+				UpdatedAt:  valueOrNow(parseShortcutAPITimestamp(c.UpdatedAt)),
+			}
+			if err := s.db.WithContext(ctx).Create(&comment).Error; err != nil {
+				warnings = append(warnings, fmt.Sprintf("Failed to create comment for story %s: %s", row.ID, err.Error()))
+				continue
+			}
+			scCommentIDMap[c.ID] = comment.ID
+			commentsCreated++
+		}
+
+		// Pass 2: replies (threaded comments)
+		for _, c := range comments {
+			if c.Deleted || c.ParentID == nil {
+				continue
+			}
+			body := normalizeShortcutDescription(c.Text)
+			if strings.TrimSpace(body) == "" {
+				continue
+			}
+			authorID := scMemberToUser[c.AuthorID]
+			if authorID == "" {
+				continue
+			}
+			comment := model.PMComment{
+				EntityType: "story",
+				EntityID:   storyID,
+				AuthorID:   authorID,
+				Body:       body,
+				CreatedAt:  valueOrNow(parseShortcutAPITimestamp(c.CreatedAt)),
+				UpdatedAt:  valueOrNow(parseShortcutAPITimestamp(c.UpdatedAt)),
+			}
+			if parentHelpin, ok := scCommentIDMap[*c.ParentID]; ok {
+				comment.ParentID = &parentHelpin
+			}
+			if err := s.db.WithContext(ctx).Create(&comment).Error; err != nil {
+				warnings = append(warnings, fmt.Sprintf("Failed to create reply for story %s: %s", row.ID, err.Error()))
+				continue
+			}
+			scCommentIDMap[c.ID] = comment.ID
+			commentsCreated++
+		}
+
+		processed++
+		if processed%50 == 0 {
+			_ = s.markStep(ctx, jobID, "comments", stepNum, processed)
+		}
+	}
+
+	if fetchErrors > 3 {
+		warnings = append(warnings, fmt.Sprintf("... and %d more comment fetch errors", fetchErrors-3))
+	}
+	return commentsCreated, warnings
+}
+
+func parseShortcutAPITimestamp(raw string) *time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	for _, layout := range []string{time.RFC3339, time.RFC3339Nano, "2006-01-02T15:04:05Z"} {
+		ts, err := time.Parse(layout, raw)
+		if err == nil {
+			utc := ts.UTC()
+			return &utc
 		}
 	}
 	return nil

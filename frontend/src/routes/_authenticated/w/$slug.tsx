@@ -104,7 +104,7 @@ function WorkspaceLayout() {
           style={{ '--sidebar-width': '16rem', '--sidebar-width-icon': '3rem' } as CSSProperties}
         >
           <Sidebar />
-          <SidebarInset className="min-w-0 overflow-hidden bg-transparent">
+          <SidebarInset className="min-w-0 overflow-hidden bg-transparent shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.06)]">
             <Header />
             <main className="relative min-h-0 flex-1 overflow-hidden">
               <Outlet />

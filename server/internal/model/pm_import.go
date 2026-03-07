@@ -55,6 +55,7 @@ type ShortcutUserMatch struct {
 	Email         string  `json:"email"`
 	MatchedUserID *string `json:"matched_user_id"`
 	MatchedName   *string `json:"matched_name"`
+	ShortcutName  *string `json:"shortcut_name,omitempty"`
 }
 
 type ShortcutImportPreviewSummary struct {
@@ -123,6 +124,7 @@ type ShortcutImportExecuteRequest struct {
 	UserMappings          map[string]string                     `json:"user_mappings"`
 	WorkflowStateMappings []ShortcutWorkflowStateMappingPayload `json:"workflow_state_mappings"`
 	Options               ShortcutImportOptions                 `json:"options"`
+	APIToken              string                                `json:"api_token,omitempty"`
 }
 
 type ShortcutImportExecuteResponse struct {
@@ -143,6 +145,7 @@ type ShortcutImportResult struct {
 	ChecklistItemsCreated int      `json:"checklist_items_created"`
 	OwnerLinksCreated     int      `json:"owner_links_created"`
 	LabelLinksCreated     int      `json:"label_links_created"`
+	CommentsCreated       int      `json:"comments_created"`
 	Warnings              []string `json:"warnings"`
 }
 

@@ -14,6 +14,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Key,
   Loader2,
   Mail,
   Upload,
@@ -58,6 +59,7 @@ interface UserMapping {
   storyCount: number;
   matchedUserId: string | null;
   matchedName: string | null;
+  shortcutName: string | null;
   action: UserAction;
   manualUserId: string | null;
   invited: boolean;
@@ -74,7 +76,8 @@ const STATE_TYPE_OPTIONS: { value: StateType; label: string; color: string }[] =
   { value: 'done', label: 'Done', color: 'bg-green-400' },
 ];
 
-const IMPORT_STEPS = ['Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Stories', 'Links'];
+const IMPORT_STEPS_BASE = ['Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Stories', 'Links'];
+const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Stories', 'Links', 'Comments'];
 
 // ─── Main Component ──────────────────────────────────────────────────
 
@@ -93,6 +96,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
   const [existingWorkflows, setExistingWorkflows] = useState<WorkflowWithStates[]>([]);
   const [importArchived, setImportArchived] = useState(true);
   const [importCompleted, setImportCompleted] = useState(true);
+  const [apiToken, setApiToken] = useState('');
 
   const [importStatus, setImportStatus] = useState<ShortcutImportStatusResponse | null>(null);
   const [importing, setImporting] = useState(false);
@@ -107,11 +111,12 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
 
   // ─── Step 0: Upload ──────────────────────────────────────────────
 
-  const handleFileSelect = useCallback(async (selected: File) => {
+  const handleFileSelect = useCallback(async (selected: File, token?: string) => {
     setFile(selected);
     setPreviewLoading(true);
     setPreview(null);
-    const { data, error } = await pmImportService.previewShortcut(workspaceId, selected);
+    const tokenToUse = token ?? apiToken;
+    const { data, error } = await pmImportService.previewShortcut(workspaceId, selected, tokenToUse || undefined);
     setPreviewLoading(false);
     if (error || !data) {
       toast.error(error || 'Failed to preview CSV');
@@ -151,6 +156,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         storyCount: 0, // preview doesn't give per-user counts yet
         matchedUserId: u.matched_user_id,
         matchedName: u.matched_name,
+        shortcutName: u.shortcut_name || null,
         action: u.matched_user_id ? ('matched' as const) : ('skip' as const),
         manualUserId: null,
         invited: false,
@@ -160,7 +166,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     // Load existing workflows for the "use existing" mode
     const wfRes = await pmWorkflowService.list(workspaceId);
     if (wfRes.data) setExistingWorkflows(wfRes.data);
-  }, [workspaceId]);
+  }, [workspaceId, apiToken]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -313,6 +319,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       userMap,
       wfMappings,
       { import_archived: importArchived, import_completed: importCompleted },
+      apiToken || undefined,
     );
 
     if (error || !data) {
@@ -333,7 +340,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         }
       }
     }, 1500);
-  }, [file, userMappings, workflowMappings, importArchived, importCompleted, workspaceId]);
+  }, [file, userMappings, workflowMappings, importArchived, importCompleted, workspaceId, apiToken]);
 
   // ─── Navigation ──────────────────────────────────────────────────
 
@@ -390,6 +397,14 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           file={file}
           preview={preview}
           loading={previewLoading}
+          apiToken={apiToken}
+          onApiTokenChange={(token) => {
+            setApiToken(token);
+            // Re-preview if file already selected and token changes
+            if (file && token !== apiToken) {
+              handleFileSelect(file, token);
+            }
+          }}
           onDrop={handleDrop}
           onFileInput={handleFileInput}
           onClear={() => {
@@ -429,6 +444,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           importing={importing}
           importStatus={importStatus}
           onStart={handleStartImport}
+          hasApiToken={!!apiToken}
         />
       )}
 
@@ -457,6 +473,8 @@ function UploadStep({
   file,
   preview,
   loading,
+  apiToken,
+  onApiTokenChange,
   onDrop,
   onFileInput,
   onClear,
@@ -464,6 +482,8 @@ function UploadStep({
   file: File | null;
   preview: ShortcutImportPreviewResponse | null;
   loading: boolean;
+  apiToken: string;
+  onApiTokenChange: (token: string) => void;
   onDrop: (e: React.DragEvent) => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClear: () => void;
@@ -481,10 +501,36 @@ function UploadStep({
 
   if (!file || !preview) {
     return (
-      <div>
-        <p className="mb-4 text-sm text-muted-foreground">
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
           In Shortcut, go to Settings &rarr; Export &rarr; CSV to download your workspace data.
         </p>
+
+        {/* API Token (optional) */}
+        <Card>
+          <CardContent className="px-4 py-3">
+            <div className="flex items-start gap-3">
+              <Key className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div>
+                  <Label className="text-sm font-medium">Shortcut API Token (optional)</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Provides richer import: real label colors, sprint dates, epic/objective descriptions, and story comments.
+                    Generate a token at Settings &rarr; API Tokens in Shortcut.
+                  </p>
+                </div>
+                <Input
+                  type="password"
+                  placeholder="sc_..."
+                  value={apiToken}
+                  onChange={(e) => onApiTokenChange(e.target.value)}
+                  className="max-w-sm font-mono text-xs"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <div
           onDragOver={(e) => e.preventDefault()}
           onDrop={onDrop}
@@ -888,7 +934,10 @@ function UserStep({
                   <TableCell className="py-1.5">
                     <div className="flex items-center gap-1.5 text-sm">
                       <Check className="h-3.5 w-3.5 text-green-500" />
-                      {u.email}
+                      <div>
+                        {u.shortcutName && <span className="font-medium">{u.shortcutName} — </span>}
+                        {u.email}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="py-1.5 text-sm">{u.matchedName || '—'}</TableCell>
@@ -921,7 +970,10 @@ function UserStep({
                         ) : (
                           <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />
                         )}
-                        {u.email}
+                        <div>
+                          {u.shortcutName && <span className="font-medium">{u.shortcutName} — </span>}
+                          {u.email}
+                        </div>
                         {u.invited && (
                           <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">
                             Invited
@@ -1007,6 +1059,7 @@ function ImportStep({
   importing,
   importStatus,
   onStart,
+  hasApiToken,
 }: {
   preview: ShortcutImportPreviewResponse | null;
   workflowMappings: WorkflowMapping[];
@@ -1018,6 +1071,7 @@ function ImportStep({
   importing: boolean;
   importStatus: ShortcutImportStatusResponse | null;
   onStart: () => void;
+  hasApiToken: boolean;
 }) {
   const s = preview?.summary;
   const isDone = importStatus?.status === 'completed';
@@ -1062,7 +1116,7 @@ function ImportStep({
 
         {isRunning && progress && (
           <div className="space-y-1">
-            {IMPORT_STEPS.map((stepLabel, i) => {
+            {(hasApiToken ? IMPORT_STEPS_API : IMPORT_STEPS_BASE).map((stepLabel, i) => {
               const done = i < (progress.steps_completed || 0);
               const active =
                 i === (progress.steps_completed || 0) &&
@@ -1211,6 +1265,7 @@ function ResultTable({ result }: { result: ShortcutImportStatusResponse['result'
     { label: 'Checklist Items', created: result.checklist_items_created },
     { label: 'Owner Links', created: result.owner_links_created },
     { label: 'Label Links', created: result.label_links_created },
+    { label: 'Comments', created: result.comments_created },
   ];
 
   return (
