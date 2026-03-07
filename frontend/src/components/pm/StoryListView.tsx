@@ -50,6 +50,7 @@ const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 interface StoryListViewProps {
   workspaceId: string;
   workflow: WorkflowWithStates;
+  workflows?: WorkflowWithStates[];
   teams: WorkspaceTeam[];
   assignableMembers?: AssignableMember[];
   epics: EpicWithStats[];
@@ -105,6 +106,7 @@ const columnHelper = createColumnHelper<Story>();
 export function StoryListView({
   workspaceId,
   workflow,
+  workflows,
   teams,
   assignableMembers = [],
   epics,
@@ -127,13 +129,26 @@ export function StoryListView({
   const parentRef = useRef<HTMLDivElement>(null);
 
   // Build lookup maps
-  const stateMap = useMemo(() => {
-    const map = new Map<string, { name: string; stateType: string }>();
-    for (const s of workflow.states) {
-      map.set(s.id, { name: s.name, stateType: s.state_type });
+  const availableWorkflows = useMemo(
+    () => (workflows && workflows.length > 0 ? workflows : [workflow]),
+    [workflow, workflows],
+  );
+  const statesByWorkflowId = useMemo(() => {
+    const map = new Map<string, WorkflowWithStates['states']>();
+    for (const wf of availableWorkflows) {
+      map.set(wf.workflow.id, wf.states);
     }
     return map;
-  }, [workflow.states]);
+  }, [availableWorkflows]);
+  const stateMap = useMemo(() => {
+    const map = new Map<string, { name: string; stateType: string }>();
+    for (const wf of availableWorkflows) {
+      for (const s of wf.states) {
+        map.set(s.id, { name: s.name, stateType: s.state_type });
+      }
+    }
+    return map;
+  }, [availableWorkflows]);
 
   const assignableMemberMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
@@ -314,7 +329,7 @@ export function StoryListView({
           cell: (info) => (
             <InlineStateCell
               story={info.row.original}
-              states={workflow.states}
+              states={statesByWorkflowId.get(info.row.original.workflow_id) ?? workflow.states}
               stateMap={stateMap}
               onUpdate={updateStoryField}
             />
@@ -474,7 +489,7 @@ export function StoryListView({
         cell: (info) => <InlineLabelsCell labels={info.row.original.labels} />,
       }),
     ],
-    [stateMap, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField]
   );
 
   const columnVisibility = useMemo(() => {

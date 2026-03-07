@@ -21,6 +21,7 @@ export interface ShortcutWorkflowStatePreview {
 }
 
 export interface ShortcutWorkflowPreview {
+  id?: string;
   name: string;
   story_count: number;
   states: ShortcutWorkflowStatePreview[];
@@ -85,6 +86,7 @@ export interface ShortcutImportExecuteResponse {
 }
 
 export interface WorkflowStateMappingPayload {
+  shortcut_workflow_id?: string;
   shortcut_workflow_name: string;
   mode: 'create_new' | 'use_existing';
   new_workflow_name?: string;

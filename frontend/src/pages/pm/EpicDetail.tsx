@@ -257,6 +257,11 @@ export function EpicDetailPage() {
   }, [form?.owner_member_id, assignableMemberNames]);
 
   const workflow = workflows[0] ?? null;
+  const selectedStoryStates = useMemo(() => {
+    const storyWorkflowID = selectedStory?.story.workflow_id;
+    if (!storyWorkflowID) return workflow?.states ?? [];
+    return workflows.find((candidate) => candidate.workflow.id === storyWorkflowID)?.states ?? workflow?.states ?? [];
+  }, [selectedStory?.story.workflow_id, workflow?.states, workflows]);
 
   // Resources: unique people from story owners + epic team members
   const resources = useMemo(() => {
@@ -416,6 +421,7 @@ export function EpicDetailPage() {
                 <StoryListView
                   workspaceId={workspaceId!}
                   workflow={workflow}
+                  workflows={workflows}
                   teams={teams}
                   assignableMembers={assignableMembers}
                   epics={allEpics}
@@ -555,7 +561,7 @@ export function EpicDetailPage() {
           open={detailOpen}
           loading={detailLoading}
           onOpenChange={setDetailOpen}
-          states={workflow.states}
+          states={selectedStoryStates}
           onStoryUpdated={async (updated) => {
             setSelectedStory(updated);
             const res = await pmEpicService.listStories(workspaceId, epicId);

@@ -4,13 +4,14 @@ import "time"
 
 // User represents a row in the users table.
 type User struct {
-	ID           string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	Email        string    `json:"email" gorm:"uniqueIndex;not null"`
-	PasswordHash string    `json:"-" gorm:"not null"`
-	FullName     string    `json:"full_name" gorm:"not null"`
-	AvatarURL    *string   `json:"avatar_url"`
-	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt    time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                 string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	Email              string    `json:"email" gorm:"uniqueIndex;not null"`
+	PasswordHash       string    `json:"-" gorm:"not null"`
+	FullName           string    `json:"full_name" gorm:"not null"`
+	AvatarURL          *string   `json:"avatar_url"`
+	DefaultWorkspaceID *string   `json:"default_workspace_id" gorm:"type:uuid"`
+	CreatedAt          time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (User) TableName() string { return "users" }
@@ -37,17 +38,19 @@ type AuthResponse struct {
 
 // UserProfile is the public user representation.
 type UserProfile struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	FullName  string    `json:"full_name"`
-	AvatarURL *string   `json:"avatar_url"`
-	CreatedAt time.Time `json:"created_at"`
+	ID                 string    `json:"id"`
+	Email              string    `json:"email"`
+	FullName           string    `json:"full_name"`
+	AvatarURL          *string   `json:"avatar_url"`
+	DefaultWorkspaceID *string   `json:"default_workspace_id"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 // UpdateProfileRequest is the payload for PUT /api/auth/me.
 type UpdateProfileRequest struct {
-	FullName  *string `json:"full_name"`
-	AvatarURL *string `json:"avatar_url"`
+	FullName           *string `json:"full_name"`
+	AvatarURL          *string `json:"avatar_url"`
+	DefaultWorkspaceID *string `json:"default_workspace_id"`
 }
 
 // RefreshTokenRequest is the payload for POST /api/auth/refresh.

@@ -165,7 +165,7 @@ export default function Workspaces() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto px-4 py-12">
+      <div className="max-w-6xl mx-auto px-4 py-12">
         {/* Organization switcher */}
         {organizations.length > 0 && (
           <div className="flex items-center gap-3 mb-6">

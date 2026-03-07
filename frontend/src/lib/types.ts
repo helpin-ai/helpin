@@ -3,6 +3,7 @@ export interface User {
   email: string;
   full_name: string;
   avatar_url?: string;
+  default_workspace_id?: string;
   created_at: string;
   updated_at: string;
 }

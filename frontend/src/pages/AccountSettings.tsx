@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useOrganizationStore } from '@/stores/organizationStore';
+import { useAuthStore } from '@/stores/authStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { organizationsService } from '@/lib/services/organizationsService';
+import { authService } from '@/lib/services/authService';
 import type { MemberWithUser } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { Building2, Trash2, Users } from 'lucide-react';
+import { Building2, Globe, Trash2, Users } from 'lucide-react';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { toast } from 'sonner';
 
@@ -88,6 +91,30 @@ export default function AccountSettings() {
     }
   };
 
+  const { user } = useAuthStore();
+  const { workspaces } = useWorkspaceStore();
+  const [defaultWsId, setDefaultWsId] = useState<string>(user?.default_workspace_id ?? '');
+  const [savingDefault, setSavingDefault] = useState(false);
+
+  useEffect(() => {
+    setDefaultWsId(user?.default_workspace_id ?? '');
+  }, [user?.default_workspace_id]);
+
+  const handleDefaultWorkspaceChange = async (value: string) => {
+    const wsId = value === 'none' ? '' : value;
+    setDefaultWsId(wsId);
+    setSavingDefault(true);
+    const { data, error } = await authService.updateProfile({ default_workspace_id: wsId || undefined });
+    setSavingDefault(false);
+    if (error) {
+      toast.error(error);
+      setDefaultWsId(user?.default_workspace_id ?? '');
+    } else {
+      toast.success('Default workspace updated');
+      if (data) useAuthStore.setState({ user: data });
+    }
+  };
+
   if (!currentOrganization) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -101,6 +128,34 @@ export default function AccountSettings() {
       <div>
         <h2 className="text-xl font-semibold">Account Settings</h2>
       </div>
+
+      {/* Default Workspace */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Globe className="h-4 w-4" />
+            Default Workspace
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label>Redirect to this workspace after login</Label>
+            <Select value={defaultWsId || 'none'} onValueChange={handleDefaultWorkspaceChange} disabled={savingDefault}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Select a workspace" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None (first available)</SelectItem>
+                {workspaces.map((ws) => (
+                  <SelectItem key={ws.id} value={ws.id}>
+                    {ws.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Organization Name */}
       <Card>

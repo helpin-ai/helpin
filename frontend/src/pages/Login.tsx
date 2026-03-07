@@ -34,11 +34,16 @@ export default function Login() {
       return;
     }
 
-    // After login, try to redirect to the user's default workspace.
+    // After login, redirect to the user's default workspace if set.
     const { data: workspaces } = await workspacesService.list();
     setLoading(false);
     if (workspaces && workspaces.length > 0) {
-      navigate({ to: '/w/$slug/pm/stories', params: { slug: workspaces[0].slug } });
+      const user = useAuthStore.getState().user;
+      const defaultWs = user?.default_workspace_id
+        ? workspaces.find((w) => w.id === user.default_workspace_id)
+        : null;
+      const targetSlug = defaultWs ? defaultWs.slug : workspaces[0].slug;
+      navigate({ to: '/w/$slug/pm/stories', params: { slug: targetSlug } });
     } else {
       navigate({ to: '/workspaces' });
     }

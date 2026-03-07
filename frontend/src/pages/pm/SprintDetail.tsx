@@ -220,6 +220,11 @@ export function SprintDetailPage() {
   );
 
   const workflow = workflows[0] ?? null;
+  const selectedStoryStates = useMemo(() => {
+    const storyWorkflowID = selectedStory?.story.workflow_id;
+    if (!storyWorkflowID) return workflow?.states ?? [];
+    return workflows.find((candidate) => candidate.workflow.id === storyWorkflowID)?.states ?? workflow?.states ?? [];
+  }, [selectedStory?.story.workflow_id, workflow?.states, workflows]);
 
   // Resources: unique people from story owners + sprint team members
   const resources = useMemo(() => {
@@ -379,6 +384,7 @@ export function SprintDetailPage() {
                 <StoryListView
                   workspaceId={workspaceId!}
                   workflow={workflow}
+                  workflows={workflows}
                   teams={teams}
                   assignableMembers={assignableMembers}
                   epics={allEpics}
@@ -459,7 +465,7 @@ export function SprintDetailPage() {
           open={detailOpen}
           loading={detailLoading}
           onOpenChange={setDetailOpen}
-          states={workflow.states}
+          states={selectedStoryStates}
           onStoryUpdated={async (updated) => {
             setSelectedStory(updated);
             const res = await pmSprintService.listStories(workspaceId, sprintId);

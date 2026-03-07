@@ -60,13 +60,16 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 }
 
 // Update modifies a user's profile fields.
-func (r *UserRepository) Update(ctx context.Context, id string, fullName *string, avatarURL *string) (*model.User, error) {
+func (r *UserRepository) Update(ctx context.Context, id string, fullName *string, avatarURL *string, defaultWorkspaceID *string) (*model.User, error) {
 	updates := map[string]interface{}{}
 	if fullName != nil {
 		updates["full_name"] = *fullName
 	}
 	if avatarURL != nil {
 		updates["avatar_url"] = *avatarURL
+	}
+	if defaultWorkspaceID != nil {
+		updates["default_workspace_id"] = *defaultWorkspaceID
 	}
 
 	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {

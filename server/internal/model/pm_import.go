@@ -35,6 +35,7 @@ type PMImportJob struct {
 func (PMImportJob) TableName() string { return "pm_import_jobs" }
 
 type ShortcutWorkflowPreview struct {
+	ID         string                         `json:"id,omitempty"`
 	Name       string                         `json:"name"`
 	StoryCount int                            `json:"story_count"`
 	States     []ShortcutWorkflowStatePreview `json:"states"`
@@ -93,6 +94,7 @@ type ShortcutStateExistingMapping struct {
 }
 
 type ShortcutWorkflowStateMapping struct {
+	ShortcutWorkflowID   string                         `json:"shortcut_workflow_id,omitempty"`
 	ShortcutWorkflowName string                         `json:"shortcut_workflow_name"`
 	Mode                 string                         `json:"mode"`
 	NewWorkflowName      string                         `json:"new_workflow_name,omitempty"`
@@ -102,6 +104,7 @@ type ShortcutWorkflowStateMapping struct {
 }
 
 type ShortcutWorkflowStateMappingPayload struct {
+	ShortcutWorkflowID   string `json:"shortcut_workflow_id,omitempty"`
 	ShortcutWorkflowName string `json:"shortcut_workflow_name"`
 	Mode                 string `json:"mode"`
 	NewWorkflowName      string `json:"new_workflow_name,omitempty"`
