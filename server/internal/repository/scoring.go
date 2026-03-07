@@ -22,30 +22,39 @@ func NewRewardScoringRepository(db *gorm.DB) *RewardScoringRepository {
 
 // UpsertCheck inserts or updates an individual check.
 func (r *RewardScoringRepository) UpsertCheck(ctx context.Context, req model.UpsertRewardCheckRequest, scoredBy string) (*model.RewardIndividualCheck, error) {
-	ic := &model.RewardIndividualCheck{
-		SprintID:    req.SprintID,
-		WorkspaceID: req.WorkspaceID,
-		EmployeeID:  req.EmployeeID,
-		ScoredBy:    &scoredBy,
-		CriteriaID:  req.CriteriaID,
-		Answer:      req.Answer,
-		Notes:       req.Notes,
-	}
-	err := r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "sprint_id"}, {Name: "employee_id"}, {Name: "criteria_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"answer", "notes", "scored_by"}),
-		}).
-		Create(ic).Error
+	var result *model.RewardIndividualCheck
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		employeeID, err := resolveRewardEmployeeIDTx(ctx, tx, req.WorkspaceID, req.EmployeeID)
+		if err != nil {
+			return err
+		}
+		ic := &model.RewardIndividualCheck{
+			SprintID:    req.SprintID,
+			WorkspaceID: req.WorkspaceID,
+			EmployeeID:  employeeID,
+			ScoredBy:    &scoredBy,
+			CriteriaID:  req.CriteriaID,
+			Answer:      req.Answer,
+			Notes:       req.Notes,
+		}
+		if err := tx.
+			Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "sprint_id"}, {Name: "employee_id"}, {Name: "criteria_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"answer", "notes", "scored_by"}),
+			}).
+			Create(ic).Error; err != nil {
+			return fmt.Errorf("upsert check: %w", err)
+		}
+		result = &model.RewardIndividualCheck{}
+		if err := tx.
+			Where("sprint_id = ? AND employee_id = ? AND criteria_id = ?", req.SprintID, employeeID, req.CriteriaID).
+			First(result).Error; err != nil {
+			return fmt.Errorf("upsert check: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("upsert check: %w", err)
-	}
-	// Re-fetch to get correct ID and timestamps after upsert.
-	result := &model.RewardIndividualCheck{}
-	if err := r.db.WithContext(ctx).
-		Where("sprint_id = ? AND employee_id = ? AND criteria_id = ?", req.SprintID, req.EmployeeID, req.CriteriaID).
-		First(result).Error; err != nil {
-		return nil, fmt.Errorf("upsert check: %w", err)
+		return nil, err
 	}
 	return result, nil
 }

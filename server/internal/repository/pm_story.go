@@ -107,11 +107,17 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 	if filters.OwnerID != nil && *filters.OwnerID != "" {
 		query = query.Where("owner_id = ?", *filters.OwnerID)
 	}
+	if filters.OwnerMemberID != nil && *filters.OwnerMemberID != "" {
+		query = query.Where("owner_member_id = ?", *filters.OwnerMemberID)
+	}
 	if filters.Priority != nil && *filters.Priority != "" {
 		query = query.Where("priority = ?", *filters.Priority)
 	}
 	if filters.RequesterID != nil && *filters.RequesterID != "" {
 		query = query.Where("requester_id = ?", *filters.RequesterID)
+	}
+	if filters.RequesterMemberID != nil && *filters.RequesterMemberID != "" {
+		query = query.Where("requester_member_id = ?", *filters.RequesterMemberID)
 	}
 	if filters.Severity != nil && *filters.Severity != "" {
 		query = query.Where("severity = ?", *filters.Severity)
@@ -502,6 +508,7 @@ func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID strin
 // collectAndEnrich collects related IDs from stories, batch-loads names/labels, and returns enriched BoardStory slices.
 func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []model.PMStory) []model.BoardStory {
 	epicIDs := map[string]struct{}{}
+	ownerMemberIDs := map[string]struct{}{}
 	ownerIDs := map[string]struct{}{}
 	storyIDs := make([]string, len(stories))
 	for i, s := range stories {
@@ -509,18 +516,22 @@ func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []mode
 		if s.EpicID != nil {
 			epicIDs[*s.EpicID] = struct{}{}
 		}
+		if s.OwnerMemberID != nil {
+			ownerMemberIDs[*s.OwnerMemberID] = struct{}{}
+		}
 		if s.OwnerID != nil {
 			ownerIDs[*s.OwnerID] = struct{}{}
 		}
 	}
 	epicNameMap := r.batchEpicNames(ctx, epicIDs)
-	ownerNameMap := r.batchOwnerNames(ctx, ownerIDs)
+	ownerNameMap := r.batchMemberNames(ctx, ownerMemberIDs)
+	legacyOwnerNameMap := r.batchOwnerNames(ctx, ownerIDs)
 	labelMap := r.batchStoryLabels(ctx, storyIDs)
-	return r.enrichBoardStories(stories, epicNameMap, ownerNameMap, labelMap)
+	return r.enrichBoardStories(stories, epicNameMap, ownerNameMap, legacyOwnerNameMap, labelMap)
 }
 
 // enrichBoardStories maps epic/owner names and labels onto raw stories for board display.
-func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicNameMap, ownerNameMap map[string]string, labelMap map[string][]model.PMLabel) []model.BoardStory {
+func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicNameMap, ownerNameMap, legacyOwnerNameMap map[string]string, labelMap map[string][]model.PMLabel) []model.BoardStory {
 	result := make([]model.BoardStory, 0, len(stories))
 	for _, story := range stories {
 		bs := model.BoardStory{PMStory: story, Labels: []model.PMLabel{}}
@@ -529,8 +540,12 @@ func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicName
 				bs.EpicName = &name
 			}
 		}
-		if story.OwnerID != nil {
-			if name, ok := ownerNameMap[*story.OwnerID]; ok {
+		if story.OwnerMemberID != nil {
+			if name, ok := ownerNameMap[*story.OwnerMemberID]; ok {
+				bs.OwnerName = &name
+			}
+		} else if story.OwnerID != nil {
+			if name, ok := legacyOwnerNameMap[*story.OwnerID]; ok {
 				bs.OwnerName = &name
 			}
 		}
@@ -567,9 +582,17 @@ func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryF
 		vals := strings.Split(*filters.OwnerID, ",")
 		q = q.Where("owner_id IN ?", vals)
 	}
+	if filters.OwnerMemberID != nil && *filters.OwnerMemberID != "" {
+		vals := strings.Split(*filters.OwnerMemberID, ",")
+		q = q.Where("owner_member_id IN ?", vals)
+	}
 	if filters.RequesterID != nil && *filters.RequesterID != "" {
 		vals := strings.Split(*filters.RequesterID, ",")
 		q = q.Where("requester_id IN ?", vals)
+	}
+	if filters.RequesterMemberID != nil && *filters.RequesterMemberID != "" {
+		vals := strings.Split(*filters.RequesterMemberID, ",")
+		q = q.Where("requester_member_id IN ?", vals)
 	}
 	if filters.Severity != nil && *filters.Severity != "" {
 		vals := strings.Split(*filters.Severity, ",")
@@ -636,6 +659,34 @@ func (r *PMStoryRepository) batchOwnerNames(ctx context.Context, ownerIDs map[st
 		ownerNameMap[row.ID] = row.FullName
 	}
 	return ownerNameMap
+}
+
+// batchMemberNames looks up workspace member display names by IDs.
+func (r *PMStoryRepository) batchMemberNames(ctx context.Context, memberIDs map[string]struct{}) map[string]string {
+	memberNameMap := map[string]string{}
+	if len(memberIDs) == 0 {
+		return memberNameMap
+	}
+	ids := make([]string, 0, len(memberIDs))
+	for id := range memberIDs {
+		ids = append(ids, id)
+	}
+	var rows []struct {
+		ID          string
+		DisplayName string `gorm:"column:display_name"`
+	}
+	if err := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Select("wm.id, COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email) AS display_name").
+		Joins("LEFT JOIN users u ON u.id = wm.user_id").
+		Where("wm.id IN ?", ids).
+		Scan(&rows).Error; err != nil {
+		return memberNameMap
+	}
+	for _, row := range rows {
+		memberNameMap[row.ID] = row.DisplayName
+	}
+	return memberNameMap
 }
 
 // batchStoryLabels loads labels for a set of story IDs, keyed by story ID.
@@ -772,6 +823,15 @@ func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PM
 		return nil, fmt.Errorf("list story followers: %w", err)
 	}
 
+	ownerMember, err := r.loadAssignableMember(ctx, story.WorkspaceID, story.OwnerMemberID)
+	if err != nil {
+		return nil, err
+	}
+	requesterMember, err := r.loadAssignableMember(ctx, story.WorkspaceID, story.RequesterMemberID)
+	if err != nil {
+		return nil, err
+	}
+
 	var labels []model.PMLabel
 	if err := r.db.WithContext(ctx).
 		Table("pm_labels l").
@@ -822,14 +882,47 @@ func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PM
 	}
 
 	return &model.StoryDetail{
-		Story:         story,
-		Owners:        owners,
-		Followers:     followers,
-		Labels:        labels,
-		EpicName:      epicName,
-		SprintName:    sprintName,
-		ObjectiveName: objectiveName,
-		ObjectiveID:   objectiveID,
-		State:         &state,
+		Story:           story,
+		Owners:          owners,
+		Followers:       followers,
+		OwnerMember:     ownerMember,
+		RequesterMember: requesterMember,
+		Labels:          labels,
+		EpicName:        epicName,
+		SprintName:      sprintName,
+		ObjectiveName:   objectiveName,
+		ObjectiveID:     objectiveID,
+		State:           &state,
 	}, nil
+}
+
+func (r *PMStoryRepository) loadAssignableMember(ctx context.Context, workspaceID string, memberID *string) (*model.AssignableMember, error) {
+	if memberID == nil || *memberID == "" {
+		return nil, nil
+	}
+
+	var member model.AssignableMember
+	if err := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Select(`
+			wm.id,
+			wm.user_id,
+			wm.role,
+			wm.email,
+			wm.display_name,
+			u.avatar_url,
+			wm.status,
+			wm.invited_by,
+			wm.invited_at,
+			wm.accepted_at
+		`).
+		Joins("LEFT JOIN users u ON u.id = wm.user_id").
+		Where("wm.workspace_id = ? AND wm.id = ?", workspaceID, *memberID).
+		Scan(&member).Error; err != nil {
+		return nil, fmt.Errorf("load story member: %w", err)
+	}
+	if member.ID == "" {
+		return nil, nil
+	}
+	return &member, nil
 }

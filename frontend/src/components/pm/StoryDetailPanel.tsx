@@ -68,13 +68,14 @@ import { LabelPicker } from '@/components/pm/LabelPicker';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
+import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -114,8 +115,8 @@ interface FormState {
   epic_id: string;
   sprint_id: string;
   team_id: string;
-  owner_id: string;
-  requester_id: string;
+  owner_member_id: string;
+  requester_member_id: string;
   blocked: boolean;
   blocker: string;
 }
@@ -141,8 +142,8 @@ const buildFormState = (story: StoryDetail): FormState => ({
   epic_id: story.story.epic_id ?? '',
   sprint_id: story.story.sprint_id ?? '',
   team_id: story.story.team_id ?? '',
-  owner_id: story.story.owner_id ?? '',
-  requester_id: story.story.requester_id ?? '',
+  owner_member_id: story.story.owner_member_id ?? '',
+  requester_member_id: story.story.requester_member_id ?? '',
   blocked: story.story.blocked,
   blocker: story.story.blocker ?? '',
 });
@@ -331,7 +332,15 @@ function StoryDetailPanelBody({
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const { teams } = useWorkspaceTeams(workspaceId);
-  const { members } = useWorkspaceMembers(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
+  const memberOptions = useMemo(
+    () => buildAssignableMemberOptions(assignableMembers),
+    [assignableMembers],
+  );
+  const memberNameMap = useMemo(
+    () => buildAssignableMemberNameMap(assignableMembers),
+    [assignableMembers],
+  );
 
   // ── URL sync ───────────────────────────────────────────────────
   useEffect(() => {
@@ -524,14 +533,14 @@ function StoryDetailPanelBody({
   }, [form.team_id, teams]);
 
   const currentOwnerName = useMemo(() => {
-    if (!form.owner_id) return 'No owner';
-    return members.find((m) => m.user_id === form.owner_id)?.full_name ?? 'No owner';
-  }, [form.owner_id, members]);
+    if (!form.owner_member_id) return 'No owner';
+    return memberNameMap.get(form.owner_member_id) ?? 'No owner';
+  }, [form.owner_member_id, memberNameMap]);
 
   const currentRequesterName = useMemo(() => {
-    if (!form.requester_id) return 'No requester';
-    return members.find((m) => m.user_id === form.requester_id)?.full_name ?? 'No requester';
-  }, [form.requester_id, members]);
+    if (!form.requester_member_id) return 'No requester';
+    return memberNameMap.get(form.requester_member_id) ?? 'No requester';
+  }, [form.requester_member_id, memberNameMap]);
 
   const storyLabels = storyDetail.labels ?? [];
 
@@ -949,14 +958,14 @@ function StoryDetailPanelBody({
             {/* Owner */}
             <MetadataRow icon={User} label="Owner">
               <SidebarPopoverSelect
-                value={form.owner_id || '__none__'}
+                value={form.owner_member_id || '__none__'}
                 options={[
                   { value: '__none__', label: 'No owner' },
-                  ...members.map((m) => ({ value: m.user_id, label: m.full_name || m.email })),
+                  ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
-                  updateField('owner_id', val, { owner_id: val || undefined });
+                  updateField('owner_member_id', val, { owner_member_id: val });
                 }}
                 renderTrigger={() => <span>{currentOwnerName}</span>}
               />
@@ -965,14 +974,14 @@ function StoryDetailPanelBody({
             {/* Requester */}
             <MetadataRow icon={User} label="Requester">
               <SidebarPopoverSelect
-                value={form.requester_id || '__none__'}
+                value={form.requester_member_id || '__none__'}
                 options={[
                   { value: '__none__', label: 'No requester' },
-                  ...members.map((m) => ({ value: m.user_id, label: m.full_name || m.email })),
+                  ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
-                  updateField('requester_id', val, { requester_id: val || undefined });
+                  updateField('requester_member_id', val, { requester_member_id: val });
                 }}
                 renderTrigger={() => <span>{currentRequesterName}</span>}
               />

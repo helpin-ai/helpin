@@ -26,10 +26,14 @@ func NewRewardBonusRepository(db *gorm.DB) *RewardBonusRepository {
 func (r *RewardBonusRepository) SaveCalculations(ctx context.Context, calcs []model.RewardBonusCalculation) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, c := range calcs {
+			employeeID, err := resolveRewardEmployeeIDTx(ctx, tx, c.WorkspaceID, c.EmployeeID)
+			if err != nil {
+				return err
+			}
 			calc := model.RewardBonusCalculation{
 				WorkspaceID:        c.WorkspaceID,
 				QuarterID:          c.QuarterID,
-				EmployeeID:         c.EmployeeID,
+				EmployeeID:         employeeID,
 				FinalAmount:        c.FinalAmount,
 				BonusTier:          c.BonusTier,
 				TeamTQI:            c.TeamTQI,
@@ -42,7 +46,7 @@ func (r *RewardBonusRepository) SaveCalculations(ctx context.Context, calcs []mo
 				OverrideAppliedAt:  c.OverrideAppliedAt,
 				CalculationDetails: c.CalculationDetails,
 			}
-			err := tx.Clauses(clause.OnConflict{
+			err = tx.Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "workspace_id"}, {Name: "quarter_id"}, {Name: "employee_id"}},
 				DoUpdates: clause.AssignmentColumns([]string{
 					"final_amount", "bonus_tier", "team_tqi", "individual_iqi",
@@ -153,11 +157,19 @@ func (r *RewardBonusRepository) GetFinance(ctx context.Context, workspaceID, qua
 
 // CreateAuditEntry inserts a bonus audit log entry.
 func (r *RewardBonusRepository) CreateAuditEntry(ctx context.Context, entry model.RewardAuditLog) (*model.RewardAuditLog, error) {
+	employeeID := entry.EmployeeID
+	if entry.EmployeeID != nil {
+		resolved, err := resolveRewardEmployeeIDTx(ctx, r.db, entry.WorkspaceID, *entry.EmployeeID)
+		if err != nil {
+			return nil, err
+		}
+		employeeID = &resolved
+	}
 	a := &model.RewardAuditLog{
 		WorkspaceID:     entry.WorkspaceID,
 		QuarterID:       entry.QuarterID,
 		Action:          entry.Action,
-		EmployeeID:      entry.EmployeeID,
+		EmployeeID:      employeeID,
 		PerformedBy:     entry.PerformedBy,
 		PerformedByName: entry.PerformedByName,
 		PerformedByRole: entry.PerformedByRole,

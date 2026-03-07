@@ -17,6 +17,7 @@ type PMEpic struct {
 	ExternalID          *string    `json:"external_id" gorm:"index"`
 	EpicStateID         *string    `json:"epic_state_id" gorm:"type:uuid;index"`
 	OwnerID             *string    `json:"owner_id" gorm:"type:uuid;index"`
+	OwnerMemberID       *string    `json:"owner_member_id" gorm:"type:uuid;index"`
 	TeamID              *string    `json:"team_id" gorm:"type:uuid;index"`
 	PlannedStartDate    *time.Time `json:"planned_start_date" gorm:"type:date"`
 	Deadline            *time.Time `json:"deadline" gorm:"type:date"`
@@ -70,6 +71,7 @@ type CreateEpicRequest struct {
 	Description      *string    `json:"description"`
 	EpicStateID      *string    `json:"epic_state_id"`
 	OwnerID          *string    `json:"owner_id"`
+	OwnerMemberID    *string    `json:"owner_member_id"`
 	TeamID           *string    `json:"team_id"`
 	PlannedStartDate *time.Time `json:"planned_start_date"`
 	Deadline         *time.Time `json:"deadline"`
@@ -86,6 +88,7 @@ type UpdateEpicRequest struct {
 	Description      *string    `json:"description"`
 	EpicStateID      *string    `json:"epic_state_id"`
 	OwnerID          *string    `json:"owner_id"`
+	OwnerMemberID    *string    `json:"owner_member_id"`
 	TeamID           *string    `json:"team_id"`
 	PlannedStartDate *time.Time `json:"planned_start_date"`
 	Deadline         *time.Time `json:"deadline"`

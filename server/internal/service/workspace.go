@@ -124,3 +124,8 @@ func (s *WorkspaceService) GetMyMembership(ctx context.Context, workspaceID, use
 func (s *WorkspaceService) ListMembers(ctx context.Context, workspaceID string) ([]model.MemberWithUser, error) {
 	return s.workspaceRepo.ListMembers(ctx, workspaceID)
 }
+
+// ListAssignableMembers returns joined and pending workspace identities for PM pickers.
+func (s *WorkspaceService) ListAssignableMembers(ctx context.Context, workspaceID string) ([]model.AssignableMember, error) {
+	return s.workspaceRepo.ListAssignableMembers(ctx, workspaceID)
+}

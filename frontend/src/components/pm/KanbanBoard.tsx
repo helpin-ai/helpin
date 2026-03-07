@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -16,21 +16,25 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { CreateStoryRequest, Story, StoryStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
-import type { MemberWithUser } from '@/lib/types';
+import type { AssignableMember } from '@/lib/types';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useAuthStore } from '@/stores/authStore';
+import { useSessionStore } from '@/stores/sessionStore';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
 import { StoryDetailPanel } from './StoryDetailPanel';
 import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar } from './StoryFilters';
 import { StoryListView } from './StoryListView';
 import { ViewBar } from './ViewBar';
+import { BoardDisplayMenu } from './BoardDisplayMenu';
+import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 
 interface KanbanBoardProps {
   workspaceId: string;
@@ -45,7 +49,8 @@ interface ColumnProps {
   onOpen: (story: Story) => void;
   findTeamName: (teamId: string | undefined) => string | undefined;
   workspaceId: string;
-  members: MemberWithUser[];
+  assignableMembers: AssignableMember[];
+  ownerNameMap: Map<string, string>;
   onOwnerChanged: (story: Story) => void;
   onPriorityChanged: (story: Story) => void;
   onSeverityChanged: (story: Story) => void;
@@ -53,7 +58,7 @@ interface ColumnProps {
   isLoadingMore: boolean;
 }
 
-function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, members, onOwnerChanged, onPriorityChanged, onSeverityChanged, onLoadMore, isLoadingMore }: ColumnProps) {
+function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, onOwnerChanged, onPriorityChanged, onSeverityChanged, onLoadMore, isLoadingMore }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -158,7 +163,8 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
                     onOpen={onOpen}
                     teamName={findTeamName(story.team_id)}
                     workspaceId={workspaceId}
-                    members={members}
+                    assignableMembers={assignableMembers}
+                    ownerNameMap={ownerNameMap}
                     onOwnerChanged={onOwnerChanged}
                     onPriorityChanged={onPriorityChanged}
                     onSeverityChanged={onSeverityChanged}
@@ -174,7 +180,8 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
                 onOpen={onOpen}
                 teamName={findTeamName(story.team_id)}
                 workspaceId={workspaceId}
-                members={members}
+                assignableMembers={assignableMembers}
+                ownerNameMap={ownerNameMap}
                 onOwnerChanged={onOwnerChanged}
                 onPriorityChanged={onPriorityChanged}
                 onSeverityChanged={onSeverityChanged}
@@ -235,8 +242,17 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   } = usePMBoardStore();
 
   const currentUser = useAuthStore((s) => s.user);
+  const currentMemberId = useSessionStore((s) => s.membership?.id);
   const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
-  const { members } = useWorkspaceMembers(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
+  const ownerNameMap = useMemo(
+    () => buildAssignableMemberNameMap(assignableMembers),
+    [assignableMembers],
+  );
+  const showEmptyColumns = useBoardDisplayStore((s) => s.showEmptyColumns);
+  const initDisplay = useBoardDisplayStore((s) => s.init);
+
+  useEffect(() => { initDisplay(workspaceId); }, [workspaceId, initDisplay]);
 
   // Sync URL team param → store on mount / prop change
   useEffect(() => {
@@ -296,10 +312,10 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
   // Load views once board and user are ready
   useEffect(() => {
-    if (currentUser?.id) {
-      loadViews(workspaceId, currentUser.id);
+    if (currentMemberId) {
+      loadViews(workspaceId, currentMemberId);
     }
-  }, [workspaceId, currentUser?.id, loadViews]);
+  }, [workspaceId, currentMemberId, loadViews]);
 
   // Refresh board when a story is created via the global modal
   useEffect(() => {
@@ -424,19 +440,20 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
   const handleStoryPatched = useCallback((story: Story) => {
     // Enrich with owner_name for board display (update API doesn't include it)
-    if (story.owner_id && !story.owner_name) {
-      const member = members.find((m) => m.user_id === story.owner_id);
-      if (member) story = { ...story, owner_name: member.full_name || member.email };
+    const ownerKey = story.owner_member_id;
+    if (ownerKey && !story.owner_name) {
+      const ownerName = ownerNameMap.get(ownerKey);
+      if (ownerName) story = { ...story, owner_name: ownerName };
     }
     const patched = patchStory('updated', story.id, story);
     if (!patched) {
       refreshBoard();
     }
-  }, [patchStory, refreshBoard, members]);
+  }, [patchStory, refreshBoard, ownerNameMap]);
 
   return (
     <StoryFilterProvider
-      members={members}
+      assignableMembers={assignableMembers}
       labels={refLabels}
       epics={refEpics}
       sprints={refSprints}
@@ -470,6 +487,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         <StoryFilterTrigger />
 
         <div className="ml-auto flex items-center gap-1">
+          <BoardDisplayMenu />
           <Button
             variant={viewMode === 'board' ? 'default' : 'ghost'}
             size="icon"
@@ -516,7 +534,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         >
           <div className="min-h-0 flex-1 overflow-x-auto">
             <div className="flex h-full min-w-full gap-3 pb-2">
-              {columns.map((column) => (
+              {columns.filter((column) => showEmptyColumns || column.story_count > 0).map((column) => (
                 <Column
                   key={column.state.id}
                   column={column}
@@ -529,7 +547,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                   onOpen={openStory}
                   findTeamName={storeTeamId ? () => undefined : findTeamName}
                   workspaceId={workspaceId}
-                  members={members}
+                  assignableMembers={assignableMembers}
+                  ownerNameMap={ownerNameMap}
                   onOwnerChanged={handleStoryPatched}
                   onPriorityChanged={handleStoryPatched}
                   onSeverityChanged={handleStoryPatched}
@@ -541,7 +560,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           </div>
 
           <DragOverlay>
-            {activeStory ? <StoryCard story={activeStory} onOpen={() => {}} isOverlay teamName={storeTeamId ? undefined : findTeamName(activeStory.team_id)} /> : null}
+            {activeStory ? <StoryCard story={activeStory} onOpen={() => {}} isOverlay teamName={storeTeamId ? undefined : findTeamName(activeStory.team_id)} ownerNameMap={ownerNameMap} /> : null}
           </DragOverlay>
         </DndContext>
       ) : null}
@@ -551,7 +570,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           workspaceId={workspaceId}
           workflow={workflow}
           teams={teams}
-          members={members}
+          assignableMembers={assignableMembers}
           epics={refEpics}
           sprints={refSprints}
           filters={filters}
@@ -582,10 +601,11 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         onStoryUpdated={(updated) => {
           setSelectedStory(updated);
           const story = { ...updated.story };
-          // Enrich with owner_name from StoryDetail owners for board display
-          if (story.owner_id && !story.owner_name && updated.owners?.length) {
-            const owner = updated.owners.find((o) => o.id === story.owner_id);
-            if (owner) story.owner_name = owner.full_name;
+          const ownerKey = story.owner_member_id;
+          if (ownerKey && !story.owner_name) {
+            story.owner_name = updated.owner_member
+              ? ownerNameMap.get(updated.owner_member.id) ?? updated.owner_member.display_name ?? updated.owner_member.email
+              : ownerNameMap.get(ownerKey);
           }
           const patched = patchStory('updated', story.id, story);
           if (!patched) {

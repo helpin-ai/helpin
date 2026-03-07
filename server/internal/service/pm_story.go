@@ -14,6 +14,7 @@ import (
 // PMStoryService contains story business logic.
 type PMStoryService struct {
 	storyRepo         *repository.PMStoryRepository
+	workspaceRepo     *repository.WorkspaceRepository
 	workflowRepo      *repository.PMWorkflowRepository
 	labelRepo         *repository.PMLabelRepository
 	activityService   *PMActivityService
@@ -22,9 +23,10 @@ type PMStoryService struct {
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService) *PMStoryService {
 	return &PMStoryService{
 		storyRepo:         storyRepo,
+		workspaceRepo:     workspaceRepo,
 		workflowRepo:      workflowRepo,
 		labelRepo:         labelRepo,
 		activityService:   activityService,
@@ -130,9 +132,20 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		return nil, fmt.Errorf("invalid severity")
 	}
 
-	requesterID := req.RequesterID
-	if requesterID == nil && actorID != "" {
-		requesterID = &actorID
+	ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, req.WorkspaceID, req.OwnerMemberID, req.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+
+	requesterMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, req.WorkspaceID, req.RequesterMemberID, req.RequesterID)
+	if err != nil {
+		return nil, err
+	}
+	if requesterMember == nil && actorID != "" {
+		requesterMember, err = resolveWorkspaceMember(ctx, s.workspaceRepo, req.WorkspaceID, nil, &actorID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	blocked := false
@@ -144,25 +157,27 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	}
 
 	story := &model.PMStory{
-		WorkspaceID:     req.WorkspaceID,
-		Name:            strings.TrimSpace(req.Name),
-		Description:     req.Description,
-		StoryType:       storyType,
-		WorkflowID:      workflowID,
-		WorkflowStateID: stateID,
-		EpicID:          req.EpicID,
-		SprintID:        req.SprintID,
-		TeamID:          req.TeamID,
-		OwnerID:         req.OwnerID,
-		RequesterID:     requesterID,
-		Estimate:        req.Estimate,
-		Priority:        priority,
-		Severity:        severity,
-		Deadline:        req.Deadline,
-		Blocked:         blocked,
-		Blocker:         req.Blocker,
-		TemplateID:      req.TemplateID,
-		ExternalID:      req.ExternalID,
+		WorkspaceID:       req.WorkspaceID,
+		Name:              strings.TrimSpace(req.Name),
+		Description:       req.Description,
+		StoryType:         storyType,
+		WorkflowID:        workflowID,
+		WorkflowStateID:   stateID,
+		EpicID:            req.EpicID,
+		SprintID:          req.SprintID,
+		TeamID:            req.TeamID,
+		OwnerID:           memberUserIDPtr(ownerMember),
+		OwnerMemberID:     memberIDPtr(ownerMember),
+		RequesterID:       memberUserIDPtr(requesterMember),
+		RequesterMemberID: memberIDPtr(requesterMember),
+		Estimate:          req.Estimate,
+		Priority:          priority,
+		Severity:          severity,
+		Deadline:          req.Deadline,
+		Blocked:           blocked,
+		Blocker:           req.Blocker,
+		TemplateID:        req.TemplateID,
+		ExternalID:        req.ExternalID,
 	}
 	if req.Position != nil {
 		story.Position = *req.Position
@@ -184,8 +199,8 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	}
 
 	followerIDs := dedupeIDs(req.FollowerIDs)
-	if requesterID != nil {
-		followerIDs = append(followerIDs, *requesterID)
+	if story.RequesterID != nil {
+		followerIDs = append(followerIDs, *story.RequesterID)
 	}
 	for _, ownerID := range ownerIDs {
 		followerIDs = append(followerIDs, ownerID)
@@ -289,10 +304,10 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		current.TeamID = req.TeamID
 	}
 	if req.OwnerID != nil {
-		current.OwnerID = req.OwnerID
+		// Handled below via workspace member resolution.
 	}
 	if req.RequesterID != nil {
-		current.RequesterID = req.RequesterID
+		// Handled below via workspace member resolution.
 	}
 	if req.Estimate != nil {
 		current.Estimate = req.Estimate
@@ -332,6 +347,23 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	}
 	if req.ExternalID != nil {
 		current.ExternalID = req.ExternalID
+	}
+
+	if req.OwnerID != nil || req.OwnerMemberID != nil {
+		ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.WorkspaceID, req.OwnerMemberID, req.OwnerID)
+		if err != nil {
+			return nil, err
+		}
+		current.OwnerMemberID = memberIDPtr(ownerMember)
+		current.OwnerID = memberUserIDPtr(ownerMember)
+	}
+	if req.RequesterID != nil || req.RequesterMemberID != nil {
+		requesterMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.WorkspaceID, req.RequesterMemberID, req.RequesterID)
+		if err != nil {
+			return nil, err
+		}
+		current.RequesterMemberID = memberIDPtr(requesterMember)
+		current.RequesterID = memberUserIDPtr(requesterMember)
 	}
 
 	if stateChanged {

@@ -25,9 +25,10 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type { SprintWithStats, SprintStatus, Story, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/sprints/$sprintId');
 
@@ -137,8 +138,12 @@ export function SprintDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const { teams, people, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
-  const { members } = useWorkspaceMembers(workspaceId);
+  const { teams, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
+  const assignableMemberNames = useMemo(
+    () => buildAssignableMemberNameMap(assignableMembers),
+    [assignableMembers],
+  );
 
   // Story detail panel
   const [selectedStory, setSelectedStory] = useState<Awaited<ReturnType<typeof pmStoryService.get>>['data'] | null>(null);
@@ -215,15 +220,27 @@ export function SprintDetailPage() {
   );
 
   const workflow = workflows[0] ?? null;
+  const selectedStoryStates = useMemo(() => {
+    const storyWorkflowID = selectedStory?.story.workflow_id;
+    if (!storyWorkflowID) return workflow?.states ?? [];
+    return workflows.find((candidate) => candidate.workflow.id === storyWorkflowID)?.states ?? workflow?.states ?? [];
+  }, [selectedStory?.story.workflow_id, workflow?.states, workflows]);
 
   // Resources: unique people from story owners + sprint team members
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
     for (const story of stories) {
-      if (story.owner_id) {
-        const person = people.find((p) => p.id === story.owner_id);
-        if (person) personMap.set(person.id, { id: person.id, name: person.name, email: person.email });
+      const ownerKey = story.owner_member_id;
+      if (ownerKey) {
+        const assignable = assignableMembers.find((member) => member.id === ownerKey);
+        if (assignable) {
+          personMap.set(assignable.id, {
+            id: assignable.id,
+            name: assignableMemberNames.get(assignable.id) ?? assignable.display_name,
+            email: assignable.email,
+          });
+        }
       }
     }
 
@@ -236,7 +253,7 @@ export function SprintDetailPage() {
     }
 
     return Array.from(personMap.values());
-  }, [stories, people, form?.team_id, getTeamMembers]);
+  }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
     async (story: Story) => {
@@ -367,8 +384,9 @@ export function SprintDetailPage() {
                 <StoryListView
                   workspaceId={workspaceId!}
                   workflow={workflow}
+                  workflows={workflows}
                   teams={teams}
-                  members={members}
+                  assignableMembers={assignableMembers}
                   epics={allEpics}
                   sprints={allSprints}
                   externalStories={stories}
@@ -447,7 +465,7 @@ export function SprintDetailPage() {
           open={detailOpen}
           loading={detailLoading}
           onOpenChange={setDetailOpen}
-          states={workflow.states}
+          states={selectedStoryStates}
           onStoryUpdated={async (updated) => {
             setSelectedStory(updated);
             const res = await pmSprintService.listStories(workspaceId, sprintId);

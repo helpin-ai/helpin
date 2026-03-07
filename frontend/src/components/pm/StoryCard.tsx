@@ -16,10 +16,11 @@ import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, STORY_TYP
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { UserAvatar } from './UserAvatar';
 import type { Priority, Severity, Story } from '@/lib/pmTypes';
-import type { MemberWithUser } from '@/lib/types';
+import type { AssignableMember } from '@/lib/types';
 import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
+import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -44,7 +45,8 @@ interface StoryCardProps {
   isOverlay?: boolean;
   teamName?: string;
   workspaceId?: string;
-  members?: MemberWithUser[];
+  assignableMembers?: AssignableMember[];
+  ownerNameMap?: Map<string, string>;
   onOwnerChanged?: (story: Story) => void;
   onPriorityChanged?: (story: Story) => void;
   onSeverityChanged?: (story: Story) => void;
@@ -56,7 +58,8 @@ export function StoryCard({
   isOverlay = false,
   teamName,
   workspaceId,
-  members,
+  assignableMembers,
+  ownerNameMap,
   onOwnerChanged,
   onPriorityChanged,
   onSeverityChanged,
@@ -79,6 +82,18 @@ export function StoryCard({
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
   const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(story.team_id));
+  const displayProps = useBoardDisplayStore((s) => s.properties);
+  const vis = useMemo(() => ({
+    story_type: fieldVis.story_type && displayProps.story_type,
+    priority: fieldVis.priority && displayProps.priority,
+    severity: fieldVis.severity && displayProps.severity,
+    epic: fieldVis.epic && displayProps.epic,
+    labels: (fieldVis.labels ?? true) && displayProps.labels,
+    estimate: fieldVis.estimate && displayProps.estimate,
+    due_date: fieldVis.due_date && displayProps.due_date,
+    blocked: fieldVis.blocked && displayProps.blocked,
+    assignee: displayProps.assignee,
+  }), [fieldVis, displayProps]);
 
   const due = useMemo(() => {
     if (!story.deadline) return null;
@@ -100,12 +115,18 @@ export function StoryCard({
 
   const priorityCfg = PRIORITY_CONFIG[story.priority];
   const storyTypeCfg = STORY_TYPE_CONFIG[story.story_type];
+  const currentOwnerName = useMemo(() => {
+    const ownerKey = story.owner_member_id;
+    if (!ownerKey) return null;
+    return ownerNameMap?.get(ownerKey) ?? story.owner_name ?? null;
+  }, [story.owner_member_id, story.owner_name, ownerNameMap]);
   const handleAssignOwner = useCallback(
-    async (member: MemberWithUser) => {
+    async (member: AssignableMember) => {
       if (!workspaceId) return;
-      const newOwnerId = story.owner_id === member.user_id ? undefined : member.user_id;
+      const isSelected = story.owner_member_id === member.id;
+      const newOwnerId = isSelected ? '' : member.id;
       try {
-        const result = await pmStoryService.update(workspaceId, story.id, { owner_id: newOwnerId });
+        const result = await pmStoryService.update(workspaceId, story.id, { owner_member_id: newOwnerId });
         if (result.data?.story) {
           onOwnerChanged?.(result.data.story);
         }
@@ -114,7 +135,7 @@ export function StoryCard({
       }
       setMemberOpen(false);
     },
-    [workspaceId, story.id, story.owner_id, onOwnerChanged],
+    [workspaceId, story.id, story.owner_member_id, onOwnerChanged],
   );
 
   const handleChangePriority = useCallback(
@@ -181,7 +202,7 @@ export function StoryCard({
     >
       {/* Row 1: Story type + Epic + Team + Priority */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {fieldVis.story_type && (
+        {vis.story_type && (
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="shrink-0">
@@ -191,7 +212,7 @@ export function StoryCard({
           <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>
         </Tooltip>
         )}
-        {fieldVis.epic && story.epic_name && (
+        {vis.epic && story.epic_name && (
           <span className="truncate text-[11px] text-muted-foreground max-w-[120px]">{story.epic_name}</span>
         )}
 
@@ -209,7 +230,7 @@ export function StoryCard({
         )}
 
         {/* Priority pill — clickable dropdown */}
-        {fieldVis.priority && (workspaceId ? (
+        {vis.priority && (workspaceId ? (
           <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
             <Tooltip open={priorityOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -296,7 +317,7 @@ export function StoryCard({
       {/* Row 3: Property pills */}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {/* Severity pill — clickable dropdown */}
-        {fieldVis.severity && (severityCfg && workspaceId ? (
+        {vis.severity && (severityCfg && workspaceId ? (
           <Popover open={severityOpen} onOpenChange={setSeverityOpen}>
             <Tooltip open={severityOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -359,7 +380,7 @@ export function StoryCard({
           </Tooltip>
         ) : null)}
 
-        {fieldVis.blocked && story.blocked && (
+        {vis.blocked && story.blocked && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400')}>
@@ -372,14 +393,14 @@ export function StoryCard({
         )}
 
         {/* Labels */}
-        {story.labels && story.labels.length > 0 && story.labels.map((label) => (
+        {vis.labels && story.labels && story.labels.length > 0 && story.labels.map((label) => (
           <LabelBadge key={label.id} label={label} />
         ))}
       </div>
 
       {/* Row 4: Footer - due date, estimate + assignee */}
       <div className="mt-2 flex items-center gap-1.5">
-        {fieldVis.due_date && due && (
+        {vis.due_date && due && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(
@@ -399,7 +420,7 @@ export function StoryCard({
             </TooltipContent>
           </Tooltip>
         )}
-        {fieldVis.estimate && story.estimate != null && (
+        {vis.estimate && story.estimate != null && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
@@ -411,7 +432,7 @@ export function StoryCard({
         )}
         <span className="flex-1" />
         {/* Assignee avatar / assign button */}
-        {members && workspaceId ? (
+        {vis.assignee && (assignableMembers && workspaceId ? (
           <Popover open={memberOpen} onOpenChange={setMemberOpen}>
             <Tooltip open={memberOpen ? false : undefined}>
               <TooltipTrigger asChild>
@@ -424,8 +445,8 @@ export function StoryCard({
                       setMemberOpen(true);
                     }}
                   >
-                    {story.owner_name ? (
-                      <UserAvatar name={story.owner_name} className="h-5 w-5" />
+                    {currentOwnerName ? (
+                      <UserAvatar name={currentOwnerName} className="h-5 w-5" />
                     ) : (
                       <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
                         <UserPlus className="h-2.5 w-2.5" />
@@ -434,7 +455,7 @@ export function StoryCard({
                   </button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent side="top">{story.owner_name || 'Assign member'}</TooltipContent>
+              <TooltipContent side="top">{currentOwnerName || 'Assign member'}</TooltipContent>
             </Tooltip>
             {memberOpen && (
               <PopoverContent
@@ -451,20 +472,23 @@ export function StoryCard({
                       No members found
                     </CommandEmpty>
                     <CommandGroup>
-                      {members.map((m) => (
+                      {assignableMembers.map((m) => {
+                        const optionName = ownerNameMap?.get(m.id) ?? m.display_name ?? m.email;
+                        const isSelected = story.owner_member_id === m.id;
+                        return (
                         <CommandItem
-                          key={m.user_id}
-                          value={m.full_name || m.email}
+                          key={m.id}
+                          value={optionName}
                           onSelect={() => handleAssignOwner(m)}
                           className="flex items-center gap-2 text-xs"
                         >
-                          <UserAvatar name={m.full_name || m.email} className="h-5 w-5" />
-                          <span className="truncate">{m.full_name || m.email}</span>
-                          {story.owner_id === m.user_id && (
+                          <UserAvatar name={optionName} className="h-5 w-5" />
+                          <span className="truncate">{optionName}</span>
+                          {isSelected && (
                             <Check className="ml-auto h-3.5 w-3.5 text-primary" />
                           )}
                         </CommandItem>
-                      ))}
+                      )})}
                     </CommandGroup>
                   </CommandList>
                 </Command>
@@ -475,12 +499,12 @@ export function StoryCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="shrink-0">
-                <UserAvatar name={story.owner_name} className="h-5 w-5" />
+                <UserAvatar name={currentOwnerName} className="h-5 w-5" />
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top">{story.owner_name || 'Unassigned'}</TooltipContent>
+            <TooltipContent side="top">{currentOwnerName || 'Unassigned'}</TooltipContent>
           </Tooltip>
-        )}
+        ))}
       </div>
     </article>
   );

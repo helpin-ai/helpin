@@ -37,11 +37,12 @@ import type {
   EpicWithStats,
   SprintWithStats,
 } from '@/lib/pmTypes';
-import type { MemberWithUser, WorkspaceTeam } from '@/lib/types';
+import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import type { BoardFilters } from '@/stores/pmBoardStore';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
@@ -49,8 +50,9 @@ const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 interface StoryListViewProps {
   workspaceId: string;
   workflow: WorkflowWithStates;
+  workflows?: WorkflowWithStates[];
   teams: WorkspaceTeam[];
-  members: MemberWithUser[];
+  assignableMembers?: AssignableMember[];
   epics: EpicWithStats[];
   sprints: SprintWithStats[];
   filters?: BoardFilters;
@@ -104,8 +106,9 @@ const columnHelper = createColumnHelper<Story>();
 export function StoryListView({
   workspaceId,
   workflow,
+  workflows,
   teams,
-  members,
+  assignableMembers = [],
   epics,
   sprints,
   filters,
@@ -126,21 +129,32 @@ export function StoryListView({
   const parentRef = useRef<HTMLDivElement>(null);
 
   // Build lookup maps
+  const availableWorkflows = useMemo(
+    () => (workflows && workflows.length > 0 ? workflows : [workflow]),
+    [workflow, workflows],
+  );
+  const statesByWorkflowId = useMemo(() => {
+    const map = new Map<string, WorkflowWithStates['states']>();
+    for (const wf of availableWorkflows) {
+      map.set(wf.workflow.id, wf.states);
+    }
+    return map;
+  }, [availableWorkflows]);
   const stateMap = useMemo(() => {
     const map = new Map<string, { name: string; stateType: string }>();
-    for (const s of workflow.states) {
-      map.set(s.id, { name: s.name, stateType: s.state_type });
+    for (const wf of availableWorkflows) {
+      for (const s of wf.states) {
+        map.set(s.id, { name: s.name, stateType: s.state_type });
+      }
     }
     return map;
-  }, [workflow.states]);
+  }, [availableWorkflows]);
 
-  const memberMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of members) {
-      map.set(m.user_id, m.full_name);
-    }
-    return map;
-  }, [members]);
+  const assignableMemberMap = useMemo(
+    () => buildAssignableMemberNameMap(assignableMembers),
+    [assignableMembers],
+  );
+  const ownerNameMap = assignableMemberMap;
 
   const teamMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -209,15 +223,27 @@ export function StoryListView({
   // Optimistic inline update with rollback on failure
   const updateStoryField = useCallback(
     async (storyId: string, patch: Partial<Story>) => {
+      const optimisticPatch: Partial<Story> = { ...patch };
+      if (Object.prototype.hasOwnProperty.call(patch, 'owner_member_id')) {
+        const ownerMemberId = patch.owner_member_id;
+        optimisticPatch.owner_name = ownerMemberId ? ownerNameMap.get(ownerMemberId) : undefined;
+      }
+
       let snapshot: Story[] = [];
       setStories((current) => {
         snapshot = current;
-        return current.map((s) => (s.id === storyId ? { ...s, ...patch } : s));
+        return current.map((s) => (s.id === storyId ? { ...s, ...optimisticPatch } : s));
       });
-      const { error } = await pmStoryService.update(workspaceId, storyId, patch);
+      const {
+        owner_name: _ownerName,
+        epic_name: _epicName,
+        labels: _labels,
+        ...apiPatch
+      } = patch;
+      const { error } = await pmStoryService.update(workspaceId, storyId, apiPatch);
       if (error) setStories(snapshot);
     },
-    [workspaceId],
+    [workspaceId, ownerNameMap],
   );
 
   // Listen for story events (only for self-fetching mode)
@@ -303,7 +329,7 @@ export function StoryListView({
           cell: (info) => (
             <InlineStateCell
               story={info.row.original}
-              states={workflow.states}
+              states={statesByWorkflowId.get(info.row.original.workflow_id) ?? workflow.states}
               stateMap={stateMap}
               onUpdate={updateStoryField}
             />
@@ -347,7 +373,10 @@ export function StoryListView({
         ),
       }),
       columnHelper.accessor(
-        (row) => (row.owner_id ? memberMap.get(row.owner_id) ?? 'Unknown' : 'Unassigned'),
+        (row) => {
+          const ownerKey = row.owner_member_id;
+          return ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : 'Unassigned';
+        },
         {
           id: 'ownerName',
           header: 'Owner',
@@ -355,8 +384,8 @@ export function StoryListView({
           cell: (info) => (
             <InlineOwnerCell
               story={info.row.original}
-              members={members}
-              memberMap={memberMap}
+              assignableMembers={assignableMembers}
+              ownerNameMap={ownerNameMap}
               onUpdate={updateStoryField}
             />
           ),
@@ -460,7 +489,7 @@ export function StoryListView({
         cell: (info) => <InlineLabelsCell labels={info.row.original.labels} />,
       }),
     ],
-    [stateMap, memberMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, members, teams, epics, sprints, updateStoryField]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField]
   );
 
   const columnVisibility = useMemo(() => {
@@ -808,17 +837,18 @@ function InlineStateCell({
 
 function InlineOwnerCell({
   story,
-  members,
-  memberMap,
+  assignableMembers,
+  ownerNameMap,
   onUpdate,
 }: {
   story: Story;
-  members: MemberWithUser[];
-  memberMap: Map<string, string>;
+  assignableMembers: AssignableMember[];
+  ownerNameMap: Map<string, string>;
   onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const ownerName = story.owner_id ? memberMap.get(story.owner_id) ?? 'Unknown' : null;
+  const ownerKey = story.owner_member_id;
+  const ownerName = ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -854,24 +884,27 @@ function InlineOwnerCell({
             <CommandList>
               <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No members found</CommandEmpty>
               <CommandGroup>
-                {members.map((m) => (
+                {assignableMembers.map((m) => {
+                  const optionName = ownerNameMap.get(m.id) ?? m.display_name ?? m.email;
+                  const isSelected = story.owner_member_id === m.id;
+                  return (
                   <CommandItem
-                    key={m.user_id}
-                    value={m.full_name || m.email}
+                    key={m.id}
+                    value={optionName}
                     onSelect={() => {
-                      const newOwnerId = story.owner_id === m.user_id ? undefined : m.user_id;
-                      onUpdate(story.id, { owner_id: newOwnerId });
+                      const newOwnerId = isSelected ? '' : m.id;
+                      onUpdate(story.id, { owner_member_id: newOwnerId });
                       setOpen(false);
                     }}
                     className="flex items-center gap-2 text-xs"
                   >
-                    <UserAvatar name={m.full_name || m.email} className="h-5 w-5" />
-                    <span className="truncate">{m.full_name || m.email}</span>
-                    {story.owner_id === m.user_id && (
+                    <UserAvatar name={optionName} className="h-5 w-5" />
+                    <span className="truncate">{optionName}</span>
+                    {isSelected && (
                       <Check className="ml-auto h-3.5 w-3.5 text-primary" />
                     )}
                   </CommandItem>
-                ))}
+                )})}
               </CommandGroup>
             </CommandList>
           </Command>

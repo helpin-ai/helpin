@@ -35,7 +35,7 @@ func TestPMImportServicePreviewShortcut(t *testing.T) {
 		t.Fatalf("seed existing story: %v", err)
 	}
 
-	resp, err := svc.PreviewShortcut(context.Background(), workspaceID, adminID, []byte(shortcutImportTestCSV()))
+	resp, err := svc.PreviewShortcut(context.Background(), workspaceID, adminID, []byte(shortcutImportTestCSV()), "")
 	if err != nil {
 		t.Fatalf("preview shortcut: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 		},
 	}
 
-	result, totalRows, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "")
+	result, totalRows, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "", "")
 	if err != nil {
 		t.Fatalf("execute shortcut import: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 
 	assertImportState(t, db, workspaceID)
 
-	secondResult, _, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "")
+	secondResult, _, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "", "")
 	if err != nil {
 		t.Fatalf("execute shortcut import second run: %v", err)
 	}
@@ -162,6 +162,115 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 	}
 	if secondResult.EpicsCreated != 0 || secondResult.ObjectivesCreated != 0 || secondResult.SprintsCreated != 0 {
 		t.Fatalf("expected no new deduped entities on second import, got epics=%d objectives=%d sprints=%d", secondResult.EpicsCreated, secondResult.ObjectivesCreated, secondResult.SprintsCreated)
+	}
+}
+
+func TestPMImportServiceExecuteShortcutUsesWorkflowIDsForStateMapping(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	csvData := shortcutImportCSVFromRows([]map[string]string{
+		{
+			"id": "2001", "name": "Alpha backlog", "type": "feature",
+			"created_at": "2026/03/01 09:00:00", "updated_at": "2026/03/01 09:00:00", "utc_offset": "+00:00",
+			"workflow": "Shared Workflow", "workflow_id": "wf-alpha", "state": "Backlog",
+		},
+		{
+			"id": "2002", "name": "Beta in progress", "type": "feature",
+			"created_at": "2026/03/01 09:00:00", "updated_at": "2026/03/01 09:00:00", "utc_offset": "+00:00",
+			"workflow": "Shared Workflow", "workflow_id": "wf-beta", "state": "In Progress",
+		},
+	})
+
+	preview, err := svc.PreviewShortcut(context.Background(), workspaceID, adminID, []byte(csvData), "")
+	if err != nil {
+		t.Fatalf("preview shortcut: %v", err)
+	}
+	if len(preview.Workflows) != 2 {
+		t.Fatalf("expected 2 distinct workflow previews, got %d", len(preview.Workflows))
+	}
+
+	req := model.ShortcutImportExecuteRequest{
+		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
+			{
+				ShortcutWorkflowID:   "wf-alpha",
+				ShortcutWorkflowName: "Shared Workflow",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Imported Alpha",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+				},
+			},
+			{
+				ShortcutWorkflowID:   "wf-beta",
+				ShortcutWorkflowName: "Shared Workflow",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Imported Beta",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "In Progress", NewStateName: "In Progress", StateType: model.PMStateTypeStarted, Position: 0},
+				},
+			},
+		},
+		Options: model.ShortcutImportOptions{
+			ImportArchived:  true,
+			ImportCompleted: true,
+		},
+	}
+
+	result, totalRows, err := svc.executeShortcutImport(context.Background(), workspaceID, adminID, []byte(csvData), req, "", "")
+	if err != nil {
+		t.Fatalf("execute shortcut import: %v", err)
+	}
+	if totalRows != 2 {
+		t.Fatalf("expected 2 imported rows, got %d", totalRows)
+	}
+	if result.WorkflowsCreated != 2 {
+		t.Fatalf("expected 2 workflows created, got %d", result.WorkflowsCreated)
+	}
+
+	var stories []model.PMStory
+	if err := db.Where("workspace_id = ?", workspaceID).Order("external_id").Find(&stories).Error; err != nil {
+		t.Fatalf("load stories: %v", err)
+	}
+	if len(stories) != 2 {
+		t.Fatalf("expected 2 imported stories, got %d", len(stories))
+	}
+	if stories[0].WorkflowID == stories[1].WorkflowID {
+		t.Fatal("expected same-named Shortcut workflows to map to different Helpin workflows")
+	}
+
+	for _, story := range stories {
+		var state model.PMWorkflowState
+		if err := db.Where("id = ?", story.WorkflowStateID).First(&state).Error; err != nil {
+			t.Fatalf("load workflow state %s: %v", story.WorkflowStateID, err)
+		}
+		if state.WorkflowID != story.WorkflowID {
+			t.Fatalf("story %s has state %s from workflow %s, expected workflow %s", story.ID, state.ID, state.WorkflowID, story.WorkflowID)
+		}
+		switch *story.ExternalID {
+		case "2001":
+			if state.Name != "Backlog" {
+				t.Fatalf("expected story 2001 to map to Backlog, got %q", state.Name)
+			}
+		case "2002":
+			if state.Name != "In Progress" {
+				t.Fatalf("expected story 2002 to map to In Progress, got %q", state.Name)
+			}
+		default:
+			t.Fatalf("unexpected story external id %q", *story.ExternalID)
+		}
 	}
 }
 
@@ -188,6 +297,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			password_hash TEXT NOT NULL,
 			full_name TEXT NOT NULL,
 			avatar_url TEXT,
+			default_workspace_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -205,8 +315,14 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 		`CREATE TABLE workspace_members (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
-			user_id TEXT NOT NULL,
+			user_id TEXT,
+			email TEXT NOT NULL,
+			display_name TEXT NOT NULL,
 			role TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active',
+			invited_by TEXT,
+			invited_at DATETIME,
+			accepted_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -292,6 +408,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			external_id TEXT,
 			epic_state_id TEXT,
 			owner_id TEXT,
+			owner_member_id TEXT,
 			team_id TEXT,
 			planned_start_date DATETIME,
 			deadline DATETIME,
@@ -348,7 +465,9 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			sprint_id TEXT,
 			team_id TEXT,
 			owner_id TEXT,
+			owner_member_id TEXT,
 			requester_id TEXT,
+			requester_member_id TEXT,
 			estimate INTEGER,
 			priority TEXT NOT NULL,
 			severity TEXT NOT NULL,
@@ -476,10 +595,10 @@ func newImportTestService(t *testing.T, db *gorm.DB) (*PMImportService, string, 
 		t.Fatalf("seed workspace: %v", err)
 	}
 	memberships := []model.WorkspaceMember{
-		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: adminID, Role: model.RoleOwner},
-		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: "user-requester", Role: model.RoleMember},
-		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: "user-owner-one", Role: model.RoleMember},
-		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: "user-owner-two", Role: model.RoleMember},
+		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr(adminID), Email: "admin@example.com", DisplayName: "Admin User", Role: model.RoleOwner, Status: model.WorkspaceMemberStatusActive},
+		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-requester"), Email: "azhar@contentstudio.io", DisplayName: "Azhar K", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
+		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-owner-one"), Email: "owner.one@example.com", DisplayName: "Owner One", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
+		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-owner-two"), Email: "owner.two@example.com", DisplayName: "Owner Two", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
 	}
 	if err := db.Create(&memberships).Error; err != nil {
 		t.Fatalf("seed workspace members: %v", err)
@@ -489,15 +608,6 @@ func newImportTestService(t *testing.T, db *gorm.DB) (*PMImportService, string, 
 }
 
 func shortcutImportTestCSV() string {
-	header := []string{
-		"id", "name", "type", "requester", "owners", "description", "is_completed", "created_at", "started_at", "updated_at",
-		"moved_at", "completed_at", "estimate", "external_ticket_count", "external_tickets", "is_blocked", "is_a_blocker", "due_date",
-		"labels", "epic_labels", "tasks", "state", "epic_id", "epic", "project_id", "project", "iteration_id", "iteration", "utc_offset",
-		"is_archived", "team_id", "team", "epic_state", "epic_is_archived", "epic_created_at", "epic_started_at", "epic_due_date",
-		"objective_id", "objective", "objective_state", "objective_created_at", "objective_started_at", "objective_due_date",
-		"objective_categories", "epic_planned_start_date", "workflow", "workflow_id", "priority", "severity", "product_area",
-		"skill_set", "technical_area", "custom_fields", "parent_story_id",
-	}
 	rows := []map[string]string{
 		{
 			"id": "85463", "name": "Paid Ads Attribution Improvements", "type": "feature", "requester": "azhar@contentstudio.io",
@@ -544,7 +654,19 @@ func shortcutImportTestCSV() string {
 			"tasks": "[X] create eventsource;[ ] Generate a webhook",
 		},
 	}
+	return shortcutImportCSVFromRows(rows)
+}
 
+func shortcutImportCSVFromRows(rows []map[string]string) string {
+	header := []string{
+		"id", "name", "type", "requester", "owners", "description", "is_completed", "created_at", "started_at", "updated_at",
+		"moved_at", "completed_at", "estimate", "external_ticket_count", "external_tickets", "is_blocked", "is_a_blocker", "due_date",
+		"labels", "epic_labels", "tasks", "state", "epic_id", "epic", "project_id", "project", "iteration_id", "iteration", "utc_offset",
+		"is_archived", "team_id", "team", "epic_state", "epic_is_archived", "epic_created_at", "epic_started_at", "epic_due_date",
+		"objective_id", "objective", "objective_state", "objective_created_at", "objective_started_at", "objective_due_date",
+		"objective_categories", "epic_planned_start_date", "workflow", "workflow_id", "priority", "severity", "product_area",
+		"skill_set", "technical_area", "custom_fields", "parent_story_id",
+	}
 	var b strings.Builder
 	writer := csv.NewWriter(&b)
 	if err := writer.Write(header); err != nil {
@@ -572,6 +694,28 @@ func assertImportState(t *testing.T, db *gorm.DB, workspaceID string) {
 	}
 	if len(stories) != 4 {
 		t.Fatalf("expected 4 imported stories, got %d", len(stories))
+	}
+	for _, story := range stories {
+		var state model.PMWorkflowState
+		if err := db.Where("id = ?", story.WorkflowStateID).First(&state).Error; err != nil {
+			t.Fatalf("load workflow state for story %s: %v", story.ID, err)
+		}
+		if state.WorkflowID != story.WorkflowID {
+			t.Fatalf("story %s has state %s from workflow %s, expected workflow %s", story.ID, state.ID, state.WorkflowID, story.WorkflowID)
+		}
+		if story.ExternalID == nil {
+			t.Fatalf("expected story %s to have external_id", story.ID)
+		}
+		switch *story.ExternalID {
+		case "85463":
+			if state.Name != "Completed" {
+				t.Fatalf("expected story 85463 to map to Completed, got %q", state.Name)
+			}
+		default:
+			if state.Name != "Backlog" {
+				t.Fatalf("expected story %s to map to Backlog, got %q", *story.ExternalID, state.Name)
+			}
+		}
 	}
 	var markdownStory *model.PMStory
 	for i := range stories {

@@ -14,11 +14,29 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  GripVertical,
+  Key,
   Loader2,
   Mail,
   Upload,
   X,
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
 import {
   pmImportService,
@@ -36,6 +54,7 @@ import { inviteService } from '@/lib/services/inviteService';
 type StateType = 'backlog' | 'unstarted' | 'started' | 'done';
 
 interface WorkflowMapping {
+  shortcutWorkflowId: string;
   shortcutWorkflowName: string;
   mode: 'create_new' | 'use_existing';
   newWorkflowName: string;
@@ -58,6 +77,7 @@ interface UserMapping {
   storyCount: number;
   matchedUserId: string | null;
   matchedName: string | null;
+  shortcutName: string | null;
   action: UserAction;
   manualUserId: string | null;
   invited: boolean;
@@ -74,7 +94,8 @@ const STATE_TYPE_OPTIONS: { value: StateType; label: string; color: string }[] =
   { value: 'done', label: 'Done', color: 'bg-green-400' },
 ];
 
-const IMPORT_STEPS = ['Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Stories', 'Links'];
+const IMPORT_STEPS_BASE = ['Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Stories', 'Links'];
+const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Stories', 'Links', 'Comments'];
 
 // ─── Main Component ──────────────────────────────────────────────────
 
@@ -93,6 +114,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
   const [existingWorkflows, setExistingWorkflows] = useState<WorkflowWithStates[]>([]);
   const [importArchived, setImportArchived] = useState(true);
   const [importCompleted, setImportCompleted] = useState(true);
+  const [apiToken, setApiToken] = useState('');
   const [importStatus, setImportStatus] = useState<ShortcutImportStatusResponse | null>(null);
   const [importing, setImporting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -106,11 +128,12 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
 
   // ─── Step 0: Upload ──────────────────────────────────────────────
 
-  const handleFileSelect = useCallback(async (selected: File) => {
+  const handleFileSelect = useCallback(async (selected: File, token?: string) => {
     setFile(selected);
     setPreviewLoading(true);
     setPreview(null);
-    const { data, error } = await pmImportService.previewShortcut(workspaceId, selected);
+    const tokenToUse = token ?? apiToken;
+    const { data, error } = await pmImportService.previewShortcut(workspaceId, selected, tokenToUse || undefined);
     setPreviewLoading(false);
     if (error || !data) {
       toast.error(error || 'Failed to preview CSV');
@@ -122,6 +145,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     // Initialize workflow mappings (backend returns states in logical order)
     setWorkflowMappings(
       data.workflows.map((wf) => ({
+        shortcutWorkflowId: wf.id || '',
         shortcutWorkflowName: wf.name,
         mode: 'create_new' as const,
         newWorkflowName: wf.name,
@@ -150,6 +174,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         storyCount: 0, // preview doesn't give per-user counts yet
         matchedUserId: u.matched_user_id,
         matchedName: u.matched_name,
+        shortcutName: u.shortcut_name || null,
         action: u.matched_user_id ? ('matched' as const) : ('skip' as const),
         manualUserId: null,
         invited: false,
@@ -159,7 +184,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     // Load existing workflows for the "use existing" mode
     const wfRes = await pmWorkflowService.list(workspaceId);
     if (wfRes.data) setExistingWorkflows(wfRes.data);
-  }, [workspaceId]);
+  }, [workspaceId, apiToken]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -233,20 +258,45 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         inviteService.send({ workspace_id: workspaceId, email: u.email, role: 'member' }),
       ),
     );
+    let succeeded = 0;
+    let autoMatched = 0;
     setUserMappings((prev) =>
       prev.map((u) => {
         const idx = toInvite.findIndex((t) => t.email === u.email);
         if (idx === -1) return u;
         const r = results[idx];
         if (r.status === 'fulfilled' && r.value.data) {
+          succeeded++;
+          return { ...u, action: 'invite' as const, invited: true };
+        }
+        // If invite failed, check if already a member and auto-match
+        const existingMember = members.find(
+          (m) => m.email.toLowerCase() === u.email.toLowerCase(),
+        );
+        if (existingMember) {
+          autoMatched++;
+          return {
+            ...u,
+            action: 'matched' as const,
+            manualUserId: existingMember.user_id,
+            matchedUserId: existingMember.user_id,
+            matchedName: existingMember.full_name || null,
+          };
+        }
+        // If pending invitation exists, mark as invited
+        const errMsg = r.status === 'fulfilled' && r.value.error ? String(r.value.error) : '';
+        if (errMsg.toLowerCase().includes('pending invitation')) {
+          succeeded++;
           return { ...u, action: 'invite' as const, invited: true };
         }
         return u;
       }),
     );
-    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
-    if (succeeded > 0) toast.success(`${succeeded} invitation(s) sent`);
-  }, [userMappings, workspaceId]);
+    const parts = [];
+    if (succeeded > 0) parts.push(`${succeeded} invited`);
+    if (autoMatched > 0) parts.push(`${autoMatched} auto-matched`);
+    if (parts.length > 0) toast.success(parts.join(', '));
+  }, [userMappings, workspaceId, members]);
 
   const handleInviteSingle = useCallback(
     async (email: string) => {
@@ -256,6 +306,37 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         role: 'member',
       });
       if (error || !data) {
+        // If already a member, auto-match them
+        const existingMember = members.find(
+          (m) => m.email.toLowerCase() === email.toLowerCase(),
+        );
+        if (existingMember) {
+          setUserMappings((prev) =>
+            prev.map((u) =>
+              u.email === email
+                ? {
+                    ...u,
+                    action: 'matched' as const,
+                    manualUserId: existingMember.user_id,
+                    matchedUserId: existingMember.user_id,
+                    matchedName: existingMember.full_name || null,
+                  }
+                : u,
+            ),
+          );
+          toast.success(`${email} is already a member — auto-matched`);
+          return;
+        }
+        // If a pending invitation already exists, mark as invited
+        if (error && error.toLowerCase().includes('pending invitation')) {
+          setUserMappings((prev) =>
+            prev.map((u) =>
+              u.email === email ? { ...u, action: 'invite' as const, invited: true } : u,
+            ),
+          );
+          toast.success(`${email} already has a pending invitation — mapped`);
+          return;
+        }
         toast.error(error || 'Failed to send invitation');
         return;
       }
@@ -264,7 +345,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       );
       toast.success(`Invitation sent to ${email}`);
     },
-    [workspaceId],
+    [workspaceId, members],
   );
 
   // ─── Step 3: Execute ─────────────────────────────────────────────
@@ -284,6 +365,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     const wfMappings: WorkflowStateMappingPayload[] = workflowMappings.map((wf) => {
       if (wf.mode === 'create_new') {
         return {
+          shortcut_workflow_id: wf.shortcutWorkflowId || undefined,
           shortcut_workflow_name: wf.shortcutWorkflowName,
           mode: 'create_new',
           new_workflow_name: wf.newWorkflowName,
@@ -296,6 +378,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         };
       }
       return {
+        shortcut_workflow_id: wf.shortcutWorkflowId || undefined,
         shortcut_workflow_name: wf.shortcutWorkflowName,
         mode: 'use_existing',
         existing_workflow_id: wf.existingWorkflowId,
@@ -312,6 +395,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       userMap,
       wfMappings,
       { import_archived: importArchived, import_completed: importCompleted },
+      apiToken || undefined,
     );
 
     if (error || !data) {
@@ -332,7 +416,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         }
       }
     }, 1500);
-  }, [file, userMappings, workflowMappings, importArchived, importCompleted, workspaceId]);
+  }, [file, userMappings, workflowMappings, importArchived, importCompleted, workspaceId, apiToken]);
 
   // ─── Navigation ──────────────────────────────────────────────────
 
@@ -389,6 +473,14 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           file={file}
           preview={preview}
           loading={previewLoading}
+          apiToken={apiToken}
+          onApiTokenChange={(token) => {
+            setApiToken(token);
+            // Re-preview if file already selected and token changes
+            if (file && token !== apiToken) {
+              handleFileSelect(file, token);
+            }
+          }}
           onDrop={handleDrop}
           onFileInput={handleFileInput}
           onClear={() => {
@@ -428,6 +520,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           importing={importing}
           importStatus={importStatus}
           onStart={handleStartImport}
+          hasApiToken={!!apiToken}
         />
       )}
 
@@ -456,6 +549,8 @@ function UploadStep({
   file,
   preview,
   loading,
+  apiToken,
+  onApiTokenChange,
   onDrop,
   onFileInput,
   onClear,
@@ -463,6 +558,8 @@ function UploadStep({
   file: File | null;
   preview: ShortcutImportPreviewResponse | null;
   loading: boolean;
+  apiToken: string;
+  onApiTokenChange: (token: string) => void;
   onDrop: (e: React.DragEvent) => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClear: () => void;
@@ -480,10 +577,39 @@ function UploadStep({
 
   if (!file || !preview) {
     return (
-      <div>
-        <p className="mb-4 text-sm text-muted-foreground">
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
           In Shortcut, go to Settings &rarr; Export &rarr; CSV to download your workspace data.
         </p>
+
+        {/* API Token (optional) */}
+        <Card>
+          <CardContent className="px-4 py-3">
+            <div className="flex items-start gap-3">
+              <Key className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div>
+                  <Label className="text-sm font-medium">Shortcut API Token (optional)</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Provides richer import: real label colors, sprint dates, epic/objective descriptions, and story comments.
+                    Generate a token at Settings &rarr; API Tokens in Shortcut.
+                  </p>
+                </div>
+                <Input
+                  type="text"
+                  placeholder="sc_..."
+                  value={apiToken}
+                  onChange={(e) => onApiTokenChange(e.target.value)}
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  className="max-w-sm font-mono text-xs"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <div
           onDragOver={(e) => e.preventDefault()}
           onDrop={onDrop}
@@ -573,7 +699,7 @@ function UploadStep({
         </div>
       </div>
 
-      {preview.warnings.length > 0 && (
+      {preview.warnings && preview.warnings.length > 0 && (
         <div className="space-y-1">
           {preview.warnings.map((w, i) => (
             <div key={i} className="flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-400">
@@ -584,6 +710,77 @@ function UploadStep({
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Sortable State Row ──────────────────────────────────────────────
+
+function SortableStateRow({
+  state,
+  onUpdateName,
+  onUpdateType,
+}: {
+  state: WorkflowMapping['states'][0];
+  onUpdateName: (name: string) => void;
+  onUpdateType: (type: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: state.shortcutState,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style} className={isDragging ? 'opacity-50 bg-accent/50' : ''}>
+      <TableCell className="py-1.5 w-[40px]">
+        <button
+          type="button"
+          className="h-6 w-6 flex items-center justify-center cursor-grab text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+      </TableCell>
+      <TableCell className="py-1.5">
+        <Input
+          value={state.newStateName}
+          onChange={(e) => onUpdateName(e.target.value)}
+          className="h-7 text-sm"
+        />
+      </TableCell>
+      <TableCell className="py-1.5 text-right text-xs text-muted-foreground">
+        {state.storyCount.toLocaleString()}
+      </TableCell>
+      <TableCell className="py-1.5">
+        <Select value={state.stateType} onValueChange={onUpdateType}>
+          <SelectTrigger className="h-7 text-xs">
+            <div className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  'h-2 w-2 rounded-full',
+                  STATE_TYPE_OPTIONS.find((o) => o.value === state.stateType)?.color,
+                )}
+              />
+              <SelectValue />
+            </div>
+          </SelectTrigger>
+          <SelectContent>
+            {STATE_TYPE_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                <div className="flex items-center gap-1.5">
+                  <div className={cn('h-2 w-2 rounded-full', opt.color)} />
+                  {opt.label}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -600,6 +797,24 @@ function WorkflowStep({
   onUpdateMapping: (idx: number, updates: Partial<WorkflowMapping>) => void;
   onUpdateState: (wfIdx: number, stateIdx: number, updates: Partial<WorkflowMapping['states'][0]>) => void;
 }) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleStateDragEnd = (wfIdx: number) => (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const wf = workflowMappings[wfIdx];
+    const oldIndex = wf.states.findIndex((s) => s.shortcutState === active.id);
+    const newIndex = wf.states.findIndex((s) => s.shortcutState === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = [...wf.states];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+    onUpdateMapping(wfIdx, { states: reordered.map((s, j) => ({ ...s, position: j })) });
+  };
+
   const allReady = workflowMappings.every((wf) => {
     if (wf.mode === 'create_new') return wf.states.some((s) => s.stateType === 'done');
     return wf.existingWorkflowId !== '' && wf.states.every((s) => s.existingStateId !== '');
@@ -623,7 +838,7 @@ function WorkflowStep({
         const totalStories = wf.states.reduce((sum, s) => sum + s.storyCount, 0);
 
         return (
-          <Card key={wf.shortcutWorkflowName}>
+          <Card key={wf.shortcutWorkflowId || wf.shortcutWorkflowName}>
             <CardHeader
               className="cursor-pointer py-3 px-4"
               onClick={() => onUpdateMapping(wfIdx, { expanded: !wf.expanded })}
@@ -679,63 +894,30 @@ function WorkflowStep({
                       />
                     </div>
 
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">State Name</TableHead>
-                          <TableHead className="text-xs text-right w-[80px]">Stories</TableHead>
-                          <TableHead className="text-xs w-[150px]">State Type</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {wf.states.map((s, sIdx) => (
-                          <TableRow key={s.shortcutState}>
-                            <TableCell className="py-1.5">
-                              <Input
-                                value={s.newStateName}
-                                onChange={(e) =>
-                                  onUpdateState(wfIdx, sIdx, { newStateName: e.target.value })
-                                }
-                                className="h-7 text-sm"
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStateDragEnd(wfIdx)}>
+                      <SortableContext items={wf.states.map((s) => s.shortcutState)} strategy={verticalListSortingStrategy}>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs w-[40px]" />
+                              <TableHead className="text-xs">State Name</TableHead>
+                              <TableHead className="text-xs text-right w-[80px]">Stories</TableHead>
+                              <TableHead className="text-xs w-[150px]">State Type</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {wf.states.map((s, sIdx) => (
+                              <SortableStateRow
+                                key={s.shortcutState}
+                                state={s}
+                                onUpdateName={(name) => onUpdateState(wfIdx, sIdx, { newStateName: name })}
+                                onUpdateType={(type) => onUpdateState(wfIdx, sIdx, { stateType: type as StateType })}
                               />
-                            </TableCell>
-                            <TableCell className="py-1.5 text-right text-xs text-muted-foreground">
-                              {s.storyCount.toLocaleString()}
-                            </TableCell>
-                            <TableCell className="py-1.5">
-                              <Select
-                                value={s.stateType}
-                                onValueChange={(v) =>
-                                  onUpdateState(wfIdx, sIdx, { stateType: v as StateType })
-                                }
-                              >
-                                <SelectTrigger className="h-7 text-xs">
-                                  <div className="flex items-center gap-1.5">
-                                    <div
-                                      className={cn(
-                                        'h-2 w-2 rounded-full',
-                                        STATE_TYPE_OPTIONS.find((o) => o.value === s.stateType)?.color,
-                                      )}
-                                    />
-                                    <SelectValue />
-                                  </div>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {STATE_TYPE_OPTIONS.map((opt) => (
-                                    <SelectItem key={opt.value} value={opt.value}>
-                                      <div className="flex items-center gap-1.5">
-                                        <div className={cn('h-2 w-2 rounded-full', opt.color)} />
-                                        {opt.label}
-                                      </div>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </SortableContext>
+                    </DndContext>
 
                     {!hasDone && (
                       <p className="flex items-center gap-1.5 text-xs text-destructive">
@@ -887,7 +1069,10 @@ function UserStep({
                   <TableCell className="py-1.5">
                     <div className="flex items-center gap-1.5 text-sm">
                       <Check className="h-3.5 w-3.5 text-green-500" />
-                      {u.email}
+                      <div>
+                        {u.shortcutName && <span className="font-medium">{u.shortcutName} — </span>}
+                        {u.email}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="py-1.5 text-sm">{u.matchedName || '—'}</TableCell>
@@ -920,7 +1105,10 @@ function UserStep({
                         ) : (
                           <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />
                         )}
-                        {u.email}
+                        <div>
+                          {u.shortcutName && <span className="font-medium">{u.shortcutName} — </span>}
+                          {u.email}
+                        </div>
                         {u.invited && (
                           <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">
                             Invited
@@ -1006,6 +1194,7 @@ function ImportStep({
   importing,
   importStatus,
   onStart,
+  hasApiToken,
 }: {
   preview: ShortcutImportPreviewResponse | null;
   workflowMappings: WorkflowMapping[];
@@ -1017,6 +1206,7 @@ function ImportStep({
   importing: boolean;
   importStatus: ShortcutImportStatusResponse | null;
   onStart: () => void;
+  hasApiToken: boolean;
 }) {
   const s = preview?.summary;
   const isDone = importStatus?.status === 'completed';
@@ -1061,7 +1251,7 @@ function ImportStep({
 
         {isRunning && progress && (
           <div className="space-y-1">
-            {IMPORT_STEPS.map((stepLabel, i) => {
+            {(hasApiToken ? IMPORT_STEPS_API : IMPORT_STEPS_BASE).map((stepLabel, i) => {
               const done = i < (progress.steps_completed || 0);
               const active =
                 i === (progress.steps_completed || 0) &&
@@ -1164,7 +1354,7 @@ function ImportStep({
         </Card>
       )}
 
-      {preview && preview.warnings.length > 0 && (
+      {preview && preview.warnings && preview.warnings.length > 0 && (
         <Card>
           <CardHeader className="py-3 px-4">
             <CardTitle className="text-sm">Warnings</CardTitle>
@@ -1210,6 +1400,7 @@ function ResultTable({ result }: { result: ShortcutImportStatusResponse['result'
     { label: 'Checklist Items', created: result.checklist_items_created },
     { label: 'Owner Links', created: result.owner_links_created },
     { label: 'Label Links', created: result.label_links_created },
+    { label: 'Comments', created: result.comments_created },
   ];
 
   return (

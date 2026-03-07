@@ -101,7 +101,7 @@ func (s *AuthService) GetProfile(ctx context.Context, userID string) (*model.Use
 
 // UpdateProfile updates the authenticated user's profile.
 func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req model.UpdateProfileRequest) (*model.UserProfile, error) {
-	user, err := s.userRepo.Update(ctx, userID, req.FullName, req.AvatarURL)
+	user, err := s.userRepo.Update(ctx, userID, req.FullName, req.AvatarURL, req.DefaultWorkspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("update profile: %w", err)
 	}
@@ -138,10 +138,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*m
 
 func toUserProfile(u *model.User) model.UserProfile {
 	return model.UserProfile{
-		ID:        u.ID,
-		Email:     u.Email,
-		FullName:  u.FullName,
-		AvatarURL: u.AvatarURL,
-		CreatedAt: u.CreatedAt,
+		ID:                 u.ID,
+		Email:              u.Email,
+		FullName:           u.FullName,
+		AvatarURL:          u.AvatarURL,
+		DefaultWorkspaceID: u.DefaultWorkspaceID,
+		CreatedAt:          u.CreatedAt,
 	}
 }

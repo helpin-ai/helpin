@@ -106,7 +106,7 @@ func parseShortcutCSV(data []byte) (*shortcutDataset, error) {
 
 	header := make(map[string]int, len(records[0]))
 	for idx, raw := range records[0] {
-		header[strings.TrimSpace(raw)] = idx
+		header[strings.ToLower(strings.TrimSpace(raw))] = idx
 	}
 	missing := make([]string, 0)
 	for _, col := range requiredShortcutColumns {
@@ -149,7 +149,7 @@ func parseShortcutCSV(data []byte) (*shortcutDataset, error) {
 			Iteration:            shortcutColumn(record, header, "iteration"),
 			UTCOffset:            shortcutColumn(record, header, "utc_offset"),
 			IsArchived:           shortcutColumn(record, header, "is_archived"),
-			Team:                 shortcutColumn(record, header, "team"),
+			Team:                 shortcutColumnAny(record, header, "team", "group"),
 			EpicState:            shortcutColumn(record, header, "epic_state"),
 			EpicIsArchived:       shortcutColumn(record, header, "epic_is_archived"),
 			EpicCreatedAt:        shortcutColumn(record, header, "epic_created_at"),
@@ -188,6 +188,16 @@ func shortcutColumn(record []string, header map[string]int, name string) string 
 		return ""
 	}
 	return strings.TrimSpace(record[idx])
+}
+
+// shortcutColumnAny tries multiple column names and returns the first match.
+func shortcutColumnAny(record []string, header map[string]int, names ...string) string {
+	for _, name := range names {
+		if v := shortcutColumn(record, header, name); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func shortcutSplitSemicolon(raw string) []string {
@@ -442,6 +452,20 @@ func parseShortcutMonth(raw string) (time.Month, bool) {
 		}
 	}
 	return 0, false
+}
+
+func parseShortcutDateOnly(raw string) *time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	for _, layout := range []string{"2006-01-02", "2006/01/02"} {
+		ts, err := time.Parse(layout, raw)
+		if err == nil {
+			return &ts
+		}
+	}
+	return nil
 }
 
 func isoWeekStart(year, week int) time.Time {

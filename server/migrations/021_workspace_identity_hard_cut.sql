@@ -1,0 +1,18 @@
+-- 021_workspace_identity_hard_cut.sql
+-- Reference migration for removing deprecated workspace identity tables after
+-- the app has fully converged on:
+--   - workspace_members
+--   - team_workspace_memberships
+--   - reward_profiles
+--
+-- Runtime application is handled by DropLegacyWorkspaceIdentitySchema().
+--
+-- Steps:
+-- 1. Remove foreign keys that still reference:
+--    - workspace_people
+--    - team_memberships
+--    - team_user_memberships
+-- 2. Drop legacy tables:
+--    - workspace_people
+--    - team_memberships
+--    - team_user_memberships

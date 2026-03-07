@@ -31,7 +31,8 @@ type WorkspaceTeam struct {
 
 func (WorkspaceTeam) TableName() string { return "workspace_teams" }
 
-// WorkspacePerson represents a row in the workspace_people table.
+// WorkspacePerson is the Settings "People" response DTO.
+// It is hydrated from workspace_members + reward_profiles.
 type WorkspacePerson struct {
 	ID                  string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID         string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
@@ -51,9 +52,8 @@ type WorkspacePerson struct {
 	UpdatedAt           time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (WorkspacePerson) TableName() string { return "workspace_people" }
-
-// TeamMembership represents a row in the team_memberships table.
+// TeamMembership is a compatibility DTO for person-based team membership data.
+// It is backed by team_workspace_memberships.
 type TeamMembership struct {
 	ID        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	TeamID    string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex:idx_team_membership_unique"`
@@ -61,9 +61,9 @@ type TeamMembership struct {
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
-func (TeamMembership) TableName() string { return "team_memberships" }
-
-// TeamUserMembership links an authenticated workspace member to a team.
+// TeamUserMembership is a compatibility DTO for user-based team membership
+// responses. It is synthesized from team_workspace_memberships +
+// workspace_members when a linked user account exists.
 type TeamUserMembership struct {
 	ID        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	TeamID    string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex:idx_team_user_membership_unique"`
@@ -73,7 +73,17 @@ type TeamUserMembership struct {
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
-func (TeamUserMembership) TableName() string { return "team_user_memberships" }
+// TeamWorkspaceMembership links a workspace member identity to a team.
+type TeamWorkspaceMembership struct {
+	ID                string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	TeamID            string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex:idx_team_workspace_member_unique"`
+	WorkspaceMemberID string    `json:"workspace_member_id" gorm:"type:uuid;not null;uniqueIndex:idx_team_workspace_member_unique"`
+	Role              string    `json:"role" gorm:"not null;default:'member'"`
+	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (TeamWorkspaceMembership) TableName() string { return "team_workspace_memberships" }
 
 // WorkspaceManager represents a row in the workspace_managers table.
 type WorkspaceManager struct {
@@ -189,6 +199,24 @@ type InvitationTeamPreassignment struct {
 
 func (InvitationTeamPreassignment) TableName() string { return "invitation_team_preassignments" }
 
+// RewardProfile holds reward- and HR-specific member metadata separately from PM identity.
+type RewardProfile struct {
+	ID                  string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceMemberID   string    `json:"workspace_member_id" gorm:"type:uuid;not null;uniqueIndex"`
+	ManagerMemberID     *string   `json:"manager_member_id" gorm:"type:uuid"`
+	Role                string    `json:"role" gorm:"not null;default:'employee'"`
+	JobRole             string    `json:"job_role" gorm:"not null;default:''"`
+	HireDate            *string   `json:"hire_date"`
+	BaseSalary          float64   `json:"base_salary" gorm:"not null;default:0"`
+	ActiveForBonus      bool      `json:"active_for_bonus" gorm:"not null;default:true"`
+	ActiveForEvaluation bool      `json:"active_for_evaluation" gorm:"not null;default:true"`
+	IsAccountOwner      bool      `json:"is_account_owner" gorm:"not null;default:false"`
+	CreatedAt           time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt           time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (RewardProfile) TableName() string { return "reward_profiles" }
+
 // FullWorkspaceConfig aggregates all settings for a workspace.
 type FullWorkspaceConfig struct {
 	Settings                     *WorkspaceSettings            `json:"settings"`
@@ -196,6 +224,7 @@ type FullWorkspaceConfig struct {
 	People                       []WorkspacePerson             `json:"people"`
 	Memberships                  []TeamMembership              `json:"memberships"`
 	UserMemberships              []TeamUserMembership          `json:"user_memberships"`
+	WorkspaceMemberships         []TeamWorkspaceMembership     `json:"workspace_memberships"`
 	Managers                     []WorkspaceManager            `json:"managers"`
 	JobRoles                     []JobRoleCriteria             `json:"job_roles"`
 	BonusTiers                   []BonusTier                   `json:"bonus_tiers"`

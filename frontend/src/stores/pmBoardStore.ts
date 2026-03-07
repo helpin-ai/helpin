@@ -60,7 +60,7 @@ interface PMBoardState {
   patchStory: (action: 'created' | 'updated' | 'deleted' | 'moved', storyId: string, story?: Story) => boolean;
 
   // View actions
-  loadViews: (workspaceId: string, currentUserId: string) => Promise<void>;
+  loadViews: (workspaceId: string, currentMemberId: string) => Promise<void>;
   applyView: (view: PMView) => void;
   saveCurrentAsView: (workspaceId: string, name: string, isShared: boolean) => Promise<PMView | null>;
   saveChangesToView: (workspaceId: string) => Promise<void>;
@@ -109,8 +109,8 @@ const storyMatchesFilters = (story: Story, teamId: string | null, filters: Board
   if (!matchesCsv(story.story_type, filters.story_type)) return false;
   if (!matchesCsv(story.epic_id, filters.epic_id)) return false;
   if (!matchesCsv(story.sprint_id, filters.sprint_id)) return false;
-  if (!matchesCsv(story.owner_id, filters.owner_id)) return false;
-  if (!matchesCsv(story.requester_id, filters.requester_id)) return false;
+  if (!matchesCsv(story.owner_member_id, filters.owner_member_id)) return false;
+  if (!matchesCsv(story.requester_member_id, filters.requester_member_id)) return false;
   if (filters.blocked && String(story.blocked) !== filters.blocked) return false;
   if (filters.updated_after && story.updated_at < filters.updated_after) return false;
   return true;
@@ -179,7 +179,11 @@ const mergeStoryGroups = (existing: StoryGroup[] | undefined, incoming: StoryGro
 /** Preserve board-enriched display fields (owner_name, epic_name) from existing story when IDs match. */
 const mergeEnrichedFields = (incoming: Story, existing: Story): Story => ({
   ...incoming,
-  owner_name: incoming.owner_name ?? (incoming.owner_id === existing.owner_id ? existing.owner_name : undefined),
+  owner_name: incoming.owner_name ?? (
+    incoming.owner_member_id === existing.owner_member_id
+      ? existing.owner_name
+      : undefined
+  ),
   epic_name: incoming.epic_name ?? (incoming.epic_id === existing.epic_id ? existing.epic_name : undefined),
 });
 
@@ -591,8 +595,8 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
 
   // ── View actions ──────────────────────────────────────────────────
 
-  loadViews: async (workspaceId, currentUserId) => {
-    const defaults = getDefaultViews(currentUserId);
+  loadViews: async (workspaceId, currentMemberId) => {
+    const defaults = getDefaultViews(currentMemberId);
     const res = await pmViewService.list(workspaceId);
     const custom = res.data ?? [];
     const allViews = [...defaults, ...custom];

@@ -71,11 +71,11 @@ type PMObjectiveTeam struct {
 
 func (PMObjectiveTeam) TableName() string { return "pm_objective_teams" }
 
-// PMObjectiveOwner links an objective to a user/person owner.
+// PMObjectiveOwner links an objective to a workspace member owner.
 type PMObjectiveOwner struct {
-	ObjectiveID string    `json:"objective_id" gorm:"type:uuid;primaryKey"`
-	UserID      string    `json:"user_id" gorm:"type:uuid;primaryKey"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
+	ObjectiveID       string    `json:"objective_id" gorm:"type:uuid;primaryKey"`
+	WorkspaceMemberID string    `json:"workspace_member_id" gorm:"type:uuid;primaryKey"`
+	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (PMObjectiveOwner) TableName() string { return "pm_objective_owners" }
@@ -112,6 +112,7 @@ type CreateObjectiveRequest struct {
 	Position         *int       `json:"position"`
 	TeamIDs          []string   `json:"team_ids"`
 	OwnerIDs         []string   `json:"owner_ids"`
+	OwnerMemberIDs   []string   `json:"owner_member_ids"`
 	LabelIDs         []string   `json:"label_ids"`
 	EpicIDs          []string   `json:"epic_ids"`
 }
@@ -129,6 +130,7 @@ type UpdateObjectiveRequest struct {
 	Archived         *bool      `json:"archived"`
 	TeamIDs          []string   `json:"team_ids"`
 	OwnerIDs         []string   `json:"owner_ids"`
+	OwnerMemberIDs   []string   `json:"owner_member_ids"`
 	LabelIDs         []string   `json:"label_ids"`
 	EpicIDs          []string   `json:"epic_ids"`
 }
@@ -169,6 +171,7 @@ type ObjectiveWithDetails struct {
 	Objective       PMObjective      `json:"objective"`
 	Teams           []string         `json:"teams"`
 	Owners          []string         `json:"owners"`
+	OwnerMemberIDs  []string         `json:"owner_member_ids"`
 	Labels          []PMLabel        `json:"labels"`
 	KeyResults      []PMKeyResult    `json:"key_results"`
 	Epics           []EpicWithStats  `json:"epics"`

@@ -170,8 +170,12 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 			return nil, err
 		}
 	}
-	if len(req.OwnerIDs) > 0 {
-		if err := s.objectiveRepo.ReplaceOwners(ctx, obj.ID, req.OwnerIDs); err != nil {
+	if len(req.OwnerIDs) > 0 || len(req.OwnerMemberIDs) > 0 {
+		owners, err := resolveWorkspaceMemberReferences(ctx, s.workspaceRepo, req.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.objectiveRepo.ReplaceOwners(ctx, obj.ID, memberIDs(owners)); err != nil {
 			return nil, err
 		}
 	}
@@ -262,8 +266,12 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 			return nil, err
 		}
 	}
-	if req.OwnerIDs != nil {
-		if err := s.objectiveRepo.ReplaceOwners(ctx, obj.ID, req.OwnerIDs); err != nil {
+	if req.OwnerIDs != nil || req.OwnerMemberIDs != nil {
+		owners, err := resolveWorkspaceMemberReferences(ctx, s.workspaceRepo, obj.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.objectiveRepo.ReplaceOwners(ctx, obj.ID, memberIDs(owners)); err != nil {
 			return nil, err
 		}
 	}
@@ -349,7 +357,7 @@ func (s *PMObjectiveService) RemoveTeam(ctx context.Context, objectiveID, teamID
 }
 
 // AddOwner links an owner to an objective.
-func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, userID, actorID string) error {
+func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, ownerRef, actorID string) error {
 	obj, err := s.objectiveRepo.GetByID(ctx, objectiveID)
 	if err != nil {
 		return err
@@ -360,7 +368,11 @@ func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, userID, 
 	if err := s.requireCanEdit(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
 		return err
 	}
-	if err := s.objectiveRepo.AddOwner(ctx, objectiveID, userID); err != nil {
+	owner, err := resolveWorkspaceMemberReference(ctx, s.workspaceRepo, obj.Objective.WorkspaceID, ownerRef)
+	if err != nil {
+		return err
+	}
+	if err := s.objectiveRepo.AddOwner(ctx, objectiveID, owner.ID); err != nil {
 		return err
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
@@ -368,7 +380,7 @@ func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, userID, 
 }
 
 // RemoveOwner unlinks an owner from an objective.
-func (s *PMObjectiveService) RemoveOwner(ctx context.Context, objectiveID, userID, actorID string) error {
+func (s *PMObjectiveService) RemoveOwner(ctx context.Context, objectiveID, ownerRef, actorID string) error {
 	obj, err := s.objectiveRepo.GetByID(ctx, objectiveID)
 	if err != nil {
 		return err
@@ -379,7 +391,11 @@ func (s *PMObjectiveService) RemoveOwner(ctx context.Context, objectiveID, userI
 	if err := s.requireCanEdit(ctx, obj.Objective.WorkspaceID, actorID); err != nil {
 		return err
 	}
-	if err := s.objectiveRepo.RemoveOwner(ctx, objectiveID, userID); err != nil {
+	owner, err := resolveWorkspaceMemberReference(ctx, s.workspaceRepo, obj.Objective.WorkspaceID, ownerRef)
+	if err != nil {
+		return err
+	}
+	if err := s.objectiveRepo.RemoveOwner(ctx, objectiveID, owner.ID); err != nil {
 		return err
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})

@@ -104,6 +104,17 @@ func (r *InvitationRepository) UpdateTokenAndExpiry(ctx context.Context, id, tok
 	return nil
 }
 
+// UpdateWorkspaceMemberID links an invitation to its canonical workspace member row.
+func (r *InvitationRepository) UpdateWorkspaceMemberID(ctx context.Context, id, workspaceMemberID string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.WorkspaceInvitation{}).
+		Where("id = ?", id).
+		Update("workspace_member_id", workspaceMemberID).Error; err != nil {
+		return fmt.Errorf("update invitation workspace member id: %w", err)
+	}
+	return nil
+}
+
 // GetByTokenWithDetails returns an invitation with workspace and inviter details.
 func (r *InvitationRepository) GetByTokenWithDetails(ctx context.Context, token string) (*model.InvitationWithDetails, error) {
 	result := &model.InvitationWithDetails{}

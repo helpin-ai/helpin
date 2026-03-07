@@ -113,15 +113,15 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 	go func() {
 		defer wg.Done()
 		if err := r.db.WithContext(ctx).
-			Raw(`SELECT wp.id, wp.name, 'member' AS type,
-					COALESCE(tm.team_id::text, '') AS team_id,
+			Raw(`SELECT wm.id, wm.display_name AS name, 'member' AS type,
+					COALESCE(twm.team_id::text, '') AS team_id,
 					COALESCE(wt.name, '') AS team_name
-				FROM workspace_people wp
-				LEFT JOIN team_memberships tm ON tm.person_id = wp.id
-				LEFT JOIN workspace_teams wt ON wt.id = tm.team_id
-				WHERE wp.workspace_id = ? AND wp.status = 'active'
-				  AND (wp.name ILIKE ? OR wp.email ILIKE ?)
-				ORDER BY wp.name ASC
+				FROM workspace_members wm
+				LEFT JOIN team_workspace_memberships twm ON twm.workspace_member_id = wm.id
+				LEFT JOIN workspace_teams wt ON wt.id = twm.team_id
+				WHERE wm.workspace_id = ? AND wm.status IN ('active', 'pending')
+				  AND (wm.display_name ILIKE ? OR wm.email ILIKE ?)
+				ORDER BY wm.display_name ASC
 				LIMIT ?`, workspaceID, pattern, pattern, searchLimit).
 			Scan(&members).Error; err != nil {
 			setErr(fmt.Errorf("search members: %w", err))

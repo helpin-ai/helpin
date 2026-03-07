@@ -1,6 +1,6 @@
 import type { PMView } from './pmTypes';
 
-export function getDefaultViews(currentUserId: string): PMView[] {
+export function getDefaultViews(currentMemberId: string): PMView[] {
   const now = new Date().toISOString();
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -21,7 +21,7 @@ export function getDefaultViews(currentUserId: string): PMView[] {
       id: '__default_owned_by_me__',
       workspace_id: '',
       name: 'Owned by me',
-      filters: { owner_id: currentUserId },
+      filters: { owner_member_id: currentMemberId },
       is_shared: false,
       is_pinned: true,
       position: -3,
@@ -33,7 +33,7 @@ export function getDefaultViews(currentUserId: string): PMView[] {
       id: '__default_requested_by_me__',
       workspace_id: '',
       name: 'Requested by me',
-      filters: { requester_id: currentUserId },
+      filters: { requester_member_id: currentMemberId },
       is_shared: false,
       is_pinned: true,
       position: -2,

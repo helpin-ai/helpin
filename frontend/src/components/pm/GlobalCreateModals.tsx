@@ -17,7 +17,7 @@ import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -26,30 +26,8 @@ import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { EpicHealth, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
-import type { MemberWithUser, WorkspacePerson } from '@/lib/types';
+import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
-
-/** Merge workspace members (user accounts) and settings people into one deduplicated list. */
-function mergeOwnerOptions(members: MemberWithUser[], people: WorkspacePerson[]) {
-  const seen = new Set<string>();
-  const result: { id: string; name: string }[] = [];
-
-  for (const m of members) {
-    const key = m.email.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push({ id: m.user_id, name: m.full_name || m.email });
-    }
-  }
-  for (const p of people) {
-    const key = p.email.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push({ id: p.id, name: p.name || p.email });
-    }
-  }
-  return result;
-}
 
 const healthOptions: EpicHealth[] = ['on_track', 'at_risk', 'off_track'];
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
@@ -103,9 +81,9 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
 function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const epicStates = usePMWorkflowStore((s) => s.epicStates);
   const loadEpicStates = usePMWorkflowStore((s) => s.loadEpicStates);
-  const { teams, people } = useWorkspaceTeams(workspaceId);
-  const { members } = useWorkspaceMembers(workspaceId);
-  const ownerOptions = mergeOwnerOptions(members, people);
+  const { teams } = useWorkspaceTeams(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
+  const ownerOptions = buildAssignableMemberOptions(assignableMembers);
 
   const [form, setForm] = useState({
     name: '',
@@ -113,7 +91,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     stateId: '',
     health: 'on_track' as EpicHealth,
     teamId: '',
-    ownerId: '',
+    ownerMemberId: '',
     startDate: '',
     targetDate: '',
   });
@@ -133,7 +111,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       description: form.description.trim() || undefined,
       epic_state_id: form.stateId || undefined,
       team_id: form.teamId || undefined,
-      owner_id: form.ownerId || undefined,
+      owner_member_id: form.ownerMemberId || undefined,
       health: form.health,
       planned_start_date: form.startDate || undefined,
       deadline: form.targetDate || undefined,
@@ -211,7 +189,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
                 <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Owner</span>
-                <Select value={form.ownerId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, ownerId: v === '__none__' ? '' : v }))}>
+                <Select value={form.ownerMemberId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, ownerMemberId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
@@ -466,9 +444,9 @@ function MultiSelectPopover({
 }
 
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
-  const { teams, people } = useWorkspaceTeams(workspaceId);
-  const { members } = useWorkspaceMembers(workspaceId);
-  const ownerOptions = mergeOwnerOptions(members, people);
+  const { teams } = useWorkspaceTeams(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
+  const ownerOptions = buildAssignableMemberOptions(assignableMembers);
 
   const [form, setForm] = useState({
     name: '',
@@ -476,7 +454,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
     objectiveType: 'tactical' as ObjectiveType,
     state: 'not_started' as ObjectiveState,
     teamIds: [] as string[],
-    ownerIds: [] as string[],
+    ownerMemberIds: [] as string[],
     startDate: '',
     targetDate: '',
   });
@@ -493,7 +471,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
       objective_type: form.objectiveType,
       state: form.state,
       team_ids: form.teamIds.length > 0 ? form.teamIds : undefined,
-      owner_ids: form.ownerIds.length > 0 ? form.ownerIds : undefined,
+      owner_member_ids: form.ownerMemberIds.length > 0 ? form.ownerMemberIds : undefined,
       planned_start_date: form.startDate || undefined,
       deadline: form.targetDate || undefined,
     });
@@ -617,8 +595,8 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 <span className="text-xs text-muted-foreground self-center">Owners</span>
                 <MultiSelectPopover
                   items={ownerOptions}
-                  selected={form.ownerIds}
-                  onChange={(ids) => setForm((f) => ({ ...f, ownerIds: ids }))}
+                  selected={form.ownerMemberIds}
+                  onChange={(ids) => setForm((f) => ({ ...f, ownerMemberIds: ids }))}
                   placeholder="Select owners"
                 />
 

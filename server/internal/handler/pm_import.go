@@ -30,7 +30,8 @@ func (h *PMImportHandler) PreviewShortcut(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	resp, err := h.importService.PreviewShortcut(r.Context(), workspaceID, userID, data)
+	apiToken := r.FormValue("api_token")
+	resp, err := h.importService.PreviewShortcut(r.Context(), workspaceID, userID, data, apiToken)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -80,6 +81,7 @@ func (h *PMImportHandler) ExecuteShortcut(w http.ResponseWriter, r *http.Request
 			req.Options.ImportCompleted = value
 		}
 	}
+	req.APIToken = r.FormValue("api_token")
 
 	resp, err := h.importService.ExecuteShortcut(r.Context(), workspaceID, userID, fileName, data, req)
 	if err != nil {

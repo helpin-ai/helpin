@@ -76,6 +76,13 @@ func main() {
 		log.Fatalf("failed to migrate pm import schema: %v", err)
 	}
 
+	if err := repository.MigrateWorkspaceMemberSchema(db); err != nil {
+		log.Fatalf("failed to migrate workspace member schema: %v", err)
+	}
+	if err := repository.DropLegacyWorkspaceIdentitySchema(db); err != nil {
+		log.Fatalf("failed to drop legacy workspace identity schema: %v", err)
+	}
+
 	// Auto-migrate all models.
 	// The SQL migration files in server/migrations/ are kept as reference documentation.
 	if err := db.AutoMigrate(
@@ -86,10 +93,9 @@ func main() {
 		&model.WorkspaceMember{},
 		&model.WorkspaceSettings{},
 		&model.WorkspaceTeam{},
-		&model.WorkspacePerson{},
-		&model.TeamMembership{},
-		&model.TeamUserMembership{},
+		&model.TeamWorkspaceMembership{},
 		&model.WorkspaceManager{},
+		&model.RewardProfile{},
 		&model.JobRoleCriteria{},
 		&model.BonusTier{},
 		&model.RewardQuarter{},
@@ -230,8 +236,8 @@ func main() {
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
-	pmStoryService := service.NewPMStoryService(pmStoryRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService)
-	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, pmActivityService, wsPublisher)
+	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService)
+	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher)
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)

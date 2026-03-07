@@ -148,8 +148,8 @@ export function Sidebar() {
 
   // ── Detect active team from URL search params ──
   const activeTeamParam = useMemo(() => {
-    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-    return params.get('team') ?? null;
+    const search = location.search as Record<string, string | undefined>;
+    return search.team ?? null;
   }, [location.search]);
 
   // ── Auto-expand team when navigating via direct URL ──
@@ -309,7 +309,7 @@ export function Sidebar() {
   };
 
   return (
-    <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f7f7f8]">
+    <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f0f0f2]">
       <SidebarHeader className="border-b border-border/70 p-2">
         <WorkspaceSwitcher />
       </SidebarHeader>
