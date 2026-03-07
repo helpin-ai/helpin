@@ -17,7 +17,9 @@ import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopov
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type { EpicWithStats, EpicHealth } from '@/lib/pmTypes';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   on_track: { label: 'On track', color: 'text-green-600' },
@@ -71,6 +73,11 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const workspaceId = workspace?.id;
   const slug = workspace?.slug;
   const { findTeamName } = useWorkspaceTeams(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
+  const ownerNameMap = useMemo(
+    () => buildAssignableMemberNameMap(assignableMembers),
+    [assignableMembers],
+  );
 
   const completionPct = (entry: EpicWithStats) => {
     if (entry.stats.story_count === 0) return 0;
@@ -117,11 +124,16 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       columnHelper.display({
         id: 'owner',
         header: 'Owner',
-        size: 80,
+        size: 180,
         cell: (info) => {
           const entry = info.row.original;
-          return entry.epic.owner_id ? (
-            <UserAvatar name={entry.epic.owner_id} />
+          const ownerKey = entry.epic.owner_member_id;
+          const ownerName = ownerKey ? ownerNameMap.get(ownerKey) : null;
+          return ownerName ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <UserAvatar name={ownerName} />
+              <span className="truncate text-xs text-muted-foreground">{ownerName}</span>
+            </div>
           ) : (
             <User className="h-4 w-4 text-muted-foreground/50" />
           );
@@ -245,7 +257,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         },
       }),
     ],
-    [findTeamName]
+    [findTeamName, ownerNameMap]
   );
 
   const columnVisibility = useMemo<VisibilityState>(() => {

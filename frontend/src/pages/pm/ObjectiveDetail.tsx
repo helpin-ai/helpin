@@ -32,10 +32,10 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import type { MemberWithUser, WorkspacePerson } from '@/lib/types';
+import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import type {
   EpicWithStats,
   KeyResult,
@@ -46,26 +46,6 @@ import type {
   UpdateObjectiveRequest,
 } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
-
-function mergeOwnerOptions(members: MemberWithUser[], people: WorkspacePerson[]) {
-  const seen = new Set<string>();
-  const result: { id: string; name: string }[] = [];
-  for (const m of members) {
-    const key = m.email.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push({ id: m.user_id, name: m.full_name || m.email });
-    }
-  }
-  for (const p of people) {
-    const key = p.email.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push({ id: p.id, name: p.name || p.email });
-    }
-  }
-  return result;
-}
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/objectives/$objectiveId');
 
@@ -453,14 +433,15 @@ export function ObjectiveDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const { teams, people } = useWorkspaceTeams(workspaceId);
-  const { members } = useWorkspaceMembers(workspaceId);
-  const ownerOptions = mergeOwnerOptions(members, people);
+  const { teams } = useWorkspaceTeams(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
+  const ownerOptions = useMemo(
+    () => buildAssignableMemberOptions(assignableMembers),
+    [assignableMembers],
+  );
   const memberMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const o of ownerOptions) map.set(o.id, o.name);
-    return map;
-  }, [ownerOptions]);
+    return buildAssignableMemberNameMap(assignableMembers);
+  }, [assignableMembers]);
 
   useTitle(form?.name ? `${form.name} — Objective` : 'Objective');
 
@@ -596,16 +577,22 @@ export function ObjectiveDetailPage() {
     setData((prev) => prev ? { ...prev, teams: prev.teams.filter((t) => t !== teamId) } : prev);
   };
 
-  const handleAddOwner = async (userId: string) => {
+  const handleAddOwner = async (workspaceMemberId: string) => {
     if (!workspaceId || !data) return;
-    await pmObjectiveService.addOwner(workspaceId, data.objective.id, userId);
-    setData((prev) => prev ? { ...prev, owners: [...prev.owners, userId] } : prev);
+    await pmObjectiveService.addOwner(workspaceId, data.objective.id, workspaceMemberId);
+    setData((prev) => prev ? {
+      ...prev,
+      owner_member_ids: [...new Set([...(prev.owner_member_ids ?? []), workspaceMemberId])],
+    } : prev);
   };
 
-  const handleRemoveOwner = async (userId: string) => {
+  const handleRemoveOwner = async (workspaceMemberId: string) => {
     if (!workspaceId || !data) return;
-    await pmObjectiveService.removeOwner(workspaceId, data.objective.id, userId);
-    setData((prev) => prev ? { ...prev, owners: prev.owners.filter((o) => o !== userId) } : prev);
+    await pmObjectiveService.removeOwner(workspaceId, data.objective.id, workspaceMemberId);
+    setData((prev) => prev ? {
+      ...prev,
+      owner_member_ids: (prev.owner_member_ids ?? []).filter((id) => id !== workspaceMemberId),
+    } : prev);
   };
 
   // Epic handlers
@@ -663,6 +650,7 @@ export function ObjectiveDetailPage() {
   const epicProgress = data.stats.epic_story_count > 0
     ? Math.round((data.stats.epic_done_stories / data.stats.epic_story_count) * 100)
     : 0;
+  const ownerIds = data.owner_member_ids ?? data.owners;
 
   return (
     <div className="flex h-full flex-col">
@@ -1011,12 +999,12 @@ export function ObjectiveDetailPage() {
             </MetadataRow>
 
             {/* Owners */}
-            <MetadataRow icon={User} label="Owners">
-              <MultiValueList
-                items={data.owners}
-                allOptions={ownerOptions}
-                onAdd={handleAddOwner}
-                onRemove={handleRemoveOwner}
+              <MetadataRow icon={User} label="Owners">
+                <MultiValueList
+                  items={ownerIds}
+                  allOptions={ownerOptions}
+                  onAdd={handleAddOwner}
+                  onRemove={handleRemoveOwner}
                 placeholder="Add owner"
                 readOnly={!canEdit()}
               />

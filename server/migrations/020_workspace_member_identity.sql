@@ -1,0 +1,44 @@
+-- 020_workspace_member_identity.sql
+-- Reference migration for the unified workspace_members identity model.
+-- GORM AutoMigrate + MigrateWorkspaceMemberSchema handle the live schema changes.
+
+-- Summary:
+-- 1. Extend workspace_members with:
+--    - email
+--    - display_name
+--    - status
+--    - invited_by
+--    - invited_at
+--    - accepted_at
+--    - nullable user_id
+--
+-- 2. Extend workspace_invitations with:
+--    - workspace_member_id
+--
+-- 3. Create team_workspace_memberships:
+--    - team_id
+--    - workspace_member_id
+--    - role
+--
+-- 4. Create reward_profiles:
+--    - workspace_member_id
+--    - manager_member_id
+--    - role
+--    - job_role
+--    - hire_date
+--    - base_salary
+--    - active_for_bonus
+--    - active_for_evaluation
+--    - is_account_owner
+--
+-- 5. Extend PM ownership:
+--    - pm_stories.owner_member_id
+--    - pm_stories.requester_member_id
+--    - pm_epics.owner_member_id
+--    - pm_objective_owners.workspace_member_id
+--
+-- 6. Legacy cleanup is handled separately by 021_workspace_identity_hard_cut.sql
+--    once the deployment is ready to remove:
+--    - workspace_people
+--    - team_memberships
+--    - team_user_memberships

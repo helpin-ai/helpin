@@ -43,10 +43,11 @@ import { pmLabelService } from "@/lib/services/pmLabelService";
 import { LabelPicker } from "@/components/pm/LabelPicker";
 import { EstimatePicker } from "@/components/pm/EstimatePicker";
 import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
-import { useWorkspaceMembers } from "@/hooks/useWorkspaceMembers";
+import { useAssignableWorkspaceMembers } from "@/hooks/useAssignableWorkspaceMembers";
 import { useTeamFieldVisibilityStore } from "@/stores/teamFieldVisibilityStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { DatePicker } from "@/components/ui/date-picker";
+import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from "@/lib/assignableMembers";
 
 interface CreateStoryModalProps {
   open: boolean;
@@ -72,8 +73,8 @@ const defaultState = {
   epic_id: "",
   sprint_id: "",
   team_id: "",
-  owner_id: "",
-  requester_id: "",
+  owner_member_id: "",
+  requester_member_id: "",
   deadline: "",
   label_ids: [] as string[],
 };
@@ -169,16 +170,24 @@ export function CreateStoryModal({
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const { teams } = useWorkspaceTeams(workspaceId);
-  const { members } = useWorkspaceMembers(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id || null));
-  const currentUserId = useSessionStore((s) => s.membership?.user_id ?? '');
+  const currentMemberId = useSessionStore((s) => s.membership?.id ?? '');
+  const memberOptions = useMemo(
+    () => buildAssignableMemberOptions(assignableMembers),
+    [assignableMembers],
+  );
+  const memberNameMap = useMemo(
+    () => buildAssignableMemberNameMap(assignableMembers),
+    [assignableMembers],
+  );
 
   useEffect(() => {
     if (!open) return;
-    setForm({ ...defaultState, owner_id: currentUserId, team_id: initialTeamId ?? '' });
+    setForm({ ...defaultState, requester_member_id: currentMemberId, team_id: initialTeamId ?? '' });
     setStateId(initialStateId);
     setError(null);
-  }, [open, initialStateId, initialTeamId, currentUserId]);
+  }, [open, initialStateId, initialTeamId, currentMemberId]);
 
   useEffect(() => {
     if (!open) return;
@@ -236,14 +245,14 @@ export function CreateStoryModal({
   }, [form.team_id, teams]);
 
   const currentOwnerName = useMemo(() => {
-    if (!form.owner_id) return "No owner";
-    return members.find((m) => m.user_id === form.owner_id)?.full_name ?? "No owner";
-  }, [form.owner_id, members]);
+    if (!form.owner_member_id) return "No owner";
+    return memberNameMap.get(form.owner_member_id) ?? "No owner";
+  }, [form.owner_member_id, memberNameMap]);
 
   const currentRequesterName = useMemo(() => {
-    if (!form.requester_id) return "No requester";
-    return members.find((m) => m.user_id === form.requester_id)?.full_name ?? "No requester";
-  }, [form.requester_id, members]);
+    if (!form.requester_member_id) return "No requester";
+    return memberNameMap.get(form.requester_member_id) ?? "No requester";
+  }, [form.requester_member_id, memberNameMap]);
 
   const submit = useCallback(async () => {
     if (!canSubmit || submitting) return;
@@ -263,14 +272,14 @@ export function CreateStoryModal({
         epic_id: form.epic_id || undefined,
         sprint_id: form.sprint_id || undefined,
         team_id: form.team_id || undefined,
-        owner_id: form.owner_id || undefined,
-        requester_id: form.requester_id || undefined,
+        owner_member_id: form.owner_member_id || undefined,
+        requester_member_id: form.requester_member_id || undefined,
         deadline: form.deadline || undefined,
         label_ids: form.label_ids.length > 0 ? form.label_ids : undefined,
       });
 
       if (createMore) {
-        setForm(defaultState);
+        setForm({ ...defaultState, requester_member_id: currentMemberId, team_id: initialTeamId ?? '' });
         setStateId(initialStateId);
       } else {
         onOpenChange(false);
@@ -289,6 +298,8 @@ export function CreateStoryModal({
     workspaceId,
     workflow,
     initialStateId,
+    currentMemberId,
+    initialTeamId,
     onCreate,
     onOpenChange,
   ]);
@@ -433,15 +444,15 @@ export function CreateStoryModal({
                 {/* Owner */}
                 <MetadataRow icon={User} label="Owner">
                   <SidebarPopoverSelect
-                    value={form.owner_id || "__none__"}
+                    value={form.owner_member_id || "__none__"}
                     options={[
                       { value: "__none__", label: "No owner" },
-                      ...members.map((m) => ({ value: m.user_id, label: m.full_name || m.email })),
+                      ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
                     ]}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
-                        owner_id: value === "__none__" ? "" : value,
+                        owner_member_id: value === "__none__" ? "" : value,
                       }))
                     }
                     renderTrigger={() => <span>{currentOwnerName}</span>}
@@ -451,15 +462,15 @@ export function CreateStoryModal({
                 {/* Requester */}
                 <MetadataRow icon={User} label="Requester">
                   <SidebarPopoverSelect
-                    value={form.requester_id || "__none__"}
+                    value={form.requester_member_id || "__none__"}
                     options={[
                       { value: "__none__", label: "No requester" },
-                      ...members.map((m) => ({ value: m.user_id, label: m.full_name || m.email })),
+                      ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
                     ]}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
-                        requester_id: value === "__none__" ? "" : value,
+                        requester_member_id: value === "__none__" ? "" : value,
                       }))
                     }
                     renderTrigger={() => <span>{currentRequesterName}</span>}

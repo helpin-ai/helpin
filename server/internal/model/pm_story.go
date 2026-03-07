@@ -21,37 +21,39 @@ const (
 
 // PMStory represents a single work item.
 type PMStory struct {
-	ID              string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	DisplayID       int        `json:"display_id" gorm:"not null;index"`
-	Name            string     `json:"name" gorm:"not null"`
-	Description     *string    `json:"description"`
-	StoryType       string     `json:"story_type" gorm:"not null;default:'feature'"`
-	WorkflowID      string     `json:"workflow_id" gorm:"type:uuid;not null;index"`
-	WorkflowStateID string     `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
-	EpicID          *string    `json:"epic_id" gorm:"type:uuid;index"`
-	SprintID        *string    `json:"sprint_id" gorm:"type:uuid;index"`
-	TeamID          *string    `json:"team_id" gorm:"type:uuid;index"`
-	OwnerID         *string    `json:"owner_id" gorm:"type:uuid;index"`
-	RequesterID     *string    `json:"requester_id" gorm:"type:uuid"`
-	Estimate        *int       `json:"estimate"`
-	Priority        string     `json:"priority" gorm:"not null;default:'none'"`
-	Severity        string     `json:"severity" gorm:"not null;default:'none'"`
-	Deadline        *time.Time `json:"deadline" gorm:"type:date"`
-	Position        int        `json:"position" gorm:"not null;default:0"`
-	Started         bool       `json:"started" gorm:"not null;default:false"`
-	StartedAt       *time.Time `json:"started_at"`
-	Completed       bool       `json:"completed" gorm:"not null;default:false"`
-	CompletedAt     *time.Time `json:"completed_at"`
-	MovedAt         *time.Time `json:"moved_at"`
-	Blocked         bool       `json:"blocked" gorm:"not null;default:false"`
-	Blocker         *string    `json:"blocker"`
-	Archived        bool       `json:"archived" gorm:"not null;default:false"`
-	AssignedAgentID *string    `json:"assigned_agent_id" gorm:"type:uuid;index"`
-	TemplateID      *string    `json:"template_id"`
-	ExternalID      *string    `json:"external_id"`
-	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt       time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	DisplayID         int        `json:"display_id" gorm:"not null;index"`
+	Name              string     `json:"name" gorm:"not null"`
+	Description       *string    `json:"description"`
+	StoryType         string     `json:"story_type" gorm:"not null;default:'feature'"`
+	WorkflowID        string     `json:"workflow_id" gorm:"type:uuid;not null;index"`
+	WorkflowStateID   string     `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
+	EpicID            *string    `json:"epic_id" gorm:"type:uuid;index"`
+	SprintID          *string    `json:"sprint_id" gorm:"type:uuid;index"`
+	TeamID            *string    `json:"team_id" gorm:"type:uuid;index"`
+	OwnerID           *string    `json:"owner_id" gorm:"type:uuid;index"`
+	OwnerMemberID     *string    `json:"owner_member_id" gorm:"type:uuid;index"`
+	RequesterID       *string    `json:"requester_id" gorm:"type:uuid"`
+	RequesterMemberID *string    `json:"requester_member_id" gorm:"type:uuid;index"`
+	Estimate          *int       `json:"estimate"`
+	Priority          string     `json:"priority" gorm:"not null;default:'none'"`
+	Severity          string     `json:"severity" gorm:"not null;default:'none'"`
+	Deadline          *time.Time `json:"deadline" gorm:"type:date"`
+	Position          int        `json:"position" gorm:"not null;default:0"`
+	Started           bool       `json:"started" gorm:"not null;default:false"`
+	StartedAt         *time.Time `json:"started_at"`
+	Completed         bool       `json:"completed" gorm:"not null;default:false"`
+	CompletedAt       *time.Time `json:"completed_at"`
+	MovedAt           *time.Time `json:"moved_at"`
+	Blocked           bool       `json:"blocked" gorm:"not null;default:false"`
+	Blocker           *string    `json:"blocker"`
+	Archived          bool       `json:"archived" gorm:"not null;default:false"`
+	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid;index"`
+	TemplateID        *string    `json:"template_id"`
+	ExternalID        *string    `json:"external_id"`
+	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMStory) TableName() string { return "pm_stories" }
@@ -85,20 +87,22 @@ func (PMStoryLabel) TableName() string { return "pm_story_labels" }
 
 // PMStoryFilters applies filter options when listing stories.
 type PMStoryFilters struct {
-	TeamID          *string
-	EpicID          *string
-	SprintID        *string
-	WorkflowID      *string
-	WorkflowStateID *string
-	StoryType       *string
-	OwnerID         *string
-	RequesterID     *string
-	LabelID         *string
-	Priority        *string
-	Severity        *string
-	Blocked         *string
-	UpdatedAfter    *string
-	Archived        *bool
+	TeamID            *string
+	EpicID            *string
+	SprintID          *string
+	WorkflowID        *string
+	WorkflowStateID   *string
+	StoryType         *string
+	OwnerID           *string
+	OwnerMemberID     *string
+	RequesterID       *string
+	RequesterMemberID *string
+	LabelID           *string
+	Priority          *string
+	Severity          *string
+	Blocked           *string
+	UpdatedAfter      *string
+	Archived          *bool
 }
 
 // PMPagination is common pagination input.
@@ -109,56 +113,60 @@ type PMPagination struct {
 
 // CreateStoryRequest is the payload for creating a story.
 type CreateStoryRequest struct {
-	WorkspaceID     string     `json:"workspace_id"`
-	Name            string     `json:"name"`
-	Description     *string    `json:"description"`
-	StoryType       string     `json:"story_type"`
-	WorkflowID      string     `json:"workflow_id"`
-	WorkflowStateID string     `json:"workflow_state_id"`
-	EpicID          *string    `json:"epic_id"`
-	SprintID        *string    `json:"sprint_id"`
-	TeamID          *string    `json:"team_id"`
-	OwnerID         *string    `json:"owner_id"`
-	RequesterID     *string    `json:"requester_id"`
-	Estimate        *int       `json:"estimate"`
-	Priority        *string    `json:"priority"`
-	Severity        *string    `json:"severity"`
-	Deadline        *time.Time `json:"deadline"`
-	Position        *int       `json:"position"`
-	Blocked         *bool      `json:"blocked"`
-	Blocker         *string    `json:"blocker"`
-	TemplateID      *string    `json:"template_id"`
-	ExternalID      *string    `json:"external_id"`
-	OwnerIDs        []string   `json:"owner_ids"`
-	FollowerIDs     []string   `json:"follower_ids"`
-	LabelIDs        []string   `json:"label_ids"`
+	WorkspaceID       string     `json:"workspace_id"`
+	Name              string     `json:"name"`
+	Description       *string    `json:"description"`
+	StoryType         string     `json:"story_type"`
+	WorkflowID        string     `json:"workflow_id"`
+	WorkflowStateID   string     `json:"workflow_state_id"`
+	EpicID            *string    `json:"epic_id"`
+	SprintID          *string    `json:"sprint_id"`
+	TeamID            *string    `json:"team_id"`
+	OwnerID           *string    `json:"owner_id"`
+	OwnerMemberID     *string    `json:"owner_member_id"`
+	RequesterID       *string    `json:"requester_id"`
+	RequesterMemberID *string    `json:"requester_member_id"`
+	Estimate          *int       `json:"estimate"`
+	Priority          *string    `json:"priority"`
+	Severity          *string    `json:"severity"`
+	Deadline          *time.Time `json:"deadline"`
+	Position          *int       `json:"position"`
+	Blocked           *bool      `json:"blocked"`
+	Blocker           *string    `json:"blocker"`
+	TemplateID        *string    `json:"template_id"`
+	ExternalID        *string    `json:"external_id"`
+	OwnerIDs          []string   `json:"owner_ids"`
+	FollowerIDs       []string   `json:"follower_ids"`
+	LabelIDs          []string   `json:"label_ids"`
 }
 
 // UpdateStoryRequest is the payload for updating a story.
 type UpdateStoryRequest struct {
-	Name            *string    `json:"name"`
-	Description     *string    `json:"description"`
-	StoryType       *string    `json:"story_type"`
-	WorkflowID      *string    `json:"workflow_id"`
-	WorkflowStateID *string    `json:"workflow_state_id"`
-	EpicID          *string    `json:"epic_id"`
-	SprintID        *string    `json:"sprint_id"`
-	TeamID          *string    `json:"team_id"`
-	OwnerID         *string    `json:"owner_id"`
-	RequesterID     *string    `json:"requester_id"`
-	Estimate        *int       `json:"estimate"`
-	Priority        *string    `json:"priority"`
-	Severity        *string    `json:"severity"`
-	Deadline        *time.Time `json:"deadline"`
-	Position        *int       `json:"position"`
-	Blocked         *bool      `json:"blocked"`
-	Blocker         *string    `json:"blocker"`
-	Archived        *bool      `json:"archived"`
-	TemplateID      *string    `json:"template_id"`
-	ExternalID      *string    `json:"external_id"`
-	OwnerIDs        []string   `json:"owner_ids"`
-	FollowerIDs     []string   `json:"follower_ids"`
-	LabelIDs        []string   `json:"label_ids"`
+	Name              *string    `json:"name"`
+	Description       *string    `json:"description"`
+	StoryType         *string    `json:"story_type"`
+	WorkflowID        *string    `json:"workflow_id"`
+	WorkflowStateID   *string    `json:"workflow_state_id"`
+	EpicID            *string    `json:"epic_id"`
+	SprintID          *string    `json:"sprint_id"`
+	TeamID            *string    `json:"team_id"`
+	OwnerID           *string    `json:"owner_id"`
+	OwnerMemberID     *string    `json:"owner_member_id"`
+	RequesterID       *string    `json:"requester_id"`
+	RequesterMemberID *string    `json:"requester_member_id"`
+	Estimate          *int       `json:"estimate"`
+	Priority          *string    `json:"priority"`
+	Severity          *string    `json:"severity"`
+	Deadline          *time.Time `json:"deadline"`
+	Position          *int       `json:"position"`
+	Blocked           *bool      `json:"blocked"`
+	Blocker           *string    `json:"blocker"`
+	Archived          *bool      `json:"archived"`
+	TemplateID        *string    `json:"template_id"`
+	ExternalID        *string    `json:"external_id"`
+	OwnerIDs          []string   `json:"owner_ids"`
+	FollowerIDs       []string   `json:"follower_ids"`
+	LabelIDs          []string   `json:"label_ids"`
 }
 
 // MoveStoryRequest moves a story to a new state and optionally position.
@@ -184,15 +192,17 @@ type StoryLabelLinkRequest struct {
 
 // StoryDetail is a story enriched with relation data.
 type StoryDetail struct {
-	Story         PMStory          `json:"story"`
-	Owners        []User           `json:"owners"`
-	Followers     []User           `json:"followers"`
-	Labels        []PMLabel        `json:"labels"`
-	EpicName      *string          `json:"epic_name"`
-	SprintName    *string          `json:"sprint_name"`
-	ObjectiveName *string          `json:"objective_name"`
-	ObjectiveID   *string          `json:"objective_id"`
-	State         *PMWorkflowState `json:"state"`
+	Story           PMStory           `json:"story"`
+	Owners          []User            `json:"owners"`
+	Followers       []User            `json:"followers"`
+	OwnerMember     *AssignableMember `json:"owner_member,omitempty"`
+	RequesterMember *AssignableMember `json:"requester_member,omitempty"`
+	Labels          []PMLabel         `json:"labels"`
+	EpicName        *string           `json:"epic_name"`
+	SprintName      *string           `json:"sprint_name"`
+	ObjectiveName   *string           `json:"objective_name"`
+	ObjectiveID     *string           `json:"objective_id"`
+	State           *PMWorkflowState  `json:"state"`
 }
 
 // BoardStory is a story enriched with relation names for board display.

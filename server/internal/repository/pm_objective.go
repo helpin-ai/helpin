@@ -65,6 +65,10 @@ func (r *PMObjectiveRepository) GetByID(ctx context.Context, id string) (*model.
 	if err != nil {
 		return nil, err
 	}
+	ownerMemberIDs, err := r.listOwnerMemberIDs(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 	labels, err := r.listLabels(ctx, id)
 	if err != nil {
 		return nil, err
@@ -83,13 +87,14 @@ func (r *PMObjectiveRepository) GetByID(ctx context.Context, id string) (*model.
 	}
 
 	return &model.ObjectiveWithDetails{
-		Objective:  obj,
-		Teams:      teamIDs,
-		Owners:     ownerIDs,
-		Labels:     labels,
-		KeyResults: keyResults,
-		Epics:      epics,
-		Stats:      stats,
+		Objective:      obj,
+		Teams:          teamIDs,
+		Owners:         ownerIDs,
+		OwnerMemberIDs: ownerMemberIDs,
+		Labels:         labels,
+		KeyResults:     keyResults,
+		Epics:          epics,
+		Stats:          stats,
 	}, nil
 }
 
@@ -158,8 +163,8 @@ func (r *PMObjectiveRepository) ReplaceTeams(ctx context.Context, objectiveID st
 
 // ── Owners ─────────────────────────────────────────────────────────
 
-func (r *PMObjectiveRepository) AddOwner(ctx context.Context, objectiveID, userID string) error {
-	link := model.PMObjectiveOwner{ObjectiveID: objectiveID, UserID: userID}
+func (r *PMObjectiveRepository) AddOwner(ctx context.Context, objectiveID, workspaceMemberID string) error {
+	link := model.PMObjectiveOwner{ObjectiveID: objectiveID, WorkspaceMemberID: workspaceMemberID}
 	if err := r.db.WithContext(ctx).Create(&link).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return nil
@@ -169,21 +174,21 @@ func (r *PMObjectiveRepository) AddOwner(ctx context.Context, objectiveID, userI
 	return nil
 }
 
-func (r *PMObjectiveRepository) RemoveOwner(ctx context.Context, objectiveID, userID string) error {
+func (r *PMObjectiveRepository) RemoveOwner(ctx context.Context, objectiveID, workspaceMemberID string) error {
 	if err := r.db.WithContext(ctx).
-		Delete(&model.PMObjectiveOwner{}, "objective_id = ? AND user_id = ?", objectiveID, userID).Error; err != nil {
+		Delete(&model.PMObjectiveOwner{}, "objective_id = ? AND workspace_member_id = ?", objectiveID, workspaceMemberID).Error; err != nil {
 		return fmt.Errorf("remove objective owner: %w", err)
 	}
 	return nil
 }
 
-func (r *PMObjectiveRepository) ReplaceOwners(ctx context.Context, objectiveID string, userIDs []string) error {
+func (r *PMObjectiveRepository) ReplaceOwners(ctx context.Context, objectiveID string, workspaceMemberIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Delete(&model.PMObjectiveOwner{}, "objective_id = ?", objectiveID).Error; err != nil {
 			return fmt.Errorf("clear objective owners: %w", err)
 		}
-		for _, userID := range userIDs {
-			link := model.PMObjectiveOwner{ObjectiveID: objectiveID, UserID: userID}
+		for _, workspaceMemberID := range workspaceMemberIDs {
+			link := model.PMObjectiveOwner{ObjectiveID: objectiveID, WorkspaceMemberID: workspaceMemberID}
 			if err := tx.Create(&link).Error; err != nil {
 				return fmt.Errorf("set objective owners: %w", err)
 			}
@@ -342,12 +347,33 @@ func (r *PMObjectiveRepository) listTeamIDs(ctx context.Context, objectiveID str
 }
 
 func (r *PMObjectiveRepository) listOwnerIDs(ctx context.Context, objectiveID string) ([]string, error) {
+	var rows []struct {
+		OwnerRef string
+	}
+	if err := r.db.WithContext(ctx).
+		Table("pm_objective_owners pmo").
+		Select("COALESCE(CAST(wm.user_id AS TEXT), CAST(pmo.workspace_member_id AS TEXT)) AS owner_ref").
+		Joins("JOIN workspace_members wm ON wm.id = pmo.workspace_member_id").
+		Where("pmo.objective_id = ?", objectiveID).
+		Order("pmo.created_at ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list objective owners: %w", err)
+	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.OwnerRef)
+	}
+	return ids, nil
+}
+
+func (r *PMObjectiveRepository) listOwnerMemberIDs(ctx context.Context, objectiveID string) ([]string, error) {
 	var ids []string
 	if err := r.db.WithContext(ctx).
 		Model(&model.PMObjectiveOwner{}).
 		Where("objective_id = ?", objectiveID).
-		Pluck("user_id", &ids).Error; err != nil {
-		return nil, fmt.Errorf("list objective owners: %w", err)
+		Order("created_at ASC").
+		Pluck("workspace_member_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("list objective owner member ids: %w", err)
 	}
 	return ids, nil
 }

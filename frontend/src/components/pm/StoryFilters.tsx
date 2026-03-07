@@ -13,12 +13,13 @@ import {
 } from '@/components/ui/command';
 import { PRIORITY_CONFIG, SEVERITY_CONFIG, STORY_TYPE_CONFIG } from '@/lib/pmConstants';
 import type { Priority, Severity, StoryType, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
-import type { MemberWithUser } from '@/lib/types';
+import type { AssignableMember } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
+import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 
 // ── Types ──────────────────────────────────────────────────────────
 
-type FilterKey = 'priority' | 'severity' | 'story_type' | 'owner_id' | 'requester_id' | 'label_id' | 'epic_id' | 'sprint_id' | 'blocked';
+type FilterKey = 'priority' | 'severity' | 'story_type' | 'owner_member_id' | 'requester_member_id' | 'label_id' | 'epic_id' | 'sprint_id' | 'blocked';
 
 type FilterState = Partial<Record<FilterKey, string[]>>;
 
@@ -151,7 +152,7 @@ function FilterPill({
 // ── Provider ───────────────────────────────────────────────────────
 
 interface StoryFilterProviderProps {
-  members: MemberWithUser[];
+  assignableMembers: AssignableMember[];
   labels: Label[];
   epics: EpicWithStats[];
   sprints: SprintWithStats[];
@@ -160,7 +161,7 @@ interface StoryFilterProviderProps {
   children: React.ReactNode;
 }
 
-export function StoryFilterProvider({ members, labels, epics, sprints, onChange, externalFilters, children }: StoryFilterProviderProps) {
+export function StoryFilterProvider({ assignableMembers, labels, epics, sprints, onChange, externalFilters, children }: StoryFilterProviderProps) {
   const [filterState, setFilterState] = useState<FilterState>({});
   const internalChangeRef = useRef(false);
 
@@ -202,9 +203,9 @@ export function StoryFilterProvider({ members, labels, epics, sprints, onChange,
       return { value: t, label: cfg.label, icon: <Icon className={`h-3.5 w-3.5 ${cfg.color}`} /> };
     });
 
-    const memberOptions: FilterOption[] = members.map((m) => ({
-      value: m.user_id,
-      label: m.full_name || m.email || m.user_id,
+    const memberOptions: FilterOption[] = buildAssignableMemberOptions(assignableMembers).map((m) => ({
+      value: m.id,
+      label: m.name,
     }));
 
     const labelOptions: FilterOption[] = labels.map((l) => ({
@@ -234,14 +235,14 @@ export function StoryFilterProvider({ members, labels, epics, sprints, onChange,
       { key: 'priority' as FilterKey, label: 'Priority', options: priorityOptions },
       { key: 'severity' as FilterKey, label: 'Severity', options: severityOptions },
       { key: 'story_type' as FilterKey, label: 'Type', options: typeOptions },
-      { key: 'owner_id' as FilterKey, label: 'Owner', options: memberOptions },
-      { key: 'requester_id' as FilterKey, label: 'Requester', options: memberOptions },
+      { key: 'owner_member_id' as FilterKey, label: 'Owner', options: memberOptions },
+      { key: 'requester_member_id' as FilterKey, label: 'Requester', options: memberOptions },
       { key: 'label_id' as FilterKey, label: 'Label', options: labelOptions },
       { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions },
       { key: 'sprint_id' as FilterKey, label: 'Sprint', options: sprintOptions },
       { key: 'blocked' as FilterKey, label: 'Blocked', options: blockedOptions },
     ];
-  }, [members, labels, epics, sprints]);
+  }, [assignableMembers, labels, epics, sprints]);
 
   const activeKeys = useMemo(() => {
     const keys = new Set<FilterKey>();

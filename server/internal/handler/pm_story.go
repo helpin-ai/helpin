@@ -34,16 +34,19 @@ func (h *PMStoryHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filters := model.PMStoryFilters{
-		TeamID:          queryStringPtr(r, "team_id"),
-		EpicID:          queryStringPtr(r, "epic_id"),
-		SprintID:        queryStringPtr(r, "sprint_id"),
-		WorkflowID:      queryStringPtr(r, "workflow_id"),
-		WorkflowStateID: queryStringPtr(r, "state_id"),
-		StoryType:       queryStringPtr(r, "story_type"),
-		OwnerID:         queryStringPtr(r, "owner_id"),
-		LabelID:         queryStringPtr(r, "label_id"),
-		Priority:        queryStringPtr(r, "priority"),
-		Archived:        archived,
+		TeamID:            queryStringPtr(r, "team_id"),
+		EpicID:            queryStringPtr(r, "epic_id"),
+		SprintID:          queryStringPtr(r, "sprint_id"),
+		WorkflowID:        queryStringPtr(r, "workflow_id"),
+		WorkflowStateID:   queryStringPtr(r, "state_id"),
+		StoryType:         queryStringPtr(r, "story_type"),
+		OwnerID:           queryStringPtr(r, "owner_id"),
+		OwnerMemberID:     queryStringPtr(r, "owner_member_id"),
+		RequesterID:       queryStringPtr(r, "requester_id"),
+		RequesterMemberID: queryStringPtr(r, "requester_member_id"),
+		LabelID:           queryStringPtr(r, "label_id"),
+		Priority:          queryStringPtr(r, "priority"),
+		Archived:          archived,
 	}
 	pagination := queryPagination(r)
 
@@ -119,17 +122,19 @@ func (h *PMStoryHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request)
 
 func boardFilters(r *http.Request) model.PMStoryFilters {
 	return model.PMStoryFilters{
-		TeamID:       queryStringPtr(r, "team_id"),
-		Priority:     queryStringPtr(r, "priority"),
-		Severity:     queryStringPtr(r, "severity"),
-		StoryType:    queryStringPtr(r, "story_type"),
-		EpicID:       queryStringPtr(r, "epic_id"),
-		SprintID:     queryStringPtr(r, "sprint_id"),
-		LabelID:      queryStringPtr(r, "label_id"),
-		OwnerID:      queryStringPtr(r, "owner_id"),
-		RequesterID:  queryStringPtr(r, "requester_id"),
-		Blocked:      queryStringPtr(r, "blocked"),
-		UpdatedAfter: queryStringPtr(r, "updated_after"),
+		TeamID:            queryStringPtr(r, "team_id"),
+		Priority:          queryStringPtr(r, "priority"),
+		Severity:          queryStringPtr(r, "severity"),
+		StoryType:         queryStringPtr(r, "story_type"),
+		EpicID:            queryStringPtr(r, "epic_id"),
+		SprintID:          queryStringPtr(r, "sprint_id"),
+		LabelID:           queryStringPtr(r, "label_id"),
+		OwnerID:           queryStringPtr(r, "owner_id"),
+		OwnerMemberID:     queryStringPtr(r, "owner_member_id"),
+		RequesterID:       queryStringPtr(r, "requester_id"),
+		RequesterMemberID: queryStringPtr(r, "requester_member_id"),
+		Blocked:           queryStringPtr(r, "blocked"),
+		UpdatedAfter:      queryStringPtr(r, "updated_after"),
 	}
 }
 

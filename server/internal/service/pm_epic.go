@@ -16,16 +16,18 @@ type PMEpicService struct {
 	epicRepo        *repository.PMEpicRepository
 	storyRepo       *repository.PMStoryRepository
 	labelRepo       *repository.PMLabelRepository
+	workspaceRepo   *repository.WorkspaceRepository
 	activityService *PMActivityService
 	wsPublisher     *websocket.Publisher
 }
 
 // NewPMEpicService creates a new PMEpicService.
-func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMEpicService {
+func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMEpicService {
 	return &PMEpicService{
 		epicRepo:        epicRepo,
 		storyRepo:       storyRepo,
 		labelRepo:       labelRepo,
+		workspaceRepo:   workspaceRepo,
 		activityService: activityService,
 		wsPublisher:     wsPublisher,
 	}
@@ -80,13 +82,18 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if !isValidEpicHealth(health) {
 		return nil, fmt.Errorf("invalid health value")
 	}
+	ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, req.WorkspaceID, req.OwnerMemberID, req.OwnerID)
+	if err != nil {
+		return nil, err
+	}
 
 	epic := &model.PMEpic{
 		WorkspaceID:      req.WorkspaceID,
 		Name:             strings.TrimSpace(req.Name),
 		Description:      req.Description,
 		EpicStateID:      req.EpicStateID,
-		OwnerID:          req.OwnerID,
+		OwnerID:          memberUserIDPtr(ownerMember),
+		OwnerMemberID:    memberIDPtr(ownerMember),
 		TeamID:           req.TeamID,
 		PlannedStartDate: req.PlannedStartDate,
 		Deadline:         req.Deadline,
@@ -146,8 +153,13 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if req.EpicStateID != nil {
 		epic.EpicStateID = req.EpicStateID
 	}
-	if req.OwnerID != nil {
-		epic.OwnerID = req.OwnerID
+	if req.OwnerID != nil || req.OwnerMemberID != nil {
+		ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.Epic.WorkspaceID, req.OwnerMemberID, req.OwnerID)
+		if err != nil {
+			return nil, err
+		}
+		epic.OwnerID = memberUserIDPtr(ownerMember)
+		epic.OwnerMemberID = memberIDPtr(ownerMember)
 	}
 	if req.TeamID != nil {
 		epic.TeamID = req.TeamID

@@ -4,17 +4,18 @@ import "time"
 
 // WorkspaceInvitation represents a row in the workspace_invitations table.
 type WorkspaceInvitation struct {
-	ID          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Email       string     `json:"email" gorm:"not null"`
-	Role        string     `json:"role" gorm:"not null;default:'member'"`
-	Token       string     `json:"-" gorm:"uniqueIndex;not null"`
-	InvitedBy   string     `json:"invited_by" gorm:"type:uuid;not null"`
-	Status      string     `json:"status" gorm:"not null;default:'pending'"`
-	ExpiresAt   time.Time  `json:"expires_at" gorm:"not null"`
-	AcceptedAt  *time.Time `json:"accepted_at"`
-	CreatedAt   time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	WorkspaceMemberID *string    `json:"workspace_member_id,omitempty" gorm:"type:uuid;index"`
+	Email             string     `json:"email" gorm:"not null"`
+	Role              string     `json:"role" gorm:"not null;default:'member'"`
+	Token             string     `json:"-" gorm:"uniqueIndex;not null"`
+	InvitedBy         string     `json:"invited_by" gorm:"type:uuid;not null"`
+	Status            string     `json:"status" gorm:"not null;default:'pending'"`
+	ExpiresAt         time.Time  `json:"expires_at" gorm:"not null"`
+	AcceptedAt        *time.Time `json:"accepted_at"`
+	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WorkspaceInvitation) TableName() string { return "workspace_invitations" }
@@ -28,16 +29,17 @@ type CreateInvitationRequest struct {
 
 // InvitationResponse is the API response for an invitation.
 type InvitationResponse struct {
-	ID          string     `json:"id"`
-	WorkspaceID string     `json:"workspace_id"`
-	Email       string     `json:"email"`
-	Role        string     `json:"role"`
-	Status      string     `json:"status"`
-	InvitedBy   string     `json:"invited_by"`
-	ExpiresAt   time.Time  `json:"expires_at"`
-	AcceptedAt  *time.Time `json:"accepted_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	JoinURL     string     `json:"join_url,omitempty"`
+	ID                string     `json:"id"`
+	WorkspaceID       string     `json:"workspace_id"`
+	WorkspaceMemberID *string    `json:"workspace_member_id,omitempty"`
+	Email             string     `json:"email"`
+	Role              string     `json:"role"`
+	Status            string     `json:"status"`
+	InvitedBy         string     `json:"invited_by"`
+	ExpiresAt         time.Time  `json:"expires_at"`
+	AcceptedAt        *time.Time `json:"accepted_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	JoinURL           string     `json:"join_url,omitempty"`
 }
 
 // AcceptInvitationRequest is the payload for accepting an invitation.

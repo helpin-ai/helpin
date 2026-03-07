@@ -137,3 +137,17 @@ func (h *WorkspaceHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, members)
 }
+
+// ListAssignableMembers handles GET /api/workspaces/{id}/assignable-members.
+func (h *WorkspaceHandler) ListAssignableMembers(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	members, err := h.workspaceService.ListAssignableMembers(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if members == nil {
+		members = []model.AssignableMember{}
+	}
+	writeJSON(w, http.StatusOK, members)
+}

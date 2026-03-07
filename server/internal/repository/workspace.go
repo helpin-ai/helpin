@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -37,20 +38,18 @@ func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, ownerID st
 	return ws, nil
 }
 
-// List returns all workspaces a user is a member of, along with their role.
-// If organizationID is non-empty, results are filtered to that organization.
+// List returns all workspaces a user is an active member of, along with their role.
 func (r *WorkspaceRepository) List(ctx context.Context, userID string, organizationID string) ([]model.WorkspaceWithRole, error) {
 	var results []model.WorkspaceWithRole
 	q := r.db.WithContext(ctx).
 		Table("workspaces w").
 		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.timezone, w.created_at, w.updated_at, wm.role").
 		Joins("JOIN workspace_members wm ON w.id = wm.workspace_id").
-		Where("wm.user_id = ?", userID)
+		Where("wm.user_id = ? AND wm.status = ?", userID, model.WorkspaceMemberStatusActive)
 	if organizationID != "" {
 		q = q.Where("w.organization_id = ?", organizationID)
 	}
-	err := q.Order("w.created_at DESC").Scan(&results).Error
-	if err != nil {
+	if err := q.Order("w.created_at DESC").Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
 	return results, nil
@@ -114,34 +113,187 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// AddMember adds a user as a member of a workspace.
+// AddMember adds or activates a user as a workspace member.
 func (r *WorkspaceRepository) AddMember(ctx context.Context, workspaceID, userID, role string) (*model.WorkspaceMember, error) {
-	m := &model.WorkspaceMember{
-		WorkspaceID: workspaceID,
-		UserID:      userID,
-		Role:        role,
-	}
-	err := r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "workspace_id"}, {Name: "user_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"role"}),
-		}).
-		Create(m).Error
+	userRecord, err := r.getUserIdentity(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("add workspace member: %w", err)
+		return nil, err
 	}
-	// Re-fetch to get the correct ID and timestamps after upsert.
-	result := &model.WorkspaceMember{}
-	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND user_id = ?", workspaceID, userID).First(result).Error; err != nil {
-		return nil, fmt.Errorf("add workspace member: %w", err)
+
+	now := time.Now().UTC()
+	var member *model.WorkspaceMember
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		existing, err := r.findMemberTx(tx, workspaceID, userID, userRecord.Email)
+		if err != nil {
+			return err
+		}
+
+		if existing == nil {
+			userIDCopy := userID
+			member = &model.WorkspaceMember{
+				WorkspaceID: workspaceID,
+				UserID:      &userIDCopy,
+				Email:       userRecord.Email,
+				DisplayName: userRecord.FullName,
+				Role:        role,
+				Status:      model.WorkspaceMemberStatusActive,
+				InvitedAt:   &now,
+				AcceptedAt:  &now,
+			}
+			if err := tx.Create(member).Error; err != nil {
+				return fmt.Errorf("add workspace member: %w", err)
+			}
+			return nil
+		}
+
+		existing.UserID = &userID
+		existing.Email = userRecord.Email
+		existing.DisplayName = userRecord.FullName
+		existing.Role = role
+		existing.Status = model.WorkspaceMemberStatusActive
+		existing.AcceptedAt = &now
+		if existing.InvitedAt == nil {
+			existing.InvitedAt = &now
+		}
+		if err := tx.Save(existing).Error; err != nil {
+			return fmt.Errorf("activate workspace member: %w", err)
+		}
+		member = existing
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return result, nil
+	return member, nil
 }
 
-// GetMemberRole returns the role a user has in a workspace, or empty string if not a member.
+// UpsertPendingMember creates or updates a pending member identity for an invitation.
+func (r *WorkspaceRepository) UpsertPendingMember(ctx context.Context, workspaceID, email, role, invitedBy string) (*model.WorkspaceMember, error) {
+	email = normalizeEmail(email)
+	now := time.Now().UTC()
+	var member *model.WorkspaceMember
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		existing, err := r.getMembershipByEmailTx(tx, workspaceID, email)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			member = &model.WorkspaceMember{
+				WorkspaceID: workspaceID,
+				Email:       email,
+				DisplayName: email,
+				Role:        role,
+				Status:      model.WorkspaceMemberStatusPending,
+				InvitedBy:   stringPtr(invitedBy),
+				InvitedAt:   &now,
+			}
+			if err := tx.Create(member).Error; err != nil {
+				return fmt.Errorf("create pending workspace member: %w", err)
+			}
+			return nil
+		}
+
+		if existing.Status != model.WorkspaceMemberStatusActive {
+			existing.Status = model.WorkspaceMemberStatusPending
+		}
+		existing.Role = role
+		existing.Email = email
+		if strings.TrimSpace(existing.DisplayName) == "" {
+			existing.DisplayName = email
+		}
+		existing.InvitedBy = stringPtr(invitedBy)
+		if existing.InvitedAt == nil {
+			existing.InvitedAt = &now
+		}
+		if err := tx.Save(existing).Error; err != nil {
+			return fmt.Errorf("update pending workspace member: %w", err)
+		}
+		member = existing
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return member, nil
+}
+
+// ActivatePendingMember links a workspace member identity to a real user on invite acceptance.
+func (r *WorkspaceRepository) ActivatePendingMember(ctx context.Context, workspaceID string, memberID *string, userID, email, displayName, role string) (*model.WorkspaceMember, error) {
+	email = normalizeEmail(email)
+	now := time.Now().UTC()
+	var member *model.WorkspaceMember
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing *model.WorkspaceMember
+		var err error
+		if memberID != nil && *memberID != "" {
+			existing, err = r.getMembershipByIDTx(tx, workspaceID, *memberID)
+			if err != nil {
+				return err
+			}
+		}
+		if existing == nil {
+			existing, err = r.findMemberTx(tx, workspaceID, userID, email)
+			if err != nil {
+				return err
+			}
+		}
+
+		if existing == nil {
+			userIDCopy := userID
+			member = &model.WorkspaceMember{
+				WorkspaceID: workspaceID,
+				UserID:      &userIDCopy,
+				Email:       email,
+				DisplayName: displayName,
+				Role:        role,
+				Status:      model.WorkspaceMemberStatusActive,
+				InvitedAt:   &now,
+				AcceptedAt:  &now,
+			}
+			if err := tx.Create(member).Error; err != nil {
+				return fmt.Errorf("create accepted workspace member: %w", err)
+			}
+			return nil
+		}
+
+		existing.UserID = &userID
+		existing.Email = email
+		existing.DisplayName = displayName
+		existing.Role = role
+		existing.Status = model.WorkspaceMemberStatusActive
+		if existing.InvitedAt == nil {
+			existing.InvitedAt = &now
+		}
+		existing.AcceptedAt = &now
+		if err := tx.Save(existing).Error; err != nil {
+			return fmt.Errorf("activate pending workspace member: %w", err)
+		}
+		member = existing
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return member, nil
+}
+
+// UpdateMemberStatus updates the lifecycle status for a workspace member.
+func (r *WorkspaceRepository) UpdateMemberStatus(ctx context.Context, memberID, status string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.WorkspaceMember{}).
+		Where("id = ?", memberID).
+		Update("status", status).Error; err != nil {
+		return fmt.Errorf("update workspace member status: %w", err)
+	}
+	return nil
+}
+
+// GetMemberRole returns the role a user has in a workspace, or empty string if not an active member.
 func (r *WorkspaceRepository) GetMemberRole(ctx context.Context, workspaceID, userID string) (string, error) {
 	var m model.WorkspaceMember
-	err := r.db.WithContext(ctx).Where("workspace_id = ? AND user_id = ?", workspaceID, userID).First(&m).Error
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND user_id = ? AND status = ?", workspaceID, userID, model.WorkspaceMemberStatusActive).
+		First(&m).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
@@ -151,15 +303,15 @@ func (r *WorkspaceRepository) GetMemberRole(ctx context.Context, workspaceID, us
 	return m.Role, nil
 }
 
-// ListMembers returns all members of a workspace with user details.
+// ListMembers returns all active joined members of a workspace with user details.
 func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID string) ([]model.MemberWithUser, error) {
 	var results []model.MemberWithUser
 	err := r.db.WithContext(ctx).
 		Table("workspace_members wm").
-		Select("wm.id, wm.user_id, wm.role, u.email, u.full_name, u.avatar_url").
+		Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name) AS full_name, u.avatar_url").
 		Joins("JOIN users u ON u.id = wm.user_id").
-		Where("wm.workspace_id = ?", workspaceID).
-		Order("u.full_name ASC").
+		Where("wm.workspace_id = ? AND wm.status = ?", workspaceID, model.WorkspaceMemberStatusActive).
+		Order("COALESCE(NULLIF(wm.display_name, ''), u.full_name) ASC").
 		Scan(&results).Error
 	if err != nil {
 		return nil, fmt.Errorf("list workspace members: %w", err)
@@ -167,10 +319,39 @@ func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID strin
 	return results, nil
 }
 
-// GetMembership returns the full membership record for a user in a workspace.
+// ListAssignableMembers returns both joined and pending identities for PM assignment pickers.
+func (r *WorkspaceRepository) ListAssignableMembers(ctx context.Context, workspaceID string) ([]model.AssignableMember, error) {
+	var members []model.AssignableMember
+	err := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Select(`
+			wm.id,
+			wm.user_id,
+			wm.role,
+			wm.email,
+			wm.display_name,
+			u.avatar_url,
+			wm.status,
+			wm.invited_by,
+			wm.invited_at,
+			wm.accepted_at
+		`).
+		Joins("LEFT JOIN users u ON u.id = wm.user_id").
+		Where("wm.workspace_id = ? AND wm.status <> ?", workspaceID, model.WorkspaceMemberStatusRevoked).
+		Order("CASE wm.status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, LOWER(wm.display_name) ASC, LOWER(wm.email) ASC").
+		Scan(&members).Error
+	if err != nil {
+		return nil, fmt.Errorf("list assignable workspace members: %w", err)
+	}
+	return members, nil
+}
+
+// GetMembership returns the active membership record for a user in a workspace.
 func (r *WorkspaceRepository) GetMembership(ctx context.Context, workspaceID, userID string) (*model.WorkspaceMember, error) {
 	m := &model.WorkspaceMember{}
-	err := r.db.WithContext(ctx).Where("workspace_id = ? AND user_id = ?", workspaceID, userID).First(m).Error
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND user_id = ? AND status = ?", workspaceID, userID, model.WorkspaceMemberStatusActive).
+		First(m).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -178,4 +359,134 @@ func (r *WorkspaceRepository) GetMembership(ctx context.Context, workspaceID, us
 		return nil, fmt.Errorf("get membership: %w", err)
 	}
 	return m, nil
+}
+
+// GetAssignableMemberByID loads a workspace member identity by ID.
+func (r *WorkspaceRepository) GetAssignableMemberByID(ctx context.Context, workspaceID, memberID string) (*model.AssignableMember, error) {
+	var member model.AssignableMember
+	err := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Select(`
+			wm.id,
+			wm.user_id,
+			wm.role,
+			wm.email,
+			wm.display_name,
+			u.avatar_url,
+			wm.status,
+			wm.invited_by,
+			wm.invited_at,
+			wm.accepted_at
+		`).
+		Joins("LEFT JOIN users u ON u.id = wm.user_id").
+		Where("wm.workspace_id = ? AND wm.id = ?", workspaceID, memberID).
+		Scan(&member).Error
+	if err != nil {
+		return nil, fmt.Errorf("get assignable workspace member: %w", err)
+	}
+	if member.ID == "" {
+		return nil, nil
+	}
+	return &member, nil
+}
+
+// ResolveMemberReference accepts either a workspace_member.id or a legacy user id and returns the member record.
+func (r *WorkspaceRepository) ResolveMemberReference(ctx context.Context, workspaceID, reference string) (*model.WorkspaceMember, error) {
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		return nil, nil
+	}
+
+	m, err := r.getMembershipByIDTx(r.db.WithContext(ctx), workspaceID, reference)
+	if err != nil {
+		return nil, err
+	}
+	if m != nil {
+		return m, nil
+	}
+
+	m, err = r.getMembershipByUserIDTx(r.db.WithContext(ctx), workspaceID, reference)
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (r *WorkspaceRepository) getUserIdentity(ctx context.Context, userID string) (*model.User, error) {
+	user := &model.User{}
+	err := r.db.WithContext(ctx).
+		Select("id, email, full_name").
+		Where("id = ?", userID).
+		First(user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("get user identity: %w", err)
+	}
+	return user, nil
+}
+
+func (r *WorkspaceRepository) findMemberTx(tx *gorm.DB, workspaceID, userID, email string) (*model.WorkspaceMember, error) {
+	if strings.TrimSpace(userID) != "" {
+		member, err := r.getMembershipByUserIDTx(tx, workspaceID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if member != nil {
+			return member, nil
+		}
+	}
+	if strings.TrimSpace(email) != "" {
+		return r.getMembershipByEmailTx(tx, workspaceID, email)
+	}
+	return nil, nil
+}
+
+func (r *WorkspaceRepository) getMembershipByIDTx(tx *gorm.DB, workspaceID, memberID string) (*model.WorkspaceMember, error) {
+	member := &model.WorkspaceMember{}
+	err := tx.Where("workspace_id = ? AND id = ?", workspaceID, memberID).First(member).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get membership by id: %w", err)
+	}
+	return member, nil
+}
+
+func (r *WorkspaceRepository) getMembershipByUserIDTx(tx *gorm.DB, workspaceID, userID string) (*model.WorkspaceMember, error) {
+	member := &model.WorkspaceMember{}
+	err := tx.Where("workspace_id = ? AND user_id = ?", workspaceID, userID).First(member).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get membership by user id: %w", err)
+	}
+	return member, nil
+}
+
+func (r *WorkspaceRepository) getMembershipByEmailTx(tx *gorm.DB, workspaceID, email string) (*model.WorkspaceMember, error) {
+	member := &model.WorkspaceMember{}
+	err := tx.Where("workspace_id = ? AND LOWER(email) = LOWER(?)", workspaceID, normalizeEmail(email)).First(member).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get membership by email: %w", err)
+	}
+	return member, nil
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func stringPtr(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	v := value
+	return &v
 }

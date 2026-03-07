@@ -27,11 +27,12 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type { EpicWithStats, EpicHealth, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { EpicOrchestrationPanel } from '@/components/pm/EpicOrchestrationPanel';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
+import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -114,6 +115,7 @@ interface EpicFormState {
   description: string;
   team_id: string;
   epic_state_id: string;
+  owner_member_id: string;
   health: EpicHealth;
   planned_start_date: string;
   deadline: string;
@@ -124,6 +126,7 @@ const buildForm = (epic: EpicWithStats): EpicFormState => ({
   description: epic.epic.description ?? '',
   team_id: epic.epic.team_id ?? '',
   epic_state_id: epic.epic.epic_state_id ?? '',
+  owner_member_id: epic.epic.owner_member_id ?? '',
   health: epic.epic.health,
   planned_start_date: epic.epic.planned_start_date ?? '',
   deadline: epic.epic.deadline ? epic.epic.deadline.slice(0, 10) : '',
@@ -153,8 +156,16 @@ export function EpicDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const { teams, people, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
-  const { members } = useWorkspaceMembers(workspaceId);
+  const { teams, getTeamMembers, findTeamName } = useWorkspaceTeams(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
+  const ownerOptions = useMemo(
+    () => buildAssignableMemberOptions(assignableMembers),
+    [assignableMembers],
+  );
+  const assignableMemberNames = useMemo(
+    () => buildAssignableMemberNameMap(assignableMembers),
+    [assignableMembers],
+  );
 
   // Story detail panel
   const [selectedStory, setSelectedStory] = useState<Awaited<ReturnType<typeof pmStoryService.get>>['data'] | null>(null);
@@ -240,6 +251,10 @@ export function EpicDetailPage() {
     () => (form?.team_id ? findTeamName(form.team_id) ?? 'No team' : 'No team'),
     [form?.team_id, findTeamName],
   );
+  const currentOwnerName = useMemo(() => {
+    if (!form?.owner_member_id) return 'Nobody';
+    return assignableMemberNames.get(form.owner_member_id) ?? 'Unknown';
+  }, [form?.owner_member_id, assignableMemberNames]);
 
   const workflow = workflows[0] ?? null;
 
@@ -248,9 +263,16 @@ export function EpicDetailPage() {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
     for (const story of stories) {
-      if (story.owner_id) {
-        const person = people.find((p) => p.id === story.owner_id);
-        if (person) personMap.set(person.id, { id: person.id, name: person.name, email: person.email });
+      const ownerKey = story.owner_member_id;
+      if (ownerKey) {
+        const assignable = assignableMembers.find((member) => member.id === ownerKey);
+        if (assignable) {
+          personMap.set(assignable.id, {
+            id: assignable.id,
+            name: assignableMemberNames.get(assignable.id) ?? assignable.display_name,
+            email: assignable.email,
+          });
+        }
       }
     }
 
@@ -263,7 +285,7 @@ export function EpicDetailPage() {
     }
 
     return Array.from(personMap.values());
-  }, [stories, people, form?.team_id, getTeamMembers]);
+  }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
     async (story: Story) => {
@@ -395,7 +417,7 @@ export function EpicDetailPage() {
                   workspaceId={workspaceId!}
                   workflow={workflow}
                   teams={teams}
-                  members={members}
+                  assignableMembers={assignableMembers}
                   epics={allEpics}
                   sprints={allSprints}
                   externalStories={stories}
@@ -474,11 +496,18 @@ export function EpicDetailPage() {
 
             {/* Owner */}
             <MetadataRow icon={User} label="Owner">
-              <span className="text-xs text-muted-foreground">
-                {epic.epic.owner_id
-                  ? (people.find((p) => p.id === epic.epic.owner_id)?.name ?? 'Unknown')
-                  : 'Nobody'}
-              </span>
+              <SidebarPopoverSelect
+                value={form.owner_member_id || '__none__'}
+                options={[
+                  { value: '__none__', label: 'Nobody' },
+                  ...ownerOptions.map((owner) => ({ value: owner.id, label: owner.name })),
+                ]}
+                onChange={(v) => {
+                  const val = v === '__none__' ? '' : v;
+                  updateField('owner_member_id', val, { owner_member_id: val || undefined });
+                }}
+                renderTrigger={() => <span>{currentOwnerName}</span>}
+              />
             </MetadataRow>
 
             {/* Start Date */}

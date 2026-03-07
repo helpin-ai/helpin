@@ -2,6 +2,13 @@ package model
 
 import "time"
 
+const (
+	WorkspaceMemberStatusPending  = "pending"
+	WorkspaceMemberStatusActive   = "active"
+	WorkspaceMemberStatusRevoked  = "revoked"
+	WorkspaceMemberStatusInactive = "inactive"
+)
+
 // Workspace represents a row in the workspaces table.
 type Workspace struct {
 	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -19,12 +26,18 @@ func (Workspace) TableName() string { return "workspaces" }
 
 // WorkspaceMember represents a row in the workspace_members table.
 type WorkspaceMember struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_ws_member_ws_user"`
-	UserID      string    `json:"user_id" gorm:"type:uuid;not null;uniqueIndex:idx_ws_member_ws_user"`
-	Role        string    `json:"role" gorm:"not null;default:'member'"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	UserID      *string    `json:"user_id" gorm:"type:uuid;uniqueIndex:idx_ws_member_ws_user"`
+	Email       string     `json:"email" gorm:"not null"`
+	DisplayName string     `json:"display_name" gorm:"not null"`
+	Role        string     `json:"role" gorm:"not null;default:'member'"`
+	Status      string     `json:"status" gorm:"not null;default:'active';index"`
+	InvitedBy   *string    `json:"invited_by,omitempty" gorm:"type:uuid"`
+	InvitedAt   *time.Time `json:"invited_at,omitempty"`
+	AcceptedAt  *time.Time `json:"accepted_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WorkspaceMember) TableName() string { return "workspace_members" }
@@ -43,6 +56,20 @@ type MemberWithUser struct {
 	Email     string  `json:"email"`
 	FullName  string  `json:"full_name"`
 	AvatarURL *string `json:"avatar_url"`
+}
+
+// AssignableMember is the workspace-level person identity used by PM pickers.
+type AssignableMember struct {
+	ID          string     `json:"id"`
+	UserID      *string    `json:"user_id,omitempty"`
+	Role        string     `json:"role"`
+	Email       string     `json:"email"`
+	DisplayName string     `json:"display_name"`
+	AvatarURL   *string    `json:"avatar_url,omitempty"`
+	Status      string     `json:"status"`
+	InvitedBy   *string    `json:"invited_by,omitempty"`
+	InvitedAt   *time.Time `json:"invited_at,omitempty"`
+	AcceptedAt  *time.Time `json:"accepted_at,omitempty"`
 }
 
 // CreateWorkspaceRequest is the payload for POST /api/workspaces.

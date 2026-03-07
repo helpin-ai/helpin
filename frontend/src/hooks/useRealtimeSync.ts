@@ -33,9 +33,8 @@ export function useRealtimeSync(workspaceId: string) {
           if (res.data) {
             const story = { ...res.data.story }
             // Enrich with owner_name from StoryDetail owners for board display
-            if (story.owner_id && !story.owner_name && res.data.owners?.length) {
-              const owner = res.data.owners.find((o) => o.id === story.owner_id)
-              if (owner) story.owner_name = owner.full_name
+            if (story.owner_member_id && !story.owner_name && res.data.owner_member) {
+              story.owner_name = res.data.owner_member.display_name || res.data.owner_member.email
             }
             const patched = store.patchStory(event.action, event.entity_id, story)
             if (!patched) scheduleRefresh()

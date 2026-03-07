@@ -1,3 +1,5 @@
+import type { AssignableMember } from './types';
+
 export type StoryType = 'feature' | 'bug' | 'chore';
 export type StateType = 'backlog' | 'unstarted' | 'started' | 'done';
 export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
@@ -66,7 +68,7 @@ export interface Epic {
   name: string;
   description?: string;
   epic_state_id?: string;
-  owner_id?: string;
+  owner_member_id?: string;
   team_id?: string;
   planned_start_date?: string;
   deadline?: string;
@@ -141,8 +143,8 @@ export interface Story {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_id?: string;
-  requester_id?: string;
+  owner_member_id?: string;
+  requester_member_id?: string;
   estimate?: number;
   priority: Priority;
   severity: Severity;
@@ -185,6 +187,8 @@ export interface StoryDetail {
     created_at: string;
     updated_at: string;
   }>;
+  owner_member?: AssignableMember;
+  requester_member?: AssignableMember;
   labels: Label[];
   epic_name?: string;
   sprint_name?: string;
@@ -349,7 +353,7 @@ export interface CreateEpicRequest {
   name: string;
   description?: string;
   epic_state_id?: string;
-  owner_id?: string;
+  owner_member_id?: string;
   team_id?: string;
   planned_start_date?: string;
   deadline?: string;
@@ -364,7 +368,7 @@ export interface UpdateEpicRequest {
   name?: string;
   description?: string;
   epic_state_id?: string;
-  owner_id?: string;
+  owner_member_id?: string;
   team_id?: string;
   planned_start_date?: string;
   deadline?: string;
@@ -411,8 +415,8 @@ export interface CreateStoryRequest {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_id?: string;
-  requester_id?: string;
+  owner_member_id?: string;
+  requester_member_id?: string;
   estimate?: number;
   priority?: Priority;
   severity?: Severity;
@@ -436,8 +440,8 @@ export interface UpdateStoryRequest {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_id?: string;
-  requester_id?: string;
+  owner_member_id?: string;
+  requester_member_id?: string;
   estimate?: number;
   priority?: Priority;
   severity?: Severity;
@@ -463,7 +467,8 @@ export interface ReorderStoryRequest {
 }
 
 export interface StoryUserLinkRequest {
-  user_id: string;
+  user_id?: string;
+  workspace_member_id?: string;
 }
 
 export interface StoryLabelLinkRequest {
@@ -612,6 +617,7 @@ export interface ObjectiveWithDetails {
   objective: Objective;
   teams: string[];
   owners: string[];
+  owner_member_ids?: string[];
   labels: Label[];
   key_results: KeyResult[];
   epics: EpicWithStats[];
@@ -632,6 +638,7 @@ export interface CreateObjectiveRequest {
   position?: number;
   team_ids?: string[];
   owner_ids?: string[];
+  owner_member_ids?: string[];
   label_ids?: string[];
   epic_ids?: string[];
 }
@@ -649,6 +656,7 @@ export interface UpdateObjectiveRequest {
   archived?: boolean;
   team_ids?: string[];
   owner_ids?: string[];
+  owner_member_ids?: string[];
   label_ids?: string[];
   epic_ids?: string[];
 }
