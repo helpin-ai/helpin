@@ -153,25 +153,34 @@ func (h *PMObjectiveHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 	var body struct {
-		UserID string `json:"user_id"`
+		UserID            string `json:"user_id"`
+		WorkspaceMemberID string `json:"workspace_member_id"`
 	}
-	if err := decodeJSON(r, &body); err != nil || body.UserID == "" {
-		writeError(w, http.StatusBadRequest, "user_id is required")
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.objectiveService.AddOwner(r.Context(), id, body.UserID, userID); err != nil {
+	ownerRef := body.WorkspaceMemberID
+	if ownerRef == "" {
+		ownerRef = body.UserID
+	}
+	if ownerRef == "" {
+		writeError(w, http.StatusBadRequest, "workspace_member_id or user_id is required")
+		return
+	}
+	if err := h.objectiveService.AddOwner(r.Context(), id, ownerRef, userID); err != nil {
 		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "owner added"})
 }
 
-// RemoveOwner handles DELETE /api/pm/objectives/{id}/owners/{userId}.
+// RemoveOwner handles DELETE /api/pm/objectives/{id}/owners/{ownerRef}.
 func (h *PMObjectiveHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	ownerID := chi.URLParam(r, "userId")
-	if err := h.objectiveService.RemoveOwner(r.Context(), id, ownerID, userID); err != nil {
+	ownerRef := chi.URLParam(r, "userId")
+	if err := h.objectiveService.RemoveOwner(r.Context(), id, ownerRef, userID); err != nil {
 		writeError(w, objectiveErrorStatus(err), err.Error())
 		return
 	}

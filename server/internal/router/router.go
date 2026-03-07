@@ -119,6 +119,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			r.Get("/workspaces/{id}/my-role", h.Workspace.GetMyRole)
 			r.Get("/workspaces/{id}/my-membership", h.Workspace.GetMyMembership)
 			r.Get("/workspaces/{id}/members", h.Workspace.ListMembers)
+			r.Get("/workspaces/{id}/assignable-members", h.Workspace.ListAssignableMembers)
 			r.Post("/workspaces/{id}/import/shortcut/preview", h.PMImport.PreviewShortcut)
 			r.Post("/workspaces/{id}/import/shortcut/execute", h.PMImport.ExecuteShortcut)
 			r.Get("/workspaces/{id}/import/shortcut/status/{importId}", h.PMImport.ShortcutStatus)

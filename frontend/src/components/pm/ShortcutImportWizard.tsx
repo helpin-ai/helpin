@@ -93,7 +93,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
   const [existingWorkflows, setExistingWorkflows] = useState<WorkflowWithStates[]>([]);
   const [importArchived, setImportArchived] = useState(true);
   const [importCompleted, setImportCompleted] = useState(true);
-  const [importId, setImportId] = useState<string | null>(null);
+
   const [importStatus, setImportStatus] = useState<ShortcutImportStatusResponse | null>(null);
   const [importing, setImporting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -321,7 +321,6 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       return;
     }
 
-    setImportId(data.import_id);
     // Start polling
     pollRef.current = setInterval(async () => {
       const { data: status } = await pmImportService.getShortcutStatus(workspaceId, data.import_id);
@@ -884,7 +883,7 @@ function UserStep({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {matched.map((u, i) => (
+              {matched.map((u) => (
                 <TableRow key={u.email}>
                   <TableCell className="py-1.5">
                     <div className="flex items-center gap-1.5 text-sm">

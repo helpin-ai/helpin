@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { settingsService } from '@/lib/services/settingsService';
 import type { WorkspaceTeam, WorkspacePerson, TeamMembership, TeamUserMembership } from '@/lib/types';
 
@@ -19,6 +19,18 @@ let cachedPeople: WorkspacePerson[] = [];
 let cachedMemberships: TeamMembership[] = [];
 let cachedUserMemberships: TeamUserMembership[] = [];
 let fetchPromise: Promise<void> | null = null;
+let listeners: (() => void)[] = [];
+
+/** Clear the teams cache and notify all mounted hook instances to re-fetch. */
+export function invalidateWorkspaceTeamsCache() {
+  cachedWorkspaceId = null;
+  cachedTeams = [];
+  cachedPeople = [];
+  cachedMemberships = [];
+  cachedUserMemberships = [];
+  fetchPromise = null;
+  listeners.forEach((l) => l());
+}
 
 export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTeamsResult {
   const [teams, setTeams] = useState<WorkspaceTeam[]>(cachedWorkspaceId === workspaceId ? cachedTeams : []);
@@ -26,6 +38,40 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
   const [memberships, setMemberships] = useState<TeamMembership[]>(cachedWorkspaceId === workspaceId ? cachedMemberships : []);
   const [userMemberships, setUserMemberships] = useState<TeamUserMembership[]>(cachedWorkspaceId === workspaceId ? cachedUserMemberships : []);
   const [loading, setLoading] = useState(false);
+  const [version, setVersion] = useState(0);
+
+  // Subscribe to cache invalidation events.
+  useEffect(() => {
+    const listener = () => setVersion((v) => v + 1);
+    listeners.push(listener);
+    return () => { listeners = listeners.filter((l) => l !== listener); };
+  }, []);
+
+  const load = useCallback(async () => {
+    if (!workspaceId) return;
+    // Deduplicate concurrent fetches.
+    if (!fetchPromise || cachedWorkspaceId !== workspaceId) {
+      setLoading(true);
+      fetchPromise = (async () => {
+        const { data } = await settingsService.getAll(workspaceId);
+        if (data) {
+          cachedWorkspaceId = workspaceId;
+          cachedTeams = data.teams;
+          cachedPeople = data.people;
+          cachedMemberships = data.memberships;
+          cachedUserMemberships = data.user_memberships;
+        }
+      })();
+    }
+
+    await fetchPromise;
+    fetchPromise = null;
+    setTeams(cachedTeams);
+    setPeople(cachedPeople);
+    setMemberships(cachedMemberships);
+    setUserMemberships(cachedUserMemberships);
+    setLoading(false);
+  }, [workspaceId]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -39,33 +85,8 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
       return;
     }
 
-    const load = async () => {
-      // Deduplicate concurrent fetches.
-      if (!fetchPromise || cachedWorkspaceId !== workspaceId) {
-        setLoading(true);
-        fetchPromise = (async () => {
-          const { data } = await settingsService.getAll(workspaceId);
-          if (data) {
-            cachedWorkspaceId = workspaceId;
-            cachedTeams = data.teams;
-            cachedPeople = data.people;
-            cachedMemberships = data.memberships;
-            cachedUserMemberships = data.user_memberships;
-          }
-        })();
-      }
-
-      await fetchPromise;
-      fetchPromise = null;
-      setTeams(cachedTeams);
-      setPeople(cachedPeople);
-      setMemberships(cachedMemberships);
-      setUserMemberships(cachedUserMemberships);
-      setLoading(false);
-    };
-
     load();
-  }, [workspaceId]);
+  }, [workspaceId, version, load]);
 
   const getTeamMembers = (teamId: string): WorkspacePerson[] => {
     const memberIds = new Set(memberships.filter((m) => m.team_id === teamId).map((m) => m.person_id));

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -60,6 +61,12 @@ func (r *SettingsRepository) GetAll(ctx context.Context, workspaceID string) (*m
 		return nil, err
 	}
 	cfg.UserMemberships = userMemberships
+
+	workspaceMemberships, err := r.listWorkspaceMemberships(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	cfg.WorkspaceMemberships = workspaceMemberships
 
 	managers, err := r.listManagers(ctx, workspaceID)
 	if err != nil {
@@ -129,7 +136,28 @@ func (r *SettingsRepository) listTeams(ctx context.Context, workspaceID string) 
 
 func (r *SettingsRepository) listPeople(ctx context.Context, workspaceID string) ([]model.WorkspacePerson, error) {
 	var people []model.WorkspacePerson
-	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("name").Find(&people).Error
+	err := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Select(`
+			wm.id,
+			wm.workspace_id,
+			wm.user_id,
+			wm.display_name AS name,
+			wm.email,
+			COALESCE(NULLIF(rp.role, ''), 'employee') AS role,
+			COALESCE(rp.job_role, '') AS job_role,
+			rp.manager_member_id AS manager_id,
+			COALESCE(rp.hire_date, '') AS hire_date,
+			wm.status,
+			COALESCE(rp.base_salary, 0) AS base_salary,
+			COALESCE(rp.active_for_bonus, true) AS active_for_bonus,
+			COALESCE(rp.active_for_evaluation, true) AS active_for_evaluation,
+			COALESCE(rp.is_account_owner, false) AS is_account_owner
+		`).
+		Joins("LEFT JOIN reward_profiles rp ON rp.workspace_member_id = wm.id").
+		Where("wm.workspace_id = ? AND wm.status <> ?", workspaceID, model.WorkspaceMemberStatusRevoked).
+		Order("LOWER(wm.display_name), LOWER(wm.email)").
+		Scan(&people).Error
 	if err != nil {
 		return nil, fmt.Errorf("list people: %w", err)
 	}
@@ -139,11 +167,11 @@ func (r *SettingsRepository) listPeople(ctx context.Context, workspaceID string)
 func (r *SettingsRepository) listMemberships(ctx context.Context, workspaceID string) ([]model.TeamMembership, error) {
 	var memberships []model.TeamMembership
 	err := r.db.WithContext(ctx).
-		Table("team_memberships").
-		Joins("JOIN workspace_teams ON team_memberships.team_id = workspace_teams.id").
-		Where("workspace_teams.workspace_id = ?", workspaceID).
-		Order("team_memberships.team_id, team_memberships.person_id").
-		Select("team_memberships.*").
+		Table("team_workspace_memberships twm").
+		Joins("JOIN workspace_teams wt ON twm.team_id = wt.id").
+		Where("wt.workspace_id = ?", workspaceID).
+		Order("twm.team_id, twm.workspace_member_id").
+		Select("twm.id, twm.team_id, twm.workspace_member_id AS person_id").
 		Find(&memberships).Error
 	if err != nil {
 		return nil, fmt.Errorf("list memberships: %w", err)
@@ -154,14 +182,30 @@ func (r *SettingsRepository) listMemberships(ctx context.Context, workspaceID st
 func (r *SettingsRepository) listUserMemberships(ctx context.Context, workspaceID string) ([]model.TeamUserMembership, error) {
 	var memberships []model.TeamUserMembership
 	err := r.db.WithContext(ctx).
-		Table("team_user_memberships").
-		Joins("JOIN workspace_teams ON team_user_memberships.team_id = workspace_teams.id").
-		Where("workspace_teams.workspace_id = ?", workspaceID).
-		Order("team_user_memberships.team_id, team_user_memberships.user_id").
-		Select("team_user_memberships.*").
+		Table("team_workspace_memberships twm").
+		Joins("JOIN workspace_teams wt ON twm.team_id = wt.id").
+		Joins("JOIN workspace_members wm ON wm.id = twm.workspace_member_id").
+		Where("wt.workspace_id = ? AND wm.user_id IS NOT NULL", workspaceID).
+		Order("twm.team_id, wm.user_id").
+		Select("twm.id, twm.team_id, wm.user_id, twm.role, twm.created_at, twm.updated_at").
 		Find(&memberships).Error
 	if err != nil {
 		return nil, fmt.Errorf("list user memberships: %w", err)
+	}
+	return memberships, nil
+}
+
+func (r *SettingsRepository) listWorkspaceMemberships(ctx context.Context, workspaceID string) ([]model.TeamWorkspaceMembership, error) {
+	var memberships []model.TeamWorkspaceMembership
+	err := r.db.WithContext(ctx).
+		Table("team_workspace_memberships").
+		Joins("JOIN workspace_teams ON team_workspace_memberships.team_id = workspace_teams.id").
+		Where("workspace_teams.workspace_id = ?", workspaceID).
+		Order("team_workspace_memberships.team_id, team_workspace_memberships.workspace_member_id").
+		Select("team_workspace_memberships.*").
+		Find(&memberships).Error
+	if err != nil {
+		return nil, fmt.Errorf("list workspace memberships: %w", err)
 	}
 	return memberships, nil
 }
@@ -213,54 +257,82 @@ func (r *SettingsRepository) Initialize(ctx context.Context, workspaceID string)
 
 // CreateTeam inserts a new team.
 func (r *SettingsRepository) CreateTeam(ctx context.Context, req model.CreateTeamRequest) (*model.WorkspaceTeam, error) {
-	t := &model.WorkspaceTeam{
-		WorkspaceID: req.WorkspaceID,
-		Name:        req.Name,
-		Handle:      req.Handle,
-		Description: req.Description,
-		ManagerID:   req.ManagerID,
+	var team *model.WorkspaceTeam
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		managerID, err := r.resolveWorkspaceMemberReferenceTx(tx, req.WorkspaceID, req.ManagerID)
+		if err != nil {
+			return err
+		}
+		t := &model.WorkspaceTeam{
+			WorkspaceID: req.WorkspaceID,
+			Name:        req.Name,
+			Handle:      req.Handle,
+			Description: req.Description,
+			ManagerID:   managerID,
+		}
+		if err := tx.Create(t).Error; err != nil {
+			return fmt.Errorf("create team: %w", err)
+		}
+		team = t
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if err := r.db.WithContext(ctx).Create(t).Error; err != nil {
-		return nil, fmt.Errorf("create team: %w", err)
-	}
-	return t, nil
+	return team, nil
 }
 
 // UpdateTeam modifies a team.
 func (r *SettingsRepository) UpdateTeam(ctx context.Context, id string, req model.UpdateTeamRequest) (*model.WorkspaceTeam, error) {
-	updates := map[string]interface{}{}
-	if req.Name != nil {
-		updates["name"] = *req.Name
-	}
-	if req.Handle != nil {
-		updates["handle"] = *req.Handle
-	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
-	}
-	if req.ManagerID != nil {
-		updates["manager_id"] = *req.ManagerID
-	}
+	var team *model.WorkspaceTeam
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := r.getTeamByIDTx(tx, id)
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return fmt.Errorf("team not found")
+		}
 
-	if err := r.db.WithContext(ctx).Model(&model.WorkspaceTeam{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("update team: %w", err)
-	}
+		updates := map[string]interface{}{}
+		if req.Name != nil {
+			updates["name"] = *req.Name
+		}
+		if req.Handle != nil {
+			updates["handle"] = *req.Handle
+		}
+		if req.Description != nil {
+			updates["description"] = *req.Description
+		}
+		if req.ManagerID != nil {
+			managerID, err := r.resolveWorkspaceMemberReferenceTx(tx, current.WorkspaceID, req.ManagerID)
+			if err != nil {
+				return err
+			}
+			updates["manager_id"] = managerID
+		}
 
-	t := &model.WorkspaceTeam{}
-	if err := r.db.WithContext(ctx).Where("id = ?", id).First(t).Error; err != nil {
-		return nil, fmt.Errorf("update team: %w", err)
+		if err := tx.Model(&model.WorkspaceTeam{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return fmt.Errorf("update team: %w", err)
+		}
+
+		team = &model.WorkspaceTeam{}
+		if err := tx.Where("id = ?", id).First(team).Error; err != nil {
+			return fmt.Errorf("update team: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return t, nil
+	return team, nil
 }
 
 // DeleteTeam removes a team by ID.
 func (r *SettingsRepository) DeleteTeam(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("team_id = ?", id).Delete(&model.TeamMembership{}).Error; err != nil {
-			return fmt.Errorf("delete person team memberships: %w", err)
-		}
-		if err := tx.Where("team_id = ?", id).Delete(&model.TeamUserMembership{}).Error; err != nil {
-			return fmt.Errorf("delete user team memberships: %w", err)
+		if err := tx.Where("team_id = ?", id).Delete(&model.TeamWorkspaceMembership{}).Error; err != nil {
+			return fmt.Errorf("delete workspace member team memberships: %w", err)
 		}
 		if err := tx.Where("id = ?", id).Delete(&model.WorkspaceTeam{}).Error; err != nil {
 			return fmt.Errorf("delete team: %w", err)
@@ -371,35 +443,20 @@ func (r *SettingsRepository) AddTeamUserMembership(ctx context.Context, teamID, 
 			return fmt.Errorf("team not found")
 		}
 
-		var count int64
-		if err := tx.Model(&model.WorkspaceMember{}).
-			Where("workspace_id = ? AND user_id = ?", team.WorkspaceID, userID).
-			Count(&count).Error; err != nil {
-			return fmt.Errorf("check workspace membership: %w", err)
+		workspaceMember, err := r.getWorkspaceMemberByUserTx(tx, team.WorkspaceID, userID)
+		if err != nil {
+			return err
 		}
-		if count == 0 {
+		if workspaceMember == nil || workspaceMember.Status != model.WorkspaceMemberStatusActive {
 			return fmt.Errorf("user is not a member of this workspace")
 		}
 
-		entry := &model.TeamUserMembership{
-			TeamID: teamID,
-			UserID: userID,
-			Role:   role,
-		}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "team_id"}, {Name: "user_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"role", "updated_at"}),
-		}).Create(entry).Error; err != nil {
-			return fmt.Errorf("add team user membership: %w", err)
-		}
-
-		if err := r.syncPersonMembershipForUserTx(tx, team.WorkspaceID, teamID, userID, true); err != nil {
+		if err := r.syncWorkspaceMembershipTx(tx, teamID, workspaceMember.ID, role, true); err != nil {
 			return err
 		}
-
-		fetched := &model.TeamUserMembership{}
-		if err := tx.Where("team_id = ? AND user_id = ?", teamID, userID).First(fetched).Error; err != nil {
-			return fmt.Errorf("fetch team user membership: %w", err)
+		fetched, err := r.getTeamUserMembershipTx(tx, teamID, userID)
+		if err != nil {
+			return err
 		}
 		membership = fetched
 		return nil
@@ -422,26 +479,54 @@ func (r *SettingsRepository) UpdateTeamUserMembership(ctx context.Context, teamI
 		membership, err = r.GetTeamUserMembership(ctx, teamID, userID)
 		return membership, err
 	}
-	if err := r.db.WithContext(ctx).
-		Model(&model.TeamUserMembership{}).
-		Where("team_id = ? AND user_id = ?", teamID, userID).
-		Updates(updates).Error; err != nil {
-		return nil, fmt.Errorf("update team user membership: %w", err)
+	role := ""
+	if req.Role != nil {
+		role = *req.Role
+	}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		team, err := r.getTeamByIDTx(tx, teamID)
+		if err != nil {
+			return err
+		}
+		if team == nil {
+			return fmt.Errorf("team not found")
+		}
+		workspaceMember, err := r.getWorkspaceMemberByUserTx(tx, team.WorkspaceID, userID)
+		if err != nil {
+			return err
+		}
+		if workspaceMember == nil {
+			return fmt.Errorf("user is not a member of this workspace")
+		}
+		return r.syncWorkspaceMembershipTx(tx, teamID, workspaceMember.ID, role, true)
+	})
+	if err != nil {
+		return nil, err
 	}
 	return r.GetTeamUserMembership(ctx, teamID, userID)
 }
 
 // GetTeamUserMembership loads a specific team membership.
 func (r *SettingsRepository) GetTeamUserMembership(ctx context.Context, teamID, userID string) (*model.TeamUserMembership, error) {
+	return r.getTeamUserMembershipTx(r.db.WithContext(ctx), teamID, userID)
+}
+
+func (r *SettingsRepository) getTeamUserMembershipTx(tx *gorm.DB, teamID, userID string) (*model.TeamUserMembership, error) {
 	membership := &model.TeamUserMembership{}
-	err := r.db.WithContext(ctx).
-		Where("team_id = ? AND user_id = ?", teamID, userID).
-		First(membership).Error
+	err := tx.
+		Table("team_workspace_memberships twm").
+		Select("twm.id, twm.team_id, wm.user_id, twm.role, twm.created_at, twm.updated_at").
+		Joins("JOIN workspace_members wm ON wm.id = twm.workspace_member_id").
+		Where("twm.team_id = ? AND wm.user_id = ?", teamID, userID).
+		Scan(membership).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get team user membership: %w", err)
+	}
+	if membership.ID == "" {
+		return nil, nil
 	}
 	return membership, nil
 }
@@ -457,11 +542,15 @@ func (r *SettingsRepository) RemoveTeamUserMembership(ctx context.Context, teamI
 			return fmt.Errorf("team not found")
 		}
 
-		if err := tx.Where("team_id = ? AND user_id = ?", teamID, userID).Delete(&model.TeamUserMembership{}).Error; err != nil {
-			return fmt.Errorf("remove team user membership: %w", err)
-		}
-		if err := r.syncPersonMembershipForUserTx(tx, team.WorkspaceID, teamID, userID, false); err != nil {
+		workspaceMember, err := r.getWorkspaceMemberByUserTx(tx, team.WorkspaceID, userID)
+		if err != nil {
 			return err
+		}
+
+		if workspaceMember != nil {
+			if err := r.syncWorkspaceMembershipTx(tx, teamID, workspaceMember.ID, "", false); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -479,25 +568,200 @@ func (r *SettingsRepository) getTeamByIDTx(tx *gorm.DB, id string) (*model.Works
 	return team, nil
 }
 
-// Keep the legacy person-based team memberships aligned when a user-backed membership changes.
-func (r *SettingsRepository) syncPersonMembershipForUserTx(tx *gorm.DB, workspaceID, teamID, userID string, add bool) error {
-	var people []model.WorkspacePerson
-	if err := tx.Where("workspace_id = ? AND user_id = ?", workspaceID, userID).Find(&people).Error; err != nil {
-		return fmt.Errorf("find workspace people by user: %w", err)
+func (r *SettingsRepository) syncWorkspaceMembershipTx(tx *gorm.DB, teamID, workspaceMemberID, role string, add bool) error {
+	if !add {
+		if err := tx.Where("team_id = ? AND workspace_member_id = ?", teamID, workspaceMemberID).Delete(&model.TeamWorkspaceMembership{}).Error; err != nil {
+			return fmt.Errorf("remove workspace member team membership: %w", err)
+		}
+		return nil
 	}
-	for _, person := range people {
-		if add {
-			entry := &model.TeamMembership{TeamID: teamID, PersonID: person.ID}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(entry).Error; err != nil {
-				return fmt.Errorf("sync person team membership: %w", err)
-			}
-			continue
-		}
-		if err := tx.Where("team_id = ? AND person_id = ?", teamID, person.ID).Delete(&model.TeamMembership{}).Error; err != nil {
-			return fmt.Errorf("remove synced person team membership: %w", err)
-		}
+
+	entry := &model.TeamWorkspaceMembership{
+		TeamID:            teamID,
+		WorkspaceMemberID: workspaceMemberID,
+		Role:              role,
+	}
+	if err := tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "team_id"}, {Name: "workspace_member_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"role", "updated_at"}),
+	}).Create(entry).Error; err != nil {
+		return fmt.Errorf("sync workspace member team membership: %w", err)
 	}
 	return nil
+}
+
+func (r *SettingsRepository) getWorkspaceMemberByUserTx(tx *gorm.DB, workspaceID, userID string) (*model.WorkspaceMember, error) {
+	member := &model.WorkspaceMember{}
+	err := tx.Where("workspace_id = ? AND user_id = ?", workspaceID, userID).First(member).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get workspace member by user: %w", err)
+	}
+	return member, nil
+}
+
+func (r *SettingsRepository) getWorkspaceMemberByEmailTx(tx *gorm.DB, workspaceID, email string) (*model.WorkspaceMember, error) {
+	member := &model.WorkspaceMember{}
+	err := tx.Where("workspace_id = ? AND LOWER(email) = LOWER(?)", workspaceID, strings.ToLower(strings.TrimSpace(email))).First(member).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get workspace member by email: %w", err)
+	}
+	return member, nil
+}
+
+func (r *SettingsRepository) getWorkspaceMemberByIDTx(tx *gorm.DB, id string) (*model.WorkspaceMember, error) {
+	member := &model.WorkspaceMember{}
+	err := tx.Where("id = ?", id).First(member).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get workspace member by id: %w", err)
+	}
+	return member, nil
+}
+
+func (r *SettingsRepository) resolveWorkspaceMemberReferenceTx(tx *gorm.DB, workspaceID string, reference *string) (*string, error) {
+	if reference == nil || strings.TrimSpace(*reference) == "" {
+		return nil, nil
+	}
+
+	member, err := r.getWorkspaceMemberByIDTx(tx, *reference)
+	if err != nil {
+		return nil, err
+	}
+	if member != nil && member.WorkspaceID == workspaceID {
+		return reference, nil
+	}
+	return nil, fmt.Errorf("workspace member not found")
+}
+
+func (r *SettingsRepository) upsertWorkspaceMemberIdentityTx(tx *gorm.DB, workspaceID string, userID *string, email, displayName, status string) (*model.WorkspaceMember, error) {
+	var member *model.WorkspaceMember
+	var err error
+	if userID != nil && *userID != "" {
+		member, err = r.getWorkspaceMemberByUserTx(tx, workspaceID, *userID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if member == nil && strings.TrimSpace(email) != "" {
+		member, err = r.getWorkspaceMemberByEmailTx(tx, workspaceID, email)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	email = strings.ToLower(strings.TrimSpace(email))
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		displayName = email
+	}
+	if status == "" {
+		status = model.WorkspaceMemberStatusActive
+	}
+
+	if member == nil {
+		member = &model.WorkspaceMember{
+			WorkspaceID: workspaceID,
+			UserID:      userID,
+			Email:       email,
+			DisplayName: displayName,
+			Role:        model.RoleMember,
+			Status:      status,
+		}
+		if err := tx.Create(member).Error; err != nil {
+			return nil, fmt.Errorf("create workspace member identity: %w", err)
+		}
+		return member, nil
+	}
+
+	member.UserID = userID
+	member.Email = email
+	member.DisplayName = displayName
+	if member.Role == "" {
+		member.Role = model.RoleMember
+	}
+	member.Status = status
+	if err := tx.Save(member).Error; err != nil {
+		return nil, fmt.Errorf("update workspace member identity: %w", err)
+	}
+	return member, nil
+}
+
+func (r *SettingsRepository) upsertRewardProfileTx(tx *gorm.DB, workspaceMemberID, role, jobRole string, managerMemberID *string, hireDate string, baseSalary float64, activeForBonus, activeForEvaluation, isAccountOwner bool) error {
+	profile := &model.RewardProfile{}
+	err := tx.Where("workspace_member_id = ?", workspaceMemberID).First(profile).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("load reward profile: %w", err)
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		profile = &model.RewardProfile{
+			WorkspaceMemberID:   workspaceMemberID,
+			Role:                role,
+			JobRole:             jobRole,
+			ActiveForBonus:      activeForBonus,
+			ActiveForEvaluation: activeForEvaluation,
+			IsAccountOwner:      isAccountOwner,
+		}
+	} else {
+		profile.Role = role
+		profile.JobRole = jobRole
+		profile.ActiveForBonus = activeForBonus
+		profile.ActiveForEvaluation = activeForEvaluation
+		profile.IsAccountOwner = isAccountOwner
+	}
+	if role == "" {
+		profile.Role = "employee"
+	}
+	profile.ManagerMemberID = managerMemberID
+	if strings.TrimSpace(hireDate) != "" {
+		profile.HireDate = &hireDate
+	} else {
+		profile.HireDate = nil
+	}
+	profile.BaseSalary = baseSalary
+	if err := tx.Save(profile).Error; err != nil {
+		return fmt.Errorf("save reward profile: %w", err)
+	}
+	return nil
+}
+
+func (r *SettingsRepository) getWorkspacePersonByIDTx(tx *gorm.DB, id string) (*model.WorkspacePerson, error) {
+	person := &model.WorkspacePerson{}
+	err := tx.
+		Table("workspace_members wm").
+		Select(`
+			wm.id,
+			wm.workspace_id,
+			wm.user_id,
+			wm.display_name AS name,
+			wm.email,
+			COALESCE(NULLIF(rp.role, ''), 'employee') AS role,
+			COALESCE(rp.job_role, '') AS job_role,
+			rp.manager_member_id AS manager_id,
+			COALESCE(rp.hire_date, '') AS hire_date,
+			wm.status,
+			COALESCE(rp.base_salary, 0) AS base_salary,
+			COALESCE(rp.active_for_bonus, true) AS active_for_bonus,
+			COALESCE(rp.active_for_evaluation, true) AS active_for_evaluation,
+			COALESCE(rp.is_account_owner, false) AS is_account_owner
+		`).
+		Joins("LEFT JOIN reward_profiles rp ON rp.workspace_member_id = wm.id").
+		Where("wm.id = ?", id).
+		Scan(person).Error
+	if err != nil {
+		return nil, fmt.Errorf("get workspace person by id: %w", err)
+	}
+	if person.ID == "" {
+		return nil, nil
+	}
+	return person, nil
 }
 
 // CreatePerson inserts a new person and optionally assigns them to teams.
@@ -505,35 +769,32 @@ func (r *SettingsRepository) CreatePerson(ctx context.Context, req model.CreateP
 	var person *model.WorkspacePerson
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		p := &model.WorkspacePerson{
-			WorkspaceID:         req.WorkspaceID,
-			UserID:              req.UserID,
-			Name:                req.Name,
-			Email:               req.Email,
-			Role:                req.Role,
-			JobRole:             req.JobRole,
-			ManagerID:           req.ManagerID,
-			HireDate:            req.HireDate,
-			BaseSalary:          req.BaseSalary,
-			ActiveForBonus:      req.ActiveForBonus,
-			ActiveForEvaluation: req.ActiveForEvaluation,
-			IsAccountOwner:      req.IsAccountOwner,
+		workspaceMember, err := r.upsertWorkspaceMemberIdentityTx(tx, req.WorkspaceID, req.UserID, req.Email, req.Name, model.WorkspaceMemberStatusActive)
+		if err != nil {
+			return err
 		}
-		if err := tx.Create(p).Error; err != nil {
-			return fmt.Errorf("create person: %w", err)
+		managerID, err := r.resolveWorkspaceMemberReferenceTx(tx, req.WorkspaceID, req.ManagerID)
+		if err != nil {
+			return err
 		}
-
-		for _, teamID := range req.TeamIDs {
-			m := &model.TeamMembership{
-				TeamID:   teamID,
-				PersonID: p.ID,
+		if err := r.upsertRewardProfileTx(tx, workspaceMember.ID, req.Role, req.JobRole, managerID, req.HireDate, req.BaseSalary, req.ActiveForBonus, req.ActiveForEvaluation, req.IsAccountOwner); err != nil {
+			return err
+		}
+		if req.TeamIDs != nil {
+			if err := tx.Where("workspace_member_id = ?", workspaceMember.ID).Delete(&model.TeamWorkspaceMembership{}).Error; err != nil {
+				return fmt.Errorf("clear team memberships: %w", err)
 			}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(m).Error; err != nil {
-				return fmt.Errorf("assign person to team: %w", err)
+			for _, teamID := range req.TeamIDs {
+				if err := r.syncWorkspaceMembershipTx(tx, teamID, workspaceMember.ID, "member", true); err != nil {
+					return err
+				}
 			}
 		}
 
-		person = p
+		person, err = r.getWorkspacePersonByIDTx(tx, workspaceMember.ID)
+		if err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -547,68 +808,91 @@ func (r *SettingsRepository) UpdatePerson(ctx context.Context, id string, req mo
 	var person *model.WorkspacePerson
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		updates := map[string]interface{}{}
-		if req.Name != nil {
-			updates["name"] = *req.Name
+		workspaceMember, err := r.getWorkspaceMemberByIDTx(tx, id)
+		if err != nil {
+			return err
 		}
-		if req.Email != nil {
-			updates["email"] = *req.Email
-		}
-		if req.Role != nil {
-			updates["role"] = *req.Role
-		}
-		if req.JobRole != nil {
-			updates["job_role"] = *req.JobRole
-		}
-		if req.ManagerID != nil {
-			updates["manager_id"] = *req.ManagerID
-		}
-		if req.HireDate != nil {
-			updates["hire_date"] = *req.HireDate
-		}
-		if req.Status != nil {
-			updates["status"] = *req.Status
-		}
-		if req.BaseSalary != nil {
-			updates["base_salary"] = *req.BaseSalary
-		}
-		if req.ActiveForBonus != nil {
-			updates["active_for_bonus"] = *req.ActiveForBonus
-		}
-		if req.ActiveForEvaluation != nil {
-			updates["active_for_evaluation"] = *req.ActiveForEvaluation
-		}
-		if req.IsAccountOwner != nil {
-			updates["is_account_owner"] = *req.IsAccountOwner
+		if workspaceMember == nil {
+			return fmt.Errorf("person not found")
 		}
 
-		if len(updates) > 0 {
-			if err := tx.Model(&model.WorkspacePerson{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-				return fmt.Errorf("update person: %w", err)
+		memberUpdates := map[string]interface{}{}
+		if req.Name != nil {
+			memberUpdates["display_name"] = *req.Name
+		}
+		if req.Email != nil {
+			memberUpdates["email"] = strings.ToLower(strings.TrimSpace(*req.Email))
+		}
+		if req.Status != nil {
+			memberUpdates["status"] = *req.Status
+		}
+		if len(memberUpdates) > 0 {
+			if err := tx.Model(&model.WorkspaceMember{}).Where("id = ?", id).Updates(memberUpdates).Error; err != nil {
+				return fmt.Errorf("update workspace member: %w", err)
 			}
+		}
+
+		profile := &model.RewardProfile{}
+		if err := tx.Where("workspace_member_id = ?", id).First(profile).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("load reward profile: %w", err)
+			}
+			profile = &model.RewardProfile{
+				WorkspaceMemberID:   id,
+				Role:                "employee",
+				JobRole:             "",
+				ActiveForBonus:      true,
+				ActiveForEvaluation: true,
+			}
+		}
+		if req.Role != nil {
+			profile.Role = *req.Role
+		}
+		if req.JobRole != nil {
+			profile.JobRole = *req.JobRole
+		}
+		if req.ManagerID != nil {
+			managerID, err := r.resolveWorkspaceMemberReferenceTx(tx, workspaceMember.WorkspaceID, req.ManagerID)
+			if err != nil {
+				return err
+			}
+			profile.ManagerMemberID = managerID
+		}
+		if req.HireDate != nil {
+			profile.HireDate = req.HireDate
+		}
+		if req.BaseSalary != nil {
+			profile.BaseSalary = *req.BaseSalary
+		}
+		if req.ActiveForBonus != nil {
+			profile.ActiveForBonus = *req.ActiveForBonus
+		}
+		if req.ActiveForEvaluation != nil {
+			profile.ActiveForEvaluation = *req.ActiveForEvaluation
+		}
+		if req.IsAccountOwner != nil {
+			profile.IsAccountOwner = *req.IsAccountOwner
+		}
+		if err := tx.Save(profile).Error; err != nil {
+			return fmt.Errorf("update reward profile: %w", err)
 		}
 
 		// Replace team memberships if provided.
 		if req.TeamIDs != nil {
-			if err := tx.Where("person_id = ?", id).Delete(&model.TeamMembership{}).Error; err != nil {
+			if err := tx.Where("workspace_member_id = ?", id).Delete(&model.TeamWorkspaceMembership{}).Error; err != nil {
 				return fmt.Errorf("clear team memberships: %w", err)
 			}
 			for _, teamID := range req.TeamIDs {
-				m := &model.TeamMembership{
-					TeamID:   teamID,
-					PersonID: id,
-				}
-				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(m).Error; err != nil {
-					return fmt.Errorf("assign person to team: %w", err)
+				if err := r.syncWorkspaceMembershipTx(tx, teamID, id, "member", true); err != nil {
+					return err
 				}
 			}
 		}
 
-		p := &model.WorkspacePerson{}
-		if err := tx.Where("id = ?", id).First(p).Error; err != nil {
-			return fmt.Errorf("update person: %w", err)
+		person, err = r.getWorkspacePersonByIDTx(tx, id)
+		if err != nil {
+			return err
 		}
-		person = p
 		return nil
 	})
 	if err != nil {
@@ -619,10 +903,37 @@ func (r *SettingsRepository) UpdatePerson(ctx context.Context, id string, req mo
 
 // DeletePerson removes a person by ID.
 func (r *SettingsRepository) DeletePerson(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.WorkspacePerson{}).Error; err != nil {
-		return fmt.Errorf("delete person: %w", err)
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		workspaceMember, err := r.getWorkspaceMemberByIDTx(tx, id)
+		if err != nil {
+			return err
+		}
+		if workspaceMember == nil {
+			return fmt.Errorf("person not found")
+		}
+		if workspaceMember.UserID != nil && workspaceMember.Status == model.WorkspaceMemberStatusActive {
+			return fmt.Errorf("joined workspace members cannot be deleted from People; remove them from Members instead")
+		}
+		if err := tx.Where("workspace_member_id = ?", id).Delete(&model.TeamWorkspaceMembership{}).Error; err != nil {
+			return fmt.Errorf("delete team memberships: %w", err)
+		}
+		if err := tx.Model(&model.WorkspaceTeam{}).Where("manager_id = ?", id).Update("manager_id", nil).Error; err != nil {
+			return fmt.Errorf("clear team manager references: %w", err)
+		}
+		if err := tx.Model(&model.WorkspaceManager{}).Where("reporting_to = ?", id).Update("reporting_to", nil).Error; err != nil {
+			return fmt.Errorf("clear manager reporting references: %w", err)
+		}
+		if err := tx.Where("person_id = ?", id).Delete(&model.WorkspaceManager{}).Error; err != nil {
+			return fmt.Errorf("delete workspace manager rows: %w", err)
+		}
+		if err := tx.Where("workspace_member_id = ?", id).Delete(&model.RewardProfile{}).Error; err != nil {
+			return fmt.Errorf("delete reward profile: %w", err)
+		}
+		if err := tx.Where("id = ?", id).Delete(&model.WorkspaceMember{}).Error; err != nil {
+			return fmt.Errorf("delete workspace member: %w", err)
+		}
+		return nil
+	})
 }
 
 // UpdateBonusTiers replaces all bonus tiers for a workspace.

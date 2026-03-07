@@ -14,7 +14,8 @@ interface PMStoryFilters {
   workflow_id?: string;
   state_id?: string;
   story_type?: string;
-  owner_id?: string;
+  owner_member_id?: string;
+  requester_member_id?: string;
   label_id?: string;
   priority?: string;
   archived?: boolean;

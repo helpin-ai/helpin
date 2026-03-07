@@ -205,8 +205,14 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 		`CREATE TABLE workspace_members (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
-			user_id TEXT NOT NULL,
+			user_id TEXT,
+			email TEXT NOT NULL,
+			display_name TEXT NOT NULL,
 			role TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active',
+			invited_by TEXT,
+			invited_at DATETIME,
+			accepted_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -292,6 +298,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			external_id TEXT,
 			epic_state_id TEXT,
 			owner_id TEXT,
+			owner_member_id TEXT,
 			team_id TEXT,
 			planned_start_date DATETIME,
 			deadline DATETIME,
@@ -348,7 +355,9 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			sprint_id TEXT,
 			team_id TEXT,
 			owner_id TEXT,
+			owner_member_id TEXT,
 			requester_id TEXT,
+			requester_member_id TEXT,
 			estimate INTEGER,
 			priority TEXT NOT NULL,
 			severity TEXT NOT NULL,
@@ -476,10 +485,10 @@ func newImportTestService(t *testing.T, db *gorm.DB) (*PMImportService, string, 
 		t.Fatalf("seed workspace: %v", err)
 	}
 	memberships := []model.WorkspaceMember{
-		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: adminID, Role: model.RoleOwner},
-		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: "user-requester", Role: model.RoleMember},
-		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: "user-owner-one", Role: model.RoleMember},
-		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: "user-owner-two", Role: model.RoleMember},
+		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr(adminID), Email: "admin@example.com", DisplayName: "Admin User", Role: model.RoleOwner, Status: model.WorkspaceMemberStatusActive},
+		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-requester"), Email: "azhar@contentstudio.io", DisplayName: "Azhar K", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
+		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-owner-one"), Email: "owner.one@example.com", DisplayName: "Owner One", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
+		{ID: uuid.NewString(), WorkspaceID: workspaceID, UserID: stringPtr("user-owner-two"), Email: "owner.two@example.com", DisplayName: "Owner Two", Role: model.RoleMember, Status: model.WorkspaceMemberStatusActive},
 	}
 	if err := db.Create(&memberships).Error; err != nil {
 		t.Fatalf("seed workspace members: %v", err)

@@ -61,11 +61,11 @@ export const pmObjectiveService = {
   removeTeam: (workspaceId: string, id: string, teamId: string) =>
     api.del(`/pm/objectives/${id}/teams/${teamId}${qs(workspaceId)}`),
 
-  addOwner: (workspaceId: string, id: string, userId: string) =>
-    api.post(`/pm/objectives/${id}/owners${qs(workspaceId)}`, { user_id: userId }),
+  addOwner: (workspaceId: string, id: string, workspaceMemberId: string) =>
+    api.post(`/pm/objectives/${id}/owners${qs(workspaceId)}`, { workspace_member_id: workspaceMemberId }),
 
-  removeOwner: (workspaceId: string, id: string, userId: string) =>
-    api.del(`/pm/objectives/${id}/owners/${userId}${qs(workspaceId)}`),
+  removeOwner: (workspaceId: string, id: string, workspaceMemberId: string) =>
+    api.del(`/pm/objectives/${id}/owners/${workspaceMemberId}${qs(workspaceId)}`),
 
   addEpic: (workspaceId: string, id: string, epicId: string) =>
     api.post(`/pm/objectives/${id}/epics${qs(workspaceId)}`, { epic_id: epicId }),

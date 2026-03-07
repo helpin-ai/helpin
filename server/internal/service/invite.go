@@ -53,6 +53,8 @@ func generateToken() (string, error) {
 
 // CreateInvitation creates a new invitation and sends an email.
 func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateInvitationRequest, inviterUserID string) (*model.InvitationResponse, error) {
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
 	// Validate role
 	validRoles := map[string]bool{"admin": true, "manager": true, "member": true, "viewer": true}
 	if !validRoles[req.Role] {
@@ -79,19 +81,25 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 		return nil, fmt.Errorf("a pending invitation already exists for this email")
 	}
 
+	pendingMember, err := s.workspaceRepo.UpsertPendingMember(ctx, req.WorkspaceID, req.Email, req.Role, inviterUserID)
+	if err != nil {
+		return nil, fmt.Errorf("prepare pending member: %w", err)
+	}
+
 	token, err := generateToken()
 	if err != nil {
 		return nil, err
 	}
 
 	inv := &model.WorkspaceInvitation{
-		WorkspaceID: req.WorkspaceID,
-		Email:       req.Email,
-		Role:        req.Role,
-		Token:       token,
-		InvitedBy:   inviterUserID,
-		Status:      "pending",
-		ExpiresAt:   time.Now().Add(7 * 24 * time.Hour),
+		WorkspaceID:       req.WorkspaceID,
+		WorkspaceMemberID: &pendingMember.ID,
+		Email:             req.Email,
+		Role:              req.Role,
+		Token:             token,
+		InvitedBy:         inviterUserID,
+		Status:            "pending",
+		ExpiresAt:         time.Now().Add(7 * 24 * time.Hour),
 	}
 
 	created, err := s.invitationRepo.Create(ctx, inv)
@@ -120,15 +128,16 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 	}
 
 	return &model.InvitationResponse{
-		ID:          created.ID,
-		WorkspaceID: created.WorkspaceID,
-		Email:       created.Email,
-		Role:        created.Role,
-		Status:      created.Status,
-		InvitedBy:   created.InvitedBy,
-		ExpiresAt:   created.ExpiresAt,
-		CreatedAt:   created.CreatedAt,
-		JoinURL:     joinURL,
+		ID:                created.ID,
+		WorkspaceID:       created.WorkspaceID,
+		WorkspaceMemberID: created.WorkspaceMemberID,
+		Email:             created.Email,
+		Role:              created.Role,
+		Status:            created.Status,
+		InvitedBy:         created.InvitedBy,
+		ExpiresAt:         created.ExpiresAt,
+		CreatedAt:         created.CreatedAt,
+		JoinURL:           joinURL,
 	}, nil
 }
 
@@ -181,26 +190,14 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 		return fmt.Errorf("your email address does not match the invitation")
 	}
 
-	// Create workspace member
-	if _, err := s.workspaceRepo.AddMember(ctx, inv.WorkspaceID, userID, inv.Role); err != nil {
-		return fmt.Errorf("add member: %w", err)
+	member, err := s.workspaceRepo.ActivatePendingMember(ctx, inv.WorkspaceID, inv.WorkspaceMemberID, userID, user.Email, user.FullName, inv.Role)
+	if err != nil {
+		return fmt.Errorf("activate member: %w", err)
 	}
-
-	// Create workspace_people record with defaults
-	today := time.Now().Format("2006-01-02")
-	personReq := model.CreatePersonRequest{
-		WorkspaceID:         inv.WorkspaceID,
-		Name:                user.FullName,
-		Email:               user.Email,
-		Role:                "employee",
-		JobRole:             "",
-		HireDate:            today,
-		ActiveForBonus:      true,
-		ActiveForEvaluation: true,
-		UserID:              &userID,
-	}
-	if _, err := s.settingsRepo.CreatePerson(ctx, personReq); err != nil {
-		log.Printf("Warning: failed to create workspace_people record: %v", err)
+	if inv.WorkspaceMemberID == nil || *inv.WorkspaceMemberID != member.ID {
+		if err := s.invitationRepo.UpdateWorkspaceMemberID(ctx, inv.ID, member.ID); err != nil {
+			return fmt.Errorf("link invitation member: %w", err)
+		}
 	}
 
 	// Auto-assign teams from preassignments
@@ -243,15 +240,16 @@ func (s *InviteService) ListInvitations(ctx context.Context, workspaceID, userID
 	result := make([]model.InvitationResponse, len(invitations))
 	for i, inv := range invitations {
 		resp := model.InvitationResponse{
-			ID:          inv.ID,
-			WorkspaceID: inv.WorkspaceID,
-			Email:       inv.Email,
-			Role:        inv.Role,
-			Status:      inv.Status,
-			InvitedBy:   inv.InvitedBy,
-			ExpiresAt:   inv.ExpiresAt,
-			AcceptedAt:  inv.AcceptedAt,
-			CreatedAt:   inv.CreatedAt,
+			ID:                inv.ID,
+			WorkspaceID:       inv.WorkspaceID,
+			WorkspaceMemberID: inv.WorkspaceMemberID,
+			Email:             inv.Email,
+			Role:              inv.Role,
+			Status:            inv.Status,
+			InvitedBy:         inv.InvitedBy,
+			ExpiresAt:         inv.ExpiresAt,
+			AcceptedAt:        inv.AcceptedAt,
+			CreatedAt:         inv.CreatedAt,
 		}
 		if inv.Status == "pending" {
 			resp.JoinURL = fmt.Sprintf("%s/join/%s", s.appBaseURL, inv.Token)
@@ -282,6 +280,16 @@ func (s *InviteService) ResendInvitation(ctx context.Context, invitationID, user
 
 	if inv.Status != "pending" {
 		return fmt.Errorf("can only resend pending invitations")
+	}
+
+	member, err := s.workspaceRepo.UpsertPendingMember(ctx, inv.WorkspaceID, inv.Email, inv.Role, userID)
+	if err != nil {
+		return fmt.Errorf("prepare pending member: %w", err)
+	}
+	if inv.WorkspaceMemberID == nil || *inv.WorkspaceMemberID != member.ID {
+		if err := s.invitationRepo.UpdateWorkspaceMemberID(ctx, inv.ID, member.ID); err != nil {
+			return fmt.Errorf("link invitation member: %w", err)
+		}
 	}
 
 	// Generate new token and reset expiry
@@ -340,5 +348,13 @@ func (s *InviteService) RevokeInvitation(ctx context.Context, invitationID, user
 		return fmt.Errorf("can only revoke pending invitations")
 	}
 
-	return s.invitationRepo.UpdateStatus(ctx, invitationID, "revoked", nil)
+	if err := s.invitationRepo.UpdateStatus(ctx, invitationID, "revoked", nil); err != nil {
+		return err
+	}
+	if inv.WorkspaceMemberID != nil {
+		if err := s.workspaceRepo.UpdateMemberStatus(ctx, *inv.WorkspaceMemberID, model.WorkspaceMemberStatusRevoked); err != nil {
+			return fmt.Errorf("revoke pending workspace member: %w", err)
+		}
+	}
+	return nil
 }

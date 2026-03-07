@@ -42,8 +42,14 @@ export interface Workspace {
 export interface WorkspaceMember {
   id: string;
   workspace_id: string;
-  user_id: string;
+  user_id?: string;
+  email?: string;
+  display_name?: string;
   role: 'owner' | 'admin' | 'manager' | 'member' | 'viewer';
+  status?: 'pending' | 'active' | 'revoked' | 'inactive';
+  invited_by?: string;
+  invited_at?: string;
+  accepted_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -55,6 +61,19 @@ export interface MemberWithUser {
   email: string;
   full_name: string;
   avatar_url?: string;
+}
+
+export interface AssignableMember {
+  id: string;
+  user_id?: string;
+  role: string;
+  email: string;
+  display_name: string;
+  avatar_url?: string;
+  status: 'pending' | 'active' | 'revoked' | 'inactive';
+  invited_by?: string;
+  invited_at?: string;
+  accepted_at?: string;
 }
 
 export interface RewardQuarter {

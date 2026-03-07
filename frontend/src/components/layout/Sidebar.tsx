@@ -148,8 +148,8 @@ export function Sidebar() {
 
   // ── Detect active team from URL search params ──
   const activeTeamParam = useMemo(() => {
-    const params = new URLSearchParams(location.search);
-    return params.get('team') ?? null;
+    const search = location.search as Record<string, string | undefined>;
+    return search.team ?? null;
   }, [location.search]);
 
   // ── Auto-expand team when navigating via direct URL ──

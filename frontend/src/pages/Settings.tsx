@@ -3,6 +3,7 @@ import { ShortcutImportWizard } from '@/components/pm/ShortcutImportWizard';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { invalidateWorkspaceTeamsCache } from '@/hooks/useWorkspaceTeams';
 import { useSessionStore } from '@/stores/sessionStore';
 import { settingsService } from '@/lib/services/settingsService';
 import { gitService } from '@/lib/services/gitService';
@@ -167,6 +168,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         setSettings(data);
         useTeamEstimateStore.getState().setSettings(data.team_estimate_settings ?? []);
         useTeamFieldVisibilityStore.getState().setSettings(data.team_field_visibility ?? []);
+        invalidateWorkspaceTeamsCache();
       }
     } finally {
       setLoading(false);
