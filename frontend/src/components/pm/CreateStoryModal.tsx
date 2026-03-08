@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CalendarDays,
   Check,
+  FileText,
   Gauge,
   GitBranch,
   Hash,
@@ -40,6 +41,8 @@ import type {
 import { pmEpicService } from "@/lib/services/pmEpicService";
 import { pmSprintService } from "@/lib/services/pmSprintService";
 import { pmLabelService } from "@/lib/services/pmLabelService";
+import { pmStoryTemplateService } from "@/lib/services/pmStoryTemplateService";
+import type { StoryTemplate } from "@/lib/pmTypes";
 import { LabelPicker } from "@/components/pm/LabelPicker";
 import { EstimatePicker } from "@/components/pm/EstimatePicker";
 import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
@@ -53,10 +56,13 @@ interface CreateStoryModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
-  workflow: WorkflowWithStates;
-  initialStateId: string;
+  workflow?: WorkflowWithStates;
+  initialStateId?: string;
   initialTeamId?: string;
-  onCreate: (payload: CreateStoryRequest) => Promise<void>;
+  onCreate?: (payload: CreateStoryRequest) => Promise<void>;
+  mode?: 'story' | 'template';
+  editingTemplate?: StoryTemplate | null;
+  onSaveTemplate?: (template: StoryTemplate) => void;
 }
 
 const priorityOptions: Priority[] = ["none", "low", "medium", "high", "urgent"];
@@ -159,9 +165,13 @@ export function CreateStoryModal({
   initialStateId,
   initialTeamId,
   onCreate,
+  mode = 'story',
+  editingTemplate,
+  onSaveTemplate,
 }: CreateStoryModalProps) {
+  const isTemplateMode = mode === 'template';
   const [form, setForm] = useState(defaultState);
-  const [stateId, setStateId] = useState(initialStateId);
+  const [stateId, setStateId] = useState(initialStateId ?? '');
   const [createMore, setCreateMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +179,7 @@ export function CreateStoryModal({
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
+  const [templates, setTemplates] = useState<StoryTemplate[]>([]);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id || null));
@@ -184,24 +195,50 @@ export function CreateStoryModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm({ ...defaultState, requester_member_id: currentMemberId, team_id: initialTeamId ?? '' });
-    setStateId(initialStateId);
+    if (isTemplateMode && editingTemplate) {
+      setForm({
+        name: editingTemplate.name,
+        description: editingTemplate.description || '',
+        story_type: (editingTemplate.story_type as StoryType) || 'feature',
+        priority: (editingTemplate.priority as Priority) || 'none',
+        severity: (editingTemplate.severity as Severity) || 'none',
+        estimate: editingTemplate.estimate !== undefined && editingTemplate.estimate !== null ? String(editingTemplate.estimate) : '',
+        epic_id: '',
+        sprint_id: '',
+        team_id: editingTemplate.team_id || initialTeamId || '',
+        owner_member_id: '',
+        requester_member_id: '',
+        deadline: '',
+        label_ids: editingTemplate.label_ids ? (() => { try { return JSON.parse(editingTemplate.label_ids!); } catch { return []; } })() : [],
+      });
+    } else {
+      setForm({ ...defaultState, requester_member_id: isTemplateMode ? '' : currentMemberId, team_id: initialTeamId ?? '' });
+    }
+    setStateId(initialStateId ?? '');
     setError(null);
-  }, [open, initialStateId, initialTeamId, currentMemberId]);
+  }, [open, initialStateId, initialTeamId, currentMemberId, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const [epicsRes, sprintsRes, labelsRes] = await Promise.all([
-        pmEpicService.list(workspaceId, { archived: false }),
-        pmSprintService.list(workspaceId, { archived: false }),
-        pmLabelService.list(workspaceId),
-      ]);
-      setEpics(epicsRes.data ?? []);
-      setSprints(sprintsRes.data ?? []);
-      setLabels(labelsRes.data ?? []);
+      if (isTemplateMode) {
+        // Template mode only needs labels
+        const labelsRes = await pmLabelService.list(workspaceId);
+        setLabels(labelsRes.data ?? []);
+      } else {
+        const [epicsRes, sprintsRes, labelsRes, templatesRes] = await Promise.all([
+          pmEpicService.list(workspaceId, { archived: false }),
+          pmSprintService.list(workspaceId, { archived: false }),
+          pmLabelService.list(workspaceId),
+          pmStoryTemplateService.list(workspaceId, { archived: false }),
+        ]);
+        setEpics(epicsRes.data ?? []);
+        setSprints(sprintsRes.data ?? []);
+        setLabels(labelsRes.data ?? []);
+        setTemplates(templatesRes.data ?? []);
+      }
     })();
-  }, [open, workspaceId]);
+  }, [open, workspaceId, isTemplateMode]);
 
   useEffect(() => {
     setForm((current) => {
@@ -217,13 +254,13 @@ export function CreateStoryModal({
   }, [labels, form.team_id]);
 
   const canSubmit = useMemo(
-    () => form.name.trim().length > 0 && stateId.trim().length > 0,
-    [form.name, stateId]
+    () => form.name.trim().length > 0 && (isTemplateMode || stateId.trim().length > 0),
+    [form.name, stateId, isTemplateMode]
   );
 
   const currentStateName = useMemo(
-    () => workflow.states.find((s) => s.id === stateId)?.name ?? "State",
-    [workflow.states, stateId]
+    () => workflow?.states.find((s) => s.id === stateId)?.name ?? "State",
+    [workflow?.states, stateId]
   );
 
   const currentEpicName = useMemo(() => {
@@ -259,33 +296,57 @@ export function CreateStoryModal({
     setSubmitting(true);
     setError(null);
     try {
-      await onCreate({
-        workspace_id: workspaceId,
-        name: form.name.trim(),
-        description: form.description.trim() || undefined,
-        story_type: form.story_type,
-        workflow_id: workflow.workflow.id,
-        workflow_state_id: stateId,
-        priority: form.priority,
-        severity: form.severity !== "none" ? form.severity : undefined,
-        estimate: form.estimate ? Number(form.estimate) : undefined,
-        epic_id: form.epic_id || undefined,
-        sprint_id: form.sprint_id || undefined,
-        team_id: form.team_id || undefined,
-        owner_member_id: form.owner_member_id || undefined,
-        requester_member_id: form.requester_member_id || undefined,
-        deadline: form.deadline || undefined,
-        label_ids: form.label_ids.length > 0 ? form.label_ids : undefined,
-      });
-
-      if (createMore) {
-        setForm({ ...defaultState, requester_member_id: currentMemberId, team_id: initialTeamId ?? '' });
-        setStateId(initialStateId);
-      } else {
+      if (isTemplateMode) {
+        const labelIds = form.label_ids.length > 0 ? JSON.stringify(form.label_ids) : undefined;
+        const templatePayload = {
+          name: form.name.trim(),
+          description: form.description.trim() || undefined,
+          story_type: form.story_type !== 'feature' ? form.story_type : undefined,
+          priority: form.priority !== 'none' ? form.priority : undefined,
+          severity: form.severity !== 'none' ? form.severity : undefined,
+          estimate: form.estimate ? Number(form.estimate) : undefined,
+          team_id: form.team_id || undefined,
+          label_ids: labelIds,
+        };
+        if (editingTemplate) {
+          const { data, error: err } = await pmStoryTemplateService.update(workspaceId, editingTemplate.id, templatePayload);
+          if (err) throw new Error(err);
+          if (data && onSaveTemplate) onSaveTemplate(data);
+        } else {
+          const { data, error: err } = await pmStoryTemplateService.create({ workspace_id: workspaceId, ...templatePayload });
+          if (err) throw new Error(err);
+          if (data && onSaveTemplate) onSaveTemplate(data);
+        }
         onOpenChange(false);
+      } else {
+        await onCreate!({
+          workspace_id: workspaceId,
+          name: form.name.trim(),
+          description: form.description.trim() || undefined,
+          story_type: form.story_type,
+          workflow_id: workflow!.workflow.id,
+          workflow_state_id: stateId,
+          priority: form.priority,
+          severity: form.severity !== "none" ? form.severity : undefined,
+          estimate: form.estimate ? Number(form.estimate) : undefined,
+          epic_id: form.epic_id || undefined,
+          sprint_id: form.sprint_id || undefined,
+          team_id: form.team_id || undefined,
+          owner_member_id: form.owner_member_id || undefined,
+          requester_member_id: form.requester_member_id || undefined,
+          deadline: form.deadline || undefined,
+          label_ids: form.label_ids.length > 0 ? form.label_ids : undefined,
+        });
+
+        if (createMore) {
+          setForm({ ...defaultState, requester_member_id: currentMemberId, team_id: initialTeamId ?? '' });
+          setStateId(initialStateId ?? '');
+        } else {
+          onOpenChange(false);
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create story");
+      setError(err instanceof Error ? err.message : isTemplateMode ? "Failed to save template" : "Failed to create story");
     } finally {
       setSubmitting(false);
     }
@@ -300,8 +361,11 @@ export function CreateStoryModal({
     initialStateId,
     currentMemberId,
     initialTeamId,
+    isTemplateMode,
+    editingTemplate,
     onCreate,
     onOpenChange,
+    onSaveTemplate,
   ]);
 
   return (
@@ -314,7 +378,7 @@ export function CreateStoryModal({
           {/* Header */}
           <div className="px-6 pt-6 pb-2">
             <h2 className="text-lg font-semibold tracking-tight">
-              Create new work item
+              {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create new work item'}
             </h2>
           </div>
 
@@ -323,7 +387,7 @@ export function CreateStoryModal({
             {/* Left column — title + description */}
             <div className="min-h-0 flex-1 flex flex-col overflow-y-auto px-6 py-3 gap-4">
               {/* Workflow badge */}
-              {!editorExpanded && (
+              {!editorExpanded && workflow && (
                 <div className="inline-flex items-center gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm font-medium text-foreground self-start">
                   <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
                   {workflow.workflow.name}
@@ -334,7 +398,7 @@ export function CreateStoryModal({
               <Input
                 id="story-title"
                 autoFocus
-                placeholder="Title"
+                placeholder={isTemplateMode ? "Template name" : "Title"}
                 className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 value={form.name}
                 onChange={(event) =>
@@ -376,7 +440,42 @@ export function CreateStoryModal({
             {/* Right sidebar — metadata */}
             <aside className="min-h-0 overflow-y-auto border-l border-border/50 px-4 py-4">
               <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
+                {/* Template */}
+                {!isTemplateMode && templates.length > 0 && (
+                <MetadataRow icon={FileText} label="Template">
+                  <SidebarPopoverSelect
+                    value=""
+                    options={[
+                      { value: '', label: 'None' },
+                      ...templates
+                        .filter((t) => !t.team_id || t.team_id === form.team_id || !form.team_id)
+                        .map((t) => ({ value: t.id, label: t.name })),
+                    ]}
+                    onChange={(templateId) => {
+                      const tmpl = templates.find((t) => t.id === templateId);
+                      if (!tmpl) return;
+                      setForm((prev) => ({
+                        ...prev,
+                        description: tmpl.description || prev.description,
+                        story_type: (tmpl.story_type as StoryType) || prev.story_type,
+                        priority: (tmpl.priority as Priority) || prev.priority,
+                        severity: (tmpl.severity as Severity) || prev.severity,
+                        estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
+                        label_ids: tmpl.label_ids ? (() => { try { return JSON.parse(tmpl.label_ids!); } catch { return prev.label_ids; } })() : prev.label_ids,
+                      }));
+                    }}
+                    renderTrigger={() => (
+                      <>
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>Apply template</span>
+                      </>
+                    )}
+                  />
+                </MetadataRow>
+                )}
+
                 {/* State */}
+                {!isTemplateMode && workflow && (
                 <MetadataRow icon={Hash} label="State">
                   <SidebarPopoverSelect
                     value={stateId}
@@ -397,6 +496,7 @@ export function CreateStoryModal({
                     }}
                   />
                 </MetadataRow>
+                )}
 
                 {/* Priority */}
                 {fieldVis.priority && (
@@ -439,9 +539,10 @@ export function CreateStoryModal({
                 )}
 
                 {/* ── People ── */}
-                <div className="col-span-3 h-px bg-border/40 my-1" />
+                {!isTemplateMode && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Owner */}
+                {!isTemplateMode && (
                 <MetadataRow icon={User} label="Owner">
                   <SidebarPopoverSelect
                     value={form.owner_member_id || "__none__"}
@@ -458,8 +559,10 @@ export function CreateStoryModal({
                     renderTrigger={() => <span>{currentOwnerName}</span>}
                   />
                 </MetadataRow>
+                )}
 
                 {/* Requester */}
+                {!isTemplateMode && (
                 <MetadataRow icon={User} label="Requester">
                   <SidebarPopoverSelect
                     value={form.requester_member_id || "__none__"}
@@ -476,6 +579,7 @@ export function CreateStoryModal({
                     renderTrigger={() => <span>{currentRequesterName}</span>}
                   />
                 </MetadataRow>
+                )}
 
                 {/* Team */}
                 {teams.length > 0 && (
@@ -608,10 +712,12 @@ export function CreateStoryModal({
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-4 border-t border-border/50 px-6 py-3">
+            {!isTemplateMode && (
             <div className="mr-auto flex items-center gap-2">
               <Switch checked={createMore} onCheckedChange={setCreateMore} />
               <span className="text-sm text-muted-foreground">Create more</span>
             </div>
+            )}
 
             <Button
               type="button"

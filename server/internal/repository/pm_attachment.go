@@ -79,6 +79,18 @@ func (r *PMAttachmentRepository) UpdateStorageKey(ctx context.Context, id, stora
 	return nil
 }
 
+// ListByWorkspace returns all uploaded attachments for a workspace with their storage keys.
+func (r *PMAttachmentRepository) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.PMAttachment, error) {
+	var attachments []model.PMAttachment
+	if err := r.db.WithContext(ctx).
+		Select("id, storage_key").
+		Where("workspace_id = ? AND is_uploaded = true AND storage_key != ''", workspaceID).
+		Find(&attachments).Error; err != nil {
+		return nil, fmt.Errorf("list workspace attachments: %w", err)
+	}
+	return attachments, nil
+}
+
 // Delete removes an attachment record.
 func (r *PMAttachmentRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Delete(&model.PMAttachment{}, "id = ?", id).Error; err != nil {

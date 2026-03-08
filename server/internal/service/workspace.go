@@ -6,11 +6,14 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 )
 
 // WorkspaceService handles workspace business logic.
 type WorkspaceService struct {
 	workspaceRepo       *repository.WorkspaceRepository
+	attachmentRepo      *repository.PMAttachmentRepository
+	s3Client            *storage.S3Client
 	defaultsInitializer WorkspaceDefaultsInitializer
 }
 
@@ -20,13 +23,15 @@ type WorkspaceDefaultsInitializer interface {
 }
 
 // NewWorkspaceService creates a new WorkspaceService.
-func NewWorkspaceService(workspaceRepo *repository.WorkspaceRepository, defaultsInitializer ...WorkspaceDefaultsInitializer) *WorkspaceService {
+func NewWorkspaceService(workspaceRepo *repository.WorkspaceRepository, attachmentRepo *repository.PMAttachmentRepository, s3Client *storage.S3Client, defaultsInitializer ...WorkspaceDefaultsInitializer) *WorkspaceService {
 	var initializer WorkspaceDefaultsInitializer
 	if len(defaultsInitializer) > 0 {
 		initializer = defaultsInitializer[0]
 	}
 	return &WorkspaceService{
 		workspaceRepo:       workspaceRepo,
+		attachmentRepo:      attachmentRepo,
+		s3Client:            s3Client,
 		defaultsInitializer: initializer,
 	}
 }
@@ -98,8 +103,17 @@ func (s *WorkspaceService) Update(ctx context.Context, id string, req model.Upda
 	return s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.Timezone)
 }
 
-// Delete removes a workspace.
+// Delete removes a workspace and all associated data including S3 attachments.
 func (s *WorkspaceService) Delete(ctx context.Context, id string) error {
+	// Clean up S3 attachments before cascade-deleting DB records.
+	if s.attachmentRepo != nil && s.s3Client != nil {
+		attachments, _ := s.attachmentRepo.ListByWorkspace(ctx, id)
+		for _, a := range attachments {
+			if a.StorageKey != "" {
+				_ = s.s3Client.DeleteObject(ctx, a.StorageKey)
+			}
+		}
+	}
 	return s.workspaceRepo.Delete(ctx, id)
 }
 

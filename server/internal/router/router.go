@@ -37,8 +37,9 @@ type Handlers struct {
 	PMChecklistItem *handler.PMChecklistItemHandler
 	PMExternalLink  *handler.PMExternalLinkHandler
 	PMView          *handler.PMViewHandler
-	PMAutomation    *handler.PMAutomationHandler
-	Search          *handler.SearchHandler
+	PMAutomation      *handler.PMAutomationHandler
+	PMStoryTemplate   *handler.PMStoryTemplateHandler
+	Search            *handler.SearchHandler
 	Agent           *handler.AgentHandler
 	Support         *handler.SupportHandler
 	Widget          *handler.WidgetHandler
@@ -253,6 +254,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 				r.Post("/labels", h.PMLabel.Create)
 				r.Put("/labels/{id}", h.PMLabel.Update)
 				r.Delete("/labels/{id}", h.PMLabel.Delete)
+
+				// Story Templates
+				r.Get("/story-templates", h.PMStoryTemplate.List)
+				r.Get("/story-templates/{id}", h.PMStoryTemplate.Get)
+				r.Post("/story-templates", h.PMStoryTemplate.Create)
+				r.Put("/story-templates/{id}", h.PMStoryTemplate.Update)
+				r.Delete("/story-templates/{id}", h.PMStoryTemplate.Delete)
 
 				// Epics
 				r.Get("/epics", h.PMEpic.List)

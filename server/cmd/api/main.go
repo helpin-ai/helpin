@@ -151,6 +151,7 @@ func main() {
 		&model.StoryDeliveryTarget{},
 		&model.StoryGitLink{},
 		&model.AgentHandoff{},
+		&model.PMStoryTemplate{},
 		&model.PMImportJob{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
@@ -216,6 +217,7 @@ func main() {
 	pmExternalLinkRepo := repository.NewPMExternalLinkRepository(db)
 	pmViewRepo := repository.NewPMViewRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
+	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
@@ -235,6 +237,7 @@ func main() {
 	authService := service.NewAuthService(userRepo, jwtManager)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
+	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
 	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService)
@@ -307,7 +310,7 @@ func main() {
 	}
 
 	orgService := service.NewOrganizationService(orgRepo)
-	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
+	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, pmWorkflowService)
 	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
 	sprintService := service.NewRewardSprintService(sprintRepo, scoringRepo)
 	goalService := service.NewRewardGoalService(goalRepo)
@@ -346,7 +349,8 @@ func main() {
 		PMExternalLink:  handler.NewPMExternalLinkHandler(pmExternalLinkService),
 		PMView:          handler.NewPMViewHandler(pmViewService),
 		Search:          handler.NewSearchHandler(searchService),
-		PMAutomation:    handler.NewPMAutomationHandler(pmAutomationService),
+		PMAutomation:      handler.NewPMAutomationHandler(pmAutomationService),
+		PMStoryTemplate:   handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
 		Agent:           handler.NewAgentHandler(agentService),
 		Support:         handler.NewSupportHandler(supportService, agentService),
 		Widget:          handler.NewWidgetHandler(supportService),

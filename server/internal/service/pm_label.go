@@ -80,29 +80,17 @@ func (s *PMLabelService) Update(ctx context.Context, id string, req model.Update
 		return nil, fmt.Errorf("label not found")
 	}
 
-	scopeChanged := false
 	if req.TeamID != nil {
 		label.TeamID = normalizeOptionalID(req.TeamID)
-		scopeChanged = true
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
 			return nil, fmt.Errorf("name cannot be empty")
 		}
-		if !strings.EqualFold(name, label.Name) {
-			existing, err := s.labelRepo.GetByName(ctx, label.WorkspaceID, label.TeamID, name)
-			if err != nil {
-				return nil, err
-			}
-			if existing != nil && existing.ID != label.ID {
-				return nil, fmt.Errorf("label name already exists in this scope")
-			}
-		}
 		label.Name = name
-		scopeChanged = false
 	}
-	if scopeChanged {
+	if req.TeamID != nil || req.Name != nil {
 		existing, err := s.labelRepo.GetByName(ctx, label.WorkspaceID, label.TeamID, label.Name)
 		if err != nil {
 			return nil, err
@@ -165,13 +153,3 @@ func (s *PMLabelService) SeedDefaults(ctx context.Context, workspaceID string) e
 	return nil
 }
 
-func normalizeOptionalID(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	trimmed := strings.TrimSpace(*value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}

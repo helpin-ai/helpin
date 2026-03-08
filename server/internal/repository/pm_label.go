@@ -16,11 +16,8 @@ type PMLabelRepository struct {
 	db *gorm.DB
 }
 
-type PMLabelListOptions struct {
-	TeamID        *string
-	IncludeShared bool
-	Archived      *bool
-}
+// PMLabelListOptions aliases ScopeFilterOptions for labels.
+type PMLabelListOptions = ScopeFilterOptions
 
 // NewPMLabelRepository creates a new PMLabelRepository.
 func NewPMLabelRepository(db *gorm.DB) *PMLabelRepository {
@@ -31,7 +28,7 @@ func NewPMLabelRepository(db *gorm.DB) *PMLabelRepository {
 func (r *PMLabelRepository) ListByWorkspace(ctx context.Context, workspaceID string, opts PMLabelListOptions) ([]model.PMLabel, error) {
 	var labels []model.PMLabel
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
-	query = applyLabelScopeFilter(query, opts)
+	query = ApplyScopeFilter(query, opts)
 	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&labels).Error; err != nil {
 		return nil, fmt.Errorf("list labels: %w", err)
 	}
@@ -89,7 +86,7 @@ func (r *PMLabelRepository) Update(ctx context.Context, label *model.PMLabel) er
 func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID string, opts PMLabelListOptions) ([]model.LabelWithStats, error) {
 	// Fetch labels
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
-	query = applyLabelScopeFilter(query, opts)
+	query = ApplyScopeFilter(query, opts)
 	var labels []model.PMLabel
 	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&labels).Error; err != nil {
 		return nil, fmt.Errorf("list labels with stats: %w", err)
@@ -174,22 +171,6 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 		results[i] = model.LabelWithStats{Label: label, Stats: stats}
 	}
 	return results, nil
-}
-
-func applyLabelScopeFilter(query *gorm.DB, opts PMLabelListOptions) *gorm.DB {
-	if opts.Archived != nil {
-		query = query.Where("archived = ?", *opts.Archived)
-	}
-	if opts.TeamID == nil || strings.TrimSpace(*opts.TeamID) == "" {
-		if !opts.IncludeShared {
-			query = query.Where("team_id IS NULL")
-		}
-		return query
-	}
-	if opts.IncludeShared {
-		return query.Where("(team_id = ? OR team_id IS NULL)", *opts.TeamID)
-	}
-	return query.Where("team_id = ?", *opts.TeamID)
 }
 
 // Delete hard-deletes a label.
