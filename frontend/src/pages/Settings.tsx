@@ -144,7 +144,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
 export const isSettingsSection = (value: string): value is SettingsSection =>
   SETTINGS_SECTIONS.some((section) => section.id === value) || value === 'account';
 
-const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
+const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none dark:border-transparent';
 
 const slugifyTeamHandle = (value: string) =>
   value

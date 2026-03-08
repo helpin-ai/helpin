@@ -304,14 +304,14 @@ export function Sidebar() {
   };
 
   return (
-    <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f0f0f2]">
-      <SidebarHeader className="border-b border-border/70 p-2">
+    <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f0f0f2] dark:border-transparent dark:bg-sidebar">
+      <SidebarHeader className="border-b border-border/70 dark:border-sidebar-border p-2">
         <WorkspaceSwitcher />
       </SidebarHeader>
 
       <SidebarContent className="gap-0">
         <div className="flex min-h-0 flex-1">
-          <div className="w-16 shrink-0 border-r border-border/70 py-2">
+          <div className="w-16 shrink-0 border-r border-border/70 dark:border-sidebar-border py-2">
             <div className="flex flex-col items-center gap-1.5">
               {railItems.map((item) => (
                 <button

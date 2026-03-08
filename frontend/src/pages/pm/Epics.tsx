@@ -6,8 +6,12 @@ import { useTitle } from '@/hooks/useTitle';
 import {
   CalendarDays,
   Hexagon,
+  Layers,
   Minus,
+  Plus,
   Sun,
+  Target,
+  TrendingUp,
   User,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,9 +19,11 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { PMDataTable } from '@/components/pm/PMDataTable';
 import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopover';
 import { pmEpicService } from '@/lib/services/pmEpicService';
+import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import type { EpicWithStats, EpicHealth } from '@/lib/pmTypes';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 
@@ -63,6 +69,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   useTitle('Epics');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const navigate = useNavigate();
+  const openCreate = useGlobalCreateStore((s) => s.openCreate);
 
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [loading, setLoading] = useState(false);
@@ -327,11 +334,35 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading epics...</p>
       ) : epics.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No epics yet. Use the Create button in the header to add your first epic.
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center justify-center py-16 px-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
+            <Hexagon className="h-7 w-7 text-violet-500" />
+          </div>
+          <h3 className="text-lg font-semibold mb-1.5">Create your first epic</h3>
+          <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
+            Epics group related stories into long-running initiatives, giving you a high-level view of progress across your team's work.
+          </p>
+          <Button
+            className="gap-2 mb-8"
+            onClick={() => openCreate('epic', { teamId })}
+          >
+            <Plus className="h-4 w-4" />
+            Create Epic
+          </Button>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-lg">
+            {[
+              { icon: Layers, title: 'Group stories', desc: 'Organize related work items under a single initiative' },
+              { icon: TrendingUp, title: 'Track health', desc: 'Monitor on-track, at-risk, and off-track status at a glance' },
+              { icon: Target, title: 'Hit deadlines', desc: 'Set target dates and watch completion progress in real time' },
+            ].map((item) => (
+              <div key={item.title} className="flex flex-col items-center text-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 p-4">
+                <item.icon className="h-4 w-4 text-muted-foreground mb-0.5" />
+                <span className="text-xs font-medium">{item.title}</span>
+                <span className="text-[11px] leading-snug text-muted-foreground">{item.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
         <PMDataTable
           data={epics}

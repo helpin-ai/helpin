@@ -343,7 +343,7 @@ export function SprintDetailPage() {
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Progress</h3>
               <span className="text-xs text-muted-foreground">{progress}%</span>
             </div>
-            <Progress value={progress} />
+            <Progress value={progress} className="h-2 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
             <p className="text-xs text-muted-foreground">
               {sprint.stats.done_story_count}/{sprint.stats.story_count} stories done · {sprint.stats.done_points}/{sprint.stats.total_points} points
             </p>

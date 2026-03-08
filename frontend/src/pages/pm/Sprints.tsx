@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { createColumnHelper, type VisibilityState } from '@tanstack/react-table';
 import { format, parseISO } from 'date-fns';
-import { CalendarDays, LayoutGrid, LayoutList, Minus, Plus } from 'lucide-react';
+import { CalendarDays, LayoutGrid, LayoutList, Minus, Plus, Timer, BarChart3, CheckCircle2 } from 'lucide-react';
 import { useTitle } from '@/hooks/useTitle';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -267,19 +267,35 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading sprints...</p>
       ) : sprints.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
-            <p>No sprints yet.</p>
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={() => openCreate('sprint', { teamId })}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Create Sprint
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center justify-center py-16 px-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-5">
+            <Timer className="h-7 w-7 text-emerald-500" />
+          </div>
+          <h3 className="text-lg font-semibold mb-1.5">Create your first sprint</h3>
+          <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
+            Sprints are time-boxed cycles that help your team plan, focus, and deliver work in a predictable rhythm.
+          </p>
+          <Button
+            className="gap-2 mb-8"
+            onClick={() => openCreate('sprint', { teamId })}
+          >
+            <Plus className="h-4 w-4" />
+            Create Sprint
+          </Button>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-lg">
+            {[
+              { icon: CalendarDays, title: 'Set a cadence', desc: 'Define start and end dates for focused work cycles' },
+              { icon: BarChart3, title: 'Track progress', desc: 'Monitor story and point completion in real time' },
+              { icon: CheckCircle2, title: 'Ship consistently', desc: 'Build momentum with regular delivery milestones' },
+            ].map((item) => (
+              <div key={item.title} className="flex flex-col items-center text-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 p-4">
+                <item.icon className="h-4 w-4 text-muted-foreground mb-0.5" />
+                <span className="text-xs font-medium">{item.title}</span>
+                <span className="text-[11px] leading-snug text-muted-foreground">{item.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : viewMode === 'cards' ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {sprints.map((entry) => (
@@ -302,7 +318,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Progress value={pct(entry)} />
+                <Progress value={pct(entry)} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{entry.stats.done_story_count}/{entry.stats.story_count} stories</span>
                   <span>{entry.stats.done_points}/{entry.stats.total_points} pts</span>
