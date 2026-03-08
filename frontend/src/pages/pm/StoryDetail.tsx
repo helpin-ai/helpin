@@ -64,6 +64,7 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { LabelPicker } from '@/components/pm/LabelPicker';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAuthStore } from '@/stores/authStore';
@@ -900,12 +901,10 @@ export function StoryDetailPage() {
 
             {/* Owner */}
             <MetadataRow icon={User} label="Owner">
-              <SidebarPopoverSelect
+              <MemberPickerPopover
                 value={form.owner_member_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'No owner' },
-                  ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
-                ]}
+                members={assignableMembers}
+                noneLabel="No owner"
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('owner_member_id', val, { owner_member_id: val });
@@ -916,12 +915,10 @@ export function StoryDetailPage() {
 
             {/* Requester */}
             <MetadataRow icon={User} label="Requester">
-              <SidebarPopoverSelect
+              <MemberPickerPopover
                 value={form.requester_member_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'No requester' },
-                  ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
-                ]}
+                members={assignableMembers}
+                noneLabel="No requester"
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('requester_member_id', val, { requester_member_id: val });

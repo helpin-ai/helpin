@@ -71,6 +71,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
@@ -957,12 +958,10 @@ function StoryDetailPanelBody({
 
             {/* Owner */}
             <MetadataRow icon={User} label="Owner">
-              <SidebarPopoverSelect
+              <MemberPickerPopover
                 value={form.owner_member_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'No owner' },
-                  ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
-                ]}
+                members={assignableMembers}
+                noneLabel="No owner"
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('owner_member_id', val, { owner_member_id: val });
@@ -973,12 +972,10 @@ function StoryDetailPanelBody({
 
             {/* Requester */}
             <MetadataRow icon={User} label="Requester">
-              <SidebarPopoverSelect
+              <MemberPickerPopover
                 value={form.requester_member_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'No requester' },
-                  ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
-                ]}
+                members={assignableMembers}
+                noneLabel="No requester"
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('requester_member_id', val, { requester_member_id: val });
