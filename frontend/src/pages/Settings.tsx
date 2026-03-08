@@ -162,14 +162,14 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = async (silent = false) => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
     if (!ws?.id) {
       setSettings(null);
-      setLoading(false);
+      if (!silent) setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const { data } = await settingsService.getAll(ws.id);
       if (data) {
@@ -179,7 +179,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         invalidateWorkspaceTeamsCache();
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -1168,7 +1168,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
   teamFieldVisibility: TeamFieldVisibility[];
   teamRepoDefaults: TeamRepoDefault[];
   editable: boolean;
-  onRefresh: () => void | Promise<void>;
+  onRefresh: (silent?: boolean) => void | Promise<void>;
 }) {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
@@ -1197,9 +1197,8 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
   const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState('');
-  const [selectedRole, setSelectedRole] = useState<'owner' | 'member'>('member');
   const [savingMember, setSavingMember] = useState(false);
+  const [memberSearch, setMemberSearch] = useState('');
   const [deleteTeamConfirm, setDeleteTeamConfirm] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1312,8 +1311,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
 
   const openMembers = (team: WorkspaceTeam) => {
     setSelectedTeamId(team.id);
-    setSelectedUserId('');
-    setSelectedRole('member');
+    setMemberSearch('');
     setMemberDialogOpen(true);
   };
 
@@ -1361,7 +1359,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     if (error) toast.error(error);
     else {
       toast.success('Team member updated');
-      await onRefresh();
+      await onRefresh(true);
     }
   };
 
@@ -1370,7 +1368,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     if (error) toast.error(error);
     else {
       toast.success('Team member removed');
-      await onRefresh();
+      await onRefresh(true);
     }
   };
 
@@ -1379,7 +1377,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     if (error) toast.error(error);
     else {
       toast.success('Invited member pre-assigned to team');
-      await onRefresh();
+      await onRefresh(true);
     }
   };
 
@@ -1388,7 +1386,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     if (error) toast.error(error);
     else {
       toast.success('Invitation pre-assignment removed');
-      await onRefresh();
+      await onRefresh(true);
     }
   };
 
@@ -1629,80 +1627,96 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
             </DialogHeader>
 
             {editable && (availableMembers.length > 0 || (selectedTeam && invitations.filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id)).length > 0)) && (
-              <div className="flex items-center gap-2 border-b px-5 py-3">
-                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                  <SelectTrigger className="h-9 flex-1">
-                    <SelectValue placeholder={membersLoading ? 'Loading...' : 'Add a member...'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableMembers.length > 0 && availableMembers.map((member) => (
-                      <SelectItem key={member.user_id} value={`user:${member.user_id}`}>
-                        <div className="flex items-center gap-2">
-                          <UserAvatar name={member.full_name || member.email} className="h-5 w-5" fallbackClassName="text-[9px]" />
-                          {member.full_name || member.email}
-                        </div>
-                      </SelectItem>
-                    ))}
-                    {selectedTeam && invitations.filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id)).length > 0 && (
-                      <>
-                        {availableMembers.length > 0 && (
-                          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Pending invitations</div>
-                        )}
-                        {invitations
+              <div className="border-b">
+                <div className="px-5 py-3">
+                  <Input
+                    placeholder="Search members to add..."
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="max-h-[160px] overflow-y-auto border-t border-border/40">
+                  {(() => {
+                    const query = memberSearch.toLowerCase();
+                    const filteredMembers = availableMembers.filter((m) =>
+                      (m.full_name || '').toLowerCase().includes(query) || m.email.toLowerCase().includes(query)
+                    );
+                    const filteredInvitations = selectedTeam
+                      ? invitations
                           .filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id))
-                          .map((inv) => (
-                            <SelectItem key={inv.id} value={`inv:${inv.id}`}>
-                              <div className="flex items-center gap-2">
-                                <UserAvatar name={inv.email} className="h-5 w-5" fallbackClassName="text-[9px]" />
-                                <span>{inv.email}</span>
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Invited</Badge>
-                              </div>
-                            </SelectItem>
-                          ))}
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-                {selectedUserId.startsWith('user:') && (
-                  <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as 'owner' | 'member')}>
-                    <SelectTrigger className="h-9 w-[110px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="member">Member</SelectItem>
-                      <SelectItem value="owner">Owner</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-                <Button
-                  size="sm"
-                  className="h-9"
-                  disabled={!selectedUserId || savingMember}
-                  onClick={async () => {
-                    if (!selectedTeam) return;
-                    if (selectedUserId.startsWith('user:')) {
-                      const uid = selectedUserId.replace('user:', '');
-                      setSavingMember(true);
-                      const { error } = await settingsService.addTeamMember(selectedTeam.id, { user_id: uid, role: selectedRole });
-                      setSavingMember(false);
-                      if (error) { toast.error(error); return; }
-                      toast.success('Team member added');
-                      setSelectedUserId('');
-                      setSelectedRole('member');
-                      await onRefresh();
-                    } else if (selectedUserId.startsWith('inv:')) {
-                      const invId = selectedUserId.replace('inv:', '');
-                      await handleAddInvitation(selectedTeam.id, invId);
-                      setSelectedUserId('');
+                          .filter((inv) => inv.email.toLowerCase().includes(query))
+                      : [];
+
+                    if (filteredMembers.length === 0 && filteredInvitations.length === 0) {
+                      return <p className="px-5 py-3 text-xs text-muted-foreground text-center">No members to add</p>;
                     }
-                  }}
-                >
-                  Add
-                </Button>
+
+                    return (
+                      <>
+                        {filteredMembers.map((member) => (
+                          <button
+                            key={member.user_id}
+                            type="button"
+                            disabled={savingMember}
+                            className="flex w-full items-center gap-3 px-5 py-2 text-left transition-colors hover:bg-accent cursor-pointer disabled:opacity-50"
+                            onClick={async () => {
+                              if (!selectedTeam) return;
+                              setSavingMember(true);
+                              const { error } = await settingsService.addTeamMember(selectedTeam.id, { user_id: member.user_id, role: 'member' });
+                              setSavingMember(false);
+                              if (error) { toast.error(error); return; }
+                              toast.success(`${member.full_name || member.email} added`);
+                              await onRefresh(true);
+                            }}
+                          >
+                            <UserAvatar name={member.full_name || member.email} className="h-6 w-6" fallbackClassName="text-[9px]" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm">{member.full_name || member.email}</p>
+                              {member.full_name && <p className="truncate text-xs text-muted-foreground">{member.email}</p>}
+                            </div>
+                            <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          </button>
+                        ))}
+                        {filteredInvitations.length > 0 && (
+                          <>
+                            {filteredMembers.length > 0 && (
+                              <div className="px-5 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Pending invitations</div>
+                            )}
+                            {filteredInvitations.map((inv) => (
+                              <button
+                                key={inv.id}
+                                type="button"
+                                disabled={savingMember}
+                                className="flex w-full items-center gap-3 px-5 py-2 text-left transition-colors hover:bg-accent cursor-pointer disabled:opacity-50"
+                                onClick={async () => {
+                                  if (!selectedTeam) return;
+                                  await handleAddInvitation(selectedTeam.id, inv.id);
+                                }}
+                              >
+                                <UserAvatar name={inv.email} className="h-6 w-6" fallbackClassName="text-[9px]" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm">{inv.email}</p>
+                                </div>
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Invited</Badge>
+                                <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
             )}
 
             <div className="max-h-[400px] overflow-y-auto">
+              {selectedTeam && (teamMembers.length > 0 || invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length > 0) && (
+                <div className="px-5 pt-3 pb-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Current members</p>
+                </div>
+              )}
               {selectedTeam && (teamMembers.length > 0 || invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length > 0) ? (
                 <div className="divide-y">
                   {teamMembers.map(({ membership, user }) => (
