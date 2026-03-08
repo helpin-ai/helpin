@@ -3486,10 +3486,7 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
 
   return (
     <Card className={LINEAR_CARD_CLASS}>
-      <CardHeader>
-        <CardTitle className="text-base">Workflow States</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="pt-6 space-y-5">
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading workflows...</p>
         ) : workflows.length === 0 ? (
