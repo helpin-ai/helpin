@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"time"
 
@@ -85,6 +86,24 @@ func (s *S3Client) GeneratePresignedPutURL(key, contentType string, size int64, 
 		return "", fmt.Errorf("generate presigned PUT URL: %w", err)
 	}
 	return result.URL, nil
+}
+
+// PutObject uploads an object directly to S3.
+func (s *S3Client) PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error {
+	input := &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(key),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(size),
+		Body:          body,
+	}
+	if publicRead {
+		input.ACL = s3types.ObjectCannedACLPublicRead
+	}
+	if _, err := s.client.PutObject(ctx, input); err != nil {
+		return fmt.Errorf("put S3 object: %w", err)
+	}
+	return nil
 }
 
 // GeneratePresignedGetURL generates a presigned GET URL for downloading a file.

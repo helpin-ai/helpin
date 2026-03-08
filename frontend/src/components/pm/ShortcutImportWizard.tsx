@@ -1401,6 +1401,7 @@ function ResultTable({ result }: { result: ShortcutImportStatusResponse['result'
     { label: 'Checklist Items', created: result.checklist_items_created },
     { label: 'Owner Links', created: result.owner_links_created },
     { label: 'Label Links', created: result.label_links_created },
+    { label: 'Attachments', created: result.attachments_created },
     { label: 'Comments', created: result.comments_created },
   ];
 

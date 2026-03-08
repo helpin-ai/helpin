@@ -246,7 +246,7 @@ func main() {
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, wsPublisher)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo)
-	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo)
+	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
 	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher)
 

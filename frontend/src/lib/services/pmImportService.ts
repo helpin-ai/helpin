@@ -60,6 +60,7 @@ export interface ShortcutImportResult {
   checklist_items_created: number;
   owner_links_created: number;
   label_links_created: number;
+  attachments_created: number;
   comments_created: number;
   warnings: string[];
 }

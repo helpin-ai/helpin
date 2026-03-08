@@ -806,8 +806,10 @@ export function ObjectiveDetailPage() {
                   return (
                     <>
                       <Progress value={timePct} className="mt-3 h-2.5 bg-sky-500/15 [&>[data-slot=progress-indicator]]:bg-sky-500" />
-                      <p className={`mt-2 text-xs ${daysLeft <= 7 ? 'text-red-500 font-medium' : daysLeft <= 14 ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                        {daysLeft > 0
+                      <p className={`mt-2 text-xs ${form.state === 'closed' ? 'text-muted-foreground' : daysLeft <= 7 ? 'text-red-500 font-medium' : daysLeft <= 14 ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                        {form.state === 'closed'
+                          ? 'Completed'
+                          : daysLeft > 0
                           ? `Time remaining: ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`
                           : daysLeft === 0 ? 'Due today' : `${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? 's' : ''} overdue`}
                       </p>

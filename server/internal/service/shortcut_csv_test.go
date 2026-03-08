@@ -79,8 +79,93 @@ func TestNormalizeShortcutDescriptionMarkdownToHTML(t *testing.T) {
 		"<strong>Email:</strong>",
 		"<strong>Plan:</strong>",
 		`<a href="https://app.crisp.chat/example">https://app.crisp.chat/example</a>`,
-		`<img src="https://media.app.shortcut.com/example/image.png" alt="image.png">`,
-		"<br>",
+		`<img src="https://media.app.shortcut.com/example/image.png" alt="image.png"/>`,
+		"<br/>",
+	}
+	for _, fragment := range wantFragments {
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("expected rendered HTML to contain %q, got %s", fragment, got)
+		}
+	}
+}
+
+func TestNormalizeShortcutDescriptionMarkdownTableToParagraphs(t *testing.T) {
+	raw := strings.Join([]string{
+		"### Reported By (Customer)",
+		"",
+		"| Field | Detail |",
+		"|---|---|",
+		"| **Name** | Paul Wright |",
+		"| **Primary Email** | calmingthemindofcancer@gmail.com |",
+		"",
+		"> \"Credits did not reset after renewal.\"",
+		"",
+		"| Field | Value |",
+		"|---|---|",
+		"| **Articles per Month Counter** | **10 / 10** (showing fully exhausted — should be reset) |",
+	}, "\n")
+
+	got := normalizeShortcutDescription(raw)
+	unwanted := []string{"<table", "<tr", "<td", "<th"}
+	for _, fragment := range unwanted {
+		if strings.Contains(got, fragment) {
+			t.Fatalf("expected rendered HTML to strip table markup, got %s", got)
+		}
+	}
+	wantFragments := []string{
+		"<h3>Reported By (Customer)</h3>",
+		"<p><strong>Name:</strong> Paul Wright</p>",
+		`<p><strong>Primary Email:</strong> <a href="mailto:calmingthemindofcancer@gmail.com">calmingthemindofcancer@gmail.com</a></p>`,
+		"<blockquote>",
+		"<p><strong>Articles per Month Counter:</strong> <strong>10 / 10</strong> (showing fully exhausted",
+	}
+	for _, fragment := range wantFragments {
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("expected rendered HTML to contain %q, got %s", fragment, got)
+		}
+	}
+}
+
+func TestNormalizeShortcutDescriptionMarkdownMultiColumnTableToParagraphs(t *testing.T) {
+	raw := strings.Join([]string{
+		"### Acceptance Criteria",
+		"| # | Description | Notes / Edge cases |",
+		"| --- | --- | --- |",
+		"| **AC-1** | A \"Remove from folder\" action is available. | Shown next to Edit and Delete. |",
+		"| **AC-2** | The item moves back to the root list. | Folder metadata is cleared only. |",
+	}, "\n")
+
+	got := normalizeShortcutDescription(raw)
+	unwanted := []string{"<table", "<tr", "<td", "<th"}
+	for _, fragment := range unwanted {
+		if strings.Contains(got, fragment) {
+			t.Fatalf("expected rendered HTML to strip table markup, got %s", got)
+		}
+	}
+	wantFragments := []string{
+		"<h3>Acceptance Criteria</h3>",
+		"<p><strong>AC-1</strong> | A",
+		"Shown next to Edit and Delete.",
+		"<p><strong>AC-2</strong> | The item moves back to the root list. | Folder metadata is cleared only.</p>",
+	}
+	for _, fragment := range wantFragments {
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("expected rendered HTML to contain %q, got %s", fragment, got)
+		}
+	}
+}
+
+func TestNormalizeShortcutDescriptionHTMLTableToParagraphs(t *testing.T) {
+	raw := `<p>Subscription details</p><table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Name</td><td>Paul Wright</td></tr><tr><td>Plan</td><td><strong>Starter Monthly</strong></td></tr></tbody></table>`
+
+	got := normalizeShortcutDescription(raw)
+	if strings.Contains(got, "<table") {
+		t.Fatalf("expected rendered HTML to strip table markup, got %s", got)
+	}
+	wantFragments := []string{
+		"<p>Subscription details</p>",
+		"<p><strong>Name:</strong> Paul Wright</p>",
+		"<p><strong>Plan:</strong> <strong>Starter Monthly</strong></p>",
 	}
 	for _, fragment := range wantFragments {
 		if !strings.Contains(got, fragment) {
