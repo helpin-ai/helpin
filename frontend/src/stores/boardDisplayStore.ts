@@ -13,6 +13,7 @@ export const DISPLAY_PROPERTY_LABELS = {
   state: 'State',
   team: 'Team',
   sprint: 'Sprint',
+  updated_at: 'Last Updated',
 } as const;
 
 /** Keys shown in the Kanban board display menu */
@@ -24,7 +25,7 @@ export const BOARD_PROPERTY_KEYS: DisplayPropertyKey[] = [
 /** Keys shown in the list view display menu */
 export const LIST_PROPERTY_KEYS: DisplayPropertyKey[] = [
   'state', 'story_type', 'priority', 'severity', 'estimate',
-  'assignee', 'team', 'epic', 'sprint', 'due_date', 'labels',
+  'assignee', 'team', 'epic', 'sprint', 'due_date', 'labels', 'updated_at',
 ];
 
 export type DisplayPropertyKey = keyof typeof DISPLAY_PROPERTY_LABELS;
@@ -44,6 +45,7 @@ const ALL_ON: DisplayProperties = {
   state: true,
   team: true,
   sprint: true,
+  updated_at: true,
 };
 
 const STORAGE_KEY = (wsId: string) => `pm_board_display_${wsId}`;
