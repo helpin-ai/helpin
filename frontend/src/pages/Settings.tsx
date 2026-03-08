@@ -1529,9 +1529,14 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
           </button>
 
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-base font-semibold text-primary">
-              {getInitials(selectedTeam.name)}
-            </div>
+            {(() => {
+              const color = getAvatarColor(selectedTeam.name);
+              return (
+                <div className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-base font-semibold', color.bg, color.text)}>
+                  {getInitials(selectedTeam.name)}
+                </div>
+              );
+            })()}
             <div className="flex min-w-0 flex-1 items-center justify-between">
               <h2 className="text-xl font-semibold tracking-tight">{selectedTeam.name}</h2>
               {editable && (
