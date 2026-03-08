@@ -165,6 +165,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   placeholder="Add a description..."
                   className="border-transparent shadow-none"
                   teams={teams}
+                  members={assignableMembers}
                 />
               </div>
             </div>
@@ -332,6 +333,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   placeholder="Add a description..."
                   className="border-transparent shadow-none"
                   teams={teams}
+                  members={assignableMembers}
                 />
               </div>
             </div>
@@ -531,6 +533,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   placeholder="Add a description..."
                   className="border-transparent shadow-none"
                   teams={teams}
+                  members={assignableMembers}
                 />
               </div>
 

@@ -369,6 +369,7 @@ export function EpicDetailPage() {
               placeholder="Add a description..."
               className="border-transparent shadow-none"
               teams={teams}
+              members={assignableMembers}
             />
           </div>
 

@@ -687,6 +687,7 @@ function StoryDetailPanelBody({
               className="border-transparent shadow-none"
               uploadConfig={{ workspaceId, entityType: 'story', entityId: storyDetail.story.id }}
               teams={teams}
+              members={assignableMembers}
             />
           </div>
 
