@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"fmt"
+	"html"
 	"regexp"
 	"sort"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	gmhtml "github.com/yuin/goldmark/renderer/html"
+	nethtml "golang.org/x/net/html"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -272,21 +274,230 @@ func normalizeShortcutDescription(raw string) string {
 	if trimmed == "" {
 		return ""
 	}
-	if shortcutHTMLTagRe.MatchString(trimmed) {
-		return raw
-	}
-
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
-	var buf bytes.Buffer
-	if err := shortcutMDToHTML.Convert([]byte(normalized), &buf); err != nil {
-		return raw
+
+	var rendered string
+	if shortcutHTMLTagRe.MatchString(trimmed) {
+		rendered = normalized
+	} else {
+		var buf bytes.Buffer
+		if err := shortcutMDToHTML.Convert([]byte(normalized), &buf); err != nil {
+			return raw
+		}
+		rendered = strings.TrimSpace(buf.String())
 	}
-	rendered := strings.TrimSpace(buf.String())
 	if rendered == "" {
 		return ""
 	}
-	return rendered
+	safeHTML, err := normalizeShortcutHTML(rendered)
+	if err != nil {
+		return rendered
+	}
+	return strings.TrimSpace(safeHTML)
+}
+
+func normalizeShortcutHTML(rendered string) (string, error) {
+	doc, err := nethtml.Parse(strings.NewReader(`<div id="shortcut-root">` + rendered + `</div>`))
+	if err != nil {
+		return "", err
+	}
+	root := findShortcutHTMLNodeByID(doc, "shortcut-root")
+	if root == nil {
+		return rendered, nil
+	}
+	rewriteShortcutUnsupportedNodes(root)
+
+	var buf bytes.Buffer
+	for child := root.FirstChild; child != nil; child = child.NextSibling {
+		if err := nethtml.Render(&buf, child); err != nil {
+			return "", err
+		}
+	}
+	return buf.String(), nil
+}
+
+func findShortcutHTMLNodeByID(node *nethtml.Node, id string) *nethtml.Node {
+	if node == nil {
+		return nil
+	}
+	if node.Type == nethtml.ElementNode {
+		for _, attr := range node.Attr {
+			if attr.Key == "id" && attr.Val == id {
+				return node
+			}
+		}
+	}
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if found := findShortcutHTMLNodeByID(child, id); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func rewriteShortcutUnsupportedNodes(node *nethtml.Node) {
+	for child := node.FirstChild; child != nil; {
+		next := child.NextSibling
+		rewriteShortcutUnsupportedNodes(child)
+		if child.Type == nethtml.ElementNode && child.Data == "table" {
+			replacementHTML := renderShortcutTableReplacement(child)
+			insertShortcutHTMLFragmentBefore(node, child, replacementHTML)
+			node.RemoveChild(child)
+		}
+		child = next
+	}
+}
+
+func insertShortcutHTMLFragmentBefore(parent, before *nethtml.Node, fragment string) {
+	if strings.TrimSpace(fragment) == "" {
+		return
+	}
+	nodes, err := nethtml.ParseFragment(strings.NewReader(fragment), parent)
+	if err != nil {
+		return
+	}
+	for _, node := range nodes {
+		parent.InsertBefore(node, before)
+	}
+}
+
+type shortcutHTMLTableRow struct {
+	Header bool
+	Cells  []shortcutHTMLTableCell
+}
+
+type shortcutHTMLTableCell struct {
+	Text string
+	HTML string
+}
+
+func renderShortcutTableReplacement(table *nethtml.Node) string {
+	rows := collectShortcutTableRows(table)
+	if len(rows) == 0 {
+		return ""
+	}
+	if shortcutGenericTableHeader(rows[0]) {
+		rows = rows[1:]
+	}
+
+	var out strings.Builder
+	for _, row := range rows {
+		rendered := renderShortcutTableRow(row)
+		if strings.TrimSpace(rendered) == "" {
+			continue
+		}
+		out.WriteString(rendered)
+	}
+	return out.String()
+}
+
+func collectShortcutTableRows(table *nethtml.Node) []shortcutHTMLTableRow {
+	rows := make([]shortcutHTMLTableRow, 0)
+	var walk func(*nethtml.Node)
+	walk = func(node *nethtml.Node) {
+		if node.Type == nethtml.ElementNode && node.Data == "tr" {
+			row := shortcutHTMLTableRow{}
+			for child := node.FirstChild; child != nil; child = child.NextSibling {
+				if child.Type != nethtml.ElementNode || (child.Data != "th" && child.Data != "td") {
+					continue
+				}
+				row.Cells = append(row.Cells, shortcutHTMLTableCell{
+					Text: normalizeShortcutHTMLText(shortcutNodeText(child)),
+					HTML: strings.TrimSpace(renderShortcutNodeChildren(child)),
+				})
+				if child.Data == "th" {
+					row.Header = true
+				}
+			}
+			if len(row.Cells) > 0 {
+				rows = append(rows, row)
+			}
+			return
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(table)
+	return rows
+}
+
+func shortcutGenericTableHeader(row shortcutHTMLTableRow) bool {
+	if !row.Header || len(row.Cells) != 2 {
+		return false
+	}
+	left := normalizeShortcutName(strings.TrimSuffix(row.Cells[0].Text, ":"))
+	right := normalizeShortcutName(strings.TrimSuffix(row.Cells[1].Text, ":"))
+	return (left == "field" || left == "label") && (right == "detail" || right == "value")
+}
+
+func renderShortcutTableRow(row shortcutHTMLTableRow) string {
+	if len(row.Cells) == 2 {
+		label := strings.TrimSpace(strings.TrimSuffix(row.Cells[0].Text, ":"))
+		value := strings.TrimSpace(row.Cells[1].HTML)
+		if label == "" && value == "" {
+			return ""
+		}
+		var out strings.Builder
+		out.WriteString("<p>")
+		if label != "" {
+			out.WriteString("<strong>")
+			out.WriteString(html.EscapeString(label))
+			out.WriteString(":</strong>")
+			if value != "" {
+				out.WriteString(" ")
+			}
+		}
+		out.WriteString(value)
+		out.WriteString("</p>")
+		return out.String()
+	}
+
+	parts := make([]string, 0, len(row.Cells))
+	for _, cell := range row.Cells {
+		if strings.TrimSpace(cell.HTML) != "" {
+			parts = append(parts, cell.HTML)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "<p>" + strings.Join(parts, " | ") + "</p>"
+}
+
+func normalizeShortcutHTMLText(raw string) string {
+	return strings.Join(strings.Fields(raw), " ")
+}
+
+func shortcutNodeText(node *nethtml.Node) string {
+	var out strings.Builder
+	var walk func(*nethtml.Node)
+	walk = func(current *nethtml.Node) {
+		switch current.Type {
+		case nethtml.TextNode:
+			out.WriteString(current.Data)
+		case nethtml.ElementNode:
+			if current.Data == "br" {
+				out.WriteString("\n")
+			}
+		}
+		for child := current.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(node)
+	return out.String()
+}
+
+func renderShortcutNodeChildren(node *nethtml.Node) string {
+	var buf bytes.Buffer
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if err := nethtml.Render(&buf, child); err != nil {
+			return ""
+		}
+	}
+	return buf.String()
 }
 
 func parseShortcutTimestamp(raw, utcOffset string) *time.Time {

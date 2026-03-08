@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -18,7 +19,7 @@ var allowedMIMETypes = map[string]bool{
 	"image/jpeg": true, "image/png": true, "image/gif": true,
 	"image/webp": true, "image/svg+xml": true,
 	// Documents
-	"application/pdf": true,
+	"application/pdf":    true,
 	"application/msword": true,
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
 	// Spreadsheets
@@ -53,6 +54,65 @@ func NewPMAttachmentService(attachmentRepo *repository.PMAttachmentRepository, s
 
 // Create validates file metadata, creates a DB record, and returns a presigned PUT URL.
 func (s *PMAttachmentService) Create(ctx context.Context, req model.CreateAttachmentRequest, workspaceID, userID string) (*model.AttachmentResponse, error) {
+	attachment, err := s.prepareAttachment(ctx, req, workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	uploadURL, err := s.s3Client.GeneratePresignedPutURL(attachment.StorageKey, attachment.ContentType, attachment.FileSize, s.s3Client.HasPublicURL())
+	if err != nil {
+		return nil, fmt.Errorf("generate upload URL: %w", err)
+	}
+
+	resp := &model.AttachmentResponse{
+		Attachment: *attachment,
+		URL:        uploadURL,
+	}
+	if s.s3Client.HasPublicURL() {
+		resp.PublicURL = s.s3Client.PublicURL(attachment.StorageKey)
+	}
+	return resp, nil
+}
+
+// SupportsPublicURL reports whether imported attachments can be rewritten to stable public URLs.
+func (s *PMAttachmentService) SupportsPublicURL() bool {
+	return s.s3Client != nil && s.s3Client.HasPublicURL()
+}
+
+// CreateImported uploads a file directly from the server and marks it as uploaded.
+func (s *PMAttachmentService) CreateImported(ctx context.Context, req model.CreateAttachmentRequest, workspaceID, userID string, body io.Reader) (*model.AttachmentResponse, error) {
+	attachment, err := s.prepareAttachment(ctx, req, workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.s3Client.PutObject(ctx, attachment.StorageKey, attachment.ContentType, attachment.FileSize, body, s.s3Client.HasPublicURL()); err != nil {
+		_ = s.attachmentRepo.Delete(ctx, attachment.ID)
+		return nil, fmt.Errorf("upload attachment: %w", err)
+	}
+	if err := s.attachmentRepo.ConfirmUpload(ctx, attachment.ID); err != nil {
+		_ = s.s3Client.DeleteObject(ctx, attachment.StorageKey)
+		_ = s.attachmentRepo.Delete(ctx, attachment.ID)
+		return nil, err
+	}
+	attachment.IsUploaded = true
+
+	resp := &model.AttachmentResponse{Attachment: *attachment}
+	if s.s3Client.HasPublicURL() {
+		resp.PublicURL = s.s3Client.PublicURL(attachment.StorageKey)
+	} else {
+		downloadURL, err := s.s3Client.GeneratePresignedGetURL(attachment.StorageKey, attachment.FileName)
+		if err == nil {
+			resp.URL = downloadURL
+		}
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "attachment", EntityID: attachment.ID, WorkspaceID: attachment.WorkspaceID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
+	}
+	return resp, nil
+}
+
+func (s *PMAttachmentService) prepareAttachment(ctx context.Context, req model.CreateAttachmentRequest, workspaceID, userID string) (*model.PMAttachment, error) {
 	if s.s3Client == nil {
 		return nil, fmt.Errorf("file storage is not configured")
 	}
@@ -97,20 +157,7 @@ func (s *PMAttachmentService) Create(ctx context.Context, req model.CreateAttach
 	if err := s.attachmentRepo.UpdateStorageKey(ctx, attachment.ID, attachment.StorageKey); err != nil {
 		return nil, err
 	}
-
-	uploadURL, err := s.s3Client.GeneratePresignedPutURL(attachment.StorageKey, attachment.ContentType, attachment.FileSize, s.s3Client.HasPublicURL())
-	if err != nil {
-		return nil, fmt.Errorf("generate upload URL: %w", err)
-	}
-
-	resp := &model.AttachmentResponse{
-		Attachment: *attachment,
-		URL:        uploadURL,
-	}
-	if s.s3Client.HasPublicURL() {
-		resp.PublicURL = s.s3Client.PublicURL(attachment.StorageKey)
-	}
-	return resp, nil
+	return attachment, nil
 }
 
 // ConfirmUpload marks an attachment as successfully uploaded.
@@ -128,7 +175,9 @@ func (s *PMAttachmentService) ConfirmUpload(ctx context.Context, id string) erro
 	if err := s.attachmentRepo.ConfirmUpload(ctx, id); err != nil {
 		return err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "attachment", EntityID: id, WorkspaceID: attachment.WorkspaceID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "attachment", EntityID: id, WorkspaceID: attachment.WorkspaceID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
+	}
 	return nil
 }
 
@@ -180,6 +229,8 @@ func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string) err
 	if err := s.attachmentRepo.Delete(ctx, id); err != nil {
 		return err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "attachment", EntityID: id, WorkspaceID: attachment.WorkspaceID, ActorID: userID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "attachment", EntityID: id, WorkspaceID: attachment.WorkspaceID, ActorID: userID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
+	}
 	return nil
 }

@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/csv"
+	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -274,6 +276,352 @@ func TestPMImportServiceExecuteShortcutUsesWorkflowIDsForStateMapping(t *testing
 	}
 }
 
+func TestPMImportServiceExecuteShortcutAssignsImportedOwnersToTeams(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	pendingMember := model.WorkspaceMember{
+		ID:          "wm-pending-owner",
+		WorkspaceID: workspaceID,
+		Email:       "pending.owner@example.com",
+		DisplayName: "pending.owner@example.com",
+		Role:        model.RoleMember,
+		Status:      model.WorkspaceMemberStatusPending,
+	}
+	if err := db.Create(&pendingMember).Error; err != nil {
+		t.Fatalf("seed pending workspace member: %v", err)
+	}
+
+	csvData := shortcutImportCSVFromRows([]map[string]string{
+		{
+			"id": "4001", "name": "Pending owner story", "type": "feature",
+			"owners": "pending.owner@example.com", "team": "Growth",
+			"created_at": "2026/03/01 09:00:00", "updated_at": "2026/03/01 09:00:00", "utc_offset": "+00:00",
+			"workflow": "Product Development", "workflow_id": "500000199", "state": "Backlog",
+		},
+	})
+
+	req := model.ShortcutImportExecuteRequest{
+		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
+			{
+				ShortcutWorkflowName: "Product Development",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Imported Product Development",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+				},
+			},
+		},
+		Options: model.ShortcutImportOptions{
+			ImportArchived:  true,
+			ImportCompleted: true,
+		},
+	}
+
+	if _, _, err := svc.executeShortcutImport(context.Background(), workspaceID, adminID, []byte(csvData), req, "", ""); err != nil {
+		t.Fatalf("execute shortcut import: %v", err)
+	}
+
+	var team model.WorkspaceTeam
+	if err := db.Where("workspace_id = ? AND name = ?", workspaceID, "Growth").First(&team).Error; err != nil {
+		t.Fatalf("load imported team: %v", err)
+	}
+
+	var membership model.TeamWorkspaceMembership
+	if err := db.Where("team_id = ? AND workspace_member_id = ?", team.ID, pendingMember.ID).First(&membership).Error; err != nil {
+		t.Fatalf("expected pending owner to be assigned to team: %v", err)
+	}
+}
+
+func TestPMImportServiceExecuteShortcutUsesManualUserMappingsForTeamMemberships(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	csvData := shortcutImportCSVFromRows([]map[string]string{
+		{
+			"id": "4002", "name": "Alias owner story", "type": "feature",
+			"owners": "alias.owner@example.com", "team": "Growth",
+			"created_at": "2026/03/01 09:00:00", "updated_at": "2026/03/01 09:00:00", "utc_offset": "+00:00",
+			"workflow": "Product Development", "workflow_id": "500000199", "state": "Backlog",
+		},
+	})
+
+	req := model.ShortcutImportExecuteRequest{
+		UserMappings: map[string]string{
+			"alias.owner@example.com": "user-owner-one",
+		},
+		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
+			{
+				ShortcutWorkflowName: "Product Development",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Imported Product Development",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+				},
+			},
+		},
+		Options: model.ShortcutImportOptions{
+			ImportArchived:  true,
+			ImportCompleted: true,
+		},
+	}
+
+	if _, _, err := svc.executeShortcutImport(context.Background(), workspaceID, adminID, []byte(csvData), req, "", ""); err != nil {
+		t.Fatalf("execute shortcut import: %v", err)
+	}
+
+	var team model.WorkspaceTeam
+	if err := db.Where("workspace_id = ? AND name = ?", workspaceID, "Growth").First(&team).Error; err != nil {
+		t.Fatalf("load imported team: %v", err)
+	}
+
+	var workspaceMember model.WorkspaceMember
+	if err := db.Where("workspace_id = ? AND user_id = ?", workspaceID, "user-owner-one").First(&workspaceMember).Error; err != nil {
+		t.Fatalf("load workspace member for mapped user: %v", err)
+	}
+
+	var membership model.TeamWorkspaceMembership
+	if err := db.Where("team_id = ? AND workspace_member_id = ?", team.ID, workspaceMember.ID).First(&membership).Error; err != nil {
+		t.Fatalf("expected manually mapped owner to be assigned to team: %v", err)
+	}
+
+	var story model.PMStory
+	if err := db.Where("workspace_id = ? AND external_id = ?", workspaceID, "4002").First(&story).Error; err != nil {
+		t.Fatalf("load imported story: %v", err)
+	}
+	if story.OwnerMemberID == nil || *story.OwnerMemberID != workspaceMember.ID {
+		t.Fatalf("expected owner_member_id to use mapped workspace member, got %v want %s", story.OwnerMemberID, workspaceMember.ID)
+	}
+}
+
+func TestPMImportServiceRewriteShortcutMediaBody(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	fakeAttachments := &fakeShortcutImportedAttachmentService{
+		publicURLPrefix: "https://cdn.example.com/imported/",
+	}
+	fakeDownloader := &fakeShortcutMediaDownloader{
+		mediaByURL: map[string]shortcutDownloadedMedia{
+			"https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png": {
+				FileName:    "downloaded-image.png",
+				ContentType: "image/png",
+				Data:        []byte("png-bytes"),
+			},
+		},
+	}
+	svc.attachmentService = fakeAttachments
+	svc.mediaDownloader = fakeDownloader
+
+	body := `<p>Screenshot</p><p><img src="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png" alt="image.png"></p><p><a href="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png">open</a></p>`
+	rewritten, created, warnings := svc.rewriteShortcutMediaBody(context.Background(), workspaceID, adminID, "story", "story-123", body, "shortcut-token")
+
+	if created != 1 {
+		t.Fatalf("expected 1 imported attachment, got %d (warnings=%v rewritten=%s calls=%v)", created, warnings, rewritten, fakeDownloader.calls)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+	if !strings.Contains(rewritten, `src="https://cdn.example.com/imported/attachment-1/image.png"`) {
+		t.Fatalf("expected rewritten img src, got %s", rewritten)
+	}
+	if !strings.Contains(rewritten, `href="https://cdn.example.com/imported/attachment-1/image.png"`) {
+		t.Fatalf("expected rewritten href, got %s", rewritten)
+	}
+	if fakeDownloader.calls["https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png"] != 1 {
+		t.Fatalf("expected a single media download, got %d", fakeDownloader.calls["https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png"])
+	}
+	if len(fakeAttachments.records) != 1 {
+		t.Fatalf("expected 1 attachment record, got %d", len(fakeAttachments.records))
+	}
+	if fakeAttachments.records[0].req.FileName != "image.png" {
+		t.Fatalf("expected imported filename image.png, got %q", fakeAttachments.records[0].req.FileName)
+	}
+	if string(fakeAttachments.records[0].data) != "png-bytes" {
+		t.Fatalf("expected uploaded bytes to match downloader payload, got %q", string(fakeAttachments.records[0].data))
+	}
+}
+
+func TestPMImportServiceImportShortcutStoryMediaUpdatesDescriptions(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	fakeAttachments := &fakeShortcutImportedAttachmentService{
+		publicURLPrefix: "https://cdn.example.com/imported/",
+	}
+	fakeDownloader := &fakeShortcutMediaDownloader{
+		mediaByURL: map[string]shortcutDownloadedMedia{
+			"https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png": {
+				FileName:    "downloaded-image.png",
+				ContentType: "image/png",
+				Data:        []byte("png-bytes"),
+			},
+		},
+	}
+	svc.attachmentService = fakeAttachments
+	svc.mediaDownloader = fakeDownloader
+
+	req := model.ShortcutImportExecuteRequest{
+		UserMappings: map[string]string{
+			"owner.one@example.com": "user-owner-one",
+			"owner.two@example.com": "user-owner-two",
+		},
+		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
+			{
+				ShortcutWorkflowName: "Product Development",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Imported Product Development",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+					{ShortcutState: "Completed", NewStateName: "Completed", StateType: model.PMStateTypeDone, Position: 1},
+				},
+			},
+		},
+		Options: model.ShortcutImportOptions{
+			ImportArchived:  true,
+			ImportCompleted: true,
+		},
+	}
+
+	if _, _, err := svc.executeShortcutImport(context.Background(), workspaceID, adminID, []byte(shortcutImportTestCSV()), req, "", ""); err != nil {
+		t.Fatalf("execute shortcut import: %v", err)
+	}
+
+	var story model.PMStory
+	if err := db.Where("workspace_id = ? AND external_id = ?", workspaceID, "113165").First(&story).Error; err != nil {
+		t.Fatalf("load imported story: %v", err)
+	}
+	if story.Description == nil || !strings.Contains(*story.Description, "media.app.shortcut.com") {
+		t.Fatalf("expected imported story to still contain Shortcut media before migration, got %v", story.Description)
+	}
+
+	attachmentsCreated, warnings := svc.importShortcutStoryMedia(context.Background(), workspaceID, adminID, []string{story.ID}, "shortcut-token", "", 1, 1)
+	if attachmentsCreated != 1 {
+		t.Fatalf("expected 1 imported attachment, got %d (warnings=%v calls=%v)", attachmentsCreated, warnings, fakeDownloader.calls)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+
+	if err := db.Where("id = ?", story.ID).First(&story).Error; err != nil {
+		t.Fatalf("reload imported story: %v", err)
+	}
+	if story.Description == nil {
+		t.Fatal("expected migrated story description")
+	}
+	if strings.Contains(*story.Description, "media.app.shortcut.com") {
+		t.Fatalf("expected Shortcut media URL to be replaced, got %s", *story.Description)
+	}
+	if !strings.Contains(*story.Description, "https://cdn.example.com/imported/attachment-1/image.png") {
+		t.Fatalf("expected migrated story description to use local media URL, got %s", *story.Description)
+	}
+}
+
+func TestPMImportServiceImportShortcutStoryMediaUpdatesChecklistItems(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	fakeAttachments := &fakeShortcutImportedAttachmentService{
+		publicURLPrefix: "https://cdn.example.com/imported/",
+	}
+	fakeDownloader := &fakeShortcutMediaDownloader{
+		mediaByURL: map[string]shortcutDownloadedMedia{
+			"https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/task-image.png": {
+				FileName:    "downloaded-task-image.png",
+				ContentType: "image/png",
+				Data:        []byte("task-png-bytes"),
+			},
+		},
+	}
+	svc.attachmentService = fakeAttachments
+	svc.mediaDownloader = fakeDownloader
+
+	csvData := shortcutImportCSVFromRows([]map[string]string{
+		{
+			"id": "3001", "name": "Checklist media story", "type": "feature", "requester": "admin@example.com",
+			"created_at": "2026/03/05 10:00:00", "updated_at": "2026/03/05 10:00:00", "utc_offset": "+00:00",
+			"workflow": "Product Development", "workflow_id": "500000199", "state": "Backlog",
+			"tasks": "[ ] Review screenshot ![task-image.png](https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/task-image.png)",
+		},
+	})
+
+	req := model.ShortcutImportExecuteRequest{
+		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
+			{
+				ShortcutWorkflowName: "Product Development",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Imported Product Development",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+				},
+			},
+		},
+		Options: model.ShortcutImportOptions{
+			ImportArchived:  true,
+			ImportCompleted: true,
+		},
+	}
+
+	if _, _, err := svc.executeShortcutImport(context.Background(), workspaceID, adminID, []byte(csvData), req, "", ""); err != nil {
+		t.Fatalf("execute shortcut import: %v", err)
+	}
+
+	var story model.PMStory
+	if err := db.Where("workspace_id = ? AND external_id = ?", workspaceID, "3001").First(&story).Error; err != nil {
+		t.Fatalf("load imported story: %v", err)
+	}
+
+	var checklistItem model.PMChecklistItem
+	if err := db.Where("story_id = ?", story.ID).First(&checklistItem).Error; err != nil {
+		t.Fatalf("load imported checklist item: %v", err)
+	}
+	if !strings.Contains(checklistItem.Text, "media.app.shortcut.com") {
+		t.Fatalf("expected checklist item to still contain Shortcut media before migration, got %s", checklistItem.Text)
+	}
+
+	attachmentsCreated, warnings := svc.importShortcutStoryMedia(context.Background(), workspaceID, adminID, []string{story.ID}, "shortcut-token", "", 1, 1)
+	if attachmentsCreated != 1 {
+		t.Fatalf("expected 1 imported attachment, got %d (warnings=%v calls=%v)", attachmentsCreated, warnings, fakeDownloader.calls)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+
+	if err := db.Where("id = ?", checklistItem.ID).First(&checklistItem).Error; err != nil {
+		t.Fatalf("reload imported checklist item: %v", err)
+	}
+	if strings.Contains(checklistItem.Text, "media.app.shortcut.com") {
+		t.Fatalf("expected Shortcut media URL in checklist item to be replaced, got %s", checklistItem.Text)
+	}
+	if !strings.Contains(checklistItem.Text, "https://cdn.example.com/imported/attachment-1/task-image.png") {
+		t.Fatalf("expected checklist item to use local media URL, got %s", checklistItem.Text)
+	}
+}
+
 func newImportTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -285,6 +633,70 @@ func newImportTestDB(t *testing.T) *gorm.DB {
 	registerTestUUIDCallback(t, db)
 	createImportTestSchema(t, db)
 	return db
+}
+
+type fakeShortcutImportedAttachmentService struct {
+	publicURLPrefix string
+	records         []fakeImportedAttachmentRecord
+}
+
+type fakeImportedAttachmentRecord struct {
+	req         model.CreateAttachmentRequest
+	workspaceID string
+	userID      string
+	data        []byte
+}
+
+func (f *fakeShortcutImportedAttachmentService) SupportsPublicURL() bool {
+	return true
+}
+
+func (f *fakeShortcutImportedAttachmentService) CreateImported(ctx context.Context, req model.CreateAttachmentRequest, workspaceID, userID string, body io.Reader) (*model.AttachmentResponse, error) {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+	f.records = append(f.records, fakeImportedAttachmentRecord{
+		req:         req,
+		workspaceID: workspaceID,
+		userID:      userID,
+		data:        data,
+	})
+	id := fmt.Sprintf("attachment-%d", len(f.records))
+	return &model.AttachmentResponse{
+		Attachment: model.PMAttachment{
+			ID:           id,
+			WorkspaceID:  workspaceID,
+			EntityType:   req.EntityType,
+			EntityID:     req.EntityID,
+			FileName:     req.FileName,
+			FileSize:     req.FileSize,
+			ContentType:  req.ContentType,
+			StorageKey:   "imported/" + id,
+			IsUploaded:   true,
+			UploadedByID: userID,
+		},
+		PublicURL: f.publicURLPrefix + id + "/" + req.FileName,
+	}, nil
+}
+
+type fakeShortcutMediaDownloader struct {
+	mediaByURL map[string]shortcutDownloadedMedia
+	calls      map[string]int
+}
+
+func (f *fakeShortcutMediaDownloader) Download(ctx context.Context, rawURL, apiToken string) (*shortcutDownloadedMedia, error) {
+	if f.calls == nil {
+		f.calls = make(map[string]int)
+	}
+	f.calls[rawURL]++
+	media, ok := f.mediaByURL[rawURL]
+	if !ok {
+		return nil, fmt.Errorf("unexpected media URL %s", rawURL)
+	}
+	copy := media
+	copy.Data = append([]byte(nil), media.Data...)
+	return &copy, nil
 }
 
 func createImportTestSchema(t *testing.T, db *gorm.DB) {
@@ -335,6 +747,15 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			manager_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE team_workspace_memberships (
+			id TEXT PRIMARY KEY,
+			team_id TEXT NOT NULL,
+			workspace_member_id TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'member',
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE (team_id, workspace_member_id)
 		)`,
 		`CREATE TABLE pm_workflows (
 			id TEXT PRIMARY KEY,
@@ -604,7 +1025,7 @@ func newImportTestService(t *testing.T, db *gorm.DB) (*PMImportService, string, 
 		t.Fatalf("seed workspace members: %v", err)
 	}
 
-	return NewPMImportService(db, repository.NewWorkspaceRepository(db), repository.NewPMWorkflowRepository(db)), workspaceID, adminID
+	return NewPMImportService(db, repository.NewWorkspaceRepository(db), repository.NewPMWorkflowRepository(db), nil), workspaceID, adminID
 }
 
 func shortcutImportTestCSV() string {
@@ -732,7 +1153,7 @@ func assertImportState(t *testing.T, db *gorm.DB, workspaceID string) {
 	if !strings.Contains(*markdownStory.Description, `<a href="https://app.crisp.chat/website/e80c07ae-0687-4e09-b9dc-22ad3bdf27ff/inbox/session_c5c5c898-3776-4f93-b1af-5142bde046fc/">`) {
 		t.Fatalf("expected rendered link in story description, got %s", *markdownStory.Description)
 	}
-	if !strings.Contains(*markdownStory.Description, `<img src="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png" alt="image.png">`) {
+	if !strings.Contains(*markdownStory.Description, `src="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/image.png" alt="image.png"`) {
 		t.Fatalf("expected rendered image in story description, got %s", *markdownStory.Description)
 	}
 

@@ -11,13 +11,15 @@ import {
   type Row,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { CalendarDays, Check, ChevronDown, ChevronRight, Loader2, UserPlus } from 'lucide-react';
+import { Archive, BarChart3, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, EllipsisVertical, ExternalLink, Link2, Loader2, StickyNote, UserPlus } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
 import { format, parseISO } from 'date-fns';
 import { pmStoryService } from '@/lib/services/pmStoryService';
+import { pmLabelService } from '@/lib/services/pmLabelService';
 import {
   PriorityIcon,
   SeverityIcon,
@@ -32,6 +34,7 @@ import type {
   Label,
   Priority,
   Severity,
+  StateType,
   Story,
   WorkflowWithStates,
   EpicWithStats,
@@ -39,8 +42,12 @@ import type {
 } from '@/lib/pmTypes';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
-import { LabelBadge } from '@/components/pm/LabelPicker';
-import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
+import { LabelPicker } from '@/components/pm/LabelPicker';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
+import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
+import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 
@@ -116,7 +123,11 @@ export function StoryListView({
   externalStories,
   onOpenStory,
 }: StoryListViewProps) {
-  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(teamId));
+  const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
+  const displayInit = useBoardDisplayStore((s) => s.init);
+  const displayProps = useBoardDisplayStore((s) => s.properties);
+
+  useEffect(() => { displayInit(workspaceId); }, [workspaceId, displayInit]);
 
   const isExternal = externalStories !== undefined;
   const [stories, setStories] = useState<Story[]>(externalStories ?? []);
@@ -127,6 +138,13 @@ export function StoryListView({
   const [groupBy, setGroupBy] = useState<GroupByOption>('workflow_state');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
+  const pinnedGroupRef = useRef<number | null>(null);
+  const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
+  const [allLabels, setAllLabels] = useState<Label[]>([]);
+
+  useEffect(() => {
+    pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
+  }, [workspaceId]);
 
   // Build lookup maps
   const availableWorkflows = useMemo(
@@ -290,15 +308,15 @@ export function StoryListView({
       columnHelper.accessor('display_id', {
         id: 'displayId',
         header: 'ID',
-        size: 80,
+        size: 90,
         cell: (info) => (
-          <span className="font-mono text-xs text-muted-foreground">TP-{info.getValue()}</span>
+          <span className="font-mono text-xs text-muted-foreground">{info.getValue()}</span>
         ),
       }),
       columnHelper.accessor('story_type', {
         id: 'typeIcon',
         header: '',
-        size: 36,
+        size: 40,
         enableGrouping: false,
         cell: (info) => <StoryTypeIcon storyType={info.getValue()} className="h-4 w-4" />,
       }),
@@ -325,7 +343,7 @@ export function StoryListView({
         {
           id: 'stateName',
           header: 'State',
-          size: 150,
+          size: 190,
           cell: (info) => (
             <InlineStateCell
               story={info.row.original}
@@ -339,7 +357,7 @@ export function StoryListView({
       columnHelper.accessor('priority', {
         id: 'priorityIcon',
         header: 'Priority',
-        size: 110,
+        size: 130,
         enableGrouping: false,
         cell: (info) => (
           <InlinePriorityCell
@@ -351,7 +369,7 @@ export function StoryListView({
       columnHelper.accessor('severity', {
         id: 'severityIcon',
         header: 'Severity',
-        size: 110,
+        size: 130,
         enableGrouping: false,
         cell: (info) => (
           <InlineSeverityCell
@@ -363,7 +381,7 @@ export function StoryListView({
       columnHelper.accessor('estimate', {
         id: 'estimate',
         header: 'Estimate',
-        size: 80,
+        size: 100,
         enableGrouping: false,
         cell: (info) => (
           <InlineEstimateCell
@@ -380,7 +398,7 @@ export function StoryListView({
         {
           id: 'ownerName',
           header: 'Owner',
-          size: 150,
+          size: 200,
           cell: (info) => (
             <InlineOwnerCell
               story={info.row.original}
@@ -396,7 +414,7 @@ export function StoryListView({
         {
           id: 'teamName',
           header: 'Team',
-          size: 130,
+          size: 180,
           cell: (info) => (
             <InlineTeamCell
               story={info.row.original}
@@ -412,7 +430,7 @@ export function StoryListView({
         {
           id: 'epicName',
           header: 'Epic',
-          size: 150,
+          size: 200,
           cell: (info) => (
             <InlineEpicCell
               story={info.row.original}
@@ -428,7 +446,7 @@ export function StoryListView({
         {
           id: 'sprintName',
           header: 'Sprint',
-          size: 140,
+          size: 190,
           cell: (info) => (
             <InlineSprintCell
               story={info.row.original}
@@ -472,7 +490,7 @@ export function StoryListView({
       columnHelper.accessor('deadline', {
         id: 'deadline',
         header: 'Deadline',
-        size: 120,
+        size: 150,
         enableGrouping: false,
         cell: (info) => (
           <InlineDeadlineCell
@@ -484,17 +502,70 @@ export function StoryListView({
       columnHelper.display({
         id: 'labels',
         header: 'Labels',
-        size: 180,
+        size: 260,
         enableGrouping: false,
-        cell: (info) => <InlineLabelsCell labels={info.row.original.labels} />,
+        cell: (info) => (
+          <InlineLabelsCell
+            story={info.row.original}
+            workspaceId={workspaceId}
+            allLabels={allLabels}
+            onLabelsChange={setAllLabels}
+            setStories={setStories}
+          />
+        ),
+      }),
+      columnHelper.accessor('updated_at', {
+        id: 'updatedAt',
+        header: 'Last Updated',
+        size: 120,
+        enableGrouping: false,
+        cell: (info) => {
+          const val = info.getValue();
+          if (!val) return null;
+          return (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {format(parseISO(val), 'MMM d')}
+            </span>
+          );
+        },
+      }),
+      columnHelper.display({
+        id: 'actions',
+        header: '',
+        size: 44,
+        enableGrouping: false,
+        cell: (info) => (
+          <InlineActionsCell
+            story={info.row.original}
+            workspaceId={workspaceId}
+            onOpenStory={onOpenStory}
+            setStories={setStories}
+          />
+        ),
       }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField, allLabels, workspaceId]
   );
+
+  // Team-level disabled keys (for hiding toggles in display menu)
+  const teamDisabledKeys = useMemo(() => {
+    const keys = new Set<DisplayPropertyKey>();
+    if (!fieldVis.priority) keys.add('priority');
+    if (!fieldVis.severity) keys.add('severity');
+    if (!fieldVis.story_type) keys.add('story_type');
+    if (!fieldVis.estimate) keys.add('estimate');
+    if (!fieldVis.epic) keys.add('epic');
+    if (!fieldVis.sprint) keys.add('sprint');
+    if (!fieldVis.due_date) keys.add('due_date');
+    if (!fieldVis.labels) keys.add('labels');
+    if (teamId) keys.add('team');
+    return keys;
+  }, [fieldVis, teamId]);
 
   const columnVisibility = useMemo(() => {
     const vis: Record<string, boolean> = {};
     for (const c of HIDDEN_GROUP_COLUMNS) vis[c] = false;
+    // Team-level visibility (overrides everything)
     if (!fieldVis.priority) { vis['priorityIcon'] = false; vis['priorityName'] = false; }
     if (!fieldVis.severity) { vis['severityIcon'] = false; vis['severityName'] = false; }
     if (!fieldVis.story_type) { vis['typeIcon'] = false; vis['typeName'] = false; }
@@ -502,9 +573,23 @@ export function StoryListView({
     if (!fieldVis.epic) vis['epicName'] = false;
     if (!fieldVis.sprint) vis['sprintName'] = false;
     if (!fieldVis.due_date) vis['deadline'] = false;
+    if (!fieldVis.labels) vis['labels'] = false;
     if (teamId) vis['teamName'] = false;
+    // User-level display preferences (only hides columns the team allows)
+    if (!displayProps.state) vis['stateName'] = false;
+    if (!displayProps.priority && vis['priorityIcon'] !== false) vis['priorityIcon'] = false;
+    if (!displayProps.severity && vis['severityIcon'] !== false) vis['severityIcon'] = false;
+    if (!displayProps.story_type && vis['typeIcon'] !== false) vis['typeIcon'] = false;
+    if (!displayProps.estimate && vis['estimate'] !== false) vis['estimate'] = false;
+    if (!displayProps.assignee) vis['ownerName'] = false;
+    if (!displayProps.team && vis['teamName'] !== false) vis['teamName'] = false;
+    if (!displayProps.epic && vis['epicName'] !== false) vis['epicName'] = false;
+    if (!displayProps.sprint && vis['sprintName'] !== false) vis['sprintName'] = false;
+    if (!displayProps.due_date && vis['deadline'] !== false) vis['deadline'] = false;
+    if (!displayProps.labels && vis['labels'] !== false) vis['labels'] = false;
+    if (!displayProps.updated_at) vis['updatedAt'] = false;
     return vis;
-  }, [fieldVis, teamId]);
+  }, [fieldVis, teamId, displayProps]);
 
   const grouping: GroupingState = useMemo(() => {
     const colId = GROUP_COLUMN_MAP[groupBy];
@@ -520,12 +605,15 @@ export function StoryListView({
       columnVisibility,
     },
     onExpandedChange: setExpanded,
+    autoResetExpanded: false,
+    getRowId: (row) => row.id,
     getExpandedRowModel: getExpandedRowModel(),
     getGroupedRowModel: getGroupedRowModel(),
     getCoreRowModel: getCoreRowModel(),
   });
 
   const { rows } = table.getRowModel();
+  const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Story> | undefined) : undefined;
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -548,7 +636,7 @@ export function StoryListView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      {/* Group By control */}
+      {/* Group By control + Display settings */}
       <div className="flex items-center gap-2 px-3 pt-2">
         <span className="text-xs text-muted-foreground">Group by:</span>
         <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
@@ -575,12 +663,16 @@ export function StoryListView({
         <span className="text-xs text-muted-foreground">
           {stories.length} {stories.length === 1 ? 'story' : 'stories'}{hasMore ? '+' : ''}
         </span>
+        <div className="ml-auto">
+          <ListDisplayMenu disabledKeys={teamDisabledKeys} />
+        </div>
       </div>
 
       {/* Table */}
-      <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border/70">
+      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border/70">
+        <div className="min-w-fit">
         {/* Header */}
-        <div className="border-b border-border/70 bg-muted/50">
+        <div className="sticky top-0 z-10 border-b border-border/70 bg-muted/50">
           {table.getHeaderGroups().map((headerGroup) => (
             <div key={headerGroup.id} className="flex items-center">
               {headerGroup.headers.map((header) => {
@@ -590,11 +682,11 @@ export function StoryListView({
                 return (
                   <div
                     key={header.id}
-                    className="px-2 py-1.5 text-xs font-medium text-muted-foreground"
+                    className={`px-2 py-1.5 text-xs font-medium text-muted-foreground ${size !== 999 ? 'text-center' : ''}`}
                     style={{
                       width: size === 999 ? undefined : size,
                       flex: size === 999 ? '1 1 0%' : undefined,
-                      minWidth: size === 999 ? 200 : undefined,
+                      minWidth: size === 999 ? 400 : undefined,
                     }}
                   >
                     {header.isPlaceholder
@@ -613,14 +705,43 @@ export function StoryListView({
           className="overflow-auto"
           style={{ height: 'calc(100% - 30px)' }}
           onScroll={(e) => {
-            if (isExternal || !hasMore || loadingMore) return;
             const el = e.currentTarget;
-            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
-              loadMore();
+            const scrollTop = el.scrollTop;
+
+            // Infinite loading
+            if (!isExternal && hasMore && !loadingMore) {
+              if (scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+                loadMore();
+              }
+            }
+
+            // Track pinned group header
+            const vItems = virtualizer.getVirtualItems();
+            let newPinnedIdx: number | null = null;
+            if (scrollTop > 10) {
+              for (const vItem of vItems) {
+                if (vItem.start > scrollTop) break;
+                if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
+              }
+              if (newPinnedIdx === null && vItems.length > 0) {
+                for (let i = vItems[0].index - 1; i >= 0; i--) {
+                  if (rows[i]?.getIsGrouped()) { newPinnedIdx = i; break; }
+                }
+              }
+            }
+            if (newPinnedIdx !== pinnedGroupRef.current) {
+              pinnedGroupRef.current = newPinnedIdx;
+              setPinnedGroupIdx(newPinnedIdx);
             }
           }}
         >
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+            {/* Pinned sticky group header */}
+            {pinnedGroupRow && (
+              <div className="sticky top-0 z-[5] bg-background" style={{ height: 0, overflow: 'visible' }}>
+                <GroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} />
+              </div>
+            )}
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<Story>;
               const isGrouped = row.getIsGrouped();
@@ -639,7 +760,7 @@ export function StoryListView({
                   }}
                 >
                   {isGrouped ? (
-                    <GroupHeaderRow row={row} />
+                    <GroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} />
                   ) : (
                     <DataRow row={row} onOpenStory={onOpenStory} />
                   )}
@@ -654,12 +775,35 @@ export function StoryListView({
             </div>
           )}
         </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function GroupHeaderRow({ row }: { row: Row<Story> }) {
+function GroupHeaderRow({
+  row,
+  groupBy,
+  stateMap,
+}: {
+  row: Row<Story>;
+  groupBy: GroupByOption;
+  stateMap: Map<string, { name: string; stateType: string }>;
+}) {
+  const subRows = row.subRows;
+  const storyCount = subRows.length;
+  const totalPoints = subRows.reduce((sum, r) => sum + (r.original.estimate ?? 0), 0);
+  const completedPoints = subRows.reduce((sum, r) => {
+    const stateInfo = stateMap.get(r.original.workflow_state_id);
+    if (stateInfo?.stateType === 'done') return sum + (r.original.estimate ?? 0);
+    return sum;
+  }, 0);
+
+  const stateType =
+    groupBy === 'workflow_state' && subRows[0]
+      ? (stateMap.get(subRows[0].original.workflow_state_id)?.stateType as StateType | undefined)
+      : undefined;
+
   return (
     <button
       className="flex w-full items-center gap-2 border-b border-border/50 bg-muted/30 px-3 py-2 text-left text-xs font-semibold hover:bg-muted/50"
@@ -670,8 +814,19 @@ function GroupHeaderRow({ row }: { row: Row<Story> }) {
       ) : (
         <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
       )}
+      {stateType && <StateTypeIcon stateType={stateType} className="h-4 w-4" />}
       <span>{String(row.groupingValue)}</span>
-      <span className="font-normal text-muted-foreground">({row.subRows.length})</span>
+      <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
+        <span className="flex items-center gap-1" title="Stories">
+          <StickyNote className="h-3 w-3" /> {storyCount}
+        </span>
+        <span className="flex items-center gap-1" title="Total Points">
+          <BarChart3 className="h-3 w-3" /> {totalPoints}
+        </span>
+        <span className="flex items-center gap-1" title="Completed Points">
+          <CircleCheck className="h-3 w-3" /> {completedPoints}
+        </span>
+      </span>
     </button>
   );
 }
@@ -679,7 +834,7 @@ function GroupHeaderRow({ row }: { row: Row<Story> }) {
 function DataRow({ row, onOpenStory }: { row: Row<Story>; onOpenStory: (story: Story) => void }) {
   return (
     <div
-      className="flex cursor-pointer items-center border-b border-border/30 transition-colors hover:bg-muted/30"
+      className="group/row flex cursor-pointer items-center border-b border-border/30 transition-colors hover:bg-muted/30"
       onClick={() => onOpenStory(row.original)}
     >
       {row.getVisibleCells().map((cell) => {
@@ -690,11 +845,11 @@ function DataRow({ row, onOpenStory }: { row: Row<Story>; onOpenStory: (story: S
         return (
           <div
             key={cell.id}
-            className="overflow-hidden px-2 py-1.5"
+            className={`overflow-hidden px-2 py-1.5 ${size !== 999 ? 'text-center flex items-center justify-center' : ''}`}
             style={{
               width: size === 999 ? undefined : size,
               flex: size === 999 ? '1 1 0%' : undefined,
-              minWidth: size === 999 ? 200 : undefined,
+              minWidth: size === 999 ? 400 : undefined,
             }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -1261,13 +1416,107 @@ function InlineDeadlineCell({
   );
 }
 
-function InlineLabelsCell({ labels }: { labels?: Label[] }) {
-  if (!labels || labels.length === 0) return null;
+function InlineLabelsCell({
+  story,
+  workspaceId,
+  allLabels,
+  onLabelsChange,
+  setStories,
+}: {
+  story: Story;
+  workspaceId: string;
+  allLabels: Label[];
+  onLabelsChange: (labels: Label[]) => void;
+  setStories: React.Dispatch<React.SetStateAction<Story[]>>;
+}) {
+  const storyLabels = story.labels ?? [];
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {labels.map((label) => (
-        <LabelBadge key={label.id} label={label} />
-      ))}
+    <div onClick={(e) => e.stopPropagation()}>
+      <LabelPicker
+        workspaceId={workspaceId}
+        teamId={story.team_id || undefined}
+        labels={allLabels}
+        selectedLabelIds={storyLabels.map((l) => l.id)}
+        onLabelsChange={onLabelsChange}
+        onChange={async (labelIds) => {
+          const currentIds = storyLabels.map((l) => l.id);
+          setStories((current) =>
+            current.map((s) =>
+              s.id === story.id
+                ? { ...s, labels: allLabels.filter((l) => labelIds.includes(l.id)) }
+                : s
+            )
+          );
+          await pmStoryService.syncLabels(workspaceId, story.id, currentIds, labelIds);
+        }}
+      />
+    </div>
+  );
+}
+
+function InlineActionsCell({
+  story,
+  workspaceId,
+  onOpenStory,
+  setStories,
+}: {
+  story: Story;
+  workspaceId: string;
+  onOpenStory: (story: Story) => void;
+  setStories: React.Dispatch<React.SetStateAction<Story[]>>;
+}) {
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const { copy } = useCopyToClipboard();
+
+  const copyLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}${window.location.pathname}?story=${story.display_id}`;
+    copy(url);
+  };
+
+  const archiveStory = async () => {
+    const { error } = await pmStoryService.remove(workspaceId, story.id);
+    if (!error) {
+      setStories((current) => current.filter((s) => s.id !== story.id));
+    }
+  };
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/row:opacity-100 data-[state=open]:opacity-100 cursor-pointer"
+          >
+            <EllipsisVertical className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => onOpenStory(story)}>
+            <ExternalLink className="mr-2 h-3.5 w-3.5" />
+            Open Story
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={copyLink}>
+            <Link2 className="mr-2 h-3.5 w-3.5" />
+            Copy Link
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setArchiveOpen(true)}
+            className="text-destructive focus:text-destructive"
+          >
+            <Archive className="mr-2 h-3.5 w-3.5" />
+            Archive Story
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ConfirmDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        description="This story will be hidden from the board and lists. You can restore it later from archived items."
+        confirmLabel="Archive"
+        onConfirm={archiveStory}
+      />
     </div>
   );
 }

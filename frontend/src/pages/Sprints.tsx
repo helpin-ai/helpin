@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useRewardQuarterStore } from '@/stores/quarterStore';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
 import type { RewardSprint } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,12 +28,13 @@ export default function Sprints() {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const { currentQuarter } = useRewardQuarterStore();
-  const { isAdmin } = useSessionStore();
+  const { data: access } = useWorkspaceAccess(currentWorkspace?.id ?? '');
+  const { isAdmin } = usePermissions(access);
   const [sprints, setSprints] = useState<RewardSprint[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
-    const q = useRewardQuarterStore.getState().currentQuarter;
+    const q = currentQuarter;
     if (!q?.id) {
       setSprints([]);
       setLoading(false);
@@ -115,7 +116,7 @@ export default function Sprints() {
                     Locked {dayjs(sprint.locked_at).format('MMM D')}
                   </p>
                 )}
-                {isAdmin() && (
+                {isAdmin && (
                   <div className="flex gap-2 pt-1" onClick={e => e.stopPropagation()}>
                     {sprint.status !== 'locked' ? (
                       <Button size="sm" variant="outline" onClick={() => handleLock(sprint.id)}>

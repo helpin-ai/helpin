@@ -7,17 +7,24 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 )
 
 // Handler upgrades HTTP connections to WebSocket.
 type Handler struct {
-	hub        *Hub
-	jwtManager *auth.JWTManager
+	hub          *Hub
+	jwtManager   *auth.JWTManager
+	authzService *authorization.AuthzService
 }
 
 // NewHandler creates a WebSocket handler.
 func NewHandler(hub *Hub, jwtManager *auth.JWTManager) *Handler {
 	return &Handler{hub: hub, jwtManager: jwtManager}
+}
+
+// SetAuthzService injects the authorization service for workspace access checks.
+func (h *Handler) SetAuthzService(authz *authorization.AuthzService) {
+	h.authzService = authz
 }
 
 // ServeHTTP handles the WebSocket upgrade and connection lifecycle.
@@ -35,6 +42,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
+	}
+
+	// Verify workspace membership and ws.connect permission.
+	if h.authzService != nil {
+		actor, err := h.authzService.ResolveActor(r.Context(), workspaceID, claims.UserID)
+		if err != nil {
+			http.Error(w, "not authorized for this workspace", http.StatusForbidden)
+			return
+		}
+		if !h.authzService.Can(actor, authorization.PermWSConnect) {
+			http.Error(w, "insufficient permissions", http.StatusForbidden)
+			return
+		}
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{

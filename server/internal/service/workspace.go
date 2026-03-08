@@ -3,14 +3,21 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
+	"path/filepath"
+
+	"github.com/google/uuid"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 )
 
 // WorkspaceService handles workspace business logic.
 type WorkspaceService struct {
 	workspaceRepo       *repository.WorkspaceRepository
+	attachmentRepo      *repository.PMAttachmentRepository
+	s3Client            *storage.S3Client
 	defaultsInitializer WorkspaceDefaultsInitializer
 }
 
@@ -20,13 +27,15 @@ type WorkspaceDefaultsInitializer interface {
 }
 
 // NewWorkspaceService creates a new WorkspaceService.
-func NewWorkspaceService(workspaceRepo *repository.WorkspaceRepository, defaultsInitializer ...WorkspaceDefaultsInitializer) *WorkspaceService {
+func NewWorkspaceService(workspaceRepo *repository.WorkspaceRepository, attachmentRepo *repository.PMAttachmentRepository, s3Client *storage.S3Client, defaultsInitializer ...WorkspaceDefaultsInitializer) *WorkspaceService {
 	var initializer WorkspaceDefaultsInitializer
 	if len(defaultsInitializer) > 0 {
 		initializer = defaultsInitializer[0]
 	}
 	return &WorkspaceService{
 		workspaceRepo:       workspaceRepo,
+		attachmentRepo:      attachmentRepo,
+		s3Client:            s3Client,
 		defaultsInitializer: initializer,
 	}
 }
@@ -95,11 +104,66 @@ func (s *WorkspaceService) GetByID(ctx context.Context, id string) (*model.Works
 
 // Update modifies a workspace.
 func (s *WorkspaceService) Update(ctx context.Context, id string, req model.UpdateWorkspaceRequest) (*model.Workspace, error) {
-	return s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.Timezone)
+	return s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.LogoURL, req.Timezone)
 }
 
-// Delete removes a workspace.
+// UploadLogo uploads a workspace logo to S3 and saves the public URL.
+func (s *WorkspaceService) UploadLogo(ctx context.Context, id string, body io.Reader, size int64, contentType string) (*model.Workspace, error) {
+	if s.s3Client == nil {
+		return nil, fmt.Errorf("file storage not configured")
+	}
+
+	ext := ".png"
+	switch contentType {
+	case "image/jpeg":
+		ext = ".jpg"
+	case "image/webp":
+		ext = ".webp"
+	case "image/svg+xml":
+		ext = ".svg"
+	}
+	key := fmt.Sprintf("workspaces/%s/logo/%s%s", id, uuid.New().String(), ext)
+
+	if err := s.s3Client.PutObject(ctx, key, contentType, size, body, true); err != nil {
+		return nil, fmt.Errorf("upload logo: %w", err)
+	}
+
+	logoURL := s.s3Client.PublicURL(key)
+	return s.workspaceRepo.Update(ctx, id, nil, nil, &logoURL, nil)
+}
+
+// DeleteLogo removes the workspace logo.
+func (s *WorkspaceService) DeleteLogo(ctx context.Context, id string) (*model.Workspace, error) {
+	ws, err := s.workspaceRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if ws == nil {
+		return nil, fmt.Errorf("workspace not found")
+	}
+
+	// Delete old logo from S3 if it exists
+	if ws.LogoURL != nil && *ws.LogoURL != "" && s.s3Client != nil {
+		key := filepath.Base(*ws.LogoURL)
+		// Extract the full key from the URL path
+		_ = s.s3Client.DeleteObject(ctx, fmt.Sprintf("workspaces/%s/logo/%s", id, key))
+	}
+
+	empty := ""
+	return s.workspaceRepo.Update(ctx, id, nil, nil, &empty, nil)
+}
+
+// Delete removes a workspace and all associated data including S3 attachments.
 func (s *WorkspaceService) Delete(ctx context.Context, id string) error {
+	// Clean up S3 attachments before cascade-deleting DB records.
+	if s.attachmentRepo != nil && s.s3Client != nil {
+		attachments, _ := s.attachmentRepo.ListByWorkspace(ctx, id)
+		for _, a := range attachments {
+			if a.StorageKey != "" {
+				_ = s.s3Client.DeleteObject(ctx, a.StorageKey)
+			}
+		}
+	}
 	return s.workspaceRepo.Delete(ctx, id)
 }
 

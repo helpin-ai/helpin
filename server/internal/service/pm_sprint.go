@@ -13,15 +13,16 @@ import (
 
 // PMSprintService contains sprint business logic.
 type PMSprintService struct {
-	sprintRepo      *repository.PMSprintRepository
-	labelRepo       *repository.PMLabelRepository
-	activityService *PMActivityService
-	wsPublisher     *websocket.Publisher
+	sprintRepo          *repository.PMSprintRepository
+	labelRepo           *repository.PMLabelRepository
+	activityService     *PMActivityService
+	wsPublisher         *websocket.Publisher
+	notificationService *NotificationService
 }
 
 // NewPMSprintService creates a new PMSprintService.
-func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMSprintService {
-	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, activityService: activityService, wsPublisher: wsPublisher}
+func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMSprintService {
+	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService}
 }
 
 // List returns sprints with filters.
@@ -100,6 +101,23 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 
 	_ = s.activityService.Log(ctx, sprint.WorkspaceID, "sprint", sprint.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "sprint", EntityID: sprint.ID, WorkspaceID: sprint.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: sprint.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "sprint.created",
+			EntityType:  "sprint",
+			EntityID:    sprint.ID,
+			Title:       "created sprint " + sprint.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title": sprint.Name,
+			},
+		})
+	}
+
 	return s.sprintRepo.GetWithStats(ctx, sprint.ID)
 }
 
@@ -166,6 +184,23 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 
 	_ = s.activityService.Log(ctx, sprint.WorkspaceID, "sprint", sprint.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "sprint", EntityID: sprint.ID, WorkspaceID: sprint.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: sprint.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "sprint.updated",
+			EntityType:  "sprint",
+			EntityID:    sprint.ID,
+			Title:       "updated sprint " + sprint.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title": sprint.Name,
+			},
+		})
+	}
+
 	return s.sprintRepo.GetWithStats(ctx, sprint.ID)
 }
 

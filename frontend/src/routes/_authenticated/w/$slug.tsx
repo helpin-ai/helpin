@@ -1,12 +1,13 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
+import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
+import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
+import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
+import { useOrganizations } from '@/hooks/queries/useOrganizations'
+import { useQuarters } from '@/hooks/queries/useQuarters'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useOrganizationStore } from '@/stores/organizationStore'
 import { useRewardQuarterStore } from '@/stores/quarterStore'
-import { useSessionStore } from '@/stores/sessionStore'
-import { useTeamEstimateStore } from '@/stores/teamEstimateStore'
-import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore'
-import { settingsService } from '@/lib/services/settingsService'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
@@ -20,45 +21,46 @@ export const Route = createFileRoute('/_authenticated/w/$slug')({
 
 function WorkspaceLayout() {
   const { slug } = Route.useParams()
+
+  // TanStack Query for all data fetching
+  const { data: workspace, isLoading: wsLoading } = useWorkspaceBySlug(slug)
+  const wsId = workspace?.id ?? ''
+  const { data: orgs, isLoading: orgsLoading } = useOrganizations()
+  const { data: quarters, isLoading: quartersLoading } = useQuarters(wsId)
+  const { isLoading: sessionLoading } = useSession(wsId)
+  const { isLoading: accessLoading } = useWorkspaceAccess(wsId)
+  const { isLoading: settingsLoading } = useWorkspaceSettings(wsId)
+
+  // Selection stores (Zustand) — sync from query data
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
-  const [loading, setLoading] = useState(true)
 
-  useRealtimeSync(currentWorkspace?.id ?? '')
+  useRealtimeSync(wsId)
 
+  // Sync workspace selection
   useEffect(() => {
-    if (!slug) return
-    const init = async () => {
-      setLoading(true)
-      const cachedWs = useWorkspaceStore.getState().currentWorkspace
-      const ws = cachedWs?.slug === slug
-        ? cachedWs
-        : await useWorkspaceStore.getState().loadWorkspaceBySlug(slug)
-      if (!ws) { setLoading(false); return }
-      // Load organization context if not already loaded.
-      const orgStore = useOrganizationStore.getState()
-      if (orgStore.organizations.length === 0) {
-        await orgStore.loadOrganizations()
-      }
-      // If workspace has an org, set it as current.
-      if (ws.organization_id) {
-        const org = useOrganizationStore.getState().organizations.find(o => o.id === ws.organization_id)
-        if (org) useOrganizationStore.getState().setCurrentOrganization(org)
-      }
+    if (workspace) useWorkspaceStore.getState().setCurrentWorkspace(workspace)
+  }, [workspace])
 
-      await Promise.all([
-        useRewardQuarterStore.getState().loadQuarters(ws.id),
-        useSessionStore.getState().loadMembership(ws.id),
-        settingsService.getAll(ws.id).then(({ data }) => {
-          if (data) {
-            useTeamEstimateStore.getState().setSettings(data.team_estimate_settings ?? []);
-            useTeamFieldVisibilityStore.getState().setSettings(data.team_field_visibility ?? []);
-          }
-        }),
-      ])
-      setLoading(false)
+  // Sync organization selection
+  useEffect(() => {
+    if (!orgs?.length || !workspace?.organization_id) return
+    const org = orgs.find(o => o.id === workspace.organization_id)
+    if (org) useOrganizationStore.getState().setCurrentOrganization(org)
+  }, [orgs, workspace?.organization_id])
+
+  // Sync quarter selection (initial only — don't override user choice)
+  useEffect(() => {
+    if (!quarters?.length) return
+    const current = useRewardQuarterStore.getState().currentQuarter
+    if (!current || !quarters.find(q => q.id === current.id)) {
+      const active = quarters.find(q => q.status === 'active')
+      useRewardQuarterStore.getState().setCurrentQuarter(active ?? quarters[0])
     }
-    init()
-  }, [slug])
+  }, [quarters])
+
+  const loading = wsLoading || orgsLoading
+    || (!!wsId && (sessionLoading || accessLoading || settingsLoading || quartersLoading))
+    || (!!workspace && currentWorkspace?.id !== workspace.id)
 
   if (loading) {
     return (
@@ -101,10 +103,10 @@ function WorkspaceLayout() {
       <div className="h-svh w-full overflow-hidden border border-border/70 bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
         <SidebarProvider
           className="!min-h-0 h-full"
-          style={{ '--sidebar-width': '16rem', '--sidebar-width-icon': '3rem' } as CSSProperties}
+          style={{ '--sidebar-width-icon': '3rem' } as CSSProperties}
         >
           <Sidebar />
-          <SidebarInset className="min-w-0 overflow-hidden bg-transparent shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.06)]">
+          <SidebarInset className="min-w-0 overflow-hidden bg-transparent shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.06)] dark:shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.2)]">
             <Header />
             <main className="relative min-h-0 flex-1 overflow-hidden">
               <Outlet />

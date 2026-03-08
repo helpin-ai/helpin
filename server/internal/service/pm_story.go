@@ -13,26 +13,60 @@ import (
 
 // PMStoryService contains story business logic.
 type PMStoryService struct {
-	storyRepo         *repository.PMStoryRepository
-	workspaceRepo     *repository.WorkspaceRepository
-	workflowRepo      *repository.PMWorkflowRepository
-	labelRepo         *repository.PMLabelRepository
-	activityService   *PMActivityService
-	wsPublisher       *websocket.Publisher
-	automationService *PMAutomationService
+	storyRepo           *repository.PMStoryRepository
+	workspaceRepo       *repository.WorkspaceRepository
+	workflowRepo        *repository.PMWorkflowRepository
+	labelRepo           *repository.PMLabelRepository
+	activityService     *PMActivityService
+	wsPublisher         *websocket.Publisher
+	automationService   *PMAutomationService
+	notificationService *NotificationService
+	followerService     *FollowerService
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
 	return &PMStoryService{
-		storyRepo:         storyRepo,
-		workspaceRepo:     workspaceRepo,
-		workflowRepo:      workflowRepo,
-		labelRepo:         labelRepo,
-		activityService:   activityService,
-		wsPublisher:       wsPublisher,
-		automationService: automationService,
+		storyRepo:           storyRepo,
+		workspaceRepo:       workspaceRepo,
+		workflowRepo:        workflowRepo,
+		labelRepo:           labelRepo,
+		activityService:     activityService,
+		wsPublisher:         wsPublisher,
+		automationService:   automationService,
+		notificationService: notificationService,
+		followerService:     followerService,
 	}
+}
+
+// requireCanEdit checks that the actor has owner, admin, or manager role.
+func (s *PMStoryService) requireCanEdit(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" || actorID == "" {
+		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
+	}
+	role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if role != model.RoleOwner && role != model.RoleAdmin && role != model.RoleManager {
+		return &model.ErrForbidden{Message: "manager access or above required"}
+	}
+	return nil
+}
+
+// requireAdmin checks that the actor has owner or admin role.
+func (s *PMStoryService) requireAdmin(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" || actorID == "" {
+		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
+	}
+	role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if role != model.RoleOwner && role != model.RoleAdmin {
+		return &model.ErrForbidden{Message: "admin access or above required"}
+	}
+	return nil
 }
 
 // List returns stories with filters/pagination.
@@ -71,6 +105,9 @@ func (s *PMStoryService) GetByDisplayID(ctx context.Context, workspaceID string,
 func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryRequest, actorID string) (*model.StoryDetail, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
+	}
+	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 
 	workflowID := req.WorkflowID
@@ -236,6 +273,29 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	}
 	_ = s.activityService.Log(ctx, story.WorkspaceID, "story", story.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "story", EntityID: story.ID, WorkspaceID: story.WorkspaceID, ActorID: actorID})
+
+	// Auto-follow the creator and emit notification.
+	if s.followerService != nil && actorID != "" {
+		_ = s.followerService.Follow(ctx, actorID, "story", story.ID, story.WorkspaceID, "creator")
+	}
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: story.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "story.created",
+			EntityType:  "story",
+			EntityID:    story.ID,
+			Title:       "created " + story.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title":      story.Name,
+				"display_id": story.DisplayID,
+				"type":       story.StoryType,
+			},
+		})
+	}
+
 	return s.storyRepo.GetByID(ctx, story.ID)
 }
 
@@ -247,6 +307,9 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	}
 	if current == nil {
 		return nil, fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 
 	stateChanged := false
@@ -457,6 +520,44 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+
+	// Emit notification for significant updates.
+	if s.notificationService != nil && (stateChanged || (req.Priority != nil && *req.Priority != oldPriority) || (req.Blocked != nil && *req.Blocked != oldBlocked)) {
+		eventType := "story.updated"
+		title := "Story updated: " + current.Name
+		category := "activity"
+		priority := "normal"
+		if stateChanged {
+			eventType = "story.status_changed"
+			title = "Story moved: " + current.Name
+			category = "status_change"
+		}
+		if req.Priority != nil && *req.Priority == "urgent" {
+			priority = "high"
+		}
+		if req.Blocked != nil && *req.Blocked && !oldBlocked {
+			eventType = "story.blocked"
+			title = "Story blocked: " + current.Name
+			category = "status_change"
+			priority = "high"
+		}
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: current.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   eventType,
+			EntityType:  "story",
+			EntityID:    current.ID,
+			Title:       title,
+			Category:    category,
+			Priority:    priority,
+			EntitySnapshot: model.JSONB{
+				"title":      current.Name,
+				"display_id": current.DisplayID,
+				"type":       current.StoryType,
+			},
+		})
+	}
+
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
@@ -468,6 +569,9 @@ func (s *PMStoryService) Delete(ctx context.Context, id, actorID string) error {
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireAdmin(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := s.storyRepo.Delete(ctx, id); err != nil {
 		return err
@@ -485,6 +589,9 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	}
 	if current == nil {
 		return nil, fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 	if req.StateID == "" {
 		return nil, fmt.Errorf("state_id is required")
@@ -517,6 +624,25 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	action := "moved this story to " + newStateName
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "moved", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: current.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "story.status_changed",
+			EntityType:  "story",
+			EntityID:    current.ID,
+			Title:       "moved " + current.Name + " to " + newStateName,
+			Category:    "status_change",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title":      current.Name,
+				"display_id": current.DisplayID,
+				"type":       current.StoryType,
+			},
+		})
+	}
+
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
@@ -528,6 +654,9 @@ func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.Reord
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if req.Position < 0 {
 		return fmt.Errorf("position must be >= 0")
@@ -549,6 +678,9 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 	if current == nil {
 		return fmt.Errorf("story not found")
 	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if userID == "" {
 		return fmt.Errorf("user_id is required")
 	}
@@ -560,6 +692,30 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &userID, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+
+	// Auto-follow and notify the assigned user.
+	if s.followerService != nil {
+		_ = s.followerService.Follow(ctx, userID, "story", storyID, current.WorkspaceID, "assigned")
+	}
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID:        current.WorkspaceID,
+			ActorID:            actorID,
+			EventType:          "story.assigned",
+			EntityType:         "story",
+			EntityID:           storyID,
+			Title:              "assigned you to " + current.Name,
+			Category:           "assignment",
+			Priority:           "normal",
+			ExplicitRecipients: []string{userID},
+			EntitySnapshot: model.JSONB{
+				"title":      current.Name,
+				"display_id": current.DisplayID,
+				"type":       current.StoryType,
+			},
+		})
+	}
+
 	return nil
 }
 
@@ -571,6 +727,9 @@ func (s *PMStoryService) RemoveOwner(ctx context.Context, storyID, userID, actor
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := s.storyRepo.RemoveOwner(ctx, storyID, userID); err != nil {
 		return err
@@ -588,6 +747,9 @@ func (s *PMStoryService) AddFollower(ctx context.Context, storyID, userID, actor
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if userID == "" {
 		return fmt.Errorf("user_id is required")
@@ -609,6 +771,9 @@ func (s *PMStoryService) RemoveFollower(ctx context.Context, storyID, userID, ac
 	if current == nil {
 		return fmt.Errorf("story not found")
 	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if err := s.storyRepo.RemoveFollower(ctx, storyID, userID); err != nil {
 		return err
 	}
@@ -625,6 +790,9 @@ func (s *PMStoryService) AddLabel(ctx context.Context, storyID, labelID, actorID
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, []string{labelID}, allowedTeamIDs(current.TeamID)); err != nil {
 		return err
@@ -645,6 +813,9 @@ func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, acto
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := s.storyRepo.RemoveLabel(ctx, storyID, labelID); err != nil {
 		return err

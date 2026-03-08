@@ -24,9 +24,10 @@ type WorkspaceTeam struct {
 	Name        string    `json:"name" gorm:"not null"`
 	Handle      *string   `json:"handle" gorm:"uniqueIndex:idx_workspace_team_handle,priority:2"`
 	Description *string   `json:"description"`
-	ManagerID   *string   `json:"manager_id" gorm:"type:uuid"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ManagerID            *string   `json:"manager_id" gorm:"type:uuid"`
+	DocsPublisherEnabled bool      `json:"docs_publisher_enabled" gorm:"not null;default:false"`
+	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt            time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WorkspaceTeam) TableName() string { return "workspace_teams" }
@@ -168,8 +169,10 @@ type PMTeamFieldVisibility struct {
 	Sprint    bool      `json:"sprint" gorm:"not null;default:true"`
 	Estimate  bool      `json:"estimate" gorm:"not null;default:true"`
 	DueDate   bool      `json:"due_date" gorm:"not null;default:true"`
-	Blocked   bool      `json:"blocked" gorm:"not null;default:true"`
-	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	Blocked    bool      `json:"blocked" gorm:"not null;default:true"`
+	Delivery   bool      `json:"delivery" gorm:"not null;default:true"`
+	DevHistory bool      `json:"dev_history" gorm:"not null;default:true"`
+	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
@@ -185,7 +188,9 @@ type UpdateTeamFieldVisibilityRequest struct {
 	Sprint    *bool `json:"sprint"`
 	Estimate  *bool `json:"estimate"`
 	DueDate   *bool `json:"due_date"`
-	Blocked   *bool `json:"blocked"`
+	Blocked    *bool `json:"blocked"`
+	Delivery   *bool `json:"delivery"`
+	DevHistory *bool `json:"dev_history"`
 }
 
 // InvitationTeamPreassignment pre-assigns a pending invitation to a team.

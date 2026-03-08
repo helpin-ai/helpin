@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useOrganizationStore } from '@/stores/organizationStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useWorkspaces } from '@/hooks/queries';
 import { organizationsService } from '@/lib/services/organizationsService';
 import { authService } from '@/lib/services/authService';
 import type { MemberWithUser } from '@/lib/types';
@@ -92,7 +92,7 @@ export default function AccountSettings() {
   };
 
   const { user } = useAuthStore();
-  const { workspaces } = useWorkspaceStore();
+  const { data: workspaces = [] } = useWorkspaces(currentOrganization?.id);
   const [defaultWsId, setDefaultWsId] = useState<string>(user?.default_workspace_id ?? '');
   const [savingDefault, setSavingDefault] = useState(false);
 

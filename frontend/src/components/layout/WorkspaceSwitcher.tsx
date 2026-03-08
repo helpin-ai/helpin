@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
-import { Building2, Check, ChevronsUpDown, Plus } from 'lucide-react';
+import { Check, ChevronsUpDown, Plus } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
+import { useWorkspaces } from '@/hooks/queries';
 import type { Workspace } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 
 function workspaceRouteFromCurrentPath(pathname: string, slug: string): string {
   const match = pathname.match(/^\/w\/[^/]+\/?(.*)$/);
@@ -20,16 +22,11 @@ export function WorkspaceSwitcher() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isMobile } = useSidebar();
-  const { workspaces, currentWorkspace, setCurrentWorkspace, loadWorkspaces } = useWorkspaceStore();
+  const { currentWorkspace, setCurrentWorkspace } = useWorkspaceStore();
   const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
+  const { data: workspaces = [] } = useWorkspaces(currentOrganization?.id);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-
-  useEffect(() => {
-    if (workspaces.length === 0) {
-      void loadWorkspaces(currentOrganization?.id);
-    }
-  }, [workspaces.length, loadWorkspaces, currentOrganization?.id]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -55,13 +52,13 @@ export function WorkspaceSwitcher() {
               size="lg"
               className="h-10 rounded-md border border-transparent px-2 data-[state=open]:bg-sidebar-accent/80 data-[state=open]:text-sidebar-accent-foreground hover:border-border/70"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-black text-white">
-                <Building2 className="h-4 w-4" />
-              </div>
+              <UserAvatar
+                name={currentWorkspace.name}
+                avatarUrl={currentWorkspace.logo_url}
+                className="h-8 w-8 rounded-md"
+                fallbackClassName="text-xs rounded-md"
+              />
               <div className="grid flex-1 text-left text-sm leading-tight">
-                {currentOrganization && (
-                  <span className="truncate text-[10px] text-muted-foreground">{currentOrganization.name}</span>
-                )}
                 <span className="truncate font-semibold">{currentWorkspace.name}</span>
               </div>
               <ChevronsUpDown className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
@@ -99,7 +96,12 @@ export function WorkspaceSwitcher() {
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-2">
-                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <UserAvatar
+                          name={workspace.name}
+                          avatarUrl={workspace.logo_url}
+                          className="h-5 w-5 shrink-0 rounded"
+                          fallbackClassName="text-[8px] rounded"
+                        />
                         <span className="truncate">{workspace.name}</span>
                       </div>
                       {isActive && <Check className="h-4 w-4 text-green-500" />}

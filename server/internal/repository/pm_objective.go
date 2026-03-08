@@ -48,9 +48,15 @@ func (r *PMObjectiveRepository) List(ctx context.Context, workspaceID string, fi
 }
 
 // GetByID returns an objective with all details.
-func (r *PMObjectiveRepository) GetByID(ctx context.Context, id string) (*model.ObjectiveWithDetails, error) {
+// If workspaceID is non-empty the query is scoped to that workspace,
+// preventing cross-workspace access via ID guessing.
+func (r *PMObjectiveRepository) GetByID(ctx context.Context, id string, workspaceID ...string) (*model.ObjectiveWithDetails, error) {
 	var obj model.PMObjective
-	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&obj).Error; err != nil {
+	q := r.db.WithContext(ctx).Where("id = ?", id)
+	if len(workspaceID) > 0 && workspaceID[0] != "" {
+		q = q.Where("workspace_id = ?", workspaceID[0])
+	}
+	if err := q.First(&obj).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

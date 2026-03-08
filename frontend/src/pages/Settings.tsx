@@ -4,12 +4,10 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { invalidateWorkspaceTeamsCache } from '@/hooks/useWorkspaceTeams';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useWorkspaceAccess, usePermissions, useNotificationPreferences, useUpdateNotificationPreferences } from '@/hooks/queries';
 import { settingsService } from '@/lib/services/settingsService';
 import { gitService } from '@/lib/services/gitService';
 import { agentService } from '@/lib/services/agentService';
-import { useTeamEstimateStore } from '@/stores/teamEstimateStore';
-import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
 import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale, TeamRepoDefault } from '@/lib/types';
@@ -17,7 +15,8 @@ import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { LabelsSettings } from '@/components/pm/LabelsSettings';
-import { UserAvatar } from '@/components/pm/UserAvatar';
+import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
+import { UserAvatar, getAvatarColor } from '@/components/pm/UserAvatar';
 import type { StateType, WorkflowState, WorkflowWithStates, EpicWorkflowState, PMAutomation, AutomationType, GitIntegration, GitRepository, RunnerHealth } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -33,13 +32,13 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Bell, Briefcase, Camera, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'automations' | 'delivery' | 'import' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'import' | 'helpcenter' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -64,6 +63,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     group: 'Workspace',
   },
   {
+    id: 'notifications',
+    label: 'Notifications',
+    description: 'Manage your notification preferences, email digests, and Do Not Disturb.',
+    icon: Bell,
+    group: 'Workspace',
+  },
+  {
     id: 'workflows',
     label: 'Workflows',
     description: '',
@@ -82,6 +88,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Labels',
     description: '',
     icon: Tag,
+    group: 'Project Settings',
+  },
+  {
+    id: 'story-templates',
+    label: 'Story Templates',
+    description: 'Define reusable templates for quick story creation.',
+    icon: FileText,
     group: 'Project Settings',
   },
   {
@@ -106,6 +119,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     group: 'Data',
   },
   {
+    id: 'helpcenter',
+    label: 'Help Center',
+    description: 'Configure your public help center branding, domain, and SEO.',
+    icon: Globe,
+    group: 'Docs',
+  },
+  /* {
     id: 'people',
     label: 'People',
     description: '',
@@ -132,13 +152,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     description: '',
     icon: Settings2,
     group: 'Reward Settings',
-  },
+  }, */
 ];
 
 export const isSettingsSection = (value: string): value is SettingsSection =>
   SETTINGS_SECTIONS.some((section) => section.id === value) || value === 'account';
 
-const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none';
+const LINEAR_CARD_CLASS = 'rounded-none border-border shadow-none dark:border-transparent';
 
 const slugifyTeamHandle = (value: string) =>
   value
@@ -150,28 +170,28 @@ const slugifyTeamHandle = (value: string) =>
 export default function Settings({ section, initialWorkflowId, initialTeamId }: { section: SettingsSection; initialWorkflowId?: string; initialTeamId?: string }) {
   useTitle('Settings');
   const { currentWorkspace } = useWorkspaceStore();
-  const { isAdmin } = useSessionStore();
+  const wsId = currentWorkspace?.id ?? '';
+  const { data: access } = useWorkspaceAccess(wsId);
+  const { isAdmin, canManageSettings, canManageMembers, canManageTeams, canManageTeamMembers, canManageInvites, canAdminWorkflows, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = async (silent = false) => {
     const ws = useWorkspaceStore.getState().currentWorkspace;
     if (!ws?.id) {
       setSettings(null);
-      setLoading(false);
+      if (!silent) setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const { data } = await settingsService.getAll(ws.id);
       if (data) {
         setSettings(data);
-        useTeamEstimateStore.getState().setSettings(data.team_estimate_settings ?? []);
-        useTeamFieldVisibilityStore.getState().setSettings(data.team_field_visibility ?? []);
         invalidateWorkspaceTeamsCache();
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -211,14 +231,14 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <GeneralTab
             workspaceId={workspaceId}
-            editable={isAdmin()}
+            editable={canManageSettings}
           />
         );
       case 'members':
         return (
           <MembersTab
             workspaceId={workspaceId}
-            editable={isAdmin()}
+            editable={canManageMembers}
           />
         );
       case 'teams':
@@ -231,7 +251,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             teamEstimateSettings={settings.team_estimate_settings}
             teamFieldVisibility={settings.team_field_visibility}
             teamRepoDefaults={settings.team_repo_defaults}
-            editable={isAdmin()}
+            editable={canManageTeams}
             onRefresh={load}
           />
         );
@@ -239,7 +259,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <PeopleTab
             people={settings.people}
-            editable={isAdmin()}
+            editable={canManageMembers}
             onRefresh={load}
           />
         );
@@ -248,7 +268,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <JobRolesTab
             workspaceId={workspaceId}
             criteria={settings.job_role_criteria}
-            editable={isAdmin()}
+            editable={canManageSettings}
             onRefresh={load}
           />
         );
@@ -257,7 +277,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <BonusTiersTab
             workspaceId={workspaceId}
             tiers={settings.bonus_tiers}
-            editable={isAdmin()}
+            editable={canManageSettings}
             onRefresh={load}
           />
         );
@@ -266,7 +286,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <SystemTab
             workspaceId={workspaceId}
             config={settings.settings}
-            editable={isAdmin()}
+            editable={canManageSettings}
             onRefresh={load}
           />
         );
@@ -274,7 +294,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <ProjectDeliveryTab
             workspaceId={workspaceId}
-            editable={isAdmin()}
+            editable={canManageSettings}
           />
         );
       case 'workflows':
@@ -282,7 +302,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <WorkflowsTab
             workspaceId={workspaceId}
             teams={settings.teams}
-            editable={isAdmin()}
+            editable={canAdminWorkflows}
             initialTeamId={initialTeamId}
           />
         );
@@ -290,16 +310,22 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <WorkflowStatesTab
             workspaceId={workspaceId}
-            editable={isAdmin()}
+            editable={canAdminWorkflows}
             initialWorkflowId={initialWorkflowId}
           />
         );
       case 'labels':
-        return <LabelsSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
+        return <LabelsSettings workspaceId={workspaceId} initialTeamId={initialTeamId} editable={canAdminLabels} />;
+      case 'story-templates':
+        return <StoryTemplatesSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
       case 'automations':
-        return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} />;
+        return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} editable={canAdminAutomations} />;
       case 'import':
-        return <ImportTab workspaceId={workspaceId} />;
+        return <ImportTab workspaceId={workspaceId} editable={canImport} />;
+      case 'helpcenter':
+        return <HelpcenterTab workspaceId={workspaceId} />;
+      case 'notifications':
+        return <NotificationsTab workspaceId={workspaceId} />;
       default:
         return null;
     }
@@ -339,15 +365,22 @@ function GeneralTab({ workspaceId, editable }: {
   editable: boolean;
 }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const navigate = useNavigate();
   const [name, setName] = useState(workspace?.name ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
   const [timezone, setTimezone] = useState(workspace?.timezone ?? 'UTC');
+  const [logoUrl, setLogoUrl] = useState(workspace?.logo_url ?? '');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tzSearch, setTzSearch] = useState('');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setName(workspace?.name ?? '');
     setDescription(workspace?.description ?? '');
+    setLogoUrl(workspace?.logo_url ?? '');
     setTimezone(workspace?.timezone ?? 'UTC');
   }, [workspace?.id, workspace?.updated_at]);
 
@@ -375,6 +408,43 @@ function GeneralTab({ workspaceId, editable }: {
     return TIMEZONE_LIST.filter((tz) => tz.searchKey.includes(q));
   }, [tzSearch]);
 
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image must be under 2MB');
+      return;
+    }
+    setUploadingLogo(true);
+    const { data, error } = await workspacesService.uploadLogo(workspaceId, file);
+    setUploadingLogo(false);
+    e.target.value = '';
+    if (error || !data) {
+      toast.error(error ?? 'Upload failed');
+      return;
+    }
+    toast.success('Logo updated');
+    setLogoUrl(data.logo_url ?? '');
+    useWorkspaceStore.getState().setCurrentWorkspace(data);
+  };
+
+  const handleRemoveLogo = async () => {
+    setSaving(true);
+    const { data, error } = await workspacesService.deleteLogo(workspaceId);
+    setSaving(false);
+    if (error) {
+      toast.error(error);
+    } else {
+      toast.success('Logo removed');
+      setLogoUrl('');
+      if (data) useWorkspaceStore.getState().setCurrentWorkspace(data);
+    }
+  };
+
   const handleSave = async () => {
     if (!name.trim()) {
       toast.error('Workspace name is required');
@@ -397,99 +467,214 @@ function GeneralTab({ workspaceId, editable }: {
     }
   };
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    const { error } = await workspacesService.delete(workspaceId);
+    setDeleting(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    toast.success('Workspace deleted');
+    navigate({ to: '/' });
+  };
+
   return (
-    <Card className={LINEAR_CARD_CLASS}>
-      <CardHeader>
-        <CardTitle>General</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="ws-name">Workspace Name</Label>
-          <Input
-            id="ws-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!editable}
-            placeholder="My Workspace"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="ws-desc">Description</Label>
-          <Textarea
-            id="ws-desc"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={!editable}
-            placeholder="A brief description of this workspace"
-            rows={3}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="ws-tz">Timezone</Label>
-          <p className="text-xs text-muted-foreground">
-            Used for sprint boundaries, due dates, and reporting. All members see the same deadlines.
-          </p>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className="w-full justify-between font-normal" disabled={!editable}>
-                <span className="flex items-center gap-2">
-                  <Globe className="h-4 w-4 text-muted-foreground" />
-                  {timezone}
-                  {selectedTz && <span className="text-muted-foreground">({selectedTz.offset})</span>}
-                </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[320px] p-0" align="start">
-              <div className="p-2 border-b">
-                <div className="flex items-center gap-2 px-2">
-                  <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <input
-                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                    placeholder="Search timezones..."
-                    value={tzSearch}
-                    onChange={(e) => setTzSearch(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="max-h-[280px] overflow-y-auto p-1">
-                {filteredTimezones.length === 0 ? (
-                  <p className="py-4 text-center text-xs text-muted-foreground">No timezones found</p>
-                ) : (
-                  filteredTimezones.map((tz) => (
-                    <button
-                      key={tz.id}
-                      type="button"
-                      className={cn(
-                        'w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent flex items-center justify-between',
-                        tz.id === timezone && 'bg-accent font-medium',
-                      )}
-                      onClick={() => { setTimezone(tz.id); setTzSearch(''); }}
-                    >
-                      <span>{tz.id}</span>
-                      <span className="text-xs text-muted-foreground ml-2 shrink-0">{tz.offset}</span>
-                    </button>
-                  ))
+    <div className="space-y-6">
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle>General</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label>Logo</Label>
+            <div className="flex items-center gap-4">
+              <div className="relative group">
+                <UserAvatar
+                  name={name || workspace?.name}
+                  avatarUrl={logoUrl || undefined}
+                  className="h-16 w-16 rounded-lg"
+                  fallbackClassName="text-xl rounded-lg"
+                />
+                {editable && (
+                  <label className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                    {uploadingLogo ? (
+                      <Loader2 className="h-5 w-5 text-white animate-spin" />
+                    ) : (
+                      <Camera className="h-5 w-5 text-white" />
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleLogoUpload}
+                      disabled={uploadingLogo}
+                    />
+                  </label>
                 )}
               </div>
-            </PopoverContent>
-          </Popover>
-          <p className="text-xs text-muted-foreground">
-            Current date and time: <span className="font-medium text-foreground">{currentTime}</span>
-          </p>
-        </div>
-
-        {editable && (
-          <div className="flex justify-end">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
+                  Upload a logo for your workspace. Recommended size: 128x128px.
+                </p>
+                {editable && logoUrl && (
+                  <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={handleRemoveLogo} disabled={saving}>
+                    Remove logo
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
-        )}
-      </CardContent>
-    </Card>
+
+          <div className="space-y-2">
+            <Label htmlFor="ws-name">Workspace Name</Label>
+            <Input
+              id="ws-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={!editable}
+              placeholder="My Workspace"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ws-desc">Description</Label>
+            <Textarea
+              id="ws-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              disabled={!editable}
+              placeholder="A brief description of this workspace"
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ws-tz">Timezone</Label>
+            <p className="text-xs text-muted-foreground">
+              Used for sprint boundaries, due dates, and reporting. All members see the same deadlines.
+            </p>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-between font-normal" disabled={!editable}>
+                  <span className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-muted-foreground" />
+                    {timezone}
+                    {selectedTz && <span className="text-muted-foreground">({selectedTz.offset})</span>}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[320px] p-0" align="start">
+                <div className="p-2 border-b">
+                  <div className="flex items-center gap-2 px-2">
+                    <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <input
+                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                      placeholder="Search timezones..."
+                      value={tzSearch}
+                      onChange={(e) => setTzSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="max-h-[280px] overflow-y-auto p-1">
+                  {filteredTimezones.length === 0 ? (
+                    <p className="py-4 text-center text-xs text-muted-foreground">No timezones found</p>
+                  ) : (
+                    filteredTimezones.map((tz) => (
+                      <button
+                        key={tz.id}
+                        type="button"
+                        className={cn(
+                          'w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent flex items-center justify-between',
+                          tz.id === timezone && 'bg-accent font-medium',
+                        )}
+                        onClick={() => { setTimezone(tz.id); setTzSearch(''); }}
+                      >
+                        <span>{tz.id}</span>
+                        <span className="text-xs text-muted-foreground ml-2 shrink-0">{tz.offset}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+            <p className="text-xs text-muted-foreground">
+              Current date and time: <span className="font-medium text-foreground">{currentTime}</span>
+            </p>
+          </div>
+
+          {editable && (
+            <div className="flex justify-end">
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {editable && (
+        <Card className={cn(LINEAR_CARD_CLASS, 'border-destructive/30')}>
+          <CardHeader>
+            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+            <CardDescription>
+              Irreversible actions that permanently affect this workspace.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Delete this workspace</p>
+                <p className="text-xs text-muted-foreground">
+                  Permanently delete this workspace and all of its data including stories, epics, sprints, attachments, and settings. This action cannot be undone.
+                </p>
+              </div>
+              <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={deleteOpen} onOpenChange={(open) => { setDeleteOpen(open); if (!open) setDeleteConfirmText(''); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete workspace</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete <span className="font-semibold text-foreground">{workspace?.name}</span> and all of its data including stories, epics, sprints, comments, attachments, and settings. This action cannot be undone.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="delete-confirm">
+                Type <span className="font-mono font-semibold text-destructive">{workspace?.slug}</span> to confirm
+              </Label>
+              <Input
+                id="delete-confirm"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={workspace?.slug ?? ''}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteOpen(false); setDeleteConfirmText(''); }}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteConfirmText !== workspace?.slug || deleting}
+              onClick={handleDelete}
+            >
+              {deleting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting...</> : 'Delete workspace'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
@@ -602,7 +787,12 @@ function MembersTab({ workspaceId, editable }: {
               <TableBody>
                 {members.map((m) => (
                   <TableRow key={m.id}>
-                    <TableCell className="font-medium">{m.full_name || '—'}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2.5">
+                        <UserAvatar name={m.full_name || m.email} className="h-7 w-7" fallbackClassName="text-[10px]" />
+                        {m.full_name || '—'}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{m.email}</TableCell>
                     <TableCell>
                       <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
@@ -846,7 +1036,7 @@ function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
 }
 
 type VisibilityFieldKey = keyof Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>;
-type FieldVisibilityGroup = 'Classification' | 'Planning' | 'Other';
+type FieldVisibilityGroup = 'Classification' | 'Planning' | 'Other' | 'Panels';
 
 const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; group: FieldVisibilityGroup }[] = [
   { key: 'priority', label: 'Priority', group: 'Classification' },
@@ -858,6 +1048,8 @@ const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; group: 
   { key: 'labels', label: 'Labels', group: 'Other' },
   { key: 'due_date', label: 'Due Date', group: 'Other' },
   { key: 'blocked', label: 'Blocked', group: 'Other' },
+  { key: 'delivery', label: 'Delivery', group: 'Panels' },
+  { key: 'dev_history', label: 'Development History', group: 'Panels' },
 ];
 
 function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
@@ -887,7 +1079,7 @@ function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
   return (
     <div className="space-y-5 py-2">
       <p className="text-sm text-muted-foreground">
-        Toggle which metadata fields appear on stories for this team. State, Owner, Requester, and Team are always visible.
+        Configure which fields and panels appear on stories for this team. State, Owner, Requester, and Team are always visible.
       </p>
       {groups.map((group) => (
         <div key={group} className="space-y-2">
@@ -1077,7 +1269,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
   teamFieldVisibility: TeamFieldVisibility[];
   teamRepoDefaults: TeamRepoDefault[];
   editable: boolean;
-  onRefresh: () => void | Promise<void>;
+  onRefresh: (silent?: boolean) => void | Promise<void>;
 }) {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
@@ -1106,9 +1298,8 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
   const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState('');
-  const [selectedRole, setSelectedRole] = useState<'owner' | 'member'>('member');
   const [savingMember, setSavingMember] = useState(false);
+  const [memberSearch, setMemberSearch] = useState('');
   const [deleteTeamConfirm, setDeleteTeamConfirm] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1221,8 +1412,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
 
   const openMembers = (team: WorkspaceTeam) => {
     setSelectedTeamId(team.id);
-    setSelectedUserId('');
-    setSelectedRole('member');
+    setMemberSearch('');
     setMemberDialogOpen(true);
   };
 
@@ -1270,7 +1460,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     if (error) toast.error(error);
     else {
       toast.success('Team member updated');
-      await onRefresh();
+      await onRefresh(true);
     }
   };
 
@@ -1279,7 +1469,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     if (error) toast.error(error);
     else {
       toast.success('Team member removed');
-      await onRefresh();
+      await onRefresh(true);
     }
   };
 
@@ -1288,7 +1478,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     if (error) toast.error(error);
     else {
       toast.success('Invited member pre-assigned to team');
-      await onRefresh();
+      await onRefresh(true);
     }
   };
 
@@ -1297,7 +1487,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
     if (error) toast.error(error);
     else {
       toast.success('Invitation pre-assignment removed');
-      await onRefresh();
+      await onRefresh(true);
     }
   };
 
@@ -1382,8 +1572,8 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
           {
             key: 'field-visibility',
             icon: Eye,
-            title: 'Field visibility',
-            description: 'Show or hide metadata fields for this team',
+            title: 'Story display',
+            description: 'Configure which fields and panels appear on stories',
             meta: fieldVisMeta,
             action: () => setFieldVisDialogOpen(true),
             disabled: !editable,
@@ -1437,9 +1627,14 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
           </button>
 
           <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-base font-semibold text-primary">
-              {getInitials(selectedTeam.name)}
-            </div>
+            {(() => {
+              const color = getAvatarColor(selectedTeam.name);
+              return (
+                <div className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-base font-semibold', color.bg, color.text)}>
+                  {getInitials(selectedTeam.name)}
+                </div>
+              );
+            })()}
             <div className="flex min-w-0 flex-1 items-center justify-between">
               <h2 className="text-xl font-semibold tracking-tight">{selectedTeam.name}</h2>
               {editable && (
@@ -1532,86 +1727,103 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
         </Dialog>
 
         <Dialog open={memberDialogOpen} onOpenChange={setMemberDialogOpen}>
-          <DialogContent className="max-w-lg gap-0 p-0">
+          <DialogContent className="max-w-xl gap-0 p-0">
             <DialogHeader className="border-b px-5 py-4">
               <DialogTitle className="text-base">{selectedTeam ? `${selectedTeam.name} members` : 'Team Members'}</DialogTitle>
+              <p className="text-sm text-muted-foreground">Add or remove members who belong to this team.</p>
             </DialogHeader>
 
             {editable && (availableMembers.length > 0 || (selectedTeam && invitations.filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id)).length > 0)) && (
-              <div className="flex items-center gap-2 border-b px-5 py-3">
-                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                  <SelectTrigger className="h-9 flex-1">
-                    <SelectValue placeholder={membersLoading ? 'Loading...' : 'Add a member...'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableMembers.length > 0 && availableMembers.map((member) => (
-                      <SelectItem key={member.user_id} value={`user:${member.user_id}`}>
-                        <div className="flex items-center gap-2">
-                          <UserAvatar name={member.full_name || member.email} className="h-5 w-5" fallbackClassName="text-[9px]" />
-                          {member.full_name || member.email}
-                        </div>
-                      </SelectItem>
-                    ))}
-                    {selectedTeam && invitations.filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id)).length > 0 && (
-                      <>
-                        {availableMembers.length > 0 && (
-                          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Pending invitations</div>
-                        )}
-                        {invitations
+              <div className="border-b">
+                <div className="px-5 py-3">
+                  <Input
+                    placeholder="Search members to add..."
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="max-h-[160px] overflow-y-auto border-t border-border/40">
+                  {(() => {
+                    const query = memberSearch.toLowerCase();
+                    const filteredMembers = availableMembers.filter((m) =>
+                      (m.full_name || '').toLowerCase().includes(query) || m.email.toLowerCase().includes(query)
+                    );
+                    const filteredInvitations = selectedTeam
+                      ? invitations
                           .filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id))
-                          .map((inv) => (
-                            <SelectItem key={inv.id} value={`inv:${inv.id}`}>
-                              <div className="flex items-center gap-2">
-                                <UserAvatar name={inv.email} className="h-5 w-5" fallbackClassName="text-[9px]" />
-                                <span>{inv.email}</span>
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Invited</Badge>
-                              </div>
-                            </SelectItem>
-                          ))}
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-                {selectedUserId.startsWith('user:') && (
-                  <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as 'owner' | 'member')}>
-                    <SelectTrigger className="h-9 w-[110px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="member">Member</SelectItem>
-                      <SelectItem value="owner">Owner</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-                <Button
-                  size="sm"
-                  className="h-9"
-                  disabled={!selectedUserId || savingMember}
-                  onClick={async () => {
-                    if (!selectedTeam) return;
-                    if (selectedUserId.startsWith('user:')) {
-                      const uid = selectedUserId.replace('user:', '');
-                      setSavingMember(true);
-                      const { error } = await settingsService.addTeamMember(selectedTeam.id, { user_id: uid, role: selectedRole });
-                      setSavingMember(false);
-                      if (error) { toast.error(error); return; }
-                      toast.success('Team member added');
-                      setSelectedUserId('');
-                      setSelectedRole('member');
-                      await onRefresh();
-                    } else if (selectedUserId.startsWith('inv:')) {
-                      const invId = selectedUserId.replace('inv:', '');
-                      await handleAddInvitation(selectedTeam.id, invId);
-                      setSelectedUserId('');
+                          .filter((inv) => inv.email.toLowerCase().includes(query))
+                      : [];
+
+                    if (filteredMembers.length === 0 && filteredInvitations.length === 0) {
+                      return <p className="px-5 py-3 text-xs text-muted-foreground text-center">No members to add</p>;
                     }
-                  }}
-                >
-                  Add
-                </Button>
+
+                    return (
+                      <>
+                        {filteredMembers.map((member) => (
+                          <button
+                            key={member.user_id}
+                            type="button"
+                            disabled={savingMember}
+                            className="flex w-full items-center gap-3 px-5 py-2 text-left transition-colors hover:bg-accent cursor-pointer disabled:opacity-50"
+                            onClick={async () => {
+                              if (!selectedTeam) return;
+                              setSavingMember(true);
+                              const { error } = await settingsService.addTeamMember(selectedTeam.id, { user_id: member.user_id, role: 'member' });
+                              setSavingMember(false);
+                              if (error) { toast.error(error); return; }
+                              toast.success(`${member.full_name || member.email} added`);
+                              await onRefresh(true);
+                            }}
+                          >
+                            <UserAvatar name={member.full_name || member.email} className="h-6 w-6" fallbackClassName="text-[9px]" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm">{member.full_name || member.email}</p>
+                              {member.full_name && <p className="truncate text-xs text-muted-foreground">{member.email}</p>}
+                            </div>
+                            <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          </button>
+                        ))}
+                        {filteredInvitations.length > 0 && (
+                          <>
+                            {filteredMembers.length > 0 && (
+                              <div className="px-5 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Pending invitations</div>
+                            )}
+                            {filteredInvitations.map((inv) => (
+                              <button
+                                key={inv.id}
+                                type="button"
+                                disabled={savingMember}
+                                className="flex w-full items-center gap-3 px-5 py-2 text-left transition-colors hover:bg-accent cursor-pointer disabled:opacity-50"
+                                onClick={async () => {
+                                  if (!selectedTeam) return;
+                                  await handleAddInvitation(selectedTeam.id, inv.id);
+                                }}
+                              >
+                                <UserAvatar name={inv.email} className="h-6 w-6" fallbackClassName="text-[9px]" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm">{inv.email}</p>
+                                </div>
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Invited</Badge>
+                                <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
             )}
 
             <div className="max-h-[400px] overflow-y-auto">
+              {selectedTeam && (teamMembers.length > 0 || invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length > 0) && (
+                <div className="px-5 pt-3 pb-1">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Current members</p>
+                </div>
+              )}
               {selectedTeam && (teamMembers.length > 0 || invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length > 0) ? (
                 <div className="divide-y">
                   {teamMembers.map(({ membership, user }) => (
@@ -1700,11 +1912,11 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
           </DialogContent>
         </Dialog>
 
-        {/* Field Visibility Dialog */}
+        {/* Story Display Dialog */}
         <Dialog open={fieldVisDialogOpen} onOpenChange={setFieldVisDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Field Visibility</DialogTitle>
+              <DialogTitle>Story Display</DialogTitle>
             </DialogHeader>
             <FieldVisibilityForm
               teamId={selectedTeam.id}
@@ -1717,7 +1929,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
                 if (error) {
                   toast.error(error);
                 } else {
-                  toast.success('Field visibility updated');
+                  toast.success('Story display updated');
                   setFieldVisDialogOpen(false);
                   await onRefresh();
                 }
@@ -1828,9 +2040,14 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-xs font-semibold text-primary">
-                            {getInitials(team.name)}
-                          </div>
+                          {(() => {
+                            const color = getAvatarColor(team.name);
+                            return (
+                              <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold', color.bg, color.text)}>
+                                {getInitials(team.name)}
+                              </div>
+                            );
+                          })()}
                           <span className="font-medium">{team.name}</span>
                         </div>
                       </TableCell>
@@ -3287,10 +3504,7 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
 
   return (
     <Card className={LINEAR_CARD_CLASS}>
-      <CardHeader>
-        <CardTitle className="text-base">Workflow States</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="pt-6 space-y-5">
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading workflows...</p>
         ) : workflows.length === 0 ? (
@@ -3470,9 +3684,10 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
 
 /* ============ Automations Tab ============ */
 
-function AutomationsTab({ workspaceId, teams }: {
+function AutomationsTab({ workspaceId, teams, editable = true }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
+  editable?: boolean;
 }) {
   const [automations, setAutomations] = useState<PMAutomation[]>([]);
   const [epicStates, setEpicStates] = useState<EpicWorkflowState[]>([]);
@@ -3630,6 +3845,7 @@ function AutomationsTab({ workspaceId, teams }: {
               ) : null}
               <Switch
                 checked={autoStart?.enabled ?? false}
+                disabled={!editable}
                 onCheckedChange={(checked) => {
                   const stateId = autoStart?.config_state_id ?? startedStates[0]?.id;
                   if (!stateId) { toast.error('No started epic state available. Please check your epic workflow states.'); return; }
@@ -3667,6 +3883,7 @@ function AutomationsTab({ workspaceId, teams }: {
               ) : null}
               <Switch
                 checked={autoComplete?.enabled ?? false}
+                disabled={!editable}
                 onCheckedChange={(checked) => {
                   const stateId = autoComplete?.config_state_id ?? doneStates[0]?.id;
                   if (!stateId) { toast.error('No done epic state available. Please check your epic workflow states.'); return; }
@@ -3699,19 +3916,21 @@ function AutomationsTab({ workspaceId, teams }: {
                   Automatically create future sprints when a sprint completes.
                 </p>
               </div>
-              <Select
-                value=""
-                onValueChange={(teamId) => upsert('sprint_auto_create', true, { teamId, configInt: 2, configInt2: 1, configInt3: 1 })}
-              >
-                <SelectTrigger className="w-[140px] h-8 text-xs">
-                  <SelectValue placeholder="Add Team..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {teams.filter((t) => !sprintAutoCreateTeamIds.has(t.id)).map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {editable && (
+                <Select
+                  value=""
+                  onValueChange={(teamId) => upsert('sprint_auto_create', true, { teamId, configInt: 2, configInt2: 1, configInt3: 1 })}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue placeholder="Add Team..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.filter((t) => !sprintAutoCreateTeamIds.has(t.id)).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             {sprintAutoCreateConfigs.map((cfg) => {
               const team = teams.find((t) => t.id === cfg.team_id);
@@ -3727,6 +3946,7 @@ function AutomationsTab({ workspaceId, teams }: {
                       value={cfg.config_int ?? 2}
                       onChange={(e) => updateSprintConfig(cfg, { configInt: Number(e.target.value) })}
                       className="w-16 h-7 text-xs"
+                      disabled={!editable}
                     />
                     <Label className="text-xs text-muted-foreground">Weeks:</Label>
                     <Input
@@ -3736,11 +3956,13 @@ function AutomationsTab({ workspaceId, teams }: {
                       value={cfg.config_int2 ?? 1}
                       onChange={(e) => updateSprintConfig(cfg, { configInt2: Number(e.target.value) })}
                       className="w-16 h-7 text-xs"
+                      disabled={!editable}
                     />
                     <Label className="text-xs text-muted-foreground">Start day:</Label>
                     <Select
                       value={String(cfg.config_int3 ?? 1)}
                       onValueChange={(val) => updateSprintConfig(cfg, { configInt3: Number(val) })}
+                      disabled={!editable}
                     >
                       <SelectTrigger className="w-[100px] h-7 text-xs">
                         <SelectValue />
@@ -3754,11 +3976,14 @@ function AutomationsTab({ workspaceId, teams }: {
                   </div>
                   <Switch
                     checked={cfg.enabled}
+                    disabled={!editable}
                     onCheckedChange={(checked) => updateSprintConfig(cfg, { enabled: checked })}
                   />
-                  <button type="button" onClick={() => removeAuto('sprint_auto_create', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
-                    <X className="h-4 w-4" />
-                  </button>
+                  {editable && (
+                    <button type="button" onClick={() => removeAuto('sprint_auto_create', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -3773,19 +3998,21 @@ function AutomationsTab({ workspaceId, teams }: {
                   When a sprint ends, move incomplete stories to the next sprint.
                 </p>
               </div>
-              <Select
-                value=""
-                onValueChange={(teamId) => upsert('sprint_move_unfinished', true, { teamId })}
-              >
-                <SelectTrigger className="w-[140px] h-8 text-xs">
-                  <SelectValue placeholder="Add Team..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {teams.filter((t) => !sprintMoveTeamIds.has(t.id)).map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {editable && (
+                <Select
+                  value=""
+                  onValueChange={(teamId) => upsert('sprint_move_unfinished', true, { teamId })}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue placeholder="Add Team..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.filter((t) => !sprintMoveTeamIds.has(t.id)).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             {sprintMoveConfigs.map((cfg) => {
               const team = teams.find((t) => t.id === cfg.team_id);
@@ -3794,11 +4021,14 @@ function AutomationsTab({ workspaceId, teams }: {
                   <span className="text-sm font-medium flex-1">{team?.name ?? 'Unknown'}</span>
                   <Switch
                     checked={cfg.enabled}
+                    disabled={!editable}
                     onCheckedChange={(checked) => upsert('sprint_move_unfinished', checked, { teamId: cfg.team_id! })}
                   />
-                  <button type="button" onClick={() => removeAuto('sprint_move_unfinished', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
-                    <X className="h-4 w-4" />
-                  </button>
+                  {editable && (
+                    <button type="button" onClick={() => removeAuto('sprint_move_unfinished', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -3811,12 +4041,438 @@ function AutomationsTab({ workspaceId, teams }: {
 
 /* ============ Import Tab ============ */
 
-function ImportTab({ workspaceId }: { workspaceId: string }) {
+const IMPORT_SOURCES = [
+  {
+    key: 'shortcut' as const,
+    title: 'Shortcut',
+    description: 'Import stories, epics, workflows, and members from Shortcut.',
+    icon: Import,
+    comingSoon: false,
+  },
+  {
+    key: 'jira' as const,
+    title: 'Jira',
+    description: 'Import issues, projects, and workflows from Jira.',
+    icon: Import,
+    comingSoon: true,
+  },
+  {
+    key: 'linear' as const,
+    title: 'Linear',
+    description: 'Import issues, projects, and cycles from Linear.',
+    icon: Import,
+    comingSoon: true,
+  },
+];
+
+function ImportTab({ workspaceId, editable = true }: { workspaceId: string; editable?: boolean }) {
+  const [selected, setSelected] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberWithUser[]>([]);
+
   useEffect(() => {
     workspacesService.listMembers(workspaceId).then(({ data }) => {
       if (data) setMembers(data);
     });
   }, [workspaceId]);
-  return <ShortcutImportWizard workspaceId={workspaceId} members={members} />;
+
+  if (selected === 'shortcut') {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => setSelected(null)}>
+          <ChevronRight className="h-4 w-4 rotate-180" />
+          Back to sources
+        </Button>
+        <ShortcutImportWizard workspaceId={workspaceId} members={members} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-medium text-muted-foreground">Select a source to import from</h3>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-border bg-background">
+        {IMPORT_SOURCES.map((source, idx) => (
+          <button
+            key={source.key}
+            type="button"
+            disabled={source.comingSoon || !editable}
+            onClick={() => setSelected(source.key)}
+            className={cn(
+              'flex w-full items-center gap-4 px-4 py-4 text-left transition-colors',
+              source.comingSoon ? 'cursor-not-allowed opacity-60' : 'hover:bg-muted/40',
+              idx > 0 && 'border-t border-border',
+            )}
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <source.icon className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">{source.title}</p>
+              <p className="text-sm text-muted-foreground">{source.description}</p>
+            </div>
+            {source.comingSoon ? (
+              <Badge variant="secondary" className="text-xs">Coming Soon</Badge>
+            ) : (
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Help Center Settings ────────────────────────────────────────────────────
+
+function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [config, setConfig] = useState<{
+    subdomain: string;
+    custom_domain: string;
+    brand_name: string;
+    brand_logo_url: string;
+    brand_color: string;
+    is_published: boolean;
+    seo_title: string;
+    seo_description: string;
+    support_email: string;
+  }>({
+    subdomain: '',
+    custom_domain: '',
+    brand_name: '',
+    brand_logo_url: '',
+    brand_color: '#3b82f6',
+    is_published: false,
+    seo_title: '',
+    seo_description: '',
+    support_email: '',
+  });
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const { docsService } = await import('@/lib/services/docsService');
+      const res = await docsService.getHelpcenterConfig(workspaceId);
+      if (res.data) {
+        setConfig({
+          subdomain: res.data.subdomain ?? '',
+          custom_domain: res.data.custom_domain ?? '',
+          brand_name: res.data.brand_name ?? '',
+          brand_logo_url: res.data.brand_logo_url ?? '',
+          brand_color: res.data.brand_color ?? '#3b82f6',
+          is_published: res.data.is_published ?? false,
+          seo_title: res.data.seo_title ?? '',
+          seo_description: res.data.seo_description ?? '',
+          support_email: res.data.support_email ?? '',
+        });
+      }
+      setLoading(false);
+    };
+    load();
+  }, [workspaceId]);
+
+  const handleSave = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    const { docsService } = await import('@/lib/services/docsService');
+    const res = await docsService.updateHelpcenterConfig(workspaceId, {
+      subdomain: config.subdomain || undefined,
+      custom_domain: config.custom_domain || undefined,
+      brand_name: config.brand_name || undefined,
+      brand_logo_url: config.brand_logo_url || undefined,
+      brand_color: config.brand_color || undefined,
+      is_published: config.is_published,
+      seo_title: config.seo_title || undefined,
+      seo_description: config.seo_description || undefined,
+      support_email: config.support_email || undefined,
+    });
+    setSaving(false);
+    if (res.error) {
+      toast.error(res.error);
+    } else {
+      toast.success('Help center settings saved');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSave} className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Branding</CardTitle>
+          <CardDescription>Customize how your public help center looks.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="hc-brand-name">Brand Name</Label>
+            <Input
+              id="hc-brand-name"
+              value={config.brand_name}
+              onChange={(e) => setConfig({ ...config, brand_name: e.target.value })}
+              placeholder="Your Company"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-brand-logo">Logo URL</Label>
+            <Input
+              id="hc-brand-logo"
+              value={config.brand_logo_url}
+              onChange={(e) => setConfig({ ...config, brand_logo_url: e.target.value })}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-brand-color">Brand Color</Label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                id="hc-brand-color"
+                value={config.brand_color}
+                onChange={(e) => setConfig({ ...config, brand_color: e.target.value })}
+                className="h-8 w-12 cursor-pointer rounded border"
+              />
+              <Input
+                value={config.brand_color}
+                onChange={(e) => setConfig({ ...config, brand_color: e.target.value })}
+                className="flex-1"
+                placeholder="#3b82f6"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Domain</CardTitle>
+          <CardDescription>Set up your help center URL.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="hc-subdomain">Subdomain</Label>
+            <div className="flex items-center gap-1">
+              <Input
+                id="hc-subdomain"
+                value={config.subdomain}
+                onChange={(e) => setConfig({ ...config, subdomain: e.target.value })}
+                placeholder="yourcompany"
+              />
+              <span className="shrink-0 text-sm text-muted-foreground">.helpin.ai</span>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-custom-domain">Custom Domain (optional)</Label>
+            <Input
+              id="hc-custom-domain"
+              value={config.custom_domain}
+              onChange={(e) => setConfig({ ...config, custom_domain: e.target.value })}
+              placeholder="help.yourcompany.com"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-support-email">Support Email</Label>
+            <Input
+              id="hc-support-email"
+              type="email"
+              value={config.support_email}
+              onChange={(e) => setConfig({ ...config, support_email: e.target.value })}
+              placeholder="support@yourcompany.com"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>SEO</CardTitle>
+          <CardDescription>Optimize your help center for search engines.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="hc-seo-title">SEO Title</Label>
+            <Input
+              id="hc-seo-title"
+              value={config.seo_title}
+              onChange={(e) => setConfig({ ...config, seo_title: e.target.value })}
+              placeholder="Help Center - Your Company"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-seo-desc">SEO Description</Label>
+            <Textarea
+              id="hc-seo-desc"
+              value={config.seo_description}
+              onChange={(e) => setConfig({ ...config, seo_description: e.target.value })}
+              placeholder="Find answers, guides, and documentation..."
+              rows={3}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Publishing</CardTitle>
+          <CardDescription>Control whether your help center is live.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Help Center Published</p>
+              <p className="text-xs text-muted-foreground">
+                {config.is_published
+                  ? 'Your help center is publicly accessible.'
+                  : 'Your help center is not visible to the public.'}
+              </p>
+            </div>
+            <Switch
+              checked={config.is_published}
+              onCheckedChange={(v) => setConfig({ ...config, is_published: v })}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button type="submit" disabled={saving}>
+          {saving ? 'Saving...' : 'Save Settings'}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/* ============ Notifications Tab ============ */
+
+function NotificationsTab({ workspaceId }: { workspaceId: string }) {
+  const { data: prefs, isLoading } = useNotificationPreferences(workspaceId);
+  const updatePrefs = useUpdateNotificationPreferences(workspaceId);
+
+  const handleToggle = (field: 'do_not_disturb' | 'email_enabled', value: boolean) => {
+    updatePrefs.mutate({ [field]: value }, {
+      onError: () => toast.error('Failed to update notification preference'),
+    });
+  };
+
+  const handleSelect = (field: 'email_digest_frequency' | 'badge_mode', value: string) => {
+    updatePrefs.mutate({ [field]: value }, {
+      onError: () => toast.error('Failed to update notification preference'),
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Do Not Disturb */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Do Not Disturb</CardTitle>
+          <CardDescription>Pause all in-app and push notifications.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Enable Do Not Disturb</p>
+              <p className="text-xs text-muted-foreground">When enabled, you won't receive any notifications.</p>
+            </div>
+            <Switch
+              checked={prefs?.do_not_disturb ?? false}
+              onCheckedChange={(v) => handleToggle('do_not_disturb', v)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Email Notifications */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Email Notifications</CardTitle>
+          <CardDescription>Control email notification delivery and digest frequency.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Enable email notifications</p>
+              <p className="text-xs text-muted-foreground">Receive notification emails for workspace activity.</p>
+            </div>
+            <Switch
+              checked={prefs?.email_enabled ?? true}
+              onCheckedChange={(v) => handleToggle('email_enabled', v)}
+            />
+          </div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Email digest frequency</p>
+              <p className="text-xs text-muted-foreground">How often to receive a summary of unread notifications.</p>
+            </div>
+            <Select
+              value={prefs?.email_digest_frequency ?? 'daily'}
+              onValueChange={(v) => handleSelect('email_digest_frequency', v)}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="never">Never</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Badge Mode */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Badge Mode</CardTitle>
+          <CardDescription>Control which notifications show an unread badge.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Show badge for</p>
+              <p className="text-xs text-muted-foreground">Choose which notifications increment the unread counter.</p>
+            </div>
+            <Select
+              value={prefs?.badge_mode ?? 'all'}
+              onValueChange={(v) => handleSelect('badge_mode', v)}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All notifications</SelectItem>
+                <SelectItem value="mentions_only">Mentions only</SelectItem>
+                <SelectItem value="none">None</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }

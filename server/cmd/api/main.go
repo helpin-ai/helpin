@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -150,7 +151,28 @@ func main() {
 		&model.StoryDeliveryTarget{},
 		&model.StoryGitLink{},
 		&model.AgentHandoff{},
+		&model.PMStoryTemplate{},
 		&model.PMImportJob{},
+		&authorization.AuthorizationRelation{},
+		// Docs module
+		&model.DocsSpace{},
+		&model.DocsCollection{},
+		&model.DocsDocument{},
+		&model.DocsContent{},
+		&model.DocsVersion{},
+		&model.DocsLink{},
+		&model.DocsHelpcenterConfig{},
+		&model.DocsHelpcenterArticle{},
+		&model.DocsSlugAlias{},
+		&model.DocsReviewQueue{},
+		&model.DocsArticleFeedback{},
+		&model.DocsComment{},
+		// Notifications module
+		&model.Notification{},
+		&model.NotificationEvent{},
+		&model.NotificationDelivery{},
+		&model.NotificationPreference{},
+		&model.EntityFollower{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -215,6 +237,7 @@ func main() {
 	pmExternalLinkRepo := repository.NewPMExternalLinkRepository(db)
 	pmViewRepo := repository.NewPMViewRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
+	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
@@ -229,23 +252,37 @@ func main() {
 	storyDeliveryTargetRepo := repository.NewStoryDeliveryTargetRepository(db)
 	storyGitLinkRepo := repository.NewStoryGitLinkRepository(db)
 	agentHandoffRepo := repository.NewAgentHandoffRepository(db)
+	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
+	docsCollectionRepo := repository.NewDocsCollectionRepository(db)
+	docsDocumentRepo := repository.NewDocsDocumentRepository(db)
+	docsContentRepo := repository.NewDocsContentRepository(db)
+	docsVersionRepo := repository.NewDocsVersionRepository(db)
+	docsLinkRepo := repository.NewDocsLinkRepository(db)
+	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
+	docsSearchRepo := repository.NewDocsSearchRepository(db)
+	notificationRepo := repository.NewNotificationRepository(db)
+	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
+	followerRepo := repository.NewFollowerRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
+	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
-	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService)
-	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher)
-	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher)
-	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher)
+	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, followerRepo, wsPublisher)
+	followerService := service.NewFollowerService(followerRepo)
+	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
+	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher, notificationService)
+	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
-	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher)
+	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, wsPublisher)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo)
-	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo)
+	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
 	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher)
 
@@ -295,8 +332,24 @@ func main() {
 		wsPublisher,
 	)
 
+	// Log orchestration availability.
+	if cfg.AnthropicAPIKey != "" {
+		log.Println("Anthropic API configured — orchestration enabled")
+	} else {
+		log.Println("Anthropic API not configured — orchestration disabled")
+	}
+
+	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo)
+	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo)
+	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo)
+	docsContentService := service.NewDocsContentService(docsContentRepo)
+	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
+	docsLinkService := service.NewDocsLinkService(docsLinkRepo)
+	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo)
+	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
+
 	orgService := service.NewOrganizationService(orgRepo)
-	workspaceService := service.NewWorkspaceService(workspaceRepo, pmWorkflowService)
+	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, pmWorkflowService)
 	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
 	sprintService := service.NewRewardSprintService(sprintRepo, scoringRepo)
 	goalService := service.NewRewardGoalService(goalRepo)
@@ -306,6 +359,13 @@ func main() {
 	draftService := service.NewRewardDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL)
 	orchestrationService := service.NewOrchestrationService(pmEpicRepo, agentRepo, pmActivityService, wsPublisher)
+
+	// Initialize authorization service.
+	authzMemberRepo := authorization.NewGORMMemberRepository(db)
+	authzService := authorization.NewAuthzService(db, authzMemberRepo)
+
+	// Inject authorization into WebSocket handler for workspace access checks.
+	wsHandler.SetAuthzService(authzService)
 
 	// Initialize handlers.
 	handlers := router.Handlers{
@@ -335,16 +395,37 @@ func main() {
 		PMExternalLink:  handler.NewPMExternalLinkHandler(pmExternalLinkService),
 		PMView:          handler.NewPMViewHandler(pmViewService),
 		Search:          handler.NewSearchHandler(searchService),
-		PMAutomation:    handler.NewPMAutomationHandler(pmAutomationService),
+		PMAutomation:      handler.NewPMAutomationHandler(pmAutomationService),
+		PMStoryTemplate:   handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
 		Agent:           handler.NewAgentHandler(agentService),
 		Support:         handler.NewSupportHandler(supportService, agentService),
 		Widget:          handler.NewWidgetHandler(supportService),
 		Git:             handler.NewGitHandler(gitService),
 		Orchestration:   handler.NewOrchestrationHandler(orchestrationService),
+		Notification: handler.NewNotificationHandler(notificationService, followerService),
+		Docs: handler.NewDocsHandler(
+			docsSpaceService,
+			docsCollectionService,
+			docsDocumentService,
+			docsContentService,
+			docsVersionService,
+			docsLinkService,
+			docsHelpcenterService,
+			docsSearchService,
+		),
 	}
 
+	// Slug resolver adapts workspace repo for RBAC middleware.
+	slugResolver := authorization.SlugResolver(func(ctx context.Context, slug string) (string, error) {
+		ws, err := workspaceRepo.GetBySlug(ctx, slug)
+		if err != nil {
+			return "", err
+		}
+		return ws.ID, nil
+	})
+
 	// Set up router.
-	r := router.New(handlers, jwtManager, cfg.CORSOrigin)
+	r := router.New(handlers, jwtManager, authzService, slugResolver, cfg.CORSOrigin)
 
 	// Start background ticker for iteration automations.
 	automationDone := make(chan struct{})

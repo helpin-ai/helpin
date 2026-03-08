@@ -4,6 +4,7 @@ import {
   BookOpen,
   CircleDot,
   Crosshair,
+  FileText,
   Loader2,
   Target,
   User,
@@ -29,6 +30,7 @@ const EMPTY: SearchResponse = {
   sprints: [],
   objectives: [],
   members: [],
+  documents: [],
 };
 
 export function SearchCommandPalette({
@@ -91,18 +93,19 @@ export function SearchCommandPalette({
     results.epics.length +
     results.sprints.length +
     results.objectives.length +
-    results.members.length;
+    results.members.length +
+    (results.documents?.length ?? 0);
 
   const slug = workspace?.slug ?? '';
 
-  type EntityType = 'story' | 'epic' | 'sprint' | 'objective' | 'member';
+  type EntityType = 'story' | 'epic' | 'sprint' | 'objective' | 'member' | 'document';
 
   const handleSelect = useCallback(
     (type: EntityType, item: SearchResult) => {
       onOpenChange(false);
       switch (type) {
         case 'story':
-          window.location.assign(`/w/${slug}/pm/stories?story=TP-${item.display_id}`);
+          window.location.assign(`/w/${slug}/pm/stories?story=${item.display_id}`);
           break;
         case 'epic':
           navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: item.id } });
@@ -118,6 +121,9 @@ export function SearchCommandPalette({
           break;
         case 'member':
           navigate({ to: '/w/$slug/settings/$section', params: { slug, section: 'people' } });
+          break;
+        case 'document':
+          navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug, docId: item.id } });
           break;
       }
     },
@@ -216,6 +222,22 @@ export function SearchCommandPalette({
                 className="cursor-pointer"
               >
                 <Target className="h-4 w-4 text-orange-500" />
+                <span className="truncate">{item.name}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+
+        {(results.documents?.length ?? 0) > 0 && (
+          <CommandGroup heading="Documents">
+            {results.documents.map((item) => (
+              <CommandItem
+                key={item.id}
+                value={`document-${item.id}-${item.name}`}
+                onSelect={() => handleSelect('document', item)}
+                className="cursor-pointer"
+              >
+                <FileText className="h-4 w-4 text-blue-400" />
                 <span className="truncate">{item.name}</span>
               </CommandItem>
             ))}

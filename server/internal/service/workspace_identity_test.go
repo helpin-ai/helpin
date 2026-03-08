@@ -188,6 +188,8 @@ func TestPMStoryServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 		NewPMActivityService(activityRepo),
 		nil,
 		nil,
+		nil,
+		nil,
 	)
 
 	story, err := svc.Create(ctx, model.CreateStoryRequest{
@@ -266,6 +268,7 @@ func TestPMEpicServiceCreateSupportsWorkspaceMemberOwners(t *testing.T) {
 		workspaceRepo,
 		NewPMActivityService(activityRepo),
 		nil,
+		nil,
 	)
 
 	epic, err := svc.Create(ctx, model.CreateEpicRequest{
@@ -340,6 +343,7 @@ func TestPMObjectiveServiceUsesWorkspaceMemberOwners(t *testing.T) {
 		nil,
 		workspaceRepo,
 		NewPMActivityService(activityRepo),
+		nil,
 		nil,
 	)
 

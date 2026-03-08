@@ -71,10 +71,11 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
+import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import type {
   ActivityLogEntry,
@@ -302,7 +303,7 @@ function StoryDetailPanelBody({
   const [saving, setSaving] = useState(false);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
-  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id));
+  const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(storyDetail.story.updated_at);
@@ -345,7 +346,7 @@ function StoryDetailPanelBody({
   // ── URL sync ───────────────────────────────────────────────────
   useEffect(() => {
     const url = new URL(window.location.href);
-    url.searchParams.set('story', `TP-${storyDetail.story.display_id}`);
+    url.searchParams.set('story', `${storyDetail.story.display_id}`);
     window.history.replaceState({}, '', url.toString());
 
     return () => {
@@ -611,7 +612,7 @@ function StoryDetailPanelBody({
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground">TP-{storyDetail.story.display_id}</span>
+          <span className="shrink-0 font-medium text-foreground">{storyDetail.story.display_id}</span>
         </div>
 
         <div className="ml-auto flex items-center gap-1">
@@ -746,25 +747,30 @@ function StoryDetailPanelBody({
               workspaceId={workspaceId}
               entityType="story"
               entityId={storyDetail.story.id}
+              memberNameMap={memberNameMap}
             />
           </div>
 
           {/* Delivery */}
-          <StoryDeliveryPanel
-            workspaceId={workspaceId}
-            storyDetail={storyDetail}
-            onStoryUpdated={onStoryUpdated}
-          />
+          {fieldVis.delivery && (
+            <StoryDeliveryPanel
+              workspaceId={workspaceId}
+              storyDetail={storyDetail}
+              onStoryUpdated={onStoryUpdated}
+            />
+          )}
 
-          {/* Git Links */}
-          <StoryGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId} />
-
-          {/* Agent Runs */}
-          <AgentRunPanel
-            storyId={storyDetail.story.id}
-            workspaceId={workspaceId}
-            assignedAgentId={storyDetail.story.assigned_agent_id}
-          />
+          {/* Git Links & Agent Runs */}
+          {fieldVis.dev_history && (
+            <>
+              <StoryGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId} />
+              <AgentRunPanel
+                storyId={storyDetail.story.id}
+                workspaceId={workspaceId}
+                assignedAgentId={storyDetail.story.assigned_agent_id}
+              />
+            </>
+          )}
 
           {/* Separator */}
           <Separator className="my-6" />
@@ -893,7 +899,7 @@ function StoryDetailPanelBody({
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
           {/* Story ID */}
           <div className="mb-4">
-            <span className="text-sm font-semibold text-foreground">TP-{storyDetail.story.display_id}</span>
+            <span className="text-sm font-semibold text-foreground">{storyDetail.story.display_id}</span>
           </div>
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
@@ -957,12 +963,10 @@ function StoryDetailPanelBody({
 
             {/* Owner */}
             <MetadataRow icon={User} label="Owner">
-              <SidebarPopoverSelect
+              <MemberPickerPopover
                 value={form.owner_member_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'No owner' },
-                  ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
-                ]}
+                members={assignableMembers}
+                noneLabel="No owner"
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('owner_member_id', val, { owner_member_id: val });
@@ -973,12 +977,10 @@ function StoryDetailPanelBody({
 
             {/* Requester */}
             <MetadataRow icon={User} label="Requester">
-              <SidebarPopoverSelect
+              <MemberPickerPopover
                 value={form.requester_member_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'No requester' },
-                  ...memberOptions.map((m) => ({ value: m.id, label: m.name })),
-                ]}
+                members={assignableMembers}
+                noneLabel="No requester"
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('requester_member_id', val, { requester_member_id: val });

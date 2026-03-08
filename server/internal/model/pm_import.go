@@ -148,6 +148,7 @@ type ShortcutImportResult struct {
 	ChecklistItemsCreated int      `json:"checklist_items_created"`
 	OwnerLinksCreated     int      `json:"owner_links_created"`
 	LabelLinksCreated     int      `json:"label_links_created"`
+	AttachmentsCreated    int      `json:"attachments_created"`
 	CommentsCreated       int      `json:"comments_created"`
 	Warnings              []string `json:"warnings"`
 }

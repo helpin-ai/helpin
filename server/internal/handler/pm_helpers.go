@@ -52,6 +52,14 @@ func queryInt(r *http.Request, key string, defaultValue int) int {
 	return value
 }
 
+func queryBoolDefault(r *http.Request, key string, fallback bool) (bool, error) {
+	value := r.URL.Query().Get(key)
+	if value == "" {
+		return fallback, nil
+	}
+	return strconv.ParseBool(value)
+}
+
 func queryPagination(r *http.Request) model.PMPagination {
 	return model.PMPagination{
 		Page:    queryInt(r, "page", 1),

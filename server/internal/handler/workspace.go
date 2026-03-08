@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -85,6 +86,50 @@ func (h *WorkspaceHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ws)
 }
 
+// UploadLogo handles POST /api/workspaces/{id}/logo.
+func (h *WorkspaceHandler) UploadLogo(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "file too large (max 2MB)")
+		return
+	}
+
+	file, header, err := r.FormFile("logo")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing logo file")
+		return
+	}
+	defer file.Close()
+
+	contentType := header.Header.Get("Content-Type")
+	if contentType != "image/png" && contentType != "image/jpeg" && contentType != "image/webp" && contentType != "image/svg+xml" {
+		writeError(w, http.StatusBadRequest, "only PNG, JPEG, WebP, and SVG images are allowed")
+		return
+	}
+
+	ws, err := h.workspaceService.UploadLogo(r.Context(), id, file, header.Size, contentType)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ws)
+}
+
+// DeleteLogo handles DELETE /api/workspaces/{id}/logo.
+func (h *WorkspaceHandler) DeleteLogo(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	ws, err := h.workspaceService.DeleteLogo(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ws)
+}
+
 // Delete handles DELETE /api/workspaces/{id}.
 func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -150,4 +195,40 @@ func (h *WorkspaceHandler) ListAssignableMembers(w http.ResponseWriter, r *http.
 		members = []model.AssignableMember{}
 	}
 	writeJSON(w, http.StatusOK, members)
+}
+
+// GetMe handles GET /api/workspaces/{id}/me.
+// Returns the actor's membership, effective permissions, and team memberships.
+func (h *WorkspaceHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	actor := authorization.GetActor(r.Context())
+	if actor == nil {
+		writeError(w, http.StatusInternalServerError, "authorization context missing")
+		return
+	}
+
+	// Build permission strings from actor's role
+	perms := authorization.NewRBACEngine().PermissionsForRole(actor.Role)
+	permStrings := make([]string, len(perms))
+	for i, p := range perms {
+		permStrings[i] = string(p)
+	}
+
+	teamMemberships := make([]map[string]string, len(actor.TeamMemberships))
+	for i, tm := range actor.TeamMemberships {
+		teamMemberships[i] = map[string]string{
+			"team_id": tm.TeamID,
+			"role":    tm.Role,
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"workspace_id": actor.WorkspaceID,
+		"membership": map[string]string{
+			"id":     actor.WorkspaceMemberID,
+			"role":   actor.Role,
+			"status": actor.Status,
+		},
+		"permissions":      permStrings,
+		"team_memberships": teamMemberships,
+	})
 }

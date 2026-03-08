@@ -15,19 +15,23 @@ var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9._-]+)`)
 
 // PMCommentService contains comment business logic.
 type PMCommentService struct {
-	commentRepo     *repository.PMCommentRepository
-	storyRepo       *repository.PMStoryRepository
-	activityService *PMActivityService
-	wsPublisher     *websocket.Publisher
+	commentRepo         *repository.PMCommentRepository
+	storyRepo           *repository.PMStoryRepository
+	activityService     *PMActivityService
+	wsPublisher         *websocket.Publisher
+	notificationService *NotificationService
+	workspaceRepo       *repository.WorkspaceRepository
 }
 
 // NewPMCommentService creates a new PMCommentService.
-func NewPMCommentService(commentRepo *repository.PMCommentRepository, storyRepo *repository.PMStoryRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMCommentService {
+func NewPMCommentService(commentRepo *repository.PMCommentRepository, storyRepo *repository.PMStoryRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) *PMCommentService {
 	return &PMCommentService{
-		commentRepo:     commentRepo,
-		storyRepo:       storyRepo,
-		activityService: activityService,
-		wsPublisher:     wsPublisher,
+		commentRepo:         commentRepo,
+		storyRepo:           storyRepo,
+		activityService:     activityService,
+		wsPublisher:         wsPublisher,
+		notificationService: notificationService,
+		workspaceRepo:       workspaceRepo,
 	}
 }
 
@@ -71,6 +75,52 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	}
 	_ = s.activityService.Log(ctx, workspaceID, req.EntityType, req.EntityID, optionalActor(authorID), "comment_added", nil, nil, nil, metadata)
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "comment", EntityID: comment.ID, WorkspaceID: workspaceID, ActorID: authorID, ParentType: req.EntityType, ParentID: req.EntityID})
+
+	// Emit notification for comment.
+	if s.notificationService != nil {
+		entityTitle := req.EntityID
+		if req.EntityType == "story" {
+			if story, _ := s.storyRepo.GetRawByID(ctx, req.EntityID); story != nil {
+				entityTitle = story.Name
+			}
+		}
+
+		// Resolve @mentions to user IDs for explicit notification recipients.
+		var mentionedUserIDs []string
+		if len(mentions) > 0 && s.workspaceRepo != nil {
+			for _, handle := range mentions {
+				if uid, err := s.workspaceRepo.GetUserIDByHandle(ctx, workspaceID, handle); err == nil && uid != "" {
+					mentionedUserIDs = append(mentionedUserIDs, uid)
+				}
+			}
+		}
+
+		// Comment notification goes to followers + mentioned users.
+		notifPriority := "normal"
+		eventType := "comment.created"
+		category := "comment"
+		if len(mentionedUserIDs) > 0 {
+			eventType = "comment.mention"
+			category = "mention"
+			notifPriority = "high"
+		}
+
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID:        workspaceID,
+			ActorID:            authorID,
+			EventType:          eventType,
+			EntityType:         req.EntityType,
+			EntityID:           req.EntityID,
+			Title:              "commented on " + entityTitle,
+			Body:               truncate(comment.Body, 200),
+			Category:           category,
+			Priority:           notifPriority,
+			ExplicitRecipients: mentionedUserIDs,
+			EntitySnapshot: model.JSONB{
+				"title": entityTitle,
+			},
+		})
+	}
 
 	comments, err := s.commentRepo.List(ctx, req.EntityType, req.EntityID)
 	if err != nil {

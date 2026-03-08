@@ -15,6 +15,7 @@ export interface SearchResponse {
   sprints: SearchResult[];
   objectives: SearchResult[];
   members: SearchResult[];
+  documents: SearchResult[];
 }
 
 const qs = (workspaceId: string) => `workspace_id=${encodeURIComponent(workspaceId)}`;

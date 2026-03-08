@@ -4,10 +4,13 @@ import {
   Bell,
   CircleHelp,
   LogOut,
+  Moon,
   Search,
+  Sun,
   User,
   Users,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { getInitials } from "@/lib/utils";
 import { QuarterSelector } from "@/components/quarter/QuarterSelector";
@@ -35,6 +38,7 @@ export function Header() {
   const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
   const { user, signOut } = useAuthStore();
+  const { theme, setTheme } = useTheme();
 
   const initials = getInitials(user?.full_name || user?.email);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -60,7 +64,7 @@ export function Header() {
     const workspaceLabel = currentWorkspace?.name ?? "Workspace";
 
     const crumbs: Crumb[] = [
-      { label: workspaceLabel, to: `/w/${slug}/dashboard` },
+      { label: workspaceLabel, to: `/w/${slug}/pm/stories` },
     ];
     if (subRoute.length === 0) {
       crumbs.push({ label: "Dashboard" });
@@ -192,6 +196,17 @@ export function Header() {
       <SearchCommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
 
       <div className="ml-auto flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-muted-foreground"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          <Sun className="h-4 w-4 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
+          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+          <span className="sr-only">Toggle theme</span>
+        </Button>
         <Button
           variant="ghost"
           size="icon"

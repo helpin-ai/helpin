@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearch } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
+import { useOrganizations, useCreateOrganization, useWorkspaces } from '@/hooks/queries';
+import { useQueryClient } from '@tanstack/react-query';
 import { workspacesService } from '@/lib/services/workspacesService';
-import { organizationsService } from '@/lib/services/organizationsService';
 import { generateWorkspaceSlug } from '@/lib/slugUtils';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import type { OrganizationWithRole } from '@/lib/types';
@@ -15,7 +15,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Building2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { toast } from 'sonner';
 
 function OrgFormFields({
@@ -42,8 +43,11 @@ function OrgFormFields({
 
 export default function Workspaces() {
   useTitle('Workspaces');
-  const { workspaces, loading, loadWorkspaces } = useWorkspaceStore();
-  const { organizations, currentOrganization, loading: orgsLoading, loadOrganizations, setCurrentOrganization } = useOrganizationStore();
+  const { data: organizations = [], isLoading: orgsLoading } = useOrganizations();
+  const { currentOrganization, setCurrentOrganization } = useOrganizationStore();
+  const { data: workspaces = [], isLoading: wsLoading } = useWorkspaces(currentOrganization?.id);
+  const createOrgMutation = useCreateOrganization();
+  const queryClient = useQueryClient();
   const { create } = useSearch({ from: '/_authenticated/workspaces' });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [orgDialogOpen, setOrgDialogOpen] = useState(false);
@@ -55,17 +59,15 @@ export default function Workspaces() {
   // Org creation state
   const [orgName, setOrgName] = useState('');
   const [orgSlug, setOrgSlug] = useState('');
-  const [creatingOrg, setCreatingOrg] = useState(false);
 
+  // Auto-select first org when organizations load and none is selected
   useEffect(() => {
-    loadOrganizations();
-  }, [loadOrganizations]);
-
-  useEffect(() => {
-    if (currentOrganization) {
-      loadWorkspaces(currentOrganization.id);
+    if (organizations.length > 0 && !currentOrganization) {
+      const savedId = localStorage.getItem('current_organization_id');
+      const org = (savedId ? organizations.find((o) => o.id === savedId) : null) ?? organizations[0];
+      setCurrentOrganization(org);
     }
-  }, [currentOrganization, loadWorkspaces]);
+  }, [organizations, currentOrganization, setCurrentOrganization]);
 
   // Auto-open create dialog when navigated with ?create=true
   useEffect(() => {
@@ -86,18 +88,15 @@ export default function Workspaces() {
 
   const handleCreateOrg = async (e: FormEvent) => {
     e.preventDefault();
-    setCreatingOrg(true);
-    const { data, error } = await organizationsService.create({ name: orgName, slug: orgSlug });
-    setCreatingOrg(false);
-    if (error) {
-      toast.error(error);
-    } else {
+    try {
+      const data = await createOrgMutation.mutateAsync({ name: orgName, slug: orgSlug });
       toast.success('Organization created');
       setOrgDialogOpen(false);
       setOrgName('');
       setOrgSlug('');
-      await loadOrganizations();
       if (data) setCurrentOrganization(data);
+    } catch {
+      toast.error('Failed to create organization');
     }
   };
 
@@ -124,7 +123,7 @@ export default function Workspaces() {
       setName('');
       setSlug('');
       setDescription('');
-      loadWorkspaces(currentOrganization.id);
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] });
     }
   };
 
@@ -132,7 +131,7 @@ export default function Workspaces() {
     setCurrentOrganization(org);
   };
 
-  const isLoading = loading || orgsLoading;
+  const isLoading = wsLoading || orgsLoading;
 
   // Show create org screen if user has no organizations
   if (!orgsLoading && organizations.length === 0) {
@@ -140,8 +139,8 @@ export default function Workspaces() {
       <div className="min-h-screen bg-background">
         <div className="max-w-md mx-auto px-4 py-24">
           <div className="text-center mb-8">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4">
-              <Building2 className="h-7 w-7 text-primary" />
+            <div className="mx-auto mb-4">
+              <UserAvatar name="Organization" className="h-14 w-14 rounded-full" fallbackClassName="text-xl rounded-full" />
             </div>
             <h1 className="text-2xl font-bold">Create your Organization</h1>
             <p className="text-muted-foreground mt-2">
@@ -154,8 +153,8 @@ export default function Workspaces() {
               onNameChange={handleOrgNameChange} onSlugChange={setOrgSlug}
               nameId="org-name" slugId="org-slug"
             />
-            <Button type="submit" className="w-full" disabled={creatingOrg}>
-              {creatingOrg ? 'Creating...' : 'Create Organization'}
+            <Button type="submit" className="w-full" disabled={createOrgMutation.isPending}>
+              {createOrgMutation.isPending ? 'Creating...' : 'Create Organization'}
             </Button>
           </form>
         </div>
@@ -169,7 +168,7 @@ export default function Workspaces() {
         {/* Organization switcher */}
         {organizations.length > 0 && (
           <div className="flex items-center gap-3 mb-6">
-            <Building2 className="h-5 w-5 text-muted-foreground" />
+            <UserAvatar name={currentOrganization?.name} avatarUrl={currentOrganization?.logo_url} className="h-6 w-6 rounded" fallbackClassName="text-[9px] rounded" />
             {organizations.length === 1 ? (
               <span className="text-sm font-medium">{currentOrganization?.name}</span>
             ) : (
@@ -212,7 +211,7 @@ export default function Workspaces() {
                   </div>
                   <DialogFooter>
                     <Button type="button" variant="outline" onClick={() => setOrgDialogOpen(false)}>Cancel</Button>
-                    <Button type="submit" disabled={creatingOrg}>{creatingOrg ? 'Creating...' : 'Create'}</Button>
+                    <Button type="submit" disabled={createOrgMutation.isPending}>{createOrgMutation.isPending ? 'Creating...' : 'Create'}</Button>
                   </DialogFooter>
                 </form>
               </DialogContent>

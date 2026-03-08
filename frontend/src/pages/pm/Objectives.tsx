@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { format, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
@@ -8,9 +8,12 @@ import {
   Crosshair,
   Filter,
   Hexagon,
+  ListChecks,
   Loader2,
   MoreHorizontal,
+  Plus,
   Target,
+  TrendingUp,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -25,7 +28,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
+import { useObjectives, useDeleteObjective } from '@/hooks/queries/useObjectives';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -113,13 +117,12 @@ export function ObjectivesPage() {
   useTitle('Objectives');
 
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const workspaceId = workspace?.id;
+  const workspaceId = workspace?.id ?? '';
   const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
-  const { teams } = useWorkspaceTeams(workspaceId);
-
-  const [objectives, setObjectives] = useState<ObjectiveWithDetails[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { canEdit, isAdmin } = usePermissions(access);
+  const { teams } = useWorkspaceTeams(workspaceId || undefined);
 
   // Filters
   const [filterState, setFilterState] = useState('');
@@ -127,26 +130,14 @@ export function ObjectivesPage() {
   const [filterType, setFilterType] = useState('');
   const [filterHealth, setFilterHealth] = useState('');
 
-  const load = useCallback(async () => {
-    if (!workspaceId) return;
-    setLoading(true);
-    const { data } = await pmObjectiveService.list(workspaceId, {
-      archived: false,
-      state: filterState || undefined,
-      team_id: filterTeam || undefined,
-      objective_type: filterType || undefined,
-    });
-    setObjectives(data ?? []);
-    setLoading(false);
-  }, [workspaceId, filterState, filterTeam, filterType]);
+  const { data: objectives = [], isLoading: loading } = useObjectives(workspaceId, {
+    archived: false,
+    state: filterState || undefined,
+    team_id: filterTeam || undefined,
+    objective_type: filterType || undefined,
+  });
 
-  useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    const handler = () => load();
-    window.addEventListener('objective-created', handler);
-    return () => window.removeEventListener('objective-created', handler);
-  }, [load]);
+  const deleteObjective = useDeleteObjective(workspaceId);
 
   // Health is client-side filtered (not in API)
   const filtered = useMemo(() => {
@@ -156,8 +147,7 @@ export function ObjectivesPage() {
 
   const handleArchive = async (id: string) => {
     if (!workspaceId) return;
-    await pmObjectiveService.remove(workspaceId, id);
-    load();
+    deleteObjective.mutate(id);
   };
 
   const activeFilterCount = [filterState, filterTeam, filterType, filterHealth].filter(Boolean).length;
@@ -184,15 +174,33 @@ export function ObjectivesPage() {
 
   if (objectives.length === 0 && !activeFilterCount) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <Target className="h-12 w-12 text-muted-foreground/40" />
-        <h2 className="mt-4 text-xl font-semibold">No Objectives yet</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Create your first objective to start tracking goals.
+      <div className="flex flex-col items-center justify-center py-16 px-4">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 mb-5">
+          <Target className="h-7 w-7 text-amber-500" />
+        </div>
+        <h3 className="text-lg font-semibold mb-1.5">Create your first objective</h3>
+        <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
+          Objectives align your team around measurable goals with key results, keeping everyone focused on outcomes that matter.
         </p>
-        <Button className="mt-4" size="sm" onClick={() => openCreate('objective')}>
-          Create Objective
-        </Button>
+        {canEdit && (
+          <Button className="gap-2 mb-8" onClick={() => openCreate('objective')}>
+            <Plus className="h-4 w-4" />
+            Create Objective
+          </Button>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-lg">
+          {[
+            { icon: Crosshair, title: 'Set goals', desc: 'Define clear objectives with measurable key results' },
+            { icon: TrendingUp, title: 'Measure progress', desc: 'Track completion across key results and linked epics' },
+            { icon: ListChecks, title: 'Align teams', desc: 'Connect objectives to team work for shared accountability' },
+          ].map((item) => (
+            <div key={item.title} className="flex flex-col items-center text-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 p-4">
+              <item.icon className="h-4 w-4 text-muted-foreground mb-0.5" />
+              <span className="text-xs font-medium">{item.title}</span>
+              <span className="text-[11px] leading-snug text-muted-foreground">{item.desc}</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -201,9 +209,11 @@ export function ObjectivesPage() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-semibold">Objectives</h1>
-        <Button size="sm" onClick={() => openCreate('objective')}>
-          Create Objective
-        </Button>
+        {canEdit && (
+          <Button size="sm" onClick={() => openCreate('objective')}>
+            Create Objective
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -232,6 +242,8 @@ export function ObjectivesPage() {
             <ObjectiveCard
               key={obj.objective.id}
               data={obj}
+              canEdit={canEdit}
+              isAdmin={isAdmin}
               onArchive={() => handleArchive(obj.objective.id)}
               onClick={() => navigate({ to: `/w/${workspace!.slug}/pm/objectives/${obj.objective.id}` } as any)}
             />
@@ -259,10 +271,14 @@ function formatDate(iso: string) {
 
 function ObjectiveCard({
   data,
+  canEdit,
+  isAdmin,
   onArchive,
   onClick,
 }: {
   data: ObjectiveWithDetails;
+  canEdit: boolean;
+  isAdmin: boolean;
   onArchive: () => void;
   onClick: () => void;
 }) {
@@ -297,25 +313,29 @@ function ObjectiveCard({
             {isStrategic ? <Crosshair className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
           </span>
           <p className="min-w-0 flex-1 text-sm font-semibold text-foreground leading-snug line-clamp-2">{objective.name}</p>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 -mt-0.5 -mr-1 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onClick={onClick}>Edit</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
-                <Archive className="mr-2 h-4 w-4 text-amber-500" />
-                Archive
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canEdit && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 -mt-0.5 -mr-1 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem onClick={onClick}>Edit</DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
+                    <Archive className="mr-2 h-4 w-4 text-amber-500" />
+                    Archive
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
         {/* Meta row */}

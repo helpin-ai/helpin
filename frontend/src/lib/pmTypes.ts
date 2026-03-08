@@ -348,6 +348,48 @@ export interface UpdateLabelRequest {
   archived?: boolean;
 }
 
+// ── Story Templates ─────────────────────────────────────────────────
+
+export interface StoryTemplate {
+  id: string;
+  workspace_id: string;
+  team_id?: string;
+  name: string;
+  description?: string;
+  story_type?: StoryType;
+  priority?: Priority;
+  severity?: Severity;
+  estimate?: number;
+  label_ids?: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateStoryTemplateRequest {
+  workspace_id: string;
+  team_id?: string;
+  name: string;
+  description?: string;
+  story_type?: StoryType;
+  priority?: Priority;
+  severity?: Severity;
+  estimate?: number;
+  label_ids?: string;
+}
+
+export interface UpdateStoryTemplateRequest {
+  team_id?: string;
+  name?: string;
+  description?: string;
+  story_type?: StoryType;
+  priority?: Priority;
+  severity?: Severity;
+  estimate?: number;
+  label_ids?: string;
+  archived?: boolean;
+}
+
 export interface CreateEpicRequest {
   workspace_id: string;
   name: string;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   CalendarDays,
   Hash,
@@ -14,8 +15,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
+import { CreateDocumentDialog } from '@/components/docs/CreateDocumentDialog';
+import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog';
+import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useEpicStates } from '@/hooks/queries/useWorkflows';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
@@ -79,8 +85,7 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
 // ── Epic dialog ──────────────────────────────────────────────────────
 
 function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
-  const epicStates = usePMWorkflowStore((s) => s.epicStates);
-  const loadEpicStates = usePMWorkflowStore((s) => s.loadEpicStates);
+  const { data: epicStates = [] } = useEpicStates(workspaceId);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = buildAssignableMemberOptions(assignableMembers);
@@ -97,10 +102,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadEpicStates(workspaceId);
-  }, [workspaceId, loadEpicStates]);
 
   const create = async () => {
     if (!form.name.trim() || submitting) return;
@@ -444,9 +445,16 @@ function MultiSelectPopover({
 }
 
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { canEdit } = usePermissions(access);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = buildAssignableMemberOptions(assignableMembers);
+
+  // Close immediately if the user lacks edit permission
+  useEffect(() => {
+    if (!canEdit) onClose();
+  }, [canEdit, onClose]);
 
   const [form, setForm] = useState({
     name: '',
@@ -629,7 +637,10 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 // ── Main export ──────────────────────────────────────────────────────
 
 export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
-  const { activeModal, closeCreate } = useGlobalCreateStore();
+  const { activeModal, closeCreate, initialSpaceId } = useGlobalCreateStore();
+  const navigate = useNavigate();
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const wsSlug = workspace?.slug ?? '';
 
   if (!activeModal) return null;
 
@@ -639,6 +650,33 @@ export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
       {activeModal === 'epic' && <GlobalCreateEpic workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'sprint' && <GlobalCreateSprint workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'objective' && <GlobalCreateObjective workspaceId={workspaceId} onClose={closeCreate} />}
+      {activeModal === 'docs_document' && (
+        <CreateDocumentDialog
+          wsId={workspaceId}
+          open
+          onOpenChange={(open) => !open && closeCreate()}
+          defaultSpaceId={initialSpaceId}
+          onCreated={(docId) => {
+            closeCreate();
+            navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug: wsSlug, docId } });
+          }}
+        />
+      )}
+      {activeModal === 'docs_space' && (
+        <CreateSpaceDialog
+          wsId={workspaceId}
+          open
+          onOpenChange={(open) => !open && closeCreate()}
+        />
+      )}
+      {activeModal === 'docs_collection' && (
+        <CreateCollectionDialog
+          wsId={workspaceId}
+          spaceId={initialSpaceId}
+          open
+          onOpenChange={(open) => !open && closeCreate()}
+        />
+      )}
     </>
   );
 }

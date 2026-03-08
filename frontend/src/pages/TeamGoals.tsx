@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useRewardQuarterStore } from '@/stores/quarterStore';
+import { useQuarters } from '@/hooks/queries';
 import { rewardGoalsService } from '@/lib/services/rewardGoalsService';
 import { settingsService } from '@/lib/services/settingsService';
 import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
-import type { RewardCompanyGoal, WorkspaceTeam, RewardSprint } from '@/lib/types';
+import type { RewardCompanyGoal, RewardQuarter, WorkspaceTeam, RewardSprint } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -26,16 +26,25 @@ interface TeamGoalSummary {
 export default function TeamGoals() {
   useTitle('Team Goals');
   const { currentWorkspace } = useWorkspaceStore();
-  const { currentQuarter } = useRewardQuarterStore();
+  const wsId = currentWorkspace?.id ?? '';
+  const { data: quarters } = useQuarters(wsId);
+  const [currentQuarter, setCurrentQuarter] = useState<RewardQuarter | null>(null);
   const [goals, setGoals] = useState<RewardCompanyGoal[]>([]);
   const [teams, setTeams] = useState<WorkspaceTeam[]>([]);
   const [sprints, setSprints] = useState<RewardSprint[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Initialize currentQuarter from query data
+  useEffect(() => {
+    if (quarters?.length && !currentQuarter) {
+      setCurrentQuarter(quarters[0]);
+    }
+  }, [quarters, currentQuarter]);
+
   useEffect(() => {
     const load = async () => {
-      const ws = useWorkspaceStore.getState().currentWorkspace;
-      const q = useRewardQuarterStore.getState().currentQuarter;
+      const ws = currentWorkspace;
+      const q = currentQuarter;
       if (!ws?.id || !q?.id) {
         setGoals([]);
         setTeams([]);

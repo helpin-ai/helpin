@@ -43,7 +43,7 @@ func (r *WorkspaceRepository) List(ctx context.Context, userID string, organizat
 	var results []model.WorkspaceWithRole
 	q := r.db.WithContext(ctx).
 		Table("workspaces w").
-		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.timezone, w.created_at, w.updated_at, wm.role").
+		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.logo_url, w.timezone, w.created_at, w.updated_at, wm.role").
 		Joins("JOIN workspace_members wm ON w.id = wm.workspace_id").
 		Where("wm.user_id = ? AND wm.status = ?", userID, model.WorkspaceMemberStatusActive)
 	if organizationID != "" {
@@ -82,13 +82,16 @@ func (r *WorkspaceRepository) GetBySlug(ctx context.Context, slug string) (*mode
 }
 
 // Update modifies workspace fields.
-func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, timezone *string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, logoURL, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}
 	if name != nil {
 		updates["name"] = *name
 	}
 	if description != nil {
 		updates["description"] = *description
+	}
+	if logoURL != nil {
+		updates["logo_url"] = *logoURL
 	}
 	if timezone != nil {
 		updates["timezone"] = *timezone
@@ -105,12 +108,142 @@ func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, descr
 	return ws, nil
 }
 
-// Delete removes a workspace by ID.
+// Delete removes a workspace and all associated data via cascade deletion.
 func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.Workspace{}).Error; err != nil {
-		return fmt.Errorf("delete workspace: %w", err)
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Helper subqueries for indirect children.
+		storyQ := "SELECT id FROM pm_stories WHERE workspace_id = ?"
+		epicQ := "SELECT id FROM pm_epics WHERE workspace_id = ?"
+		sprintQ := "SELECT id FROM pm_sprints WHERE workspace_id = ?"
+		objectiveQ := "SELECT id FROM pm_objectives WHERE workspace_id = ?"
+		workflowQ := "SELECT id FROM pm_workflows WHERE workspace_id = ?"
+		invitationQ := "SELECT id FROM workspace_invitations WHERE workspace_id = ?"
+		goalQ := "SELECT id FROM reward_company_goals WHERE workspace_id = ?"
+		rewardSprintQ := "SELECT id FROM reward_sprints WHERE workspace_id = ?"
+		teamQ := "SELECT id FROM workspace_teams WHERE workspace_id = ?"
+		memberQ := "SELECT id FROM workspace_members WHERE workspace_id = ?"
+		ticketQ := "SELECT id FROM support_tickets WHERE workspace_id = ?"
+
+		queries := []string{
+			// ── Phase 1: Indirect children (via subqueries) ──
+
+			// Story children
+			"DELETE FROM pm_story_owners WHERE story_id IN (" + storyQ + ")",
+			"DELETE FROM pm_story_followers WHERE story_id IN (" + storyQ + ")",
+			"DELETE FROM pm_story_labels WHERE story_id IN (" + storyQ + ")",
+			"DELETE FROM pm_checklist_items WHERE story_id IN (" + storyQ + ")",
+			"DELETE FROM pm_external_links WHERE story_id IN (" + storyQ + ")",
+
+			// Comments (polymorphic via entity_id on stories and epics)
+			"DELETE FROM pm_comments WHERE entity_id IN (" + storyQ + ") OR entity_id IN (" + epicQ + ")",
+
+			// Epic children
+			"DELETE FROM pm_epic_labels WHERE epic_id IN (" + epicQ + ")",
+			"DELETE FROM pm_epic_objectives WHERE epic_id IN (" + epicQ + ")",
+
+			// Sprint label join table
+			"DELETE FROM pm_sprint_labels WHERE sprint_id IN (" + sprintQ + ")",
+
+			// Objective children
+			"DELETE FROM pm_key_results WHERE objective_id IN (" + objectiveQ + ")",
+			"DELETE FROM pm_objective_teams WHERE objective_id IN (" + objectiveQ + ")",
+			"DELETE FROM pm_objective_owners WHERE objective_id IN (" + objectiveQ + ")",
+			"DELETE FROM pm_objective_labels WHERE objective_id IN (" + objectiveQ + ")",
+
+			// Workflow states
+			"DELETE FROM pm_workflow_states WHERE workflow_id IN (" + workflowQ + ")",
+
+			// Invitation pre-assignments
+			"DELETE FROM invitation_team_preassignments WHERE invitation_id IN (" + invitationQ + ")",
+
+			// Reward indirect children
+			"DELETE FROM reward_goal_team_contributions WHERE goal_id IN (" + goalQ + ")",
+			"DELETE FROM reward_sprint_goals WHERE sprint_id IN (" + rewardSprintQ + ")",
+
+			// Team-scoped settings
+			"DELETE FROM pm_team_estimate_settings WHERE team_id IN (" + teamQ + ")",
+			"DELETE FROM pm_team_field_visibility WHERE team_id IN (" + teamQ + ")",
+			"DELETE FROM pm_team_repo_defaults WHERE team_id IN (" + teamQ + ")",
+
+			// Reward profiles (via workspace members)
+			"DELETE FROM reward_profiles WHERE workspace_member_id IN (" + memberQ + ")",
+
+			// Support messages (via tickets for FK ordering)
+			"DELETE FROM support_messages WHERE ticket_id IN (" + ticketQ + ")",
+
+			// ── Phase 2: Direct workspace_id tables ──
+
+			// PM module
+			"DELETE FROM pm_attachments WHERE workspace_id = ?",
+			"DELETE FROM pm_activity_log WHERE workspace_id = ?",
+			"DELETE FROM pm_stories WHERE workspace_id = ?",
+			"DELETE FROM pm_epics WHERE workspace_id = ?",
+			"DELETE FROM pm_sprints WHERE workspace_id = ?",
+			"DELETE FROM pm_labels WHERE workspace_id = ?",
+			"DELETE FROM pm_objectives WHERE workspace_id = ?",
+			"DELETE FROM pm_workflows WHERE workspace_id = ?",
+			"DELETE FROM pm_epic_workflow_states WHERE workspace_id = ?",
+			"DELETE FROM pm_views WHERE workspace_id = ?",
+			"DELETE FROM pm_automations WHERE workspace_id = ?",
+			"DELETE FROM pm_import_jobs WHERE workspace_id = ?",
+
+			// Git module
+			"DELETE FROM story_delivery_targets WHERE workspace_id = ?",
+			"DELETE FROM story_git_links WHERE workspace_id = ?",
+			"DELETE FROM git_repositories WHERE workspace_id = ?",
+			"DELETE FROM git_integrations WHERE workspace_id = ?",
+
+			// Agent module
+			"DELETE FROM agent_run_artifacts WHERE workspace_id = ?",
+			"DELETE FROM agent_runs WHERE workspace_id = ?",
+			"DELETE FROM agents WHERE workspace_id = ?",
+			"DELETE FROM agent_handoffs WHERE workspace_id = ?",
+
+			// Support module
+			"DELETE FROM support_tickets WHERE workspace_id = ?",
+			"DELETE FROM support_widget_sessions WHERE workspace_id = ?",
+			"DELETE FROM support_widget_installations WHERE workspace_id = ?",
+
+			// Reward module
+			"DELETE FROM reward_bonus_calculations WHERE workspace_id = ?",
+			"DELETE FROM reward_individual_checks WHERE workspace_id = ?",
+			"DELETE FROM reward_finance_settings WHERE workspace_id = ?",
+			"DELETE FROM reward_audit_log WHERE workspace_id = ?",
+			"DELETE FROM reward_company_goals WHERE workspace_id = ?",
+			"DELETE FROM reward_goal_drafts WHERE workspace_id = ?",
+			"DELETE FROM reward_sprints WHERE workspace_id = ?",
+			"DELETE FROM reward_quarters WHERE workspace_id = ?",
+
+			// Workspace structure
+			"DELETE FROM team_workspace_memberships WHERE workspace_id = ?",
+			"DELETE FROM workspace_managers WHERE workspace_id = ?",
+			"DELETE FROM job_role_criteria WHERE workspace_id = ?",
+			"DELETE FROM bonus_tiers WHERE workspace_id = ?",
+			"DELETE FROM workspace_teams WHERE workspace_id = ?",
+			"DELETE FROM workspace_settings WHERE workspace_id = ?",
+			"DELETE FROM workspace_invitations WHERE workspace_id = ?",
+			"DELETE FROM workspace_members WHERE workspace_id = ?",
+
+			// Clear user default workspace references
+			"UPDATE users SET default_workspace_id = NULL WHERE default_workspace_id = ?",
+
+			// Finally, delete the workspace itself
+			"DELETE FROM workspaces WHERE id = ?",
+		}
+
+		for _, q := range queries {
+			argCount := strings.Count(q, "?")
+			args := make([]interface{}, argCount)
+			for i := range args {
+				args[i] = id
+			}
+			if err := tx.Exec(q, args...).Error; err != nil {
+				return fmt.Errorf("delete workspace %s: %w", id, err)
+			}
+		}
+
+		return nil
+	})
 }
 
 // AddMember adds or activates a user as a workspace member.
@@ -481,6 +614,26 @@ func (r *WorkspaceRepository) getMembershipByEmailTx(tx *gorm.DB, workspaceID, e
 
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// GetUserIDByHandle resolves a @mention handle to a user ID within a workspace.
+// It tries matching against user full_name (case-insensitive, dot-separated).
+func (r *WorkspaceRepository) GetUserIDByHandle(ctx context.Context, workspaceID, handle string) (string, error) {
+	// Convert handle like "john.doe" to "john doe" for name matching.
+	namePattern := strings.ReplaceAll(handle, ".", " ")
+	var userID string
+	err := r.db.WithContext(ctx).
+		Table("workspace_members").
+		Joins("JOIN users ON users.id = workspace_members.user_id").
+		Where("workspace_members.workspace_id = ? AND workspace_members.status = 'active'", workspaceID).
+		Where("LOWER(users.full_name) = LOWER(?) OR LOWER(REPLACE(users.full_name, ' ', '.')) = LOWER(?)", namePattern, handle).
+		Select("workspace_members.user_id").
+		Limit(1).
+		Scan(&userID).Error
+	if err != nil {
+		return "", err
+	}
+	return userID, nil
 }
 
 func stringPtr(value string) *string {

@@ -26,9 +26,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     const load = async () => {
-      const ws = useWorkspaceStore.getState().currentWorkspace;
-      const q = useRewardQuarterStore.getState().currentQuarter;
-      if (!ws?.id) {
+      if (!currentWorkspace?.id) {
         setGoals([]);
         setSprints([]);
         setSettings(null);
@@ -39,8 +37,8 @@ export default function Dashboard() {
       setLoading(true);
       try {
         // If no quarter exists yet, still load settings.
-        if (!q?.id) {
-          const settingsRes = await settingsService.getAll(ws.id);
+        if (!currentQuarter?.id) {
+          const settingsRes = await settingsService.getAll(currentWorkspace.id);
           if (settingsRes.data) setSettings(settingsRes.data);
           setGoals([]);
           setSprints([]);
@@ -48,9 +46,9 @@ export default function Dashboard() {
         }
 
         const [goalsRes, sprintsRes, settingsRes] = await Promise.all([
-          rewardGoalsService.list(ws.id, q.id),
-          rewardSprintsService.list(q.id),
-          settingsService.getAll(ws.id),
+          rewardGoalsService.list(currentWorkspace.id, currentQuarter.id),
+          rewardSprintsService.list(currentQuarter.id),
+          settingsService.getAll(currentWorkspace.id),
         ]);
         if (goalsRes.data) setGoals(goalsRes.data);
         if (sprintsRes.data) setSprints(sprintsRes.data);

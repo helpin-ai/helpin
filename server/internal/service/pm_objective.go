@@ -14,12 +14,13 @@ import (
 
 // PMObjectiveService contains objective business logic.
 type PMObjectiveService struct {
-	objectiveRepo *repository.PMObjectiveRepository
-	krRepo        *repository.PMKeyResultRepository
-	labelRepo     *repository.PMLabelRepository
-	workspaceRepo *repository.WorkspaceRepository
-	activitySvc   *PMActivityService
-	wsPublisher   *websocket.Publisher
+	objectiveRepo       *repository.PMObjectiveRepository
+	krRepo              *repository.PMKeyResultRepository
+	labelRepo           *repository.PMLabelRepository
+	workspaceRepo       *repository.WorkspaceRepository
+	activitySvc         *PMActivityService
+	wsPublisher         *websocket.Publisher
+	notificationService *NotificationService
 }
 
 // NewPMObjectiveService creates a new PMObjectiveService.
@@ -30,14 +31,16 @@ func NewPMObjectiveService(
 	workspaceRepo *repository.WorkspaceRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
+	notificationService *NotificationService,
 ) *PMObjectiveService {
 	return &PMObjectiveService{
-		objectiveRepo: objectiveRepo,
-		krRepo:        krRepo,
-		labelRepo:     labelRepo,
-		workspaceRepo: workspaceRepo,
-		activitySvc:   activitySvc,
-		wsPublisher:   wsPublisher,
+		objectiveRepo:       objectiveRepo,
+		krRepo:              krRepo,
+		labelRepo:           labelRepo,
+		workspaceRepo:       workspaceRepo,
+		activitySvc:         activitySvc,
+		wsPublisher:         wsPublisher,
+		notificationService: notificationService,
 	}
 }
 
@@ -96,8 +99,10 @@ func (s *PMObjectiveService) List(ctx context.Context, workspaceID string, filte
 }
 
 // GetByID returns a single objective with details.
-func (s *PMObjectiveService) GetByID(ctx context.Context, id string) (*model.ObjectiveWithDetails, error) {
-	obj, err := s.objectiveRepo.GetByID(ctx, id)
+// When workspaceID is provided, the query is scoped to that workspace
+// to prevent cross-workspace data access.
+func (s *PMObjectiveService) GetByID(ctx context.Context, id string, workspaceID ...string) (*model.ObjectiveWithDetails, error) {
+	obj, err := s.objectiveRepo.GetByID(ctx, id, workspaceID...)
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +200,24 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 
 	_ = s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: obj.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "objective.created",
+			EntityType:  "objective",
+			EntityID:    obj.ID,
+			Title:       "created objective " + obj.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title": obj.Name,
+				"type":  obj.ObjectiveType,
+			},
+		})
+	}
+
 	return s.GetByID(ctx, obj.ID)
 }
 
@@ -295,6 +318,24 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 
 	_ = s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: obj.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "objective.updated",
+			EntityType:  "objective",
+			EntityID:    obj.ID,
+			Title:       "updated objective " + obj.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title": obj.Name,
+				"type":  obj.ObjectiveType,
+			},
+		})
+	}
+
 	return s.GetByID(ctx, obj.ID)
 }
 
@@ -315,6 +356,23 @@ func (s *PMObjectiveService) Delete(ctx context.Context, id string, actorID stri
 	}
 	_ = s.activitySvc.Log(ctx, obj.Objective.WorkspaceID, "objective", id, optionalActor(actorID), "archived", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "objective", EntityID: id, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: obj.Objective.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "objective.deleted",
+			EntityType:  "objective",
+			EntityID:    id,
+			Title:       "archived objective " + obj.Objective.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title": obj.Objective.Name,
+			},
+		})
+	}
+
 	return nil
 }
 
@@ -376,6 +434,25 @@ func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, ownerRef
 		return err
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil && owner.UserID != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID:        obj.Objective.WorkspaceID,
+			ActorID:            actorID,
+			EventType:          "objective.assigned",
+			EntityType:         "objective",
+			EntityID:           objectiveID,
+			Title:              "assigned you to objective " + obj.Objective.Name,
+			Category:           "assignment",
+			Priority:           "normal",
+			ExplicitRecipients: []string{*owner.UserID},
+			EntitySnapshot: model.JSONB{
+				"title": obj.Objective.Name,
+				"type":  obj.Objective.ObjectiveType,
+			},
+		})
+	}
+
 	return nil
 }
 

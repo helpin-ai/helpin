@@ -81,8 +81,9 @@ func (h *PMObjectiveHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Get handles GET /api/pm/objectives/{id}.
 func (h *PMObjectiveHandler) Get(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
-	obj, err := h.objectiveService.GetByID(r.Context(), id)
+	obj, err := h.objectiveService.GetByID(r.Context(), id, workspaceID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return

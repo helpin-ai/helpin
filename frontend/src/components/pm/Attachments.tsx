@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
@@ -27,6 +27,7 @@ interface AttachmentsProps {
   workspaceId: string;
   entityType: 'story' | 'epic' | 'comment';
   entityId: string;
+  memberNameMap?: Map<string, string>;
 }
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -84,7 +85,7 @@ function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/') && !contentType.includes('svg');
 }
 
-export function Attachments({ workspaceId, entityType, entityId }: AttachmentsProps) {
+export function Attachments({ workspaceId, entityType, entityId, memberNameMap }: AttachmentsProps) {
   const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -239,17 +240,34 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
                   loading="lazy"
                 />
               </button>
-              <Button
-                variant="secondary"
-                size="icon"
-                className="absolute top-1 right-1 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm"
-                onClick={() => handleDelete(entry.attachment.id)}
-              >
-                <Trash2 className="h-2.5 w-2.5 text-destructive" />
-              </Button>
+              <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="h-5 w-5 bg-background/80 backdrop-blur-sm"
+                  onClick={() => window.open(resolveUrl(entry), '_blank')}
+                  title="Download"
+                >
+                  <Download className="h-2.5 w-2.5" />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="h-5 w-5 bg-background/80 backdrop-blur-sm"
+                  onClick={() => handleDelete(entry.attachment.id)}
+                  title="Delete"
+                >
+                  <Trash2 className="h-2.5 w-2.5 text-destructive" />
+                </Button>
+              </div>
               <p className="mt-1 truncate text-[11px] text-muted-foreground" title={entry.attachment.file_name}>
                 {entry.attachment.file_name}
               </p>
+              {memberNameMap && (
+                <p className="truncate text-[10px] text-muted-foreground/70">
+                  {memberNameMap.get(entry.attachment.uploaded_by_id) ?? 'Unknown'}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -280,6 +298,11 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
                     {name}
                     {ext && <span className="text-muted-foreground">.{ext}</span>}
                   </a>
+                  {memberNameMap && (
+                    <span className="shrink-0 truncate max-w-[80px] text-[11px] text-muted-foreground/70">
+                      {memberNameMap.get(entry.attachment.uploaded_by_id) ?? 'Unknown'}
+                    </span>
+                  )}
                   <span className="shrink-0 text-[11px] text-muted-foreground">
                     {formatFileSize(entry.attachment.file_size)}
                   </span>
@@ -289,8 +312,21 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
                     className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.preventDefault();
+                      window.open(resolveUrl(entry), '_blank');
+                    }}
+                    title="Download"
+                  >
+                    <Download className="h-3 w-3 text-muted-foreground" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.preventDefault();
                       handleDelete(entry.attachment.id);
                     }}
+                    title="Delete"
                   >
                     <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                   </Button>

@@ -1,8 +1,10 @@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { useTeamEstimateStore } from '@/stores/teamEstimateStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useTeamEstimateSettingsForTeam } from '@/hooks/queries';
 import { getEstimateOptions, formatEstimateValue } from '@/lib/estimateScales';
+import type { TeamEstimateSettings } from '@/lib/types';
 
 interface EstimatePickerProps {
   value: string;
@@ -12,7 +14,8 @@ interface EstimatePickerProps {
 }
 
 export function EstimatePicker({ value, teamId, onChange, className }: EstimatePickerProps) {
-  const config = useTeamEstimateStore((s) => s.getForTeam(teamId));
+  const wsId = useWorkspaceStore((s) => s.currentWorkspace?.id) ?? '';
+  const config = useTeamEstimateSettingsForTeam(wsId, teamId);
 
   // If team has estimate settings enabled, use scale-aware picker
   if (config?.enabled) {
@@ -95,8 +98,7 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
   );
 }
 
-export function formatEstimateDisplay(value: number | undefined | null, teamId: string | undefined | null): string {
-  const config = useTeamEstimateStore.getState().getForTeam(teamId);
+export function formatEstimateDisplay(value: number | undefined | null, _teamId: string | undefined | null, config?: TeamEstimateSettings | null): string {
   if (config?.enabled) {
     return formatEstimateValue(value, config.scale);
   }

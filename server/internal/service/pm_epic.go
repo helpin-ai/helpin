@@ -13,24 +13,56 @@ import (
 
 // PMEpicService contains epic business logic.
 type PMEpicService struct {
-	epicRepo        *repository.PMEpicRepository
-	storyRepo       *repository.PMStoryRepository
-	labelRepo       *repository.PMLabelRepository
-	workspaceRepo   *repository.WorkspaceRepository
-	activityService *PMActivityService
-	wsPublisher     *websocket.Publisher
+	epicRepo            *repository.PMEpicRepository
+	storyRepo           *repository.PMStoryRepository
+	labelRepo           *repository.PMLabelRepository
+	workspaceRepo       *repository.WorkspaceRepository
+	activityService     *PMActivityService
+	wsPublisher         *websocket.Publisher
+	notificationService *NotificationService
 }
 
 // NewPMEpicService creates a new PMEpicService.
-func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher) *PMEpicService {
+func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMEpicService {
 	return &PMEpicService{
-		epicRepo:        epicRepo,
-		storyRepo:       storyRepo,
-		labelRepo:       labelRepo,
-		workspaceRepo:   workspaceRepo,
-		activityService: activityService,
-		wsPublisher:     wsPublisher,
+		epicRepo:            epicRepo,
+		storyRepo:           storyRepo,
+		labelRepo:           labelRepo,
+		workspaceRepo:       workspaceRepo,
+		activityService:     activityService,
+		wsPublisher:         wsPublisher,
+		notificationService: notificationService,
 	}
+}
+
+// requireCanEdit checks that the actor has owner, admin, or manager role.
+func (s *PMEpicService) requireCanEdit(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" || actorID == "" {
+		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
+	}
+	role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if role != model.RoleOwner && role != model.RoleAdmin && role != model.RoleManager {
+		return &model.ErrForbidden{Message: "manager access or above required"}
+	}
+	return nil
+}
+
+// requireAdmin checks that the actor has owner or admin role.
+func (s *PMEpicService) requireAdmin(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" || actorID == "" {
+		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
+	}
+	role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if role != model.RoleOwner && role != model.RoleAdmin {
+		return &model.ErrForbidden{Message: "admin access or above required"}
+	}
+	return nil
 }
 
 // List returns epics and computed stats.
@@ -74,6 +106,9 @@ func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWith
 func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest, actorID string) (*model.EpicWithStats, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
+	}
+	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 	health := model.PMEpicHealthOnTrack
 	if req.Health != nil && *req.Health != "" {
@@ -126,6 +161,22 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	_ = s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: epic.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "epic.created",
+			EntityType:  "epic",
+			EntityID:    epic.ID,
+			Title:       "created epic " + epic.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title": epic.Name,
+			},
+		})
+	}
+
 	return s.epicRepo.GetWithStats(ctx, epic.ID)
 }
 
@@ -137,6 +188,9 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	}
 	if current == nil {
 		return nil, fmt.Errorf("epic not found")
+	}
+	if err := s.requireCanEdit(ctx, current.Epic.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 	epic := current.Epic
 
@@ -206,6 +260,23 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	}
 	_ = s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: epic.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "epic.updated",
+			EntityType:  "epic",
+			EntityID:    epic.ID,
+			Title:       "updated epic " + epic.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title": epic.Name,
+			},
+		})
+	}
+
 	return s.epicRepo.GetWithStats(ctx, epic.ID)
 }
 
@@ -218,11 +289,31 @@ func (s *PMEpicService) Delete(ctx context.Context, id string, actorID string) e
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
+	if err := s.requireAdmin(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if err := s.epicRepo.Delete(ctx, id); err != nil {
 		return err
 	}
 	_ = s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", id, optionalActor(actorID), "archived", nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "epic", EntityID: id, WorkspaceID: epic.Epic.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: epic.Epic.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "epic.deleted",
+			EntityType:  "epic",
+			EntityID:    id,
+			Title:       "archived epic " + epic.Epic.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title": epic.Epic.Name,
+			},
+		})
+	}
+
 	return nil
 }
 
@@ -237,6 +328,9 @@ func (s *PMEpicService) UpdateHealth(ctx context.Context, id string, req model.U
 	}
 	if epic == nil {
 		return fmt.Errorf("epic not found")
+	}
+	if err := s.requireCanEdit(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := s.epicRepo.UpdateHealth(ctx, id, req.Health, req.Comment); err != nil {
 		return err
@@ -253,6 +347,9 @@ func (s *PMEpicService) AddLabel(ctx context.Context, epicID, labelID, actorID s
 	}
 	if epic == nil {
 		return fmt.Errorf("epic not found")
+	}
+	if err := s.requireCanEdit(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := validateLabelScope(ctx, s.labelRepo, epic.Epic.WorkspaceID, []string{labelID}, allowedTeamIDs(epic.Epic.TeamID)); err != nil {
 		return err
@@ -272,6 +369,9 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 	}
 	if epic == nil {
 		return fmt.Errorf("epic not found")
+	}
+	if err := s.requireCanEdit(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := s.epicRepo.RemoveLabel(ctx, epicID, labelID); err != nil {
 		return err

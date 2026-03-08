@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -112,10 +111,3 @@ func (h *PMLabelHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "label deleted"})
 }
 
-func queryBoolDefault(r *http.Request, key string, fallback bool) (bool, error) {
-	value := r.URL.Query().Get(key)
-	if value == "" {
-		return fallback, nil
-	}
-	return strconv.ParseBool(value)
-}
