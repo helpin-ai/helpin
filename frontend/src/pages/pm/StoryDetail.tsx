@@ -709,6 +709,7 @@ export function StoryDetailPage() {
               workspaceId={workspaceId!}
               entityType="story"
               entityId={storyDetail.story.id}
+              memberNameMap={memberNameMap}
             />
           </div>
 

@@ -747,6 +747,7 @@ function StoryDetailPanelBody({
               workspaceId={workspaceId}
               entityType="story"
               entityId={storyDetail.story.id}
+              memberNameMap={memberNameMap}
             />
           </div>
 

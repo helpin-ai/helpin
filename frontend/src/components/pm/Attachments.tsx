@@ -27,6 +27,7 @@ interface AttachmentsProps {
   workspaceId: string;
   entityType: 'story' | 'epic' | 'comment';
   entityId: string;
+  memberNameMap?: Map<string, string>;
 }
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -84,7 +85,7 @@ function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/') && !contentType.includes('svg');
 }
 
-export function Attachments({ workspaceId, entityType, entityId }: AttachmentsProps) {
+export function Attachments({ workspaceId, entityType, entityId, memberNameMap }: AttachmentsProps) {
   const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -250,6 +251,11 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
               <p className="mt-1 truncate text-[11px] text-muted-foreground" title={entry.attachment.file_name}>
                 {entry.attachment.file_name}
               </p>
+              {memberNameMap && (
+                <p className="truncate text-[10px] text-muted-foreground/70">
+                  {memberNameMap.get(entry.attachment.uploaded_by_id) ?? 'Unknown'}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -280,6 +286,11 @@ export function Attachments({ workspaceId, entityType, entityId }: AttachmentsPr
                     {name}
                     {ext && <span className="text-muted-foreground">.{ext}</span>}
                   </a>
+                  {memberNameMap && (
+                    <span className="shrink-0 truncate max-w-[80px] text-[11px] text-muted-foreground/70">
+                      {memberNameMap.get(entry.attachment.uploaded_by_id) ?? 'Unknown'}
+                    </span>
+                  )}
                   <span className="shrink-0 text-[11px] text-muted-foreground">
                     {formatFileSize(entry.attachment.file_size)}
                   </span>
