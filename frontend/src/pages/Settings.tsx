@@ -1621,7 +1621,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
         </Dialog>
 
         <Dialog open={memberDialogOpen} onOpenChange={setMemberDialogOpen}>
-          <DialogContent className="max-w-lg gap-0 p-0">
+          <DialogContent className="max-w-xl gap-0 p-0">
             <DialogHeader className="border-b px-5 py-4">
               <DialogTitle className="text-base">{selectedTeam ? `${selectedTeam.name} members` : 'Team Members'}</DialogTitle>
             </DialogHeader>
