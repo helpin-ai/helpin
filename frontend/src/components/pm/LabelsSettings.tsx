@@ -143,10 +143,10 @@ function LabelForm({
       />
       <Select value={form.team_id || '__shared__'} onValueChange={(value) => setForm((f) => ({ ...f, team_id: value === '__shared__' ? '' : value }))}>
         <SelectTrigger className="h-8 text-sm">
-          <SelectValue placeholder="Shared label" />
+          <SelectValue placeholder="For everyone" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="__shared__">Shared label</SelectItem>
+          <SelectItem value="__shared__">For everyone</SelectItem>
           {teams.map((team) => (
             <SelectItem key={team.id} value={team.id}>
               {team.name}
@@ -246,7 +246,7 @@ export function LabelsSettings({ workspaceId, initialTeamId }: LabelsSettingsPro
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">All labels</SelectItem>
-            <SelectItem value="__shared__">Shared labels</SelectItem>
+            <SelectItem value="__shared__">For everyone</SelectItem>
             {teams.map((team) => (
               <SelectItem key={team.id} value={team.id}>
                 {team.name} labels

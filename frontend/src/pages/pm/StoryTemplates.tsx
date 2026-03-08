@@ -195,7 +195,7 @@ export function StoryTemplatesPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">All templates</SelectItem>
-              <SelectItem value="__shared__">Shared templates</SelectItem>
+              <SelectItem value="__shared__">For everyone</SelectItem>
               {teams.map((team) => (
                 <SelectItem key={team.id} value={team.id}>
                   {team.name} templates
