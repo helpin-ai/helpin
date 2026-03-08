@@ -162,6 +162,13 @@
   color: var(--primary);
   text-decoration: underline;
 }
+.mention-highlight {
+  color: oklch(0.55 0.2 260);
+  font-weight: 500;
+}
+.dark .mention-highlight {
+  color: oklch(0.72 0.18 260);
+}
 
 .dark {
   --background: oklch(0.145 0 0);

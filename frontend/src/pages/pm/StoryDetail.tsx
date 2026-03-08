@@ -89,6 +89,7 @@ import type {
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
 import { CommentEditor } from '@/components/pm/CommentEditor';
+import { MentionText } from '@/components/pm/MentionText';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/stories/$storyId');
 
@@ -779,7 +780,7 @@ export function StoryDetailPage() {
                           </div>
                         </div>
                       ) : (
-                        <p className="mt-1.5 pl-8 text-sm">{entry.comment.body}</p>
+                        <p className="mt-1.5 pl-8 text-sm"><MentionText text={entry.comment.body} members={assignableMembers} /></p>
                       )}
                     </div>
                   </div>

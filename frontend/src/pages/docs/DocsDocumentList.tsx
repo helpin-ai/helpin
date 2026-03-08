@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
-import { FileText, PenLine, User } from 'lucide-react'
+import { Clock, FileText, PenLine, User } from 'lucide-react'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -24,7 +24,7 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' {
 interface DocsDocumentListProps {
   title: string
   description: string
-  filterMode: 'my' | 'drafts'
+  filterMode: 'my' | 'drafts' | 'recent'
 }
 
 export function DocsDocumentList({ title, description, filterMode }: DocsDocumentListProps) {
@@ -41,9 +41,18 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
     return {}
   }, [filterMode, user?.id])
 
-  const { data: documents, isLoading } = useDocsDocuments(wsId, filters)
+  const { data: rawDocuments, isLoading } = useDocsDocuments(wsId, filters)
 
-  const emptyIcon = filterMode === 'my' ? User : PenLine
+  // For recent, sort by updated_at descending and limit
+  const documents = useMemo(() => {
+    if (!rawDocuments) return rawDocuments
+    if (filterMode === 'recent') {
+      return [...rawDocuments].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 20)
+    }
+    return rawDocuments
+  }, [rawDocuments, filterMode])
+
+  const emptyIcon = filterMode === 'recent' ? Clock : filterMode === 'my' ? User : PenLine
   const EmptyIcon = emptyIcon
 
   if (!workspace) {
@@ -69,12 +78,14 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
             <EmptyIcon className="h-7 w-7 text-muted-foreground/60" />
           </div>
           <h3 className="text-lg font-semibold mb-1.5">
-            {filterMode === 'my' ? 'No documents yet' : 'No drafts'}
+            {filterMode === 'recent' ? 'No recent documents' : filterMode === 'my' ? 'No documents yet' : 'No drafts'}
           </h3>
           <p className="text-sm text-muted-foreground text-center max-w-md">
-            {filterMode === 'my'
-              ? 'Documents you create or own will appear here.'
-              : 'Draft documents will appear here until they are published.'}
+            {filterMode === 'recent'
+              ? 'Recently updated documents will appear here.'
+              : filterMode === 'my'
+                ? 'Documents you create or own will appear here.'
+                : 'Draft documents will appear here until they are published.'}
           </p>
         </div>
       ) : (

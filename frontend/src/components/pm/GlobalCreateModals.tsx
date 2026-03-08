@@ -637,7 +637,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 // ── Main export ──────────────────────────────────────────────────────
 
 export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
-  const { activeModal, closeCreate, initialSpaceId } = useGlobalCreateStore();
+  const { activeModal, closeCreate, initialSpaceId, initialCollectionId } = useGlobalCreateStore();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const wsSlug = workspace?.slug ?? '';
@@ -656,6 +656,7 @@ export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
           open
           onOpenChange={(open) => !open && closeCreate()}
           defaultSpaceId={initialSpaceId}
+          defaultCollectionId={initialCollectionId}
           onCreated={(docId) => {
             closeCreate();
             navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug: wsSlug, docId } });

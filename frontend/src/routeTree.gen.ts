@@ -39,6 +39,7 @@ import { Route as AuthenticatedWSlugPmRoadmapRouteImport } from './routes/_authe
 import { Route as AuthenticatedWSlugPmReportsRouteImport } from './routes/_authenticated/w/$slug/pm/reports'
 import { Route as AuthenticatedWSlugPmLabelsRouteImport } from './routes/_authenticated/w/$slug/pm/labels'
 import { Route as AuthenticatedWSlugPmAgentsRouteImport } from './routes/_authenticated/w/$slug/pm/agents'
+import { Route as AuthenticatedWSlugDocsRecentRouteImport } from './routes/_authenticated/w/$slug/docs/recent'
 import { Route as AuthenticatedWSlugDocsMyRouteImport } from './routes/_authenticated/w/$slug/docs/my'
 import { Route as AuthenticatedWSlugDocsDraftsRouteImport } from './routes/_authenticated/w/$slug/docs/drafts'
 import { Route as AuthenticatedWSlugPmStoriesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/stories/index'
@@ -218,6 +219,12 @@ const AuthenticatedWSlugPmAgentsRoute =
     path: '/pm/agents',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugDocsRecentRoute =
+  AuthenticatedWSlugDocsRecentRouteImport.update({
+    id: '/recent',
+    path: '/recent',
+    getParentRoute: () => AuthenticatedWSlugDocsRoute,
+  } as any)
 const AuthenticatedWSlugDocsMyRoute =
   AuthenticatedWSlugDocsMyRouteImport.update({
     id: '/my',
@@ -311,6 +318,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
+  '/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
   '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
@@ -352,6 +360,7 @@ export interface FileRoutesByTo {
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
   '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
+  '/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
   '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
@@ -397,6 +406,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/': typeof AuthenticatedWSlugIndexRoute
   '/_authenticated/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/_authenticated/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
+  '/_authenticated/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
   '/_authenticated/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
   '/_authenticated/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/_authenticated/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
@@ -442,6 +452,7 @@ export interface FileRouteTypes {
     | '/w/$slug/'
     | '/w/$slug/docs/drafts'
     | '/w/$slug/docs/my'
+    | '/w/$slug/docs/recent'
     | '/w/$slug/pm/agents'
     | '/w/$slug/pm/labels'
     | '/w/$slug/pm/reports'
@@ -483,6 +494,7 @@ export interface FileRouteTypes {
     | '/w/$slug'
     | '/w/$slug/docs/drafts'
     | '/w/$slug/docs/my'
+    | '/w/$slug/docs/recent'
     | '/w/$slug/pm/agents'
     | '/w/$slug/pm/labels'
     | '/w/$slug/pm/reports'
@@ -527,6 +539,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/'
     | '/_authenticated/w/$slug/docs/drafts'
     | '/_authenticated/w/$slug/docs/my'
+    | '/_authenticated/w/$slug/docs/recent'
     | '/_authenticated/w/$slug/pm/agents'
     | '/_authenticated/w/$slug/pm/labels'
     | '/_authenticated/w/$slug/pm/reports'
@@ -771,6 +784,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmAgentsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/docs/recent': {
+      id: '/_authenticated/w/$slug/docs/recent'
+      path: '/recent'
+      fullPath: '/w/$slug/docs/recent'
+      preLoaderRoute: typeof AuthenticatedWSlugDocsRecentRouteImport
+      parentRoute: typeof AuthenticatedWSlugDocsRoute
+    }
     '/_authenticated/w/$slug/docs/my': {
       id: '/_authenticated/w/$slug/docs/my'
       path: '/my'
@@ -861,6 +881,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedWSlugDocsRouteChildren {
   AuthenticatedWSlugDocsDraftsRoute: typeof AuthenticatedWSlugDocsDraftsRoute
   AuthenticatedWSlugDocsMyRoute: typeof AuthenticatedWSlugDocsMyRoute
+  AuthenticatedWSlugDocsRecentRoute: typeof AuthenticatedWSlugDocsRecentRoute
   AuthenticatedWSlugDocsIndexRoute: typeof AuthenticatedWSlugDocsIndexRoute
   AuthenticatedWSlugDocsDocumentsDocIdRoute: typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   AuthenticatedWSlugDocsSpacesSpaceIdRoute: typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
@@ -870,6 +891,7 @@ const AuthenticatedWSlugDocsRouteChildren: AuthenticatedWSlugDocsRouteChildren =
   {
     AuthenticatedWSlugDocsDraftsRoute: AuthenticatedWSlugDocsDraftsRoute,
     AuthenticatedWSlugDocsMyRoute: AuthenticatedWSlugDocsMyRoute,
+    AuthenticatedWSlugDocsRecentRoute: AuthenticatedWSlugDocsRecentRoute,
     AuthenticatedWSlugDocsIndexRoute: AuthenticatedWSlugDocsIndexRoute,
     AuthenticatedWSlugDocsDocumentsDocIdRoute:
       AuthenticatedWSlugDocsDocumentsDocIdRoute,

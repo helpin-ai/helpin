@@ -2,6 +2,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
+import { MentionHighlight } from '@/components/pm/mention-highlight';
 import {
   Bold,
   Code2,
@@ -160,6 +161,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         openOnClick: false,
         HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
       }),
+      MentionHighlight,
     ];
     if (uploadConfig) {
       exts.push(ResizableImageExtension as typeof exts[number]);
