@@ -10,8 +10,6 @@ import {
   Layers,
   LayoutGrid,
   Loader2,
-  Maximize2,
-  Minimize2,
   Sparkles,
   Tag,
   User,
@@ -176,7 +174,6 @@ export function CreateStoryModal({
   const [createMore, setCreateMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editorExpanded, setEditorExpanded] = useState(false);
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
@@ -388,7 +385,7 @@ export function CreateStoryModal({
             {/* Left column — title + description */}
             <div className="min-h-0 flex-1 flex flex-col overflow-y-auto px-6 py-3 gap-4">
               {/* Workflow badge */}
-              {!editorExpanded && workflow && (
+              {workflow && (
                 <div className="inline-flex items-center gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm font-medium text-foreground self-start">
                   <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
                   {workflow.workflow.name}
@@ -408,26 +405,18 @@ export function CreateStoryModal({
               />
 
               {/* Description — Tiptap rich text editor */}
-              <div className={`relative flex flex-col ${editorExpanded ? "min-h-0 flex-1" : ""}`}>
+              <div className="relative flex flex-col min-h-0 flex-1">
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) =>
                     setForm((prev) => ({ ...prev, description: html }))
                   }
                   placeholder="Press '/' for commands"
-                  className={editorExpanded ? "min-h-0 flex-1 flex flex-col" : ""}
+                  className="min-h-0 flex-1 flex flex-col"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   teams={teams}
                 />
                 <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setEditorExpanded((prev) => !prev)}
-                    className="inline-flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
-                    title={editorExpanded ? "Minimize editor" : "Maximize editor"}
-                  >
-                    {editorExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-                  </button>
                   <div className="pointer-events-none inline-flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground">
                     <Sparkles className="h-3 w-3" />
                     AI
