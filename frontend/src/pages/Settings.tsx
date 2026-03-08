@@ -689,7 +689,12 @@ function MembersTab({ workspaceId, editable }: {
               <TableBody>
                 {members.map((m) => (
                   <TableRow key={m.id}>
-                    <TableCell className="font-medium">{m.full_name || '—'}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2.5">
+                        <UserAvatar name={m.full_name || m.email} className="h-7 w-7" fallbackClassName="text-[10px]" />
+                        {m.full_name || '—'}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{m.email}</TableCell>
                     <TableCell>
                       <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
