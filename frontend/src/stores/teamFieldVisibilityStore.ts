@@ -12,6 +12,8 @@ const DEFAULT_VISIBILITY: Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_
   estimate: true,
   due_date: true,
   blocked: true,
+  delivery: true,
+  dev_history: true,
 };
 
 type VisibilityField = keyof typeof DEFAULT_VISIBILITY;

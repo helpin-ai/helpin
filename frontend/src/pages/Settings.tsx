@@ -935,7 +935,7 @@ function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
 }
 
 type VisibilityFieldKey = keyof Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>;
-type FieldVisibilityGroup = 'Classification' | 'Planning' | 'Other';
+type FieldVisibilityGroup = 'Classification' | 'Planning' | 'Other' | 'Panels';
 
 const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; group: FieldVisibilityGroup }[] = [
   { key: 'priority', label: 'Priority', group: 'Classification' },
@@ -947,6 +947,8 @@ const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; group: 
   { key: 'labels', label: 'Labels', group: 'Other' },
   { key: 'due_date', label: 'Due Date', group: 'Other' },
   { key: 'blocked', label: 'Blocked', group: 'Other' },
+  { key: 'delivery', label: 'Delivery', group: 'Panels' },
+  { key: 'dev_history', label: 'Development History', group: 'Panels' },
 ];
 
 function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
@@ -976,7 +978,7 @@ function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
   return (
     <div className="space-y-5 py-2">
       <p className="text-sm text-muted-foreground">
-        Toggle which metadata fields appear on stories for this team. State, Owner, Requester, and Team are always visible.
+        Configure which fields and panels appear on stories for this team. State, Owner, Requester, and Team are always visible.
       </p>
       {groups.map((group) => (
         <div key={group} className="space-y-2">
@@ -1471,8 +1473,8 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
           {
             key: 'field-visibility',
             icon: Eye,
-            title: 'Field visibility',
-            description: 'Show or hide metadata fields for this team',
+            title: 'Story display',
+            description: 'Configure which fields and panels appear on stories',
             meta: fieldVisMeta,
             action: () => setFieldVisDialogOpen(true),
             disabled: !editable,
@@ -1789,11 +1791,11 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
           </DialogContent>
         </Dialog>
 
-        {/* Field Visibility Dialog */}
+        {/* Story Display Dialog */}
         <Dialog open={fieldVisDialogOpen} onOpenChange={setFieldVisDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Field Visibility</DialogTitle>
+              <DialogTitle>Story Display</DialogTitle>
             </DialogHeader>
             <FieldVisibilityForm
               teamId={selectedTeam.id}
@@ -1806,7 +1808,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
                 if (error) {
                   toast.error(error);
                 } else {
-                  toast.success('Field visibility updated');
+                  toast.success('Story display updated');
                   setFieldVisDialogOpen(false);
                   await onRefresh();
                 }

@@ -751,21 +751,25 @@ function StoryDetailPanelBody({
           </div>
 
           {/* Delivery */}
-          <StoryDeliveryPanel
-            workspaceId={workspaceId}
-            storyDetail={storyDetail}
-            onStoryUpdated={onStoryUpdated}
-          />
+          {fieldVis.delivery && (
+            <StoryDeliveryPanel
+              workspaceId={workspaceId}
+              storyDetail={storyDetail}
+              onStoryUpdated={onStoryUpdated}
+            />
+          )}
 
-          {/* Git Links */}
-          <StoryGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId} />
-
-          {/* Agent Runs */}
-          <AgentRunPanel
-            storyId={storyDetail.story.id}
-            workspaceId={workspaceId}
-            assignedAgentId={storyDetail.story.assigned_agent_id}
-          />
+          {/* Git Links & Agent Runs */}
+          {fieldVis.dev_history && (
+            <>
+              <StoryGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId} />
+              <AgentRunPanel
+                storyId={storyDetail.story.id}
+                workspaceId={workspaceId}
+                assignedAgentId={storyDetail.story.assigned_agent_id}
+              />
+            </>
+          )}
 
           {/* Separator */}
           <Separator className="my-6" />

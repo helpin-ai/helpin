@@ -228,6 +228,8 @@ export interface TeamFieldVisibility {
   estimate: boolean;
   due_date: boolean;
   blocked: boolean;
+  delivery: boolean;
+  dev_history: boolean;
   created_at: string;
   updated_at: string;
 }
