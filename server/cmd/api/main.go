@@ -359,7 +359,7 @@ func main() {
 	}
 
 	// Set up router.
-	r := router.New(handlers, jwtManager, cfg.CORSOrigin)
+	r := router.New(handlers, jwtManager, workspaceRepo.GetMemberRole, cfg.CORSOrigin)
 
 	// Start background ticker for iteration automations.
 	automationDone := make(chan struct{})

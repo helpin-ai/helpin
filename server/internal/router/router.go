@@ -48,7 +48,7 @@ type Handlers struct {
 }
 
 // New creates and configures the Chi router with all routes.
-func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
+func New(h Handlers, jwtManager *auth.JWTManager, membershipCheck middleware.MembershipChecker, corsOrigin string) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -197,6 +197,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			// Git integrations
 			r.Route("/git", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
+				r.Use(middleware.RequireWorkspaceMembership(membershipCheck))
 				r.Get("/github/install-url", h.Git.GetGitHubInstallURL)
 				r.Get("/integrations", h.Git.ListIntegrations)
 				r.Post("/integrations", h.Git.CreateIntegration)
@@ -208,12 +209,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			// Search
 			r.Route("/search", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
+				r.Use(middleware.RequireWorkspaceMembership(membershipCheck))
 				r.Get("/", h.Search.Search)
 			})
 
 			// Support module
 			r.Route("/support", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
+				r.Use(middleware.RequireWorkspaceMembership(membershipCheck))
 
 				r.Get("/tickets", h.Support.ListTickets)
 				r.Post("/tickets", h.Support.CreateTicket)
@@ -229,6 +232,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, corsOrigin string) *chi.Mux {
 			// PM module
 			r.Route("/pm", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
+				r.Use(middleware.RequireWorkspaceMembership(membershipCheck))
 
 				// Workflows
 				r.Get("/workflows", h.PMWorkflow.List)

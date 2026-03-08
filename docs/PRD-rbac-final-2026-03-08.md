@@ -102,6 +102,45 @@ Authorization remains incomplete and inconsistent:
 - WebSocket access trusts any valid token plus any supplied `workspace_id`
 - frontend UI uses local role heuristics instead of backend-resolved permissions
 
+### 3.4 Gap analysis: PRD requirements vs current codebase
+
+Backend gaps:
+
+| PRD requirement | Status | Current codebase reality |
+|---|---|---|
+| `§9.1` authorization package | Missing | there is no `server/internal/authorization/` package today |
+| `§9.1` permission catalog | Missing | no canonical permission constants such as `workspace.read` or `pm.edit` exist |
+| `§9.1` role-to-permission mapping | Missing | there is no policy engine or shared `Can()` helper |
+| `§9.2` `RequireWorkspaceAccess` middleware | Missing | `RequireWorkspaceID` only copies a client-supplied workspace ID into context |
+| `§9.3` route-level workspace authorization | Missing | routes are primarily behind JWT auth, not workspace-membership enforcement |
+| `§9.4` workspace-scoped repositories | Partial | many list queries are scoped, but a large number of `GetByID`, `Update`, and `Delete` methods still trust raw IDs |
+| `§9.5` active-status enforcement | Missing | there is no central middleware or policy check ensuring only `active` members get access |
+| `§9.6` `GET /workspaces/{id}/me` with permissions | Partial | `/my-membership` exists, but it returns only the membership row, not effective permissions or team memberships |
+| `§9.7` WebSocket hardening | Missing | WebSocket accepts any valid JWT and any supplied `workspace_id` |
+
+Frontend gaps:
+
+| PRD requirement | Status | Current codebase reality |
+|---|---|---|
+| `§10.1` permission-based access store | Missing | `sessionStore` exposes role heuristics such as `isAdmin()` and `isOwner()` |
+| `§10.2` route guards | Missing | settings and admin surfaces rely on page/component behavior, not route-level permission guards |
+| `§10.2` 403 handling | Missing | the API client has 401 refresh/logout behavior but no dedicated 403 access-denied flow |
+| `§10.1` viewer-role support | Partial | `viewer` exists in types and invitation UI, but there is no consistent read-only enforcement path |
+| `§10.2` team-level RBAC in UI | Missing | the frontend has no effective team-role or team-permission awareness |
+
+### 3.5 Critical security risks
+
+The current gaps create four immediate risks:
+
+1. Cross-workspace data access:
+   authenticated users can supply arbitrary `workspace_id` values in header or query parameters, and many downstream reads and writes do not prove workspace membership.
+2. WebSocket subscription leakage:
+   any valid JWT holder can attempt to connect to another workspace's real-time channel by supplying a different `workspace_id`.
+3. Unguarded mutations:
+   routes such as team creation, team membership changes, team estimate updates, and workspace deletion currently lack centralized permission enforcement.
+4. Slug lookup leakage:
+   `GET /api/workspaces/by-slug/{slug}` returns workspace data without first proving the caller belongs to that workspace.
+
 ## 4. Problem Statement
 
 TeamPulse has mostly finished the identity-table migration that older RBAC docs were still planning for. The remaining product risk is not missing a new table or missing a guest role. The remaining risk is that authorization is not consistently enforced server-side.
@@ -299,6 +338,14 @@ Specific corrections required:
 - `GET /api/workspaces/by-slug/{slug}` must verify the caller belongs to that workspace
 - `GET /api/workspaces/{id}/my-membership` must not be the only membership check a page relies on
 - routes that currently take `workspace_id` in query string must still prove the actor belongs to that workspace
+
+High-priority mutation routes to lock down first:
+
+- `POST /api/settings/teams`
+- `POST /api/settings/teams/{id}/members`
+- `PUT /api/settings/teams/{id}/estimates`
+- `DELETE /api/workspaces/{id}`
+- WebSocket `/api/ws`
 
 ### 9.4 Stop trusting raw entity IDs
 

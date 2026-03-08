@@ -96,8 +96,10 @@ func (s *PMObjectiveService) List(ctx context.Context, workspaceID string, filte
 }
 
 // GetByID returns a single objective with details.
-func (s *PMObjectiveService) GetByID(ctx context.Context, id string) (*model.ObjectiveWithDetails, error) {
-	obj, err := s.objectiveRepo.GetByID(ctx, id)
+// When workspaceID is provided, the query is scoped to that workspace
+// to prevent cross-workspace data access.
+func (s *PMObjectiveService) GetByID(ctx context.Context, id string, workspaceID ...string) (*model.ObjectiveWithDetails, error) {
+	obj, err := s.objectiveRepo.GetByID(ctx, id, workspaceID...)
 	if err != nil {
 		return nil, err
 	}
