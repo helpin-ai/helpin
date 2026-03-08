@@ -276,6 +276,136 @@ func TestPMImportServiceExecuteShortcutUsesWorkflowIDsForStateMapping(t *testing
 	}
 }
 
+func TestPMImportServiceExecuteShortcutAssignsImportedOwnersToTeams(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	pendingMember := model.WorkspaceMember{
+		ID:          "wm-pending-owner",
+		WorkspaceID: workspaceID,
+		Email:       "pending.owner@example.com",
+		DisplayName: "pending.owner@example.com",
+		Role:        model.RoleMember,
+		Status:      model.WorkspaceMemberStatusPending,
+	}
+	if err := db.Create(&pendingMember).Error; err != nil {
+		t.Fatalf("seed pending workspace member: %v", err)
+	}
+
+	csvData := shortcutImportCSVFromRows([]map[string]string{
+		{
+			"id": "4001", "name": "Pending owner story", "type": "feature",
+			"owners": "pending.owner@example.com", "team": "Growth",
+			"created_at": "2026/03/01 09:00:00", "updated_at": "2026/03/01 09:00:00", "utc_offset": "+00:00",
+			"workflow": "Product Development", "workflow_id": "500000199", "state": "Backlog",
+		},
+	})
+
+	req := model.ShortcutImportExecuteRequest{
+		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
+			{
+				ShortcutWorkflowName: "Product Development",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Imported Product Development",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+				},
+			},
+		},
+		Options: model.ShortcutImportOptions{
+			ImportArchived:  true,
+			ImportCompleted: true,
+		},
+	}
+
+	if _, _, err := svc.executeShortcutImport(context.Background(), workspaceID, adminID, []byte(csvData), req, "", ""); err != nil {
+		t.Fatalf("execute shortcut import: %v", err)
+	}
+
+	var team model.WorkspaceTeam
+	if err := db.Where("workspace_id = ? AND name = ?", workspaceID, "Growth").First(&team).Error; err != nil {
+		t.Fatalf("load imported team: %v", err)
+	}
+
+	var membership model.TeamWorkspaceMembership
+	if err := db.Where("team_id = ? AND workspace_member_id = ?", team.ID, pendingMember.ID).First(&membership).Error; err != nil {
+		t.Fatalf("expected pending owner to be assigned to team: %v", err)
+	}
+}
+
+func TestPMImportServiceExecuteShortcutUsesManualUserMappingsForTeamMemberships(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	csvData := shortcutImportCSVFromRows([]map[string]string{
+		{
+			"id": "4002", "name": "Alias owner story", "type": "feature",
+			"owners": "alias.owner@example.com", "team": "Growth",
+			"created_at": "2026/03/01 09:00:00", "updated_at": "2026/03/01 09:00:00", "utc_offset": "+00:00",
+			"workflow": "Product Development", "workflow_id": "500000199", "state": "Backlog",
+		},
+	})
+
+	req := model.ShortcutImportExecuteRequest{
+		UserMappings: map[string]string{
+			"alias.owner@example.com": "user-owner-one",
+		},
+		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
+			{
+				ShortcutWorkflowName: "Product Development",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Imported Product Development",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+				},
+			},
+		},
+		Options: model.ShortcutImportOptions{
+			ImportArchived:  true,
+			ImportCompleted: true,
+		},
+	}
+
+	if _, _, err := svc.executeShortcutImport(context.Background(), workspaceID, adminID, []byte(csvData), req, "", ""); err != nil {
+		t.Fatalf("execute shortcut import: %v", err)
+	}
+
+	var team model.WorkspaceTeam
+	if err := db.Where("workspace_id = ? AND name = ?", workspaceID, "Growth").First(&team).Error; err != nil {
+		t.Fatalf("load imported team: %v", err)
+	}
+
+	var workspaceMember model.WorkspaceMember
+	if err := db.Where("workspace_id = ? AND user_id = ?", workspaceID, "user-owner-one").First(&workspaceMember).Error; err != nil {
+		t.Fatalf("load workspace member for mapped user: %v", err)
+	}
+
+	var membership model.TeamWorkspaceMembership
+	if err := db.Where("team_id = ? AND workspace_member_id = ?", team.ID, workspaceMember.ID).First(&membership).Error; err != nil {
+		t.Fatalf("expected manually mapped owner to be assigned to team: %v", err)
+	}
+
+	var story model.PMStory
+	if err := db.Where("workspace_id = ? AND external_id = ?", workspaceID, "4002").First(&story).Error; err != nil {
+		t.Fatalf("load imported story: %v", err)
+	}
+	if story.OwnerMemberID == nil || *story.OwnerMemberID != workspaceMember.ID {
+		t.Fatalf("expected owner_member_id to use mapped workspace member, got %v want %s", story.OwnerMemberID, workspaceMember.ID)
+	}
+}
+
 func TestPMImportServiceRewriteShortcutMediaBody(t *testing.T) {
 	db := newImportTestDB(t)
 	svc, workspaceID, adminID := newImportTestService(t, db)
@@ -617,6 +747,15 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			manager_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE team_workspace_memberships (
+			id TEXT PRIMARY KEY,
+			team_id TEXT NOT NULL,
+			workspace_member_id TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'member',
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE (team_id, workspace_member_id)
 		)`,
 		`CREATE TABLE pm_workflows (
 			id TEXT PRIMARY KEY,

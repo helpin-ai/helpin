@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
+import { Maximize2, X } from 'lucide-react';
 
 const MIN_WIDTH = 100;
 
@@ -14,6 +15,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected }: No
   const [currentHeight, setCurrentHeight] = useState<string>(height ?? 'auto');
   const [aspectRatio, setAspectRatio] = useState<number | null>(storedAspectRatio ?? null);
   const [isResizing, setIsResizing] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const containerRectRef = useRef<DOMRect | null>(null);
   const aspectRatioRef = useRef(aspectRatio);
@@ -116,6 +118,16 @@ export function ResizableImageComponent({ node, updateAttributes, selected }: No
     }
   }, [width, height, isResizing]);
 
+  // Close fullscreen on Escape
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isFullscreen]);
+
   return (
     <NodeViewWrapper className="relative my-2" data-drag-handle>
       <div
@@ -148,6 +160,20 @@ export function ResizableImageComponent({ node, updateAttributes, selected }: No
           }`}
         />
 
+        {/* View fullscreen button — top-right corner */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
+          className={`absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white backdrop-blur-sm transition-opacity duration-100 hover:bg-black/80 ${
+            isResizing
+              ? 'pointer-events-none opacity-0'
+              : 'pointer-events-none opacity-0 group-hover/img:pointer-events-auto group-hover/img:opacity-100'
+          }`}
+          title="View full size"
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+        </button>
+
         {/* Resize handle — bottom-right corner */}
         <div
           className={`absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-nwse-resize rounded-full border-2 border-white bg-primary shadow-sm transition-opacity duration-100 ${
@@ -159,6 +185,29 @@ export function ResizableImageComponent({ node, updateAttributes, selected }: No
           onTouchStart={handleResizeStart}
         />
       </div>
+
+      {/* Fullscreen overlay */}
+      {isFullscreen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setIsFullscreen(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(false)}
+            className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            title="Close (Esc)"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={src}
+            alt={alt ?? ''}
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </NodeViewWrapper>
   );
 }

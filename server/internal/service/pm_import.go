@@ -526,6 +526,52 @@ func (s *PMImportService) ensureTeams(ctx context.Context, tx *gorm.DB, workspac
 	return teamMap, created, nil
 }
 
+func (s *PMImportService) ensureTeamMemberships(ctx context.Context, tx *gorm.DB, rows []shortcutCSVRow, teamMap, memberByEmail map[string]string) error {
+	memberships := make(map[string]model.TeamWorkspaceMembership)
+
+	for _, row := range rows {
+		teamID := firstMappedValue(teamMap, []string{normalizeShortcutName(row.Team)})
+		if teamID == "" {
+			continue
+		}
+		for _, email := range shortcutOwnerEmails(row.Owners) {
+			memberID := firstMappedValue(memberByEmail, []string{normalizeShortcutName(email)})
+			if memberID == "" {
+				continue
+			}
+			key := teamID + "::" + memberID
+			if _, exists := memberships[key]; exists {
+				continue
+			}
+			memberships[key] = model.TeamWorkspaceMembership{
+				TeamID:            teamID,
+				WorkspaceMemberID: memberID,
+				Role:              "member",
+			}
+		}
+	}
+
+	if len(memberships) == 0 {
+		return nil
+	}
+
+	records := make([]model.TeamWorkspaceMembership, 0, len(memberships))
+	for _, membership := range memberships {
+		records = append(records, membership)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].TeamID == records[j].TeamID {
+			return records[i].WorkspaceMemberID < records[j].WorkspaceMemberID
+		}
+		return records[i].TeamID < records[j].TeamID
+	})
+
+	if err := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&records).Error; err != nil {
+		return fmt.Errorf("create team memberships: %w", err)
+	}
+	return nil
+}
+
 func (s *PMImportService) resolveWorkflowMappings(ctx context.Context, tx *gorm.DB, workspaceID string, mappings []model.ShortcutWorkflowStateMappingPayload) (map[string]string, map[string]string, map[string]string, int, int, error) {
 	workflowMap := map[string]string{}
 	shortcutStateMap := map[string]string{}
