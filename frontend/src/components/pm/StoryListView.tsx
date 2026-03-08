@@ -298,7 +298,7 @@ export function StoryListView({
         header: 'ID',
         size: 90,
         cell: (info) => (
-          <span className="font-mono text-xs text-muted-foreground">TP-{info.getValue()}</span>
+          <span className="font-mono text-xs text-muted-foreground">{info.getValue()}</span>
         ),
       }),
       columnHelper.accessor('story_type', {

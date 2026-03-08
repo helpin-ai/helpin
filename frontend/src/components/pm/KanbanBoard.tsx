@@ -346,7 +346,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     if (!workflow) return;
     const maybeStory = new URLSearchParams(window.location.search).get('story');
     if (!maybeStory) return;
-    const match = maybeStory.match(/^TP-(\d+)$/i);
+    const match = maybeStory.match(/^(\d+)$/);
     if (!match) return;
 
     (async () => {

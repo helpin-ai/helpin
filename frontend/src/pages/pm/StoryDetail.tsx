@@ -293,7 +293,7 @@ export function StoryDetailPage() {
     [assignableMembers],
   );
 
-  useTitle(form?.name ? `TP-${storyDetail?.story.display_id} ${form.name}` : 'Story');
+  useTitle(form?.name ? `${storyDetail?.story.display_id} ${form.name}` : 'Story');
 
   // ── Load all data in parallel ───────────────────────────────────
   useEffect(() => {
@@ -599,7 +599,7 @@ export function StoryDetailPage() {
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground">TP-{storyDetail.story.display_id}</span>
+          <span className="shrink-0 font-medium text-foreground">{storyDetail.story.display_id}</span>
         </div>
 
         <div className="ml-auto flex items-center gap-1">
@@ -837,7 +837,7 @@ export function StoryDetailPage() {
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
           {/* Story ID + copy */}
           <div className="mb-4 flex items-center justify-between">
-            <span className="text-sm font-semibold text-foreground">TP-{storyDetail.story.display_id}</span>
+            <span className="text-sm font-semibold text-foreground">{storyDetail.story.display_id}</span>
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={copyLink}>
               {linkCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
             </Button>

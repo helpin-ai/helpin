@@ -102,7 +102,7 @@ export function SearchCommandPalette({
       onOpenChange(false);
       switch (type) {
         case 'story':
-          window.location.assign(`/w/${slug}/pm/stories?story=TP-${item.display_id}`);
+          window.location.assign(`/w/${slug}/pm/stories?story=${item.display_id}`);
           break;
         case 'epic':
           navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: item.id } });

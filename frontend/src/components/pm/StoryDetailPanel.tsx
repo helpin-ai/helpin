@@ -345,7 +345,7 @@ function StoryDetailPanelBody({
   // ── URL sync ───────────────────────────────────────────────────
   useEffect(() => {
     const url = new URL(window.location.href);
-    url.searchParams.set('story', `TP-${storyDetail.story.display_id}`);
+    url.searchParams.set('story', `${storyDetail.story.display_id}`);
     window.history.replaceState({}, '', url.toString());
 
     return () => {
@@ -611,7 +611,7 @@ function StoryDetailPanelBody({
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground">TP-{storyDetail.story.display_id}</span>
+          <span className="shrink-0 font-medium text-foreground">{storyDetail.story.display_id}</span>
         </div>
 
         <div className="ml-auto flex items-center gap-1">
@@ -893,7 +893,7 @@ function StoryDetailPanelBody({
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
           {/* Story ID */}
           <div className="mb-4">
-            <span className="text-sm font-semibold text-foreground">TP-{storyDetail.story.display_id}</span>
+            <span className="text-sm font-semibold text-foreground">{storyDetail.story.display_id}</span>
           </div>
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
