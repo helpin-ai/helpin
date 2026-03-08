@@ -1,3 +1,5 @@
+> Superseded by [PRD-rbac-final-2026-03-08.md](/root/teampulse/docs/PRD-rbac-final-2026-03-08.md). This file is retained as historical planning context.
+
 # Final RBAC Plan
 
 **Product**: Helpin  

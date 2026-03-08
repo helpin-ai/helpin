@@ -138,6 +138,8 @@ export function StoryListView({
   const [groupBy, setGroupBy] = useState<GroupByOption>('workflow_state');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
+  const pinnedGroupRef = useRef<number | null>(null);
+  const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
   const [allLabels, setAllLabels] = useState<Label[]>([]);
 
   useEffect(() => {
@@ -611,6 +613,7 @@ export function StoryListView({
   });
 
   const { rows } = table.getRowModel();
+  const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Story> | undefined) : undefined;
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -702,14 +705,43 @@ export function StoryListView({
           className="overflow-auto"
           style={{ height: 'calc(100% - 30px)' }}
           onScroll={(e) => {
-            if (isExternal || !hasMore || loadingMore) return;
             const el = e.currentTarget;
-            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
-              loadMore();
+            const scrollTop = el.scrollTop;
+
+            // Infinite loading
+            if (!isExternal && hasMore && !loadingMore) {
+              if (scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+                loadMore();
+              }
+            }
+
+            // Track pinned group header
+            const vItems = virtualizer.getVirtualItems();
+            let newPinnedIdx: number | null = null;
+            if (scrollTop > 10) {
+              for (const vItem of vItems) {
+                if (vItem.start > scrollTop) break;
+                if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
+              }
+              if (newPinnedIdx === null && vItems.length > 0) {
+                for (let i = vItems[0].index - 1; i >= 0; i--) {
+                  if (rows[i]?.getIsGrouped()) { newPinnedIdx = i; break; }
+                }
+              }
+            }
+            if (newPinnedIdx !== pinnedGroupRef.current) {
+              pinnedGroupRef.current = newPinnedIdx;
+              setPinnedGroupIdx(newPinnedIdx);
             }
           }}
         >
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+            {/* Pinned sticky group header */}
+            {pinnedGroupRow && (
+              <div className="sticky top-0 z-[5] bg-background" style={{ height: 0, overflow: 'visible' }}>
+                <GroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} />
+              </div>
+            )}
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<Story>;
               const isGrouped = row.getIsGrouped();
