@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
@@ -240,14 +240,26 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
                   loading="lazy"
                 />
               </button>
-              <Button
-                variant="secondary"
-                size="icon"
-                className="absolute top-1 right-1 h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm"
-                onClick={() => handleDelete(entry.attachment.id)}
-              >
-                <Trash2 className="h-2.5 w-2.5 text-destructive" />
-              </Button>
+              <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="h-5 w-5 bg-background/80 backdrop-blur-sm"
+                  onClick={() => window.open(resolveUrl(entry), '_blank')}
+                  title="Download"
+                >
+                  <Download className="h-2.5 w-2.5" />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="h-5 w-5 bg-background/80 backdrop-blur-sm"
+                  onClick={() => handleDelete(entry.attachment.id)}
+                  title="Delete"
+                >
+                  <Trash2 className="h-2.5 w-2.5 text-destructive" />
+                </Button>
+              </div>
               <p className="mt-1 truncate text-[11px] text-muted-foreground" title={entry.attachment.file_name}>
                 {entry.attachment.file_name}
               </p>
@@ -300,8 +312,21 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
                     className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.preventDefault();
+                      window.open(resolveUrl(entry), '_blank');
+                    }}
+                    title="Download"
+                  >
+                    <Download className="h-3 w-3 text-muted-foreground" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.preventDefault();
                       handleDelete(entry.attachment.id);
                     }}
+                    title="Delete"
                   >
                     <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                   </Button>
