@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useQueryClient } from '@tanstack/react-query';
 import { inviteService } from '@/lib/services/inviteService';
 import type { InviteInfo } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +16,7 @@ export default function JoinWorkspace() {
   const { token } = useParams({ from: '/join/$token' });
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { loadWorkspaces } = useWorkspaceStore();
+  const queryClient = useQueryClient();
 
   const [info, setInfo] = useState<InviteInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +45,7 @@ export default function JoinWorkspace() {
       return;
     }
     toast.success(`Joined ${info?.workspace_name}!`);
-    await loadWorkspaces();
+    await queryClient.invalidateQueries({ queryKey: ['workspaces'] });
     navigate({ to: '/w/$slug/pm/stories', params: { slug: info?.workspace_slug ?? '' } });
   };
 

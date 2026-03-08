@@ -1,10 +1,10 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '@/lib/queryKeys'
 import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
 import { useSession } from '@/hooks/queries/useSession'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
+import { useOrganizations } from '@/hooks/queries/useOrganizations'
+import { useQuarters } from '@/hooks/queries/useQuarters'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useOrganizationStore } from '@/stores/organizationStore'
 import { useRewardQuarterStore } from '@/stores/quarterStore'
@@ -21,55 +21,45 @@ export const Route = createFileRoute('/_authenticated/w/$slug')({
 
 function WorkspaceLayout() {
   const { slug } = Route.useParams()
-  const queryClient = useQueryClient()
 
-  // TanStack Query for data fetching
+  // TanStack Query for all data fetching
   const { data: workspace, isLoading: wsLoading } = useWorkspaceBySlug(slug)
   const wsId = workspace?.id ?? ''
+  const { data: orgs, isLoading: orgsLoading } = useOrganizations()
+  const { data: quarters, isLoading: quartersLoading } = useQuarters(wsId)
   const { isLoading: sessionLoading } = useSession(wsId)
   const { isLoading: settingsLoading } = useWorkspaceSettings(wsId)
 
-  // Selection-based stores still use Zustand (org selection, quarter selection)
-  const [initDone, setInitDone] = useState(false)
+  // Selection stores (Zustand) — sync from query data
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
 
   useRealtimeSync(wsId)
 
-  // Sync workspace to store + load selection-based data
+  // Sync workspace selection
   useEffect(() => {
-    if (!workspace) {
-      setInitDone(false)
-      return
+    if (workspace) useWorkspaceStore.getState().setCurrentWorkspace(workspace)
+  }, [workspace])
+
+  // Sync organization selection
+  useEffect(() => {
+    if (!orgs?.length || !workspace?.organization_id) return
+    const org = orgs.find(o => o.id === workspace.organization_id)
+    if (org) useOrganizationStore.getState().setCurrentOrganization(org)
+  }, [orgs, workspace?.organization_id])
+
+  // Sync quarter selection (initial only — don't override user choice)
+  useEffect(() => {
+    if (!quarters?.length) return
+    const current = useRewardQuarterStore.getState().currentQuarter
+    if (!current || !quarters.find(q => q.id === current.id)) {
+      const active = quarters.find(q => q.status === 'active')
+      useRewardQuarterStore.getState().setCurrentQuarter(active ?? quarters[0])
     }
+  }, [quarters])
 
-    const init = async () => {
-      // Set current workspace in store (used by many components)
-      useWorkspaceStore.getState().setCurrentWorkspace(workspace)
-
-      // Load organization context (manages currentOrganization selection)
-      const orgStore = useOrganizationStore.getState()
-      if (orgStore.organizations.length === 0) {
-        await orgStore.loadOrganizations()
-      }
-      const orgs = useOrganizationStore.getState().organizations
-      if (orgs.length) queryClient.setQueryData(queryKeys.organizations.all, orgs)
-
-      if (workspace.organization_id) {
-        const org = orgs.find(o => o.id === workspace.organization_id)
-        if (org) useOrganizationStore.getState().setCurrentOrganization(org)
-      }
-
-      // Load quarters (manages currentQuarter selection)
-      await useRewardQuarterStore.getState().loadQuarters(workspace.id)
-      const quarters = useRewardQuarterStore.getState().quarters
-      if (quarters.length) queryClient.setQueryData(queryKeys.workspaces.quarters(workspace.id), quarters)
-
-      setInitDone(true)
-    }
-    init()
-  }, [workspace, queryClient])
-
-  const loading = wsLoading || !initDone || (!!wsId && (sessionLoading || settingsLoading))
+  const loading = wsLoading || orgsLoading
+    || (!!wsId && (sessionLoading || settingsLoading || quartersLoading))
+    || (!!workspace && currentWorkspace?.id !== workspace.id)
 
   if (loading) {
     return (
