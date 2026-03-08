@@ -41,6 +41,8 @@ import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
+import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
+import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 
@@ -117,6 +119,10 @@ export function StoryListView({
   onOpenStory,
 }: StoryListViewProps) {
   const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(teamId));
+  const displayInit = useBoardDisplayStore((s) => s.init);
+  const displayProps = useBoardDisplayStore((s) => s.properties);
+
+  useEffect(() => { displayInit(workspaceId); }, [workspaceId, displayInit]);
 
   const isExternal = externalStories !== undefined;
   const [stories, setStories] = useState<Story[]>(externalStories ?? []);
@@ -290,7 +296,7 @@ export function StoryListView({
       columnHelper.accessor('display_id', {
         id: 'displayId',
         header: 'ID',
-        size: 80,
+        size: 90,
         cell: (info) => (
           <span className="font-mono text-xs text-muted-foreground">TP-{info.getValue()}</span>
         ),
@@ -298,7 +304,7 @@ export function StoryListView({
       columnHelper.accessor('story_type', {
         id: 'typeIcon',
         header: '',
-        size: 36,
+        size: 40,
         enableGrouping: false,
         cell: (info) => <StoryTypeIcon storyType={info.getValue()} className="h-4 w-4" />,
       }),
@@ -325,7 +331,7 @@ export function StoryListView({
         {
           id: 'stateName',
           header: 'State',
-          size: 150,
+          size: 170,
           cell: (info) => (
             <InlineStateCell
               story={info.row.original}
@@ -339,7 +345,7 @@ export function StoryListView({
       columnHelper.accessor('priority', {
         id: 'priorityIcon',
         header: 'Priority',
-        size: 110,
+        size: 130,
         enableGrouping: false,
         cell: (info) => (
           <InlinePriorityCell
@@ -351,7 +357,7 @@ export function StoryListView({
       columnHelper.accessor('severity', {
         id: 'severityIcon',
         header: 'Severity',
-        size: 110,
+        size: 130,
         enableGrouping: false,
         cell: (info) => (
           <InlineSeverityCell
@@ -363,7 +369,7 @@ export function StoryListView({
       columnHelper.accessor('estimate', {
         id: 'estimate',
         header: 'Estimate',
-        size: 80,
+        size: 100,
         enableGrouping: false,
         cell: (info) => (
           <InlineEstimateCell
@@ -380,7 +386,7 @@ export function StoryListView({
         {
           id: 'ownerName',
           header: 'Owner',
-          size: 150,
+          size: 170,
           cell: (info) => (
             <InlineOwnerCell
               story={info.row.original}
@@ -396,7 +402,7 @@ export function StoryListView({
         {
           id: 'teamName',
           header: 'Team',
-          size: 130,
+          size: 150,
           cell: (info) => (
             <InlineTeamCell
               story={info.row.original}
@@ -412,7 +418,7 @@ export function StoryListView({
         {
           id: 'epicName',
           header: 'Epic',
-          size: 150,
+          size: 170,
           cell: (info) => (
             <InlineEpicCell
               story={info.row.original}
@@ -428,7 +434,7 @@ export function StoryListView({
         {
           id: 'sprintName',
           header: 'Sprint',
-          size: 140,
+          size: 160,
           cell: (info) => (
             <InlineSprintCell
               story={info.row.original}
@@ -472,7 +478,7 @@ export function StoryListView({
       columnHelper.accessor('deadline', {
         id: 'deadline',
         header: 'Deadline',
-        size: 120,
+        size: 150,
         enableGrouping: false,
         cell: (info) => (
           <InlineDeadlineCell
@@ -484,7 +490,7 @@ export function StoryListView({
       columnHelper.display({
         id: 'labels',
         header: 'Labels',
-        size: 180,
+        size: 220,
         enableGrouping: false,
         cell: (info) => <InlineLabelsCell labels={info.row.original.labels} />,
       }),
@@ -492,9 +498,25 @@ export function StoryListView({
     [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenStory, workflow.states, assignableMembers, teams, epics, sprints, updateStoryField]
   );
 
+  // Team-level disabled keys (for hiding toggles in display menu)
+  const teamDisabledKeys = useMemo(() => {
+    const keys = new Set<DisplayPropertyKey>();
+    if (!fieldVis.priority) keys.add('priority');
+    if (!fieldVis.severity) keys.add('severity');
+    if (!fieldVis.story_type) keys.add('story_type');
+    if (!fieldVis.estimate) keys.add('estimate');
+    if (!fieldVis.epic) keys.add('epic');
+    if (!fieldVis.sprint) keys.add('sprint');
+    if (!fieldVis.due_date) keys.add('due_date');
+    if (!fieldVis.labels) keys.add('labels');
+    if (teamId) keys.add('team');
+    return keys;
+  }, [fieldVis, teamId]);
+
   const columnVisibility = useMemo(() => {
     const vis: Record<string, boolean> = {};
     for (const c of HIDDEN_GROUP_COLUMNS) vis[c] = false;
+    // Team-level visibility (overrides everything)
     if (!fieldVis.priority) { vis['priorityIcon'] = false; vis['priorityName'] = false; }
     if (!fieldVis.severity) { vis['severityIcon'] = false; vis['severityName'] = false; }
     if (!fieldVis.story_type) { vis['typeIcon'] = false; vis['typeName'] = false; }
@@ -502,9 +524,22 @@ export function StoryListView({
     if (!fieldVis.epic) vis['epicName'] = false;
     if (!fieldVis.sprint) vis['sprintName'] = false;
     if (!fieldVis.due_date) vis['deadline'] = false;
+    if (!fieldVis.labels) vis['labels'] = false;
     if (teamId) vis['teamName'] = false;
+    // User-level display preferences (only hides columns the team allows)
+    if (!displayProps.state) vis['stateName'] = false;
+    if (!displayProps.priority && vis['priorityIcon'] !== false) vis['priorityIcon'] = false;
+    if (!displayProps.severity && vis['severityIcon'] !== false) vis['severityIcon'] = false;
+    if (!displayProps.story_type && vis['typeIcon'] !== false) vis['typeIcon'] = false;
+    if (!displayProps.estimate && vis['estimate'] !== false) vis['estimate'] = false;
+    if (!displayProps.assignee) vis['ownerName'] = false;
+    if (!displayProps.team && vis['teamName'] !== false) vis['teamName'] = false;
+    if (!displayProps.epic && vis['epicName'] !== false) vis['epicName'] = false;
+    if (!displayProps.sprint && vis['sprintName'] !== false) vis['sprintName'] = false;
+    if (!displayProps.due_date && vis['deadline'] !== false) vis['deadline'] = false;
+    if (!displayProps.labels && vis['labels'] !== false) vis['labels'] = false;
     return vis;
-  }, [fieldVis, teamId]);
+  }, [fieldVis, teamId, displayProps]);
 
   const grouping: GroupingState = useMemo(() => {
     const colId = GROUP_COLUMN_MAP[groupBy];
@@ -548,7 +583,7 @@ export function StoryListView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      {/* Group By control */}
+      {/* Group By control + Display settings */}
       <div className="flex items-center gap-2 px-3 pt-2">
         <span className="text-xs text-muted-foreground">Group by:</span>
         <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
@@ -575,12 +610,16 @@ export function StoryListView({
         <span className="text-xs text-muted-foreground">
           {stories.length} {stories.length === 1 ? 'story' : 'stories'}{hasMore ? '+' : ''}
         </span>
+        <div className="ml-auto">
+          <ListDisplayMenu disabledKeys={teamDisabledKeys} />
+        </div>
       </div>
 
       {/* Table */}
-      <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border/70">
+      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border/70">
+        <div className="min-w-fit">
         {/* Header */}
-        <div className="border-b border-border/70 bg-muted/50">
+        <div className="sticky top-0 z-10 border-b border-border/70 bg-muted/50">
           {table.getHeaderGroups().map((headerGroup) => (
             <div key={headerGroup.id} className="flex items-center">
               {headerGroup.headers.map((header) => {
@@ -594,7 +633,7 @@ export function StoryListView({
                     style={{
                       width: size === 999 ? undefined : size,
                       flex: size === 999 ? '1 1 0%' : undefined,
-                      minWidth: size === 999 ? 200 : undefined,
+                      minWidth: size === 999 ? 300 : undefined,
                     }}
                   >
                     {header.isPlaceholder
@@ -654,6 +693,7 @@ export function StoryListView({
             </div>
           )}
         </div>
+        </div>
       </div>
     </div>
   );
@@ -694,7 +734,7 @@ function DataRow({ row, onOpenStory }: { row: Row<Story>; onOpenStory: (story: S
             style={{
               width: size === 999 ? undefined : size,
               flex: size === 999 ? '1 1 0%' : undefined,
-              minWidth: size === 999 ? 200 : undefined,
+              minWidth: size === 999 ? 300 : undefined,
             }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}

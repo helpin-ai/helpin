@@ -5,10 +5,8 @@ import { Switch } from '@/components/ui/switch';
 import {
   useBoardDisplayStore,
   DISPLAY_PROPERTY_LABELS,
-  type DisplayPropertyKey,
+  BOARD_PROPERTY_KEYS,
 } from '@/stores/boardDisplayStore';
-
-const PROPERTY_KEYS = Object.keys(DISPLAY_PROPERTY_LABELS) as DisplayPropertyKey[];
 
 export function BoardDisplayMenu() {
   const { properties, showEmptyColumns, toggleProperty, toggleShowEmptyColumns } =
@@ -26,7 +24,7 @@ export function BoardDisplayMenu() {
           <div>
             <p className="mb-2 text-xs font-medium text-muted-foreground">Display properties</p>
             <div className="flex flex-wrap gap-1.5">
-              {PROPERTY_KEYS.map((key) => (
+              {BOARD_PROPERTY_KEYS.map((key) => (
                 <button
                   key={key}
                   onClick={() => toggleProperty(key)}

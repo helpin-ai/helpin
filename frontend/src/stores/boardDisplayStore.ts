@@ -10,7 +10,22 @@ export const DISPLAY_PROPERTY_LABELS = {
   due_date: 'Due Date',
   blocked: 'Blocked',
   assignee: 'Assignee',
+  state: 'State',
+  team: 'Team',
+  sprint: 'Sprint',
 } as const;
+
+/** Keys shown in the Kanban board display menu */
+export const BOARD_PROPERTY_KEYS: DisplayPropertyKey[] = [
+  'story_type', 'priority', 'severity', 'epic', 'labels',
+  'estimate', 'due_date', 'blocked', 'assignee',
+];
+
+/** Keys shown in the list view display menu */
+export const LIST_PROPERTY_KEYS: DisplayPropertyKey[] = [
+  'state', 'story_type', 'priority', 'severity', 'estimate',
+  'assignee', 'team', 'epic', 'sprint', 'due_date', 'labels',
+];
 
 export type DisplayPropertyKey = keyof typeof DISPLAY_PROPERTY_LABELS;
 
@@ -26,6 +41,9 @@ const ALL_ON: DisplayProperties = {
   due_date: true,
   blocked: true,
   assignee: true,
+  state: true,
+  team: true,
+  sprint: true,
 };
 
 const STORAGE_KEY = (wsId: string) => `pm_board_display_${wsId}`;
