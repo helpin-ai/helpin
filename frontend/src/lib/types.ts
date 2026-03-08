@@ -55,6 +55,47 @@ export interface WorkspaceMember {
   updated_at: string;
 }
 
+// Permission strings matching the backend authorization catalog.
+export type Permission =
+  | 'workspace.read'
+  | 'workspace.update'
+  | 'workspace.delete'
+  | 'workspace.members.read'
+  | 'workspace.members.manage'
+  | 'workspace.invites.manage'
+  | 'workspace.roles.manage'
+  | 'settings.read'
+  | 'settings.manage'
+  | 'team.read'
+  | 'team.manage'
+  | 'team.members.read'
+  | 'team.members.manage'
+  | 'pm.read'
+  | 'pm.edit'
+  | 'pm.admin.workflows'
+  | 'pm.admin.labels'
+  | 'pm.admin.automations'
+  | 'pm.import'
+  | 'rewards.read'
+  | 'rewards.manage'
+  | 'search.read'
+  | 'ws.connect';
+
+// Response from GET /api/workspaces/{id}/me
+export interface WorkspaceAccess {
+  workspace_id: string;
+  membership: {
+    id: string;
+    role: 'owner' | 'admin' | 'manager' | 'member' | 'viewer';
+    status: string;
+  };
+  permissions: Permission[];
+  team_memberships: {
+    team_id: string;
+    role: string;
+  }[];
+}
+
 export interface MemberWithUser {
   id: string;
   user_id: string;

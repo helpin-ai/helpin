@@ -12,6 +12,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 interface LabelsSettingsProps {
   workspaceId: string;
   initialTeamId?: string;
+  editable?: boolean;
 }
 
 export interface LabelFormState {
@@ -45,10 +46,12 @@ function LabelRow({
   entry,
   onEdit,
   onDelete,
+  editable = true,
 }: {
   entry: LabelWithStats;
   onEdit: () => void;
   onDelete: () => void;
+  editable?: boolean;
 }) {
   const { label, stats } = entry;
   return (
@@ -72,24 +75,26 @@ function LabelRow({
       </div>
       <StatCell done={stats.done_story_count} total={stats.story_count} entity="Stories" />
       <StatCell done={stats.done_epic_count} total={stats.epic_count} entity="Epics" />
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={onEdit}
-        >
-          <Pencil className="h-3 w-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="text-muted-foreground hover:text-destructive"
-          onClick={onDelete}
-        >
-          <Trash2 className="h-3 w-3" />
-        </Button>
-      </div>
+      {editable && (
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={onEdit}
+          >
+            <Pencil className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -171,7 +176,7 @@ function LabelForm({
   );
 }
 
-export function LabelsSettings({ workspaceId, initialTeamId }: LabelsSettingsProps) {
+export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: LabelsSettingsProps) {
   const { teams } = useWorkspaceTeams(workspaceId);
   const [labels, setLabels] = useState<LabelWithStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -256,7 +261,7 @@ export function LabelsSettings({ workspaceId, initialTeamId }: LabelsSettingsPro
             ))}
           </SelectContent>
         </Select>
-        {!showCreate && (
+        {editable && !showCreate && (
           <Button
             variant="outline"
             size="sm"
@@ -272,7 +277,7 @@ export function LabelsSettings({ workspaceId, initialTeamId }: LabelsSettingsPro
         )}
       </div>
 
-      {showCreate && (
+      {editable && showCreate && (
         <LabelForm
           initial={emptyForm}
           teams={teams}
@@ -294,17 +299,19 @@ export function LabelsSettings({ workspaceId, initialTeamId }: LabelsSettingsPro
                 Labels help you categorize and filter stories across your workspace.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setShowCreate(true);
-                setEditingId(null);
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Create your first label
-            </Button>
+            {editable && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowCreate(true);
+                  setEditingId(null);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Create your first label
+              </Button>
+            )}
           </div>
         )}
         {labels.map((entry) =>
@@ -355,6 +362,7 @@ export function LabelsSettings({ workspaceId, initialTeamId }: LabelsSettingsPro
             <LabelRow
               key={entry.label.id}
               entry={entry}
+              editable={editable}
               onEdit={() => {
                 setEditingId(entry.label.id);
                 setShowCreate(false);

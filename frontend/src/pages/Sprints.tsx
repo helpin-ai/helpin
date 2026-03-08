@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useRewardQuarterStore } from '@/stores/quarterStore';
-import { useSession, useSessionRole } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
 import type { RewardSprint } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,8 +28,8 @@ export default function Sprints() {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const { currentQuarter } = useRewardQuarterStore();
-  const { data: membership } = useSession(currentWorkspace?.id ?? '');
-  const { isAdmin } = useSessionRole(membership);
+  const { data: access } = useWorkspaceAccess(currentWorkspace?.id ?? '');
+  const { isAdmin } = usePermissions(access);
   const [sprints, setSprints] = useState<RewardSprint[]>([]);
   const [loading, setLoading] = useState(true);
 

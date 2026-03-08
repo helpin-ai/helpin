@@ -1,7 +1,7 @@
 import { useEffect, type CSSProperties } from 'react'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
-import { useSession } from '@/hooks/queries/useSession'
+import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
 import { useOrganizations } from '@/hooks/queries/useOrganizations'
 import { useQuarters } from '@/hooks/queries/useQuarters'
@@ -28,6 +28,7 @@ function WorkspaceLayout() {
   const { data: orgs, isLoading: orgsLoading } = useOrganizations()
   const { data: quarters, isLoading: quartersLoading } = useQuarters(wsId)
   const { isLoading: sessionLoading } = useSession(wsId)
+  const { isLoading: accessLoading } = useWorkspaceAccess(wsId)
   const { isLoading: settingsLoading } = useWorkspaceSettings(wsId)
 
   // Selection stores (Zustand) — sync from query data
@@ -58,7 +59,7 @@ function WorkspaceLayout() {
   }, [quarters])
 
   const loading = wsLoading || orgsLoading
-    || (!!wsId && (sessionLoading || settingsLoading || quartersLoading))
+    || (!!wsId && (sessionLoading || accessLoading || settingsLoading || quartersLoading))
     || (!!workspace && currentWorkspace?.id !== workspace.id)
 
   if (loading) {

@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useRewardQuarterStore } from '@/stores/quarterStore';
-import { useSession, useSessionRole } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { rewardGoalsService } from '@/lib/services/rewardGoalsService';
 import { settingsService } from '@/lib/services/settingsService';
 import type { RewardCompanyGoal, WorkspaceTeam } from '@/lib/types';
@@ -23,8 +23,8 @@ export default function CompanyGoals() {
   useTitle('Company Goals');
   const { currentWorkspace } = useWorkspaceStore();
   const { currentQuarter } = useRewardQuarterStore();
-  const { data: membership } = useSession(currentWorkspace?.id ?? '');
-  const { canEdit } = useSessionRole(membership);
+  const { data: access } = useWorkspaceAccess(currentWorkspace?.id ?? '');
+  const { canManageRewards } = usePermissions(access);
   const [goals, setGoals] = useState<RewardCompanyGoal[]>([]);
   const [teams, setTeams] = useState<WorkspaceTeam[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +70,7 @@ export default function CompanyGoals() {
           <h1 className="text-2xl font-bold">Company Goals</h1>
           <p className="text-muted-foreground">{currentQuarter?.name} &middot; {goals.length} goals</p>
         </div>
-        {canEdit && currentWorkspace?.id && currentQuarter?.id && (
+        {canManageRewards && currentWorkspace?.id && currentQuarter?.id && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button>

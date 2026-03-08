@@ -4,7 +4,7 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { invalidateWorkspaceTeamsCache } from '@/hooks/useWorkspaceTeams';
-import { useSession, useSessionRole } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { settingsService } from '@/lib/services/settingsService';
 import { gitService } from '@/lib/services/gitService';
 import { agentService } from '@/lib/services/agentService';
@@ -157,8 +157,8 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
   useTitle('Settings');
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
-  const { data: membership } = useSession(wsId);
-  const { isAdmin } = useSessionRole(membership);
+  const { data: access } = useWorkspaceAccess(wsId);
+  const { isAdmin, canManageSettings, canManageMembers, canManageTeams, canManageTeamMembers, canManageInvites, canAdminWorkflows, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -217,14 +217,14 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <GeneralTab
             workspaceId={workspaceId}
-            editable={isAdmin}
+            editable={canManageSettings}
           />
         );
       case 'members':
         return (
           <MembersTab
             workspaceId={workspaceId}
-            editable={isAdmin}
+            editable={canManageMembers}
           />
         );
       case 'teams':
@@ -237,7 +237,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             teamEstimateSettings={settings.team_estimate_settings}
             teamFieldVisibility={settings.team_field_visibility}
             teamRepoDefaults={settings.team_repo_defaults}
-            editable={isAdmin}
+            editable={canManageTeams}
             onRefresh={load}
           />
         );
@@ -245,7 +245,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <PeopleTab
             people={settings.people}
-            editable={isAdmin}
+            editable={canManageMembers}
             onRefresh={load}
           />
         );
@@ -254,7 +254,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <JobRolesTab
             workspaceId={workspaceId}
             criteria={settings.job_role_criteria}
-            editable={isAdmin}
+            editable={canManageSettings}
             onRefresh={load}
           />
         );
@@ -263,7 +263,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <BonusTiersTab
             workspaceId={workspaceId}
             tiers={settings.bonus_tiers}
-            editable={isAdmin}
+            editable={canManageSettings}
             onRefresh={load}
           />
         );
@@ -272,7 +272,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <SystemTab
             workspaceId={workspaceId}
             config={settings.settings}
-            editable={isAdmin}
+            editable={canManageSettings}
             onRefresh={load}
           />
         );
@@ -280,7 +280,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <ProjectDeliveryTab
             workspaceId={workspaceId}
-            editable={isAdmin}
+            editable={canManageSettings}
           />
         );
       case 'workflows':
@@ -288,7 +288,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <WorkflowsTab
             workspaceId={workspaceId}
             teams={settings.teams}
-            editable={isAdmin}
+            editable={canAdminWorkflows}
             initialTeamId={initialTeamId}
           />
         );
@@ -296,18 +296,18 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <WorkflowStatesTab
             workspaceId={workspaceId}
-            editable={isAdmin}
+            editable={canAdminWorkflows}
             initialWorkflowId={initialWorkflowId}
           />
         );
       case 'labels':
-        return <LabelsSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
+        return <LabelsSettings workspaceId={workspaceId} initialTeamId={initialTeamId} editable={canAdminLabels} />;
       case 'story-templates':
         return <StoryTemplatesSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
       case 'automations':
-        return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} />;
+        return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} editable={canAdminAutomations} />;
       case 'import':
-        return <ImportTab workspaceId={workspaceId} />;
+        return <ImportTab workspaceId={workspaceId} editable={canImport} />;
       default:
         return null;
     }
@@ -3589,9 +3589,10 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
 
 /* ============ Automations Tab ============ */
 
-function AutomationsTab({ workspaceId, teams }: {
+function AutomationsTab({ workspaceId, teams, editable = true }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
+  editable?: boolean;
 }) {
   const [automations, setAutomations] = useState<PMAutomation[]>([]);
   const [epicStates, setEpicStates] = useState<EpicWorkflowState[]>([]);
@@ -3749,6 +3750,7 @@ function AutomationsTab({ workspaceId, teams }: {
               ) : null}
               <Switch
                 checked={autoStart?.enabled ?? false}
+                disabled={!editable}
                 onCheckedChange={(checked) => {
                   const stateId = autoStart?.config_state_id ?? startedStates[0]?.id;
                   if (!stateId) { toast.error('No started epic state available. Please check your epic workflow states.'); return; }
@@ -3786,6 +3788,7 @@ function AutomationsTab({ workspaceId, teams }: {
               ) : null}
               <Switch
                 checked={autoComplete?.enabled ?? false}
+                disabled={!editable}
                 onCheckedChange={(checked) => {
                   const stateId = autoComplete?.config_state_id ?? doneStates[0]?.id;
                   if (!stateId) { toast.error('No done epic state available. Please check your epic workflow states.'); return; }
@@ -3818,19 +3821,21 @@ function AutomationsTab({ workspaceId, teams }: {
                   Automatically create future sprints when a sprint completes.
                 </p>
               </div>
-              <Select
-                value=""
-                onValueChange={(teamId) => upsert('sprint_auto_create', true, { teamId, configInt: 2, configInt2: 1, configInt3: 1 })}
-              >
-                <SelectTrigger className="w-[140px] h-8 text-xs">
-                  <SelectValue placeholder="Add Team..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {teams.filter((t) => !sprintAutoCreateTeamIds.has(t.id)).map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {editable && (
+                <Select
+                  value=""
+                  onValueChange={(teamId) => upsert('sprint_auto_create', true, { teamId, configInt: 2, configInt2: 1, configInt3: 1 })}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue placeholder="Add Team..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.filter((t) => !sprintAutoCreateTeamIds.has(t.id)).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             {sprintAutoCreateConfigs.map((cfg) => {
               const team = teams.find((t) => t.id === cfg.team_id);
@@ -3846,6 +3851,7 @@ function AutomationsTab({ workspaceId, teams }: {
                       value={cfg.config_int ?? 2}
                       onChange={(e) => updateSprintConfig(cfg, { configInt: Number(e.target.value) })}
                       className="w-16 h-7 text-xs"
+                      disabled={!editable}
                     />
                     <Label className="text-xs text-muted-foreground">Weeks:</Label>
                     <Input
@@ -3855,11 +3861,13 @@ function AutomationsTab({ workspaceId, teams }: {
                       value={cfg.config_int2 ?? 1}
                       onChange={(e) => updateSprintConfig(cfg, { configInt2: Number(e.target.value) })}
                       className="w-16 h-7 text-xs"
+                      disabled={!editable}
                     />
                     <Label className="text-xs text-muted-foreground">Start day:</Label>
                     <Select
                       value={String(cfg.config_int3 ?? 1)}
                       onValueChange={(val) => updateSprintConfig(cfg, { configInt3: Number(val) })}
+                      disabled={!editable}
                     >
                       <SelectTrigger className="w-[100px] h-7 text-xs">
                         <SelectValue />
@@ -3873,11 +3881,14 @@ function AutomationsTab({ workspaceId, teams }: {
                   </div>
                   <Switch
                     checked={cfg.enabled}
+                    disabled={!editable}
                     onCheckedChange={(checked) => updateSprintConfig(cfg, { enabled: checked })}
                   />
-                  <button type="button" onClick={() => removeAuto('sprint_auto_create', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
-                    <X className="h-4 w-4" />
-                  </button>
+                  {editable && (
+                    <button type="button" onClick={() => removeAuto('sprint_auto_create', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -3892,19 +3903,21 @@ function AutomationsTab({ workspaceId, teams }: {
                   When a sprint ends, move incomplete stories to the next sprint.
                 </p>
               </div>
-              <Select
-                value=""
-                onValueChange={(teamId) => upsert('sprint_move_unfinished', true, { teamId })}
-              >
-                <SelectTrigger className="w-[140px] h-8 text-xs">
-                  <SelectValue placeholder="Add Team..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {teams.filter((t) => !sprintMoveTeamIds.has(t.id)).map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {editable && (
+                <Select
+                  value=""
+                  onValueChange={(teamId) => upsert('sprint_move_unfinished', true, { teamId })}
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue placeholder="Add Team..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.filter((t) => !sprintMoveTeamIds.has(t.id)).map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             {sprintMoveConfigs.map((cfg) => {
               const team = teams.find((t) => t.id === cfg.team_id);
@@ -3913,11 +3926,14 @@ function AutomationsTab({ workspaceId, teams }: {
                   <span className="text-sm font-medium flex-1">{team?.name ?? 'Unknown'}</span>
                   <Switch
                     checked={cfg.enabled}
+                    disabled={!editable}
                     onCheckedChange={(checked) => upsert('sprint_move_unfinished', checked, { teamId: cfg.team_id! })}
                   />
-                  <button type="button" onClick={() => removeAuto('sprint_move_unfinished', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
-                    <X className="h-4 w-4" />
-                  </button>
+                  {editable && (
+                    <button type="button" onClick={() => removeAuto('sprint_move_unfinished', cfg.team_id!)} className="text-muted-foreground hover:text-destructive">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -3954,7 +3970,7 @@ const IMPORT_SOURCES = [
   },
 ];
 
-function ImportTab({ workspaceId }: { workspaceId: string }) {
+function ImportTab({ workspaceId, editable = true }: { workspaceId: string; editable?: boolean }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberWithUser[]>([]);
 
@@ -3986,7 +4002,7 @@ function ImportTab({ workspaceId }: { workspaceId: string }) {
           <button
             key={source.key}
             type="button"
-            disabled={source.comingSoon}
+            disabled={source.comingSoon || !editable}
             onClick={() => setSelected(source.key)}
             className={cn(
               'flex w-full items-center gap-4 px-4 py-4 text-left transition-colors',

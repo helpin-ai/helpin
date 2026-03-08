@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -153,6 +154,7 @@ func main() {
 		&model.AgentHandoff{},
 		&model.PMStoryTemplate{},
 		&model.PMImportJob{},
+		&authorization.AuthorizationRelation{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -321,6 +323,13 @@ func main() {
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL)
 	orchestrationService := service.NewOrchestrationService(pmEpicRepo, pmStoryService, agentRepo, agentHandoffRepo, pmActivityService, wsPublisher, claudeClient)
 
+	// Initialize authorization service.
+	authzMemberRepo := authorization.NewGORMMemberRepository(db)
+	authzService := authorization.NewAuthzService(db, authzMemberRepo)
+
+	// Inject authorization into WebSocket handler for workspace access checks.
+	wsHandler.SetAuthzService(authzService)
+
 	// Initialize handlers.
 	handlers := router.Handlers{
 		Health:          handler.NewHealthHandler(),
@@ -358,8 +367,17 @@ func main() {
 		Orchestration:   handler.NewOrchestrationHandler(orchestrationService),
 	}
 
+	// Slug resolver adapts workspace repo for RBAC middleware.
+	slugResolver := authorization.SlugResolver(func(ctx context.Context, slug string) (string, error) {
+		ws, err := workspaceRepo.GetBySlug(ctx, slug)
+		if err != nil {
+			return "", err
+		}
+		return ws.ID, nil
+	})
+
 	// Set up router.
-	r := router.New(handlers, jwtManager, workspaceRepo.GetMemberRole, cfg.CORSOrigin)
+	r := router.New(handlers, jwtManager, authzService, slugResolver, cfg.CORSOrigin)
 
 	// Start background ticker for iteration automations.
 	automationDone := make(chan struct{})

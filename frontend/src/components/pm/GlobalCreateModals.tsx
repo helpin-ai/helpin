@@ -15,7 +15,7 @@ import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import { useSession, useSessionRole } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useEpicStates } from '@/hooks/queries/useWorkflows';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -440,8 +440,8 @@ function MultiSelectPopover({
 }
 
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
-  const { data: membership } = useSession(workspaceId);
-  const { canEdit } = useSessionRole(membership);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { canEdit } = usePermissions(access);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = buildAssignableMemberOptions(assignableMembers);

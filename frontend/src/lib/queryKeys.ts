@@ -16,6 +16,7 @@ export const queryKeys = {
     teams: (wsId: string) => ['workspaces', wsId, 'teams'] as const,
     quarters: (wsId: string) => ['workspaces', wsId, 'quarters'] as const,
     session: (wsId: string) => ['workspaces', wsId, 'session'] as const,
+    access: (wsId: string) => ['workspaces', wsId, 'access'] as const,
   },
 
   pm: {

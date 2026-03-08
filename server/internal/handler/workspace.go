@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -150,4 +151,40 @@ func (h *WorkspaceHandler) ListAssignableMembers(w http.ResponseWriter, r *http.
 		members = []model.AssignableMember{}
 	}
 	writeJSON(w, http.StatusOK, members)
+}
+
+// GetMe handles GET /api/workspaces/{id}/me.
+// Returns the actor's membership, effective permissions, and team memberships.
+func (h *WorkspaceHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	actor := authorization.GetActor(r.Context())
+	if actor == nil {
+		writeError(w, http.StatusInternalServerError, "authorization context missing")
+		return
+	}
+
+	// Build permission strings from actor's role
+	perms := authorization.NewRBACEngine().PermissionsForRole(actor.Role)
+	permStrings := make([]string, len(perms))
+	for i, p := range perms {
+		permStrings[i] = string(p)
+	}
+
+	teamMemberships := make([]map[string]string, len(actor.TeamMemberships))
+	for i, tm := range actor.TeamMemberships {
+		teamMemberships[i] = map[string]string{
+			"team_id": tm.TeamID,
+			"role":    tm.Role,
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"workspace_id": actor.WorkspaceID,
+		"membership": map[string]string{
+			"id":     actor.WorkspaceMemberID,
+			"role":   actor.Role,
+			"status": actor.Status,
+		},
+		"permissions":      permStrings,
+		"team_memberships": teamMemberships,
+	})
 }

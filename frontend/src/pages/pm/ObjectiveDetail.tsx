@@ -30,7 +30,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useSession, useSessionRole } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -421,8 +421,8 @@ export function ObjectiveDetailPage() {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
-  const { data: membership } = useSession(workspaceId ?? '');
-  const { canEdit, isAdmin } = useSessionRole(membership);
+  const { data: access } = useWorkspaceAccess(workspaceId ?? '');
+  const { canEdit, isAdmin } = usePermissions(access);
 
   const [data, setData] = useState<ObjectiveWithDetails | null>(null);
   const [loading, setLoading] = useState(true);

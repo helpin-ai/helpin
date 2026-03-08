@@ -35,7 +35,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useSession, useSessionRole } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { Button } from '@/components/ui/button';
@@ -121,16 +121,16 @@ export function Sidebar() {
   const workspaceId = currentWorkspace?.id;
   const activeRail = deriveActiveRail(location.pathname);
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
-  const { data: membership } = useSession(workspaceId ?? '');
-  const { isAdmin } = useSessionRole(membership);
-  const currentUserId = membership?.user_id;
+  const { data: access } = useWorkspaceAccess(workspaceId ?? '');
+  const { isAdmin } = usePermissions(access);
 
-  const { teams: allTeams, userMemberships } = useWorkspaceTeams(workspaceId);
+  const { teams: allTeams } = useWorkspaceTeams(workspaceId);
+  const myTeamMemberships = access?.team_memberships ?? [];
   const teams = useMemo(() => {
     if (isAdmin) return allTeams;
-    const myTeamIds = new Set(userMemberships.filter((m) => m.user_id === currentUserId).map((m) => m.team_id));
+    const myTeamIds = new Set(myTeamMemberships.map((m) => m.team_id));
     return allTeams.filter((t) => myTeamIds.has(t.id));
-  }, [allTeams, userMemberships, currentUserId, isAdmin]);
+  }, [allTeams, myTeamMemberships, isAdmin]);
 
   // ── Expanded teams state ──
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() =>

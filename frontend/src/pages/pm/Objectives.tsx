@@ -26,7 +26,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useObjectives, useDeleteObjective } from '@/hooks/queries/useObjectives';
-import { useSession, useSessionRole } from '@/hooks/queries/useSession';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -117,8 +117,8 @@ export function ObjectivesPage() {
   const workspaceId = workspace?.id ?? '';
   const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
-  const { data: membership } = useSession(workspaceId);
-  const { canEdit, isAdmin } = useSessionRole(membership);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { canEdit, isAdmin } = usePermissions(access);
   const { teams } = useWorkspaceTeams(workspaceId || undefined);
 
   // Filters

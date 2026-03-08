@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useSession, useSessionRole, useQuarters } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions, useQuarters } from '@/hooks/queries';
 import { rewardBonusService } from '@/lib/services/rewardBonusService';
 import { settingsService } from '@/lib/services/settingsService';
 import type { RewardBonusCalculation, RewardFinanceSettings, RewardQuarter, WorkspacePerson, WorkspaceTeam } from '@/lib/types';
@@ -20,8 +20,8 @@ export default function BonusDashboard() {
   useTitle('Bonus Dashboard');
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
-  const { data: membership } = useSession(wsId);
-  const { isAdmin } = useSessionRole(membership);
+  const { data: access } = useWorkspaceAccess(wsId);
+  const { canManageRewards } = usePermissions(access);
   const { data: quarters } = useQuarters(wsId);
   const [currentQuarter, setCurrentQuarter] = useState<RewardQuarter | null>(null);
   const [calculations, setCalculations] = useState<RewardBonusCalculation[]>([]);
@@ -131,7 +131,7 @@ export default function BonusDashboard() {
           <h1 className="text-2xl font-bold">Bonus Dashboard</h1>
           <p className="text-muted-foreground">{currentQuarter?.name}</p>
         </div>
-        {isAdmin && (
+        {canManageRewards && (
           isLocked ? (
             <Button variant="outline" onClick={handleUnlock}>
               <Unlock className="h-4 w-4 mr-2" />
@@ -205,21 +205,21 @@ export default function BonusDashboard() {
             <FinanceField
               label="MRR Start"
               value={finance?.mrr_start ?? 0}
-              disabled={isLocked || !isAdmin}
+              disabled={isLocked || !canManageRewards}
               onChange={v => handleFinanceUpdate('mrr_start', v)}
               prefix="$"
             />
             <FinanceField
               label="MRR End"
               value={finance?.mrr_end ?? 0}
-              disabled={isLocked || !isAdmin}
+              disabled={isLocked || !canManageRewards}
               onChange={v => handleFinanceUpdate('mrr_end', v)}
               prefix="$"
             />
             <FinanceField
               label="Pool %"
               value={finance?.bonus_pool_percentage ?? 0}
-              disabled={isLocked || !isAdmin}
+              disabled={isLocked || !canManageRewards}
               onChange={v => handleFinanceUpdate('bonus_pool_percentage', v)}
               suffix="%"
             />

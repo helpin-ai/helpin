@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { AssignableMember, Workspace, WorkspaceMember, MemberWithUser } from '../types';
+import type { AssignableMember, Workspace, WorkspaceAccess, WorkspaceMember, MemberWithUser } from '../types';
 
 export const workspacesService = {
   list: (organizationId?: string) =>
@@ -12,6 +12,7 @@ export const workspacesService = {
   delete: (id: string) => api.del(`/workspaces/${id}`),
   getMyRole: (id: string) => api.get<{ role: string }>(`/workspaces/${id}/my-role`),
   getMyMembership: (id: string) => api.get<WorkspaceMember>(`/workspaces/${id}/my-membership`),
+  getMe: (id: string) => api.get<WorkspaceAccess>(`/workspaces/${id}/me`),
   listMembers: (id: string) => api.get<MemberWithUser[]>(`/workspaces/${id}/members`),
   listAssignableMembers: (id: string) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members`),
 };
