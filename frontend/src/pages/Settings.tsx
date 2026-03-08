@@ -4,7 +4,7 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { invalidateWorkspaceTeamsCache } from '@/hooks/useWorkspaceTeams';
-import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions, useNotificationPreferences, useUpdateNotificationPreferences } from '@/hooks/queries';
 import { settingsService } from '@/lib/services/settingsService';
 import { gitService } from '@/lib/services/gitService';
 import { agentService } from '@/lib/services/agentService';
@@ -32,13 +32,13 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, Camera, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Bell, Briefcase, Camera, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'import' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'import' | 'helpcenter' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -60,6 +60,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Teams',
     description: '',
     icon: Users,
+    group: 'Workspace',
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    description: 'Manage your notification preferences, email digests, and Do Not Disturb.',
+    icon: Bell,
     group: 'Workspace',
   },
   {
@@ -110,6 +117,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     description: 'Import data from Shortcut and other project management tools.',
     icon: Import,
     group: 'Data',
+  },
+  {
+    id: 'helpcenter',
+    label: 'Help Center',
+    description: 'Configure your public help center branding, domain, and SEO.',
+    icon: Globe,
+    group: 'Docs',
   },
   /* {
     id: 'people',
@@ -308,6 +322,10 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} editable={canAdminAutomations} />;
       case 'import':
         return <ImportTab workspaceId={workspaceId} editable={canImport} />;
+      case 'helpcenter':
+        return <HelpcenterTab workspaceId={workspaceId} />;
+      case 'notifications':
+        return <NotificationsTab workspaceId={workspaceId} />;
       default:
         return null;
     }
@@ -4102,6 +4120,359 @@ function ImportTab({ workspaceId, editable = true }: { workspaceId: string; edit
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Help Center Settings ────────────────────────────────────────────────────
+
+function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [config, setConfig] = useState<{
+    subdomain: string;
+    custom_domain: string;
+    brand_name: string;
+    brand_logo_url: string;
+    brand_color: string;
+    is_published: boolean;
+    seo_title: string;
+    seo_description: string;
+    support_email: string;
+  }>({
+    subdomain: '',
+    custom_domain: '',
+    brand_name: '',
+    brand_logo_url: '',
+    brand_color: '#3b82f6',
+    is_published: false,
+    seo_title: '',
+    seo_description: '',
+    support_email: '',
+  });
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const { docsService } = await import('@/lib/services/docsService');
+      const res = await docsService.getHelpcenterConfig(workspaceId);
+      if (res.data) {
+        setConfig({
+          subdomain: res.data.subdomain ?? '',
+          custom_domain: res.data.custom_domain ?? '',
+          brand_name: res.data.brand_name ?? '',
+          brand_logo_url: res.data.brand_logo_url ?? '',
+          brand_color: res.data.brand_color ?? '#3b82f6',
+          is_published: res.data.is_published ?? false,
+          seo_title: res.data.seo_title ?? '',
+          seo_description: res.data.seo_description ?? '',
+          support_email: res.data.support_email ?? '',
+        });
+      }
+      setLoading(false);
+    };
+    load();
+  }, [workspaceId]);
+
+  const handleSave = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    const { docsService } = await import('@/lib/services/docsService');
+    const res = await docsService.updateHelpcenterConfig(workspaceId, {
+      subdomain: config.subdomain || undefined,
+      custom_domain: config.custom_domain || undefined,
+      brand_name: config.brand_name || undefined,
+      brand_logo_url: config.brand_logo_url || undefined,
+      brand_color: config.brand_color || undefined,
+      is_published: config.is_published,
+      seo_title: config.seo_title || undefined,
+      seo_description: config.seo_description || undefined,
+      support_email: config.support_email || undefined,
+    });
+    setSaving(false);
+    if (res.error) {
+      toast.error(res.error);
+    } else {
+      toast.success('Help center settings saved');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSave} className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Branding</CardTitle>
+          <CardDescription>Customize how your public help center looks.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="hc-brand-name">Brand Name</Label>
+            <Input
+              id="hc-brand-name"
+              value={config.brand_name}
+              onChange={(e) => setConfig({ ...config, brand_name: e.target.value })}
+              placeholder="Your Company"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-brand-logo">Logo URL</Label>
+            <Input
+              id="hc-brand-logo"
+              value={config.brand_logo_url}
+              onChange={(e) => setConfig({ ...config, brand_logo_url: e.target.value })}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-brand-color">Brand Color</Label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                id="hc-brand-color"
+                value={config.brand_color}
+                onChange={(e) => setConfig({ ...config, brand_color: e.target.value })}
+                className="h-8 w-12 cursor-pointer rounded border"
+              />
+              <Input
+                value={config.brand_color}
+                onChange={(e) => setConfig({ ...config, brand_color: e.target.value })}
+                className="flex-1"
+                placeholder="#3b82f6"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Domain</CardTitle>
+          <CardDescription>Set up your help center URL.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="hc-subdomain">Subdomain</Label>
+            <div className="flex items-center gap-1">
+              <Input
+                id="hc-subdomain"
+                value={config.subdomain}
+                onChange={(e) => setConfig({ ...config, subdomain: e.target.value })}
+                placeholder="yourcompany"
+              />
+              <span className="shrink-0 text-sm text-muted-foreground">.helpin.ai</span>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-custom-domain">Custom Domain (optional)</Label>
+            <Input
+              id="hc-custom-domain"
+              value={config.custom_domain}
+              onChange={(e) => setConfig({ ...config, custom_domain: e.target.value })}
+              placeholder="help.yourcompany.com"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-support-email">Support Email</Label>
+            <Input
+              id="hc-support-email"
+              type="email"
+              value={config.support_email}
+              onChange={(e) => setConfig({ ...config, support_email: e.target.value })}
+              placeholder="support@yourcompany.com"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>SEO</CardTitle>
+          <CardDescription>Optimize your help center for search engines.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="hc-seo-title">SEO Title</Label>
+            <Input
+              id="hc-seo-title"
+              value={config.seo_title}
+              onChange={(e) => setConfig({ ...config, seo_title: e.target.value })}
+              placeholder="Help Center - Your Company"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-seo-desc">SEO Description</Label>
+            <Textarea
+              id="hc-seo-desc"
+              value={config.seo_description}
+              onChange={(e) => setConfig({ ...config, seo_description: e.target.value })}
+              placeholder="Find answers, guides, and documentation..."
+              rows={3}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Publishing</CardTitle>
+          <CardDescription>Control whether your help center is live.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Help Center Published</p>
+              <p className="text-xs text-muted-foreground">
+                {config.is_published
+                  ? 'Your help center is publicly accessible.'
+                  : 'Your help center is not visible to the public.'}
+              </p>
+            </div>
+            <Switch
+              checked={config.is_published}
+              onCheckedChange={(v) => setConfig({ ...config, is_published: v })}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button type="submit" disabled={saving}>
+          {saving ? 'Saving...' : 'Save Settings'}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/* ============ Notifications Tab ============ */
+
+function NotificationsTab({ workspaceId }: { workspaceId: string }) {
+  const { data: prefs, isLoading } = useNotificationPreferences(workspaceId);
+  const updatePrefs = useUpdateNotificationPreferences(workspaceId);
+
+  const handleToggle = (field: 'do_not_disturb' | 'email_enabled', value: boolean) => {
+    updatePrefs.mutate({ [field]: value }, {
+      onError: () => toast.error('Failed to update notification preference'),
+    });
+  };
+
+  const handleSelect = (field: 'email_digest_frequency' | 'badge_mode', value: string) => {
+    updatePrefs.mutate({ [field]: value }, {
+      onError: () => toast.error('Failed to update notification preference'),
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Do Not Disturb */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Do Not Disturb</CardTitle>
+          <CardDescription>Pause all in-app and push notifications.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Enable Do Not Disturb</p>
+              <p className="text-xs text-muted-foreground">When enabled, you won't receive any notifications.</p>
+            </div>
+            <Switch
+              checked={prefs?.do_not_disturb ?? false}
+              onCheckedChange={(v) => handleToggle('do_not_disturb', v)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Email Notifications */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Email Notifications</CardTitle>
+          <CardDescription>Control email notification delivery and digest frequency.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Enable email notifications</p>
+              <p className="text-xs text-muted-foreground">Receive notification emails for workspace activity.</p>
+            </div>
+            <Switch
+              checked={prefs?.email_enabled ?? true}
+              onCheckedChange={(v) => handleToggle('email_enabled', v)}
+            />
+          </div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Email digest frequency</p>
+              <p className="text-xs text-muted-foreground">How often to receive a summary of unread notifications.</p>
+            </div>
+            <Select
+              value={prefs?.email_digest_frequency ?? 'daily'}
+              onValueChange={(v) => handleSelect('email_digest_frequency', v)}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="never">Never</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Badge Mode */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Badge Mode</CardTitle>
+          <CardDescription>Control which notifications show an unread badge.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Show badge for</p>
+              <p className="text-xs text-muted-foreground">Choose which notifications increment the unread counter.</p>
+            </div>
+            <Select
+              value={prefs?.badge_mode ?? 'all'}
+              onValueChange={(v) => handleSelect('badge_mode', v)}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All notifications</SelectItem>
+                <SelectItem value="mentions_only">Mentions only</SelectItem>
+                <SelectItem value="none">None</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

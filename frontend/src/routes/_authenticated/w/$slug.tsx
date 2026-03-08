@@ -103,7 +103,7 @@ function WorkspaceLayout() {
       <div className="h-svh w-full overflow-hidden border border-border/70 bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
         <SidebarProvider
           className="!min-h-0 h-full"
-          style={{ '--sidebar-width': '16rem', '--sidebar-width-icon': '3rem' } as CSSProperties}
+          style={{ '--sidebar-width-icon': '3rem' } as CSSProperties}
         >
           <Sidebar />
           <SidebarInset className="min-w-0 overflow-hidden bg-transparent shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.06)] dark:shadow-[inset_2px_0_12px_0_rgba(0,0,0,0.2)]">

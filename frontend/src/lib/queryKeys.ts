@@ -88,4 +88,31 @@ export const queryKeys = {
     ticket: (wsId: string, id: string) => ['support', wsId, 'tickets', id] as const,
     messages: (wsId: string, ticketId: string) => ['support', wsId, 'tickets', ticketId, 'messages'] as const,
   },
+
+  docs: {
+    spaces: (wsId: string) => ['docs', wsId, 'spaces'] as const,
+    space: (wsId: string, id: string) => ['docs', wsId, 'spaces', id] as const,
+    collections: (wsId: string, spaceId: string) => ['docs', wsId, 'spaces', spaceId, 'collections'] as const,
+    documents: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['docs', wsId, 'documents', filters] as const) : (['docs', wsId, 'documents'] as const),
+    document: (wsId: string, id: string) => ['docs', wsId, 'documents', id] as const,
+    content: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'content'] as const,
+    versions: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'versions'] as const,
+    links: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'links'] as const,
+    linkedDocs: (wsId: string, objectType: string, objectId: string) =>
+      ['docs', wsId, 'linkedDocs', objectType, objectId] as const,
+    search: (wsId: string, query: string) => ['docs', wsId, 'search', query] as const,
+    helpcenterConfig: (wsId: string) => ['docs', wsId, 'helpcenter', 'config'] as const,
+  },
+
+  notifications: {
+    all: (wsId: string) => ['notifications', wsId] as const,
+    list: (wsId: string, filter?: string) =>
+      filter ? (['notifications', wsId, 'list', filter] as const) : (['notifications', wsId, 'list'] as const),
+    unreadCount: (wsId: string) => ['notifications', wsId, 'unread-count'] as const,
+    preferences: (wsId: string) => ['notifications', wsId, 'preferences'] as const,
+    following: (wsId: string) => ['notifications', wsId, 'following'] as const,
+    isFollowing: (wsId: string, entityType: string, entityId: string) =>
+      ['notifications', wsId, 'following', entityType, entityId] as const,
+  },
 } as const

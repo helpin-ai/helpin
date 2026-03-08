@@ -616,6 +616,26 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
+// GetUserIDByHandle resolves a @mention handle to a user ID within a workspace.
+// It tries matching against user full_name (case-insensitive, dot-separated).
+func (r *WorkspaceRepository) GetUserIDByHandle(ctx context.Context, workspaceID, handle string) (string, error) {
+	// Convert handle like "john.doe" to "john doe" for name matching.
+	namePattern := strings.ReplaceAll(handle, ".", " ")
+	var userID string
+	err := r.db.WithContext(ctx).
+		Table("workspace_members").
+		Joins("JOIN users ON users.id = workspace_members.user_id").
+		Where("workspace_members.workspace_id = ? AND workspace_members.status = 'active'", workspaceID).
+		Where("LOWER(users.full_name) = LOWER(?) OR LOWER(REPLACE(users.full_name, ' ', '.')) = LOWER(?)", namePattern, handle).
+		Select("workspace_members.user_id").
+		Limit(1).
+		Scan(&userID).Error
+	if err != nil {
+		return "", err
+	}
+	return userID, nil
+}
+
 func stringPtr(value string) *string {
 	if strings.TrimSpace(value) == "" {
 		return nil

@@ -33,6 +33,7 @@ import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { EpicOrchestrationPanel } from '@/components/pm/EpicOrchestrationPanel';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { FollowButton } from '@/components/notifications/FollowButton';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -342,6 +343,7 @@ export function EpicDetailPage() {
 
         <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
+          <FollowButton entityType="epic" entityId={epic.epic.id} />
         </div>
       </div>
 

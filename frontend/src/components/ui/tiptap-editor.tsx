@@ -17,10 +17,17 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
 import { uploadEditorImage } from '@/hooks/useEditorImageUpload';
-import type { WorkspaceTeam } from '@/lib/types';
+import type { WorkspaceTeam, AssignableMember } from '@/lib/types';
 import { ResizableImageExtension } from './resizable-image-extension';
 
 export type { EditorUploadConfig };
+
+interface MentionItem {
+  id: string;
+  name: string;
+  handle: string;
+  type: 'member' | 'team';
+}
 
 interface TiptapEditorProps {
   content: string;
@@ -29,6 +36,7 @@ interface TiptapEditorProps {
   className?: string;
   uploadConfig?: EditorUploadConfig;
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
+  members?: AssignableMember[];
 }
 
 function ToolbarButton({
@@ -53,17 +61,23 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, teams = [] }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, teams = [], members = [] }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
   const [mentionState, setMentionState] = useState<{
     from: number;
     to: number;
-    items: Array<{ id: string; name: string; handle: string }>;
+    items: MentionItem[];
     selectedIndex: number;
   } | null>(null);
   const mentionStateRef = useRef(mentionState);
   mentionStateRef.current = mentionState;
+  const teamsRef = useRef(teams);
+  teamsRef.current = teams;
+  const membersRef = useRef(members);
+  membersRef.current = members;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const handleImageUpload = useCallback(
     async (file: File, editorInstance: ReturnType<typeof useEditor>) => {
@@ -231,9 +245,21 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         return false;
       },
     },
-    onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
-      if (teams.length === 0) {
+  });
+
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+
+  // Register update/blur handlers via useEffect — avoids TipTap v3 stale-closure
+  // issue where onUpdate passed in useEditor options is only captured once.
+  useEffect(() => {
+    if (!editor) return;
+
+    const handleUpdate = () => {
+      onChangeRef.current(editor.getHTML());
+      const currentTeams = teamsRef.current;
+      const currentMembers = membersRef.current;
+      if (currentTeams.length === 0 && currentMembers.length === 0) {
         setMentionState(null);
         return;
       }
@@ -243,17 +269,31 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         return;
       }
       const textBefore = selection.$from.parent.textBetween(0, selection.$from.parentOffset, undefined, '\ufffc');
-      const match = textBefore.match(/(?:^|\s)@([a-z0-9-]*)$/i);
+      const match = textBefore.match(/(?:^|\s)@([a-z0-9._-]*)$/i);
       if (!match) {
         setMentionState(null);
         return;
       }
       const query = match[1].toLowerCase();
-      const items = teams
-        .filter((team): team is typeof team & { handle: string } => Boolean(team.handle))
-        .filter((team) => !query || team.handle.toLowerCase().includes(query) || team.name.toLowerCase().includes(query))
-        .slice(0, 6)
-        .map((team) => ({ id: team.id, name: team.name, handle: team.handle }));
+      const items: MentionItem[] = [];
+
+      // Members first
+      for (const m of currentMembers) {
+        if (m.status !== 'active') continue;
+        const handle = m.display_name.toLowerCase().replace(/\s+/g, '.');
+        if (!query || handle.includes(query) || m.display_name.toLowerCase().includes(query) || m.email.toLowerCase().includes(query)) {
+          items.push({ id: m.user_id || m.id, name: m.display_name, handle, type: 'member' });
+        }
+      }
+
+      // Then teams
+      for (const t of currentTeams) {
+        if (!t.handle) continue;
+        if (!query || t.handle.toLowerCase().includes(query) || t.name.toLowerCase().includes(query)) {
+          items.push({ id: t.id, name: t.name, handle: t.handle, type: 'team' });
+        }
+      }
+
       if (items.length === 0) {
         setMentionState(null);
         return;
@@ -261,15 +301,21 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       setMentionState({
         from: selection.from - (query.length + 1),
         to: selection.from,
-        items,
+        items: items.slice(0, 8),
         selectedIndex: 0,
       });
-    },
-    onBlur: () => setMentionState(null),
-  });
+    };
 
-  const editorRef = useRef(editor);
-  editorRef.current = editor;
+    const handleBlur = () => setMentionState(null);
+
+    editor.on('update', handleUpdate);
+    editor.on('blur', handleBlur);
+
+    return () => {
+      editor.off('update', handleUpdate);
+      editor.off('blur', handleBlur);
+    };
+  }, [editor]);
 
   // Sync external content changes (e.g. form reset)
   useEffect(() => {
@@ -375,12 +421,12 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       {mentionState && mentionState.items.length > 0 ? (
         <div className="border-t border-border/60 bg-muted/40 px-2 py-2">
           <div className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Mention team
+            Mention
           </div>
           <div className="space-y-1">
-            {mentionState.items.map((team, index) => (
+            {mentionState.items.map((item, index) => (
               <button
-                key={team.id}
+                key={`${item.type}-${item.id}`}
                 type="button"
                 className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
                   index === mentionState.selectedIndex
@@ -393,13 +439,18 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
                   editorRef.current
                     .chain()
                     .focus()
-                    .insertContentAt({ from: mentionState.from, to: mentionState.to }, `@${team.handle} `)
+                    .insertContentAt({ from: mentionState.from, to: mentionState.to }, `@${item.handle} `)
                     .run();
                   setMentionState(null);
                 }}
               >
-                <span>{team.name}</span>
-                <span className="font-mono text-xs text-muted-foreground">@{team.handle}</span>
+                <div className="flex items-center gap-1.5">
+                  {item.type === 'team' && (
+                    <span className="inline-flex h-4 items-center rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground">T</span>
+                  )}
+                  <span>{item.name}</span>
+                </div>
+                <span className="font-mono text-xs text-muted-foreground">@{item.handle}</span>
               </button>
             ))}
           </div>

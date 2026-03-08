@@ -59,6 +59,18 @@ export function useRealtimeSync(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints'] })
     } else if (event.entity === 'objective') {
       queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'objectives'] })
+    } else if (event.entity === 'docs_document') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(workspaceId, event.entity_id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.content(workspaceId, event.entity_id) })
+    } else if (event.entity === 'docs_space') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.spaces(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.space(workspaceId, event.entity_id) })
+    } else if (event.entity === 'docs_collection') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.collections(workspaceId, event.parent_id ?? '') })
+    } else if (event.entity === 'notification') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
     }
 
     // Child entity events → invalidate parent query cache

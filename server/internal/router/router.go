@@ -48,6 +48,8 @@ type Handlers struct {
 	Widget          *handler.WidgetHandler
 	Git             *handler.GitHandler
 	Orchestration   *handler.OrchestrationHandler
+	Docs            *handler.DocsHandler
+	Notification    *handler.NotificationHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -85,6 +87,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
+
+		// ---- Public Help Center routes (no JWT) ----
+		r.Route("/hc/{subdomain}", func(r chi.Router) {
+			r.Get("/articles/{slug}", h.Docs.PublicGetArticle)
+			r.Get("/search", h.Docs.PublicSearchArticles)
+		})
 
 		// ---- Public widget routes (no JWT, open CORS) ----
 		r.Route("/widget/support", func(r chi.Router) {
@@ -416,6 +424,100 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/approve", h.Agent.ApproveRun)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/handoff", h.Agent.HandoffRun)
+			})
+
+			// Notifications module
+			r.Route("/notifications", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Use(wsAccess)
+
+				// Inbox
+				r.With(requirePerm(authorization.PermNotificationsRead)).Get("/", h.Notification.List)
+				r.With(requirePerm(authorization.PermNotificationsRead)).Get("/unread-count", h.Notification.GetUnreadCount)
+				r.With(requirePerm(authorization.PermNotificationsManage)).Patch("/{notifId}", h.Notification.Update)
+				r.With(requirePerm(authorization.PermNotificationsManage)).Post("/mark-all-read", h.Notification.MarkAllRead)
+				r.With(requirePerm(authorization.PermNotificationsManage)).Post("/archive-all-read", h.Notification.ArchiveAllRead)
+				r.With(requirePerm(authorization.PermNotificationsManage)).Delete("/{notifId}", h.Notification.Delete)
+
+				// Preferences
+				r.With(requirePerm(authorization.PermNotificationsRead)).Get("/preferences", h.Notification.GetPreferences)
+				r.With(requirePerm(authorization.PermNotificationsManage)).Put("/preferences", h.Notification.UpdatePreferences)
+
+				// Following
+				r.With(requirePerm(authorization.PermNotificationsRead)).Get("/following", h.Notification.ListFollowing)
+			})
+
+			// Followers (on PM entities)
+			r.Route("/pm/{entityType}/{entityId}/followers", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Use(wsAccess)
+
+				r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Notification.ListFollowers)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/check", h.Notification.IsFollowing)
+				r.With(requirePerm(authorization.PermPMRead)).Post("/", h.Notification.Follow)
+				r.With(requirePerm(authorization.PermPMRead)).Delete("/", h.Notification.Unfollow)
+			})
+
+			// Docs module
+			r.Route("/docs", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Use(wsAccess)
+
+				// Spaces — docs.read / docs.edit / docs.admin
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces", h.Docs.ListSpaces)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/spaces", h.Docs.CreateSpace)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}", h.Docs.GetSpace)
+				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/spaces/{spaceId}", h.Docs.UpdateSpace)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Delete("/spaces/{spaceId}", h.Docs.DeleteSpace)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/spaces/{spaceId}/restore", h.Docs.RestoreSpace)
+
+				// Collections — docs.read / docs.edit
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}/collections", h.Docs.ListCollections)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/spaces/{spaceId}/collections", h.Docs.CreateCollection)
+				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/collections/{collectionId}", h.Docs.UpdateCollection)
+				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/collections/{collectionId}", h.Docs.DeleteCollection)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/collections/{collectionId}/restore", h.Docs.RestoreCollection)
+
+				// Documents — docs.read / docs.edit
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents", h.Docs.ListDocuments)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents", h.Docs.CreateDocument)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}", h.Docs.GetDocument)
+				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/documents/{docId}", h.Docs.UpdateDocument)
+				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/documents/{docId}", h.Docs.DeleteDocument)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/restore", h.Docs.RestoreDocument)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/archive", h.Docs.ArchiveDocument)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/unarchive", h.Docs.UnarchiveDocument)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/move", h.Docs.MoveDocument)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/publish", h.Docs.PublishDocument)
+
+				// Content — docs.read / docs.edit
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content", h.Docs.SaveContent)
+
+				// Versions — docs.read / docs.edit
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/versions", h.Docs.ListVersions)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/versions", h.Docs.CreateVersion)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/revert/{versionId}", h.Docs.RevertVersion)
+
+				// Links — docs.read / docs.edit
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/links", h.Docs.ListLinks)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/links", h.Docs.CreateLink)
+				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/links/{linkId}", h.Docs.DeleteLink)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/linked-docs/{objectType}/{objectId}", h.Docs.ListLinkedDocs)
+
+				// External publish/unpublish — docs.publish
+				r.With(requirePerm(authorization.PermDocsPublish)).Post("/documents/{docId}/publish-external", h.Docs.PublishExternally)
+				r.With(requirePerm(authorization.PermDocsPublish)).Post("/documents/{docId}/unpublish-external", h.Docs.UnpublishExternally)
+
+				// Search
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/search", h.Docs.Search)
+
+				// Help Center Config — docs.admin
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/config", h.Docs.GetHelpcenterConfig)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/helpcenter/config", h.Docs.UpdateHelpcenterConfig)
+
+				// Feedback
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/articles/{docId}/feedback", h.Docs.SubmitArticleFeedback)
 			})
 		})
 	})

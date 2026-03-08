@@ -87,6 +87,8 @@ import type {
   WorkflowState,
 } from '@/lib/pmTypes';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { FollowButton } from '@/components/notifications/FollowButton';
+import { CommentEditor } from '@/components/pm/CommentEditor';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/stories/$storyId');
 
@@ -268,7 +270,6 @@ export function StoryDetailPage() {
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
-  const [newComment, setNewComment] = useState('');
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentBody, setEditingCommentBody] = useState('');
@@ -418,18 +419,17 @@ export function StoryDetailPage() {
   };
 
   // ── Comments ────────────────────────────────────────────────────
-  const addComment = async () => {
-    if (!newComment.trim() || !workspaceId || !storyDetail) return;
+  const addComment = async (body: string) => {
+    if (!body.trim() || !workspaceId || !storyDetail) return;
     setCommentLoading(true);
     const { data, error: err } = await pmCommentService.create(workspaceId, {
       entity_type: 'story',
       entity_id: storyDetail.story.id,
-      body: newComment.trim(),
+      body: body.trim(),
     });
     setCommentLoading(false);
     if (err || !data) return;
     setComments((current) => [...current, data]);
-    setNewComment('');
   };
 
   const startEditComment = (comment: CommentWithAuthor) => {
@@ -606,6 +606,7 @@ export function StoryDetailPage() {
 
         <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
+          <FollowButton entityType="story" entityId={storyDetail.story.id} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7 ml-2">
@@ -649,6 +650,7 @@ export function StoryDetailPage() {
               className="border-transparent shadow-none"
               uploadConfig={{ workspaceId: workspaceId!, entityType: 'story', entityId: storyDetail.story.id }}
               teams={teams}
+              members={assignableMembers}
             />
           </div>
 
@@ -787,29 +789,13 @@ export function StoryDetailPage() {
               {/* Comment input */}
               {comments.length > 0 && <Separator />}
               <div className="px-4 py-3">
-                <textarea
-                  value={newComment}
-                  placeholder="Leave a comment..."
-                  rows={2}
-                  className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
-                  onChange={(e) => setNewComment(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      e.preventDefault();
-                      addComment();
-                    }
-                  }}
+                <CommentEditor
+                  onSubmit={addComment}
+                  loading={commentLoading}
+                  placeholder="Leave a comment... (type @ to mention)"
+                  teams={teams}
+                  members={assignableMembers}
                 />
-                <div className="flex items-center justify-end gap-1">
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:opacity-40"
-                    disabled={commentLoading || !newComment.trim()}
-                    onClick={addComment}
-                  >
-                    {commentLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
               </div>
             </div>
 

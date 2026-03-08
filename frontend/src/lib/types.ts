@@ -79,6 +79,10 @@ export type Permission =
   | 'pm.import'
   | 'rewards.read'
   | 'rewards.manage'
+  | 'docs.read'
+  | 'docs.edit'
+  | 'docs.publish'
+  | 'docs.admin'
   | 'search.read'
   | 'ws.connect';
 

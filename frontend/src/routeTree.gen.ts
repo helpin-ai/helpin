@@ -21,6 +21,7 @@ import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
 import { Route as AuthenticatedWSlugSupportRouteImport } from './routes/_authenticated/w/$slug/support'
+import { Route as AuthenticatedWSlugNotificationsRouteImport } from './routes/_authenticated/w/$slug/notifications'
 import { Route as AuthenticatedWSlugMyQuarterRouteImport } from './routes/_authenticated/w/$slug/my-quarter'
 import { Route as AuthenticatedWSlugGoalsRouteImport } from './routes/_authenticated/w/$slug/goals'
 import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authenticated/w/$slug/docs'
@@ -29,6 +30,7 @@ import { Route as AuthenticatedWSlugBonusRouteImport } from './routes/_authentic
 import { Route as AuthenticatedWSlugSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/sprints/index'
 import { Route as AuthenticatedWSlugSettingsIndexRouteImport } from './routes/_authenticated/w/$slug/settings/index'
 import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authenticated/w/$slug/pm/index'
+import { Route as AuthenticatedWSlugDocsIndexRouteImport } from './routes/_authenticated/w/$slug/docs/index'
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
 import { Route as AuthenticatedWSlugSettingsSectionRouteImport } from './routes/_authenticated/w/$slug/settings/$section'
 import { Route as AuthenticatedWSlugPmSupportRouteImport } from './routes/_authenticated/w/$slug/pm/support'
@@ -37,6 +39,8 @@ import { Route as AuthenticatedWSlugPmRoadmapRouteImport } from './routes/_authe
 import { Route as AuthenticatedWSlugPmReportsRouteImport } from './routes/_authenticated/w/$slug/pm/reports'
 import { Route as AuthenticatedWSlugPmLabelsRouteImport } from './routes/_authenticated/w/$slug/pm/labels'
 import { Route as AuthenticatedWSlugPmAgentsRouteImport } from './routes/_authenticated/w/$slug/pm/agents'
+import { Route as AuthenticatedWSlugDocsMyRouteImport } from './routes/_authenticated/w/$slug/docs/my'
+import { Route as AuthenticatedWSlugDocsDraftsRouteImport } from './routes/_authenticated/w/$slug/docs/drafts'
 import { Route as AuthenticatedWSlugPmStoriesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/stories/index'
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
@@ -45,6 +49,8 @@ import { Route as AuthenticatedWSlugPmStoriesStoryIdRouteImport } from './routes
 import { Route as AuthenticatedWSlugPmSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/$sprintId'
 import { Route as AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/$objectiveId'
 import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_authenticated/w/$slug/pm/epics/$epicId'
+import { Route as AuthenticatedWSlugDocsSpacesSpaceIdRouteImport } from './routes/_authenticated/w/$slug/docs/spaces/$spaceId'
+import { Route as AuthenticatedWSlugDocsDocumentsDocIdRouteImport } from './routes/_authenticated/w/$slug/docs/documents/$docId'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -107,6 +113,12 @@ const AuthenticatedWSlugSupportRoute =
     path: '/support',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugNotificationsRoute =
+  AuthenticatedWSlugNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugMyQuarterRoute =
   AuthenticatedWSlugMyQuarterRouteImport.update({
     id: '/my-quarter',
@@ -151,6 +163,12 @@ const AuthenticatedWSlugPmIndexRoute =
     id: '/pm/',
     path: '/pm/',
     getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugDocsIndexRoute =
+  AuthenticatedWSlugDocsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedWSlugDocsRoute,
   } as any)
 const AuthenticatedWSlugSprintsSprintIdRoute =
   AuthenticatedWSlugSprintsSprintIdRouteImport.update({
@@ -200,6 +218,18 @@ const AuthenticatedWSlugPmAgentsRoute =
     path: '/pm/agents',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugDocsMyRoute =
+  AuthenticatedWSlugDocsMyRouteImport.update({
+    id: '/my',
+    path: '/my',
+    getParentRoute: () => AuthenticatedWSlugDocsRoute,
+  } as any)
+const AuthenticatedWSlugDocsDraftsRoute =
+  AuthenticatedWSlugDocsDraftsRouteImport.update({
+    id: '/drafts',
+    path: '/drafts',
+    getParentRoute: () => AuthenticatedWSlugDocsRoute,
+  } as any)
 const AuthenticatedWSlugPmStoriesIndexRoute =
   AuthenticatedWSlugPmStoriesIndexRouteImport.update({
     id: '/pm/stories/',
@@ -248,6 +278,18 @@ const AuthenticatedWSlugPmEpicsEpicIdRoute =
     path: '/pm/epics/$epicId',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugDocsSpacesSpaceIdRoute =
+  AuthenticatedWSlugDocsSpacesSpaceIdRouteImport.update({
+    id: '/spaces/$spaceId',
+    path: '/spaces/$spaceId',
+    getParentRoute: () => AuthenticatedWSlugDocsRoute,
+  } as any)
+const AuthenticatedWSlugDocsDocumentsDocIdRoute =
+  AuthenticatedWSlugDocsDocumentsDocIdRouteImport.update({
+    id: '/documents/$docId',
+    path: '/documents/$docId',
+    getParentRoute: () => AuthenticatedWSlugDocsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -259,13 +301,16 @@ export interface FileRoutesByFullPath {
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/w/$slug/bonus': typeof AuthenticatedWSlugBonusRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
-  '/w/$slug/docs': typeof AuthenticatedWSlugDocsRoute
+  '/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
   '/w/$slug/goals': typeof AuthenticatedWSlugGoalsRoute
   '/w/$slug/my-quarter': typeof AuthenticatedWSlugMyQuarterRoute
+  '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/support': typeof AuthenticatedWSlugSupportRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
+  '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
+  '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
   '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
@@ -274,9 +319,12 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
+  '/w/$slug/docs/': typeof AuthenticatedWSlugDocsIndexRoute
   '/w/$slug/pm/': typeof AuthenticatedWSlugPmIndexRoute
   '/w/$slug/settings/': typeof AuthenticatedWSlugSettingsIndexRoute
   '/w/$slug/sprints/': typeof AuthenticatedWSlugSprintsIndexRoute
+  '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
+  '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
@@ -295,13 +343,15 @@ export interface FileRoutesByTo {
   '/join/$token': typeof JoinTokenRoute
   '/w/$slug/bonus': typeof AuthenticatedWSlugBonusRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
-  '/w/$slug/docs': typeof AuthenticatedWSlugDocsRoute
   '/w/$slug/goals': typeof AuthenticatedWSlugGoalsRoute
   '/w/$slug/my-quarter': typeof AuthenticatedWSlugMyQuarterRoute
+  '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/support': typeof AuthenticatedWSlugSupportRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
+  '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
+  '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
   '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
@@ -310,9 +360,12 @@ export interface FileRoutesByTo {
   '/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
+  '/w/$slug/docs': typeof AuthenticatedWSlugDocsIndexRoute
   '/w/$slug/pm': typeof AuthenticatedWSlugPmIndexRoute
   '/w/$slug/settings': typeof AuthenticatedWSlugSettingsIndexRoute
   '/w/$slug/sprints': typeof AuthenticatedWSlugSprintsIndexRoute
+  '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
+  '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
@@ -334,13 +387,16 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/_authenticated/w/$slug/bonus': typeof AuthenticatedWSlugBonusRoute
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
-  '/_authenticated/w/$slug/docs': typeof AuthenticatedWSlugDocsRoute
+  '/_authenticated/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
   '/_authenticated/w/$slug/goals': typeof AuthenticatedWSlugGoalsRoute
   '/_authenticated/w/$slug/my-quarter': typeof AuthenticatedWSlugMyQuarterRoute
+  '/_authenticated/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/_authenticated/w/$slug/support': typeof AuthenticatedWSlugSupportRoute
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/_authenticated/w/$slug/': typeof AuthenticatedWSlugIndexRoute
+  '/_authenticated/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
+  '/_authenticated/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/_authenticated/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
   '/_authenticated/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/_authenticated/w/$slug/pm/reports': typeof AuthenticatedWSlugPmReportsRoute
@@ -349,9 +405,12 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/support': typeof AuthenticatedWSlugPmSupportRoute
   '/_authenticated/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
+  '/_authenticated/w/$slug/docs/': typeof AuthenticatedWSlugDocsIndexRoute
   '/_authenticated/w/$slug/pm/': typeof AuthenticatedWSlugPmIndexRoute
   '/_authenticated/w/$slug/settings/': typeof AuthenticatedWSlugSettingsIndexRoute
   '/_authenticated/w/$slug/sprints/': typeof AuthenticatedWSlugSprintsIndexRoute
+  '/_authenticated/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
+  '/_authenticated/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/_authenticated/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   '/_authenticated/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/_authenticated/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
@@ -376,10 +435,13 @@ export interface FileRouteTypes {
     | '/w/$slug/docs'
     | '/w/$slug/goals'
     | '/w/$slug/my-quarter'
+    | '/w/$slug/notifications'
     | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug/'
+    | '/w/$slug/docs/drafts'
+    | '/w/$slug/docs/my'
     | '/w/$slug/pm/agents'
     | '/w/$slug/pm/labels'
     | '/w/$slug/pm/reports'
@@ -388,9 +450,12 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/support'
     | '/w/$slug/settings/$section'
     | '/w/$slug/sprints/$sprintId'
+    | '/w/$slug/docs/'
     | '/w/$slug/pm/'
     | '/w/$slug/settings/'
     | '/w/$slug/sprints/'
+    | '/w/$slug/docs/documents/$docId'
+    | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/epics/$epicId'
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
@@ -409,13 +474,15 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/w/$slug/bonus'
     | '/w/$slug/dashboard'
-    | '/w/$slug/docs'
     | '/w/$slug/goals'
     | '/w/$slug/my-quarter'
+    | '/w/$slug/notifications'
     | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug'
+    | '/w/$slug/docs/drafts'
+    | '/w/$slug/docs/my'
     | '/w/$slug/pm/agents'
     | '/w/$slug/pm/labels'
     | '/w/$slug/pm/reports'
@@ -424,9 +491,12 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/support'
     | '/w/$slug/settings/$section'
     | '/w/$slug/sprints/$sprintId'
+    | '/w/$slug/docs'
     | '/w/$slug/pm'
     | '/w/$slug/settings'
     | '/w/$slug/sprints'
+    | '/w/$slug/docs/documents/$docId'
+    | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/epics/$epicId'
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
@@ -450,10 +520,13 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/docs'
     | '/_authenticated/w/$slug/goals'
     | '/_authenticated/w/$slug/my-quarter'
+    | '/_authenticated/w/$slug/notifications'
     | '/_authenticated/w/$slug/support'
     | '/_authenticated/w/$slug/tasks'
     | '/_authenticated/w/$slug/team-goals'
     | '/_authenticated/w/$slug/'
+    | '/_authenticated/w/$slug/docs/drafts'
+    | '/_authenticated/w/$slug/docs/my'
     | '/_authenticated/w/$slug/pm/agents'
     | '/_authenticated/w/$slug/pm/labels'
     | '/_authenticated/w/$slug/pm/reports'
@@ -462,9 +535,12 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/support'
     | '/_authenticated/w/$slug/settings/$section'
     | '/_authenticated/w/$slug/sprints/$sprintId'
+    | '/_authenticated/w/$slug/docs/'
     | '/_authenticated/w/$slug/pm/'
     | '/_authenticated/w/$slug/settings/'
     | '/_authenticated/w/$slug/sprints/'
+    | '/_authenticated/w/$slug/docs/documents/$docId'
+    | '/_authenticated/w/$slug/docs/spaces/$spaceId'
     | '/_authenticated/w/$slug/pm/epics/$epicId'
     | '/_authenticated/w/$slug/pm/objectives/$objectiveId'
     | '/_authenticated/w/$slug/pm/sprints/$sprintId'
@@ -569,6 +645,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSupportRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/notifications': {
+      id: '/_authenticated/w/$slug/notifications'
+      path: '/notifications'
+      fullPath: '/w/$slug/notifications'
+      preLoaderRoute: typeof AuthenticatedWSlugNotificationsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/my-quarter': {
       id: '/_authenticated/w/$slug/my-quarter'
       path: '/my-quarter'
@@ -624,6 +707,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/pm/'
       preLoaderRoute: typeof AuthenticatedWSlugPmIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/docs/': {
+      id: '/_authenticated/w/$slug/docs/'
+      path: '/'
+      fullPath: '/w/$slug/docs/'
+      preLoaderRoute: typeof AuthenticatedWSlugDocsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugDocsRoute
     }
     '/_authenticated/w/$slug/sprints/$sprintId': {
       id: '/_authenticated/w/$slug/sprints/$sprintId'
@@ -681,6 +771,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmAgentsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/docs/my': {
+      id: '/_authenticated/w/$slug/docs/my'
+      path: '/my'
+      fullPath: '/w/$slug/docs/my'
+      preLoaderRoute: typeof AuthenticatedWSlugDocsMyRouteImport
+      parentRoute: typeof AuthenticatedWSlugDocsRoute
+    }
+    '/_authenticated/w/$slug/docs/drafts': {
+      id: '/_authenticated/w/$slug/docs/drafts'
+      path: '/drafts'
+      fullPath: '/w/$slug/docs/drafts'
+      preLoaderRoute: typeof AuthenticatedWSlugDocsDraftsRouteImport
+      parentRoute: typeof AuthenticatedWSlugDocsRoute
+    }
     '/_authenticated/w/$slug/pm/stories/': {
       id: '/_authenticated/w/$slug/pm/stories/'
       path: '/pm/stories'
@@ -737,15 +841,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsEpicIdRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/docs/spaces/$spaceId': {
+      id: '/_authenticated/w/$slug/docs/spaces/$spaceId'
+      path: '/spaces/$spaceId'
+      fullPath: '/w/$slug/docs/spaces/$spaceId'
+      preLoaderRoute: typeof AuthenticatedWSlugDocsSpacesSpaceIdRouteImport
+      parentRoute: typeof AuthenticatedWSlugDocsRoute
+    }
+    '/_authenticated/w/$slug/docs/documents/$docId': {
+      id: '/_authenticated/w/$slug/docs/documents/$docId'
+      path: '/documents/$docId'
+      fullPath: '/w/$slug/docs/documents/$docId'
+      preLoaderRoute: typeof AuthenticatedWSlugDocsDocumentsDocIdRouteImport
+      parentRoute: typeof AuthenticatedWSlugDocsRoute
+    }
   }
 }
+
+interface AuthenticatedWSlugDocsRouteChildren {
+  AuthenticatedWSlugDocsDraftsRoute: typeof AuthenticatedWSlugDocsDraftsRoute
+  AuthenticatedWSlugDocsMyRoute: typeof AuthenticatedWSlugDocsMyRoute
+  AuthenticatedWSlugDocsIndexRoute: typeof AuthenticatedWSlugDocsIndexRoute
+  AuthenticatedWSlugDocsDocumentsDocIdRoute: typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
+  AuthenticatedWSlugDocsSpacesSpaceIdRoute: typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
+}
+
+const AuthenticatedWSlugDocsRouteChildren: AuthenticatedWSlugDocsRouteChildren =
+  {
+    AuthenticatedWSlugDocsDraftsRoute: AuthenticatedWSlugDocsDraftsRoute,
+    AuthenticatedWSlugDocsMyRoute: AuthenticatedWSlugDocsMyRoute,
+    AuthenticatedWSlugDocsIndexRoute: AuthenticatedWSlugDocsIndexRoute,
+    AuthenticatedWSlugDocsDocumentsDocIdRoute:
+      AuthenticatedWSlugDocsDocumentsDocIdRoute,
+    AuthenticatedWSlugDocsSpacesSpaceIdRoute:
+      AuthenticatedWSlugDocsSpacesSpaceIdRoute,
+  }
+
+const AuthenticatedWSlugDocsRouteWithChildren =
+  AuthenticatedWSlugDocsRoute._addFileChildren(
+    AuthenticatedWSlugDocsRouteChildren,
+  )
 
 interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugBonusRoute: typeof AuthenticatedWSlugBonusRoute
   AuthenticatedWSlugDashboardRoute: typeof AuthenticatedWSlugDashboardRoute
-  AuthenticatedWSlugDocsRoute: typeof AuthenticatedWSlugDocsRoute
+  AuthenticatedWSlugDocsRoute: typeof AuthenticatedWSlugDocsRouteWithChildren
   AuthenticatedWSlugGoalsRoute: typeof AuthenticatedWSlugGoalsRoute
   AuthenticatedWSlugMyQuarterRoute: typeof AuthenticatedWSlugMyQuarterRoute
+  AuthenticatedWSlugNotificationsRoute: typeof AuthenticatedWSlugNotificationsRoute
   AuthenticatedWSlugSupportRoute: typeof AuthenticatedWSlugSupportRoute
   AuthenticatedWSlugTasksRoute: typeof AuthenticatedWSlugTasksRoute
   AuthenticatedWSlugTeamGoalsRoute: typeof AuthenticatedWSlugTeamGoalsRoute
@@ -774,9 +917,10 @@ interface AuthenticatedWSlugRouteChildren {
 const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugBonusRoute: AuthenticatedWSlugBonusRoute,
   AuthenticatedWSlugDashboardRoute: AuthenticatedWSlugDashboardRoute,
-  AuthenticatedWSlugDocsRoute: AuthenticatedWSlugDocsRoute,
+  AuthenticatedWSlugDocsRoute: AuthenticatedWSlugDocsRouteWithChildren,
   AuthenticatedWSlugGoalsRoute: AuthenticatedWSlugGoalsRoute,
   AuthenticatedWSlugMyQuarterRoute: AuthenticatedWSlugMyQuarterRoute,
+  AuthenticatedWSlugNotificationsRoute: AuthenticatedWSlugNotificationsRoute,
   AuthenticatedWSlugSupportRoute: AuthenticatedWSlugSupportRoute,
   AuthenticatedWSlugTasksRoute: AuthenticatedWSlugTasksRoute,
   AuthenticatedWSlugTeamGoalsRoute: AuthenticatedWSlugTeamGoalsRoute,

@@ -36,6 +36,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { FollowButton } from '@/components/notifications/FollowButton';
 import type {
   EpicWithStats,
   KeyResult,
@@ -672,6 +673,7 @@ export function ObjectiveDetailPage() {
 
         <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
+          <FollowButton entityType="objective" entityId={data.objective.id} />
         </div>
       </div>
 

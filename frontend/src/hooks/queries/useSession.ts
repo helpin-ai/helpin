@@ -86,6 +86,14 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
       canImport: has('pm.import'),
       /** Can delete workspace (owner only) */
       canDeleteWorkspace: has('workspace.delete'),
+      /** Can read docs (viewer+) */
+      canReadDocs: has('docs.read'),
+      /** Can edit docs (member+) */
+      canEditDocs: has('docs.edit'),
+      /** Can publish docs (manager+) */
+      canPublishDocs: has('docs.publish'),
+      /** Can admin docs (admin+) */
+      canAdminDocs: has('docs.admin'),
     }
   }, [access])
 }

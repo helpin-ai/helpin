@@ -13,25 +13,29 @@ import (
 
 // PMStoryService contains story business logic.
 type PMStoryService struct {
-	storyRepo         *repository.PMStoryRepository
-	workspaceRepo     *repository.WorkspaceRepository
-	workflowRepo      *repository.PMWorkflowRepository
-	labelRepo         *repository.PMLabelRepository
-	activityService   *PMActivityService
-	wsPublisher       *websocket.Publisher
-	automationService *PMAutomationService
+	storyRepo           *repository.PMStoryRepository
+	workspaceRepo       *repository.WorkspaceRepository
+	workflowRepo        *repository.PMWorkflowRepository
+	labelRepo           *repository.PMLabelRepository
+	activityService     *PMActivityService
+	wsPublisher         *websocket.Publisher
+	automationService   *PMAutomationService
+	notificationService *NotificationService
+	followerService     *FollowerService
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
 	return &PMStoryService{
-		storyRepo:         storyRepo,
-		workspaceRepo:     workspaceRepo,
-		workflowRepo:      workflowRepo,
-		labelRepo:         labelRepo,
-		activityService:   activityService,
-		wsPublisher:       wsPublisher,
-		automationService: automationService,
+		storyRepo:           storyRepo,
+		workspaceRepo:       workspaceRepo,
+		workflowRepo:        workflowRepo,
+		labelRepo:           labelRepo,
+		activityService:     activityService,
+		wsPublisher:         wsPublisher,
+		automationService:   automationService,
+		notificationService: notificationService,
+		followerService:     followerService,
 	}
 }
 
@@ -269,6 +273,29 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	}
 	_ = s.activityService.Log(ctx, story.WorkspaceID, "story", story.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "story", EntityID: story.ID, WorkspaceID: story.WorkspaceID, ActorID: actorID})
+
+	// Auto-follow the creator and emit notification.
+	if s.followerService != nil && actorID != "" {
+		_ = s.followerService.Follow(ctx, actorID, "story", story.ID, story.WorkspaceID, "creator")
+	}
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: story.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "story.created",
+			EntityType:  "story",
+			EntityID:    story.ID,
+			Title:       "created " + story.Name,
+			Category:    "activity",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title":      story.Name,
+				"display_id": story.DisplayID,
+				"type":       story.StoryType,
+			},
+		})
+	}
+
 	return s.storyRepo.GetByID(ctx, story.ID)
 }
 
@@ -493,6 +520,44 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+
+	// Emit notification for significant updates.
+	if s.notificationService != nil && (stateChanged || (req.Priority != nil && *req.Priority != oldPriority) || (req.Blocked != nil && *req.Blocked != oldBlocked)) {
+		eventType := "story.updated"
+		title := "Story updated: " + current.Name
+		category := "activity"
+		priority := "normal"
+		if stateChanged {
+			eventType = "story.status_changed"
+			title = "Story moved: " + current.Name
+			category = "status_change"
+		}
+		if req.Priority != nil && *req.Priority == "urgent" {
+			priority = "high"
+		}
+		if req.Blocked != nil && *req.Blocked && !oldBlocked {
+			eventType = "story.blocked"
+			title = "Story blocked: " + current.Name
+			category = "status_change"
+			priority = "high"
+		}
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: current.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   eventType,
+			EntityType:  "story",
+			EntityID:    current.ID,
+			Title:       title,
+			Category:    category,
+			Priority:    priority,
+			EntitySnapshot: model.JSONB{
+				"title":      current.Name,
+				"display_id": current.DisplayID,
+				"type":       current.StoryType,
+			},
+		})
+	}
+
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
@@ -559,6 +624,25 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	action := "moved this story to " + newStateName
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "moved", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID: current.WorkspaceID,
+			ActorID:     actorID,
+			EventType:   "story.status_changed",
+			EntityType:  "story",
+			EntityID:    current.ID,
+			Title:       "moved " + current.Name + " to " + newStateName,
+			Category:    "status_change",
+			Priority:    "normal",
+			EntitySnapshot: model.JSONB{
+				"title":      current.Name,
+				"display_id": current.DisplayID,
+				"type":       current.StoryType,
+			},
+		})
+	}
+
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
@@ -608,6 +692,30 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 	}
 	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &userID, nil)
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+
+	// Auto-follow and notify the assigned user.
+	if s.followerService != nil {
+		_ = s.followerService.Follow(ctx, userID, "story", storyID, current.WorkspaceID, "assigned")
+	}
+	if s.notificationService != nil {
+		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID:        current.WorkspaceID,
+			ActorID:            actorID,
+			EventType:          "story.assigned",
+			EntityType:         "story",
+			EntityID:           storyID,
+			Title:              "assigned you to " + current.Name,
+			Category:           "assignment",
+			Priority:           "normal",
+			ExplicitRecipients: []string{userID},
+			EntitySnapshot: model.JSONB{
+				"title":      current.Name,
+				"display_id": current.DisplayID,
+				"type":       current.StoryType,
+			},
+		})
+	}
+
 	return nil
 }
 

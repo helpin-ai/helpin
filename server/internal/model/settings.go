@@ -24,9 +24,10 @@ type WorkspaceTeam struct {
 	Name        string    `json:"name" gorm:"not null"`
 	Handle      *string   `json:"handle" gorm:"uniqueIndex:idx_workspace_team_handle,priority:2"`
 	Description *string   `json:"description"`
-	ManagerID   *string   `json:"manager_id" gorm:"type:uuid"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ManagerID            *string   `json:"manager_id" gorm:"type:uuid"`
+	DocsPublisherEnabled bool      `json:"docs_publisher_enabled" gorm:"not null;default:false"`
+	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt            time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WorkspaceTeam) TableName() string { return "workspace_teams" }

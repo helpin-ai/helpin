@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   CalendarDays,
   Hash,
@@ -14,7 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
+import { CreateDocumentDialog } from '@/components/docs/CreateDocumentDialog';
+import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog';
+import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useEpicStates } from '@/hooks/queries/useWorkflows';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -632,7 +637,10 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 // ── Main export ──────────────────────────────────────────────────────
 
 export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
-  const { activeModal, closeCreate } = useGlobalCreateStore();
+  const { activeModal, closeCreate, initialSpaceId } = useGlobalCreateStore();
+  const navigate = useNavigate();
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const wsSlug = workspace?.slug ?? '';
 
   if (!activeModal) return null;
 
@@ -642,6 +650,33 @@ export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
       {activeModal === 'epic' && <GlobalCreateEpic workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'sprint' && <GlobalCreateSprint workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'objective' && <GlobalCreateObjective workspaceId={workspaceId} onClose={closeCreate} />}
+      {activeModal === 'docs_document' && (
+        <CreateDocumentDialog
+          wsId={workspaceId}
+          open
+          onOpenChange={(open) => !open && closeCreate()}
+          defaultSpaceId={initialSpaceId}
+          onCreated={(docId) => {
+            closeCreate();
+            navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug: wsSlug, docId } });
+          }}
+        />
+      )}
+      {activeModal === 'docs_space' && (
+        <CreateSpaceDialog
+          wsId={workspaceId}
+          open
+          onOpenChange={(open) => !open && closeCreate()}
+        />
+      )}
+      {activeModal === 'docs_collection' && (
+        <CreateCollectionDialog
+          wsId={workspaceId}
+          spaceId={initialSpaceId}
+          open
+          onOpenChange={(open) => !open && closeCreate()}
+        />
+      )}
     </>
   );
 }

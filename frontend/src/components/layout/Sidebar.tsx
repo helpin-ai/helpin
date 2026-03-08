@@ -13,6 +13,7 @@ import {
   DollarSign,
   FileText,
   FolderKanban,
+  FolderOpen,
   GanttChart,
   Globe,
   EllipsisVertical,
@@ -22,6 +23,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   LayoutList,
+  PenLine,
   Plus,
   RefreshCw,
   Settings,
@@ -35,7 +37,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { Button } from '@/components/ui/button';
@@ -59,6 +61,7 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
+import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 
 type NavItem = {
   link: string;
@@ -82,7 +85,7 @@ type RailItem = {
 
 function deriveActiveRail(pathname: string): RailId {
   if (pathname.includes('/support')) return 'support';
-  if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
+if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
   if (pathname.includes('/docs')) return 'docs';
   if (pathname.includes('/settings')) return 'settings';
   return 'projects';
@@ -111,6 +114,134 @@ const teamSubItems: { key: string; label: string; icon: LucideIcon; path: string
   { key: 'sprints', label: 'Sprints', icon: RefreshCw, path: 'sprints' },
   { key: 'epics', label: 'Epics', icon: Layers, path: 'epics' },
 ];
+
+// ── Docs space collections (fetches only when parent space is expanded) ──
+
+function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openCreate }: {
+  wsId: string;
+  spaceId: string;
+  wsSlug: string;
+  navigate: ReturnType<typeof useNavigate>;
+  isActive: (link: string) => boolean;
+  openCreate: (modal: 'docs_collection', options?: { spaceId?: string }) => void;
+}) {
+  const { data: collections } = useDocsCollections(wsId, spaceId);
+
+  return (
+    <SidebarMenuSub>
+      {(collections ?? []).map((col) => {
+        const link = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=${col.id}`;
+        return (
+          <SidebarMenuSubItem key={col.id}>
+            <SidebarMenuSubButton
+              asChild
+              size="sm"
+              isActive={isActive(link)}
+            >
+              <a
+                href={link}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate({
+                    to: '/w/$slug/docs/spaces/$spaceId' as string,
+                    params: { slug: wsSlug, spaceId },
+                    search: { collection: col.id },
+                  });
+                }}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                <span>{col.icon ? `${col.icon} ` : ''}{col.name}</span>
+              </a>
+            </SidebarMenuSubButton>
+          </SidebarMenuSubItem>
+        );
+      })}
+      <SidebarMenuSubItem>
+        <SidebarMenuSubButton
+          size="sm"
+          className="text-muted-foreground/70 hover:text-foreground cursor-pointer"
+          onClick={() => openCreate('docs_collection', { spaceId })}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span>Add collection</span>
+        </SidebarMenuSubButton>
+      </SidebarMenuSubItem>
+    </SidebarMenuSub>
+  );
+}
+
+// ── Docs spaces nav (extracted to avoid conditional hook calls) ──
+
+function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggleTeam, openCreate }: {
+  wsId: string;
+  wsSlug: string;
+  navigate: ReturnType<typeof useNavigate>;
+  isActive: (link: string) => boolean;
+  expandedTeams: Set<string>;
+  toggleTeam: (id: string) => void;
+  openCreate: (modal: 'docs_collection', options?: { spaceId?: string }) => void;
+}) {
+  const { data: spaces } = useDocsSpaces(wsId);
+
+  if (!spaces || spaces.length === 0) return null;
+
+  return (
+    <SidebarGroup className="p-0 pb-3">
+      <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+        Spaces
+      </SidebarGroupLabel>
+      <SidebarMenu>
+        {spaces.map((space) => {
+          const spaceKey = `docs_space_${space.id}`;
+          const isExpanded = expandedTeams.has(spaceKey);
+          const spaceLink = `/w/${wsSlug}/docs/spaces/${space.id}`;
+
+          return (
+            <Collapsible.Root
+              key={space.id}
+              asChild
+              open={isExpanded}
+              onOpenChange={() => toggleTeam(spaceKey)}
+            >
+              <SidebarMenuItem>
+                <div className="group/space relative flex items-center">
+                  <Collapsible.Trigger asChild>
+                    <SidebarMenuButton
+                      className="h-8 rounded-md px-2 flex-1"
+                      isActive={isActive(spaceLink)}
+                    >
+                      <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      <span className="text-sm">{space.icon ?? '📁'}</span>
+                      <span className="truncate">{space.name}</span>
+                    </SidebarMenuButton>
+                  </Collapsible.Trigger>
+                  <button
+                    type="button"
+                    className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/space:opacity-100"
+                    title="Open space"
+                    onClick={() => navigate({ to: '/w/$slug/docs/spaces/$spaceId' as string, params: { slug: wsSlug, spaceId: space.id } })}
+                  >
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                </div>
+                <Collapsible.Content>
+                  <DocsSpaceCollections
+                    wsId={wsId}
+                    spaceId={space.id}
+                    wsSlug={wsSlug}
+                    navigate={navigate}
+                    isActive={isActive}
+                    openCreate={openCreate}
+                  />
+                </Collapsible.Content>
+              </SidebarMenuItem>
+            </Collapsible.Root>
+          );
+        })}
+      </SidebarMenu>
+    </SidebarGroup>
+  );
+}
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -188,7 +319,7 @@ export function Sidebar() {
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/stories` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
-    // { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
+// { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
   ];
@@ -233,9 +364,11 @@ export function Sidebar() {
     ], */
     docs: [
       {
-        label: 'Documentation',
+        label: '',
         items: [
           { link: `/w/${wsSlug}/docs`, label: 'All Docs', icon: FileText },
+          { link: `/w/${wsSlug}/docs/my`, label: 'My Documents', icon: User },
+          { link: `/w/${wsSlug}/docs/drafts`, label: 'Drafts', icon: PenLine },
         ],
       },
     ],
@@ -267,6 +400,12 @@ export function Sidebar() {
         ],
       },
       {
+        label: 'Docs',
+        items: [
+          { link: `/w/${wsSlug}/settings/helpcenter`, label: 'Help Center', icon: Globe },
+        ],
+      },
+      {
         label: 'Data',
         items: [
           { link: `/w/${wsSlug}/settings/import`, label: 'Import / Export', icon: Import },
@@ -292,7 +431,10 @@ export function Sidebar() {
   }, [currentWorkspace?.name]);
 
   const isActive = (link: string) => {
-    return location.pathname === link || location.pathname.startsWith(`${link}/`);
+    if (location.pathname === link) return true;
+    // Don't prefix-match section roots (e.g. /docs) — they'd match every sub-page
+    if (link.endsWith('/docs') || link.endsWith('/pm') || link.endsWith('/support')) return false;
+    return location.pathname.startsWith(`${link}/`);
   };
 
   const isAllWorkSubActive = (subPath: string) => {
@@ -306,7 +448,12 @@ export function Sidebar() {
   return (
     <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f0f0f2] dark:border-transparent dark:bg-sidebar">
       <SidebarHeader className="border-b border-border/70 dark:border-sidebar-border p-2">
-        <WorkspaceSwitcher />
+        <div className="flex items-center gap-1">
+          <div className="flex-1 min-w-0">
+            <WorkspaceSwitcher />
+          </div>
+          <NotificationCenter />
+        </div>
       </SidebarHeader>
 
       <SidebarContent className="gap-0">
@@ -357,6 +504,36 @@ export function Sidebar() {
                         {opt.label}
                       </DropdownMenuItem>
                     ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+
+            {activeRail === 'docs' && (
+              <div className="mb-2 flex w-full">
+                <Button
+                  size="sm"
+                  className="h-7 flex-1 rounded-r-none text-xs gap-1.5"
+                  onClick={() => openCreate('docs_document')}
+                >
+                  <Plus className="h-3 w-3" />
+                  Document
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" className="h-7 rounded-l-none border-l border-primary-foreground/20 px-1.5">
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => openCreate('docs_space')}>
+                      <Globe className="h-4 w-4" />
+                      Space
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openCreate('docs_collection')}>
+                      <FolderOpen className="h-4 w-4" />
+                      Collection
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -545,6 +722,9 @@ export function Sidebar() {
                 </SidebarMenu>
               </SidebarGroup>
             )}
+
+            {/* ── Docs spaces navigation (docs rail only) ── */}
+            {activeRail === 'docs' && <DocsSpacesNav wsId={workspaceId ?? ''} wsSlug={wsSlug} navigate={navigate} isActive={isActive} expandedTeams={expandedTeams} toggleTeam={toggleTeam} openCreate={openCreate} />}
           </div>
         </div>
       </SidebarContent>

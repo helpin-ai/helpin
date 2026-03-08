@@ -34,6 +34,20 @@ const (
 	PermPMImport          Permission = "pm.import"
 )
 
+// Docs permissions.
+const (
+	PermDocsRead    Permission = "docs.read"
+	PermDocsEdit    Permission = "docs.edit"
+	PermDocsPublish Permission = "docs.publish"
+	PermDocsAdmin   Permission = "docs.admin"
+)
+
+// Notification permissions.
+const (
+	PermNotificationsRead   Permission = "notifications.read"
+	PermNotificationsManage Permission = "notifications.manage"
+)
+
 // Other workspace-scoped permissions.
 const (
 	PermRewardsRead    Permission = "rewards.read"
@@ -52,6 +66,8 @@ func AllPermissions() []Permission {
 		PermTeamRead, PermTeamManage, PermTeamMembersRead, PermTeamMembersManage,
 		PermPMRead, PermPMEdit,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
+		PermDocsRead, PermDocsEdit, PermDocsPublish, PermDocsAdmin,
+		PermNotificationsRead, PermNotificationsManage,
 		PermRewardsRead, PermRewardsManage,
 		PermSearchRead, PermWSConnect,
 	}
