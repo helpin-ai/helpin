@@ -19,7 +19,7 @@ import type { Priority, Severity, Story } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
-import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
+import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 
 // ── Shared constants ────────────────────────────────────────────────
@@ -81,7 +81,7 @@ export function StoryCard({
   const [memberOpen, setMemberOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
-  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(story.team_id));
+  const fieldVis = useTeamFieldVisibilityForTeam(workspaceId ?? '', story.team_id);
   const displayProps = useBoardDisplayStore((s) => s.properties);
   const vis = useMemo(() => ({
     story_type: fieldVis.story_type && displayProps.story_type,

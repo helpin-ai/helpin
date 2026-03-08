@@ -45,8 +45,8 @@ import { LabelPicker } from "@/components/pm/LabelPicker";
 import { EstimatePicker } from "@/components/pm/EstimatePicker";
 import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
 import { useAssignableWorkspaceMembers } from "@/hooks/useAssignableWorkspaceMembers";
-import { useTeamFieldVisibilityStore } from "@/stores/teamFieldVisibilityStore";
-import { useSessionStore } from "@/stores/sessionStore";
+import { useTeamFieldVisibilityForTeam } from "@/hooks/queries/useSettings";
+import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MemberPickerPopover } from "@/components/pm/MemberPickerPopover";
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from "@/lib/assignableMembers";
@@ -180,8 +180,9 @@ export function CreateStoryModal({
   const [templates, setTemplates] = useState<StoryTemplate[]>([]);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
-  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id || null));
-  const currentMemberId = useSessionStore((s) => s.membership?.id ?? '');
+  const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id || null);
+  const { data: membership } = useSession(workspaceId);
+  const currentMemberId = membership?.id ?? '';
   const memberOptions = useMemo(
     () => buildAssignableMemberOptions(assignableMembers),
     [assignableMembers],

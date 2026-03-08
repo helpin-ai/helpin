@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useRewardQuarterStore } from '@/stores/quarterStore';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useSession, useSessionRole } from '@/hooks/queries';
 import { rewardGoalsService } from '@/lib/services/rewardGoalsService';
 import { settingsService } from '@/lib/services/settingsService';
 import type { RewardCompanyGoal, WorkspaceTeam } from '@/lib/types';
@@ -23,16 +23,15 @@ export default function CompanyGoals() {
   useTitle('Company Goals');
   const { currentWorkspace } = useWorkspaceStore();
   const { currentQuarter } = useRewardQuarterStore();
-  const { canEdit } = useSessionStore();
+  const { data: membership } = useSession(currentWorkspace?.id ?? '');
+  const { canEdit } = useSessionRole(membership);
   const [goals, setGoals] = useState<RewardCompanyGoal[]>([]);
   const [teams, setTeams] = useState<WorkspaceTeam[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const load = async () => {
-    const ws = useWorkspaceStore.getState().currentWorkspace;
-    const q = useRewardQuarterStore.getState().currentQuarter;
-    if (!ws?.id || !q?.id) {
+    if (!currentWorkspace?.id || !currentQuarter?.id) {
       setGoals([]);
       setTeams([]);
       setLoading(false);
@@ -41,8 +40,8 @@ export default function CompanyGoals() {
     setLoading(true);
     try {
       const [goalsRes, settingsRes] = await Promise.all([
-        rewardGoalsService.list(ws.id, q.id),
-        settingsService.getAll(ws.id),
+        rewardGoalsService.list(currentWorkspace.id, currentQuarter.id),
+        settingsService.getAll(currentWorkspace.id),
       ]);
       if (goalsRes.data) setGoals(goalsRes.data);
       if (settingsRes.data) setTeams(settingsRes.data.teams);
@@ -71,7 +70,7 @@ export default function CompanyGoals() {
           <h1 className="text-2xl font-bold">Company Goals</h1>
           <p className="text-muted-foreground">{currentQuarter?.name} &middot; {goals.length} goals</p>
         </div>
-        {canEdit() && currentWorkspace?.id && currentQuarter?.id && (
+        {canEdit && currentWorkspace?.id && currentQuarter?.id && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button>

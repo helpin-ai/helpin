@@ -30,7 +30,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useSession, useSessionRole } from '@/hooks/queries';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -421,7 +421,8 @@ export function ObjectiveDetailPage() {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
-  const { canEdit, isAdmin } = useSessionStore();
+  const { data: membership } = useSession(workspaceId ?? '');
+  const { canEdit, isAdmin } = useSessionRole(membership);
 
   const [data, setData] = useState<ObjectiveWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -680,7 +681,7 @@ export function ObjectiveDetailPage() {
         <div className="min-h-0 overflow-y-auto px-8 py-8">
           {/* ── Objective Header Card ──────────────────────────── */}
           <div className="rounded-lg border border-border/60 p-6">
-            {canEdit() ? (
+            {canEdit ? (
               <input
                 type="text"
                 aria-label="Objective title"
@@ -713,9 +714,9 @@ export function ObjectiveDetailPage() {
                   {form.description ? (
                     <div className="prose prose-sm dark:prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: form.description }} />
                   ) : (
-                    <p className="text-sm text-muted-foreground">{canEdit() ? 'No description yet' : 'No description'}</p>
+                    <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
                   )}
-                  {canEdit() && (
+                  {canEdit && (
                     <button
                       type="button"
                       className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
@@ -737,7 +738,7 @@ export function ObjectiveDetailPage() {
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Heart className="h-3.5 w-3.5" />
                 <span>Health:</span>
-                {canEdit() ? (
+                {canEdit ? (
                   <SidebarPopoverSelect
                     value={form.health}
                     options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
@@ -846,7 +847,7 @@ export function ObjectiveDetailPage() {
                     </Tooltip>
                   </TooltipProvider>
                 )}
-                {canEdit() && (
+                {canEdit && (
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setKrModalOpen(true)}>
                     <Plus className="mr-1 h-3 w-3" />
                     Add Key Results
@@ -864,7 +865,7 @@ export function ObjectiveDetailPage() {
                     memberMap={memberMap}
                     onUpdate={handleUpdateKeyResult}
                     onDelete={() => handleDeleteKeyResult(kr.id)}
-                    readOnly={!canEdit()}
+                    readOnly={!canEdit}
                   />
                 ))}
               </div>
@@ -880,7 +881,7 @@ export function ObjectiveDetailPage() {
           <div className="mt-8">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-foreground">Epics</h3>
-              {canEdit() && (
+              {canEdit && (
                 <LinkEpicPopover
                   workspaceId={workspaceId!}
                   linkedEpicIds={data.epics.map((e) => e.epic.id)}
@@ -913,7 +914,7 @@ export function ObjectiveDetailPage() {
                           <div className="w-24">
                             <Progress value={pct} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
                           </div>
-                          {canEdit() && (
+                          {canEdit && (
                             <button
                               type="button"
                               className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
@@ -923,7 +924,7 @@ export function ObjectiveDetailPage() {
                             </button>
                           )}
                         </div>
-                        <span className={`text-[11px] text-muted-foreground ${canEdit() ? 'pr-6' : ''}`}>Updated {epicUpdated}</span>
+                        <span className={`text-[11px] text-muted-foreground ${canEdit ? 'pr-6' : ''}`}>Updated {epicUpdated}</span>
                       </div>
                     </div>
                   );
@@ -944,7 +945,7 @@ export function ObjectiveDetailPage() {
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* State */}
             <MetadataRow icon={Hash} label="State">
-              {canEdit() ? (
+              {canEdit ? (
                 <SidebarPopoverSelect
                   value={form.state}
                   options={stateOptions}
@@ -960,7 +961,7 @@ export function ObjectiveDetailPage() {
             {form.state !== 'closed' && (
             <MetadataRow icon={Heart} label="Health">
               <div className="flex flex-col gap-1">
-                {canEdit() ? (
+                {canEdit ? (
                   <SidebarPopoverSelect
                     value={form.health}
                     options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
@@ -972,7 +973,7 @@ export function ObjectiveDetailPage() {
                 ) : (
                   <span className={`text-xs px-1.5 py-0.5 ${currentHealth.color}`}>{currentHealth.label}</span>
                 )}
-                {canEdit() && suggestedLabel && suggestedHealth !== form.health && (
+                {canEdit && suggestedLabel && suggestedHealth !== form.health && (
                   <button
                     type="button"
                     className="text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left"
@@ -996,7 +997,7 @@ export function ObjectiveDetailPage() {
                 onAdd={handleAddTeam}
                 onRemove={handleRemoveTeam}
                 placeholder="Add team"
-                readOnly={!canEdit()}
+                readOnly={!canEdit}
               />
             </MetadataRow>
 
@@ -1008,7 +1009,7 @@ export function ObjectiveDetailPage() {
                   onAdd={handleAddOwner}
                   onRemove={handleRemoveOwner}
                 placeholder="Add owner"
-                readOnly={!canEdit()}
+                readOnly={!canEdit}
               />
             </MetadataRow>
 
@@ -1017,7 +1018,7 @@ export function ObjectiveDetailPage() {
 
             {/* Start Date */}
             <MetadataRow icon={CalendarDays} label="Start date">
-              {canEdit() ? (
+              {canEdit ? (
                 <DatePicker
                   value={form.planned_start_date}
                   onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
@@ -1033,7 +1034,7 @@ export function ObjectiveDetailPage() {
 
             {/* Target Date */}
             <MetadataRow icon={CalendarDays} label="Target date">
-              {canEdit() ? (
+              {canEdit ? (
                 <DatePicker
                   value={form.deadline}
                   onChange={(v) => updateField('deadline', v, { deadline: v || undefined })}
@@ -1065,7 +1066,7 @@ export function ObjectiveDetailPage() {
           </div>
 
           {/* Delete objective — admin only */}
-          {isAdmin() && (
+          {isAdmin && (
             <div className="mt-8 border-t border-border/40 pt-4">
               <Button
                 variant="ghost"

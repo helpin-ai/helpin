@@ -4,12 +4,10 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { invalidateWorkspaceTeamsCache } from '@/hooks/useWorkspaceTeams';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useSession, useSessionRole } from '@/hooks/queries';
 import { settingsService } from '@/lib/services/settingsService';
 import { gitService } from '@/lib/services/gitService';
 import { agentService } from '@/lib/services/agentService';
-import { useTeamEstimateStore } from '@/stores/teamEstimateStore';
-import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
 import type { WorkspaceSettings, WorkspaceTeam, WorkspacePerson, JobRoleCriteria, BonusTierConfig, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale, TeamRepoDefault } from '@/lib/types';
@@ -158,7 +156,9 @@ const slugifyTeamHandle = (value: string) =>
 export default function Settings({ section, initialWorkflowId, initialTeamId }: { section: SettingsSection; initialWorkflowId?: string; initialTeamId?: string }) {
   useTitle('Settings');
   const { currentWorkspace } = useWorkspaceStore();
-  const { isAdmin } = useSessionStore();
+  const wsId = currentWorkspace?.id ?? '';
+  const { data: membership } = useSession(wsId);
+  const { isAdmin } = useSessionRole(membership);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -174,8 +174,6 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
       const { data } = await settingsService.getAll(ws.id);
       if (data) {
         setSettings(data);
-        useTeamEstimateStore.getState().setSettings(data.team_estimate_settings ?? []);
-        useTeamFieldVisibilityStore.getState().setSettings(data.team_field_visibility ?? []);
         invalidateWorkspaceTeamsCache();
       }
     } finally {
@@ -219,14 +217,14 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <GeneralTab
             workspaceId={workspaceId}
-            editable={isAdmin()}
+            editable={isAdmin}
           />
         );
       case 'members':
         return (
           <MembersTab
             workspaceId={workspaceId}
-            editable={isAdmin()}
+            editable={isAdmin}
           />
         );
       case 'teams':
@@ -239,7 +237,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             teamEstimateSettings={settings.team_estimate_settings}
             teamFieldVisibility={settings.team_field_visibility}
             teamRepoDefaults={settings.team_repo_defaults}
-            editable={isAdmin()}
+            editable={isAdmin}
             onRefresh={load}
           />
         );
@@ -247,7 +245,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <PeopleTab
             people={settings.people}
-            editable={isAdmin()}
+            editable={isAdmin}
             onRefresh={load}
           />
         );
@@ -256,7 +254,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <JobRolesTab
             workspaceId={workspaceId}
             criteria={settings.job_role_criteria}
-            editable={isAdmin()}
+            editable={isAdmin}
             onRefresh={load}
           />
         );
@@ -265,7 +263,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <BonusTiersTab
             workspaceId={workspaceId}
             tiers={settings.bonus_tiers}
-            editable={isAdmin()}
+            editable={isAdmin}
             onRefresh={load}
           />
         );
@@ -274,7 +272,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <SystemTab
             workspaceId={workspaceId}
             config={settings.settings}
-            editable={isAdmin()}
+            editable={isAdmin}
             onRefresh={load}
           />
         );
@@ -282,7 +280,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <ProjectDeliveryTab
             workspaceId={workspaceId}
-            editable={isAdmin()}
+            editable={isAdmin}
           />
         );
       case 'workflows':
@@ -290,7 +288,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <WorkflowsTab
             workspaceId={workspaceId}
             teams={settings.teams}
-            editable={isAdmin()}
+            editable={isAdmin}
             initialTeamId={initialTeamId}
           />
         );
@@ -298,7 +296,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <WorkflowStatesTab
             workspaceId={workspaceId}
-            editable={isAdmin()}
+            editable={isAdmin}
             initialWorkflowId={initialWorkflowId}
           />
         );

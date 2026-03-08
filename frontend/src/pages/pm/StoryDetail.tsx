@@ -68,7 +68,7 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAuthStore } from '@/stores/authStore';
-import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
+import { useWorkflows } from '@/hooks/queries/useWorkflows';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -253,7 +253,7 @@ export function StoryDetailPage() {
   const workspaceId = workspace?.id;
   const currentUser = useAuthStore((s) => s.user);
 
-  const loadWorkflows = usePMWorkflowStore((s) => s.loadWorkflows);
+  const { data: workflows = [] } = useWorkflows(workspaceId ?? '');
 
   const [storyDetail, setStoryDetail] = useState<StoryDetail | null>(null);
   const [states, setStates] = useState<WorkflowState[]>([]);
@@ -302,10 +302,9 @@ export function StoryDetailPage() {
     (async () => {
       setLoading(true);
       setError(null);
-      const [storyRes, , epicsRes, sprintsRes, labelsRes, commentsRes, activityRes, clRes, elRes] =
+      const [storyRes, epicsRes, sprintsRes, labelsRes, commentsRes, activityRes, clRes, elRes] =
         await Promise.all([
           pmStoryService.get(workspaceId, storyId),
-          loadWorkflows(workspaceId),
           pmEpicService.list(workspaceId, { archived: false }),
           pmSprintService.list(workspaceId, { archived: false }),
           pmLabelService.list(workspaceId),
@@ -323,11 +322,6 @@ export function StoryDetailPage() {
       setStoryDetail(detail);
       setForm(buildFormState(detail));
 
-      // Load workflow states for this story's workflow
-      const allWorkflows = usePMWorkflowStore.getState().workflows;
-      const wf = allWorkflows.find((w) => w.workflow.id === detail.story.workflow_id);
-      setStates(wf?.states ?? []);
-
       setEpics(epicsRes.data ?? []);
       setSprints(sprintsRes.data ?? []);
       setAllLabels(labelsRes.data ?? []);
@@ -338,7 +332,14 @@ export function StoryDetailPage() {
 
       setLoading(false);
     })();
-  }, [workspaceId, storyId, loadWorkflows]);
+  }, [workspaceId, storyId]);
+
+  // ── Sync workflow states from query data ──────────────────────────
+  useEffect(() => {
+    if (!storyDetail || workflows.length === 0) return;
+    const wf = workflows.find((w) => w.workflow.id === storyDetail.story.workflow_id);
+    setStates(wf?.states ?? []);
+  }, [workflows, storyDetail]);
 
   // ── Reload helpers (for real-time events) ───────────────────────
   const reloadComments = useCallback(async () => {

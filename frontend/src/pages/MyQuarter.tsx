@@ -28,9 +28,9 @@ export default function MyQuarter() {
 
   useEffect(() => {
     const load = async () => {
-      const ws = useWorkspaceStore.getState().currentWorkspace;
-      const q = useRewardQuarterStore.getState().currentQuarter;
-      const u = useAuthStore.getState().user;
+      const ws = currentWorkspace;
+      const q = currentQuarter;
+      const u = user;
       if (!ws?.id || !q?.id || !u?.id) {
         setSprints([]);
         setMyCalc(null);

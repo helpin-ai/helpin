@@ -35,7 +35,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useSession, useSessionRole } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { Button } from '@/components/ui/button';
@@ -121,8 +121,9 @@ export function Sidebar() {
   const workspaceId = currentWorkspace?.id;
   const activeRail = deriveActiveRail(location.pathname);
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
-  const isAdmin = useSessionStore((s) => s.isAdmin());
-  const currentUserId = useSessionStore((s) => s.membership?.user_id);
+  const { data: membership } = useSession(workspaceId ?? '');
+  const { isAdmin } = useSessionRole(membership);
+  const currentUserId = membership?.user_id;
 
   const { teams: allTeams, userMemberships } = useWorkspaceTeams(workspaceId);
   const teams = useMemo(() => {

@@ -1,9 +1,13 @@
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useRewardQuarterStore } from '@/stores/quarterStore';
+import { useQuarters } from '@/hooks/queries';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 
 export function QuarterSelector() {
-  const { quarters, currentQuarter, setCurrentQuarter } = useRewardQuarterStore();
+  const { currentWorkspace } = useWorkspaceStore();
+  const { data: quarters = [] } = useQuarters(currentWorkspace?.id ?? '');
+  const { currentQuarter, setCurrentQuarter } = useRewardQuarterStore();
 
   if (quarters.length === 0) return null;
 

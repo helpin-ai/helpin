@@ -1,12 +1,13 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/queryKeys'
+import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
+import { useSession } from '@/hooks/queries/useSession'
+import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useOrganizationStore } from '@/stores/organizationStore'
 import { useRewardQuarterStore } from '@/stores/quarterStore'
-import { useSessionStore } from '@/stores/sessionStore'
-import { useTeamEstimateStore } from '@/stores/teamEstimateStore'
-import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore'
-import { settingsService } from '@/lib/services/settingsService'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
@@ -20,45 +21,55 @@ export const Route = createFileRoute('/_authenticated/w/$slug')({
 
 function WorkspaceLayout() {
   const { slug } = Route.useParams()
+  const queryClient = useQueryClient()
+
+  // TanStack Query for data fetching
+  const { data: workspace, isLoading: wsLoading } = useWorkspaceBySlug(slug)
+  const wsId = workspace?.id ?? ''
+  const { isLoading: sessionLoading } = useSession(wsId)
+  const { isLoading: settingsLoading } = useWorkspaceSettings(wsId)
+
+  // Selection-based stores still use Zustand (org selection, quarter selection)
+  const [initDone, setInitDone] = useState(false)
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
-  const [loading, setLoading] = useState(true)
 
-  useRealtimeSync(currentWorkspace?.id ?? '')
+  useRealtimeSync(wsId)
 
+  // Sync workspace to store + load selection-based data
   useEffect(() => {
-    if (!slug) return
+    if (!workspace) {
+      setInitDone(false)
+      return
+    }
+
     const init = async () => {
-      setLoading(true)
-      const cachedWs = useWorkspaceStore.getState().currentWorkspace
-      const ws = cachedWs?.slug === slug
-        ? cachedWs
-        : await useWorkspaceStore.getState().loadWorkspaceBySlug(slug)
-      if (!ws) { setLoading(false); return }
-      // Load organization context if not already loaded.
+      // Set current workspace in store (used by many components)
+      useWorkspaceStore.getState().setCurrentWorkspace(workspace)
+
+      // Load organization context (manages currentOrganization selection)
       const orgStore = useOrganizationStore.getState()
       if (orgStore.organizations.length === 0) {
         await orgStore.loadOrganizations()
       }
-      // If workspace has an org, set it as current.
-      if (ws.organization_id) {
-        const org = useOrganizationStore.getState().organizations.find(o => o.id === ws.organization_id)
+      const orgs = useOrganizationStore.getState().organizations
+      if (orgs.length) queryClient.setQueryData(queryKeys.organizations.all, orgs)
+
+      if (workspace.organization_id) {
+        const org = orgs.find(o => o.id === workspace.organization_id)
         if (org) useOrganizationStore.getState().setCurrentOrganization(org)
       }
 
-      await Promise.all([
-        useRewardQuarterStore.getState().loadQuarters(ws.id),
-        useSessionStore.getState().loadMembership(ws.id),
-        settingsService.getAll(ws.id).then(({ data }) => {
-          if (data) {
-            useTeamEstimateStore.getState().setSettings(data.team_estimate_settings ?? []);
-            useTeamFieldVisibilityStore.getState().setSettings(data.team_field_visibility ?? []);
-          }
-        }),
-      ])
-      setLoading(false)
+      // Load quarters (manages currentQuarter selection)
+      await useRewardQuarterStore.getState().loadQuarters(workspace.id)
+      const quarters = useRewardQuarterStore.getState().quarters
+      if (quarters.length) queryClient.setQueryData(queryKeys.workspaces.quarters(workspace.id), quarters)
+
+      setInitDone(true)
     }
     init()
-  }, [slug])
+  }, [workspace, queryClient])
+
+  const loading = wsLoading || !initDone || (!!wsId && (sessionLoading || settingsLoading))
 
   if (loading) {
     return (

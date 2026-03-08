@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { Building2, Check, ChevronsUpDown, Plus } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
+import { useWorkspaces } from '@/hooks/queries';
 import type { Workspace } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -20,16 +21,11 @@ export function WorkspaceSwitcher() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isMobile } = useSidebar();
-  const { workspaces, currentWorkspace, setCurrentWorkspace, loadWorkspaces } = useWorkspaceStore();
+  const { currentWorkspace, setCurrentWorkspace } = useWorkspaceStore();
   const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
+  const { data: workspaces = [] } = useWorkspaces(currentOrganization?.id);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-
-  useEffect(() => {
-    if (workspaces.length === 0) {
-      void loadWorkspaces(currentOrganization?.id);
-    }
-  }, [workspaces.length, loadWorkspaces, currentOrganization?.id]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();

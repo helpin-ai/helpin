@@ -45,7 +45,7 @@ import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
+import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import type { BoardFilters } from '@/stores/pmBoardStore';
@@ -123,7 +123,7 @@ export function StoryListView({
   externalStories,
   onOpenStory,
 }: StoryListViewProps) {
-  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(teamId));
+  const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
   const displayInit = useBoardDisplayStore((s) => s.init);
   const displayProps = useBoardDisplayStore((s) => s.properties);
 

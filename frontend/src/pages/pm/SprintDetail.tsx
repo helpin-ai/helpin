@@ -22,7 +22,7 @@ import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
-import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
+import { useWorkflows } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -123,8 +123,7 @@ export function SprintDetailPage() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
 
-  const workflows = usePMWorkflowStore((s) => s.workflows);
-  const loadWorkflows = usePMWorkflowStore((s) => s.loadWorkflows);
+  const { data: workflows = [] } = useWorkflows(workspaceId ?? '');
 
   const [sprint, setSprint] = useState<SprintWithStats | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
@@ -158,10 +157,9 @@ export function SprintDetailPage() {
     (async () => {
       setLoading(true);
       setError(null);
-      const [sprintRes, storiesRes, , epicsRes, sprintsRes] = await Promise.all([
+      const [sprintRes, storiesRes, epicsRes, sprintsRes] = await Promise.all([
         pmSprintService.get(workspaceId, sprintId),
         pmSprintService.listStories(workspaceId, sprintId),
-        loadWorkflows(workspaceId),
         pmEpicService.list(workspaceId, { archived: false }),
         pmSprintService.list(workspaceId, { archived: false }),
       ]);
@@ -177,7 +175,7 @@ export function SprintDetailPage() {
       setAllSprints(sprintsRes.data ?? []);
       setLoading(false);
     })();
-  }, [workspaceId, sprintId, loadWorkflows]);
+  }, [workspaceId, sprintId]);
 
   // Auto-save debounce
   useEffect(() => {

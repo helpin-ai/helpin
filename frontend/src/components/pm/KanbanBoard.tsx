@@ -25,7 +25,7 @@ import { StateTypeIcon } from '@/lib/pmConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useAuthStore } from '@/stores/authStore';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useSession } from '@/hooks/queries';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
 import { StoryDetailPanel } from './StoryDetailPanel';
@@ -242,7 +242,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   } = usePMBoardStore();
 
   const currentUser = useAuthStore((s) => s.user);
-  const currentMemberId = useSessionStore((s) => s.membership?.id);
+  const { data: sessionMembership } = useSession(workspaceId);
+  const currentMemberId = sessionMembership?.id;
   const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerNameMap = useMemo(

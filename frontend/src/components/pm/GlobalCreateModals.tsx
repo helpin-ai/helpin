@@ -15,8 +15,8 @@ import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useSession, useSessionRole } from '@/hooks/queries';
+import { useEpicStates } from '@/hooks/queries/useWorkflows';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
@@ -80,8 +80,7 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
 // ── Epic dialog ──────────────────────────────────────────────────────
 
 function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
-  const epicStates = usePMWorkflowStore((s) => s.epicStates);
-  const loadEpicStates = usePMWorkflowStore((s) => s.loadEpicStates);
+  const { data: epicStates = [] } = useEpicStates(workspaceId);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = buildAssignableMemberOptions(assignableMembers);
@@ -98,10 +97,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadEpicStates(workspaceId);
-  }, [workspaceId, loadEpicStates]);
 
   const create = async () => {
     if (!form.name.trim() || submitting) return;
@@ -445,14 +440,15 @@ function MultiSelectPopover({
 }
 
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
-  const { canEdit } = useSessionStore();
+  const { data: membership } = useSession(workspaceId);
+  const { canEdit } = useSessionRole(membership);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = buildAssignableMemberOptions(assignableMembers);
 
   // Close immediately if the user lacks edit permission
   useEffect(() => {
-    if (!canEdit()) onClose();
+    if (!canEdit) onClose();
   }, [canEdit, onClose]);
 
   const [form, setForm] = useState({

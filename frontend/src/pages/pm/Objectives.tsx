@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { format, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
@@ -23,10 +23,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useSessionStore } from '@/stores/sessionStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
+import { useObjectives, useDeleteObjective } from '@/hooks/queries/useObjectives';
+import { useSession, useSessionRole } from '@/hooks/queries/useSession';
 import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -114,14 +114,12 @@ export function ObjectivesPage() {
   useTitle('Objectives');
 
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const workspaceId = workspace?.id;
+  const workspaceId = workspace?.id ?? '';
   const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
-  const { canEdit, isAdmin } = useSessionStore();
-  const { teams } = useWorkspaceTeams(workspaceId);
-
-  const [objectives, setObjectives] = useState<ObjectiveWithDetails[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: membership } = useSession(workspaceId);
+  const { canEdit, isAdmin } = useSessionRole(membership);
+  const { teams } = useWorkspaceTeams(workspaceId || undefined);
 
   // Filters
   const [filterState, setFilterState] = useState('');
@@ -129,26 +127,14 @@ export function ObjectivesPage() {
   const [filterType, setFilterType] = useState('');
   const [filterHealth, setFilterHealth] = useState('');
 
-  const load = useCallback(async () => {
-    if (!workspaceId) return;
-    setLoading(true);
-    const { data } = await pmObjectiveService.list(workspaceId, {
-      archived: false,
-      state: filterState || undefined,
-      team_id: filterTeam || undefined,
-      objective_type: filterType || undefined,
-    });
-    setObjectives(data ?? []);
-    setLoading(false);
-  }, [workspaceId, filterState, filterTeam, filterType]);
+  const { data: objectives = [], isLoading: loading } = useObjectives(workspaceId, {
+    archived: false,
+    state: filterState || undefined,
+    team_id: filterTeam || undefined,
+    objective_type: filterType || undefined,
+  });
 
-  useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    const handler = () => load();
-    window.addEventListener('objective-created', handler);
-    return () => window.removeEventListener('objective-created', handler);
-  }, [load]);
+  const deleteObjective = useDeleteObjective(workspaceId);
 
   // Health is client-side filtered (not in API)
   const filtered = useMemo(() => {
@@ -158,8 +144,7 @@ export function ObjectivesPage() {
 
   const handleArchive = async (id: string) => {
     if (!workspaceId) return;
-    await pmObjectiveService.remove(workspaceId, id);
-    load();
+    deleteObjective.mutate(id);
   };
 
   const activeFilterCount = [filterState, filterTeam, filterType, filterHealth].filter(Boolean).length;
@@ -192,7 +177,7 @@ export function ObjectivesPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Create your first objective to start tracking goals.
         </p>
-        {canEdit() && (
+        {canEdit && (
           <Button className="mt-4" size="sm" onClick={() => openCreate('objective')}>
             Create Objective
           </Button>
@@ -205,7 +190,7 @@ export function ObjectivesPage() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-semibold">Objectives</h1>
-        {canEdit() && (
+        {canEdit && (
           <Button size="sm" onClick={() => openCreate('objective')}>
             Create Objective
           </Button>
@@ -238,8 +223,8 @@ export function ObjectivesPage() {
             <ObjectiveCard
               key={obj.objective.id}
               data={obj}
-              canEdit={canEdit()}
-              isAdmin={isAdmin()}
+              canEdit={canEdit}
+              isAdmin={isAdmin}
               onArchive={() => handleArchive(obj.objective.id)}
               onClick={() => navigate({ to: `/w/${workspace!.slug}/pm/objectives/${obj.objective.id}` } as any)}
             />

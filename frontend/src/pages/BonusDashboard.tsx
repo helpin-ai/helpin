@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useRewardQuarterStore } from '@/stores/quarterStore';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useSession, useSessionRole, useQuarters } from '@/hooks/queries';
 import { rewardBonusService } from '@/lib/services/rewardBonusService';
 import { settingsService } from '@/lib/services/settingsService';
-import type { RewardBonusCalculation, RewardFinanceSettings, WorkspacePerson, WorkspaceTeam } from '@/lib/types';
+import type { RewardBonusCalculation, RewardFinanceSettings, RewardQuarter, WorkspacePerson, WorkspaceTeam } from '@/lib/types';
 import { formatCurrencyUSD, formatPercentage } from '@/lib/formatters';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,17 +19,27 @@ import { toast } from 'sonner';
 export default function BonusDashboard() {
   useTitle('Bonus Dashboard');
   const { currentWorkspace } = useWorkspaceStore();
-  const { currentQuarter } = useRewardQuarterStore();
-  const { isAdmin } = useSessionStore();
+  const wsId = currentWorkspace?.id ?? '';
+  const { data: membership } = useSession(wsId);
+  const { isAdmin } = useSessionRole(membership);
+  const { data: quarters } = useQuarters(wsId);
+  const [currentQuarter, setCurrentQuarter] = useState<RewardQuarter | null>(null);
   const [calculations, setCalculations] = useState<RewardBonusCalculation[]>([]);
   const [finance, setFinance] = useState<RewardFinanceSettings | null>(null);
   const [people, setPeople] = useState<WorkspacePerson[]>([]);
   const [, setTeams] = useState<WorkspaceTeam[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Initialize currentQuarter from query data
+  useEffect(() => {
+    if (quarters?.length && !currentQuarter) {
+      setCurrentQuarter(quarters[0]);
+    }
+  }, [quarters, currentQuarter]);
+
   const load = async () => {
-    const ws = useWorkspaceStore.getState().currentWorkspace;
-    const q = useRewardQuarterStore.getState().currentQuarter;
+    const ws = currentWorkspace;
+    const q = currentQuarter;
     if (!ws?.id || !q?.id) {
       setCalculations([]);
       setFinance(null);
@@ -122,7 +131,7 @@ export default function BonusDashboard() {
           <h1 className="text-2xl font-bold">Bonus Dashboard</h1>
           <p className="text-muted-foreground">{currentQuarter?.name}</p>
         </div>
-        {isAdmin() && (
+        {isAdmin && (
           isLocked ? (
             <Button variant="outline" onClick={handleUnlock}>
               <Unlock className="h-4 w-4 mr-2" />
@@ -196,21 +205,21 @@ export default function BonusDashboard() {
             <FinanceField
               label="MRR Start"
               value={finance?.mrr_start ?? 0}
-              disabled={isLocked || !isAdmin()}
+              disabled={isLocked || !isAdmin}
               onChange={v => handleFinanceUpdate('mrr_start', v)}
               prefix="$"
             />
             <FinanceField
               label="MRR End"
               value={finance?.mrr_end ?? 0}
-              disabled={isLocked || !isAdmin()}
+              disabled={isLocked || !isAdmin}
               onChange={v => handleFinanceUpdate('mrr_end', v)}
               prefix="$"
             />
             <FinanceField
               label="Pool %"
               value={finance?.bonus_pool_percentage ?? 0}
-              disabled={isLocked || !isAdmin()}
+              disabled={isLocked || !isAdmin}
               onChange={v => handleFinanceUpdate('bonus_pool_percentage', v)}
               suffix="%"
             />

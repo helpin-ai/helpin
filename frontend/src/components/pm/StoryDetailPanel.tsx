@@ -75,7 +75,7 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useTeamFieldVisibilityStore } from '@/stores/teamFieldVisibilityStore';
+import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import type {
   ActivityLogEntry,
@@ -303,7 +303,7 @@ function StoryDetailPanelBody({
   const [saving, setSaving] = useState(false);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
-  const fieldVis = useTeamFieldVisibilityStore((s) => s.getForTeam(form.team_id));
+  const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(storyDetail.story.updated_at);

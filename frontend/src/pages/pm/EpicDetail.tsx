@@ -24,7 +24,7 @@ import { StoryDetailPanel } from '@/components/pm/StoryDetailPanel';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
-import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
+import { useWorkflows, useEpicStates } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -139,10 +139,8 @@ export function EpicDetailPage() {
 
   const workspaceId = workspace?.id;
 
-  const epicStates = usePMWorkflowStore((s) => s.epicStates);
-  const loadEpicStates = usePMWorkflowStore((s) => s.loadEpicStates);
-  const workflows = usePMWorkflowStore((s) => s.workflows);
-  const loadWorkflows = usePMWorkflowStore((s) => s.loadWorkflows);
+  const { data: epicStates = [] } = useEpicStates(workspaceId ?? '');
+  const { data: workflows = [] } = useWorkflows(workspaceId ?? '');
 
   const [epic, setEpic] = useState<EpicWithStats | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
@@ -178,11 +176,9 @@ export function EpicDetailPage() {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
-    const [epicRes, storiesRes, , , epicsRes, sprintsRes] = await Promise.all([
+    const [epicRes, storiesRes, epicsRes, sprintsRes] = await Promise.all([
       pmEpicService.get(workspaceId, epicId),
       pmEpicService.listStories(workspaceId, epicId),
-      loadEpicStates(workspaceId),
-      loadWorkflows(workspaceId),
       pmEpicService.list(workspaceId, { archived: false }),
       pmSprintService.list(workspaceId, { archived: false }),
     ]);
@@ -197,7 +193,7 @@ export function EpicDetailPage() {
     setAllEpics(epicsRes.data ?? []);
     setAllSprints(sprintsRes.data ?? []);
     setLoading(false);
-  }, [workspaceId, epicId, loadEpicStates, loadWorkflows]);
+  }, [workspaceId, epicId]);
 
   // Load epic data + reference data
   useEffect(() => {

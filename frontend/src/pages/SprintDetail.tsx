@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { getRouteApi } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useSessionStore } from '@/stores/sessionStore';
+import { useSession, useSessionRole } from '@/hooks/queries';
 import { rewardSprintsService } from '@/lib/services/rewardSprintsService';
 import { settingsService } from '@/lib/services/settingsService';
 import { rewardGoalsService } from '@/lib/services/rewardGoalsService';
@@ -26,7 +26,8 @@ export default function SprintDetail() {
   const { sprintId } = routeApi.useParams();
   const { currentWorkspace } = useWorkspaceStore();
   useTitle(`Sprint ${sprintId}`);
-  const { canEdit } = useSessionStore();
+  const { data: membership } = useSession(currentWorkspace?.id ?? '');
+  const { canEdit } = useSessionRole(membership);
   const [sprint, setSprint] = useState<RewardSprint | null>(null);
   const [wsSettings, setWsSettings] = useState<WorkspaceSettings | null>(null);
   const [sprintGoals, setSprintGoals] = useState<RewardSprintGoal[]>([]);
@@ -35,8 +36,7 @@ export default function SprintDetail() {
   const [addGoalOpen, setAddGoalOpen] = useState(false);
 
   const load = useCallback(async () => {
-    const ws = useWorkspaceStore.getState().currentWorkspace;
-    if (!sprintId || !ws?.id) {
+    if (!sprintId || !currentWorkspace?.id) {
       setSprint(null);
       setWsSettings(null);
       setSprintGoals([]);
@@ -48,9 +48,9 @@ export default function SprintDetail() {
     try {
       const [sprintRes, settingsRes, sprintGoalsRes, checksRes] = await Promise.all([
         rewardSprintsService.get(sprintId),
-        settingsService.getAll(ws.id),
+        settingsService.getAll(currentWorkspace!.id),
         rewardGoalsService.listSprintGoals(sprintId),
-        rewardSprintsService.getIndividualChecks(sprintId, ws.id),
+        rewardSprintsService.getIndividualChecks(sprintId, currentWorkspace!.id),
       ]);
       if (sprintRes.data) setSprint(sprintRes.data);
       if (settingsRes.data) setWsSettings(settingsRes.data);
@@ -97,7 +97,7 @@ export default function SprintDetail() {
   };
 
   const handleGoalDoneToggle = async (goal: RewardSprintGoal) => {
-    if (!canEdit() || sprint?.status === 'locked') return;
+    if (!canEdit || sprint?.status === 'locked') return;
     const { error, data } = await rewardGoalsService.upsertSprintGoal({
       sprint_id: goal.sprint_id,
       team_id: goal.team_id,
@@ -165,7 +165,7 @@ export default function SprintDetail() {
 
         {/* Sprint Goals Tab */}
         <TabsContent value="goals" className="space-y-4">
-          {canEdit() && sprint.status !== 'locked' && (
+          {canEdit && sprint.status !== 'locked' && (
             <div className="flex justify-end">
               <Button size="sm" onClick={() => setAddGoalOpen(true)}>
                 <Plus className="h-4 w-4 mr-1" />
@@ -201,7 +201,7 @@ export default function SprintDetail() {
                             <div className="flex items-center gap-3">
                               <Checkbox
                                 checked={sg.done}
-                                disabled={sprint.status === 'locked' || !canEdit()}
+                                disabled={sprint.status === 'locked' || !canEdit}
                                 onCheckedChange={() => void handleGoalDoneToggle(sg)}
                               />
                               <span className="text-sm">{sg.title}</span>
@@ -266,7 +266,7 @@ export default function SprintDetail() {
                             <div key={c.criteria_id} className="flex items-start gap-3 py-1">
                               <Checkbox
                                 checked={isChecked}
-                                disabled={sprint.status === 'locked' || !canEdit()}
+                                disabled={sprint.status === 'locked' || !canEdit}
                                 onCheckedChange={() => handleCheckToggle(person.id, c.criteria_id, isChecked)}
                               />
                               <div>

@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearch } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
+import { useOrganizations, useCreateOrganization, useWorkspaces } from '@/hooks/queries';
+import { useQueryClient } from '@tanstack/react-query';
 import { workspacesService } from '@/lib/services/workspacesService';
-import { organizationsService } from '@/lib/services/organizationsService';
 import { generateWorkspaceSlug } from '@/lib/slugUtils';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import type { OrganizationWithRole } from '@/lib/types';
@@ -42,8 +42,11 @@ function OrgFormFields({
 
 export default function Workspaces() {
   useTitle('Workspaces');
-  const { workspaces, loading, loadWorkspaces } = useWorkspaceStore();
-  const { organizations, currentOrganization, loading: orgsLoading, loadOrganizations, setCurrentOrganization } = useOrganizationStore();
+  const { data: organizations = [], isLoading: orgsLoading } = useOrganizations();
+  const { currentOrganization, setCurrentOrganization } = useOrganizationStore();
+  const { data: workspaces = [], isLoading: wsLoading } = useWorkspaces(currentOrganization?.id);
+  const createOrgMutation = useCreateOrganization();
+  const queryClient = useQueryClient();
   const { create } = useSearch({ from: '/_authenticated/workspaces' });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [orgDialogOpen, setOrgDialogOpen] = useState(false);
@@ -55,17 +58,15 @@ export default function Workspaces() {
   // Org creation state
   const [orgName, setOrgName] = useState('');
   const [orgSlug, setOrgSlug] = useState('');
-  const [creatingOrg, setCreatingOrg] = useState(false);
 
+  // Auto-select first org when organizations load and none is selected
   useEffect(() => {
-    loadOrganizations();
-  }, [loadOrganizations]);
-
-  useEffect(() => {
-    if (currentOrganization) {
-      loadWorkspaces(currentOrganization.id);
+    if (organizations.length > 0 && !currentOrganization) {
+      const savedId = localStorage.getItem('current_organization_id');
+      const org = (savedId ? organizations.find((o) => o.id === savedId) : null) ?? organizations[0];
+      setCurrentOrganization(org);
     }
-  }, [currentOrganization, loadWorkspaces]);
+  }, [organizations, currentOrganization, setCurrentOrganization]);
 
   // Auto-open create dialog when navigated with ?create=true
   useEffect(() => {
@@ -86,18 +87,15 @@ export default function Workspaces() {
 
   const handleCreateOrg = async (e: FormEvent) => {
     e.preventDefault();
-    setCreatingOrg(true);
-    const { data, error } = await organizationsService.create({ name: orgName, slug: orgSlug });
-    setCreatingOrg(false);
-    if (error) {
-      toast.error(error);
-    } else {
+    try {
+      const data = await createOrgMutation.mutateAsync({ name: orgName, slug: orgSlug });
       toast.success('Organization created');
       setOrgDialogOpen(false);
       setOrgName('');
       setOrgSlug('');
-      await loadOrganizations();
       if (data) setCurrentOrganization(data);
+    } catch {
+      toast.error('Failed to create organization');
     }
   };
 
@@ -124,7 +122,7 @@ export default function Workspaces() {
       setName('');
       setSlug('');
       setDescription('');
-      loadWorkspaces(currentOrganization.id);
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] });
     }
   };
 
@@ -132,7 +130,7 @@ export default function Workspaces() {
     setCurrentOrganization(org);
   };
 
-  const isLoading = loading || orgsLoading;
+  const isLoading = wsLoading || orgsLoading;
 
   // Show create org screen if user has no organizations
   if (!orgsLoading && organizations.length === 0) {
@@ -154,8 +152,8 @@ export default function Workspaces() {
               onNameChange={handleOrgNameChange} onSlugChange={setOrgSlug}
               nameId="org-name" slugId="org-slug"
             />
-            <Button type="submit" className="w-full" disabled={creatingOrg}>
-              {creatingOrg ? 'Creating...' : 'Create Organization'}
+            <Button type="submit" className="w-full" disabled={createOrgMutation.isPending}>
+              {createOrgMutation.isPending ? 'Creating...' : 'Create Organization'}
             </Button>
           </form>
         </div>
@@ -212,7 +210,7 @@ export default function Workspaces() {
                   </div>
                   <DialogFooter>
                     <Button type="button" variant="outline" onClick={() => setOrgDialogOpen(false)}>Cancel</Button>
-                    <Button type="submit" disabled={creatingOrg}>{creatingOrg ? 'Creating...' : 'Create'}</Button>
+                    <Button type="submit" disabled={createOrgMutation.isPending}>{createOrgMutation.isPending ? 'Creating...' : 'Create'}</Button>
                   </DialogFooter>
                 </form>
               </DialogContent>

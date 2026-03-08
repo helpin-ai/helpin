@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useWebSocket, type WSEvent } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { pmStoryService } from '@/lib/services/pmStoryService'
+import { queryKeys } from '@/lib/queryKeys'
 
 const BOARD_ENTITIES = new Set(['story'])
 const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link'])
@@ -10,6 +12,7 @@ const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'exte
 const DEBOUNCE_MS = 200
 
 export function useRealtimeSync(workspaceId: string) {
+  const queryClient = useQueryClient()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scheduleRefresh = useCallback(() => {
     clearTimeout(debounceTimer.current ?? undefined)
@@ -46,6 +49,31 @@ export function useRealtimeSync(workspaceId: string) {
       }
     }
 
+    // Invalidate TanStack Query cache for the affected entity
+    if (event.entity === 'story') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.entity_id) })
+      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'stories'] })
+    } else if (event.entity === 'epic') {
+      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'epics'] })
+    } else if (event.entity === 'sprint') {
+      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints'] })
+    } else if (event.entity === 'objective') {
+      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'objectives'] })
+    }
+
+    // Child entity events → invalidate parent query cache
+    if (CHILD_ENTITIES.has(event.entity) && event.parent_type && event.parent_id) {
+      if (event.entity === 'comment') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.pm.comments(workspaceId, event.parent_id) })
+      } else if (event.entity === 'checklist_item') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.pm.checklists(workspaceId, event.parent_id) })
+      } else if (event.entity === 'attachment') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.pm.attachments(workspaceId, event.parent_id) })
+      } else if (event.entity === 'external_link') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.pm.externalLinks(workspaceId, event.parent_id) })
+      }
+    }
+
     // Dispatch custom DOM events for any component that listens
     // e.g. "story-updated", "comment-created", "epic-deleted"
     window.dispatchEvent(
@@ -63,7 +91,7 @@ export function useRealtimeSync(workspaceId: string) {
         })
       )
     }
-  }, [scheduleRefresh, workspaceId])
+  }, [scheduleRefresh, workspaceId, queryClient])
 
   useEffect(() => {
     return () => { clearTimeout(debounceTimer.current ?? undefined) }
