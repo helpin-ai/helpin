@@ -40,7 +40,7 @@ export function MemberPickerPopover({
           {renderTrigger()}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-52 p-0.5" align="start">
+      <PopoverContent className="w-64 p-0.5 z-[60]" align="start">
         <div className="flex max-h-60 flex-col overflow-y-auto">
           {/* None option */}
           <button
