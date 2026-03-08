@@ -15,7 +15,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Building2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { toast } from 'sonner';
 
 function OrgFormFields({
@@ -138,8 +139,8 @@ export default function Workspaces() {
       <div className="min-h-screen bg-background">
         <div className="max-w-md mx-auto px-4 py-24">
           <div className="text-center mb-8">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 mb-4">
-              <Building2 className="h-7 w-7 text-primary" />
+            <div className="mx-auto mb-4">
+              <UserAvatar name="Organization" className="h-14 w-14 rounded-full" fallbackClassName="text-xl rounded-full" />
             </div>
             <h1 className="text-2xl font-bold">Create your Organization</h1>
             <p className="text-muted-foreground mt-2">
@@ -167,7 +168,7 @@ export default function Workspaces() {
         {/* Organization switcher */}
         {organizations.length > 0 && (
           <div className="flex items-center gap-3 mb-6">
-            <Building2 className="h-5 w-5 text-muted-foreground" />
+            <UserAvatar name={currentOrganization?.name} avatarUrl={currentOrganization?.logo_url} className="h-6 w-6 rounded" fallbackClassName="text-[9px] rounded" />
             {organizations.length === 1 ? (
               <span className="text-sm font-medium">{currentOrganization?.name}</span>
             ) : (

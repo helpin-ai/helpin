@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { Building2, Star, Users } from 'lucide-react';
+import { Star, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 const MAX_VISIBLE_AVATARS = 5;
@@ -66,9 +66,12 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">
-                  <div className="h-11 w-11 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Building2 className="h-5 w-5 text-primary" />
-                  </div>
+                  <UserAvatar
+                    name={ws.name}
+                    avatarUrl={ws.logo_url}
+                    className="h-11 w-11 shrink-0 rounded-lg"
+                    fallbackClassName="text-sm rounded-lg"
+                  />
                   <div className="min-w-0 flex-1">
                     <CardTitle className="text-base truncate">{ws.name}</CardTitle>
                     <div className="flex items-center gap-1.5 mt-0.5">

@@ -32,7 +32,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Award, Briefcase, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Award, Briefcase, Camera, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
@@ -351,6 +351,8 @@ function GeneralTab({ workspaceId, editable }: {
   const [name, setName] = useState(workspace?.name ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
   const [timezone, setTimezone] = useState(workspace?.timezone ?? 'UTC');
+  const [logoUrl, setLogoUrl] = useState(workspace?.logo_url ?? '');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tzSearch, setTzSearch] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -360,6 +362,7 @@ function GeneralTab({ workspaceId, editable }: {
   useEffect(() => {
     setName(workspace?.name ?? '');
     setDescription(workspace?.description ?? '');
+    setLogoUrl(workspace?.logo_url ?? '');
     setTimezone(workspace?.timezone ?? 'UTC');
   }, [workspace?.id, workspace?.updated_at]);
 
@@ -386,6 +389,43 @@ function GeneralTab({ workspaceId, editable }: {
     const q = tzSearch.toLowerCase();
     return TIMEZONE_LIST.filter((tz) => tz.searchKey.includes(q));
   }, [tzSearch]);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image must be under 2MB');
+      return;
+    }
+    setUploadingLogo(true);
+    const { data, error } = await workspacesService.uploadLogo(workspaceId, file);
+    setUploadingLogo(false);
+    e.target.value = '';
+    if (error || !data) {
+      toast.error(error ?? 'Upload failed');
+      return;
+    }
+    toast.success('Logo updated');
+    setLogoUrl(data.logo_url ?? '');
+    useWorkspaceStore.getState().setCurrentWorkspace(data);
+  };
+
+  const handleRemoveLogo = async () => {
+    setSaving(true);
+    const { data, error } = await workspacesService.deleteLogo(workspaceId);
+    setSaving(false);
+    if (error) {
+      toast.error(error);
+    } else {
+      toast.success('Logo removed');
+      setLogoUrl('');
+      if (data) useWorkspaceStore.getState().setCurrentWorkspace(data);
+    }
+  };
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -428,6 +468,46 @@ function GeneralTab({ workspaceId, editable }: {
           <CardTitle>General</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label>Logo</Label>
+            <div className="flex items-center gap-4">
+              <div className="relative group">
+                <UserAvatar
+                  name={name || workspace?.name}
+                  avatarUrl={logoUrl || undefined}
+                  className="h-16 w-16 rounded-lg"
+                  fallbackClassName="text-xl rounded-lg"
+                />
+                {editable && (
+                  <label className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                    {uploadingLogo ? (
+                      <Loader2 className="h-5 w-5 text-white animate-spin" />
+                    ) : (
+                      <Camera className="h-5 w-5 text-white" />
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleLogoUpload}
+                      disabled={uploadingLogo}
+                    />
+                  </label>
+                )}
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
+                  Upload a logo for your workspace. Recommended size: 128x128px.
+                </p>
+                {editable && logoUrl && (
+                  <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={handleRemoveLogo} disabled={saving}>
+                    Remove logo
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="ws-name">Workspace Name</Label>
             <Input

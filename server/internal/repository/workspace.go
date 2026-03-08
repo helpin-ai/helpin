@@ -43,7 +43,7 @@ func (r *WorkspaceRepository) List(ctx context.Context, userID string, organizat
 	var results []model.WorkspaceWithRole
 	q := r.db.WithContext(ctx).
 		Table("workspaces w").
-		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.timezone, w.created_at, w.updated_at, wm.role").
+		Select("w.id, w.name, w.slug, w.owner_id, w.organization_id, w.description, w.logo_url, w.timezone, w.created_at, w.updated_at, wm.role").
 		Joins("JOIN workspace_members wm ON w.id = wm.workspace_id").
 		Where("wm.user_id = ? AND wm.status = ?", userID, model.WorkspaceMemberStatusActive)
 	if organizationID != "" {
@@ -82,13 +82,16 @@ func (r *WorkspaceRepository) GetBySlug(ctx context.Context, slug string) (*mode
 }
 
 // Update modifies workspace fields.
-func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, timezone *string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, logoURL, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}
 	if name != nil {
 		updates["name"] = *name
 	}
 	if description != nil {
 		updates["description"] = *description
+	}
+	if logoURL != nil {
+		updates["logo_url"] = *logoURL
 	}
 	if timezone != nil {
 		updates["timezone"] = *timezone

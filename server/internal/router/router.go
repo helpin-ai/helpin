@@ -138,6 +138,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/assignable-members", h.Workspace.ListAssignableMembers)
 
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/", h.Workspace.Update)
+				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/logo", h.Workspace.UploadLogo)
+				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Delete("/logo", h.Workspace.DeleteLogo)
 				r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
 
 				// Import routes require pm.import

@@ -3,6 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
+	"path/filepath"
+
+	"github.com/google/uuid"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -100,7 +104,53 @@ func (s *WorkspaceService) GetByID(ctx context.Context, id string) (*model.Works
 
 // Update modifies a workspace.
 func (s *WorkspaceService) Update(ctx context.Context, id string, req model.UpdateWorkspaceRequest) (*model.Workspace, error) {
-	return s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.Timezone)
+	return s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.LogoURL, req.Timezone)
+}
+
+// UploadLogo uploads a workspace logo to S3 and saves the public URL.
+func (s *WorkspaceService) UploadLogo(ctx context.Context, id string, body io.Reader, size int64, contentType string) (*model.Workspace, error) {
+	if s.s3Client == nil {
+		return nil, fmt.Errorf("file storage not configured")
+	}
+
+	ext := ".png"
+	switch contentType {
+	case "image/jpeg":
+		ext = ".jpg"
+	case "image/webp":
+		ext = ".webp"
+	case "image/svg+xml":
+		ext = ".svg"
+	}
+	key := fmt.Sprintf("workspaces/%s/logo/%s%s", id, uuid.New().String(), ext)
+
+	if err := s.s3Client.PutObject(ctx, key, contentType, size, body, true); err != nil {
+		return nil, fmt.Errorf("upload logo: %w", err)
+	}
+
+	logoURL := s.s3Client.PublicURL(key)
+	return s.workspaceRepo.Update(ctx, id, nil, nil, &logoURL, nil)
+}
+
+// DeleteLogo removes the workspace logo.
+func (s *WorkspaceService) DeleteLogo(ctx context.Context, id string) (*model.Workspace, error) {
+	ws, err := s.workspaceRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if ws == nil {
+		return nil, fmt.Errorf("workspace not found")
+	}
+
+	// Delete old logo from S3 if it exists
+	if ws.LogoURL != nil && *ws.LogoURL != "" && s.s3Client != nil {
+		key := filepath.Base(*ws.LogoURL)
+		// Extract the full key from the URL path
+		_ = s.s3Client.DeleteObject(ctx, fmt.Sprintf("workspaces/%s/logo/%s", id, key))
+	}
+
+	empty := ""
+	return s.workspaceRepo.Update(ctx, id, nil, nil, &empty, nil)
 }
 
 // Delete removes a workspace and all associated data including S3 attachments.

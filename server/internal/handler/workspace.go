@@ -86,6 +86,50 @@ func (h *WorkspaceHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ws)
 }
 
+// UploadLogo handles POST /api/workspaces/{id}/logo.
+func (h *WorkspaceHandler) UploadLogo(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "file too large (max 2MB)")
+		return
+	}
+
+	file, header, err := r.FormFile("logo")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing logo file")
+		return
+	}
+	defer file.Close()
+
+	contentType := header.Header.Get("Content-Type")
+	if contentType != "image/png" && contentType != "image/jpeg" && contentType != "image/webp" && contentType != "image/svg+xml" {
+		writeError(w, http.StatusBadRequest, "only PNG, JPEG, WebP, and SVG images are allowed")
+		return
+	}
+
+	ws, err := h.workspaceService.UploadLogo(r.Context(), id, file, header.Size, contentType)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ws)
+}
+
+// DeleteLogo handles DELETE /api/workspaces/{id}/logo.
+func (h *WorkspaceHandler) DeleteLogo(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	ws, err := h.workspaceService.DeleteLogo(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ws)
+}
+
 // Delete handles DELETE /api/workspaces/{id}.
 func (h *WorkspaceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
