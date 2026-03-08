@@ -16,7 +16,7 @@ import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
-import { UserAvatar } from '@/components/pm/UserAvatar';
+import { UserAvatar, getAvatarColor } from '@/components/pm/UserAvatar';
 import type { StateType, WorkflowState, WorkflowWithStates, EpicWorkflowState, PMAutomation, AutomationType, GitIntegration, GitRepository, RunnerHealth } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -1936,9 +1936,14 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-xs font-semibold text-primary">
-                            {getInitials(team.name)}
-                          </div>
+                          {(() => {
+                            const color = getAvatarColor(team.name);
+                            return (
+                              <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold', color.bg, color.text)}>
+                                {getInitials(team.name)}
+                              </div>
+                            );
+                          })()}
                           <span className="font-medium">{team.name}</span>
                         </div>
                       </TableCell>
