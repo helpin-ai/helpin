@@ -1627,6 +1627,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
           <DialogContent className="max-w-xl gap-0 p-0">
             <DialogHeader className="border-b px-5 py-4">
               <DialogTitle className="text-base">{selectedTeam ? `${selectedTeam.name} members` : 'Team Members'}</DialogTitle>
+              <p className="text-sm text-muted-foreground">Add or remove members who belong to this team.</p>
             </DialogHeader>
 
             {editable && (availableMembers.length > 0 || (selectedTeam && invitations.filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id)).length > 0)) && (
