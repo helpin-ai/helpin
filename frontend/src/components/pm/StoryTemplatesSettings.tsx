@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FileText, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
@@ -22,8 +22,8 @@ function TemplateRow({
   onDelete: () => void;
 }) {
   return (
-    <div className="group rounded-md border-b border-border/30 last:border-b-0">
-      <div className="flex items-center gap-3 px-3 py-3.5 hover:bg-accent/50 transition-colors">
+    <div className="rounded-lg border border-border/60 bg-muted/30 px-3.5 py-3 mb-2 last:mb-0 hover:bg-muted/50 transition-colors">
+      <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-foreground">{template.name}</span>
@@ -32,7 +32,7 @@ function TemplateRow({
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground" onClick={onEdit}>
             <Pencil className="h-3 w-3" />
           </Button>
@@ -114,9 +114,28 @@ export function StoryTemplatesSettings({ workspaceId, initialTeamId }: StoryTemp
 
       <div>
         {templates.length === 0 && (
-          <p className="text-sm text-muted-foreground py-6 text-center">
-            No story templates yet. Create one to get started.
-          </p>
+          <div className="flex flex-col items-center gap-3 py-12 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <FileText className="h-6 w-6 text-muted-foreground/60" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-foreground">No templates yet</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Templates let you pre-fill story fields so your team can create consistent stories faster.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditingTemplate(null);
+                setShowCreate(true);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Create your first template
+            </Button>
+          </div>
         )}
         {templates.map((template) =>
           deleteConfirmId === template.id ? (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Check, Loader2, Pencil, Plus, Tag, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -52,7 +52,7 @@ function LabelRow({
 }) {
   const { label, stats } = entry;
   return (
-    <div className="group flex items-center gap-4 rounded-md px-3 py-4 hover:bg-accent/50 transition-colors border-b border-border/30 last:border-b-0">
+    <div className="flex items-center gap-4 rounded-lg border border-border/60 bg-muted/30 px-3.5 py-3 mb-2 last:mb-0 hover:bg-muted/50 transition-colors">
       <div className="flex items-center gap-2.5 min-w-0 flex-1">
         <span
           className="h-3 w-3 rounded-full shrink-0"
@@ -72,7 +72,7 @@ function LabelRow({
       </div>
       <StatCell done={stats.done_story_count} total={stats.story_count} entity="Stories" />
       <StatCell done={stats.done_epic_count} total={stats.epic_count} entity="Epics" />
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-1">
         <Button
           variant="ghost"
           size="icon-xs"
@@ -121,10 +121,10 @@ function LabelForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-md border p-3 space-y-3 bg-muted/30">
-      <div className="flex items-center gap-2">
+    <form onSubmit={handleSubmit} className="rounded-lg border border-border/60 bg-muted/30 p-3.5 space-y-3">
+      <div className="flex items-center gap-2.5">
         <span
-          className="h-3 w-3 rounded-full shrink-0"
+          className="h-3.5 w-3.5 rounded-full shrink-0 ring-2 ring-background"
           style={{ backgroundColor: form.color || '#64748b' }}
         />
         <Input
@@ -141,20 +141,22 @@ function LabelForm({
         onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
         className="h-8 text-sm"
       />
-      <Select value={form.team_id || '__shared__'} onValueChange={(value) => setForm((f) => ({ ...f, team_id: value === '__shared__' ? '' : value }))}>
-        <SelectTrigger className="h-8 text-sm">
-          <SelectValue placeholder="For everyone" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__shared__">For everyone</SelectItem>
-          {teams.map((team) => (
-            <SelectItem key={team.id} value={team.id}>
-              {team.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <ColorPicker value={form.color} onChange={(c) => setForm((f) => ({ ...f, color: c }))} />
+      <div className="flex items-center gap-2">
+        <Select value={form.team_id || '__shared__'} onValueChange={(value) => setForm((f) => ({ ...f, team_id: value === '__shared__' ? '' : value }))}>
+          <SelectTrigger className="h-8 w-[180px] text-sm">
+            <SelectValue placeholder="For everyone" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__shared__">For everyone</SelectItem>
+            {teams.map((team) => (
+              <SelectItem key={team.id} value={team.id}>
+                {team.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <ColorPicker value={form.color} onChange={(c) => setForm((f) => ({ ...f, color: c }))} />
+      </div>
       <div className="flex items-center gap-2 pt-1">
         <Button type="submit" size="sm" disabled={saving || !form.name.trim()}>
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
@@ -254,20 +256,21 @@ export function LabelsSettings({ workspaceId, initialTeamId }: LabelsSettingsPro
             ))}
           </SelectContent>
         </Select>
+        {!showCreate && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => {
+              setShowCreate(true);
+              setEditingId(null);
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add label
+          </Button>
+        )}
       </div>
-      {!showCreate && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setShowCreate(true);
-            setEditingId(null);
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add label
-        </Button>
-      )}
 
       {showCreate && (
         <LabelForm
@@ -281,9 +284,28 @@ export function LabelsSettings({ workspaceId, initialTeamId }: LabelsSettingsPro
 
       <div>
         {labels.length === 0 && !showCreate && (
-          <p className="text-sm text-muted-foreground py-6 text-center">
-            No labels yet. Create one to get started.
-          </p>
+          <div className="flex flex-col items-center gap-3 py-12 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Tag className="h-6 w-6 text-muted-foreground/60" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-foreground">No labels yet</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Labels help you categorize and filter stories across your workspace.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowCreate(true);
+                setEditingId(null);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Create your first label
+            </Button>
+          </div>
         )}
         {labels.map((entry) =>
           editingId === entry.label.id ? (
