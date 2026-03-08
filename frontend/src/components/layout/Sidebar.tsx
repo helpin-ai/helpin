@@ -71,7 +71,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-type RailId = 'projects' | 'support' | 'rewards' | 'docs' | 'settings';
+type RailId = 'projects' | 'support' | /* 'rewards' | */ 'docs' | 'settings';
 
 type RailItem = {
   id: RailId;
@@ -85,7 +85,7 @@ function deriveActiveRail(pathname: string): RailId {
   if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
   if (pathname.includes('/docs')) return 'docs';
   if (pathname.includes('/settings')) return 'settings';
-  return 'rewards';
+  return 'projects';
 }
 
 // ── localStorage helpers for expanded teams ──
@@ -187,7 +187,7 @@ export function Sidebar() {
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/stories` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
-    { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
+    // { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
   ];
@@ -212,7 +212,7 @@ export function Sidebar() {
         ],
       },
     ],
-    rewards: [
+    /* rewards: [
       {
         label: 'Workspace',
         items: [
@@ -229,7 +229,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/my-quarter`, label: 'My Quarter', icon: User },
         ],
       },
-    ],
+    ], */
     docs: [
       {
         label: 'Documentation',
@@ -271,7 +271,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/import`, label: 'Import / Export', icon: Import },
         ],
       },
-      {
+      /* {
         label: 'Reward Settings',
         items: [
           { link: `/w/${wsSlug}/settings/system`, label: 'Reward Defaults', icon: Settings2 },
@@ -279,12 +279,12 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
           { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },
         ],
-      },
+      }, */
     ],
   };
 
   const currentNavGroups = panelNavGroups[activeRail];
-  const showProjects = activeRail === 'rewards';
+  const showProjects = false; // activeRail === 'rewards';
 
   const projectNames = useMemo(() => {
     const names = workspaces.map((workspace) => workspace.name);

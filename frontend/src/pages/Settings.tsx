@@ -113,7 +113,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     icon: Import,
     group: 'Data',
   },
-  {
+  /* {
     id: 'people',
     label: 'People',
     description: '',
@@ -140,7 +140,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     description: '',
     icon: Settings2,
     group: 'Reward Settings',
-  },
+  }, */
 ];
 
 export const isSettingsSection = (value: string): value is SettingsSection =>

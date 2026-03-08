@@ -555,6 +555,8 @@ export function StoryListView({
       columnVisibility,
     },
     onExpandedChange: setExpanded,
+    autoResetExpanded: false,
+    getRowId: (row) => row.id,
     getExpandedRowModel: getExpandedRowModel(),
     getGroupedRowModel: getGroupedRowModel(),
     getCoreRowModel: getCoreRowModel(),
@@ -633,7 +635,7 @@ export function StoryListView({
                     style={{
                       width: size === 999 ? undefined : size,
                       flex: size === 999 ? '1 1 0%' : undefined,
-                      minWidth: size === 999 ? 300 : undefined,
+                      minWidth: size === 999 ? 400 : undefined,
                     }}
                   >
                     {header.isPlaceholder
@@ -734,7 +736,7 @@ function DataRow({ row, onOpenStory }: { row: Row<Story>; onOpenStory: (story: S
             style={{
               width: size === 999 ? undefined : size,
               flex: size === 999 ? '1 1 0%' : undefined,
-              minWidth: size === 999 ? 300 : undefined,
+              minWidth: size === 999 ? 400 : undefined,
             }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
