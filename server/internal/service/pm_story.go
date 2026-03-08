@@ -35,6 +35,36 @@ func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *r
 	}
 }
 
+// requireCanEdit checks that the actor has owner, admin, or manager role.
+func (s *PMStoryService) requireCanEdit(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" || actorID == "" {
+		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
+	}
+	role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if role != model.RoleOwner && role != model.RoleAdmin && role != model.RoleManager {
+		return &model.ErrForbidden{Message: "manager access or above required"}
+	}
+	return nil
+}
+
+// requireAdmin checks that the actor has owner or admin role.
+func (s *PMStoryService) requireAdmin(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" || actorID == "" {
+		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
+	}
+	role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if role != model.RoleOwner && role != model.RoleAdmin {
+		return &model.ErrForbidden{Message: "admin access or above required"}
+	}
+	return nil
+}
+
 // List returns stories with filters/pagination.
 func (s *PMStoryService) List(ctx context.Context, workspaceID string, filters model.PMStoryFilters, pagination model.PMPagination) ([]model.BoardStory, int64, error) {
 	if workspaceID == "" {
@@ -71,6 +101,9 @@ func (s *PMStoryService) GetByDisplayID(ctx context.Context, workspaceID string,
 func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryRequest, actorID string) (*model.StoryDetail, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
+	}
+	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 
 	workflowID := req.WorkflowID
@@ -247,6 +280,9 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	}
 	if current == nil {
 		return nil, fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 
 	stateChanged := false
@@ -469,6 +505,9 @@ func (s *PMStoryService) Delete(ctx context.Context, id, actorID string) error {
 	if current == nil {
 		return fmt.Errorf("story not found")
 	}
+	if err := s.requireAdmin(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if err := s.storyRepo.Delete(ctx, id); err != nil {
 		return err
 	}
@@ -485,6 +524,9 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	}
 	if current == nil {
 		return nil, fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return nil, err
 	}
 	if req.StateID == "" {
 		return nil, fmt.Errorf("state_id is required")
@@ -529,6 +571,9 @@ func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.Reord
 	if current == nil {
 		return fmt.Errorf("story not found")
 	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if req.Position < 0 {
 		return fmt.Errorf("position must be >= 0")
 	}
@@ -548,6 +593,9 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if userID == "" {
 		return fmt.Errorf("user_id is required")
@@ -572,6 +620,9 @@ func (s *PMStoryService) RemoveOwner(ctx context.Context, storyID, userID, actor
 	if current == nil {
 		return fmt.Errorf("story not found")
 	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if err := s.storyRepo.RemoveOwner(ctx, storyID, userID); err != nil {
 		return err
 	}
@@ -588,6 +639,9 @@ func (s *PMStoryService) AddFollower(ctx context.Context, storyID, userID, actor
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if userID == "" {
 		return fmt.Errorf("user_id is required")
@@ -609,6 +663,9 @@ func (s *PMStoryService) RemoveFollower(ctx context.Context, storyID, userID, ac
 	if current == nil {
 		return fmt.Errorf("story not found")
 	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
+	}
 	if err := s.storyRepo.RemoveFollower(ctx, storyID, userID); err != nil {
 		return err
 	}
@@ -625,6 +682,9 @@ func (s *PMStoryService) AddLabel(ctx context.Context, storyID, labelID, actorID
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, []string{labelID}, allowedTeamIDs(current.TeamID)); err != nil {
 		return err
@@ -645,6 +705,9 @@ func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, acto
 	}
 	if current == nil {
 		return fmt.Errorf("story not found")
+	}
+	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
 	}
 	if err := s.storyRepo.RemoveLabel(ctx, storyID, labelID); err != nil {
 		return err

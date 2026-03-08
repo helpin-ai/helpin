@@ -33,9 +33,15 @@ func (r *PMKeyResultRepository) List(ctx context.Context, objectiveID string) ([
 }
 
 // GetByID returns a key result by ID.
-func (r *PMKeyResultRepository) GetByID(ctx context.Context, id string) (*model.PMKeyResult, error) {
+// When workspaceID is provided, the query is scoped to that workspace
+// via the parent objective to prevent cross-workspace data access.
+func (r *PMKeyResultRepository) GetByID(ctx context.Context, id string, workspaceID ...string) (*model.PMKeyResult, error) {
 	var kr model.PMKeyResult
-	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&kr).Error; err != nil {
+	q := r.db.WithContext(ctx).Where("id = ?", id)
+	if len(workspaceID) > 0 && workspaceID[0] != "" {
+		q = q.Where("objective_id IN (SELECT id FROM pm_objectives WHERE workspace_id = ?)", workspaceID[0])
+	}
+	if err := q.First(&kr).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

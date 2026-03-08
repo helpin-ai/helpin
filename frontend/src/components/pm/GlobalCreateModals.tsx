@@ -16,6 +16,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { usePMWorkflowStore } from '@/stores/pmWorkflowStore';
+import { useSessionStore } from '@/stores/sessionStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
@@ -444,9 +445,15 @@ function MultiSelectPopover({
 }
 
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const { canEdit } = useSessionStore();
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = buildAssignableMemberOptions(assignableMembers);
+
+  // Close immediately if the user lacks edit permission
+  useEffect(() => {
+    if (!canEdit()) onClose();
+  }, [canEdit, onClose]);
 
   const [form, setForm] = useState({
     name: '',

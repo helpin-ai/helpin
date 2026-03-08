@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useSessionStore } from '@/stores/sessionStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
@@ -116,6 +117,7 @@ export function ObjectivesPage() {
   const workspaceId = workspace?.id;
   const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
+  const { canEdit, isAdmin } = useSessionStore();
   const { teams } = useWorkspaceTeams(workspaceId);
 
   const [objectives, setObjectives] = useState<ObjectiveWithDetails[]>([]);
@@ -190,9 +192,11 @@ export function ObjectivesPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Create your first objective to start tracking goals.
         </p>
-        <Button className="mt-4" size="sm" onClick={() => openCreate('objective')}>
-          Create Objective
-        </Button>
+        {canEdit() && (
+          <Button className="mt-4" size="sm" onClick={() => openCreate('objective')}>
+            Create Objective
+          </Button>
+        )}
       </div>
     );
   }
@@ -201,9 +205,11 @@ export function ObjectivesPage() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-semibold">Objectives</h1>
-        <Button size="sm" onClick={() => openCreate('objective')}>
-          Create Objective
-        </Button>
+        {canEdit() && (
+          <Button size="sm" onClick={() => openCreate('objective')}>
+            Create Objective
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -232,6 +238,8 @@ export function ObjectivesPage() {
             <ObjectiveCard
               key={obj.objective.id}
               data={obj}
+              canEdit={canEdit()}
+              isAdmin={isAdmin()}
               onArchive={() => handleArchive(obj.objective.id)}
               onClick={() => navigate({ to: `/w/${workspace!.slug}/pm/objectives/${obj.objective.id}` } as any)}
             />
@@ -259,10 +267,14 @@ function formatDate(iso: string) {
 
 function ObjectiveCard({
   data,
+  canEdit,
+  isAdmin,
   onArchive,
   onClick,
 }: {
   data: ObjectiveWithDetails;
+  canEdit: boolean;
+  isAdmin: boolean;
   onArchive: () => void;
   onClick: () => void;
 }) {
@@ -297,25 +309,29 @@ function ObjectiveCard({
             {isStrategic ? <Crosshair className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
           </span>
           <p className="min-w-0 flex-1 text-sm font-semibold text-foreground leading-snug line-clamp-2">{objective.name}</p>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 -mt-0.5 -mr-1 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onClick={onClick}>Edit</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
-                <Archive className="mr-2 h-4 w-4 text-amber-500" />
-                Archive
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canEdit && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 -mt-0.5 -mr-1 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem onClick={onClick}>Edit</DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
+                    <Archive className="mr-2 h-4 w-4 text-amber-500" />
+                    Archive
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
         {/* Meta row */}

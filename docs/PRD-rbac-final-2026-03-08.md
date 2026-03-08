@@ -3,9 +3,7 @@
 **Product**: TeamPulse  
 **Date**: March 8, 2026  
 **Status**: Final PRD  
-**Supersedes**:
-- [PRD-rbac-members-and-roles.md](/root/teampulse/docs/PRD-rbac-members-and-roles.md)
-- [RBAC-final-plan-2026-03-06.md](/root/teampulse/docs/RBAC-final-plan-2026-03-06.md)
+**Supersedes**: PRD-rbac-members-and-roles.md and RBAC-final-plan-2026-03-06.md (both removed from the repository)
 
 ## 1. Review Summary
 
@@ -181,7 +179,7 @@ Today this creates five concrete problems:
 |---|---|---|
 | `owner` | workspace | full administrative access including owner-only destructive actions |
 | `admin` | workspace | full operational administration except owner-only actions |
-| `manager` | workspace | can operate day-to-day PM and applicable management surfaces, but cannot administer workspace membership or core workspace settings |
+| `manager` | workspace | can operate day-to-day PM, manage rewards data, and manage team membership for teams they own, but cannot administer workspace membership or core workspace settings |
 | `member` | workspace | standard collaborator with edit access to day-to-day product work |
 | `viewer` | workspace | read-only workspace access |
 
@@ -237,6 +235,7 @@ Settings and team permissions:
 - `settings.manage`
 - `team.read`
 - `team.manage`
+- `team.members.read`
 - `team.members.manage`
 
 PM permissions:
@@ -265,8 +264,13 @@ Other workspace-scoped permissions:
 | `pm.read` | Yes | Yes | Yes | Yes | Yes |
 | `search.read` | Yes | Yes | Yes | Yes | Yes |
 | `ws.connect` | Yes | Yes | Yes | Yes | Yes |
+| `team.read` | Yes | Yes | Yes | Yes | Yes |
+| `team.members.read` | Yes | Yes | Yes | Yes | Yes |
 | `pm.edit` | Yes | Yes | Yes | Yes | No |
 | `rewards.read` | Yes | Yes | Yes | Yes | No |
+| `rewards.manage` | Yes | Yes | Yes | No | No |
+| `team.manage` | Yes | Yes | No | No | No |
+| `team.members.manage` | Yes | Yes | No | No | No |
 | `settings.manage` | Yes | Yes | No | No | No |
 | `workspace.update` | Yes | Yes | No | No | No |
 | `workspace.members.manage` | Yes | Yes | No | No | No |
@@ -280,45 +284,336 @@ Other workspace-scoped permissions:
 
 Notes:
 
-- team-level settings and membership permissions will additionally allow team `owner`
-- `admin` may not transfer or assign the workspace `owner` role
+- team-level `team.manage` and `team.members.manage` are additionally granted to team `owner` for teams they own, even if their workspace role would not normally include those permissions
+- `admin` may not transfer or assign the workspace `owner` role; this is enforced by treating owner transfer as a distinct action within `workspace.roles.manage` that requires `owner` role specifically (services must check `role == "owner"` before allowing owner assignment)
+- `manager` receives `rewards.manage` to support day-to-day compensation and evaluation workflows without requiring full admin access
 - reward-route hardening should adopt the same pattern: read permissions separate from manage permissions
 
 ## 9. Backend Design
 
-### 9.1 Introduce a centralized authorization package
+### 9.1 Introduce a centralized authorization package using Casbin
 
-Add a dedicated package such as:
+#### 9.1.1 Framework choice: Casbin
 
-- `server/internal/authorization/permissions.go`
-- `server/internal/authorization/policy.go`
-- `server/internal/authorization/context.go`
-- `server/internal/authorization/middleware.go`
+The authorization layer will be built on **Casbin** (`github.com/casbin/casbin/v2`) with the GORM adapter (`github.com/casbin/gorm-adapter/v3`).
 
-This layer will:
+Rationale:
 
-- resolve the actor's active workspace membership
-- attach actor context to the request
-- map workspace roles to permissions
-- resolve team memberships for the active workspace when needed
-- expose helpers such as `Can(actor, permission)` and `CanManageTeam(actor, teamID)`
+- runs in-process inside the Go binary — no new infrastructure to deploy or operate
+- GORM adapter stores policies in the existing Neon PostgreSQL database
+- supports RBAC with resource roles, which maps directly to the workspace role + team role model
+- model and policy are configuration-driven and can evolve to ABAC in later phases without migrating to a different system
+- mature ecosystem with Chi middleware helpers and multi-language ports
+
+Alternatives considered and rejected:
+
+- **OpenFGA / ORY Keto**: require deploying and operating a separate authorization service over gRPC, which is unnecessary complexity for a single Go monolith with ~5 workspace roles and ~25 permissions
+- **goRBAC**: too basic — no resource-scoped roles, no path to ABAC, would dead-end if Phase 4 needs richer team or per-resource controls
+
+#### 9.1.2 Package structure
+
+Add a dedicated package:
+
+```
+server/internal/authorization/
+├── permissions.go    # permission string constants
+├── model.conf        # Casbin model definition
+├── policy.go         # policy loader and role-permission seed
+├── enforcer.go       # Casbin enforcer initialization and helpers
+├── actor.go          # Actor struct and context helpers
+├── middleware.go      # Chi middleware wrappers
+```
+
+#### 9.1.3 Casbin model definition (`model.conf`)
+
+```ini
+[request_definition]
+r = sub, dom, obj, act
+
+[policy_definition]
+p = sub, dom, obj, act
+
+[role_definition]
+g = _, _, _    # user -> workspace_role (per workspace domain)
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act
+```
+
+- `sub`: the actor's workspace member ID (e.g. `wm_123`)
+- `dom`: the workspace ID (e.g. `ws_456`) — Casbin's domain feature provides workspace isolation
+- `obj`: the permission resource (e.g. `workspace`, `pm`, `settings`, `team`, `rewards`)
+- `act`: the permission action (e.g. `read`, `edit`, `manage`, `delete`, `admin.workflows`)
+
+#### 9.1.4 Policy seeding
+
+Policy seeding follows the same idempotent pattern used elsewhere in the codebase (e.g. `SeedDefaultWorkflow`, `SeedDefaultEpicStates`, `SeedDefaults` for labels). The seed function is called once at startup from `cmd/api/main.go`, after the `AuthzService` is constructed.
+
+**How it works with GORM AutoMigrate:**
+
+1. The GORM adapter (`gormadapter.NewAdapterByDB(db)`) internally calls `db.AutoMigrate(&CasbinRule{})` to create or update the `casbin_rule` table. This happens automatically when the adapter is constructed — no manual AutoMigrate call is needed for the Casbin table.
+2. After the enforcer is created, `seedBasePolicy()` is called. This function is **idempotent** — it checks whether the base policies already exist before inserting. On subsequent startups, it detects existing policies and skips the seed.
+3. If the policy catalog changes (e.g. a new permission is added in a future release), the seed function detects missing policies and adds only the new ones.
+
+**Seed function pattern:**
+
+```go
+func (s *AuthzService) seedBasePolicy() error {
+    // Check if base policies already exist (idempotent guard)
+    existingPolicies := s.enforcer.GetPolicy()
+    if len(existingPolicies) > 0 {
+        // Policies exist — sync any new permissions added since last seed
+        return s.syncPolicyUpdates()
+    }
+
+    // First-time seed: add all role-permission policies
+    policies := [][]string{
+        // Viewer permissions
+        {"viewer", "*", "workspace", "read"},
+        {"viewer", "*", "settings", "read"},
+        {"viewer", "*", "workspace.members", "read"},
+        {"viewer", "*", "pm", "read"},
+        {"viewer", "*", "search", "read"},
+        {"viewer", "*", "ws", "connect"},
+        {"viewer", "*", "team", "read"},
+        {"viewer", "*", "team.members", "read"},
+
+        // Member permissions (inherits viewer via grouping)
+        {"member", "*", "pm", "edit"},
+        {"member", "*", "rewards", "read"},
+
+        // Manager permissions (inherits member)
+        {"manager", "*", "rewards", "manage"},
+
+        // Admin permissions (inherits manager)
+        {"admin", "*", "settings", "manage"},
+        {"admin", "*", "workspace", "update"},
+        {"admin", "*", "workspace.members", "manage"},
+        {"admin", "*", "workspace.invites", "manage"},
+        {"admin", "*", "workspace.roles", "manage"},
+        {"admin", "*", "pm", "admin.workflows"},
+        {"admin", "*", "pm", "admin.labels"},
+        {"admin", "*", "pm", "admin.automations"},
+        {"admin", "*", "pm", "import"},
+        {"admin", "*", "team", "manage"},
+        {"admin", "*", "team.members", "manage"},
+
+        // Owner permissions (inherits admin)
+        {"owner", "*", "workspace", "delete"},
+    }
+    s.enforcer.AddPolicies(policies)
+
+    // Role inheritance chain
+    groupingRules := [][]string{
+        {"member", "viewer", "*"},
+        {"manager", "member", "*"},
+        {"admin", "manager", "*"},
+        {"owner", "admin", "*"},
+    }
+    s.enforcer.AddGroupingPolicies(groupingRules)
+
+    return s.enforcer.SavePolicy()
+}
+```
+
+**`syncPolicyUpdates()` handles rolling upgrades:**
+
+When new permissions are added in a future release, the seed function compares the expected policy set against what exists in the database. It adds missing policies and removes deprecated ones. This avoids requiring a manual migration for policy changes.
+
+**Runtime role assignment:**
+
+When a user accesses a workspace, `RequireWorkspaceAccess` middleware assigns their workspace member ID to their role within that workspace domain:
+
+```
+g, wm_123, admin, ws_456
+```
+
+This grouping rule is added to the enforcer (and persisted via the adapter) when membership is resolved. The enforcer then evaluates permissions through the role inheritance chain: if `wm_123` is `admin` in `ws_456`, they inherit `manager` → `member` → `viewer` permissions automatically.
+
+#### 9.1.5 GORM adapter and storage
+
+The GORM adapter (`github.com/casbin/gorm-adapter/v3`) handles its own table lifecycle:
+
+- `gormadapter.NewAdapterByDB(db)` internally calls `db.AutoMigrate(&CasbinRule{})` — this creates or updates the `casbin_rule` table automatically, consistent with how the rest of the codebase uses GORM AutoMigrate
+- no manual `db.AutoMigrate` call is needed for Casbin in `cmd/api/main.go`
+- the adapter reuses the existing `*gorm.DB` connection — no new database or connection pool
+
+The `casbin_rule` table stores two kinds of rows:
+
+| `ptype` | Purpose | Example |
+|---|---|---|
+| `p` | role-to-permission mappings (global baseline) | `p, admin, *, workspace, update` |
+| `g` | role inheritance + per-workspace role assignments | `g, wm_123, admin, ws_456` |
+
+Policy is loaded into memory by the enforcer at startup. The GORM adapter persists changes (new role assignments, policy updates) back to the database so they survive restarts.
+
+Startup sequence in `cmd/api/main.go`:
+
+```go
+// Existing: db connection + AutoMigrate for all app models
+db.AutoMigrate(&model.Workspace{}, &model.WorkspaceMember{}, /* ... */)
+
+// New: AuthzService construction (adapter auto-creates casbin_rule table)
+authzService, err := authorization.NewAuthzService(db, memberRepo)
+// seedBasePolicy() is called internally — idempotent, safe on every restart
+```
+
+This fits the existing pattern where `main.go` runs AutoMigrate first, then calls idempotent seed functions (e.g. `MigrateWorkspacesToOrganizations`).
+
+#### 9.1.6 Enforcer initialization (`enforcer.go`)
+
+```go
+type AuthzService struct {
+    enforcer   *casbin.Enforcer
+    memberRepo MemberRepository
+}
+
+func NewAuthzService(db *gorm.DB, memberRepo MemberRepository) (*AuthzService, error) {
+    // Adapter auto-creates casbin_rule table via GORM AutoMigrate
+    adapter, err := gormadapter.NewAdapterByDB(db)
+    if err != nil {
+        return nil, fmt.Errorf("authorization: failed to create adapter: %w", err)
+    }
+
+    enforcer, err := casbin.NewEnforcer("internal/authorization/model.conf", adapter)
+    if err != nil {
+        return nil, fmt.Errorf("authorization: failed to create enforcer: %w", err)
+    }
+
+    svc := &AuthzService{enforcer: enforcer, memberRepo: memberRepo}
+
+    // Idempotent seed — safe to call on every startup
+    // First run: inserts all role-permission policies and inheritance rules
+    // Subsequent runs: detects existing policies, adds only new ones
+    if err := svc.seedBasePolicy(); err != nil {
+        return nil, fmt.Errorf("authorization: failed to seed base policy: %w", err)
+    }
+
+    return svc, nil
+}
+```
+
+Wiring in `cmd/api/main.go` (placed after existing AutoMigrate and migration calls):
+
+```go
+// After: db.AutoMigrate(...)
+// After: MigrateWorkspaceMemberSchema(db), MigrateWorkspacesToOrganizations(db), etc.
+
+authzService, err := authorization.NewAuthzService(db, memberRepo)
+if err != nil {
+    log.Fatalf("Failed to initialize authorization: %v", err)
+}
+
+// Pass authzService to router setup
+r := router.New(handlers, authzService)
+```
+
+#### 9.1.7 Public helpers
+
+The package exposes the following helpers for use by middleware and services:
+
+```go
+// Can checks whether the actor has a specific permission in their workspace.
+func (s *AuthzService) Can(actor *Actor, permission string) bool
+
+// CanAny checks whether the actor has at least one of the listed permissions.
+func (s *AuthzService) CanAny(actor *Actor, permissions ...string) bool
+
+// CanManageTeam checks team-level management permission.
+// Returns true if the actor is a workspace owner/admin OR a team owner for the given team.
+func (s *AuthzService) CanManageTeam(actor *Actor, teamID string) bool
+
+// IsOwnerOnly checks whether an action requires the workspace owner role specifically.
+// Used for owner-transfer and workspace deletion guards.
+func (s *AuthzService) IsOwnerOnly(actor *Actor) bool
+```
+
+#### 9.1.8 Actor context (`actor.go`)
+
+```go
+type Actor struct {
+    UserID            string
+    WorkspaceID       string
+    WorkspaceMemberID string
+    Role              string
+    Status            string
+    TeamMemberships   []TeamRole  // loaded lazily on first CanManageTeam call
+}
+
+type TeamRole struct {
+    TeamID string
+    Role   string
+}
+```
+
+The `Actor` is resolved once per request by `RequireWorkspaceAccess` middleware and stored in the request context. Downstream handlers and services retrieve it via `authorization.GetActor(ctx)`.
+
+#### 9.1.9 Team owner override
+
+Team-level permissions (`team.manage`, `team.members.manage`) use a two-layer check:
+
+1. Casbin enforcer checks the actor's workspace role — workspace `owner` and `admin` always pass
+2. If the workspace role does not grant the permission, check `team_workspace_memberships` for team `owner` role on the specific team
+
+This is implemented inside `CanManageTeam` rather than as additional Casbin policies, because team ownership is per-team and looked up dynamically.
 
 ### 9.2 Replace `RequireWorkspaceID` as the security boundary
 
 `RequireWorkspaceID` should stop being treated as authorization middleware. It may remain as an internal workspace-ID extraction helper, but it must not be the route guard.
 
-New route guards should be:
+New Chi middleware functions (in `authorization/middleware.go`):
 
-- `RequireWorkspaceAccess`
-- `RequireWorkspacePermission(permission)`
-- `RequireTeamPermission(permission)`
+- `RequireWorkspaceAccess(authzService)` — resolves membership, enforces `active` status, stores `Actor` in context
+- `RequirePermission(authzService, permission)` — calls `authzService.Can(actor, permission)`, returns 403 if denied
+- `RequireAnyPermission(authzService, permissions...)` — calls `authzService.CanAny(actor, permissions...)`, returns 403 if none match
+- `RequireTeamPermission(authzService, permission)` — extracts team ID from path, calls `authzService.CanManageTeam(actor, teamID)`, returns 403 if denied
 
-Required behavior:
+`RequireWorkspaceAccess` behavior:
 
-- resolve workspace ID from path, header, or query in one place
-- load the caller's membership from `workspace_members`
-- reject non-members and non-`active` members
-- store resolved actor context for downstream handlers and services
+1. Resolve workspace ID from a single source per request using the following precedence: (1) path parameter `{id}` or `{slug}`, (2) header `X-Workspace-ID`, (3) query parameter `workspace_id`; only the first match is used
+2. Load the caller's membership from `workspace_members` where `user_id` matches the JWT subject and `workspace_id` matches the resolved ID
+3. Reject with 403 if no membership exists or membership status is not `active`
+4. Assign the actor's workspace role to the Casbin enforcer for the workspace domain (if not already cached): `enforcer.AddGroupingPolicy(memberID, role, workspaceID)`
+5. Build an `Actor` struct and store it in the request context via `authorization.WithActor(ctx, actor)`
+6. Downstream handlers retrieve the actor via `authorization.GetActor(ctx)`
+
+`RequirePermission` behavior:
+
+1. Retrieve the `Actor` from context (fails with 500 if `RequireWorkspaceAccess` was not applied first)
+2. Call `authzService.Can(actor, permission)` which delegates to `enforcer.Enforce(actor.WorkspaceMemberID, actor.WorkspaceID, resource, action)`
+3. Return 403 with `{ "error": "forbidden", "reason": "insufficient_permission", "required": "<permission>" }` if denied
+
+Router integration example:
+
+```go
+r.Route("/api", func(r chi.Router) {
+    r.Use(middleware.RequireAuth)
+
+    r.Route("/workspaces/{id}", func(r chi.Router) {
+        r.Use(authorization.RequireWorkspaceAccess(authzService))
+
+        r.Get("/me", h.Workspace.GetMe)  // any active member
+        r.With(authorization.RequirePermission(authzService, "workspace.update")).Put("/", h.Workspace.Update)
+        r.With(authorization.RequirePermission(authzService, "workspace.delete")).Delete("/", h.Workspace.Delete)
+    })
+
+    r.Route("/settings", func(r chi.Router) {
+        r.Use(authorization.RequireWorkspaceAccess(authzService))
+        r.With(authorization.RequirePermission(authzService, "settings.read")).Get("/", h.Settings.Get)
+        r.With(authorization.RequirePermission(authzService, "settings.manage")).Post("/teams", h.Settings.CreateTeam)
+    })
+
+    r.Route("/pm", func(r chi.Router) {
+        r.Use(authorization.RequireWorkspaceAccess(authzService))
+        r.With(authorization.RequirePermission(authzService, "pm.read")).Get("/stories", h.PM.ListStories)
+        r.With(authorization.RequirePermission(authzService, "pm.edit")).Post("/stories", h.PM.CreateStory)
+        r.With(authorization.RequirePermission(authzService, "pm.admin.workflows")).Put("/workflows/{id}", h.PM.UpdateWorkflow)
+    })
+})
+```
 
 ### 9.3 Enforce authorization at the router level
 
@@ -436,27 +731,39 @@ Suggested shape:
 
 This becomes the only supported source of truth for frontend access control.
 
+Error responses:
+
+- `401 Unauthorized`: JWT is missing or invalid
+- `403 Forbidden`: caller is not a member of the workspace, or membership status is not `active` (body should include `{ "error": "forbidden", "reason": "not_a_member" | "membership_inactive" | "membership_revoked" | "membership_pending" }`)
+- `404 Not Found`: workspace ID does not exist
+
 ### 9.7 WebSocket hardening
 
 WebSocket connection must require:
 
 - valid JWT
-- resolved workspace membership
-- `ws.connect` permission
+- resolved workspace membership (same `workspace_members` lookup as `RequireWorkspaceAccess`)
+- `ws.connect` permission check via `authzService.Can(actor, "ws.connect")`
 
 No socket should be registered from token validation alone.
+
+Implementation: the WebSocket handler must resolve an `Actor` using the same logic as `RequireWorkspaceAccess` before upgrading the connection. Since WebSocket uses query parameters (`token`, `workspace_id`) rather than headers, the handler calls `authzService` directly instead of relying on Chi middleware.
 
 ### 9.8 Backend tests required before rollout
 
 Add automated coverage for:
 
-- active vs pending/inactive/revoked membership access
-- owner/admin/manager/member/viewer permission mapping
-- team owner overrides where applicable
+- Casbin policy correctness: each role receives exactly the permissions defined in §8.2 (test by calling `enforcer.Enforce` for every role-permission combination)
+- Casbin role inheritance: verify `member` inherits `viewer`, `manager` inherits `member`, etc.
+- active vs pending/inactive/revoked membership access: `RequireWorkspaceAccess` must reject non-active members
+- owner-only actions: workspace deletion and owner transfer must reject `admin` and below
+- team owner override: `CanManageTeam` grants access to team owners even when workspace role is `member`
+- workspace-admin team override: `CanManageTeam` grants access to workspace `owner`/`admin` for any team
 - route middleware rejection of cross-workspace requests
 - repository methods rejecting raw cross-workspace entity access
 - invite acceptance preserving the same `workspace_member_id`
 - WebSocket rejection for unauthorized workspace IDs
+- GORM adapter persistence: policies survive enforcer restart
 
 ## 10. Frontend Design
 
@@ -530,23 +837,30 @@ Documentation rule:
 
 ### Phase 1: Authorization foundation
 
-- add permission catalog
-- add actor-context and workspace-access middleware
-- add backend tests for membership and permission resolution
+- add `github.com/casbin/casbin/v2` and `github.com/casbin/gorm-adapter/v3` dependencies
+- create `server/internal/authorization/` package with model, policy seed, enforcer, actor, and middleware
+- initialize `AuthzService` in `cmd/api/main.go` DI wiring, passing the existing GORM `*gorm.DB`
+- seed the baseline role-to-permission policies and role inheritance from §8.2
+- implement `RequireWorkspaceAccess` and `RequirePermission` Chi middleware
+- add backend tests for Casbin policy correctness, role inheritance, and membership resolution
 
 Exit criteria:
 
-- backend has one canonical authorization layer
+- backend has one canonical authorization layer powered by Casbin
+- `casbin_rule` table exists in PostgreSQL with seeded policies
+- all §8.2 role-permission mappings are enforced and tested
 
 ### Phase 2: Route and repository hardening
 
-- apply workspace authorization to all workspace-scoped routes
+- wire `RequireWorkspaceAccess` and `RequirePermission` into all workspace-scoped route groups in `router.go`
 - refactor repositories and services to workspace-scoped entity access
-- harden WebSocket and slug lookup
+- harden WebSocket handler to resolve `Actor` and check `ws.connect` before upgrading
+- protect slug lookup with membership check
 
 Exit criteria:
 
 - changing `workspace_id`, slug, or raw entity ID cannot cross workspace boundaries
+- every mutation route requires the appropriate Casbin permission check
 
 ### Phase 3: Frontend permission integration
 
