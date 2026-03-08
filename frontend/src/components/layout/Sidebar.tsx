@@ -115,7 +115,7 @@ const teamSubItems: { key: string; label: string; icon: LucideIcon; path: string
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentWorkspace, workspaces } = useWorkspaceStore();
+  const { currentWorkspace } = useWorkspaceStore();
 
   const wsSlug = currentWorkspace?.slug ?? '';
   const workspaceId = currentWorkspace?.id;
@@ -288,15 +288,8 @@ export function Sidebar() {
   const showProjects = false; // activeRail === 'rewards';
 
   const projectNames = useMemo(() => {
-    const names = workspaces.map((workspace) => workspace.name);
-    if (currentWorkspace?.name && !names.includes(currentWorkspace.name)) {
-      names.unshift(currentWorkspace.name);
-    }
-    if (names.length === 0 && currentWorkspace?.name) {
-      names.push(currentWorkspace.name);
-    }
-    return names.slice(0, 5);
-  }, [workspaces, currentWorkspace?.name]);
+    return currentWorkspace?.name ? [currentWorkspace.name] : [];
+  }, [currentWorkspace?.name]);
 
   const isActive = (link: string) => {
     return location.pathname === link || location.pathname.startsWith(`${link}/`);
