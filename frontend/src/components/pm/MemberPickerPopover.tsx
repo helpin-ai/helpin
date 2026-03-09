@@ -35,7 +35,7 @@ export function MemberPickerPopover({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="inline-flex max-w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
         >
           {renderTrigger()}
         </button>

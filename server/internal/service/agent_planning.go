@@ -131,7 +131,7 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 			return nil, fmt.Errorf("spec document has no content to approve")
 		}
 		label := "Approved Spec"
-		version, err = s.docsVersionRepo.Create(ctx, *epic.SpecDocumentID, actorID, content.Content, content.ContentText, &label)
+		version, err = s.docsVersionRepo.Create(ctx, *epic.SpecDocumentID, actorID, content.Content, content.ContentText, &label, "manual", len(strings.Fields(content.ContentText)))
 		if err != nil {
 			return nil, err
 		}

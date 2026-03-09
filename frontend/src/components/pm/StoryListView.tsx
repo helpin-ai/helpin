@@ -1513,6 +1513,7 @@ function InlineActionsCell({
       <ConfirmDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
+        title="Archive Story"
         description="This story will be hidden from the board and lists. You can restore it later from archived items."
         confirmLabel="Archive"
         onConfirm={archiveStory}

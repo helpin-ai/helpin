@@ -1,71 +1,257 @@
-name: Deploy Production
+name: Production Release
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+    paths-ignore:
+      - "k8s/**"
+      - "**.md"
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/helpin-ai/helpin
 
 jobs:
-  detect-changes:
+  version:
+    name: Determine Release Version
     runs-on: ubuntu-latest
+    # Skip version bump commits
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     outputs:
-      server: ${{ steps.changes.outputs.server }}
-      frontend: ${{ steps.changes.outputs.frontend }}
+      release_tag: ${{ steps.release_version.outputs.release_tag }}
+      prev_tag: ${{ steps.release_version.outputs.prev_tag }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: changes
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          filters: |
-            server:
-              - 'server/**'
-            frontend:
-              - 'frontend/**'
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: prod-version
 
-  deploy-server:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.server == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v5
-        with:
-          context: ./server
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/server:prod-${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/server:prod-latest
+      - name: Determine release version
+        id: release_version
+        working-directory: prod-version
+        run: |
+          # Check if there's an RC tag to promote
+          LATEST_RC=$(git tag -l 'v*-rc.*' --sort=-v:refname | head -n1 || echo "")
 
-  deploy-frontend:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.frontend == 'true'
+          if [ -n "$LATEST_RC" ]; then
+            # Promote RC to stable: v1.2.0-rc.3 → v1.2.0
+            RELEASE_TAG=$(echo "$LATEST_RC" | sed 's/-rc\.[0-9]*//')
+            PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -vE '\-(rc|dev)\.' | head -n1 || echo "v0.0.0")
+            echo "Promoting RC $LATEST_RC → $RELEASE_TAG"
+          else
+            # No RC found — compute version from commits
+            PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -vE '\-(rc|dev)\.' | head -n1 || echo "v0.0.0")
+            echo "No RC tag found, computing from commits since $PREV_TAG"
+
+            if [ "$PREV_TAG" = "v0.0.0" ]; then
+              COMMITS=$(git log --pretty=format:"%s" -20)
+            else
+              COMMITS=$(git log "$PREV_TAG"..HEAD --pretty=format:"%s")
+            fi
+
+            BUMP_TYPE="patch"
+            if echo "$COMMITS" | grep -qiE "^(BREAKING CHANGE|breaking|major):"; then
+              BUMP_TYPE="major"
+            elif echo "$COMMITS" | grep -qiE "^(feat|feature|minor):"; then
+              BUMP_TYPE="minor"
+            fi
+
+            VERSION=${PREV_TAG#v}
+            IFS='.' read -ra PARTS <<< "$VERSION"
+            MAJOR=${PARTS[0]:-0}
+            MINOR=${PARTS[1]:-0}
+            PATCH=${PARTS[2]:-0}
+
+            case $BUMP_TYPE in
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              patch) PATCH=$((PATCH + 1)) ;;
+            esac
+
+            RELEASE_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          # Guard: don't re-release an existing tag
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG already exists — skipping"
+            echo "release_tag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "prev_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $RELEASE_TAG"
+
+  build-server:
+    name: Build Server Image
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    needs: version
+    if: needs.version.outputs.release_tag != ''
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v5
+          path: build-prod-server
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push server image
+        run: |
+          docker buildx build \
+            -f build-prod-server/server/Dockerfile \
+            -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.release_tag }} \
+            -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
+            -t ${{ env.IMAGE_PREFIX }}/server:prod-latest \
+            --push \
+            build-prod-server/server/
+
+  deploy-netlify:
+    name: Build & Deploy Frontend to Netlify
+    runs-on: ubuntu-latest
+    needs: version
+    if: needs.version.outputs.release_tag != ''
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          context: ./frontend
-          push: true
-          build-args: |
-            VITE_API_URL=https://helpin.ai/api
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/frontend:prod-${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/frontend:prod-latest
+          path: build-prod-netlify
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Doppler CLI
+        run: curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sudo sh
+
+      - name: Download secrets to .env
+        run: |
+          cd build-prod-netlify/frontend
+          doppler secrets download -t ${{ secrets.DOPPLER_TOKEN_FRONTEND_PROD }} --format=env-no-quotes --no-file > .env
+
+      - name: Install dependencies and build
+        run: |
+          cd build-prod-netlify/frontend
+          npm ci
+          NODE_OPTIONS=--max-old-space-size=8192 npm run build
+
+      - name: Deploy to Netlify
+        run: |
+          cd build-prod-netlify/frontend
+          npx netlify-cli deploy --dir=dist --no-build --prod --auth=${{ secrets.NETLIFY_AUTH_TOKEN }} --site=${{ secrets.NETLIFY_SITE_ID_PROD }}
+
+  release:
+    name: Create Official Release
+    runs-on: ubuntu-latest
+    needs: [version, build-server]
+    if: needs.version.outputs.release_tag != ''
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: prod-release
+
+      - name: Configure git
+        working-directory: prod-release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push release tag
+        working-directory: prod-release
+        run: |
+          RELEASE_TAG="${{ needs.version.outputs.release_tag }}"
+          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
+
+      - name: Generate release notes
+        id: release_notes
+        working-directory: prod-release
+        run: |
+          PREV_TAG="${{ needs.version.outputs.prev_tag }}"
+          RELEASE_TAG="${{ needs.version.outputs.release_tag }}"
+
+          echo "## What's Changed" > release_notes.md
+          echo "" >> release_notes.md
+
+          # Add commit log
+          if [ "$PREV_TAG" = "v0.0.0" ]; then
+            COMMITS=$(git log --pretty=format:"- %s (%h)" -20)
+          else
+            COMMITS=$(git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)")
+          fi
+
+          echo "<details>" >> release_notes.md
+          echo "<summary>Commit Log</summary>" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "$COMMITS" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "</details>" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Images" >> release_notes.md
+          echo "- \`${{ env.IMAGE_PREFIX }}/server:$RELEASE_TAG\`" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...$RELEASE_TAG" >> release_notes.md
+
+      - name: Create GitHub release
+        working-directory: prod-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ needs.version.outputs.release_tag }}" \
+            --title "Release ${{ needs.version.outputs.release_tag }}" \
+            --notes-file release_notes.md \
+            --latest
+
+      - name: Update K8s manifests
+        working-directory: prod-release
+        run: |
+          RELEASE_TAG="${{ needs.version.outputs.release_tag }}"
+          SERVER_IMAGE="${{ env.IMAGE_PREFIX }}/server:${RELEASE_TAG}"
+
+          MANIFEST_DIR="k8s/prod"
+
+          # Update server image references
+          find "$MANIFEST_DIR" -name "*.yaml" -exec \
+            sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" {} +
+
+          # Commit and push
+          git add k8s/
+          git commit -m "chore: update helpin prod images to ${RELEASE_TAG} [skip ci]" || echo "No manifest changes"
+
+      - name: Push all changes
+        working-directory: prod-release
+        run: |
+          git pull --rebase origin main
+          git push origin main
+
+      - name: Clean up RC tags
+        working-directory: prod-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete RC pre-releases and tags for this version
+          RELEASE_TAG="${{ needs.version.outputs.release_tag }}"
+          PRERELEASE_TAGS=$(git tag -l "${RELEASE_TAG}-rc.*" "${RELEASE_TAG}-dev.*")
+
+          for tag in $PRERELEASE_TAGS; do
+            echo "Cleaning up pre-release tag: $tag"
+            gh release delete "$tag" --yes 2>/dev/null || true
+            git push origin --delete "$tag" 2>/dev/null || true
+          done
+

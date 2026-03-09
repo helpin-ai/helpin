@@ -456,8 +456,6 @@ export function EpicDetailPage() {
 
         {/* ── Right column — metadata sidebar ────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
-          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
-
           <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
             {/* State */}
             <MetadataRow icon={Hash} label="State">

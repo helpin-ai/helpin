@@ -326,7 +326,6 @@ function ObjectiveCard({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                <DropdownMenuItem onClick={onClick}>Edit</DropdownMenuItem>
                 {isAdmin && (
                   <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
                     <Archive className="mr-2 h-4 w-4 text-amber-500" />

@@ -982,7 +982,7 @@ func (a *AgentRunActivities) finalizeDraftSpecRun(ctx context.Context, state *re
 	}
 
 	label := "AI Draft"
-	version, err := a.docsVersionRepo.Create(ctx, doc.ID, runActorID(state.run), savedContent.Content, savedContent.ContentText, &label)
+	version, err := a.docsVersionRepo.Create(ctx, doc.ID, runActorID(state.run), savedContent.Content, savedContent.ContentText, &label, "manual", len(strings.Fields(savedContent.ContentText)))
 	if err != nil {
 		return err
 	}

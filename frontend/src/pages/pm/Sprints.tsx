@@ -2,13 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { createColumnHelper, type VisibilityState } from '@tanstack/react-table';
 import { format, parseISO } from 'date-fns';
-import { CalendarDays, LayoutGrid, LayoutList, Minus, Plus, Timer, BarChart3, CheckCircle2 } from 'lucide-react';
+import { Archive, ArchiveRestore, CalendarDays, LayoutGrid, LayoutList, Minus, MoreHorizontal, Plus, Timer, BarChart3, CheckCircle2 } from 'lucide-react';
 import { useTitle } from '@/hooks/useTitle';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { PMDataTable } from '@/components/pm/PMDataTable';
 import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopover';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -51,6 +58,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE);
+  const [showArchived, setShowArchived] = useState(false);
 
   const VIEW_MODE_KEY = `pm_view_mode_sprints_${workspaceId}`;
   const [viewMode, setViewModeState] = useState<'cards' | 'table'>(() => {
@@ -190,7 +198,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
-    const res = await pmSprintService.list(workspaceId, { archived: false, team_id: teamId });
+    const res = await pmSprintService.list(workspaceId, { archived: showArchived, team_id: teamId });
     if (res.error || !res.data) {
       setError(res.error ?? 'Failed to load sprints');
       setLoading(false);
@@ -203,7 +211,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, teamId]);
+  }, [workspaceId, teamId, showArchived]);
 
   // Refresh when sprint is created via global modal
   useEffect(() => {
@@ -218,6 +226,13 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: entry.sprint.id } });
   };
 
+  const handleArchiveToggle = async (entry: SprintWithStats) => {
+    if (!workspaceId) return;
+    const next = !entry.sprint.archived;
+    await pmSprintService.update(workspaceId, entry.sprint.id, { archived: next });
+    loadData();
+  };
+
   if (!workspace) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
@@ -230,6 +245,15 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           <p className="text-sm text-muted-foreground">Plan cycles and monitor story completion.</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant={showArchived ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            <Archive className="h-3.5 w-3.5" />
+            {showArchived ? 'Showing archived' : 'Archived'}
+          </Button>
           {viewMode === 'table' && (
             <DisplayPropertiesPopover
               allProperties={ALL_PROPERTIES}
@@ -267,71 +291,61 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading sprints...</p>
       ) : sprints.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 px-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-5">
-            <Timer className="h-7 w-7 text-emerald-500" />
+        showArchived ? (
+          <div className="flex flex-col items-center justify-center py-16 px-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/50 mb-5">
+              <Archive className="h-7 w-7 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold mb-1.5">No archived sprints</h3>
+            <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
+              Archived sprints will appear here. You can archive completed sprints to keep your active list clean.
+            </p>
+            <Button variant="outline" onClick={() => setShowArchived(false)}>
+              View active sprints
+            </Button>
           </div>
-          <h3 className="text-lg font-semibold mb-1.5">Create your first sprint</h3>
-          <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-            Sprints are time-boxed cycles that help your team plan, focus, and deliver work in a predictable rhythm.
-          </p>
-          <Button
-            className="gap-2 mb-8"
-            onClick={() => openCreate('sprint', { teamId })}
-          >
-            <Plus className="h-4 w-4" />
-            Create Sprint
-          </Button>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-lg">
-            {[
-              { icon: CalendarDays, title: 'Set a cadence', desc: 'Define start and end dates for focused work cycles' },
-              { icon: BarChart3, title: 'Track progress', desc: 'Monitor story and point completion in real time' },
-              { icon: CheckCircle2, title: 'Ship consistently', desc: 'Build momentum with regular delivery milestones' },
-            ].map((item) => (
-              <div key={item.title} className="flex flex-col items-center text-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 p-4">
-                <item.icon className="h-4 w-4 text-muted-foreground mb-0.5" />
-                <span className="text-xs font-medium">{item.title}</span>
-                <span className="text-[11px] leading-snug text-muted-foreground">{item.desc}</span>
-              </div>
-            ))}
+        ) : (
+          <div className="flex flex-col items-center justify-center py-16 px-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-5">
+              <Timer className="h-7 w-7 text-emerald-500" />
+            </div>
+            <h3 className="text-lg font-semibold mb-1.5">Create your first sprint</h3>
+            <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
+              Sprints are time-boxed cycles that help your team plan, focus, and deliver work in a predictable rhythm.
+            </p>
+            <Button
+              className="gap-2 mb-8"
+              onClick={() => openCreate('sprint', { teamId })}
+            >
+              <Plus className="h-4 w-4" />
+              Create Sprint
+            </Button>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-lg">
+              {[
+                { icon: CalendarDays, title: 'Set a cadence', desc: 'Define start and end dates for focused work cycles' },
+                { icon: BarChart3, title: 'Track progress', desc: 'Monitor story and point completion in real time' },
+                { icon: CheckCircle2, title: 'Ship consistently', desc: 'Build momentum with regular delivery milestones' },
+              ].map((item) => (
+                <div key={item.title} className="flex flex-col items-center text-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 p-4">
+                  <item.icon className="h-4 w-4 text-muted-foreground mb-0.5" />
+                  <span className="text-xs font-medium">{item.title}</span>
+                  <span className="text-[11px] leading-snug text-muted-foreground">{item.desc}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )
       ) : viewMode === 'cards' ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {sprints.map((entry) => (
-            <Card
+            <SprintCard
               key={entry.sprint.id}
-              className="cursor-pointer transition hover:shadow-md"
-              onClick={() => openSprint(entry)}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">{entry.sprint.name}</CardTitle>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className={SPRINT_STATUS_CONFIG[entry.sprint.status as SprintStatus]?.color}>
-                    {SPRINT_STATUS_CONFIG[entry.sprint.status as SprintStatus]?.label ?? entry.sprint.status}
-                  </span>
-                  {findTeamName(entry.sprint.team_id) && (
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
-                      {findTeamName(entry.sprint.team_id)}
-                    </span>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Progress value={pct(entry)} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{entry.stats.done_story_count}/{entry.stats.story_count} stories</span>
-                  <span>{entry.stats.done_points}/{entry.stats.total_points} pts</span>
-                </div>
-                {entry.sprint.start_date && entry.sprint.end_date ? (
-                  <p className="text-xs text-muted-foreground">
-                    {format(parseISO(entry.sprint.start_date), 'MMM d')} - {format(parseISO(entry.sprint.end_date), 'MMM d, yyyy')}
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">No dates set</p>
-                )}
-              </CardContent>
-            </Card>
+              entry={entry}
+              findTeamName={findTeamName}
+              pct={pct}
+              onOpen={() => openSprint(entry)}
+              onArchiveToggle={() => handleArchiveToggle(entry)}
+            />
           ))}
         </div>
       ) : (
@@ -343,5 +357,98 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
         />
       )}
     </div>
+  );
+}
+
+// ── Sprint Card with archive action ──────────────────────────────────
+
+function SprintCard({
+  entry,
+  findTeamName,
+  pct,
+  onOpen,
+  onArchiveToggle,
+}: {
+  entry: SprintWithStats;
+  findTeamName: (id?: string | null) => string | undefined;
+  pct: (entry: SprintWithStats) => number;
+  onOpen: () => void;
+  onArchiveToggle: () => void;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const isArchived = entry.sprint.archived;
+
+  return (
+    <>
+      <Card
+        className="group cursor-pointer transition hover:shadow-md"
+        onClick={onOpen}
+      >
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-2">
+            <CardTitle className="text-base">{entry.sprint.name}</CardTitle>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                {isArchived ? (
+                  <DropdownMenuItem onClick={onArchiveToggle}>
+                    <ArchiveRestore className="mr-2 h-4 w-4 text-blue-500" />
+                    Unarchive
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={() => setConfirmOpen(true)}>
+                    <Archive className="mr-2 h-4 w-4 text-amber-500" />
+                    Archive
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className={SPRINT_STATUS_CONFIG[entry.sprint.status as SprintStatus]?.color}>
+              {SPRINT_STATUS_CONFIG[entry.sprint.status as SprintStatus]?.label ?? entry.sprint.status}
+            </span>
+            {findTeamName(entry.sprint.team_id) && (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+                {findTeamName(entry.sprint.team_id)}
+              </span>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Progress value={pct(entry)} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{entry.stats.done_story_count}/{entry.stats.story_count} stories</span>
+            <span>{entry.stats.done_points}/{entry.stats.total_points} pts</span>
+          </div>
+          {entry.sprint.start_date && entry.sprint.end_date ? (
+            <p className="text-xs text-muted-foreground">
+              {format(parseISO(entry.sprint.start_date), 'MMM d')} - {format(parseISO(entry.sprint.end_date), 'MMM d, yyyy')}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">No dates set</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Archive sprint"
+        description="This sprint will be hidden from the active list. You can view and restore it from the archived sprints view."
+        confirmLabel="Archive"
+        variant="default"
+        onConfirm={onArchiveToggle}
+      />
+    </>
   );
 }

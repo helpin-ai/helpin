@@ -69,7 +69,7 @@ type Handlers struct {
 }
 
 // New creates and configures the Chi router with all routes.
-func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzService, slugResolver authorization.SlugResolver, corsOrigin string) *chi.Mux {
+func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzService, slugResolver authorization.SlugResolver, corsOrigins []string) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -78,7 +78,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	r.Use(middleware.RequestLogger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{corsOrigin},
+		AllowedOrigins:   corsOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Workspace-ID"},
 		ExposedHeaders:   []string{"Link"},
@@ -91,6 +91,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		return authorization.RequirePermission(authz, perm)
 	}
 	wsAccess := authorization.RequireWorkspaceAccess(authz)
+
+	// Root endpoint — responds on bare domain requests.
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"name":"Helpin API","status":"running"}`))
+	})
+	r.Get("/health", h.Health.Check)
 
 	r.Route("/api", func(r chi.Router) {
 		// ---- Public routes ----
@@ -109,6 +117,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/articles/{slug}", h.Docs.PublicGetArticle)
 			r.Get("/search", h.Docs.PublicSearchArticles)
 		})
+
+		// ---- Public shared document route (no JWT) ----
+		r.Get("/docs/shared/{shareToken}", h.Docs.PublicGetSharedDoc)
 
 		// ---- Public widget routes (no JWT, open CORS) ----
 		r.Route("/widget/support", func(r chi.Router) {
@@ -520,17 +531,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Content — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content", h.Docs.SaveContent)
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content/markdown", h.Docs.SaveMarkdownContent)
 
 				// Versions — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/versions", h.Docs.ListVersions)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/versions", h.Docs.CreateVersion)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/revert/{versionId}", h.Docs.RevertVersion)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/versions/{versionId}", h.Docs.GetVersion)
+				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/documents/{docId}/versions/{versionId}", h.Docs.UpdateVersionLabel)
 
 				// Links — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/links", h.Docs.ListLinks)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/links", h.Docs.CreateLink)
 				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/links/{linkId}", h.Docs.DeleteLink)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/linked-docs/{objectType}/{objectId}", h.Docs.ListLinkedDocs)
+
+				// Share toggle — docs.edit
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/toggle-share", h.Docs.ToggleDocShare)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/toggle-lock", h.Docs.ToggleDocLock)
 
 				// External publish/unpublish — docs.publish
 				r.With(requirePerm(authorization.PermDocsPublish)).Post("/documents/{docId}/publish-external", h.Docs.PublishExternally)

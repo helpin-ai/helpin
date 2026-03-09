@@ -20,7 +20,6 @@ import {
   Paperclip,
   Pencil,
   RefreshCw,
-  Send,
   ShieldAlert,
   Tag,
   Target,
@@ -76,10 +75,11 @@ import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
-import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { CommentEditor } from '@/components/pm/CommentEditor';
 import { LinkedDeals } from '@/components/pm/LinkedDeals';
 import { MentionText } from '@/components/pm/MentionText';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -337,10 +337,6 @@ function StoryDetailPanelBody({
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
-  const memberOptions = useMemo(
-    () => buildAssignableMemberOptions(assignableMembers),
-    [assignableMembers],
-  );
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
@@ -625,9 +621,11 @@ function StoryDetailPanelBody({
               Copied!
             </span>
           ) : (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={copyLink} title="Copy link">
-              <Link2 className="h-3.5 w-3.5" />
-            </Button>
+            <QuickTooltip label="Copy link">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={copyLink}>
+                <Link2 className="h-3.5 w-3.5" />
+              </Button>
+            </QuickTooltip>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -643,21 +641,22 @@ function StoryDetailPanelBody({
             </DropdownMenuContent>
           </DropdownMenu>
           {workspace && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0"
-              title="Open full page"
-              onClick={() => {
-                onOpenChange(false);
-                navigate({
-                  to: '/w/$slug/pm/stories/$storyId',
-                  params: { slug: workspace.slug, storyId: storyDetail.story.id },
-                });
-              }}
-            >
-              <Maximize2 className="h-3.5 w-3.5" />
-            </Button>
+            <QuickTooltip label="Open full page">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={() => {
+                  onOpenChange(false);
+                  navigate({
+                    to: '/w/$slug/pm/stories/$storyId',
+                    params: { slug: workspace.slug, storyId: storyDetail.story.id },
+                  });
+                }}
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+              </Button>
+            </QuickTooltip>
           )}
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
             <X className="h-4 w-4" />

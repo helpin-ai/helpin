@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bell, Check, CheckCheck, Archive, Clock, Trash2, Eye, EyeOff } from 'lucide-react'
+import { Bell, CheckCheck, Archive, Clock, Trash2, Eye, EyeOff } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { useNavigate } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -70,8 +70,6 @@ function NotificationRow({
   onNavigate: (notification: Notification) => void
 }) {
   const isUnread = notification.status === 'unread'
-  const actorName = notification.actor_snapshot?.name || 'Someone'
-  const entityTitle = notification.entity_snapshot?.title || ''
   const identifier = notification.entity_snapshot?.identifier || ''
 
   return (

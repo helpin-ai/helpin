@@ -21,8 +21,10 @@ import {
   Layers,
   LayoutDashboard,
   Lightbulb,
+  LogOut,
   MessageSquare,
   LayoutList,
+  Moon,
   PenLine,
   Play,
   Plus,
@@ -30,21 +32,28 @@ import {
   Settings,
   Settings2,
   SquareKanban,
+  Sun,
   Tag,
   Target,
   User,
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -181,7 +190,7 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
 
 // ── Docs spaces nav (extracted to avoid conditional hook calls) ──
 
-function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggleTeam, setExpandedTeams, openCreate }: {
+function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggleTeam: _toggleTeam, setExpandedTeams, openCreate }: {
   wsId: string;
   wsSlug: string;
   navigate: ReturnType<typeof useNavigate>;
@@ -211,60 +220,79 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
 
   if (!spaces || spaces.length === 0) return null;
 
-  return (
-    <SidebarGroup className="p-0 pb-3">
-      <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-        Spaces
-      </SidebarGroupLabel>
-      <SidebarMenu>
-        {spaces.map((space) => {
-          const spaceKey = `docs_space_${space.id}`;
-          const isExpanded = expandedTeams.has(spaceKey);
-          const spaceLink = `/w/${wsSlug}/docs/spaces/${space.id}`;
+  const internalSpaces = spaces.filter((s) => s.type === 'internal');
+  const externalSpaces = spaces.filter((s) => s.type === 'external_capable');
 
-          return (
-            <Collapsible.Root
-              key={space.id}
-              asChild
-              open={isExpanded}
-            >
-              <SidebarMenuItem>
-                <div className="group/space relative flex items-center">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <SidebarMenuButton
-                        className="h-8 rounded-md px-2 flex-1"
-                        isActive={isActive(spaceLink)}
-                        onClick={() => {
-                          toggleDocSpace(spaceKey);
-                          navigate({ to: '/w/$slug/docs/spaces/$spaceId' as string, params: { slug: wsSlug, spaceId: space.id } });
-                        }}
-                      >
-                        <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                        <span className="truncate">{space.name}</span>
-                      </SidebarMenuButton>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" align="center">
-                      {space.name}
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <Collapsible.Content>
-                  <DocsSpaceCollections
-                    wsId={wsId}
-                    spaceId={space.id}
-                    wsSlug={wsSlug}
-                    navigate={navigate}
-                    isActive={isActive}
-                    openCreate={openCreate}
-                  />
-                </Collapsible.Content>
-              </SidebarMenuItem>
-            </Collapsible.Root>
-          );
-        })}
-      </SidebarMenu>
-    </SidebarGroup>
+  const renderSpaceItem = (space: typeof spaces[number]) => {
+    const spaceKey = `docs_space_${space.id}`;
+    const isExpanded = expandedTeams.has(spaceKey);
+    const spaceLink = `/w/${wsSlug}/docs/spaces/${space.id}`;
+
+    return (
+      <Collapsible.Root
+        key={space.id}
+        asChild
+        open={isExpanded}
+      >
+        <SidebarMenuItem>
+          <div className="group/space relative flex items-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <SidebarMenuButton
+                  className="h-8 rounded-md px-2 flex-1"
+                  isActive={isActive(spaceLink)}
+                  onClick={() => {
+                    toggleDocSpace(spaceKey);
+                    navigate({ to: '/w/$slug/docs/spaces/$spaceId' as string, params: { slug: wsSlug, spaceId: space.id } });
+                  }}
+                >
+                  <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                  <span className="truncate">{space.name}</span>
+                </SidebarMenuButton>
+              </TooltipTrigger>
+              <TooltipContent side="right" align="center">
+                {space.name}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <Collapsible.Content>
+            <DocsSpaceCollections
+              wsId={wsId}
+              spaceId={space.id}
+              wsSlug={wsSlug}
+              navigate={navigate}
+              isActive={isActive}
+              openCreate={openCreate}
+            />
+          </Collapsible.Content>
+        </SidebarMenuItem>
+      </Collapsible.Root>
+    );
+  };
+
+  return (
+    <>
+      {internalSpaces.length > 0 && (
+        <SidebarGroup className="p-0 pb-3">
+          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+            Internal Spaces
+          </SidebarGroupLabel>
+          <SidebarMenu>
+            {internalSpaces.map(renderSpaceItem)}
+          </SidebarMenu>
+        </SidebarGroup>
+      )}
+      {externalSpaces.length > 0 && (
+        <SidebarGroup className="p-0 pb-3">
+          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+            External Spaces
+          </SidebarGroupLabel>
+          <SidebarMenu>
+            {externalSpaces.map(renderSpaceItem)}
+          </SidebarMenu>
+        </SidebarGroup>
+      )}
+    </>
   );
 }
 
@@ -273,10 +301,13 @@ export function Sidebar() {
   const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
 
+  const { user, signOut } = useAuthStore();
+  const { theme, setTheme } = useTheme();
   const wsSlug = currentWorkspace?.slug ?? '';
   const workspaceId = currentWorkspace?.id;
   const activeRail = deriveActiveRail(location.pathname);
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
+  const initials = getInitials(user?.full_name || user?.email);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { isAdmin } = usePermissions(access);
 
@@ -477,10 +508,26 @@ export function Sidebar() {
   }, [currentWorkspace?.name]);
 
   const isActive = (link: string) => {
-    if (location.pathname === link) return true;
+    const [linkPath, linkQuery] = link.split('?');
+    const search = location.search as Record<string, string | undefined>;
+
+    if (linkQuery) {
+      // Link has query params (e.g. collection=abc) — must match pathname + param value
+      if (location.pathname !== linkPath) return false;
+      const params = new URLSearchParams(linkQuery);
+      for (const [key, value] of params.entries()) {
+        if (search[key] !== value) return false;
+      }
+      return true;
+    }
+    // Link has no query params — match pathname but NOT if a collection param is active
+    if (location.pathname === linkPath) {
+      if (search.collection) return false;
+      return true;
+    }
     // Don't prefix-match section roots (e.g. /docs) — they'd match every sub-page
     if (link.endsWith('/docs') || link.endsWith('/pm') || link.endsWith('/support')) return false;
-    return location.pathname.startsWith(`${link}/`);
+    return location.pathname.startsWith(`${linkPath}/`);
   };
 
   const isAllWorkSubActive = (subPath: string) => {
@@ -504,25 +551,69 @@ export function Sidebar() {
 
       <SidebarContent className="gap-0">
         <div className="flex min-h-0 flex-1">
-          <div className="w-16 shrink-0 border-r border-border/70 dark:border-sidebar-border py-2">
-            <div className="flex flex-col items-center gap-1.5">
+          <div className="flex w-16 shrink-0 flex-col border-r border-border/70 dark:border-sidebar-border py-2">
+            <div className="flex flex-1 flex-col items-center gap-1.5">
               {railItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-label={item.label}
-                  title={item.label}
-                  onClick={() => navigate({ to: item.defaultLink as string })}
-                  className={`flex w-12 flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-2 transition-colors ${
-                    activeRail === item.id
-                      ? 'bg-foreground/10 text-foreground'
-                      : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
-                  }`}
-                >
-                  <item.icon className="h-3.5 w-3.5" />
-                  <span className="text-[10px] leading-none">{item.label}</span>
-                </button>
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-label={item.label}
+                    onClick={() => navigate({ to: item.defaultLink as string })}
+                    className={`flex w-12 flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-2 transition-colors ${
+                      activeRail === item.id
+                        ? 'bg-foreground/10 text-foreground'
+                        : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+                    }`}
+                  >
+                    <item.icon className="h-3.5 w-3.5" />
+                    <span className="text-[10px] leading-none">{item.label}</span>
+                  </button>
               ))}
+            </div>
+            <div className="flex flex-col items-center gap-1.5 pt-2">
+              <button
+                type="button"
+                className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                aria-label="Toggle theme"
+              >
+                <Sun className="h-3.5 w-3.5 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
+                <Moon className="absolute h-3.5 w-3.5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="rounded-full transition-opacity hover:opacity-80"
+                    aria-label="Account menu"
+                  >
+                    <Avatar className="size-8">
+                      <AvatarFallback className="text-[11px]">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="right" align="end" className="w-56">
+                  <DropdownMenuLabel className="truncate">
+                    {user?.full_name || user?.email || 'Account'}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}>
+                    <User className="h-4 w-4" />
+                    <span>Profile</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate({ to: '/workspaces' })}>
+                    <Users className="h-4 w-4" />
+                    <span>All Workspaces</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={signOut} variant="destructive">
+                    <LogOut className="h-4 w-4" />
+                    <span>Sign out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 

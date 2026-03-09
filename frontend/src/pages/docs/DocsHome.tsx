@@ -26,6 +26,7 @@ import {
 } from '@/hooks/queries'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog'
 import type { DocsSpace, DocsDocument, SpaceType } from '@/lib/docsTypes'
 import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
@@ -200,10 +201,14 @@ function SpaceSection({
               <div className="flex items-center gap-2">
                 <span className="truncate text-sm font-semibold">{space.name}</span>
                 {space.type === 'external_capable' && (
-                  <Globe className="h-3 w-3 shrink-0 text-blue-500" title="External capable" />
+                  <QuickTooltip label="External">
+                    <Globe className="h-3 w-3 shrink-0 text-blue-500" />
+                  </QuickTooltip>
                 )}
                 {space.restrict_to_owners && (
-                  <Lock className="h-3 w-3 shrink-0 text-amber-500" title="Restricted" />
+                  <QuickTooltip label="Restricted">
+                    <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                  </QuickTooltip>
                 )}
               </div>
             </div>
@@ -214,20 +219,21 @@ function SpaceSection({
             )}
           </button>
         </Collapsible.Trigger>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="mr-1 h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover/space:opacity-100"
-          title="Open space"
-          onClick={() =>
-            navigate({
-              to: '/w/$slug/docs/spaces/$spaceId',
-              params: { slug: wsSlug, spaceId: space.id },
-            })
-          }
-        >
-          <BookOpen className="h-3.5 w-3.5" />
-        </Button>
+        <QuickTooltip label="Open space">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mr-1 h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover/space:opacity-100"
+            onClick={() =>
+              navigate({
+                to: '/w/$slug/docs/spaces/$spaceId',
+                params: { slug: wsSlug, spaceId: space.id },
+              })
+            }
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+          </Button>
+        </QuickTooltip>
       </div>
 
       <Collapsible.Content>
@@ -404,7 +410,9 @@ export function DocsHome() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold truncate">{t.name}</span>
                           {t.type === 'external_capable' && (
-                            <Globe className="h-3 w-3 shrink-0 text-blue-500" title="External capable" />
+                            <QuickTooltip label="External">
+                              <Globe className="h-3 w-3 shrink-0 text-blue-500" />
+                            </QuickTooltip>
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{t.description}</p>
@@ -442,16 +450,42 @@ export function DocsHome() {
           )}
         </div>
       ) : (
-        <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
-          {spaces.map((space) => (
-            <SpaceSection
-              key={space.id}
-              space={space}
-              wsId={wsId}
-              wsSlug={wsSlug}
-              navigate={navigate}
-            />
-          ))}
+        <div className="space-y-6">
+          {/* Internal spaces */}
+          {spaces.filter((s) => s.type === 'internal').length > 0 && (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Internal</h3>
+              <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
+                {spaces.filter((s) => s.type === 'internal').map((space) => (
+                  <SpaceSection
+                    key={space.id}
+                    space={space}
+                    wsId={wsId}
+                    wsSlug={wsSlug}
+                    navigate={navigate}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* External spaces */}
+          {spaces.filter((s) => s.type === 'external_capable').length > 0 && (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">External</h3>
+              <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
+                {spaces.filter((s) => s.type === 'external_capable').map((space) => (
+                  <SpaceSection
+                    key={space.id}
+                    space={space}
+                    wsId={wsId}
+                    wsSlug={wsSlug}
+                    navigate={navigate}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
       <CreateSpaceDialog wsId={wsId} open={createSpaceOpen} onOpenChange={setCreateSpaceOpen} />

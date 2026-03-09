@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useLocation } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   Check,
   ChevronDown,
@@ -13,6 +15,8 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Send,
+  Settings,
   Trash2,
   X,
 } from 'lucide-react'
@@ -28,6 +32,11 @@ import {
   useDeleteDocsCollection,
   useUpdateDocsSpace,
   useDeleteDocsSpace,
+  useArchiveDocsDocument,
+  useUnarchiveDocsDocument,
+  useDeleteDocsDocument,
+  usePublishDocsDocument,
+  useAssignableMembers,
   useWorkspaceAccess,
   usePermissions,
 } from '@/hooks/queries'
@@ -43,7 +52,11 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DocsDocument, DocType, DocStatus } from '@/lib/docsTypes'
 import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
+import { UserAvatar } from '@/components/pm/UserAvatar'
+import { formatAssignableMemberName } from '@/lib/assignableMembers'
+import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
+import { SpaceDialog } from '@/components/docs/SpaceDialog'
 
 function statusVariant(status: string): 'default' | 'secondary' | 'outline' {
   switch (status) {
@@ -72,8 +85,14 @@ export function DocsSpaceDetail() {
   const { data: space, isLoading: spaceLoading } = useDocsSpace(wsId, spaceId)
   const { data: collections } = useDocsCollections(wsId, spaceId)
   const { data: documents } = useDocsDocuments(wsId, { space_id: spaceId })
+  const { data: members = [] } = useAssignableMembers(wsId)
+  const archiveDoc = useArchiveDocsDocument(wsId)
+  const unarchiveDoc = useUnarchiveDocsDocument(wsId)
+  const deleteDoc = useDeleteDocsDocument(wsId)
+  const publishDoc = usePublishDocsDocument(wsId)
   const [filterType, setFilterType] = useState<DocType | null>(null)
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
+  const [editSpaceOpen, setEditSpaceOpen] = useState(false)
 
   useTitle(space?.name ?? 'Space')
 
@@ -245,7 +264,7 @@ export function DocsSpaceDetail() {
                   <TooltipTrigger asChild>
                     <Globe className="h-4 w-4 text-blue-500" />
                   </TooltipTrigger>
-                  <TooltipContent>External capable</TooltipContent>
+                  <TooltipContent>External</TooltipContent>
                 </Tooltip>
               )}
               {space.restrict_to_owners && (
@@ -258,7 +277,7 @@ export function DocsSpaceDetail() {
               )}
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {space.visibility === 'team_only' ? 'Team only' : 'Workspace wide'} ·{' '}
+              {space.visibility === 'team_only' ? 'Team only' : 'All teams'} ·{' '}
               {documents?.length ?? 0} documents
             </p>
           </div>
@@ -297,9 +316,9 @@ export function DocsSpaceDetail() {
                 New collection
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setTimeout(startRenameSpace, 100)}>
-                <Pencil className="h-3.5 w-3.5" />
-                Rename space
+              <DropdownMenuItem onClick={() => setEditSpaceOpen(true)}>
+                <Settings className="h-3.5 w-3.5" />
+                Edit space
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setConfirmDelete({ type: 'space', id: spaceId, name: space.name })}
@@ -313,12 +332,12 @@ export function DocsSpaceDetail() {
         )}
       </header>
 
-      {/* Collection tabs — hidden scrollbar */}
-      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* Collection tabs */}
+      <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           onClick={() => setActiveCollection(null)}
-          className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
             !activeCollection
               ? 'bg-foreground text-background'
               : 'bg-muted/60 text-muted-foreground hover:bg-muted'
@@ -328,7 +347,7 @@ export function DocsSpaceDetail() {
         </button>
 
         {(collections ?? []).map((col) => (
-          <div key={col.id} className="group/tab relative flex shrink-0 items-center">
+          <div key={col.id} className="group/tab relative flex items-center">
             {renamingId === col.id ? (
               <input
                 ref={renameRef}
@@ -345,7 +364,7 @@ export function DocsSpaceDetail() {
               <button
                 type="button"
                 onClick={() => setActiveCollection(col.id)}
-                className={`shrink-0 rounded-full px-3 py-1 pr-7 text-xs font-medium transition-colors ${
+                className={`rounded-full px-3 py-1 pr-7 text-xs font-medium transition-colors ${
                   activeCollection === col.id
                     ? 'bg-foreground text-background'
                     : 'bg-muted/60 text-muted-foreground hover:bg-muted'
@@ -393,7 +412,7 @@ export function DocsSpaceDetail() {
           <button
             type="button"
             onClick={() => setActiveCollection('__uncollected__')}
-            className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               activeCollection === '__uncollected__'
                 ? 'bg-foreground text-background'
                 : 'bg-muted/60 text-muted-foreground hover:bg-muted'
@@ -405,15 +424,16 @@ export function DocsSpaceDetail() {
 
         {/* Add collection */}
         {canEditDocs && (
-          <button
-            type="button"
-            onClick={() => openCreate('docs_collection', { spaceId })}
-            className="flex shrink-0 items-center gap-1 rounded-full bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            title="Add collection"
-          >
-            <Plus className="h-3 w-3" />
-            Collection
-          </button>
+          <QuickTooltip label="Add collection">
+            <button
+              type="button"
+              onClick={() => openCreate('docs_collection', { spaceId })}
+              className="flex items-center gap-1 rounded-full bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Plus className="h-3 w-3" />
+              Collection
+            </button>
+          </QuickTooltip>
         )}
       </div>
 
@@ -567,29 +587,50 @@ export function DocsSpaceDetail() {
           <div className="rounded-lg border border-border/60 bg-card divide-y divide-border/40">
             <div className="flex items-center gap-3 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               <span className="min-w-0 flex-1">Title</span>
-              <span className="w-32 shrink-0">Collection</span>
-              <span className="w-28 shrink-0">Type</span>
+              <span className="w-36 shrink-0">Owner</span>
+              <span className="w-28 shrink-0">Collection</span>
+              <span className="w-24 shrink-0">Type</span>
               <span className="w-20 shrink-0">Status</span>
               <span className="w-20 shrink-0 text-right">Updated</span>
+              {canEditDocs && <span className="w-8 shrink-0" />}
             </div>
-            {displayDocs.map((doc: DocsDocument) => (
-              <button
+            {displayDocs.map((doc: DocsDocument) => {
+              const owner = members.find((m) => m.id === doc.owner_id)
+              return (
+              <div
                 key={doc.id}
-                type="button"
-                onClick={() =>
-                  navigate({
-                    to: '/w/$slug/docs/documents/$docId',
-                    params: { slug: wsSlug, docId: doc.id },
-                  })
-                }
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40"
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40 group/row"
               >
-                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate font-medium">{doc.title}</span>
-                <span className="w-32 shrink-0 truncate text-xs text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate({
+                      to: '/w/$slug/docs/documents/$docId',
+                      params: { slug: wsSlug, docId: doc.id },
+                    })
+                  }
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left justify-start"
+                >
+                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 truncate font-medium">{doc.title}</span>
+                </button>
+                <span className="w-36 shrink-0 truncate text-xs text-muted-foreground">
+                  {owner ? (
+                    <span className="flex items-center gap-1">
+                      <UserAvatar
+                        name={owner.display_name || owner.email}
+                        avatarUrl={owner.avatar_url}
+                        className="h-4 w-4"
+                        fallbackClassName="text-[7px]"
+                      />
+                      <span className="truncate">{formatAssignableMemberName(owner)}</span>
+                    </span>
+                  ) : '—'}
+                </span>
+                <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
                   {doc.collection_id ? collectionNames.get(doc.collection_id) ?? '—' : '—'}
                 </span>
-                <span className="w-28 shrink-0 text-xs text-muted-foreground">
+                <span className="w-24 shrink-0 text-xs text-muted-foreground">
                   {DOC_TYPE_LABELS[doc.doc_type] ?? doc.doc_type}
                 </span>
                 <span className="w-20 shrink-0">
@@ -603,8 +644,77 @@ export function DocsSpaceDetail() {
                 <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">
                   {timeAgo(doc.updated_at)}
                 </span>
-              </button>
-            ))}
+                {canEditDocs && (
+                  <span className="w-8 shrink-0">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="rounded p-1 text-muted-foreground/60 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40">
+                        {doc.status === 'draft' && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              publishDoc.mutate(doc.id, {
+                                onSuccess: () => toast.success('Document published'),
+                                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish'),
+                              })
+                            }}
+                          >
+                            <Send className="h-3.5 w-3.5" />
+                            Publish
+                          </DropdownMenuItem>
+                        )}
+                        {doc.status === 'archived' ? (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              unarchiveDoc.mutate(doc.id, {
+                                onSuccess: () => toast.success('Document unarchived'),
+                                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unarchive'),
+                              })
+                            }}
+                          >
+                            <ArchiveRestore className="h-3.5 w-3.5" />
+                            Unarchive
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              archiveDoc.mutate(doc.id, {
+                                onSuccess: () => toast.success('Document archived'),
+                                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to archive'),
+                              })
+                            }}
+                          >
+                            <Archive className="h-3.5 w-3.5" />
+                            Archive
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => {
+                            deleteDoc.mutate(doc.id, {
+                              onSuccess: () => toast.success('Document deleted'),
+                              onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to delete'),
+                            })
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </span>
+                )}
+              </div>
+              )
+            })}
           </div>
         )
       })()}
@@ -621,6 +731,13 @@ export function DocsSpaceDetail() {
         }
         confirmText={confirmDelete?.name ?? ''}
         onConfirm={handleConfirmDelete}
+      />
+
+      <SpaceDialog
+        wsId={wsId}
+        open={editSpaceOpen}
+        onOpenChange={setEditSpaceOpen}
+        space={space ?? null}
       />
     </div>
   )

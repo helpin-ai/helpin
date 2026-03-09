@@ -3,23 +3,46 @@ import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
+import { Markdown } from 'tiptap-markdown'
 import {
   Bold,
+  Check,
+  ChevronDown,
   Code2,
+  Copy,
+  FileDown,
+  FileUp,
   Heading2,
   ImagePlus,
   Italic,
   Link2,
   List,
   ListOrdered,
+  Loader2,
   Quote,
   Strikethrough,
-  Check,
-  Loader2,
+  X,
 } from 'lucide-react'
 import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
 import { toast } from 'sonner'
+import { QuickTooltip } from '@/components/ui/quick-tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 
@@ -35,29 +58,52 @@ function ToolbarButton({
   title: string
 }) {
   return (
-    <button
-      type="button"
-      title={title}
-      onMouseDown={(e) => {
-        e.preventDefault() // prevent losing selection
-        onClick()
-      }}
-      className={`rounded p-1.5 transition-colors ${
-        active
-          ? 'bg-white/20 text-white'
-          : 'text-white/70 hover:bg-white/10 hover:text-white'
-      }`}
-    >
-      {children}
-    </button>
+    <QuickTooltip label={title} side="bottom">
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault() // prevent losing selection
+          onClick()
+        }}
+        className={`rounded p-1.5 transition-colors ${
+          active
+            ? 'bg-white/20 text-white'
+            : 'text-white/70 hover:bg-white/10 hover:text-white'
+        }`}
+      >
+        {children}
+      </button>
+    </QuickTooltip>
   )
 }
 
 // ── Save status indicator ───────────────────────────────────────────────────
 
-type SaveStatus = 'saved' | 'saving' | 'unsaved'
+type SaveStatus = 'idle' | 'saved' | 'saving' | 'unsaved'
 
-function SaveIndicator({ status }: { status: SaveStatus }) {
+function formatLastSaved(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
+  if (seconds < 60) return 'a few seconds ago'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes === 1) return '1 minute ago'
+  if (minutes < 60) return `${minutes} minutes ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours === 1) return '1 hour ago'
+  return `${hours} hours ago`
+}
+
+function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; lastSavedAt: Date | null }) {
+  const [, setTick] = useState(0)
+
+  // Re-render every 30s to update "last saved X ago"
+  useEffect(() => {
+    if (!lastSavedAt || status === 'saving') return
+    const interval = setInterval(() => setTick((t) => t + 1), 30_000)
+    return () => clearInterval(interval)
+  }, [lastSavedAt, status])
+
+  if (status === 'idle' && !lastSavedAt) return null
+
   switch (status) {
     case 'saving':
       return (
@@ -73,10 +119,20 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
           Saved
         </span>
       )
-    default:
+    case 'unsaved':
       return (
         <span className="text-[11px] text-muted-foreground">Unsaved changes</span>
       )
+    default:
+      // idle but has lastSavedAt — show "Last saved X ago"
+      if (lastSavedAt) {
+        return (
+          <span className="text-[11px] text-muted-foreground">
+            Last saved {formatLastSaved(lastSavedAt)}
+          </span>
+        )
+      }
+      return null
   }
 }
 
@@ -220,6 +276,99 @@ function FloatingToolbar({ editor, uploadConfig, onInsertImage }: {
   )
 }
 
+// ── Import / Export menu ───────────────────────────────────────────────────
+
+function ImportExportMenu({
+  getMarkdown,
+  onDownloadMarkdown,
+  onDownloadDocx,
+  onImportMarkdown,
+  onUploadMarkdownFile,
+  onUploadDocxFile,
+  onToggleSource,
+  sourceView,
+}: {
+  getMarkdown: () => string
+  onDownloadMarkdown: () => void
+  onDownloadDocx: () => void
+  onImportMarkdown: () => void
+  onUploadMarkdownFile: () => void
+  onUploadDocxFile: () => void
+  onToggleSource: () => void
+  sourceView: boolean
+}) {
+  const [open, setOpen] = useState(false)
+
+  const handleCopyMarkdown = (e: Event) => {
+    e.preventDefault()
+    const md = getMarkdown()
+    if (!md) {
+      toast.error('No content to copy')
+      setOpen(false)
+      return
+    }
+    // Intercept the copy event to inject our text directly into clipboardData
+    const handler = (evt: ClipboardEvent) => {
+      evt.clipboardData?.setData('text/plain', md)
+      evt.preventDefault()
+    }
+    document.addEventListener('copy', handler, true)
+    document.execCommand('copy')
+    document.removeEventListener('copy', handler, true)
+    setOpen(false)
+    toast.success('Copied as Markdown')
+  }
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md bg-background/80 backdrop-blur-sm px-2 py-1 text-[11px] text-muted-foreground shadow-sm border border-border/40 transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Import / Export
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuItem onSelect={handleCopyMarkdown}>
+          <Copy className="h-3.5 w-3.5 mr-2" />
+          Copy as Markdown
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onDownloadMarkdown}>
+          <FileDown className="h-3.5 w-3.5 mr-2" />
+          Download as .md
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onDownloadDocx}>
+          <FileDown className="h-3.5 w-3.5 mr-2" />
+          Download as .doc
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onImportMarkdown}>
+          <FileUp className="h-3.5 w-3.5 mr-2" />
+          Import Markdown
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onUploadMarkdownFile}>
+          <FileUp className="h-3.5 w-3.5 mr-2" />
+          Upload .md file
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onUploadDocxFile}>
+          <FileUp className="h-3.5 w-3.5 mr-2" />
+          Upload .docx file
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onToggleSource}>
+          <Code2 className="h-3.5 w-3.5 mr-2" />
+          {sourceView ? 'Back to Rich Editor' : 'Markdown Source'}
+          <span className="ml-auto text-[10px] text-muted-foreground">
+            {navigator.platform.includes('Mac') ? '⌘⇧M' : 'Ctrl+⇧+M'}
+          </span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 // ── Main editor ─────────────────────────────────────────────────────────────
 
 interface DocsEditorProps {
@@ -241,10 +390,19 @@ export function DocsEditor({
   readOnly = false,
   uploadConfig,
 }: DocsEditorProps) {
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved')
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const savingRef = useRef(false)
   const pendingContentRef = useRef<JSONContent | null>(null)
+  const skipNextSaveRef = useRef(false)
+
+  // Markdown feature state
+  const [sourceView, setSourceView] = useState(false)
+  const [sourceMarkdown, setSourceMarkdown] = useState('')
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [importText, setImportText] = useState('')
 
   const doSave = useCallback(
     async (json: JSONContent) => {
@@ -257,6 +415,9 @@ export function DocsEditor({
       try {
         await onSave(json)
         setSaveStatus('saved')
+        setLastSavedAt(new Date())
+        if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
+        savedFadeTimerRef.current = setTimeout(() => setSaveStatus('idle'), 5000)
       } catch {
         setSaveStatus('unsaved')
       } finally {
@@ -280,9 +441,10 @@ export function DocsEditor({
     [doSave, autoSaveMs],
   )
 
-  // Cleanup timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
   }, [])
 
   const uploadConfigRef = useRef(uploadConfig)
@@ -346,6 +508,15 @@ export function DocsEditor({
         heading: { levels: [1, 2, 3] },
       }),
       Placeholder.configure({ placeholder: 'Start writing your document...' }),
+      Markdown.configure({
+        html: true,
+        tightLists: true,
+        bulletListMarker: '-',
+        transformPastedText: true,
+        transformCopiedText: false, // Don't force clipboard to markdown — we have explicit "Copy as Markdown"
+      }),
+      // Register Link AFTER Markdown so our full extension (with setLink command) takes precedence
+      // over tiptap-markdown's minimal link mark
       Link.configure({
         openOnClick: false,
         HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
@@ -358,14 +529,14 @@ export function DocsEditor({
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-6 py-4',
       },
-      handlePaste(view, event) {
+      handlePaste(_view, event) {
         const items = event.clipboardData?.items
         if (!items) return false
         for (const item of items) {
           if (item.type.startsWith('image/')) {
             event.preventDefault()
             const file = item.getAsFile()
-            if (file) {
+            if (file && editorRef.current) {
               handleImageUpload(file, editorRef.current)
             }
             return true
@@ -373,13 +544,13 @@ export function DocsEditor({
         }
         return false
       },
-      handleDrop(view, event) {
+      handleDrop(_view, event) {
         const files = event.dataTransfer?.files
         if (!files?.length) return false
         for (const file of files) {
           if (file.type.startsWith('image/')) {
             event.preventDefault()
-            handleImageUpload(file, editorRef.current)
+            if (editorRef.current) handleImageUpload(file, editorRef.current)
             return true
           }
         }
@@ -387,6 +558,10 @@ export function DocsEditor({
       },
     },
     onUpdate: ({ editor: e }) => {
+      if (skipNextSaveRef.current) {
+        skipNextSaveRef.current = false
+        return
+      }
       if (!readOnly) {
         scheduleSave(e.getJSON())
       }
@@ -395,14 +570,22 @@ export function DocsEditor({
 
   editorRef.current = editor
 
+  // Sync editable state when readOnly prop changes (e.g. after unlock)
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(!readOnly)
+    }
+  }, [editor, readOnly])
+
   // Update content if initial content changes (e.g. after revert)
   useEffect(() => {
     if (editor && initialContent) {
       const currentJson = JSON.stringify(editor.getJSON())
       const newJson = JSON.stringify(initialContent)
       if (currentJson !== newJson) {
+        skipNextSaveRef.current = true
         editor.commands.setContent(initialContent)
-        setSaveStatus('saved')
+        setSaveStatus('idle')
       }
     }
   }, [editor, initialContent])
@@ -421,12 +604,166 @@ export function DocsEditor({
     input.click()
   }, [editor, handleImageUpload])
 
+  // ── Markdown actions ───────────────────────────────────────────────────────
+
+  const getMarkdown = useCallback((): string => {
+    if (!editor) return ''
+    return (editor.storage as Record<string, any>).markdown.getMarkdown()
+  }, [editor])
+
+  const handleImportMarkdown = useCallback(() => {
+    if (!editor || !importText.trim()) return
+    editor.commands.setContent(importText.trim())
+    scheduleSave(editor.getJSON())
+    setImportDialogOpen(false)
+    setImportText('')
+    toast.success('Markdown imported')
+  }, [editor, importText, scheduleSave])
+
+  const toggleSourceView = useCallback(() => {
+    if (!editor) return
+    if (!sourceView) {
+      setSourceMarkdown(getMarkdown())
+      setSourceView(true)
+    } else {
+      editor.commands.setContent(sourceMarkdown)
+      scheduleSave(editor.getJSON())
+      setSourceView(false)
+    }
+  }, [editor, sourceView, sourceMarkdown, getMarkdown, scheduleSave])
+
+  const discardSourceView = useCallback(() => {
+    setSourceView(false)
+  }, [])
+
+  // ── .md file download ──────────────────────────────────────────────────────
+
+  const downloadAsMarkdown = useCallback(() => {
+    const md = getMarkdown()
+    const filename = `${(title || 'document').replace(/[^a-z0-9_-]/gi, '_').toLowerCase()}.md`
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [getMarkdown, title])
+
+  // ── .md file upload ────────────────────────────────────────────────────────
+
+  const uploadMarkdownFile = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.md,.markdown,text/markdown'
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (!file || !editor) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const md = reader.result as string
+        editor.commands.setContent(md)
+        scheduleSave(editor.getJSON())
+        toast.success(`Imported "${file.name}"`)
+      }
+      reader.onerror = () => toast.error('Failed to read file')
+      reader.readAsText(file)
+    }
+    input.click()
+  }, [editor, scheduleSave])
+
+  // ── .docx export ──────────────────────────────────────────────────────────
+
+  const downloadAsDocx = useCallback(() => {
+    if (!editor) return
+    const html = editor.getHTML()
+    const docHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><style>
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.6; color: #1a1a1a; }
+h1 { font-size: 20pt; font-weight: bold; margin: 16pt 0 8pt; }
+h2 { font-size: 16pt; font-weight: bold; margin: 14pt 0 6pt; }
+h3 { font-size: 13pt; font-weight: bold; margin: 12pt 0 4pt; }
+p { margin: 0 0 8pt; }
+ul, ol { margin: 4pt 0 8pt 20pt; }
+li { margin: 2pt 0; }
+blockquote { border-left: 3pt solid #ccc; padding-left: 10pt; margin: 8pt 0; color: #555; }
+code { font-family: Consolas, monospace; font-size: 10pt; background: #f4f4f4; padding: 1pt 3pt; }
+pre { font-family: Consolas, monospace; font-size: 10pt; background: #f4f4f4; padding: 8pt; margin: 8pt 0; }
+a { color: #1a73e8; }
+img { max-width: 100%; }
+</style></head>
+<body>${html}</body></html>`
+    const blob = new Blob([docHtml], { type: 'application/msword' })
+    const filename = `${(title || 'document').replace(/[^a-z0-9_-]/gi, '_').toLowerCase()}.doc`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [editor, title])
+
+  // ── .docx import ──────────────────────────────────────────────────────────
+
+  const uploadDocxFile = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file || !editor) return
+      try {
+        const mammoth = await import('mammoth')
+        const arrayBuffer = await file.arrayBuffer()
+        const result = await mammoth.convertToHtml({ arrayBuffer })
+        editor.commands.setContent(result.value)
+        scheduleSave(editor.getJSON())
+        toast.success(`Imported "${file.name}"`)
+        if (result.messages.length > 0) {
+          const warnings = result.messages.filter((m) => m.type === 'warning').length
+          if (warnings > 0) {
+            toast.info(`${warnings} formatting warning${warnings > 1 ? 's' : ''} — some styles may have been simplified`)
+          }
+        }
+      } catch {
+        toast.error('Failed to import .docx file')
+      }
+    }
+    input.click()
+  }, [editor, scheduleSave])
+
+  // ── Keyboard shortcut: Ctrl+Shift+M → toggle source view ──────────────────
+
+  useEffect(() => {
+    if (readOnly) return
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'M') {
+        e.preventDefault()
+        toggleSourceView()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [readOnly, toggleSourceView])
+
+  // ── Detect _markdown_source from backend AI import ─────────────────────────
+
+  useEffect(() => {
+    if (!editor || !initialContent) return
+    const raw = initialContent as Record<string, unknown>
+    if (typeof raw._markdown_source === 'string') {
+      // Backend stored raw markdown — parse it via tiptap-markdown and auto-save as JSON
+      editor.commands.setContent(raw._markdown_source as string)
+      scheduleSave(editor.getJSON())
+    }
+  }, [editor, initialContent, scheduleSave])
+
   if (!editor) return null
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Floating toolbar — appears on text selection */}
-      {!readOnly && (
+      {!readOnly && !sourceView && (
         <FloatingToolbar
           editor={editor}
           uploadConfig={uploadConfig}
@@ -435,34 +772,118 @@ export function DocsEditor({
       )}
 
       {/* Editor content with title */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl">
-          {/* Title */}
-          {title !== undefined && (
-            <div className="px-6 pt-10 pb-1">
-              {onTitleChange && !readOnly ? (
-                <input
-                  value={title}
-                  onChange={(e) => onTitleChange(e.target.value)}
-                  placeholder="Untitled"
-                  className="w-full bg-transparent text-3xl font-bold text-left outline-none placeholder:text-muted-foreground/40"
-                />
-              ) : (
-                <h1 className="text-3xl font-bold text-left">{title || 'Untitled'}</h1>
-              )}
+      <div className={`relative flex-1 ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'}`}>
+        {/* Markdown menu (left) + Save indicator (right) — floating */}
+        {!readOnly && (
+          <div className="sticky top-2 z-10 flex items-center justify-between px-4 pointer-events-none">
+            <div className="pointer-events-auto">
+              <ImportExportMenu
+                getMarkdown={getMarkdown}
+                onDownloadMarkdown={downloadAsMarkdown}
+                onDownloadDocx={downloadAsDocx}
+                onImportMarkdown={() => setImportDialogOpen(true)}
+                onUploadMarkdownFile={uploadMarkdownFile}
+                onUploadDocxFile={uploadDocxFile}
+                onToggleSource={toggleSourceView}
+                sourceView={sourceView}
+              />
             </div>
-          )}
+            <div className="pointer-events-auto rounded-md bg-background/80 backdrop-blur-sm px-2 py-0.5 shadow-sm border border-border/40">
+              <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
+            </div>
+          </div>
+        )}
 
-          <EditorContent editor={editor} />
-        </div>
+        {sourceView ? (
+          /* Source view — full width, fills remaining height */
+          <div className="flex flex-1 flex-col px-6 py-4 min-h-0">
+            {/* Title (read-only in source view) */}
+            {title !== undefined && (
+              <div className="pb-3 shrink-0">
+                <h1 className="text-3xl font-bold text-left">{title || 'Untitled'}</h1>
+              </div>
+            )}
+            <div className="flex items-center justify-between mb-3 shrink-0">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Markdown Source
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={discardSourceView}
+                >
+                  <X className="h-3 w-3" />
+                  Discard
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={toggleSourceView}
+                >
+                  <Check className="h-3 w-3" />
+                  Apply
+                </Button>
+              </div>
+            </div>
+            <textarea
+              value={sourceMarkdown}
+              onChange={(e) => setSourceMarkdown(e.target.value)}
+              className="flex-1 w-full min-h-0 rounded-lg border border-border/60 bg-muted/30 p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              placeholder="Markdown content..."
+              spellCheck={false}
+            />
+          </div>
+        ) : (
+          <div className="mx-auto max-w-3xl">
+            {/* Title */}
+            {title !== undefined && (
+              <div className="px-6 pt-10 pb-1">
+                {onTitleChange && !readOnly ? (
+                  <input
+                    value={title}
+                    onChange={(e) => onTitleChange(e.target.value)}
+                    placeholder="Untitled"
+                    className="w-full bg-transparent text-3xl font-bold text-left outline-none placeholder:text-muted-foreground/40"
+                  />
+                ) : (
+                  <h1 className="text-3xl font-bold text-left">{title || 'Untitled'}</h1>
+                )}
+              </div>
+            )}
+            <EditorContent editor={editor} />
+          </div>
+        )}
       </div>
 
-      {/* Save indicator */}
-      {!readOnly && (
-        <div className="flex items-center justify-end border-t border-border/40 px-4 py-1">
-          <SaveIndicator status={saveStatus} />
-        </div>
-      )}
+      {/* Import Markdown dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Import Markdown</DialogTitle>
+            <DialogDescription>
+              Paste Markdown content below. It will replace the current document content.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            className="w-full min-h-[250px] rounded-lg border border-border/60 bg-muted/30 p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+            placeholder="# Paste your Markdown here..."
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setImportDialogOpen(false); setImportText('') }}>
+              Cancel
+            </Button>
+            <Button onClick={handleImportMarkdown} disabled={!importText.trim()}>
+              <FileDown className="h-3.5 w-3.5 mr-1.5" />
+              Import
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

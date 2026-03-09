@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   CalendarDays,
   ChevronRight,
@@ -19,6 +21,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { StoryListView } from '@/components/pm/StoryListView';
 import { StoryDetailPanel } from '@/components/pm/StoryDetailPanel';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
@@ -136,6 +139,7 @@ export function SprintDetailPage() {
   const [pendingPatch, setPendingPatch] = useState<UpdateSprintRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
 
   const { teams, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
@@ -307,6 +311,41 @@ export function SprintDetailPage() {
 
         <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 text-xs text-muted-foreground"
+            onClick={async () => {
+              if (!workspaceId || !sprint) return;
+              if (!sprint.sprint.archived) {
+                // Show confirm dialog before archiving
+                setArchiveConfirmOpen(true);
+                return;
+              }
+              // Unarchive directly
+              setSaving(true);
+              const { data, error: err } = await pmSprintService.update(workspaceId, sprint.sprint.id, { archived: false });
+              if (err || !data) {
+                setSaveError(err ?? 'Failed to update');
+              } else {
+                setSprint(data);
+                setSaveError(null);
+              }
+              setSaving(false);
+            }}
+          >
+            {sprint.sprint.archived ? (
+              <>
+                <ArchiveRestore className="h-3.5 w-3.5" />
+                Unarchive
+              </>
+            ) : (
+              <>
+                <Archive className="h-3.5 w-3.5" />
+                Archive
+              </>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -400,8 +439,6 @@ export function SprintDetailPage() {
 
         {/* ── Right column — metadata sidebar ────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
-          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
-
           <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
             {/* Status */}
             <MetadataRow icon={RefreshCw} label="Status">
@@ -452,6 +489,42 @@ export function SprintDetailPage() {
                 className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
               />
             </MetadataRow>
+
+          </div>
+
+          <Separator className="my-4" />
+
+          <div className="space-y-1">
+            {sprint.sprint.archived ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!workspaceId || !sprint) return;
+                  setSaving(true);
+                  const { data, error: err } = await pmSprintService.update(workspaceId, sprint.sprint.id, { archived: false });
+                  if (err || !data) {
+                    setSaveError(err ?? 'Failed to update');
+                  } else {
+                    setSprint(data);
+                    setSaveError(null);
+                  }
+                  setSaving(false);
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                <ArchiveRestore className="h-3.5 w-3.5" />
+                Unarchive
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setArchiveConfirmOpen(true)}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                Archive
+              </button>
+            )}
           </div>
         </aside>
       </div>
@@ -478,6 +551,27 @@ export function SprintDetailPage() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={archiveConfirmOpen}
+        onOpenChange={setArchiveConfirmOpen}
+        title="Archive sprint"
+        description="This sprint will be hidden from the active list. You can view and restore it from the archived sprints view."
+        confirmLabel="Archive"
+        variant="default"
+        onConfirm={async () => {
+          if (!workspaceId || !sprint) return;
+          setSaving(true);
+          const { data, error: err } = await pmSprintService.update(workspaceId, sprint.sprint.id, { archived: true });
+          if (err || !data) {
+            setSaveError(err ?? 'Failed to archive');
+          } else {
+            setSaveError(null);
+            navigate({ to: '/w/$slug/pm/sprints', params: { slug } });
+          }
+          setSaving(false);
+        }}
+      />
     </div>
   );
 }

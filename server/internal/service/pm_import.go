@@ -485,7 +485,7 @@ func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID
 	// Phase 2: Import comments from Shortcut API (outside transaction, per-story)
 	if apiClient != nil {
 		_ = s.markStep(ctx, jobID, "comments", 9+stepOffset, len(rows), totalSteps)
-		commentsCreated, attachmentsCreated, commentWarnings := s.importShortcutComments(ctx, apiClient, workspaceID, actorID, rows, scMemberToUser, apiToken, jobID, 10+stepOffset, totalSteps)
+		commentsCreated, attachmentsCreated, commentWarnings := s.importShortcutComments(ctx, apiClient, workspaceID, actorID, rows, scMemberToUser, enrichment, apiToken, jobID, 10+stepOffset, totalSteps)
 		result.CommentsCreated = commentsCreated
 		result.AttachmentsCreated += attachmentsCreated
 		result.Warnings = appendUniqueWarnings(result.Warnings, commentWarnings)
@@ -1212,7 +1212,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 	return createdStoryIDs, nil
 }
 
-func (s *PMImportService) importShortcutComments(ctx context.Context, client *ShortcutAPIClient, workspaceID, actorID string, rows []shortcutCSVRow, scMemberToUser map[string]string, apiToken, jobID string, stepNum, totalSteps int) (int, int, []string) {
+func (s *PMImportService) importShortcutComments(ctx context.Context, client *ShortcutAPIClient, workspaceID, actorID string, rows []shortcutCSVRow, scMemberToUser map[string]string, enrichment *shortcutAPIEnrichment, apiToken, jobID string, stepNum, totalSteps int) (int, int, []string) {
 	// Lookup existing stories by external ID so we can attach comments to the right story
 	var storyRows []struct {
 		ID         string
@@ -1276,7 +1276,10 @@ func (s *PMImportService) importShortcutComments(ctx context.Context, client *Sh
 			}
 			authorID := scMemberToUser[c.AuthorID]
 			if authorID == "" {
-				continue
+				authorID = actorID
+				if authorName := shortcutMemberName(enrichment, c.AuthorID); authorName != "" {
+					body = fmt.Sprintf(`<p><em>Comment by %s (imported from Shortcut)</em></p>`, authorName) + body
+				}
 			}
 			comment := model.PMComment{
 				EntityType: "story",
@@ -1313,7 +1316,10 @@ func (s *PMImportService) importShortcutComments(ctx context.Context, client *Sh
 			}
 			authorID := scMemberToUser[c.AuthorID]
 			if authorID == "" {
-				continue
+				authorID = actorID
+				if authorName := shortcutMemberName(enrichment, c.AuthorID); authorName != "" {
+					body = fmt.Sprintf(`<p><em>Comment by %s (imported from Shortcut)</em></p>`, authorName) + body
+				}
 			}
 			comment := model.PMComment{
 				EntityType: "story",
@@ -1571,6 +1577,16 @@ func valueOrNow(ts *time.Time) time.Time {
 
 func timePtr(ts time.Time) *time.Time {
 	return &ts
+}
+
+func shortcutMemberName(enrichment *shortcutAPIEnrichment, memberID string) string {
+	if enrichment == nil {
+		return ""
+	}
+	if m, ok := enrichment.Members[memberID]; ok && m.Profile.Name != "" {
+		return m.Profile.Name
+	}
+	return ""
 }
 
 func fallbackName(name, fallback string) string {

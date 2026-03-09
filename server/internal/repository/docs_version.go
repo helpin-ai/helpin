@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -22,12 +23,14 @@ func NewDocsVersionRepository(db *gorm.DB) *DocsVersionRepository {
 }
 
 // Create inserts a new version snapshot.
-func (r *DocsVersionRepository) Create(ctx context.Context, documentID, createdBy string, content json.RawMessage, contentText string, snapshotLabel *string) (*model.DocsVersion, error) {
+func (r *DocsVersionRepository) Create(ctx context.Context, documentID, createdBy string, content json.RawMessage, contentText string, snapshotLabel *string, versionType string, wordCount int) (*model.DocsVersion, error) {
 	v := &model.DocsVersion{
 		DocumentID:    documentID,
 		Content:       content,
 		ContentText:   contentText,
 		SnapshotLabel: snapshotLabel,
+		VersionType:   versionType,
+		WordCount:     wordCount,
 		CreatedBy:     createdBy,
 	}
 	if err := r.db.WithContext(ctx).Create(v).Error; err != nil {
@@ -58,4 +61,36 @@ func (r *DocsVersionRepository) ListByDocument(ctx context.Context, documentID s
 		return nil, fmt.Errorf("list docs versions: %w", err)
 	}
 	return versions, nil
+}
+
+// GetLatestByDocument returns the most recent version for a document.
+func (r *DocsVersionRepository) GetLatestByDocument(ctx context.Context, documentID string) (*model.DocsVersion, error) {
+	var v model.DocsVersion
+	if err := r.db.WithContext(ctx).
+		Where("document_id = ?", documentID).
+		Order("created_at DESC").
+		First(&v).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get latest docs version: %w", err)
+	}
+	return &v, nil
+}
+
+// UpdateLabel updates the snapshot_label of a version.
+func (r *DocsVersionRepository) UpdateLabel(ctx context.Context, id string, label *string) (*model.DocsVersion, error) {
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsVersion{}).
+		Where("id = ?", id).
+		Update("snapshot_label", label).Error; err != nil {
+		return nil, fmt.Errorf("update docs version label: %w", err)
+	}
+	return r.GetByID(ctx, id)
+}
+
+// wordCount counts words in a plain text string.
+func WordCount(text string) int {
+	fields := strings.Fields(text)
+	return len(fields)
 }

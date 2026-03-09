@@ -9,7 +9,7 @@ interface WorkspaceTeamsResult {
   userMemberships: TeamUserMembership[];
   loading: boolean;
   getTeamMembers: (teamId: string) => WorkspacePerson[];
-  findTeamName: (teamId: string | undefined) => string | undefined;
+  findTeamName: (teamId: string | null | undefined) => string | undefined;
 }
 
 // Module-level cache keyed by workspace ID.
@@ -93,7 +93,7 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
     return people.filter((p) => memberIds.has(p.id));
   };
 
-  const findTeamName = (teamId: string | undefined): string | undefined => {
+  const findTeamName = (teamId: string | null | undefined): string | undefined => {
     if (!teamId) return undefined;
     return teams.find((t) => t.id === teamId)?.name;
   };

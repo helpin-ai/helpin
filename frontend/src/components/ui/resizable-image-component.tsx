@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
 import { Maximize2, X } from 'lucide-react';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 const MIN_WIDTH = 100;
 
@@ -161,18 +162,19 @@ export function ResizableImageComponent({ node, updateAttributes, selected }: No
         />
 
         {/* View fullscreen button — top-right corner */}
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
-          className={`absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white backdrop-blur-sm transition-opacity duration-100 hover:bg-black/80 ${
-            isResizing
-              ? 'pointer-events-none opacity-0'
-              : 'pointer-events-none opacity-0 group-hover/img:pointer-events-auto group-hover/img:opacity-100'
-          }`}
-          title="View full size"
-        >
-          <Maximize2 className="h-3.5 w-3.5" />
-        </button>
+        <QuickTooltip label="View full size">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
+            className={`absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white backdrop-blur-sm transition-opacity duration-100 hover:bg-black/80 ${
+              isResizing
+                ? 'pointer-events-none opacity-0'
+                : 'pointer-events-none opacity-0 group-hover/img:pointer-events-auto group-hover/img:opacity-100'
+            }`}
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+        </QuickTooltip>
 
         {/* Resize handle — bottom-right corner */}
         <div
@@ -192,14 +194,15 @@ export function ResizableImageComponent({ node, updateAttributes, selected }: No
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
           onClick={() => setIsFullscreen(false)}
         >
-          <button
-            type="button"
-            onClick={() => setIsFullscreen(false)}
-            className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
-            title="Close (Esc)"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <QuickTooltip label="Close (Esc)">
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(false)}
+              className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </QuickTooltip>
           <img
             src={src}
             alt={alt ?? ''}

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -88,8 +90,14 @@ func (s *DocsDocumentService) Get(ctx context.Context, id string) (*model.DocsDo
 }
 
 // List returns documents with optional filters.
-func (s *DocsDocumentService) List(ctx context.Context, workspaceID string, spaceID, collectionID, docType, status, teamID *string) ([]model.DocsDocument, error) {
-	return s.docRepo.List(ctx, workspaceID, spaceID, collectionID, docType, status, teamID)
+func (s *DocsDocumentService) List(ctx context.Context, workspaceID string, spaceID, collectionID, docType, status, teamID *string, userID, role string) ([]model.DocsDocument, error) {
+	// Admins/owners can see all drafts; others only see their own.
+	isAdminOrOwner := role == "admin" || role == "owner"
+	var draftViewerID string
+	if !isAdminOrOwner {
+		draftViewerID = userID
+	}
+	return s.docRepo.List(ctx, workspaceID, spaceID, collectionID, docType, status, teamID, draftViewerID)
 }
 
 // Update updates a document's metadata.
@@ -240,4 +248,74 @@ func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 // Restore restores a soft-deleted document. Does NOT auto-republish externally.
 func (s *DocsDocumentService) Restore(ctx context.Context, id string) (*model.DocsDocument, error) {
 	return s.docRepo.Restore(ctx, id)
+}
+
+// ToggleShare enables or disables public sharing for a document.
+// When enabling, a share token is generated if not already present.
+func (s *DocsDocumentService) ToggleShare(ctx context.Context, id string, enable bool) (*model.DocsDocument, error) {
+	doc, err := s.docRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+
+	updates := map[string]interface{}{
+		"is_publicly_shared": enable,
+	}
+
+	if enable && doc.ShareToken == nil {
+		token, err := generateShareToken()
+		if err != nil {
+			return nil, fmt.Errorf("generate share token: %w", err)
+		}
+		updates["share_token"] = token
+	}
+
+	return s.docRepo.Update(ctx, id, updates)
+}
+
+// GetByShareToken returns a publicly shared document by its token.
+func (s *DocsDocumentService) GetByShareToken(ctx context.Context, token string) (*model.DocsDocument, error) {
+	return s.docRepo.GetByShareToken(ctx, token)
+}
+
+// ToggleLock locks or unlocks a document.
+// When locking, records who locked it. When unlocking, only the locker or admin/owner can unlock.
+func (s *DocsDocumentService) ToggleLock(ctx context.Context, id string, lock bool, userID, userRole string) (*model.DocsDocument, error) {
+	doc, err := s.docRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+
+	if !lock && doc.IsLocked {
+		// Only the locker or admin/owner can unlock
+		isAdminOrOwner := userRole == "admin" || userRole == "owner"
+		if doc.LockedBy != nil && *doc.LockedBy != userID && !isAdminOrOwner {
+			return nil, fmt.Errorf("only the person who locked this document or an admin can unlock it")
+		}
+	}
+
+	updates := map[string]interface{}{
+		"is_locked": lock,
+	}
+	if lock {
+		updates["locked_by"] = userID
+	} else {
+		updates["locked_by"] = nil
+	}
+
+	return s.docRepo.Update(ctx, id, updates)
+}
+
+func generateShareToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

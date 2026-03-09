@@ -12,6 +12,7 @@ import type {
   MoveDocsDocumentRequest,
   SaveDocsContentRequest,
   CreateDocsVersionRequest,
+  UpdateDocsVersionRequest,
   CreateDocsLinkRequest,
   UpdateDocsHelpcenterConfigRequest,
   DocsArticleFeedbackRequest,
@@ -113,7 +114,7 @@ export function useUpdateDocsCollection(wsId: string) {
 export function useDeleteDocsCollection(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, spaceId }: { id: string; spaceId: string }) =>
+    mutationFn: async ({ id }: { id: string; spaceId: string }) =>
       unwrap(await docsService.deleteCollection(wsId, id)),
     onSuccess: (_, { spaceId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
@@ -124,7 +125,7 @@ export function useDeleteDocsCollection(wsId: string) {
 export function useRestoreDocsCollection(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, spaceId }: { id: string; spaceId: string }) =>
+    mutationFn: async ({ id }: { id: string; spaceId: string }) =>
       unwrap(await docsService.restoreCollection(wsId, id)),
     onSuccess: (_, { spaceId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
@@ -323,6 +324,25 @@ export function useSaveDocsContent(wsId: string) {
   })
 }
 
+export function useSaveDocsMarkdown(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, markdown }: { docId: string; markdown: string }) =>
+      unwrap(await docsService.saveMarkdownContent(wsId, docId, markdown)),
+    onSuccess: (savedContent, { docId }) => {
+      qc.setQueryData(queryKeys.docs.content(wsId, docId), savedContent)
+      qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId), exact: true })
+      qc.invalidateQueries({
+        predicate: (query) => {
+          const k = query.queryKey
+          return k[0] === 'docs' && k[1] === wsId && k[2] === 'documents'
+            && (k.length === 3 || (k.length === 4 && typeof k[3] !== 'string'))
+        },
+      })
+    },
+  })
+}
+
 // ── Versions ────────────────────────────────────────────────────────────────
 
 export function useDocsVersions(wsId: string, docId: string) {
@@ -338,6 +358,25 @@ export function useCreateDocsVersion(wsId: string) {
   return useMutation({
     mutationFn: async ({ docId, ...data }: CreateDocsVersionRequest & { docId: string }) =>
       unwrap(await docsService.createVersion(wsId, docId, data)),
+    onSuccess: (_, { docId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.versions(wsId, docId) })
+    },
+  })
+}
+
+export function useDocsVersion(wsId: string, docId: string, versionId: string) {
+  return useQuery({
+    queryKey: queryKeys.docs.version(wsId, docId, versionId),
+    queryFn: async () => unwrap(await docsService.getVersion(wsId, docId, versionId)),
+    enabled: !!wsId && !!docId && !!versionId,
+  })
+}
+
+export function useUpdateDocsVersionLabel(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, versionId, ...data }: UpdateDocsVersionRequest & { docId: string; versionId: string }) =>
+      unwrap(await docsService.updateVersionLabel(wsId, docId, versionId, data)),
     onSuccess: (_, { docId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.versions(wsId, docId) })
     },
@@ -380,7 +419,7 @@ export function useCreateDocsLink(wsId: string) {
 export function useDeleteDocsLink(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ linkId, docId }: { linkId: string; docId: string }) =>
+    mutationFn: async ({ linkId }: { linkId: string; docId: string }) =>
       unwrap(await docsService.deleteLink(wsId, linkId)),
     onSuccess: (_, { docId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.links(wsId, docId) })
@@ -416,6 +455,32 @@ export function useUnpublishDocsExternally(wsId: string) {
       unwrap(await docsService.unpublishExternally(wsId, docId)),
     onSuccess: (_, docId) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
+    },
+  })
+}
+
+// ── Lock Toggle ──────────────────────────────────────────────────────────────
+
+export function useToggleDocLock(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, isLocked }: { docId: string; isLocked: boolean }) =>
+      unwrap(await docsService.toggleDocLock(wsId, docId, isLocked)),
+    onSuccess: (updatedDoc, { docId }) => {
+      qc.setQueryData(queryKeys.docs.document(wsId, docId), updatedDoc)
+    },
+  })
+}
+
+// ── Share Toggle ─────────────────────────────────────────────────────────────
+
+export function useToggleDocShare(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, isPubliclyShared }: { docId: string; isPubliclyShared: boolean }) =>
+      unwrap(await docsService.toggleDocShare(wsId, docId, isPubliclyShared)),
+    onSuccess: (updatedDoc, { docId }) => {
+      qc.setQueryData(queryKeys.docs.document(wsId, docId), updatedDoc)
     },
   })
 }

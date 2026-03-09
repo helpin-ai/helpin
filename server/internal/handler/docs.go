@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -50,7 +52,8 @@ func NewDocsHandler(
 
 func (h *DocsHandler) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
-	spaces, err := h.spaceSvc.List(r.Context(), wsID)
+	actor := authorization.GetActor(r.Context())
+	spaces, err := h.spaceSvc.List(r.Context(), wsID, actor)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -75,7 +78,8 @@ func (h *DocsHandler) CreateSpace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocsHandler) GetSpace(w http.ResponseWriter, r *http.Request) {
-	space, err := h.spaceSvc.Get(r.Context(), chi.URLParam(r, "spaceId"))
+	actor := authorization.GetActor(r.Context())
+	space, err := h.spaceSvc.Get(r.Context(), chi.URLParam(r, "spaceId"), actor)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -181,6 +185,8 @@ func (h *DocsHandler) RestoreCollection(w http.ResponseWriter, r *http.Request) 
 
 func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	actor := authorization.GetActor(r.Context())
 	q := r.URL.Query()
 	spaceID := ptrIfSet(q.Get("space_id"))
 	collectionID := ptrIfSet(q.Get("collection_id"))
@@ -188,7 +194,11 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	status := ptrIfSet(q.Get("status"))
 	teamID := ptrIfSet(q.Get("team_id"))
 
-	docs, err := h.documentSvc.List(r.Context(), wsID, spaceID, collectionID, docType, status, teamID)
+	role := ""
+	if actor != nil {
+		role = actor.Role
+	}
+	docs, err := h.documentSvc.List(r.Context(), wsID, spaceID, collectionID, docType, status, teamID, userID, role)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -199,10 +209,15 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 func (h *DocsHandler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	userID := middleware.GetUserID(r.Context())
+	actor := authorization.GetActor(r.Context())
 	var req model.CreateDocsDocumentRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	// Default owner to the creator's membership ID.
+	if req.OwnerID == nil && actor != nil && actor.WorkspaceMemberID != "" {
+		req.OwnerID = &actor.WorkspaceMemberID
 	}
 	doc, err := h.documentSvc.Create(r.Context(), wsID, req, userID)
 	if err != nil {
@@ -298,7 +313,7 @@ func (h *DocsHandler) MoveDocument(w http.ResponseWriter, r *http.Request) {
 
 	// If help center article moved to non-external space, unpublish externally.
 	if doc.DocType == model.DocTypeHelpCenterArticle {
-		space, _ := h.spaceSvc.Get(r.Context(), doc.SpaceID)
+		space, _ := h.spaceSvc.GetUnfiltered(r.Context(), doc.SpaceID)
 		if space != nil && space.Type != model.SpaceTypeExternalCapable {
 			_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
 		}
@@ -323,16 +338,52 @@ func (h *DocsHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	docID := chi.URLParam(r, "docId")
 	var req model.SaveDocsContentRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	content, err := h.contentSvc.Save(r.Context(), chi.URLParam(r, "docId"), req.Content)
+	content, err := h.contentSvc.Save(r.Context(), docID, req.Content)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	// Check for periodic auto-snapshot (non-blocking).
+	go h.versionSvc.MaybeAutoSnapshot(r.Context(), docID, userID)
+
+	writeJSON(w, http.StatusOK, content)
+}
+
+// SaveMarkdownContent accepts raw Markdown from AI agents or external tools and
+// stores it as a JSON envelope that the frontend auto-converts on first load.
+func (h *DocsHandler) SaveMarkdownContent(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	docID := chi.URLParam(r, "docId")
+	var req model.SaveDocsMarkdownRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Markdown == "" {
+		writeError(w, http.StatusBadRequest, "markdown field is required")
+		return
+	}
+
+	// Wrap markdown in a JSON envelope the frontend Tiptap editor will detect and convert.
+	envelope := map[string]string{"_markdown_source": req.Markdown}
+	raw, _ := json.Marshal(envelope)
+
+	content, err := h.contentSvc.Save(r.Context(), docID, raw)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	go h.versionSvc.MaybeAutoSnapshot(r.Context(), docID, userID)
+
 	writeJSON(w, http.StatusOK, content)
 }
 
@@ -360,6 +411,35 @@ func (h *DocsHandler) CreateVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, version)
+}
+
+func (h *DocsHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
+	versionID := chi.URLParam(r, "versionId")
+	version, err := h.versionSvc.Get(r.Context(), versionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if version == nil {
+		writeError(w, http.StatusNotFound, "version not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, version)
+}
+
+func (h *DocsHandler) UpdateVersionLabel(w http.ResponseWriter, r *http.Request) {
+	versionID := chi.URLParam(r, "versionId")
+	var req model.UpdateDocsVersionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	version, err := h.versionSvc.UpdateLabel(r.Context(), versionID, req.SnapshotLabel)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, version)
 }
 
 func (h *DocsHandler) RevertVersion(w http.ResponseWriter, r *http.Request) {
@@ -468,6 +548,7 @@ func (h *DocsHandler) ListLinkedDocs(w http.ResponseWriter, r *http.Request) {
 
 func (h *DocsHandler) Search(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
+	actor := authorization.GetActor(r.Context())
 	q := r.URL.Query()
 	query := q.Get("q")
 	docType := ptrIfSet(q.Get("doc_type"))
@@ -479,8 +560,14 @@ func (h *DocsHandler) Search(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// For v1 we pass nil for spaceIDs — permission filtering is handled by middleware.
-	results, err := h.searchSvc.Search(r.Context(), wsID, query, nil, docType, status, limit)
+	// Get accessible space IDs for the actor (nil = no filtering for admin/owner)
+	spaceIDs, err := h.spaceSvc.AccessibleSpaceIDs(r.Context(), wsID, actor)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	results, err := h.searchSvc.Search(r.Context(), wsID, query, spaceIDs, docType, status, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -610,6 +697,66 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, results)
+}
+
+// ─── Share Toggle ────────────────────────────────────────────────────────────
+
+func (h *DocsHandler) ToggleDocShare(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "docId")
+	var req model.ToggleDocShareRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	doc, err := h.documentSvc.ToggleShare(r.Context(), docID, req.IsPubliclyShared)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, doc)
+}
+
+func (h *DocsHandler) ToggleDocLock(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "docId")
+	userID := middleware.GetUserID(r.Context())
+	actor := authorization.GetActor(r.Context())
+	var req model.ToggleDocLockRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	role := ""
+	if actor != nil {
+		role = actor.Role
+	}
+	doc, err := h.documentSvc.ToggleLock(r.Context(), docID, req.IsLocked, userID, role)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, doc)
+}
+
+// ─── Public Shared Document (no JWT) ────────────────────────────────────────
+
+func (h *DocsHandler) PublicGetSharedDoc(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "shareToken")
+	doc, err := h.documentSvc.GetByShareToken(r.Context(), token)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if doc == nil {
+		writeError(w, http.StatusNotFound, "document not found or sharing disabled")
+		return
+	}
+
+	content, _ := h.contentSvc.Get(r.Context(), doc.ID)
+
+	writeJSON(w, http.StatusOK, model.PublicDocResponse{
+		Document: doc,
+		Content:  content,
+	})
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

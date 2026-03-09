@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -24,6 +25,11 @@ func (s *DocsVersionService) List(ctx context.Context, documentID string) ([]mod
 	return s.versionRepo.ListByDocument(ctx, documentID)
 }
 
+// Get returns a single version by ID (for preview).
+func (s *DocsVersionService) Get(ctx context.Context, id string) (*model.DocsVersion, error) {
+	return s.versionRepo.GetByID(ctx, id)
+}
+
 // CreateSnapshot creates a manual version snapshot from current content.
 func (s *DocsVersionService) CreateSnapshot(ctx context.Context, documentID, userID string, label *string) (*model.DocsVersion, error) {
 	content, err := s.contentRepo.GetByDocumentID(ctx, documentID)
@@ -33,16 +39,38 @@ func (s *DocsVersionService) CreateSnapshot(ctx context.Context, documentID, use
 	if content == nil {
 		return nil, fmt.Errorf("no content to snapshot")
 	}
-	return s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, label)
+	wc := repository.WordCount(content.ContentText)
+	return s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, label, model.VersionTypeManual, wc)
 }
 
-// SnapshotOnPublish creates a version snapshot labeled "Published".
+// SnapshotOnPublish creates a version snapshot labeled "Published" with type=publish.
 func (s *DocsVersionService) SnapshotOnPublish(ctx context.Context, documentID, userID string) (*model.DocsVersion, error) {
+	content, err := s.contentRepo.GetByDocumentID(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if content == nil {
+		return nil, fmt.Errorf("no content to snapshot")
+	}
 	label := "Published"
-	return s.CreateSnapshot(ctx, documentID, userID, &label)
+	wc := repository.WordCount(content.ContentText)
+	return s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypePublish, wc)
 }
 
-// Revert replaces current content with a previous version's content and creates a "Reverted" snapshot.
+// createInternalSnapshot creates a version snapshot with a specific type (used internally for revert flow).
+func (s *DocsVersionService) createInternalSnapshot(ctx context.Context, documentID, userID string, label *string, versionType string) (*model.DocsVersion, error) {
+	content, err := s.contentRepo.GetByDocumentID(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if content == nil {
+		return nil, fmt.Errorf("no content to snapshot")
+	}
+	wc := repository.WordCount(content.ContentText)
+	return s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, label, versionType, wc)
+}
+
+// Revert replaces current content with a previous version's content and creates before/after revert snapshots.
 func (s *DocsVersionService) Revert(ctx context.Context, documentID, versionID, userID string) (*model.DocsContent, error) {
 	version, err := s.versionRepo.GetByID(ctx, versionID)
 	if err != nil {
@@ -56,8 +84,8 @@ func (s *DocsVersionService) Revert(ctx context.Context, documentID, versionID, 
 	}
 
 	// Snapshot current state before reverting.
-	label := "Before revert"
-	_, _ = s.CreateSnapshot(ctx, documentID, userID, &label)
+	beforeLabel := "Before revert"
+	_, _ = s.createInternalSnapshot(ctx, documentID, userID, &beforeLabel, model.VersionTypeRevert)
 
 	// Overwrite current content with the version's content.
 	updated, err := s.contentRepo.Upsert(ctx, documentID, version.Content)
@@ -65,9 +93,77 @@ func (s *DocsVersionService) Revert(ctx context.Context, documentID, versionID, 
 		return nil, err
 	}
 
-	// Create a "Reverted" snapshot.
-	revertLabel := "Reverted"
-	_, _ = s.versionRepo.Create(ctx, documentID, userID, version.Content, version.ContentText, &revertLabel)
+	// Create a "Reverted" snapshot with the timestamp of the target version.
+	revertLabel := fmt.Sprintf("Reverted to version from %s", version.CreatedAt.Format("Jan 2, 2006 15:04"))
+	wc := repository.WordCount(version.ContentText)
+	_, _ = s.versionRepo.Create(ctx, documentID, userID, version.Content, version.ContentText, &revertLabel, model.VersionTypeRevert, wc)
 
 	return updated, nil
+}
+
+// UpdateLabel renames the label of a manual version snapshot. System labels cannot be renamed.
+func (s *DocsVersionService) UpdateLabel(ctx context.Context, versionID string, label *string) (*model.DocsVersion, error) {
+	version, err := s.versionRepo.GetByID(ctx, versionID)
+	if err != nil {
+		return nil, err
+	}
+	if version == nil {
+		return nil, fmt.Errorf("version not found")
+	}
+	if version.VersionType != model.VersionTypeManual {
+		return nil, fmt.Errorf("only manual snapshots can be renamed")
+	}
+	return s.versionRepo.UpdateLabel(ctx, versionID, label)
+}
+
+// autoSnapshotInterval is the minimum time between auto snapshots.
+const autoSnapshotInterval = 20 * time.Minute
+
+// MaybeAutoSnapshot checks if enough time has passed and content has meaningfully changed,
+// then creates an auto snapshot if appropriate. Called during content saves.
+func (s *DocsVersionService) MaybeAutoSnapshot(ctx context.Context, documentID, userID string) {
+	latest, err := s.versionRepo.GetLatestByDocument(ctx, documentID)
+	if err != nil {
+		return
+	}
+
+	// If there are no versions at all, create the first auto snapshot.
+	if latest == nil {
+		content, err := s.contentRepo.GetByDocumentID(ctx, documentID)
+		if err != nil || content == nil {
+			return
+		}
+		wc := repository.WordCount(content.ContentText)
+		if wc < 5 {
+			return // too little content
+		}
+		label := "Auto snapshot"
+		_, _ = s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypeAuto, wc)
+		return
+	}
+
+	// Check if enough time has passed.
+	if time.Since(latest.CreatedAt) < autoSnapshotInterval {
+		return
+	}
+
+	// Check if content has meaningfully changed.
+	content, err := s.contentRepo.GetByDocumentID(ctx, documentID)
+	if err != nil || content == nil {
+		return
+	}
+
+	currentWC := repository.WordCount(content.ContentText)
+
+	// Meaningful change: word count difference > 10 or content text differs significantly.
+	wcDiff := currentWC - latest.WordCount
+	if wcDiff < 0 {
+		wcDiff = -wcDiff
+	}
+	if wcDiff < 10 && content.ContentText == latest.ContentText {
+		return // no meaningful change
+	}
+
+	label := "Auto snapshot"
+	_, _ = s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypeAuto, currentWC)
 }

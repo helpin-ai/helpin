@@ -49,7 +49,7 @@ import { useTeamFieldVisibilityForTeam } from "@/hooks/queries/useSettings";
 import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MemberPickerPopover } from "@/components/pm/MemberPickerPopover";
-import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from "@/lib/assignableMembers";
+import { buildAssignableMemberNameMap } from "@/lib/assignableMembers";
 
 interface CreateStoryModalProps {
   open: boolean;
@@ -183,10 +183,6 @@ export function CreateStoryModal({
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id || null);
   const { data: membership } = useSession(workspaceId);
   const currentMemberId = membership?.id ?? '';
-  const memberOptions = useMemo(
-    () => buildAssignableMemberOptions(assignableMembers),
-    [assignableMembers],
-  );
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],

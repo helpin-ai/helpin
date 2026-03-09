@@ -6,6 +6,7 @@ export type DocType = 'wiki' | 'sop' | 'feature_doc' | 'product_spec' | 'support
 export type DocStatus = 'draft' | 'published' | 'archived';
 export type SpaceType = 'internal' | 'external_capable';
 export type SpaceVisibility = 'workspace_wide' | 'team_only';
+export type VersionType = 'manual' | 'auto' | 'publish' | 'revert';
 export type LinkContext = 'attached' | 'mentioned' | 'created_from' | 'linked_in_content';
 export type LinkedObjectType = 'epic' | 'story' | 'project' | 'objective' | 'sprint' | 'support_ticket';
 
@@ -15,6 +16,7 @@ export interface DocsSpace {
   id: string;
   workspace_id: string;
   team_id?: string;
+  team_ids: string[];
   name: string;
   slug: string;
   icon?: string;
@@ -60,6 +62,10 @@ export interface DocsDocument {
   icon?: string;
   tags: string[];
   is_pinned: boolean;
+  is_publicly_shared: boolean;
+  share_token?: string;
+  is_locked: boolean;
+  locked_by?: string;
   last_reviewed_at?: string;
   next_review_at?: string;
   published_at?: string;
@@ -85,6 +91,8 @@ export interface DocsVersion {
   content: unknown;
   content_text: string;
   snapshot_label?: string;
+  version_type: VersionType;
+  word_count: number;
   created_by: string;
   created_at: string;
 }
@@ -147,6 +155,7 @@ export interface DocsSearchResult extends DocsDocument {
 
 export interface CreateDocsSpaceRequest {
   team_id?: string;
+  team_ids?: string[];
   name: string;
   slug?: string;
   icon?: string;
@@ -160,9 +169,12 @@ export interface UpdateDocsSpaceRequest {
   name?: string;
   slug?: string;
   icon?: string;
+  type?: SpaceType;
   visibility?: SpaceVisibility;
   restrict_to_owners?: boolean;
   default_review_days?: number;
+  team_ids?: string[];
+  set_team_ids?: boolean;
 }
 
 export interface CreateDocsCollectionRequest {
@@ -213,6 +225,10 @@ export interface CreateDocsVersionRequest {
   snapshot_label?: string;
 }
 
+export interface UpdateDocsVersionRequest {
+  snapshot_label?: string;
+}
+
 export interface CreateDocsLinkRequest {
   linked_object_type: LinkedObjectType;
   linked_object_id: string;
@@ -237,6 +253,15 @@ export interface DocsArticleFeedbackRequest {
   session_id?: string;
 }
 
+export interface ToggleDocShareRequest {
+  is_publicly_shared: boolean;
+}
+
+export interface PublicDocResponse {
+  document: DocsDocument;
+  content: DocsContent | null;
+}
+
 // ─── Display helpers ────────────────────────────────────────────────────────
 
 export const DOC_TYPE_LABELS: Record<DocType, string> = {
@@ -252,4 +277,11 @@ export const DOC_STATUS_LABELS: Record<DocStatus, string> = {
   draft: 'Draft',
   published: 'Published',
   archived: 'Archived',
+};
+
+export const VERSION_TYPE_LABELS: Record<VersionType, string> = {
+  manual: 'Manual',
+  auto: 'Auto',
+  publish: 'Published',
+  revert: 'Reverted',
 };

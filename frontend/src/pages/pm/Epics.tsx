@@ -14,7 +14,6 @@ import {
   TrendingUp,
   User,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { PMDataTable } from '@/components/pm/PMDataTable';
 import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopover';
