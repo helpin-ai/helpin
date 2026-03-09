@@ -37,6 +37,12 @@ build-help-center:
     cd help-center && npm install && npm run build
     @echo "✅ help-center built → help-center/dist"
 
+kill-dev:
+    -pkill -f 'npm run dev' 2>/dev/null
+    -pkill -f 'go run ./cmd/api' 2>/dev/null
+    -pkill -f 'vite' 2>/dev/null
+    @echo "✅ dev processes killed"
+
 claude:
     tmux new-session -s claude "claude"
 
