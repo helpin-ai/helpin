@@ -9,13 +9,13 @@ spec:
   ingressClassName: pp-nginx
   tls:
   - hosts:
-    - helpin.ai
+    - api.prod.helpin.ai
     secretName: cert-prod-helpin-wildcard
   rules:
-  - host: helpin.ai
+  - host: api.prod.helpin.ai
     http:
       paths:
-      - path: /api
+      - path: /
         pathType: Prefix
         backend:
           service:
