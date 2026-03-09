@@ -204,9 +204,12 @@ func (r *StoryDeliveryTargetRepository) GetByID(ctx context.Context, workspaceID
 	return &target, nil
 }
 
-// Save persists a delivery target.
+// Save persists a delivery target, upserting on the story_id unique index.
 func (r *StoryDeliveryTargetRepository) Save(ctx context.Context, target *model.StoryDeliveryTarget) error {
-	if err := r.db.WithContext(ctx).Save(target).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("story_id = ?", target.StoryID).
+		Assign(target).
+		FirstOrCreate(target).Error; err != nil {
 		return fmt.Errorf("save story delivery target: %w", err)
 	}
 	return nil
