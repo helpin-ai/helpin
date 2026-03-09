@@ -2577,6 +2577,11 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
           </div>
         </CardContent>
       </Card>
+      {editable && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      )}
     </div>
   );
 }
