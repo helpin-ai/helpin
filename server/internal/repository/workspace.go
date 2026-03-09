@@ -49,7 +49,7 @@ func (r *WorkspaceRepository) List(ctx context.Context, userID string, organizat
 	if organizationID != "" {
 		q = q.Where("w.organization_id = ?", organizationID)
 	}
-	if err := q.Order("w.created_at DESC").Scan(&results).Error; err != nil {
+	if err := q.Order("w.created_at ASC").Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("list workspaces: %w", err)
 	}
 	return results, nil
