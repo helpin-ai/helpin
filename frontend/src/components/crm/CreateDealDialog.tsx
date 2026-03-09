@@ -91,7 +91,7 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
             <Select value={contactId} onValueChange={setContactId}>
               <SelectTrigger><SelectValue placeholder="Select contact" /></SelectTrigger>
               <SelectContent>
-                {contacts?.map((c) => (
+                {contacts?.data?.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.first_name} {c.last_name}{c.email ? ` (${c.email})` : ''}
                   </SelectItem>
