@@ -324,6 +324,25 @@ export function useSaveDocsContent(wsId: string) {
   })
 }
 
+export function useSaveDocsMarkdown(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, markdown }: { docId: string; markdown: string }) =>
+      unwrap(await docsService.saveMarkdownContent(wsId, docId, markdown)),
+    onSuccess: (savedContent, { docId }) => {
+      qc.setQueryData(queryKeys.docs.content(wsId, docId), savedContent)
+      qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId), exact: true })
+      qc.invalidateQueries({
+        predicate: (query) => {
+          const k = query.queryKey
+          return k[0] === 'docs' && k[1] === wsId && k[2] === 'documents'
+            && (k.length === 3 || (k.length === 4 && typeof k[3] !== 'string'))
+        },
+      })
+    },
+  })
+}
+
 // ── Versions ────────────────────────────────────────────────────────────────
 
 export function useDocsVersions(wsId: string, docId: string) {

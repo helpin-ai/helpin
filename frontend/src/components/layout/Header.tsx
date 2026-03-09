@@ -119,8 +119,8 @@ export function Header() {
   }, [location.pathname, currentWorkspace?.name]);
 
   return (
-    <header className="h-14 border-b border-border/70 bg-background/95 px-3 flex items-center gap-3">
-      <div className="flex min-w-0 items-center gap-2">
+    <header className="relative h-14 border-b border-border/70 bg-background/95 px-3 flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-2 z-10">
         <SidebarTrigger className="-ml-1" />
         {breadcrumbs.length > 0 && (
           <nav
@@ -154,11 +154,11 @@ export function Header() {
         )}
       </div>
 
-      <div className="hidden lg:flex flex-1 max-w-xl items-center">
+      <div className="hidden lg:flex absolute inset-0 justify-center items-center pointer-events-none">
         <button
           type="button"
           onClick={() => setSearchOpen(true)}
-          className="relative flex h-8 w-3/4 items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground cursor-pointer"
+          className="pointer-events-auto relative flex h-8 w-full max-w-xl items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground cursor-pointer"
         >
           <Search className="h-4 w-4 shrink-0" />
           <span className="truncate">Search {currentWorkspace?.name ?? "workspace"}...</span>

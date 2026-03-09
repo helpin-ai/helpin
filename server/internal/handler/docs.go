@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -351,6 +352,36 @@ func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check for periodic auto-snapshot (non-blocking).
+	go h.versionSvc.MaybeAutoSnapshot(r.Context(), docID, userID)
+
+	writeJSON(w, http.StatusOK, content)
+}
+
+// SaveMarkdownContent accepts raw Markdown from AI agents or external tools and
+// stores it as a JSON envelope that the frontend auto-converts on first load.
+func (h *DocsHandler) SaveMarkdownContent(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	docID := chi.URLParam(r, "docId")
+	var req model.SaveDocsMarkdownRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Markdown == "" {
+		writeError(w, http.StatusBadRequest, "markdown field is required")
+		return
+	}
+
+	// Wrap markdown in a JSON envelope the frontend Tiptap editor will detect and convert.
+	envelope := map[string]string{"_markdown_source": req.Markdown}
+	raw, _ := json.Marshal(envelope)
+
+	content, err := h.contentSvc.Save(r.Context(), docID, raw)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	go h.versionSvc.MaybeAutoSnapshot(r.Context(), docID, userID)
 
 	writeJSON(w, http.StatusOK, content)

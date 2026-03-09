@@ -3,24 +3,46 @@ import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
+import { Markdown } from 'tiptap-markdown'
 import {
   Bold,
+  Check,
+  ChevronDown,
   Code2,
+  Copy,
+  FileDown,
+  FileUp,
   Heading2,
   ImagePlus,
   Italic,
   Link2,
   List,
   ListOrdered,
+  Loader2,
   Quote,
   Strikethrough,
-  Check,
-  Loader2,
+  X,
 } from 'lucide-react'
 import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
 import { toast } from 'sonner'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 
@@ -254,6 +276,65 @@ function FloatingToolbar({ editor, uploadConfig, onInsertImage }: {
   )
 }
 
+// ── Markdown menu ──────────────────────────────────────────────────────────
+
+function MarkdownMenu({
+  onCopyMarkdown,
+  onImportMarkdown,
+  onDownloadMarkdown,
+  onUploadMarkdownFile,
+  onToggleSource,
+  sourceView,
+}: {
+  onCopyMarkdown: () => void
+  onImportMarkdown: () => void
+  onDownloadMarkdown: () => void
+  onUploadMarkdownFile: () => void
+  onToggleSource: () => void
+  sourceView: boolean
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          MD
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem onClick={onCopyMarkdown}>
+          <Copy className="h-3.5 w-3.5 mr-2" />
+          Copy as Markdown
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onDownloadMarkdown}>
+          <FileDown className="h-3.5 w-3.5 mr-2" />
+          Download as .md
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onImportMarkdown}>
+          <FileUp className="h-3.5 w-3.5 mr-2" />
+          Import from text
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onUploadMarkdownFile}>
+          <FileUp className="h-3.5 w-3.5 mr-2" />
+          Upload .md file
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onToggleSource}>
+          <Code2 className="h-3.5 w-3.5 mr-2" />
+          {sourceView ? 'Back to Rich Editor' : 'Markdown Source'}
+          <span className="ml-auto text-[10px] text-muted-foreground">
+            {navigator.platform.includes('Mac') ? '⌘⇧M' : 'Ctrl+⇧+M'}
+          </span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 // ── Main editor ─────────────────────────────────────────────────────────────
 
 interface DocsEditorProps {
@@ -281,6 +362,12 @@ export function DocsEditor({
   const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const savingRef = useRef(false)
   const pendingContentRef = useRef<JSONContent | null>(null)
+
+  // Markdown feature state
+  const [sourceView, setSourceView] = useState(false)
+  const [sourceMarkdown, setSourceMarkdown] = useState('')
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [importText, setImportText] = useState('')
 
   const doSave = useCallback(
     async (json: JSONContent) => {
@@ -391,6 +478,13 @@ export function DocsEditor({
         HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
       }),
       ResizableImageExtension,
+      Markdown.configure({
+        html: true,
+        tightLists: true,
+        bulletListMarker: '-',
+        transformPastedText: true,
+        transformCopiedText: false, // Don't force clipboard to markdown — we have explicit "Copy as Markdown"
+      }),
     ],
     content: initialContent ?? { type: 'doc', content: [{ type: 'paragraph' }] },
     editable: !readOnly,
@@ -468,12 +562,116 @@ export function DocsEditor({
     input.click()
   }, [editor, handleImageUpload])
 
+  // ── Markdown actions ───────────────────────────────────────────────────────
+
+  const getMarkdown = useCallback((): string => {
+    if (!editor) return ''
+    return editor.storage.markdown.getMarkdown()
+  }, [editor])
+
+  const copyAsMarkdown = useCallback(() => {
+    const md = getMarkdown()
+    navigator.clipboard.writeText(md).then(
+      () => toast.success('Copied as Markdown'),
+      () => toast.error('Failed to copy'),
+    )
+  }, [getMarkdown])
+
+  const handleImportMarkdown = useCallback(() => {
+    if (!editor || !importText.trim()) return
+    editor.commands.setContent(importText.trim())
+    scheduleSave(editor.getJSON())
+    setImportDialogOpen(false)
+    setImportText('')
+    toast.success('Markdown imported')
+  }, [editor, importText, scheduleSave])
+
+  const toggleSourceView = useCallback(() => {
+    if (!editor) return
+    if (!sourceView) {
+      // Entering source view — snapshot current markdown
+      setSourceMarkdown(getMarkdown())
+      setSourceView(true)
+    } else {
+      // Leaving source view — apply markdown changes back to editor
+      editor.commands.setContent(sourceMarkdown)
+      scheduleSave(editor.getJSON())
+      setSourceView(false)
+    }
+  }, [editor, sourceView, sourceMarkdown, getMarkdown, scheduleSave])
+
+  const discardSourceView = useCallback(() => {
+    setSourceView(false)
+  }, [])
+
+  // ── .md file download ──────────────────────────────────────────────────────
+
+  const downloadAsMarkdown = useCallback(() => {
+    const md = getMarkdown()
+    const filename = `${(title || 'document').replace(/[^a-z0-9_-]/gi, '_').toLowerCase()}.md`
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [getMarkdown, title])
+
+  // ── .md file upload ────────────────────────────────────────────────────────
+
+  const uploadMarkdownFile = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.md,.markdown,text/markdown'
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (!file || !editor) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const md = reader.result as string
+        editor.commands.setContent(md)
+        scheduleSave(editor.getJSON())
+        toast.success(`Imported "${file.name}"`)
+      }
+      reader.onerror = () => toast.error('Failed to read file')
+      reader.readAsText(file)
+    }
+    input.click()
+  }, [editor, scheduleSave])
+
+  // ── Keyboard shortcut: Ctrl+Shift+M → toggle source view ──────────────────
+
+  useEffect(() => {
+    if (readOnly) return
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'M') {
+        e.preventDefault()
+        toggleSourceView()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [readOnly, toggleSourceView])
+
+  // ── Detect _markdown_source from backend AI import ─────────────────────────
+
+  useEffect(() => {
+    if (!editor || !initialContent) return
+    const raw = initialContent as Record<string, unknown>
+    if (typeof raw._markdown_source === 'string') {
+      // Backend stored raw markdown — parse it via tiptap-markdown and auto-save as JSON
+      editor.commands.setContent(raw._markdown_source as string)
+      scheduleSave(editor.getJSON())
+    }
+  }, [editor, initialContent, scheduleSave])
+
   if (!editor) return null
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Floating toolbar — appears on text selection */}
-      {!readOnly && (
+      {!readOnly && !sourceView && (
         <FloatingToolbar
           editor={editor}
           uploadConfig={uploadConfig}
@@ -483,11 +681,34 @@ export function DocsEditor({
 
       {/* Editor content with title */}
       <div className="relative flex-1 overflow-y-auto">
-        {/* Save indicator — top-right floating */}
-        {!readOnly && (
+        {/* Save indicator + Markdown menu — top-right floating */}
+        {!readOnly ? (
           <div className="sticky top-2 z-10 flex justify-end px-4 pointer-events-none">
-            <div className="pointer-events-auto rounded-md bg-background/80 backdrop-blur-sm px-2 py-0.5 shadow-sm border border-border/40">
+            <div className="pointer-events-auto flex items-center gap-1.5 rounded-md bg-background/80 backdrop-blur-sm px-2 py-0.5 shadow-sm border border-border/40">
               <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
+              <MarkdownMenu
+                onCopyMarkdown={copyAsMarkdown}
+                onImportMarkdown={() => setImportDialogOpen(true)}
+                onDownloadMarkdown={downloadAsMarkdown}
+                onUploadMarkdownFile={uploadMarkdownFile}
+                onToggleSource={toggleSourceView}
+                sourceView={sourceView}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="sticky top-2 z-10 flex justify-end px-4 pointer-events-none">
+            <div className="pointer-events-auto">
+              <QuickTooltip label="Copy as Markdown" side="left">
+                <button
+                  type="button"
+                  onClick={copyAsMarkdown}
+                  className="inline-flex items-center gap-1 rounded-md bg-background/80 backdrop-blur-sm px-2 py-1 text-[11px] text-muted-foreground shadow-sm border border-border/40 transition-colors hover:text-foreground"
+                >
+                  <Copy className="h-3 w-3" />
+                  MD
+                </button>
+              </QuickTooltip>
             </div>
           </div>
         )}
@@ -509,9 +730,74 @@ export function DocsEditor({
             </div>
           )}
 
-          <EditorContent editor={editor} />
+          {/* Rich editor (default) or Markdown source view */}
+          {sourceView ? (
+            <div className="px-6 py-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Markdown Source
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs"
+                    onClick={discardSourceView}
+                  >
+                    <X className="h-3 w-3" />
+                    Discard
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 gap-1.5 text-xs"
+                    onClick={toggleSourceView}
+                  >
+                    <Check className="h-3 w-3" />
+                    Apply
+                  </Button>
+                </div>
+              </div>
+              <textarea
+                value={sourceMarkdown}
+                onChange={(e) => setSourceMarkdown(e.target.value)}
+                className="w-full min-h-[400px] rounded-lg border border-border/60 bg-muted/30 p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+                placeholder="Markdown content..."
+                spellCheck={false}
+              />
+            </div>
+          ) : (
+            <EditorContent editor={editor} />
+          )}
         </div>
       </div>
+
+      {/* Import Markdown dialog */}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Import Markdown</DialogTitle>
+            <DialogDescription>
+              Paste Markdown content below. It will replace the current document content.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            className="w-full min-h-[250px] rounded-lg border border-border/60 bg-muted/30 p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-y"
+            placeholder="# Paste your Markdown here..."
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setImportDialogOpen(false); setImportText('') }}>
+              Cancel
+            </Button>
+            <Button onClick={handleImportMarkdown} disabled={!importText.trim()}>
+              <FileDown className="h-3.5 w-3.5 mr-1.5" />
+              Import
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

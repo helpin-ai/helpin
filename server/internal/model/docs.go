@@ -451,6 +451,12 @@ type SaveDocsContentRequest struct {
 	Content json.RawMessage `json:"content"`
 }
 
+// SaveDocsMarkdownRequest is the payload for saving document content from Markdown.
+// The backend wraps the markdown in a JSON envelope so the frontend can auto-convert.
+type SaveDocsMarkdownRequest struct {
+	Markdown string `json:"markdown"`
+}
+
 // CreateDocsVersionRequest is the payload for manually creating a version snapshot.
 type CreateDocsVersionRequest struct {
 	SnapshotLabel *string `json:"snapshot_label"`

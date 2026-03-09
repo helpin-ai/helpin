@@ -496,6 +496,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Content — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content", h.Docs.SaveContent)
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content/markdown", h.Docs.SaveMarkdownContent)
 
 				// Versions — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/versions", h.Docs.ListVersions)

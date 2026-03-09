@@ -89,6 +89,8 @@ export const docsService = {
     api.get<DocsContent>(`/docs/documents/${docId}/content${qs(wsId)}`),
   saveContent: (wsId: string, docId: string, payload: SaveDocsContentRequest) =>
     api.put<DocsContent>(`/docs/documents/${docId}/content${qs(wsId)}`, payload),
+  saveMarkdownContent: (wsId: string, docId: string, markdown: string) =>
+    api.put<DocsContent>(`/docs/documents/${docId}/content/markdown${qs(wsId)}`, { markdown }),
 
   // ── Versions ────────────────────────────────────────────────────────────
   listVersions: (wsId: string, docId: string) =>
