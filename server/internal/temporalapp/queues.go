@@ -32,9 +32,9 @@ func QueueForProfile(profile string) string {
 	switch profile {
 	case "engineer":
 		return QueueAgentEngineer
-	case "planner":
+	case "product_planner", "planner", "orchestrator":
 		return QueueAgentPlanner
-	case "reviewer_tester":
+	case "reviewer", "reviewer_tester":
 		return QueueAgentReviewer
 	case "support":
 		return QueueAgentSupport

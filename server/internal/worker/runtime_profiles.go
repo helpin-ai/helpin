@@ -2,64 +2,61 @@ package worker
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 var runtimeProfiles = []model.RuntimeProfile{
 	{
-		Name:             "engineer",
-		RuntimeKind:      "native_claude",
-		Description:      "Code implementation with repository, git, and validation tools.",
-		AllowedTools:     []string{"read_file", "write_file", "list_directory", "search_files", "run_command", "create_branch", "commit_and_push", "open_pr", "add_story_comment", "update_story_state", "list_story_checklist"},
-		AllowedCommands:  []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "mkdir", "cp", "mv", "pwd", "python", "pip", "cargo", "rustc"},
-		ApprovalRequired: false,
-		RequiresRepo:     true,
+		Name:               model.AgentClassEngineer,
+		RuntimeKind:        "native_claude",
+		Description:        "Story-only code implementation with repository, git, and validation tools.",
+		AllowedTools:       []string{"read_file", "write_file", "list_directory", "search_files", "run_command", "create_branch", "commit_and_push", "open_pr", "add_story_comment", "update_story_state", "list_story_checklist"},
+		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "mkdir", "cp", "mv", "pwd", "python", "pip", "cargo", "rustc"},
+		AllowedTargetTypes: []string{"story"},
+		ApprovalRequired:   false,
+		RequiresRepo:       true,
 	},
 	{
-		Name:             "planner",
-		RuntimeKind:      "native_claude",
-		Description:      "Read-heavy planning and PRD generation with repository context but no mutation tools.",
-		AllowedTools:     []string{"read_file", "list_directory", "search_files", "run_command", "add_story_comment", "list_story_checklist"},
-		AllowedCommands:  []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo"},
-		ApprovalRequired: false,
-		RequiresRepo:     false,
+		Name:               model.AgentClassProductPlanner,
+		RuntimeKind:        "native_claude",
+		Description:        "Epic-only product spec and story planning with repository-aware read access, optional web research, and no mutation tools.",
+		AllowedTools:       []string{"read_file", "list_directory", "search_files", "run_command", "web_search", "add_story_comment", "list_story_checklist"},
+		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo"},
+		AllowedTargetTypes: []string{"epic"},
+		ApprovalRequired:   true,
+		RequiresRepo:       false,
 	},
 	{
-		Name:             "reviewer_tester",
-		RuntimeKind:      "native_claude",
-		Description:      "Read-heavy validation and test execution with no repository mutation tools.",
-		AllowedTools:     []string{"read_file", "list_directory", "search_files", "run_command", "add_story_comment", "list_story_checklist"},
-		AllowedCommands:  []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo"},
-		ApprovalRequired: false,
-		RequiresRepo:     true,
+		Name:               model.AgentClassReviewer,
+		RuntimeKind:        "native_claude",
+		Description:        "Story-only validation and test execution with no repository mutation tools.",
+		AllowedTools:       []string{"read_file", "list_directory", "search_files", "run_command", "add_story_comment", "list_story_checklist"},
+		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo"},
+		AllowedTargetTypes: []string{"story"},
+		ApprovalRequired:   false,
+		RequiresRepo:       true,
 	},
 	{
-		Name:             "support",
-		RuntimeKind:      "native_claude",
-		Description:      "Ticket triage and draft replies with human approval before customer-visible sends.",
-		AllowedTools:     []string{"list_ticket_messages", "draft_support_reply", "update_ticket_status"},
-		AllowedCommands:  []string{},
-		ApprovalRequired: true,
-		RequiresRepo:     false,
+		Name:               model.AgentClassSupport,
+		RuntimeKind:        "native_claude",
+		Description:        "Support-ticket triage and draft replies with human approval before customer-visible sends.",
+		AllowedTools:       []string{"list_ticket_messages", "draft_support_reply", "update_ticket_status"},
+		AllowedCommands:    []string{},
+		AllowedTargetTypes: []string{"support_ticket"},
+		ApprovalRequired:   true,
+		RequiresRepo:       false,
 	},
 	{
-		Name:             "orchestrator",
-		RuntimeKind:      "native_claude",
-		Description:      "Epic planning and decomposition that produces reviewable orchestration proposals.",
-		AllowedTools:     []string{},
-		AllowedCommands:  []string{},
-		ApprovalRequired: true,
-		RequiresRepo:     false,
-	},
-	{
-		Name:             "human_proxy",
-		RuntimeKind:      "native_claude",
-		Description:      "Non-executable placeholder used for explicit handoffs to human participants.",
-		AllowedTools:     []string{},
-		AllowedCommands:  []string{},
-		ApprovalRequired: false,
-		RequiresRepo:     false,
+		Name:               model.AgentClassHuman,
+		RuntimeKind:        "native_claude",
+		Description:        "Non-executable placeholder used for explicit assignment and handoffs to human participants.",
+		AllowedTools:       []string{},
+		AllowedCommands:    []string{},
+		AllowedTargetTypes: []string{},
+		ApprovalRequired:   false,
+		RequiresRepo:       false,
 	},
 }
 
@@ -72,12 +69,30 @@ func ListRuntimeProfiles() []model.RuntimeProfile {
 
 // GetRuntimeProfile returns the named runtime profile, defaulting to engineer.
 func GetRuntimeProfile(name string) model.RuntimeProfile {
+	name = NormalizeCapabilityProfile(name)
 	for _, profile := range runtimeProfiles {
 		if profile.Name == name {
 			return profile
 		}
 	}
 	return runtimeProfiles[0]
+}
+
+func NormalizeCapabilityProfile(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "engineer":
+		return model.AgentClassEngineer
+	case "planner", "orchestrator", model.AgentClassProductPlanner:
+		return model.AgentClassProductPlanner
+	case "reviewer", "reviewer_tester":
+		return model.AgentClassReviewer
+	case "support":
+		return model.AgentClassSupport
+	case "human", "human_proxy":
+		return model.AgentClassHuman
+	default:
+		return strings.TrimSpace(name)
+	}
 }
 
 func allowedToolSet(profile model.RuntimeProfile) map[string]bool {

@@ -87,6 +87,22 @@ func (r *SupportTicketRepository) Update(ctx context.Context, ticket *model.Supp
 	return nil
 }
 
+// ListByLinkedStoryIDs returns tickets linked to any of the provided stories.
+func (r *SupportTicketRepository) ListByLinkedStoryIDs(ctx context.Context, workspaceID string, storyIDs []string) ([]model.SupportTicket, error) {
+	if len(storyIDs) == 0 {
+		return []model.SupportTicket{}, nil
+	}
+
+	var tickets []model.SupportTicket
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND linked_story_id IN ?", workspaceID, storyIDs).
+		Order("updated_at DESC").
+		Find(&tickets).Error; err != nil {
+		return nil, fmt.Errorf("list tickets by linked stories: %w", err)
+	}
+	return tickets, nil
+}
+
 // SupportMessageRepository handles DB operations for support messages.
 type SupportMessageRepository struct {
 	db *gorm.DB

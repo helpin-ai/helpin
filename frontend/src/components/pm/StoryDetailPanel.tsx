@@ -78,6 +78,7 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { CommentEditor } from '@/components/pm/CommentEditor';
+import { LinkedDeals } from '@/components/pm/LinkedDeals';
 import { MentionText } from '@/components/pm/MentionText';
 import type {
   ActivityLogEntry,
@@ -1115,6 +1116,9 @@ function StoryDetailPanelBody({
             </MetadataRow>
             )}
           </div>
+
+          {/* Linked Deals */}
+          <LinkedDeals objectType="story" objectId={storyDetail.story.id} workspaceId={workspaceId} />
         </aside>
       </div>
 

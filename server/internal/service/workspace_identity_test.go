@@ -265,6 +265,7 @@ func TestPMEpicServiceCreateSupportsWorkspaceMemberOwners(t *testing.T) {
 		epicRepo,
 		nil,
 		nil,
+		repository.NewGitRepositoryRepository(db),
 		workspaceRepo,
 		NewPMActivityService(activityRepo),
 		nil,

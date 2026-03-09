@@ -32,13 +32,13 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Award, Bell, Briefcase, Camera, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bell, Bot, Camera, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, Users, X, Zap, type LucideIcon } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'import' | 'helpcenter' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -112,6 +112,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     group: 'Project Settings',
   },
   {
+    id: 'ai',
+    label: 'AI',
+    description: 'Choose the workspace planning methodology used for epic PRD and story planning.',
+    icon: Bot,
+    group: 'Project Settings',
+  },
+  {
     id: 'import',
     label: 'Import / Export',
     description: 'Import data from Shortcut and other project management tools.',
@@ -172,7 +179,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const { data: access } = useWorkspaceAccess(wsId);
-  const { isAdmin, canManageSettings, canManageMembers, canManageTeams, canManageTeamMembers, canManageInvites, canAdminWorkflows, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
+  const { canManageSettings, canManageMembers, canManageTeams, canAdminWorkflows, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -295,6 +302,15 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           <ProjectDeliveryTab
             workspaceId={workspaceId}
             editable={canManageSettings}
+          />
+        );
+      case 'ai':
+        return (
+          <AITab
+            workspaceId={workspaceId}
+            config={settings.settings}
+            editable={canManageSettings}
+            onRefresh={load}
           />
         );
       case 'workflows':
@@ -1297,7 +1313,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [membersLoading, setMembersLoading] = useState(false);
+  const [, setMembersLoading] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const [deleteTeamConfirm, setDeleteTeamConfirm] = useState<string | null>(null);
@@ -2545,6 +2561,121 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
               </div>
               <Switch checked={autoCalc} onCheckedChange={setAutoCalc} disabled={!editable} />
             </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AITab({ workspaceId, config, editable, onRefresh }: {
+  workspaceId: string;
+  config: WorkspaceSettings['settings'];
+  editable: boolean;
+  onRefresh: () => void;
+}) {
+  const [planningMethodology, setPlanningMethodology] = useState(config.planning_methodology);
+  const [planningWebSearchEnabled, setPlanningWebSearchEnabled] = useState(config.planning_web_search_enabled);
+  const [planningWebSearchProvider, setPlanningWebSearchProvider] = useState(config.planning_web_search_provider);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setPlanningMethodology(config.planning_methodology);
+    setPlanningWebSearchEnabled(config.planning_web_search_enabled);
+    setPlanningWebSearchProvider(config.planning_web_search_provider);
+  }, [config]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await settingsService.updateSystem(workspaceId, {
+      planning_methodology: planningMethodology,
+      planning_web_search_enabled: planningWebSearchEnabled,
+      planning_web_search_provider: planningWebSearchProvider,
+    });
+    setSaving(false);
+    if (error) toast.error(error);
+    else { toast.success('AI settings updated'); onRefresh(); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">Planning Methodology</CardTitle>
+          <CardDescription>
+            This controls the hidden prompt pack used for epic `draft_spec` and `plan_stories` runs. It does not change story execution or support prompts yet.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label>Workspace Planning Mode</Label>
+            <Select
+              value={planningMethodology}
+              onValueChange={(value) => setPlanningMethodology(value as 'structured_v1' | 'basic_v1')}
+              disabled={!editable}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="structured_v1">Structured v1</SelectItem>
+                <SelectItem value="basic_v1">Basic v1</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              `Structured v1` uses a stronger internal planning methodology inspired by staged PM and architecture roles. `Basic v1` keeps planning simpler for fallback and comparison.
+            </p>
+          </div>
+
+          {editable && (
+            <div className="flex justify-end">
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Save Settings'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">External Research</CardTitle>
+          <CardDescription>
+            Product planners can use controlled web research during `draft_spec` to gather market context, standards, and external evidence. Sources are cited back into the saved PRD.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">Enable planning web research</Label>
+              <p className="text-xs text-muted-foreground">
+                This only affects `product_planner` during the PRD drafting stage. Story planning remains repo/spec-driven.
+              </p>
+            </div>
+            <Switch
+              checked={planningWebSearchEnabled}
+              onCheckedChange={setPlanningWebSearchEnabled}
+              disabled={!editable}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Research Provider</Label>
+            <Select
+              value={planningWebSearchProvider}
+              onValueChange={(value) => setPlanningWebSearchProvider(value as 'brave')}
+              disabled={!editable || !planningWebSearchEnabled}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="brave">Brave Search</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Brave is the first supported provider. The API server will reject enabling research if Brave credentials are not configured.
+            </p>
           </div>
 
           {editable && (

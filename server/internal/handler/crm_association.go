@@ -62,6 +62,16 @@ func (h *CRMAssociationHandler) ListDealAssociations(w http.ResponseWriter, r *h
 	h.listByObject(w, r, model.CRMObjectDeal)
 }
 
+// ListEpicAssociations handles GET /api/pm/epics/{id}/associations.
+func (h *CRMAssociationHandler) ListEpicAssociations(w http.ResponseWriter, r *http.Request) {
+	h.listByObject(w, r, model.CRMObjectEpic)
+}
+
+// ListStoryAssociations handles GET /api/pm/stories/{id}/associations.
+func (h *CRMAssociationHandler) ListStoryAssociations(w http.ResponseWriter, r *http.Request) {
+	h.listByObject(w, r, model.CRMObjectStory)
+}
+
 func (h *CRMAssociationHandler) listByObject(w http.ResponseWriter, r *http.Request, objectType string) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
@@ -70,13 +80,13 @@ func (h *CRMAssociationHandler) listByObject(w http.ResponseWriter, r *http.Requ
 	}
 	objectID := chi.URLParam(r, "id")
 
-	assocs, err := h.assocService.ListByObject(r.Context(), workspaceID, objectType, objectID)
+	assocs, err := h.assocService.ListByObjectEnriched(r.Context(), workspaceID, objectType, objectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if assocs == nil {
-		assocs = []model.CRMAssociation{}
+		assocs = []model.CRMAssociationEnriched{}
 	}
 	writeJSON(w, http.StatusOK, assocs)
 }

@@ -125,6 +125,11 @@ func (r *SettingsRepository) getSettings(ctx context.Context, workspaceID string
 	return s, nil
 }
 
+// GetWorkspaceSettings returns the workspace-level settings row without loading the full config graph.
+func (r *SettingsRepository) GetWorkspaceSettings(ctx context.Context, workspaceID string) (*model.WorkspaceSettings, error) {
+	return r.getSettings(ctx, workspaceID)
+}
+
 func (r *SettingsRepository) listTeams(ctx context.Context, workspaceID string) ([]model.WorkspaceTeam, error) {
 	var teams []model.WorkspaceTeam
 	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("name").Find(&teams).Error
@@ -240,7 +245,9 @@ func (r *SettingsRepository) listBonusTiers(ctx context.Context, workspaceID str
 // Initialize creates default workspace settings.
 func (r *SettingsRepository) Initialize(ctx context.Context, workspaceID string) (*model.WorkspaceSettings, error) {
 	s := &model.WorkspaceSettings{
-		WorkspaceID: workspaceID,
+		WorkspaceID:               workspaceID,
+		PlanningMethodology:       model.PlanningMethodologyStructuredV1,
+		PlanningWebSearchProvider: model.PlanningWebSearchProviderBrave,
 	}
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
@@ -1037,6 +1044,15 @@ func (r *SettingsRepository) UpdateSystem(ctx context.Context, workspaceID strin
 	}
 	if req.TeamWeight != nil {
 		updates["team_weight"] = *req.TeamWeight
+	}
+	if req.PlanningMethodology != nil {
+		updates["planning_methodology"] = *req.PlanningMethodology
+	}
+	if req.PlanningWebSearchEnabled != nil {
+		updates["planning_web_search_enabled"] = *req.PlanningWebSearchEnabled
+	}
+	if req.PlanningWebSearchProvider != nil {
+		updates["planning_web_search_provider"] = *req.PlanningWebSearchProvider
 	}
 
 	if err := r.db.WithContext(ctx).Model(&model.WorkspaceSettings{}).Where("workspace_id = ?", workspaceID).Updates(updates).Error; err != nil {

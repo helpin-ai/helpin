@@ -57,6 +57,7 @@ func main() {
 	agentRepo := repository.NewAgentRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	storyRepo := repository.NewPMStoryRepository(db)
+	storyLinkRepo := repository.NewPMStoryLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 	ticketRepo := repository.NewSupportTicketRepository(db)
 	commentRepo := repository.NewPMCommentRepository(db)
@@ -67,8 +68,13 @@ func main() {
 	gitLinkRepo := repository.NewStoryGitLinkRepository(db)
 	deliveryRepo := repository.NewStoryDeliveryTargetRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
+	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
+	docsDocumentRepo := repository.NewDocsDocumentRepository(db)
+	docsContentRepo := repository.NewDocsContentRepository(db)
+	docsVersionRepo := repository.NewDocsVersionRepository(db)
+	docsLinkRepo := repository.NewDocsLinkRepository(db)
 
-	runtimes := workerpkg.NewDefaultRuntimeRegistry(cfg.AnthropicAPIKey, runRepo, artifactRepo)
+	runtimes := workerpkg.NewDefaultRuntimeRegistry(cfg.AnthropicAPIKey, cfg.BraveSearchAPIKey, runRepo, artifactRepo)
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
 		log.Fatalf("failed to initialize github app client: %v", err)
@@ -78,6 +84,7 @@ func main() {
 		agentRepo,
 		artifactRepo,
 		storyRepo,
+		storyLinkRepo,
 		epicRepo,
 		ticketRepo,
 		commentRepo,
@@ -88,6 +95,11 @@ func main() {
 		gitLinkRepo,
 		deliveryRepo,
 		settingsRepo,
+		docsSpaceRepo,
+		docsDocumentRepo,
+		docsContentRepo,
+		docsVersionRepo,
+		docsLinkRepo,
 		runtimes,
 		githubAppClient,
 	)

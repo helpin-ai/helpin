@@ -197,3 +197,35 @@ func (r *CRMDealRepository) Delete(ctx context.Context, id string) error {
 	}
 	return nil
 }
+
+// SeedDefaultPipeline creates a default "Sales Pipeline" with HubSpot-standard stages
+// if the workspace has no pipelines yet.
+func (r *CRMDealRepository) SeedDefaultPipeline(ctx context.Context, workspaceID string) error {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.CRMPipeline{}).Where("workspace_id = ?", workspaceID).Count(&count).Error; err != nil {
+		return fmt.Errorf("count pipelines: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	pipeline := &model.CRMPipeline{
+		WorkspaceID: workspaceID,
+		Name:        "Sales Pipeline",
+		IsDefault:   true,
+		Stages: []model.CRMPipelineStage{
+			{Name: "Appointment Scheduled", StageType: "open", Position: 0, Probability: 20},
+			{Name: "Qualified to Buy", StageType: "open", Position: 1, Probability: 40},
+			{Name: "Presentation Scheduled", StageType: "open", Position: 2, Probability: 60},
+			{Name: "Decision Maker Bought-In", StageType: "open", Position: 3, Probability: 80},
+			{Name: "Contract Sent", StageType: "open", Position: 4, Probability: 90},
+			{Name: "Closed Won", StageType: "won", Position: 5, Probability: 100},
+			{Name: "Closed Lost", StageType: "lost", Position: 6, Probability: 0},
+		},
+	}
+
+	if err := r.db.WithContext(ctx).Create(pipeline).Error; err != nil {
+		return fmt.Errorf("seed default pipeline: %w", err)
+	}
+	return nil
+}

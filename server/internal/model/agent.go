@@ -5,12 +5,21 @@ import (
 	"time"
 )
 
+const (
+	AgentClassProductPlanner = "product_planner"
+	AgentClassEngineer       = "engineer"
+	AgentClassReviewer       = "reviewer"
+	AgentClassSupport        = "support"
+	AgentClassHuman          = "human"
+)
+
 // Agent represents a human or LLM agent in a workspace.
 type Agent struct {
 	ID                  string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID         string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	Name                string          `json:"name" gorm:"not null"`
 	AgentKind           string          `json:"agent_kind" gorm:"not null"`
+	AgentClass          string          `json:"agent_class" gorm:"not null;default:'engineer'"`
 	Role                string          `json:"role"`
 	Status              string          `json:"status" gorm:"not null;default:'idle'"`
 	BackingUserID       *string         `json:"backing_user_id" gorm:"column:user_id;type:uuid"`
@@ -20,6 +29,7 @@ type Agent struct {
 	TriggerMode         string          `json:"trigger_mode" gorm:"not null;default:'manual'"`
 	Model               *string         `json:"model"`
 	SystemPrompt        *string         `json:"system_prompt"`
+	PlanningNotes       *string         `json:"planning_notes"`
 	Tools               json.RawMessage `json:"tools" gorm:"type:jsonb;not null;default:'[]'"`
 	MonthlyTokenBudget  *int            `json:"monthly_token_budget"`
 	TokensUsedThisMonth int             `json:"tokens_used_this_month" gorm:"not null;default:0"`
@@ -90,6 +100,7 @@ type CreateAgentRequest struct {
 	WorkspaceID        string          `json:"workspace_id"`
 	Name               string          `json:"name"`
 	AgentKind          string          `json:"agent_kind"`
+	AgentClass         *string         `json:"agent_class"`
 	Role               string          `json:"role"`
 	BackingUserID      *string         `json:"backing_user_id"`
 	RuntimeKind        *string         `json:"runtime_kind"`
@@ -98,6 +109,7 @@ type CreateAgentRequest struct {
 	TriggerMode        *string         `json:"trigger_mode"`
 	Model              *string         `json:"model"`
 	SystemPrompt       *string         `json:"system_prompt"`
+	PlanningNotes      *string         `json:"planning_notes"`
 	Tools              json.RawMessage `json:"tools"`
 	MonthlyTokenBudget *int            `json:"monthly_token_budget"`
 }
@@ -105,6 +117,7 @@ type CreateAgentRequest struct {
 // UpdateAgentRequest is the payload for updating an agent.
 type UpdateAgentRequest struct {
 	Name               *string         `json:"name"`
+	AgentClass         *string         `json:"agent_class"`
 	Role               *string         `json:"role"`
 	Status             *string         `json:"status"`
 	BackingUserID      *string         `json:"backing_user_id"`
@@ -114,6 +127,7 @@ type UpdateAgentRequest struct {
 	TriggerMode        *string         `json:"trigger_mode"`
 	Model              *string         `json:"model"`
 	SystemPrompt       *string         `json:"system_prompt"`
+	PlanningNotes      *string         `json:"planning_notes"`
 	Tools              json.RawMessage `json:"tools"`
 	MonthlyTokenBudget *int            `json:"monthly_token_budget"`
 	ActiveStoryID      *string         `json:"active_story_id"`
@@ -140,11 +154,12 @@ type HandoffAgentRunRequest struct {
 
 // RuntimeProfile describes the policy attached to a capability profile.
 type RuntimeProfile struct {
-	Name             string   `json:"name"`
-	RuntimeKind      string   `json:"runtime_kind"`
-	Description      string   `json:"description"`
-	AllowedTools     []string `json:"allowed_tools"`
-	AllowedCommands  []string `json:"allowed_commands"`
-	ApprovalRequired bool     `json:"approval_required"`
-	RequiresRepo     bool     `json:"requires_repo"`
+	Name               string   `json:"name"`
+	RuntimeKind        string   `json:"runtime_kind"`
+	Description        string   `json:"description"`
+	AllowedTools       []string `json:"allowed_tools"`
+	AllowedCommands    []string `json:"allowed_commands"`
+	AllowedTargetTypes []string `json:"allowed_target_types"`
+	ApprovalRequired   bool     `json:"approval_required"`
+	RequiresRepo       bool     `json:"requires_repo"`
 }

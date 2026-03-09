@@ -17,6 +17,7 @@ import (
 type SupportService struct {
 	ticketRepo  *repository.SupportTicketRepository
 	messageRepo *repository.SupportMessageRepository
+	agentRepo   *repository.AgentRepository
 	widgetRepo  *repository.WidgetInstallationRepository
 	sessionRepo *repository.WidgetSessionRepository
 	activitySvc *PMActivityService
@@ -27,6 +28,7 @@ type SupportService struct {
 func NewSupportService(
 	ticketRepo *repository.SupportTicketRepository,
 	messageRepo *repository.SupportMessageRepository,
+	agentRepo *repository.AgentRepository,
 	widgetRepo *repository.WidgetInstallationRepository,
 	sessionRepo *repository.WidgetSessionRepository,
 	activitySvc *PMActivityService,
@@ -35,6 +37,7 @@ func NewSupportService(
 	return &SupportService{
 		ticketRepo:  ticketRepo,
 		messageRepo: messageRepo,
+		agentRepo:   agentRepo,
 		widgetRepo:  widgetRepo,
 		sessionRepo: sessionRepo,
 		activitySvc: activitySvc,
@@ -212,6 +215,16 @@ func (s *SupportService) AssignAgent(ctx context.Context, workspaceID, ticketID,
 	}
 	if ticket == nil {
 		return fmt.Errorf("ticket not found")
+	}
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return err
+	}
+	if agent == nil {
+		return fmt.Errorf("agent not found")
+	}
+	if err := validateAgentTarget(agent, "support_ticket"); err != nil {
+		return err
 	}
 
 	ticket.AssignedAgentID = &agentID

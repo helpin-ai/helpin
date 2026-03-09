@@ -1,24 +1,35 @@
-# Helpin: Agents And Automation
+# Teampulse: Agents And Automation
 
 ## Overview
 
-Helpin treats agents as workflow participants inside the PM and support systems. Helpin owns:
+Teampulse treats agents as opinionated workflow participants inside PM and support.
+
+Teampulse owns:
 
 - assignments
 - run lifecycle
 - approvals
 - handoffs
 - artifacts
+- epic planning stages
 - story delivery targets
 - branch and PR history
 
-Execution happens through shared Temporal worker pools. Temporal owns retries, cancellation, approval waits, and handoff signaling. Shared runners own the actual tool loop and repo workspace.
+Execution happens through shared Temporal worker pools. Temporal owns retries, cancellation, approval waits, and handoff signaling. Shared runners own the tool loop and repo workspace.
+
+The product model is intentionally narrow:
+
+- a small fixed set of user-visible agent classes
+- strict target mapping by class
+- one workspace-level planning methodology
+- hidden planning prompt packs for epic planning
 
 ## Core Model
 
 | Concept | Meaning |
 |---|---|
 | `agent` | A workspace-scoped human or LLM participant |
+| `agent_class` | The user-visible class that defines intended target surface |
 | `agent_run` | A single execution against one target |
 | `target_type` / `target_id` | Canonical run target: story, epic, or support ticket |
 | `story_delivery_target` | The current repo lane for a story |
@@ -26,35 +37,56 @@ Execution happens through shared Temporal worker pools. Temporal owns retries, c
 | `artifact` | A stored run output such as logs, diffs, or PR metadata |
 | `handoff` | Explicit transfer from one agent to another agent or a human |
 
-## Runtime Model
+## Agent Classes
 
-### Orchestration
+Current user-visible agent classes:
 
-- One Temporal workflow per `agent_run`
-- Shared task queues by capability:
-  - `agent-engineer`
-  - `agent-planner`
-  - `agent-reviewer`
-  - `agent-support`
-  - `automation-default`
-- Approval and handoff happen through workflow signals
+- `product_planner`
+- `engineer`
+- `reviewer`
+- `support`
+- `human`
 
-### Execution
+Intent by class:
 
-Each run gets:
+- `product_planner`: epic-only PRD/spec/story planning
+- `engineer`: story-only implementation and delivery
+- `reviewer`: story-only review, testing, and readiness checks
+- `support`: support-ticket triage and draft replies
+- `human`: non-runnable assignment and handoff target only
 
-- a fresh temp workspace
-- a repo clone when the profile requires one
-- a capability-profile tool policy
-- heartbeat updates written back to `agent_runs`
+Important:
 
-The current implementation uses shared runners, not one container or pod per run.
-The legacy `agent_jobs` poller has been removed. Temporal workflows are the only supported execution path.
+- `planner` and `orchestrator` are legacy aliases that normalize to `product_planner`
+- `reviewer_tester` is a legacy alias that normalizes to `reviewer`
+- `human_proxy` is a legacy alias that normalizes to `human`
+
+The UI should only expose the canonical classes above.
+
+## Strict Target Mapping
+
+Teampulse now enforces agent-to-target compatibility server-side and client-side.
+
+Allowed mappings:
+
+- `product_planner` -> `epic`
+- `engineer` -> `story`
+- `reviewer` -> `story`
+- `support` -> `support_ticket`
+- `human` -> not runnable
+
+This means:
+
+- a support agent cannot be assigned to a story
+- an engineer cannot run on an epic
+- a product planner cannot run directly on a support ticket
 
 ## Agent Kinds
 
 - `llm`: executable agents
 - `human`: assignment and handoff only, never executed
+
+`human` class requires `agent_kind = human`. All other classes require `agent_kind = llm`.
 
 ## Runtime Kinds
 
@@ -72,25 +104,25 @@ Current backend support:
 - `openclaw`: reserved, not implemented
 - `zeroclaw`: reserved, not implemented
 
-## Capability Profiles
+## Internal Runtime Profiles
 
-Current profiles:
+Internally, each agent class maps 1:1 to a runtime profile with queueing and tool policy.
 
+Current canonical runtime profiles:
+
+- `product_planner`
 - `engineer`
-- `planner`
-- `reviewer_tester`
+- `reviewer`
 - `support`
-- `orchestrator`
-- `human_proxy`
+- `human`
 
 Profile intent:
 
+- `product_planner`: read-heavy planning, Docs-first epic planning, no repo mutation
 - `engineer`: repo mutation, commit, push, PR creation
-- `planner`: read-heavy planning and PRD generation, no repo mutation
-- `reviewer_tester`: read-heavy validation and test execution
-- `support`: ticket triage and draft replies with approval boundary
-- `orchestrator`: epic decomposition flow
-- `human_proxy`: explicit handoff target only
+- `reviewer`: read-heavy validation and test execution
+- `support`: support triage and draft replies with approval boundary
+- `human`: explicit handoff only
 
 ## Trigger Modes
 
@@ -100,15 +132,90 @@ Profile intent:
 
 Current behavior:
 
-- human agents never execute
-- story assignment supports `manual` and `auto_on_assignment`
-- epic orchestrator runs are manual today
-- `auto_on_assignment` only starts when the story has a valid delivery target if the profile requires a repo
-- support runs are still manual today
+- `human` agents never execute
+- `product_planner` runs are manual
+- `support` runs are manual
+- `engineer` and `reviewer` can use `manual`, `auto_on_assignment`, or `auto_on_event`
+- auto execution only starts when repo requirements are satisfied for the selected profile
+
+## Planning Methodology
+
+Epic planning uses a workspace-level planning methodology, configured in `Project Settings > AI`.
+
+Current options:
+
+- `structured_v1` recommended and default
+- `basic_v1` fallback/testing option
+
+Rules:
+
+- the setting applies to epic planning only in v1
+- the setting affects `draft_spec` and `plan_stories`
+- the methodology is stamped into epic planning run input and summary for auditability
+- workspace AI settings can also enable external web research for `draft_spec`
+- Brave Search is the first supported research provider
+
+### Structured methodology
+
+`structured_v1` is inspired by BMAD, OpenSpec, GitHub Spec Kit, and Taskmaster-style decomposition, but remains Teampulse-native.
+
+Internal behavior:
+
+- `draft_spec` uses an analyst + PM stance
+- `plan_stories` uses an architect + scrum-master stance
+- a built-in self-check runs inside the prompt contract before final output
+
+Important:
+
+- these are hidden prompt-pack behaviors, not user-visible agent personas
+- Teampulse does not expose a BMAD-style catalog of planner personalities
+
+### Planner notes vs system prompt
+
+For `product_planner`, free-form prompt drift is intentionally reduced.
+
+Practical behavior:
+
+- the workspace methodology is authoritative
+- `planning_notes` append planner-specific context or preferences
+- legacy `system_prompt` values, if present, are treated as secondary advanced notes
+- planning agents should not rely on arbitrary prompt overrides to change the workflow contract
+
+## Runtime Model
+
+### Orchestration
+
+- One Temporal workflow per `agent_run`
+- Shared task queues by capability:
+  - `agent-engineer`
+  - `agent-planner`
+  - `agent-reviewer`
+  - `agent-support`
+  - `automation-default`
+- Approval and handoff happen through workflow signals
+
+Queue routing:
+
+- `product_planner` -> `agent-planner`
+- `engineer` -> `agent-engineer`
+- `reviewer` -> `agent-reviewer`
+- `support` -> `agent-support`
+- everything else -> `automation-default`
+
+### Execution
+
+Each run gets:
+
+- a fresh temp workspace
+- a repo clone when the profile requires one
+- a capability-profile tool policy
+- heartbeat updates written back to `agent_runs`
+
+The current implementation uses shared runners, not one container or pod per run. The legacy `agent_jobs` poller has been removed. Temporal workflows are the only supported execution path.
 
 ## Story Delivery Model
 
-Stories now separate planning state from Git delivery state.
+Stories separate planning state from Git delivery state.
 
 ### Team defaults
 
@@ -139,7 +246,7 @@ tp-{display_id}-{slug}
 
 ## GitHub Integration Model
 
-Helpin uses GitHub App installations for repo mutation workflows.
+Teampulse uses GitHub App installations for repo mutation workflows.
 
 Current behavior:
 
@@ -155,10 +262,10 @@ Legacy PAT persistence remains only for migration compatibility and should not b
 
 For a working install flow, configure the GitHub App with:
 
-- `Homepage URL`: the frontend base URL, for example `http://65.109.173.49:5173`
-- `Setup URL`: the backend callback endpoint, for example `http://65.109.173.49:8080/api/git/github/callback`
-- `Callback URL`: the same backend callback endpoint is acceptable, but the install return path depends on `Setup URL`
-- `Webhook URL`: the backend webhook endpoint, for example `http://65.109.173.49:8080/api/git/webhook`
+- `Homepage URL`: the frontend base URL
+- `Setup URL`: the backend callback endpoint
+- `Callback URL`: the same backend callback endpoint is acceptable
+- `Webhook URL`: the backend webhook endpoint
 
 Recommended repository permissions:
 
@@ -166,16 +273,10 @@ Recommended repository permissions:
 - `Pull requests`: `Read and write`
 - `Metadata`: `Read-only`
 
-Current webhook subscriptions used by Helpin:
+Current webhook subscriptions used by Teampulse:
 
 - `Push`
 - `Pull request`
-
-Install flow notes:
-
-- Saving the GitHub App settings page does not redirect back to Helpin
-- The redirect back to Helpin only happens when the install is started from `Project Settings > Delivery`
-- The install completion path depends on the GitHub App `Setup URL`
 
 ## Deployment Model
 
@@ -214,82 +315,148 @@ Optional worker queue pinning:
 - `TEMPORAL_WORKER_QUEUES=agent-support go run ./cmd/temporal-worker`
 - `TEMPORAL_WORKER_QUEUES=automation-default go run ./cmd/temporal-worker`
 
-Required runtime environment variables:
+## Required Runtime Environment Variables
 
-- API:
-  - `DATABASE_URL`
-  - `JWT_SECRET`
-  - `TEMPORAL_ADDRESS`
-  - `TEMPORAL_NAMESPACE`
-  - `TEMPORAL_API_KEY` for Temporal Cloud
-  - `TEMPORAL_TLS_ENABLED` for TLS connections; automatically enabled when `TEMPORAL_API_KEY` is set
-  - `TEMPORAL_TLS_SERVER_NAME` optional override for TLS server name
-  - `APP_BASE_URL`
-  - `GITHUB_APP_ID`
-  - `GITHUB_APP_SLUG`
-  - `GITHUB_APP_PRIVATE_KEY` as base64-encoded PEM
-- Worker:
-  - `DATABASE_URL`
-  - `JWT_SECRET`
-  - `TEMPORAL_ADDRESS`
-  - `TEMPORAL_NAMESPACE`
-  - `TEMPORAL_API_KEY` for Temporal Cloud
-  - `TEMPORAL_TLS_ENABLED` for TLS connections; automatically enabled when `TEMPORAL_API_KEY` is set
-  - `TEMPORAL_TLS_SERVER_NAME` optional override for TLS server name
-  - `GITHUB_APP_ID`
-  - `GITHUB_APP_PRIVATE_KEY` as base64-encoded PEM
-  - `ANTHROPIC_API_KEY` for LLM-backed runs
+API:
+
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `TEMPORAL_ADDRESS`
+- `TEMPORAL_NAMESPACE`
+- `TEMPORAL_API_KEY` for Temporal Cloud
+- `TEMPORAL_TLS_ENABLED`
+- `TEMPORAL_TLS_SERVER_NAME`
+- `APP_BASE_URL`
+- `GITHUB_APP_ID`
+- `GITHUB_APP_SLUG`
+- `GITHUB_APP_PRIVATE_KEY` as base64-encoded PEM
+- `BRAVE_SEARCH_API_KEY` to enable planner web research in workspace AI settings
+
+Worker:
+
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `TEMPORAL_ADDRESS`
+- `TEMPORAL_NAMESPACE`
+- `TEMPORAL_API_KEY`
+- `TEMPORAL_TLS_ENABLED`
+- `TEMPORAL_TLS_SERVER_NAME`
+- `GITHUB_APP_ID`
+- `GITHUB_APP_PRIVATE_KEY` as base64-encoded PEM
+- `ANTHROPIC_API_KEY` for LLM-backed runs
+- `BRAVE_SEARCH_API_KEY` to expose the `web_search` tool for `draft_spec`
 
 ## Story Run Flow
 
 Practical flow:
 
-1. Create an agent
-2. Create a story
-3. Configure or inherit the story delivery target
-4. Assign the agent
-5. Run the agent, or let `auto_on_assignment` trigger it
+1. Create an `engineer` or `reviewer` agent.
+2. Create a story.
+3. Configure or inherit the story delivery target.
+4. Assign the agent.
+5. Run the agent, or let `auto_on_assignment` trigger it.
 
 Execution flow:
 
-1. API creates `agent_run`
-2. Temporal workflow starts
-3. prepare activity resolves repo and branch state
-4. execute activity runs the tool loop in a shared runner
-5. artifacts and run status update live
-6. PR and push events update delivery state and history
+1. API creates `agent_run`.
+2. Temporal workflow starts.
+3. prepare activity resolves repo and branch state.
+4. execute activity runs the tool loop in a shared runner.
+5. artifacts and run status update live.
+6. PR and push events update delivery state and history.
 
-## Epic Orchestration Flow
+## Epic Planning Flow
 
-Epic orchestration now uses the same `agent_run` and Temporal workflow model as story and support runs.
+Epic planning is docs-first and staged.
+
+Core rules:
+
+- Docs is the canonical source of truth for product specs
+- epics are the planning entrypoint
+- the epic planning repo is the live code source for both `draft_spec` and `plan_stories`
+- `agent_run` is the audit trail for draft and planning stages
+- stories are only created after human confirmation
+- code execution remains story-scoped
+
+### Planning stages
+
+- `draft_spec`
+- `awaiting_spec_approval`
+- `plan_stories`
+- `awaiting_plan_approval`
+- `stories_created`
+- `execution_started` or `ready_for_execution`
+
+### Draft spec stage
 
 Practical flow:
 
-1. Create an orchestrator agent
-2. Assign the orchestrator to an epic
-3. Start an epic agent run
-4. Review the proposal artifact
-5. Confirm the proposal to create stories
+1. Epic planning ensures a `product_spec` doc exists.
+2. The product planner drafts spec content from epic metadata, linked docs, linked support tickets, operator notes, bounded live repo context, and optional external web research.
+3. The worker writes the result into Docs and snapshots a `DocsVersion` labeled `AI Draft`.
+4. The epic moves to `awaiting_spec_approval`.
 
-Execution flow:
+Artifacts:
 
-1. API creates an epic-targeted `agent_run`
-2. Temporal workflow starts
-3. worker loads epic context and existing stories
-4. orchestrator runtime produces an `orchestration_proposal` artifact
-5. run waits in approval state for human review
-6. confirming the run creates stories and approves the run
+- `product_spec_draft`
+- `external_research_sources` when external citations were used
+- normal run logs and conversation artifacts
 
-Current behavior:
+### Spec approval boundary
 
-- the orchestrator produces planning output only
-- implementation work still happens on story-targeted runs
-- epic proposals are stored as artifacts and can be edited before story creation
-- confirmation can optionally assign agents to created stories
+Approval happens through Docs versioning, not by trusting the latest mutable document state.
+
+Important semantics:
+
+- `approved_spec_version_id` pins the exact version used for later story planning
+- new drafts can be generated later without invalidating the previously approved version until a human approves again
+- when external research is used, the saved spec includes a normalized `Research Sources` section appended by the runtime
+
+### Story planning stage
+
+Practical flow:
+
+1. A `plan_stories` run loads the approved spec version.
+2. The worker clones the epic planning repository and builds an ephemeral bounded code-context summary.
+3. The product planner proposes stories with stable refs, dependencies, acceptance criteria, risks, and open questions.
+4. The epic moves to `awaiting_plan_approval`.
+5. A human confirms the proposal before stories are created.
+
+Artifacts:
+
+- `story_plan_proposal`
+- `orchestration_proposal` for backward compatibility
+
+Important runtime rule:
+
+- the code-context summary used for planning is not saved as a Docs artifact, so it cannot become stale canonical documentation
+- external web search is not exposed during `plan_stories` in v1
+
+### Confirmation and handoff
+
+On confirmation:
+
+- PM stories are created
+- `pm_story_links` are written for dependency edges
+- the run stores `created_story_ids`
+- reconfirming the same approved run is idempotent and does not create duplicates
+
+### Execution handoff
+
+Execution kickoff starts story-level runs only.
+
+The story-level `additional_context` includes:
+
+- approved spec snapshot
+- acceptance criteria
+- dependency refs
+- source refs
+
+This preserves the planning model even if future execution moves from the current shared API executor to CLI-native runtimes such as `codex_cli` or `claude_cli`.
 
 ## Support Run Flow
 
-Support runs are still target-based agent runs, but without story delivery.
+Support runs are target-based agent runs without story delivery.
 
 Current behavior:
 
@@ -326,6 +493,8 @@ Current artifact types:
 - `agent_summary`
 - `file_bundle`
 - `handoff_note`
+- `product_spec_draft`
+- `story_plan_proposal`
 
 ## Repository Policy
 
@@ -340,7 +509,7 @@ handoff_state: human_review
 ---
 ```
 
-The worker intersects repository policy with the capability profile.
+The worker intersects repository policy with the runtime profile.
 
 ## API Reference
 
@@ -362,15 +531,30 @@ The worker intersects repository policy with the capability profile.
 |---|---|---|
 | POST | `/api/pm/stories/{id}/assign-agent?workspace_id=` | Assign story agent |
 | POST | `/api/pm/stories/{id}/run-agent?workspace_id=` | Run story agent |
-| GET | `/api/pm/epics/{id}/agent-runs?workspace_id=` | List runs for epic orchestrator work |
-| POST | `/api/pm/epics/{id}/run-agent?workspace_id=` | Run epic orchestrator |
 | GET | `/api/pm/agents/{id}/runs?workspace_id=` | List runs for agent |
 | GET | `/api/pm/agent-runs/{id}?workspace_id=` | Get run |
 | GET | `/api/pm/agent-runs/{id}/artifacts?workspace_id=` | Get artifacts |
 | POST | `/api/pm/agent-runs/{id}/cancel?workspace_id=` | Cancel run |
 | POST | `/api/pm/agent-runs/{id}/approve?workspace_id=` | Approve run result |
-| POST | `/api/pm/agent-runs/{id}/confirm-orchestration?workspace_id=` | Create stories from an epic proposal and approve the run |
 | POST | `/api/pm/agent-runs/{id}/handoff?workspace_id=` | Record handoff |
+
+### Epic Planning
+
+Compatibility note:
+
+- route names still use historical `orchestrator` wording in a few places
+- the product-facing term is now `product planner`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/pm/epics/{id}/agent-runs?workspace_id=` | List runs for epic planning work |
+| POST | `/api/pm/epics/{id}/run-agent?workspace_id=` | Backward-compatible epic planning entrypoint; currently defaults to `draft_spec` |
+| POST | `/api/pm/epics/{id}/draft-spec?workspace_id=` | Draft or refresh the product spec |
+| POST | `/api/pm/epics/{id}/approve-spec?workspace_id=` | Approve the current or selected spec version |
+| POST | `/api/pm/epics/{id}/plan-stories?workspace_id=` | Generate a reviewable story plan |
+| POST | `/api/pm/agent-runs/{id}/confirm-orchestration?workspace_id=` | Create stories from a planning proposal and approve the run |
+| POST | `/api/pm/epics/{id}/kickoff-execution?workspace_id=` | Start story-level execution for selected stories |
+| POST | `/api/pm/epics/{id}/assign-orchestrator?workspace_id=` | Backward-compatible endpoint to assign the epic product planner |
 
 ### Story Delivery
 
@@ -419,45 +603,47 @@ The worker intersects repository policy with the capability profile.
 
 Current UI support:
 
-- story detail `Delivery` block for:
-  - agent picker
+- Agents page:
+  - fixed agent-class templates
+  - class-specific trigger mode rules
+  - `planning_notes` for `product_planner`
+  - `system_prompt` for non-planner LLM classes
+- story detail `Delivery` block:
+  - agent picker filtered to `engineer` and `reviewer`
   - repository selector
   - base branch
   - branch preview
   - PR status
   - manual run action
-- `Agent Runs` panel for:
-  - runner pool
-  - execution stage
-  - repo snapshot
-  - artifacts
-  - approval and cancellation actions
-- epic detail `Epic Orchestration` block for:
-  - orchestrator assignment
-  - epic run start
+- epic detail planning surface:
+  - product planner assignment
+  - spec draft
+  - plan generation
   - run history
-  - proposal artifact review
+  - proposal review
   - confirmation into story creation
-- Settings:
-  - Project Settings > Delivery:
-    GitHub App install flow, integration list, repository catalog selection, repository sync, runner queue visibility, and active run health
-  - team delivery defaults
+  - execution kickoff
+- support page:
+  - support-agent picker filtered to `support`
+  - manual agent run
+  - approval of draft replies
+- Project Settings > AI:
+  - workspace planning methodology selector
 
 ## What Is Not Implemented Yet
 
-- true OpenClaw execution backend
-- true ZeroClaw execution backend
+- true `openclaw` execution backend
+- true `zeroclaw` execution backend
 - generic document-targeted agent runs
 - automatic support-agent execution on assignment
-- a dedicated reviewer/tester UI beyond the shared run panel
+- methodology packs for `engineer`, `reviewer`, or `support`
+- public BMAD-style multi-persona agent catalog
 
 ## Recommended Usage
 
-- Use `orchestrator` for epic decomposition.
-- Let the orchestrator decompose epics into stories first; do not use it for implementation work.
-- Use `planner` for PRDs, planning, and repo-aware analysis without mutation.
-- Use `engineer` for implementation, branching, commits, and PRs.
-- Use `reviewer_tester` for validation and read-heavy QA runs.
+- Use `product_planner` for epic decomposition, product specs, and story planning.
+- Use `engineer` for story implementation, branching, commits, and PRs.
+- Use `reviewer` for validation and read-heavy QA runs.
 - Use `support` for ticket triage and draft replies.
-- Use `human_proxy` to represent explicit human ownership or handoff targets.
-- Prefer explicit handoffs over adding many specialized agents to the product model.
+- Use `human` to represent explicit human ownership or handoff targets.
+- Prefer explicit handoffs over adding more product-visible agent classes.

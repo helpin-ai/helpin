@@ -16,6 +16,7 @@ type PMEpicService struct {
 	epicRepo            *repository.PMEpicRepository
 	storyRepo           *repository.PMStoryRepository
 	labelRepo           *repository.PMLabelRepository
+	gitRepo             *repository.GitRepositoryRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
@@ -23,11 +24,12 @@ type PMEpicService struct {
 }
 
 // NewPMEpicService creates a new PMEpicService.
-func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMEpicService {
+func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, gitRepo *repository.GitRepositoryRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMEpicService {
 	return &PMEpicService{
 		epicRepo:            epicRepo,
 		storyRepo:           storyRepo,
 		labelRepo:           labelRepo,
+		gitRepo:             gitRepo,
 		workspaceRepo:       workspaceRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
@@ -123,18 +125,22 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	}
 
 	epic := &model.PMEpic{
-		WorkspaceID:      req.WorkspaceID,
-		Name:             strings.TrimSpace(req.Name),
-		Description:      req.Description,
-		EpicStateID:      req.EpicStateID,
-		OwnerID:          memberUserIDPtr(ownerMember),
-		OwnerMemberID:    memberIDPtr(ownerMember),
-		TeamID:           req.TeamID,
-		PlannedStartDate: req.PlannedStartDate,
-		Deadline:         req.Deadline,
-		Color:            req.Color,
-		Health:           health,
-		HealthComment:    req.HealthComment,
+		WorkspaceID:          req.WorkspaceID,
+		Name:                 strings.TrimSpace(req.Name),
+		Description:          req.Description,
+		EpicStateID:          req.EpicStateID,
+		OwnerID:              memberUserIDPtr(ownerMember),
+		OwnerMemberID:        memberIDPtr(ownerMember),
+		TeamID:               req.TeamID,
+		PlannedStartDate:     req.PlannedStartDate,
+		Deadline:             req.Deadline,
+		Color:                req.Color,
+		Health:               health,
+		HealthComment:        req.HealthComment,
+		PlanningRepositoryID: req.PlanningRepositoryID,
+	}
+	if err := s.validatePlanningRepository(ctx, req.WorkspaceID, epic.PlanningRepositoryID); err != nil {
+		return nil, err
 	}
 	if req.Position != nil {
 		epic.Position = *req.Position
@@ -242,6 +248,12 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if req.HealthComment != nil {
 		epic.HealthComment = req.HealthComment
 	}
+	if req.PlanningRepositoryID != nil {
+		if err := s.validatePlanningRepository(ctx, epic.WorkspaceID, req.PlanningRepositoryID); err != nil {
+			return nil, err
+		}
+		epic.PlanningRepositoryID = req.PlanningRepositoryID
+	}
 
 	if err := s.epicRepo.Update(ctx, &epic); err != nil {
 		return nil, err
@@ -278,6 +290,26 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	}
 
 	return s.epicRepo.GetWithStats(ctx, epic.ID)
+}
+
+func (s *PMEpicService) validatePlanningRepository(ctx context.Context, workspaceID string, repositoryID *string) error {
+	if repositoryID == nil || strings.TrimSpace(*repositoryID) == "" {
+		return nil
+	}
+	if s.gitRepo == nil {
+		return fmt.Errorf("git repository catalog is not configured")
+	}
+	repo, err := s.gitRepo.GetByID(ctx, workspaceID, *repositoryID)
+	if err != nil {
+		return err
+	}
+	if repo == nil {
+		return fmt.Errorf("planning repository not found")
+	}
+	if repo.Archived || !repo.Selected {
+		return fmt.Errorf("planning repository is not available")
+	}
+	return nil
 }
 
 // Delete archives an epic.

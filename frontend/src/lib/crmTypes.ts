@@ -15,7 +15,7 @@ export type CRMActivityType = 'note' | 'call' | 'meeting' | 'email' | 'task';
 
 export type PipelineStageType = 'open' | 'won' | 'lost';
 
-export type CRMObjectType = 'contact' | 'company' | 'deal';
+export type CRMObjectType = 'contact' | 'company' | 'deal' | 'epic' | 'story';
 
 export interface CRMContact {
   id: string;
@@ -215,6 +215,11 @@ export interface CreateCRMAssociationRequest {
   to_object_type: CRMObjectType;
   to_object_id: string;
   association_label?: string;
+}
+
+export interface CRMAssociationEnriched extends CRMAssociation {
+  linked_object_name: string;
+  linked_object_display_id: string;
 }
 
 export interface CRMActivity {

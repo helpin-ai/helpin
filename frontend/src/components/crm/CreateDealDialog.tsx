@@ -23,6 +23,9 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
   const [pipelineId, setPipelineId] = useState('');
   const [stageId, setStageId] = useState('');
   const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [closeDate, setCloseDate] = useState('');
+  const [probability, setProbability] = useState('');
 
   const selectedPipeline = pipelines?.find((p) => p.id === pipelineId);
   const stages = selectedPipeline?.stages ?? [];
@@ -46,11 +49,17 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
         pipeline_id: pipelineId,
         stage_id: stageId,
         amount: amount ? parseFloat(amount) : undefined,
+        currency: currency,
+        close_date: closeDate || undefined,
+        probability: probability ? parseInt(probability) : undefined,
       });
       toast.success('Deal created');
       onOpenChange(false);
       setName('');
       setAmount('');
+      setCurrency('USD');
+      setCloseDate('');
+      setProbability('');
     } catch (err) {
       toast.error('Failed to create deal');
     }
@@ -93,9 +102,34 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
               </Select>
             </div>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="dealAmount">Amount</Label>
-            <Input id="dealAmount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+          <div className="grid grid-cols-[1fr_100px] gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="dealAmount">Amount</Label>
+              <Input id="dealAmount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+            </div>
+            <div className="space-y-2">
+              <Label>Currency</Label>
+              <Select value={currency} onValueChange={setCurrency}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                  <SelectItem value="GBP">GBP</SelectItem>
+                  <SelectItem value="CAD">CAD</SelectItem>
+                  <SelectItem value="AUD">AUD</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="closeDate">Close Date</Label>
+              <Input id="closeDate" type="date" value={closeDate} onChange={(e) => setCloseDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="probability">Probability (%)</Label>
+              <Input id="probability" type="number" min="0" max="100" value={probability} onChange={(e) => setProbability(e.target.value)} placeholder="0" />
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

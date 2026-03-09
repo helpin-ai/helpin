@@ -28,19 +28,26 @@ type supportDraftReply struct {
 
 // AgentService contains agent business logic.
 type AgentService struct {
-	agentRepo    *repository.AgentRepository
-	runRepo      *repository.AgentRunRepository
-	artifactRepo *repository.AgentRunArtifactRepository
-	storyRepo    *repository.PMStoryRepository
-	epicRepo     *repository.PMEpicRepository
-	ticketRepo   *repository.SupportTicketRepository
-	messageRepo  *repository.SupportMessageRepository
-	handoffRepo  *repository.AgentHandoffRepository
-	runEngine    *temporalapp.RunEngine
-	gitService   *GitService
-	storyService *PMStoryService
-	activitySvc  *PMActivityService
-	wsPublisher  *websocket.Publisher
+	agentRepo        *repository.AgentRepository
+	runRepo          *repository.AgentRunRepository
+	artifactRepo     *repository.AgentRunArtifactRepository
+	storyRepo        *repository.PMStoryRepository
+	storyLinkRepo    *repository.PMStoryLinkRepository
+	epicRepo         *repository.PMEpicRepository
+	ticketRepo       *repository.SupportTicketRepository
+	messageRepo      *repository.SupportMessageRepository
+	handoffRepo      *repository.AgentHandoffRepository
+	settingsRepo     *repository.SettingsRepository
+	docsSpaceRepo    *repository.DocsSpaceRepository
+	docsDocumentRepo *repository.DocsDocumentRepository
+	docsContentRepo  *repository.DocsContentRepository
+	docsVersionRepo  *repository.DocsVersionRepository
+	docsLinkRepo     *repository.DocsLinkRepository
+	runEngine        *temporalapp.RunEngine
+	gitService       *GitService
+	storyService     *PMStoryService
+	activitySvc      *PMActivityService
+	wsPublisher      *websocket.Publisher
 }
 
 // NewAgentService creates a new AgentService.
@@ -49,10 +56,17 @@ func NewAgentService(
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 	storyRepo *repository.PMStoryRepository,
+	storyLinkRepo *repository.PMStoryLinkRepository,
 	epicRepo *repository.PMEpicRepository,
 	ticketRepo *repository.SupportTicketRepository,
 	messageRepo *repository.SupportMessageRepository,
 	handoffRepo *repository.AgentHandoffRepository,
+	settingsRepo *repository.SettingsRepository,
+	docsSpaceRepo *repository.DocsSpaceRepository,
+	docsDocumentRepo *repository.DocsDocumentRepository,
+	docsContentRepo *repository.DocsContentRepository,
+	docsVersionRepo *repository.DocsVersionRepository,
+	docsLinkRepo *repository.DocsLinkRepository,
 	runEngine *temporalapp.RunEngine,
 	gitService *GitService,
 	storyService *PMStoryService,
@@ -60,19 +74,26 @@ func NewAgentService(
 	wsPublisher *websocket.Publisher,
 ) *AgentService {
 	return &AgentService{
-		agentRepo:    agentRepo,
-		runRepo:      runRepo,
-		artifactRepo: artifactRepo,
-		storyRepo:    storyRepo,
-		epicRepo:     epicRepo,
-		ticketRepo:   ticketRepo,
-		messageRepo:  messageRepo,
-		handoffRepo:  handoffRepo,
-		runEngine:    runEngine,
-		gitService:   gitService,
-		storyService: storyService,
-		activitySvc:  activitySvc,
-		wsPublisher:  wsPublisher,
+		agentRepo:        agentRepo,
+		runRepo:          runRepo,
+		artifactRepo:     artifactRepo,
+		storyRepo:        storyRepo,
+		storyLinkRepo:    storyLinkRepo,
+		epicRepo:         epicRepo,
+		ticketRepo:       ticketRepo,
+		messageRepo:      messageRepo,
+		handoffRepo:      handoffRepo,
+		settingsRepo:     settingsRepo,
+		docsSpaceRepo:    docsSpaceRepo,
+		docsDocumentRepo: docsDocumentRepo,
+		docsContentRepo:  docsContentRepo,
+		docsVersionRepo:  docsVersionRepo,
+		docsLinkRepo:     docsLinkRepo,
+		runEngine:        runEngine,
+		gitService:       gitService,
+		storyService:     storyService,
+		activitySvc:      activitySvc,
+		wsPublisher:      wsPublisher,
 	}
 }
 
@@ -81,7 +102,14 @@ func (s *AgentService) ListAgents(ctx context.Context, workspaceID string) ([]mo
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.agentRepo.List(ctx, workspaceID)
+	agents, err := s.agentRepo.List(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	for idx := range agents {
+		normalizeAgentRecord(&agents[idx])
+	}
+	return agents, nil
 }
 
 // GetAgent returns a single agent.
@@ -93,6 +121,7 @@ func (s *AgentService) GetAgent(ctx context.Context, workspaceID, id string) (*m
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found")
 	}
+	normalizeAgentRecord(agent)
 	return agent, nil
 }
 
@@ -106,7 +135,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
-	if req.AgentKind != "human" && req.AgentKind != "llm" {
+	if strings.TrimSpace(req.AgentKind) != "" && req.AgentKind != "human" && req.AgentKind != "llm" {
 		return nil, fmt.Errorf("agent_kind must be 'human' or 'llm'")
 	}
 
@@ -120,35 +149,52 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		skills = json.RawMessage("[]")
 	}
 
-	runtimeKind := stringOrDefault(req.RuntimeKind, "native_claude")
-	capabilityProfile := stringOrDefault(req.CapabilityProfile, defaultCapabilityProfileForRole(req.Role))
-	triggerMode := stringOrDefault(req.TriggerMode, "manual")
+	agentClass := normalizeAgentClass(stringOrDefault(req.AgentClass, ""), stringOrDefault(req.CapabilityProfile, ""), req.Role, req.AgentKind)
+	agentKind := strings.TrimSpace(req.AgentKind)
+	if agentKind == "" {
+		agentKind = agentKindForAgentClass(agentClass)
+	}
+	role := strings.TrimSpace(req.Role)
+	if role == "" {
+		role = defaultRoleForAgentClass(agentClass)
+	}
+	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, defaultRuntimeKindForAgentClass(agentClass)))
+	triggerMode := stringOrDefault(req.TriggerMode, defaultTriggerModeForAgentClass(agentClass))
 	if err := validateRuntimeKind(runtimeKind); err != nil {
 		return nil, err
 	}
-	if err := validateCapabilityProfile(capabilityProfile); err != nil {
+	if err := validateAgentClass(agentClass); err != nil {
 		return nil, err
 	}
-	if err := validateTriggerMode(triggerMode); err != nil {
+	if err := validateTriggerModeForAgentClass(triggerMode, agentClass); err != nil {
 		return nil, err
+	}
+	if agentKind == "human" && agentClass != model.AgentClassHuman {
+		return nil, fmt.Errorf("human agents must use agent_class human")
+	}
+	if agentKind == "llm" && agentClass == model.AgentClassHuman {
+		return nil, fmt.Errorf("agent_class human requires agent_kind human")
 	}
 
 	agent := &model.Agent{
 		WorkspaceID:        req.WorkspaceID,
 		Name:               strings.TrimSpace(req.Name),
-		AgentKind:          req.AgentKind,
-		Role:               strings.TrimSpace(req.Role),
+		AgentKind:          agentKind,
+		AgentClass:         agentClass,
+		Role:               role,
 		Status:             "idle",
-		BackingUserID:      req.BackingUserID,
+		BackingUserID:      trimPtr(req.BackingUserID),
 		RuntimeKind:        runtimeKind,
-		CapabilityProfile:  capabilityProfile,
+		CapabilityProfile:  capabilityProfileForAgentClass(agentClass),
 		Skills:             skills,
 		TriggerMode:        triggerMode,
-		Model:              req.Model,
-		SystemPrompt:       req.SystemPrompt,
+		Model:              trimPtr(req.Model),
+		SystemPrompt:       trimPtr(req.SystemPrompt),
+		PlanningNotes:      trimPtr(req.PlanningNotes),
 		Tools:              tools,
-		MonthlyTokenBudget: req.MonthlyTokenBudget,
+		MonthlyTokenBudget: normalizeTokenBudget(req.MonthlyTokenBudget),
 	}
+	normalizeAgentRecord(agent)
 
 	if err := s.agentRepo.Create(ctx, agent); err != nil {
 		return nil, err
@@ -172,14 +218,16 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		return nil, fmt.Errorf("agent not found")
 	}
 
+	classChanged := false
 	if req.Name != nil {
 		agent.Name = strings.TrimSpace(*req.Name)
 	}
+	if req.AgentClass != nil {
+		agent.AgentClass = strings.TrimSpace(*req.AgentClass)
+		classChanged = true
+	}
 	if req.Role != nil {
 		agent.Role = strings.TrimSpace(*req.Role)
-		if req.CapabilityProfile == nil || *req.CapabilityProfile == "" {
-			agent.CapabilityProfile = defaultCapabilityProfileForRole(agent.Role)
-		}
 	}
 	if req.Status != nil {
 		agent.Status = *req.Status
@@ -192,36 +240,55 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			return nil, err
 		}
 		agent.RuntimeKind = *req.RuntimeKind
+	} else if classChanged {
+		agent.RuntimeKind = defaultRuntimeKindForAgentClass(agent.AgentClass)
 	}
 	if req.CapabilityProfile != nil && strings.TrimSpace(*req.CapabilityProfile) != "" {
-		if err := validateCapabilityProfile(*req.CapabilityProfile); err != nil {
+		profile := worker.NormalizeCapabilityProfile(*req.CapabilityProfile)
+		if err := validateAgentClass(profile); err != nil {
 			return nil, err
 		}
-		agent.CapabilityProfile = *req.CapabilityProfile
+		agent.AgentClass = profile
 	}
 	if req.Skills != nil {
 		agent.Skills = req.Skills
 	}
 	if req.TriggerMode != nil && strings.TrimSpace(*req.TriggerMode) != "" {
-		if err := validateTriggerMode(*req.TriggerMode); err != nil {
-			return nil, err
-		}
 		agent.TriggerMode = *req.TriggerMode
 	}
 	if req.Model != nil {
-		agent.Model = req.Model
+		agent.Model = trimPtr(req.Model)
 	}
 	if req.SystemPrompt != nil {
-		agent.SystemPrompt = req.SystemPrompt
+		agent.SystemPrompt = trimPtr(req.SystemPrompt)
+	}
+	if req.PlanningNotes != nil {
+		agent.PlanningNotes = trimPtr(req.PlanningNotes)
 	}
 	if req.Tools != nil {
 		agent.Tools = req.Tools
 	}
 	if req.MonthlyTokenBudget != nil {
-		agent.MonthlyTokenBudget = req.MonthlyTokenBudget
+		agent.MonthlyTokenBudget = normalizeTokenBudget(req.MonthlyTokenBudget)
 	}
 	if req.ActiveStoryID != nil {
 		agent.ActiveStoryID = req.ActiveStoryID
+	}
+	if classChanged && (req.Role == nil || strings.TrimSpace(*req.Role) == "") {
+		agent.Role = defaultRoleForAgentClass(agent.AgentClass)
+	}
+	normalizeAgentRecord(agent)
+	if err := validateAgentClass(agent.AgentClass); err != nil {
+		return nil, err
+	}
+	if agent.AgentKind == "human" && agent.AgentClass != model.AgentClassHuman {
+		return nil, fmt.Errorf("human agents must use agent_class human")
+	}
+	if agent.AgentKind != "human" && agent.AgentClass == model.AgentClassHuman {
+		return nil, fmt.Errorf("agent_class human requires agent_kind human")
+	}
+	if err := validateTriggerModeForAgentClass(agent.TriggerMode, agent.AgentClass); err != nil {
+		return nil, err
 	}
 
 	if err := s.agentRepo.Update(ctx, agent); err != nil {
@@ -264,6 +331,9 @@ func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, stor
 	}
 	if agent == nil {
 		return fmt.Errorf("agent not found")
+	}
+	if err := validateAgentTarget(agent, "story"); err != nil {
+		return err
 	}
 
 	story, err := s.storyRepo.GetRawByID(ctx, storyID)
@@ -347,7 +417,7 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actor
 		return nil, fmt.Errorf("no agent assigned to this story")
 	}
 
-	agent, err := s.requireRunnableAgent(ctx, workspaceID, *story.AssignedAgentID)
+	agent, err := s.requireRunnableAgent(ctx, workspaceID, *story.AssignedAgentID, "story")
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +465,7 @@ func (s *AgentService) RunTicketAgent(ctx context.Context, workspaceID, ticketID
 		return nil, fmt.Errorf("no agent assigned to this ticket")
 	}
 
-	agent, err := s.requireRunnableAgent(ctx, workspaceID, *ticket.AssignedAgentID)
+	agent, err := s.requireRunnableAgent(ctx, workspaceID, *ticket.AssignedAgentID, "support_ticket")
 	if err != nil {
 		return nil, err
 	}
@@ -421,53 +491,6 @@ func (s *AgentService) RunTicketAgent(ctx context.Context, workspaceID, ticketID
 	}
 
 	_ = s.activitySvc.Log(ctx, workspaceID, "support_ticket", ticketID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
-	s.publishRunEvent(run, actorID)
-
-	return run, nil
-}
-
-// RunEpicAgent creates a new epic-targeted orchestrator run and starts its Temporal workflow.
-func (s *AgentService) RunEpicAgent(ctx context.Context, workspaceID, epicID, actorID, additionalContext string) (*model.AgentRun, error) {
-	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
-	if err != nil {
-		return nil, fmt.Errorf("get epic: %w", err)
-	}
-	if epicWithStats == nil {
-		return nil, fmt.Errorf("epic not found")
-	}
-	epic := &epicWithStats.Epic
-	if epic.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("epic not found")
-	}
-	if epic.OrchestratorAgentID == nil || *epic.OrchestratorAgentID == "" {
-		return nil, fmt.Errorf("no orchestrator agent assigned to this epic")
-	}
-
-	agent, err := s.requireRunnableAgent(ctx, workspaceID, *epic.OrchestratorAgentID)
-	if err != nil {
-		return nil, err
-	}
-	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
-
-	input, _ := json.Marshal(map[string]any{
-		"epic_id":            epicID,
-		"additional_context": strings.TrimSpace(additionalContext),
-	})
-
-	run, err := s.createRun(ctx, createRunParams{
-		workspaceID: workspaceID,
-		agent:       agent,
-		profile:     profile,
-		targetType:  "epic",
-		targetID:    epicID,
-		actorID:     actorID,
-		input:       input,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	_ = s.activitySvc.Log(ctx, workspaceID, "epic", epicID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
 	s.publishRunEvent(run, actorID)
 
 	return run, nil
@@ -621,114 +644,6 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 	return run, nil
 }
 
-// ConfirmEpicRun creates stories from an orchestration proposal artifact and approves the run.
-func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, runID, actorID string, req model.ConfirmOrchestrationRequest) ([]model.PMStory, error) {
-	run, err := s.GetAgentRun(ctx, workspaceID, runID)
-	if err != nil {
-		return nil, err
-	}
-	if run.TargetType != "epic" || run.TargetID != epicID {
-		return nil, fmt.Errorf("run does not belong to this epic")
-	}
-	if run.ApprovalState == "approved" {
-		return nil, fmt.Errorf("orchestration run has already been confirmed")
-	}
-	if run.ApprovalState != "pending" {
-		return nil, fmt.Errorf("run does not have a pending orchestration proposal")
-	}
-	if s.storyService == nil {
-		return nil, fmt.Errorf("story service is not configured")
-	}
-
-	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
-	if err != nil {
-		return nil, fmt.Errorf("get epic: %w", err)
-	}
-	if epicWithStats == nil {
-		return nil, fmt.Errorf("epic not found")
-	}
-
-	if len(req.ProposedStories) == 0 {
-		return nil, fmt.Errorf("at least one proposed story is required")
-	}
-
-	created := make([]model.PMStory, 0, len(req.ProposedStories))
-	createdIDs := make([]string, 0, len(req.ProposedStories))
-	for idx, ps := range req.ProposedStories {
-		name := strings.TrimSpace(ps.Name)
-		if name == "" {
-			return nil, fmt.Errorf("proposed story %d is missing a name", idx+1)
-		}
-
-		storyType := strings.TrimSpace(ps.StoryType)
-		if storyType == "" {
-			storyType = "feature"
-		}
-
-		detail, err := s.storyService.Create(ctx, model.CreateStoryRequest{
-			WorkspaceID: workspaceID,
-			Name:        name,
-			Description: strPtr(strings.TrimSpace(ps.Description)),
-			StoryType:   storyType,
-			EpicID:      &epicID,
-			Estimate:    ps.Estimate,
-		}, actorID)
-		if err != nil {
-			return nil, fmt.Errorf("create story %d: %w", idx+1, err)
-		}
-
-		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" {
-			if err := s.AssignAgentToStory(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
-				return nil, fmt.Errorf("assign agent to story %q: %w", detail.Story.Name, err)
-			}
-		}
-
-		created = append(created, detail.Story)
-		createdIDs = append(createdIDs, detail.Story.ID)
-	}
-
-	handoffContext, _ := json.Marshal(map[string]any{
-		"created_story_ids":   createdIDs,
-		"created_story_count": len(created),
-		"epic_id":             epicID,
-		"run_id":              runID,
-	})
-	handoff := &model.AgentHandoff{
-		WorkspaceID: workspaceID,
-		FromAgentID: &run.AgentID,
-		EpicID:      &epicID,
-		RunID:       &run.ID,
-		HandoffType: "agent_to_human",
-		Reason:      fmt.Sprintf("Confirmed orchestration proposal and created %d stories", len(created)),
-		Context:     handoffContext,
-	}
-	_ = s.handoffRepo.Create(ctx, handoff)
-
-	outputSummary, _ := json.Marshal(map[string]any{
-		"created_story_count": len(created),
-		"created_story_ids":   createdIDs,
-	})
-	run.OutputSummary = outputSummary
-	run.ApprovalState = "approved"
-	if run.Status == "awaiting_approval" {
-		now := time.Now()
-		run.Status = "completed"
-		run.CompletedAt = &now
-		run.ExecutionStage = strPtr("approved")
-	}
-	if err := s.runRepo.Update(ctx, run); err != nil {
-		return nil, err
-	}
-
-	summary := fmt.Sprintf("Created %d stories from epic orchestration.", len(created))
-	_ = s.saveArtifact(ctx, run, "handoff_note", "markdown", summary, 999998)
-
-	_ = s.runEngine.SignalApprove(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
-	s.publishRunEvent(run, actorID)
-
-	return created, nil
-}
-
 type createRunParams struct {
 	workspaceID string
 	agent       *model.Agent
@@ -813,13 +728,17 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	return run, nil
 }
 
-func (s *AgentService) requireRunnableAgent(ctx context.Context, workspaceID, agentID string) (*model.Agent, error) {
+func (s *AgentService) requireRunnableAgent(ctx context.Context, workspaceID, agentID, targetType string) (*model.Agent, error) {
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
 		return nil, fmt.Errorf("assigned agent not found")
 	}
+	normalizeAgentRecord(agent)
 	if agent.AgentKind != "llm" {
 		return nil, fmt.Errorf("only LLM agents can be run")
+	}
+	if err := validateAgentTarget(agent, targetType); err != nil {
+		return nil, err
 	}
 	return agent, nil
 }
@@ -880,17 +799,17 @@ func (s *AgentService) saveArtifact(ctx context.Context, run *model.AgentRun, ar
 func defaultCapabilityProfileForRole(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "planner", "prd", "product":
-		return "planner"
+		return model.AgentClassProductPlanner
 	case "support":
-		return "support"
+		return model.AgentClassSupport
 	case "reviewer", "reviewer_tester", "tester":
-		return "reviewer_tester"
+		return model.AgentClassReviewer
 	case "orchestrator":
-		return "orchestrator"
+		return model.AgentClassProductPlanner
 	case "human_proxy", "human":
-		return "human_proxy"
+		return model.AgentClassHuman
 	default:
-		return "engineer"
+		return model.AgentClassEngineer
 	}
 }
 
@@ -984,12 +903,7 @@ func validateRuntimeKind(runtimeKind string) error {
 }
 
 func validateCapabilityProfile(profileName string) error {
-	for _, profile := range worker.ListRuntimeProfiles() {
-		if profile.Name == profileName {
-			return nil
-		}
-	}
-	return fmt.Errorf("unknown capability_profile %q", profileName)
+	return validateAgentClass(worker.NormalizeCapabilityProfile(profileName))
 }
 
 func validateTriggerMode(triggerMode string) error {

@@ -42,6 +42,13 @@ func PrepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration,
 		return "", fmt.Errorf("git clone failed: %s", string(output))
 	}
 
+	// Remove the persisted http.extraheader from the cloned repo config.
+	// git clone -c persists config values into .git/config, which causes
+	// "Duplicate header" errors when subsequent commands also pass -c http.extraheader.
+	unsetCmd := exec.CommandContext(cloneCtx, "git", "config", "--unset-all", "http.extraheader")
+	unsetCmd.Dir = cloneDir
+	_ = unsetCmd.Run()
+
 	return cloneDir, nil
 }
 

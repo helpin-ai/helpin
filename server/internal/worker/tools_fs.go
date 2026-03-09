@@ -3,6 +3,7 @@ package worker
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,10 @@ func toolReadFile(ctx *ExecutionContext, input json.RawMessage) (string, error) 
 	data, err := os.ReadFile(absPath)
 	if err != nil {
 		return "", fmt.Errorf("read file: %w", err)
+	}
+
+	if isBinaryContent(data) {
+		return "", fmt.Errorf("file appears to be binary, cannot read: %s", params.Path)
 	}
 
 	// Truncate very large files.
@@ -127,7 +132,7 @@ func toolSearchFiles(ctx *ExecutionContext, input json.RawMessage) (string, erro
 			continue
 		}
 		data, err := os.ReadFile(m)
-		if err != nil {
+		if err != nil || isBinaryContent(data) {
 			continue
 		}
 		lines := strings.Split(string(data), "\n")
@@ -147,6 +152,20 @@ func toolSearchFiles(ctx *ExecutionContext, input json.RawMessage) (string, erro
 		return "No matches found.", nil
 	}
 	return strings.Join(results, "\n"), nil
+}
+
+// isBinaryContent returns true if data looks like a binary file.
+func isBinaryContent(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	// Use net/http's content type detection on the first 512 bytes.
+	sniff := data
+	if len(sniff) > 512 {
+		sniff = sniff[:512]
+	}
+	ct := http.DetectContentType(sniff)
+	return !strings.HasPrefix(ct, "text/") && ct != "application/json" && ct != "application/xml"
 }
 
 // safePath resolves a relative path within workDir and ensures it doesn't escape.

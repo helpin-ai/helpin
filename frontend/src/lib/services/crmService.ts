@@ -5,6 +5,7 @@ import type {
   CRMDeal,
   CRMPipeline,
   CRMAssociation,
+  CRMAssociationEnriched,
   CRMActivity,
   CreateCRMContactRequest,
   UpdateCRMContactRequest,
@@ -86,7 +87,7 @@ export const crmContactService = {
   listActivities: (workspaceId: string, contactId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMActivity[]>>(`/crm/contacts/${contactId}/activities${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listAssociations: (workspaceId: string, contactId: string) =>
-    api.get<CRMAssociation[]>(`/crm/contacts/${contactId}/associations${qs(workspaceId)}`),
+    api.get<CRMAssociationEnriched[]>(`/crm/contacts/${contactId}/associations${qs(workspaceId)}`),
 };
 
 export const crmCompanyService = {
@@ -103,7 +104,7 @@ export const crmCompanyService = {
   listActivities: (workspaceId: string, companyId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMActivity[]>>(`/crm/companies/${companyId}/activities${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listAssociations: (workspaceId: string, companyId: string) =>
-    api.get<CRMAssociation[]>(`/crm/companies/${companyId}/associations${qs(workspaceId)}`),
+    api.get<CRMAssociationEnriched[]>(`/crm/companies/${companyId}/associations${qs(workspaceId)}`),
 };
 
 export const crmDealService = {
@@ -120,7 +121,7 @@ export const crmDealService = {
   listActivities: (workspaceId: string, dealId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMActivity[]>>(`/crm/deals/${dealId}/activities${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listAssociations: (workspaceId: string, dealId: string) =>
-    api.get<CRMAssociation[]>(`/crm/deals/${dealId}/associations${qs(workspaceId)}`),
+    api.get<CRMAssociationEnriched[]>(`/crm/deals/${dealId}/associations${qs(workspaceId)}`),
 };
 
 export const crmPipelineService = {
@@ -139,8 +140,16 @@ export const crmPipelineService = {
 export const crmAssociationService = {
   create: (payload: CreateCRMAssociationRequest) =>
     api.post<CRMAssociation>(`/crm/associations${qs(payload.workspace_id)}`, payload),
+  createFromPM: (payload: CreateCRMAssociationRequest) =>
+    api.post<CRMAssociation>(`/pm/associations${qs(payload.workspace_id)}`, payload),
   remove: (workspaceId: string, id: string) =>
     api.del(`/crm/associations/${id}${qs(workspaceId)}`),
+  removeFromPM: (workspaceId: string, id: string) =>
+    api.del(`/pm/associations/${id}${qs(workspaceId)}`),
+  listByEpic: (workspaceId: string, epicId: string) =>
+    api.get<CRMAssociationEnriched[]>(`/pm/epics/${epicId}/associations${qs(workspaceId)}`),
+  listByStory: (workspaceId: string, storyId: string) =>
+    api.get<CRMAssociationEnriched[]>(`/pm/stories/${storyId}/associations${qs(workspaceId)}`),
 };
 
 export const crmActivityService = {

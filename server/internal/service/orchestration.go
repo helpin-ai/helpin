@@ -43,6 +43,9 @@ func (s *OrchestrationService) AssignOrchestrator(ctx context.Context, workspace
 	if err != nil || agent == nil {
 		return fmt.Errorf("agent not found")
 	}
+	if err := validateAgentTarget(agent, "epic"); err != nil {
+		return err
+	}
 
 	epic.OrchestratorAgentID = &agentID
 	if err := s.epicRepo.Update(ctx, epic); err != nil {

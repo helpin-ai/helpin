@@ -23,31 +23,3 @@ type AgentHandoff struct {
 }
 
 func (AgentHandoff) TableName() string { return "agent_handoffs" }
-
-// OrchestrateRequest is the request to decompose an epic into stories.
-type OrchestrateRequest struct {
-	AdditionalContext string `json:"additional_context"`
-}
-
-// ProposedStory is a story proposed by the orchestrator before confirmation.
-type ProposedStory struct {
-	Name          string  `json:"name"`
-	Description   string  `json:"description"`
-	StoryType     string  `json:"story_type"`
-	Estimate      *int    `json:"estimate"`
-	AssignAgentID *string `json:"assign_agent_id"`
-}
-
-// OrchestrationProposal is the result of an orchestration request.
-type OrchestrationProposal struct {
-	EpicID          string          `json:"epic_id"`
-	Summary         string          `json:"summary"`
-	ProposedStories []ProposedStory `json:"proposed_stories"`
-	TokensUsed      int             `json:"tokens_used"`
-}
-
-// ConfirmOrchestrationRequest confirms and creates the proposed stories.
-type ConfirmOrchestrationRequest struct {
-	RunID           string          `json:"run_id"`
-	ProposedStories []ProposedStory `json:"proposed_stories"`
-}

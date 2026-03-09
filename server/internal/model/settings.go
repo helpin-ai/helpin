@@ -1,29 +1,61 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+const (
+	PlanningMethodologyStructuredV1 = "structured_v1"
+	PlanningMethodologyBasicV1      = "basic_v1"
+	PlanningWebSearchProviderBrave  = "brave"
+)
+
+func NormalizePlanningMethodology(value string) string {
+	switch value {
+	case "", PlanningMethodologyStructuredV1:
+		return PlanningMethodologyStructuredV1
+	case PlanningMethodologyBasicV1:
+		return PlanningMethodologyBasicV1
+	default:
+		return PlanningMethodologyStructuredV1
+	}
+}
+
+func NormalizePlanningWebSearchProvider(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", PlanningWebSearchProviderBrave:
+		return PlanningWebSearchProviderBrave
+	default:
+		return PlanningWebSearchProviderBrave
+	}
+}
 
 // WorkspaceSettings represents a row in the workspace_settings table.
 type WorkspaceSettings struct {
-	ID                   string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID          string    `json:"workspace_id" gorm:"type:uuid;uniqueIndex;not null"`
-	QuarterStartDate     *string   `json:"quarter_start_date"`
-	SprintDurationWeeks  int       `json:"sprint_duration_weeks" gorm:"not null;default:2"`
-	NotificationsEnabled bool      `json:"notifications_enabled" gorm:"not null;default:true"`
-	AutoCalculateBonuses bool      `json:"auto_calculate_bonuses" gorm:"not null;default:false"`
-	TeamWeight           int       `json:"team_weight" gorm:"not null;default:50"`
-	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt            time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID               string    `json:"workspace_id" gorm:"type:uuid;uniqueIndex;not null"`
+	QuarterStartDate          *string   `json:"quarter_start_date"`
+	SprintDurationWeeks       int       `json:"sprint_duration_weeks" gorm:"not null;default:2"`
+	NotificationsEnabled      bool      `json:"notifications_enabled" gorm:"not null;default:true"`
+	AutoCalculateBonuses      bool      `json:"auto_calculate_bonuses" gorm:"not null;default:false"`
+	TeamWeight                int       `json:"team_weight" gorm:"not null;default:50"`
+	PlanningMethodology       string    `json:"planning_methodology" gorm:"not null;default:'structured_v1'"`
+	PlanningWebSearchEnabled  bool      `json:"planning_web_search_enabled" gorm:"not null;default:false"`
+	PlanningWebSearchProvider string    `json:"planning_web_search_provider" gorm:"not null;default:'brave'"`
+	CreatedAt                 time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                 time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WorkspaceSettings) TableName() string { return "workspace_settings" }
 
 // WorkspaceTeam represents a row in the workspace_teams table.
 type WorkspaceTeam struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_workspace_team_handle,priority:1"`
-	Name        string    `json:"name" gorm:"not null"`
-	Handle      *string   `json:"handle" gorm:"uniqueIndex:idx_workspace_team_handle,priority:2"`
-	Description *string   `json:"description"`
+	ID                   string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID          string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_workspace_team_handle,priority:1"`
+	Name                 string    `json:"name" gorm:"not null"`
+	Handle               *string   `json:"handle" gorm:"uniqueIndex:idx_workspace_team_handle,priority:2"`
+	Description          *string   `json:"description"`
 	ManagerID            *string   `json:"manager_id" gorm:"type:uuid"`
 	DocsPublisherEnabled bool      `json:"docs_publisher_enabled" gorm:"not null;default:false"`
 	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime"`
@@ -159,35 +191,35 @@ type UpdateTeamEstimateSettingsRequest struct {
 
 // PMTeamFieldVisibility stores per-team field visibility configuration.
 type PMTeamFieldVisibility struct {
-	ID        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	TeamID    string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex"`
-	Priority  bool      `json:"priority" gorm:"not null;default:true"`
-	StoryType bool      `json:"story_type" gorm:"not null;default:true"`
-	Severity  bool      `json:"severity" gorm:"not null;default:true"`
-	Labels    bool      `json:"labels" gorm:"not null;default:true"`
-	Epic      bool      `json:"epic" gorm:"not null;default:true"`
-	Sprint    bool      `json:"sprint" gorm:"not null;default:true"`
-	Estimate  bool      `json:"estimate" gorm:"not null;default:true"`
-	DueDate   bool      `json:"due_date" gorm:"not null;default:true"`
+	ID         string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	TeamID     string    `json:"team_id" gorm:"type:uuid;not null;uniqueIndex"`
+	Priority   bool      `json:"priority" gorm:"not null;default:true"`
+	StoryType  bool      `json:"story_type" gorm:"not null;default:true"`
+	Severity   bool      `json:"severity" gorm:"not null;default:true"`
+	Labels     bool      `json:"labels" gorm:"not null;default:true"`
+	Epic       bool      `json:"epic" gorm:"not null;default:true"`
+	Sprint     bool      `json:"sprint" gorm:"not null;default:true"`
+	Estimate   bool      `json:"estimate" gorm:"not null;default:true"`
+	DueDate    bool      `json:"due_date" gorm:"not null;default:true"`
 	Blocked    bool      `json:"blocked" gorm:"not null;default:true"`
 	Delivery   bool      `json:"delivery" gorm:"not null;default:true"`
 	DevHistory bool      `json:"dev_history" gorm:"not null;default:true"`
 	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	UpdatedAt  time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMTeamFieldVisibility) TableName() string { return "pm_team_field_visibility" }
 
 // UpdateTeamFieldVisibilityRequest is the payload for updating team field visibility.
 type UpdateTeamFieldVisibilityRequest struct {
-	Priority  *bool `json:"priority"`
-	StoryType *bool `json:"story_type"`
-	Severity  *bool `json:"severity"`
-	Labels    *bool `json:"labels"`
-	Epic      *bool `json:"epic"`
-	Sprint    *bool `json:"sprint"`
-	Estimate  *bool `json:"estimate"`
-	DueDate   *bool `json:"due_date"`
+	Priority   *bool `json:"priority"`
+	StoryType  *bool `json:"story_type"`
+	Severity   *bool `json:"severity"`
+	Labels     *bool `json:"labels"`
+	Epic       *bool `json:"epic"`
+	Sprint     *bool `json:"sprint"`
+	Estimate   *bool `json:"estimate"`
+	DueDate    *bool `json:"due_date"`
 	Blocked    *bool `json:"blocked"`
 	Delivery   *bool `json:"delivery"`
 	DevHistory *bool `json:"dev_history"`
@@ -344,10 +376,13 @@ type JobRoleCriteriaItem struct {
 
 // UpdateSystemSettingsRequest is the payload for updating workspace system settings.
 type UpdateSystemSettingsRequest struct {
-	SprintDurationWeeks  *int  `json:"sprint_duration_weeks"`
-	NotificationsEnabled *bool `json:"notifications_enabled"`
-	AutoCalculateBonuses *bool `json:"auto_calculate_bonuses"`
-	TeamWeight           *int  `json:"team_weight"`
+	SprintDurationWeeks       *int    `json:"sprint_duration_weeks"`
+	NotificationsEnabled      *bool   `json:"notifications_enabled"`
+	AutoCalculateBonuses      *bool   `json:"auto_calculate_bonuses"`
+	TeamWeight                *int    `json:"team_weight"`
+	PlanningMethodology       *string `json:"planning_methodology"`
+	PlanningWebSearchEnabled  *bool   `json:"planning_web_search_enabled"`
+	PlanningWebSearchProvider *string `json:"planning_web_search_provider"`
 }
 
 // InitializeSettingsRequest is the payload for initializing workspace settings.

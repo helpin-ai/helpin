@@ -7,7 +7,16 @@ const (
 	CRMObjectContact = "contact"
 	CRMObjectCompany = "company"
 	CRMObjectDeal    = "deal"
+	CRMObjectEpic    = "epic"
+	CRMObjectStory   = "story"
 )
+
+// CRMAssociationEnriched extends CRMAssociation with the linked object's display info.
+type CRMAssociationEnriched struct {
+	CRMAssociation
+	LinkedObjectName      string `json:"linked_object_name"`
+	LinkedObjectDisplayID string `json:"linked_object_display_id"`
+}
 
 // CRMAssociation represents a relationship between two CRM objects.
 type CRMAssociation struct {

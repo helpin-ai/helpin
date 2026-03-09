@@ -40,10 +40,13 @@ export const queryKeys = {
     epics: (wsId: string) => ['pm', wsId, 'epics'] as const,
     epic: (wsId: string, id: string) => ['pm', wsId, 'epics', id] as const,
     epicStories: (wsId: string, epicId: string) => ['pm', wsId, 'epics', epicId, 'stories'] as const,
+    epicAssociations: (wsId: string, epicId: string) => ['pm', wsId, 'epics', epicId, 'associations'] as const,
 
     sprints: (wsId: string) => ['pm', wsId, 'sprints'] as const,
     sprint: (wsId: string, id: string) => ['pm', wsId, 'sprints', id] as const,
     sprintStories: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', sprintId, 'stories'] as const,
+
+    storyAssociations: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'associations'] as const,
 
     labels: (wsId: string) => ['pm', wsId, 'labels'] as const,
     labelsWithStats: (wsId: string) => ['pm', wsId, 'labels', 'withStats'] as const,

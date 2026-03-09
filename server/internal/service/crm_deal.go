@@ -19,6 +19,11 @@ func NewCRMDealService(dealRepo *repository.CRMDealRepository) *CRMDealService {
 	return &CRMDealService{dealRepo: dealRepo}
 }
 
+// SeedWorkspaceDefaults creates a default sales pipeline for a new workspace.
+func (s *CRMDealService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
+	return s.dealRepo.SeedDefaultPipeline(ctx, workspaceID)
+}
+
 // ── Pipeline operations ──
 
 // ListPipelines returns all pipelines in a workspace.

@@ -82,6 +82,11 @@ export interface Epic {
   health_comment?: string;
   archived: boolean;
   orchestrator_agent_id?: string;
+  spec_document_id?: string;
+  planning_repository_id?: string;
+  planning_state: string;
+  approved_spec_version_id?: string;
+  last_planning_run_id?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
@@ -404,6 +409,7 @@ export interface CreateEpicRequest {
   health?: EpicHealth;
   health_comment?: string;
   label_ids?: string[];
+  planning_repository_id?: string;
 }
 
 export interface UpdateEpicRequest {
@@ -420,6 +426,7 @@ export interface UpdateEpicRequest {
   health?: EpicHealth;
   health_comment?: string;
   label_ids?: string[];
+  planning_repository_id?: string;
 }
 
 export interface UpdateEpicHealthRequest {
@@ -791,6 +798,7 @@ export interface UpdateViewRequest {
 // ── Agents ──────────────────────────────────────────────────────────
 
 export type AgentKind = 'human' | 'llm';
+export type AgentClass = 'product_planner' | 'engineer' | 'reviewer' | 'support' | 'human';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'native_claude' | 'claude_code' | 'openclaw' | 'zeroclaw';
@@ -803,6 +811,7 @@ export interface Agent {
   workspace_id: string;
   name: string;
   agent_kind: AgentKind;
+  agent_class: AgentClass;
   role: string;
   status: AgentStatus;
   backing_user_id?: string;
@@ -812,6 +821,7 @@ export interface Agent {
   trigger_mode: AgentTriggerMode;
   model?: string;
   system_prompt?: string;
+  planning_notes?: string;
   tools: unknown[];
   monthly_token_budget?: number;
   tokens_used_this_month: number;
@@ -856,18 +866,55 @@ export interface AgentRun {
 }
 
 export interface ProposedStory {
+  ref?: string;
   name: string;
   description: string;
   story_type: string;
   estimate?: number;
+  priority?: string;
+  acceptance_criteria?: string[];
+  dependency_refs?: string[];
+  source_refs?: PlanningSourceRef[];
   assign_agent_id?: string;
+}
+
+export interface PlanningSourceRef {
+  type: string;
+  id?: string;
+  title?: string;
 }
 
 export interface OrchestrationProposal {
   epic_id: string;
   summary: string;
+  spec_version_id?: string;
   proposed_stories: ProposedStory[];
+  open_questions?: string[];
+  risks?: string[];
   tokens_used: number;
+}
+
+export interface ApprovedSpecSummary {
+  stage: string;
+  spec_document_id: string;
+  spec_version_id: string;
+  summary?: string;
+}
+
+export interface PlanningExecutionStart {
+  story_id: string;
+  run_id: string;
+  started_at: string;
+}
+
+export interface PlanningExecutionSkip {
+  story_id: string;
+  reason: string;
+}
+
+export interface KickoffExecutionResult {
+  started: PlanningExecutionStart[];
+  skipped: PlanningExecutionSkip[];
 }
 
 export interface AgentRunArtifact {
@@ -887,8 +934,9 @@ export interface AgentRunArtifact {
 export interface CreateAgentRequest {
   workspace_id: string;
   name: string;
-  agent_kind: AgentKind;
-  role: string;
+  agent_kind?: AgentKind;
+  agent_class?: AgentClass;
+  role?: string;
   backing_user_id?: string;
   runtime_kind?: AgentRuntimeKind;
   capability_profile?: string;
@@ -896,12 +944,14 @@ export interface CreateAgentRequest {
   trigger_mode?: AgentTriggerMode;
   model?: string;
   system_prompt?: string;
+  planning_notes?: string;
   tools?: unknown[];
   monthly_token_budget?: number;
 }
 
 export interface UpdateAgentRequest {
   name?: string;
+  agent_class?: AgentClass;
   role?: string;
   status?: AgentStatus;
   backing_user_id?: string;
@@ -911,6 +961,7 @@ export interface UpdateAgentRequest {
   trigger_mode?: AgentTriggerMode;
   model?: string;
   system_prompt?: string;
+  planning_notes?: string;
   tools?: unknown[];
   monthly_token_budget?: number;
   active_story_id?: string;
@@ -938,6 +989,7 @@ export interface RuntimeProfile {
   description: string;
   allowed_tools: string[];
   allowed_commands: string[];
+  allowed_target_types: AgentTargetType[];
   approval_required: boolean;
   requires_repo: boolean;
 }

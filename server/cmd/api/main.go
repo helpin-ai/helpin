@@ -141,6 +141,7 @@ func main() {
 		&model.Agent{},
 		&model.AgentRun{},
 		&model.AgentRunArtifact{},
+		&model.PMStoryLink{},
 		&model.SupportTicket{},
 		&model.SupportMessage{},
 		&model.SupportWidgetInstallation{},
@@ -270,6 +271,7 @@ func main() {
 	agentRepo := repository.NewAgentRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
+	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportTicketRepo := repository.NewSupportTicketRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	widgetInstallRepo := repository.NewWidgetInstallationRepository(db)
@@ -316,7 +318,7 @@ func main() {
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, followerRepo, wsPublisher)
 	followerService := service.NewFollowerService(followerRepo)
 	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
-	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher, notificationService)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
@@ -326,7 +328,7 @@ func main() {
 	pmViewService := service.NewPMViewService(pmViewRepo)
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
-	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher)
+	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, agentRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher)
 
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
@@ -363,10 +365,17 @@ func main() {
 		agentRunRepo,
 		agentRunArtifactRepo,
 		pmStoryRepo,
+		pmStoryLinkRepo,
 		pmEpicRepo,
 		supportTicketRepo,
 		supportMessageRepo,
 		agentHandoffRepo,
+		settingsRepo,
+		docsSpaceRepo,
+		docsDocumentRepo,
+		docsContentRepo,
+		docsVersionRepo,
+		docsLinkRepo,
 		runEngine,
 		gitService,
 		pmStoryService,
@@ -408,12 +417,13 @@ func main() {
 	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
 
 	orgService := service.NewOrganizationService(orgRepo)
-	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, pmWorkflowService)
+	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, crmDealService)
+	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
 	sprintService := service.NewRewardSprintService(sprintRepo, scoringRepo)
 	goalService := service.NewRewardGoalService(goalRepo)
 	bonusService := service.NewRewardBonusService(bonusRepo, scoringRepo)
-	settingsService := service.NewSettingsService(settingsRepo)
+	settingsService := service.NewSettingsService(settingsRepo, cfg.BraveSearchAPIKey)
 	auditService := service.NewRewardAuditService(bonusRepo)
 	draftService := service.NewRewardDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL)
@@ -428,56 +438,56 @@ func main() {
 
 	// Initialize handlers.
 	handlers := router.Handlers{
-		Health:          handler.NewHealthHandler(),
-		Auth:            handler.NewAuthHandler(authService),
-		Organization:    handler.NewOrganizationHandler(orgService),
-		Workspace:       handler.NewWorkspaceHandler(workspaceService),
-		RewardQuarter:   handler.NewRewardQuarterHandler(quarterService),
-		RewardSprint:    handler.NewRewardSprintHandler(sprintService),
-		RewardGoal:      handler.NewRewardGoalHandler(goalService),
-		RewardBonus:     handler.NewRewardBonusHandler(bonusService),
-		RewardFinance:   handler.NewRewardFinanceHandler(bonusService),
-		Settings:        handler.NewSettingsHandler(settingsService),
-		RewardAudit:     handler.NewRewardAuditHandler(auditService),
-		RewardDraft:     handler.NewRewardDraftHandler(draftService),
-		Invite:          handler.NewInviteHandler(inviteService),
-		PMWorkflow:      handler.NewPMWorkflowHandler(pmWorkflowService),
-		PMImport:        handler.NewPMImportHandler(pmImportService),
-		PMLabel:         handler.NewPMLabelHandler(pmLabelService),
-		PMEpic:          handler.NewPMEpicHandler(pmEpicService),
-		PMSprint:        handler.NewPMSprintHandler(pmSprintService),
-		PMStory:         handler.NewPMStoryHandler(pmStoryService),
-		PMComment:       handler.NewPMCommentHandler(pmCommentService),
-		PMAttachment:    handler.NewPMAttachmentHandler(pmAttachmentService),
-		PMObjective:     handler.NewPMObjectiveHandler(pmObjectiveService),
-		PMChecklistItem: handler.NewPMChecklistItemHandler(pmChecklistItemService),
-		PMExternalLink:  handler.NewPMExternalLinkHandler(pmExternalLinkService),
-		PMView:          handler.NewPMViewHandler(pmViewService),
-		Search:          handler.NewSearchHandler(searchService),
+		Health:            handler.NewHealthHandler(),
+		Auth:              handler.NewAuthHandler(authService),
+		Organization:      handler.NewOrganizationHandler(orgService),
+		Workspace:         handler.NewWorkspaceHandler(workspaceService),
+		RewardQuarter:     handler.NewRewardQuarterHandler(quarterService),
+		RewardSprint:      handler.NewRewardSprintHandler(sprintService),
+		RewardGoal:        handler.NewRewardGoalHandler(goalService),
+		RewardBonus:       handler.NewRewardBonusHandler(bonusService),
+		RewardFinance:     handler.NewRewardFinanceHandler(bonusService),
+		Settings:          handler.NewSettingsHandler(settingsService),
+		RewardAudit:       handler.NewRewardAuditHandler(auditService),
+		RewardDraft:       handler.NewRewardDraftHandler(draftService),
+		Invite:            handler.NewInviteHandler(inviteService),
+		PMWorkflow:        handler.NewPMWorkflowHandler(pmWorkflowService),
+		PMImport:          handler.NewPMImportHandler(pmImportService),
+		PMLabel:           handler.NewPMLabelHandler(pmLabelService),
+		PMEpic:            handler.NewPMEpicHandler(pmEpicService),
+		PMSprint:          handler.NewPMSprintHandler(pmSprintService),
+		PMStory:           handler.NewPMStoryHandler(pmStoryService),
+		PMComment:         handler.NewPMCommentHandler(pmCommentService),
+		PMAttachment:      handler.NewPMAttachmentHandler(pmAttachmentService),
+		PMObjective:       handler.NewPMObjectiveHandler(pmObjectiveService),
+		PMChecklistItem:   handler.NewPMChecklistItemHandler(pmChecklistItemService),
+		PMExternalLink:    handler.NewPMExternalLinkHandler(pmExternalLinkService),
+		PMView:            handler.NewPMViewHandler(pmViewService),
+		Search:            handler.NewSearchHandler(searchService),
 		PMAutomation:      handler.NewPMAutomationHandler(pmAutomationService),
 		PMStoryTemplate:   handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
-		Agent:           handler.NewAgentHandler(agentService),
-		Support:         handler.NewSupportHandler(supportService, agentService),
-		Widget:          handler.NewWidgetHandler(supportService),
-		Git:             handler.NewGitHandler(gitService),
-		Orchestration:   handler.NewOrchestrationHandler(orchestrationService),
-		Notification: handler.NewNotificationHandler(notificationService, followerService),
-		CRMContact:     handler.NewCRMContactHandler(crmContactService),
-		CRMCompany:     handler.NewCRMCompanyHandler(crmCompanyService),
-		CRMDeal:        handler.NewCRMDealHandler(crmDealService),
-		CRMAssociation: handler.NewCRMAssociationHandler(crmAssociationService),
-		CRMActivity:    handler.NewCRMActivityHandler(crmActivityService),
-		CRMProperty:    handler.NewCRMPropertyHandler(crmPropertyService),
-		CRMList:        handler.NewCRMListHandler(crmListService),
-		CRMImport:      handler.NewCRMImportHandler(crmImportService),
-		CRMEmail:       handler.NewCRMEmailHandler(crmEmailService),
-		CRMCalendar:    handler.NewCRMCalendarHandler(crmCalendarService),
-		CRMEnrichment:  handler.NewCRMEnrichmentHandler(crmEnrichmentService),
-		CRMSignal:      handler.NewCRMSignalHandler(crmSignalService),
-		CRMSuggestion:  handler.NewCRMSuggestionHandler(crmSuggestionService),
-		CRMSequence:    handler.NewCRMSequenceHandler(crmSequenceService),
+		Agent:             handler.NewAgentHandler(agentService),
+		Support:           handler.NewSupportHandler(supportService, agentService),
+		Widget:            handler.NewWidgetHandler(supportService),
+		Git:               handler.NewGitHandler(gitService),
+		Orchestration:     handler.NewOrchestrationHandler(orchestrationService),
+		Notification:      handler.NewNotificationHandler(notificationService, followerService),
+		CRMContact:        handler.NewCRMContactHandler(crmContactService),
+		CRMCompany:        handler.NewCRMCompanyHandler(crmCompanyService),
+		CRMDeal:           handler.NewCRMDealHandler(crmDealService),
+		CRMAssociation:    handler.NewCRMAssociationHandler(crmAssociationService),
+		CRMActivity:       handler.NewCRMActivityHandler(crmActivityService),
+		CRMProperty:       handler.NewCRMPropertyHandler(crmPropertyService),
+		CRMList:           handler.NewCRMListHandler(crmListService),
+		CRMImport:         handler.NewCRMImportHandler(crmImportService),
+		CRMEmail:          handler.NewCRMEmailHandler(crmEmailService),
+		CRMCalendar:       handler.NewCRMCalendarHandler(crmCalendarService),
+		CRMEnrichment:     handler.NewCRMEnrichmentHandler(crmEnrichmentService),
+		CRMSignal:         handler.NewCRMSignalHandler(crmSignalService),
+		CRMSuggestion:     handler.NewCRMSuggestionHandler(crmSuggestionService),
+		CRMSequence:       handler.NewCRMSequenceHandler(crmSequenceService),
 		CRMWritingProfile: handler.NewCRMWritingProfileHandler(crmWritingProfileService),
-		CRMSearch:      handler.NewCRMSearchHandler(crmSearchService),
+		CRMSearch:         handler.NewCRMSearchHandler(crmSearchService),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,

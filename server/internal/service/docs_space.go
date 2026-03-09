@@ -142,13 +142,14 @@ func (s *DocsSpaceService) SeedDefaultSpaces(ctx context.Context, workspaceID, u
 	}{
 		{"Company Wiki", "company-wiki", model.SpaceTypeInternal, false, 0},
 		{"Engineering", "engineering", model.SpaceTypeInternal, false, 1},
-		{"Support Knowledge", "support-knowledge", model.SpaceTypeInternal, false, 2},
-		{"Marketing", "marketing", model.SpaceTypeInternal, false, 3},
-		{"Sales", "sales", model.SpaceTypeInternal, false, 4},
-		{"HR & People", "hr-people", model.SpaceTypeInternal, true, 5},
-		{"Operations", "operations", model.SpaceTypeInternal, false, 6},
-		{"Help Center", "help-center", model.SpaceTypeExternalCapable, false, 7},
-		{"Developer / API Docs", "developer-api-docs", model.SpaceTypeExternalCapable, false, 8},
+		{"Product Specs", "product-specs", model.SpaceTypeInternal, false, 2},
+		{"Support Knowledge", "support-knowledge", model.SpaceTypeInternal, false, 3},
+		{"Marketing", "marketing", model.SpaceTypeInternal, false, 4},
+		{"Sales", "sales", model.SpaceTypeInternal, false, 5},
+		{"HR & People", "hr-people", model.SpaceTypeInternal, true, 6},
+		{"Operations", "operations", model.SpaceTypeInternal, false, 7},
+		{"Help Center", "help-center", model.SpaceTypeExternalCapable, false, 8},
+		{"Developer / API Docs", "developer-api-docs", model.SpaceTypeExternalCapable, false, 9},
 	}
 
 	for _, d := range defaults {
@@ -168,6 +169,29 @@ func (s *DocsSpaceService) SeedDefaultSpaces(ctx context.Context, workspaceID, u
 		}
 	}
 	return nil
+}
+
+// EnsureSystemSpace returns a system space by slug, creating it if needed.
+func (s *DocsSpaceService) EnsureSystemSpace(ctx context.Context, workspaceID, userID, slug, name, spaceType string, position int) (*model.DocsSpace, error) {
+	existing, err := s.spaceRepo.GetBySlug(ctx, workspaceID, slug)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
+	space := &model.DocsSpace{
+		WorkspaceID: workspaceID,
+		Name:        name,
+		Slug:        slug,
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        spaceType,
+		IsSystem:    true,
+		Position:    position,
+		CreatedBy:   userID,
+	}
+	return s.spaceRepo.Create(ctx, space)
 }
 
 // slugify creates a URL-safe slug from a name.

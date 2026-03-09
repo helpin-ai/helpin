@@ -322,6 +322,9 @@ export interface WorkspaceConfig {
   notifications_enabled: boolean;
   auto_calculate_bonuses: boolean;
   team_weight: number;
+  planning_methodology: 'structured_v1' | 'basic_v1';
+  planning_web_search_enabled: boolean;
+  planning_web_search_provider: 'brave';
 }
 
 export interface WorkspaceTeam {

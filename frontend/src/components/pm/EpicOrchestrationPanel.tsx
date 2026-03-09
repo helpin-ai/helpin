@@ -1,444 +1,454 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bot, Check, Clock, FileText, Loader2, Play, ShieldCheck, Sparkles, StopCircle, Trash2 } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
+
 import { Separator } from '@/components/ui/separator';
+import { useDocsDocument, useDocsLinkedDocs } from '@/hooks/queries/useDocs';
 import { agentService } from '@/lib/services/agentService';
-import type { Agent, AgentRun, AgentRunArtifact, OrchestrationProposal, ProposedStory } from '@/lib/pmTypes';
+import type {
+  Agent,
+  AgentRun,
+  AgentRunArtifact,
+  Epic,
+  KickoffExecutionResult,
+  OrchestrationProposal,
+  ProposedStory,
+} from '@/lib/pmTypes';
+
+import { ApproveSpecStep } from './ApproveSpecStep';
+import { DraftSpecStep } from './DraftSpecStep';
+import { ExecuteStep } from './ExecuteStep';
+import { GenerateStoriesStep } from './GenerateStoriesStep';
+import { PlannerSetupStep } from './PlannerSetupStep';
+import { PlanningActivityLog } from './PlanningActivityLog';
+import { PlanningProgress } from './PlanningProgress';
+import { computeCurrentStep, getStepStatus } from './planningStepUtils';
+import { ReviewStoriesStep } from './ReviewStoriesStep';
 
 interface Props {
-  epicId: string;
+  epic: Epic;
   workspaceId: string;
-  orchestratorAgentId?: string;
+  workspaceSlug: string;
   onStoriesCreated?: () => void;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  queued: { label: 'Queued', variant: 'secondary' },
-  running: { label: 'Running', variant: 'default' },
-  awaiting_approval: { label: 'Review required', variant: 'secondary' },
-  completed: { label: 'Completed', variant: 'outline' },
-  failed: { label: 'Failed', variant: 'destructive' },
-  cancelled: { label: 'Cancelled', variant: 'secondary' },
-};
-
-function parseProposal(artifacts: AgentRunArtifact[], run: AgentRun | null): OrchestrationProposal | null {
-  const proposalArtifact = [...artifacts]
-    .sort((a, b) => b.sequence_no - a.sequence_no)
-    .find((artifact) => artifact.artifact_type === 'orchestration_proposal' && artifact.inline_content);
-
-  const candidate = proposalArtifact?.inline_content ?? (run?.output_summary && 'proposed_stories' in run.output_summary ? JSON.stringify(run.output_summary) : null);
-  if (!candidate) return null;
-
-  try {
-    const parsed = JSON.parse(candidate) as OrchestrationProposal;
-    if (!Array.isArray(parsed.proposed_stories)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+interface ProductSpecDraft {
+  title: string;
+  summary: string;
+  spec_markdown: string;
+  risks?: string[];
+  open_questions?: string[];
+  sources?: {
+    title: string;
+    url: string;
+    note?: string;
+    published_at?: string;
+  }[];
 }
 
-export function EpicOrchestrationPanel({ epicId, workspaceId, orchestratorAgentId, onStoriesCreated }: Props) {
+interface CreatedPlanningStory {
+  story_id: string;
+  ref?: string;
+  name: string;
+  story_type: string;
+  estimate?: number;
+  priority?: string;
+  acceptance_criteria?: string[];
+  dependency_refs?: string[];
+}
+
+interface PlanningRunSummary {
+  stage?: string;
+  spec_document_id?: string;
+  spec_version_id?: string;
+  summary?: string;
+  risks?: string[];
+  open_questions?: string[];
+  proposal?: OrchestrationProposal;
+  created_story_ids?: string[];
+  created_stories?: CreatedPlanningStory[];
+}
+
+// --- Helpers ---
+
+function parseJSONValue<T>(value: unknown): T | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try { return JSON.parse(value) as T; } catch { return null; }
+  }
+  if (typeof value === 'object') return value as T;
+  return null;
+}
+
+function getRunStage(run: AgentRun | null): string {
+  if (!run) return '';
+  const stage = run.input?.stage;
+  return typeof stage === 'string' ? stage : '';
+}
+
+function findArtifactPayload<T>(artifacts: AgentRunArtifact[], artifactTypes: string[]): T | null {
+  const artifact = [...artifacts]
+    .sort((a, b) => b.sequence_no - a.sequence_no)
+    .find((item) => artifactTypes.includes(item.artifact_type) && item.inline_content);
+  if (!artifact?.inline_content) return null;
+  return parseJSONValue<T>(artifact.inline_content);
+}
+
+function parsePlanningSummary(run: AgentRun | null): PlanningRunSummary | null {
+  return parseJSONValue<PlanningRunSummary>(run?.output_summary);
+}
+
+function parseProposal(artifacts: AgentRunArtifact[], run: AgentRun | null): OrchestrationProposal | null {
+  const artifactProposal = findArtifactPayload<OrchestrationProposal>(artifacts, ['story_plan_proposal', 'orchestration_proposal']);
+  if (artifactProposal?.proposed_stories?.length) return artifactProposal;
+  const summary = parsePlanningSummary(run);
+  if (summary?.proposal?.proposed_stories?.length) return summary.proposal;
+  const runProposal = parseJSONValue<OrchestrationProposal>(run?.output_summary);
+  if (runProposal?.proposed_stories?.length) return runProposal;
+  return null;
+}
+
+function parseSpecDraft(artifacts: AgentRunArtifact[]): ProductSpecDraft | null {
+  return findArtifactPayload<ProductSpecDraft>(artifacts, ['product_spec_draft']);
+}
+
+function parseExecutionResult(value: unknown): KickoffExecutionResult | null {
+  return parseJSONValue<KickoffExecutionResult>(value);
+}
+
+// --- Component ---
+
+export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onStoriesCreated }: Props) {
+  const navigate = useNavigate();
+
+  // State
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [assignedAgentId, setAssignedAgentId] = useState(orchestratorAgentId ?? '');
-  const [selectedAgentId, setSelectedAgentId] = useState(orchestratorAgentId ?? '');
+  const [assignedAgentId, setAssignedAgentId] = useState(epic.orchestrator_agent_id ?? '');
+  const [selectedAgentId, setSelectedAgentId] = useState(epic.orchestrator_agent_id ?? '');
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [artifacts, setArtifacts] = useState<AgentRunArtifact[]>([]);
   const [editedStories, setEditedStories] = useState<ProposedStory[]>([]);
+  const [selectedStoryIds, setSelectedStoryIds] = useState<string[]>([]);
   const [additionalContext, setAdditionalContext] = useState('');
   const [assigning, setAssigning] = useState(false);
-  const [triggering, setTriggering] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [actingOnRun, setActingOnRun] = useState<string | null>(null);
   const [loadingRuns, setLoadingRuns] = useState(true);
+  const [triggeringDraft, setTriggeringDraft] = useState(false);
+  const [approvingSpec, setApprovingSpec] = useState(false);
+  const [triggeringPlan, setTriggeringPlan] = useState(false);
+  const [confirmingPlan, setConfirmingPlan] = useState(false);
+  const [kickingOff, setKickingOff] = useState(false);
+  const [actingOnRun, setActingOnRun] = useState<string | null>(null);
+  const [lastExecutionResult, setLastExecutionResult] = useState<KickoffExecutionResult | null>(null);
 
+  useDocsLinkedDocs(workspaceId, 'epic', epic.id);
+  const specDocQuery = useDocsDocument(workspaceId, epic.spec_document_id ?? '');
+
+  // Sync props
   useEffect(() => {
-    setAssignedAgentId(orchestratorAgentId ?? '');
-    setSelectedAgentId(orchestratorAgentId ?? '');
-  }, [orchestratorAgentId]);
+    setAssignedAgentId(epic.orchestrator_agent_id ?? '');
+    setSelectedAgentId(epic.orchestrator_agent_id ?? '');
+  }, [epic.orchestrator_agent_id]);
 
+  // Fetchers
   const fetchAgents = useCallback(async () => {
     const res = await agentService.list(workspaceId);
-    if (res.error) {
-      toast.error(res.error);
-      return;
-    }
+    if (res.error) { toast.error(res.error); return; }
     const data = Array.isArray(res.data) ? res.data : [];
-    setAgents(data.filter((agent) => agent.agent_kind === 'llm'));
+    setAgents(data.filter((agent) => agent.agent_kind === 'llm' && agent.agent_class === 'product_planner'));
   }, [workspaceId]);
 
   const fetchRuns = useCallback(async () => {
     setLoadingRuns(true);
     try {
-      const res = await agentService.listEpicRuns(workspaceId, epicId);
-      if (res.error) {
-        toast.error(res.error);
-        return;
-      }
+      const res = await agentService.listEpicRuns(workspaceId, epic.id);
+      if (res.error) { toast.error(res.error); return; }
       const data = Array.isArray(res.data) ? res.data : [];
       setRuns(data);
       setSelectedRunId((current) => current ?? data[0]?.id ?? null);
     } finally {
       setLoadingRuns(false);
     }
-  }, [workspaceId, epicId]);
+  }, [workspaceId, epic.id]);
 
   const loadArtifacts = useCallback(async (runId: string) => {
     const res = await agentService.listRunArtifacts(workspaceId, runId);
-    if (res.error) {
-      toast.error(res.error);
-      return;
-    }
+    if (res.error) { toast.error(res.error); return; }
     setArtifacts(Array.isArray(res.data) ? res.data : []);
   }, [workspaceId]);
 
-  useEffect(() => {
-    void fetchAgents();
-  }, [fetchAgents]);
+  useEffect(() => { void fetchAgents(); }, [fetchAgents]);
+  useEffect(() => { void fetchRuns(); }, [fetchRuns]);
 
-  useEffect(() => {
-    void fetchRuns();
-  }, [fetchRuns]);
-
+  // Poll active runs
   useEffect(() => {
     const active = runs.some((run) => ['queued', 'running', 'awaiting_approval'].includes(run.status));
     if (!active) return;
-    const interval = window.setInterval(() => {
-      void fetchRuns();
-    }, 5000);
+    const interval = window.setInterval(() => { void fetchRuns(); }, 5000);
     return () => window.clearInterval(interval);
   }, [runs, fetchRuns]);
 
+  // Load artifacts for selected run
   useEffect(() => {
-    if (!selectedRunId) {
-      setArtifacts([]);
-      return;
-    }
+    if (!selectedRunId) { setArtifacts([]); return; }
     void loadArtifacts(selectedRunId);
   }, [selectedRunId, loadArtifacts]);
 
-  const selectedRun = useMemo(
-    () => runs.find((run) => run.id === selectedRunId) ?? null,
-    [runs, selectedRunId],
-  );
+  // Derived data
+  const selectedRun = useMemo(() => runs.find((r) => r.id === selectedRunId) ?? null, [runs, selectedRunId]);
+  const selectedRunStage = useMemo(() => getRunStage(selectedRun), [selectedRun]);
 
-  const proposal = useMemo(
-    () => parseProposal(artifacts, selectedRun),
-    [artifacts, selectedRun],
-  );
+  const selectedProposal = useMemo(() => parseProposal(artifacts, selectedRun), [artifacts, selectedRun]);
+  const selectedDraft = useMemo(() => parseSpecDraft(artifacts), [artifacts]);
 
+  const latestPlanRun = useMemo(() => runs.find((r) => getRunStage(r) === 'plan_stories') ?? null, [runs]);
+  const latestDraftRun = useMemo(() => runs.find((r) => getRunStage(r) === 'draft_spec') ?? null, [runs]);
+
+  const selectedSummary = useMemo(() => parsePlanningSummary(selectedRun), [selectedRun]);
+  const planSummary = useMemo(
+    () => (selectedRunStage === 'plan_stories' ? selectedSummary : parsePlanningSummary(latestPlanRun)),
+    [latestPlanRun, selectedRunStage, selectedSummary],
+  );
+  const createdStories = useMemo(() => planSummary?.created_stories ?? [], [planSummary]);
+
+  // Sync edited stories from proposal
   useEffect(() => {
-    if (proposal?.proposed_stories) {
-      setEditedStories(proposal.proposed_stories);
-    } else {
-      setEditedStories([]);
-    }
-  }, [proposal?.epic_id, proposal?.summary, proposal?.tokens_used, proposal?.proposed_stories]);
+    if (selectedProposal?.proposed_stories) { setEditedStories(selectedProposal.proposed_stories); return; }
+    setEditedStories([]);
+  }, [selectedProposal]);
 
-  const assignAgent = useCallback(async () => {
-    if (!selectedAgentId) {
-      toast.error('Choose an orchestrator agent first');
-      return false;
-    }
+  // Sync selected story IDs from created stories
+  useEffect(() => {
+    if (createdStories.length === 0) { setSelectedStoryIds([]); return; }
+    setSelectedStoryIds((current) => {
+      if (current.length > 0) return current;
+      return createdStories.map((s) => s.story_id);
+    });
+  }, [createdStories]);
+
+  // Compute current step
+  const currentStep = useMemo(() => computeCurrentStep(epic, agents, runs), [epic, agents, runs]);
+
+  // --- Handlers ---
+
+  const ensureAssignedAgent = useCallback(async () => {
+    if (assignedAgentId) return assignedAgentId;
+    if (!selectedAgentId) { toast.error('Choose a planner first'); return ''; }
     setAssigning(true);
     try {
-      const res = await agentService.assignOrchestrator(workspaceId, epicId, selectedAgentId);
-      if (res.error) {
-        toast.error(res.error);
-        return false;
-      }
+      const res = await agentService.assignOrchestrator(workspaceId, epic.id, selectedAgentId);
+      if (res.error) { toast.error(res.error); return ''; }
       setAssignedAgentId(selectedAgentId);
-      toast.success('Orchestrator assigned');
-      return true;
-    } finally {
-      setAssigning(false);
-    }
-  }, [selectedAgentId, workspaceId, epicId]);
+      toast.success('Planner assigned');
+      return selectedAgentId;
+    } finally { setAssigning(false); }
+  }, [assignedAgentId, epic.id, selectedAgentId, workspaceId]);
 
-  const handleRun = useCallback(async () => {
-    let effectiveAgentId = assignedAgentId;
-    if (!effectiveAgentId) {
-      const assigned = await assignAgent();
-      if (!assigned) return;
-      effectiveAgentId = selectedAgentId;
-    }
-
-    if (!effectiveAgentId) {
-      toast.error('Assign an orchestrator first');
-      return;
-    }
-
-    setTriggering(true);
+  const handleAssignAgent = useCallback(async () => {
+    if (!selectedAgentId) { toast.error('Choose a planner first'); return; }
+    setAssigning(true);
     try {
-      const res = await agentService.runEpicAgent(workspaceId, epicId, additionalContext);
-      if (res.error) {
-        toast.error(res.error);
-        return;
-      }
-      toast.success('Epic orchestration run started');
+      const res = await agentService.assignOrchestrator(workspaceId, epic.id, selectedAgentId);
+      if (res.error) { toast.error(res.error); return; }
+      setAssignedAgentId(selectedAgentId);
+      toast.success('Planner assigned');
+    } finally { setAssigning(false); }
+  }, [epic.id, selectedAgentId, workspaceId]);
+
+  const handleDraftSpec = useCallback(async () => {
+    const agentId = await ensureAssignedAgent();
+    if (!agentId) return;
+    setTriggeringDraft(true);
+    try {
+      const res = await agentService.draftEpicSpec(workspaceId, epic.id, additionalContext);
+      if (res.error) { toast.error(res.error); return; }
+      toast.success('Spec draft started');
+      setAdditionalContext('');
+      setLastExecutionResult(null);
+      await fetchRuns();
+      onStoriesCreated?.();
+      if (res.data?.id) setSelectedRunId(res.data.id);
+    } finally { setTriggeringDraft(false); }
+  }, [additionalContext, ensureAssignedAgent, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
+
+  const handleApproveSpec = useCallback(async () => {
+    setApprovingSpec(true);
+    try {
+      const res = await agentService.approveEpicSpec(workspaceId, epic.id);
+      if (res.error) { toast.error(res.error); return; }
+      toast.success('Spec approved');
+      await fetchRuns();
+      onStoriesCreated?.();
+    } finally { setApprovingSpec(false); }
+  }, [epic.id, fetchRuns, onStoriesCreated, workspaceId]);
+
+  const handlePlanStories = useCallback(async () => {
+    const agentId = await ensureAssignedAgent();
+    if (!agentId) return;
+    setTriggeringPlan(true);
+    try {
+      const res = await agentService.planEpicStories(workspaceId, epic.id, additionalContext);
+      if (res.error) { toast.error(res.error); return; }
+      toast.success('Story generation started');
       setAdditionalContext('');
       await fetchRuns();
-      if (res.data?.id) {
-        setSelectedRunId(res.data.id);
-      }
-    } finally {
-      setTriggering(false);
-    }
-  }, [additionalContext, assignedAgentId, assignAgent, epicId, fetchRuns, selectedAgentId, workspaceId]);
+      onStoriesCreated?.();
+      if (res.data?.id) setSelectedRunId(res.data.id);
+    } finally { setTriggeringPlan(false); }
+  }, [additionalContext, ensureAssignedAgent, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
+
+  const handleConfirmPlan = useCallback(async () => {
+    const run = selectedRunStage === 'plan_stories' ? selectedRun : latestPlanRun;
+    if (!run) { toast.error('Select a story planning run first'); return; }
+    if (!editedStories.length) { toast.error('No proposed stories to create'); return; }
+    setConfirmingPlan(true);
+    try {
+      const res = await agentService.confirmOrchestrationRun(workspaceId, run.id, editedStories);
+      if (res.error) { toast.error(res.error); return; }
+      toast.success(`Created ${editedStories.length} stories`);
+      await fetchRuns();
+      await loadArtifacts(run.id);
+      onStoriesCreated?.();
+    } finally { setConfirmingPlan(false); }
+  }, [editedStories, fetchRuns, latestPlanRun, loadArtifacts, onStoriesCreated, selectedRun, selectedRunStage, workspaceId]);
+
+  const handleKickoffExecution = useCallback(async () => {
+    const run = selectedRunStage === 'plan_stories' ? selectedRun : latestPlanRun;
+    if (!run) { toast.error('Select a confirmed story plan first'); return; }
+    if (selectedStoryIds.length === 0) { toast.error('Select at least one story'); return; }
+    setKickingOff(true);
+    try {
+      const res = await agentService.kickoffEpicExecution(workspaceId, epic.id, run.id, selectedStoryIds);
+      if (res.error) { toast.error(res.error); return; }
+      setLastExecutionResult(parseExecutionResult(res.data) ?? null);
+      toast.success('Execution started');
+      await fetchRuns();
+      onStoriesCreated?.();
+    } finally { setKickingOff(false); }
+  }, [epic.id, fetchRuns, latestPlanRun, onStoriesCreated, selectedRun, selectedRunStage, selectedStoryIds, workspaceId]);
 
   const handleCancelRun = useCallback(async (runId: string) => {
     setActingOnRun(runId);
     try {
       const res = await agentService.cancelRun(workspaceId, runId);
-      if (res.error) {
-        toast.error(res.error);
-        return;
-      }
+      if (res.error) { toast.error(res.error); return; }
       toast.success('Run cancelled');
       await fetchRuns();
-    } finally {
-      setActingOnRun(null);
-    }
+    } finally { setActingOnRun(null); }
   }, [fetchRuns, workspaceId]);
 
-  const handleConfirm = useCallback(async () => {
-    if (!selectedRun) {
-      toast.error('Select an orchestration run first');
-      return;
-    }
-    if (!editedStories.length) {
-      toast.error('No proposed stories to create');
-      return;
-    }
+  const openSpecDoc = useCallback(() => {
+    if (!epic.spec_document_id) { toast.error('No spec document yet'); return; }
+    navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug: workspaceSlug, docId: epic.spec_document_id } });
+  }, [epic.spec_document_id, navigate, workspaceSlug]);
 
-    setConfirming(true);
-    try {
-      const res = await agentService.confirmOrchestrationRun(workspaceId, selectedRun.id, editedStories);
-      if (res.error) {
-        toast.error(res.error);
-        return;
-      }
-      toast.success(`Created ${editedStories.length} stories`);
-      await fetchRuns();
-      await loadArtifacts(selectedRun.id);
-      onStoriesCreated?.();
-    } finally {
-      setConfirming(false);
-    }
-  }, [editedStories, fetchRuns, loadArtifacts, onStoriesCreated, selectedRun, workspaceId]);
-
-  const updateStory = useCallback((index: number, field: keyof ProposedStory, value: string | number) => {
+  const updateStoryField = useCallback(<K extends keyof ProposedStory>(index: number, field: K, value: ProposedStory[K]) => {
     setEditedStories((current) =>
-      current.map((story, storyIndex) => (storyIndex === index ? { ...story, [field]: value } : story)),
+      current.map((story, i) => (i === index ? { ...story, [field]: value } : story)),
     );
   }, []);
 
-  const removeStory = useCallback((index: number) => {
-    setEditedStories((current) => current.filter((_, storyIndex) => storyIndex !== index));
+  const toggleExecutionStory = useCallback((storyId: string, checked: boolean) => {
+    setSelectedStoryIds((current) =>
+      checked ? [...current, storyId] : current.filter((v) => v !== storyId),
+    );
   }, []);
 
-  const otherArtifacts = useMemo(
-    () => artifacts.filter((artifact) => artifact.artifact_type !== 'orchestration_proposal'),
-    [artifacts],
-  );
+  const specDocTitle = specDocQuery.data?.title ?? 'Product Spec';
+
+  // --- Render ---
 
   return (
     <div className="mt-6">
       <Separator className="mb-6" />
-      <div className="flex items-center gap-2 mb-4">
-        <Sparkles className="h-4 w-4 text-purple-500" />
-        <h3 className="text-sm font-semibold">Epic Orchestration</h3>
+
+      <div className="mb-4 flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-amber-500" />
+        <h3 className="text-sm font-semibold">Product Planning</h3>
       </div>
 
-      <div className="rounded-md border border-border/60 bg-muted/20 p-3 space-y-3">
-        <p className="text-xs text-muted-foreground">
-          The orchestrator now runs through the shared agent-run pipeline, produces a proposal artifact, and waits for review before stories are created.
-        </p>
-        <div className="flex items-center gap-2">
-          <select
-            value={selectedAgentId}
-            onChange={(event) => setSelectedAgentId(event.target.value)}
-            className="h-8 rounded-md border border-border bg-background px-2 text-xs flex-1"
-          >
-            <option value="">Select orchestrator...</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name} ({agent.capability_profile || agent.role || 'agent'})
-              </option>
-            ))}
-          </select>
-          <Button size="sm" variant="outline" onClick={() => void assignAgent()} disabled={!selectedAgentId || assigning}>
-            {assigning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />}
-            Assign
-          </Button>
-        </div>
+      <div className="mb-5 flex justify-center">
+        <PlanningProgress currentStep={currentStep} />
+      </div>
 
-        <Textarea
-          value={additionalContext}
-          onChange={(event) => setAdditionalContext(event.target.value)}
-          placeholder="Additional context or constraints for this orchestration run..."
-          className="text-xs min-h-[72px]"
+      <div className="space-y-3">
+        <PlannerSetupStep
+          status={getStepStatus('setup', currentStep)}
+          epic={epic}
+          agents={agents}
+          selectedAgentId={selectedAgentId}
+          onSelectAgent={setSelectedAgentId}
+          onAssign={() => void handleAssignAgent()}
+          assigning={assigning}
         />
 
-        <div className="flex items-center gap-2">
-          <Button onClick={() => void handleRun()} disabled={triggering} className="gap-1.5" size="sm">
-            {triggering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            {triggering ? 'Starting...' : 'Run Orchestrator'}
-          </Button>
-          {assignedAgentId ? (
-            <Badge variant="outline" className="text-[10px]">assigned</Badge>
-          ) : (
-            <Badge variant="secondary" className="text-[10px]">no orchestrator assigned</Badge>
-          )}
-        </div>
+        <DraftSpecStep
+          status={getStepStatus('draft', currentStep)}
+          epic={epic}
+          specDocTitle={specDocTitle}
+          latestDraftRun={latestDraftRun}
+          specDraft={selectedDraft}
+          additionalContext={additionalContext}
+          onAdditionalContextChange={setAdditionalContext}
+          onDraftSpec={() => void handleDraftSpec()}
+          onOpenSpecDoc={openSpecDoc}
+          triggeringDraft={triggeringDraft}
+        />
+
+        <ApproveSpecStep
+          status={getStepStatus('approve', currentStep)}
+          epic={epic}
+          specDocTitle={specDocTitle}
+          onApproveSpec={() => void handleApproveSpec()}
+          onOpenSpecDoc={openSpecDoc}
+          approvingSpec={approvingSpec}
+        />
+
+        <GenerateStoriesStep
+          status={getStepStatus('generate', currentStep)}
+          epic={epic}
+          latestPlanRun={latestPlanRun}
+          proposal={selectedProposal}
+          additionalContext={additionalContext}
+          onAdditionalContextChange={setAdditionalContext}
+          onGenerateStories={() => void handlePlanStories()}
+          triggeringPlan={triggeringPlan}
+        />
+
+        <ReviewStoriesStep
+          status={getStepStatus('review', currentStep)}
+          proposal={selectedProposal}
+          editedStories={editedStories}
+          onUpdateStory={updateStoryField}
+          onConfirmPlan={() => void handleConfirmPlan()}
+          confirmingPlan={confirmingPlan}
+          canConfirm={editedStories.length > 0 && !!(selectedRunStage === 'plan_stories' ? selectedRun : latestPlanRun)}
+        />
+
+        <ExecuteStep
+          status={getStepStatus('execute', currentStep)}
+          createdStories={createdStories}
+          selectedStoryIds={selectedStoryIds}
+          onToggleStory={toggleExecutionStory}
+          onKickoff={() => void handleKickoffExecution()}
+          kickingOff={kickingOff}
+          executionResult={lastExecutionResult}
+        />
       </div>
 
-      <div className="mt-4 space-y-2">
-        <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Runs</h4>
-        </div>
-
-        {loadingRuns ? (
-          <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Loading orchestration runs...
-          </div>
-        ) : runs.length === 0 ? (
-          <p className="py-2 text-xs text-muted-foreground">No orchestration runs yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {runs.map((run) => {
-              const config = STATUS_CONFIG[run.status] ?? STATUS_CONFIG.queued;
-              const selected = selectedRunId === run.id;
-              return (
-                <div key={run.id} className={`rounded-md border px-3 py-2 ${selected ? 'border-primary bg-accent/30' : 'border-border/60'}`}>
-                  <button type="button" className="w-full text-left" onClick={() => setSelectedRunId(run.id)}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <Badge variant={config.variant} className="text-[10px]">{config.label}</Badge>
-                        <span className="text-[10px] text-muted-foreground">{run.runtime_kind}</span>
-                        {run.runner_pool && <span className="text-[10px] text-muted-foreground">pool: {run.runner_pool}</span>}
-                      </div>
-                      <span className="text-[10px] text-muted-foreground">{run.tokens_used > 0 ? `${run.tokens_used.toLocaleString()} tokens` : 'no tokens yet'}</span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-                      {run.execution_stage && <span>stage: {run.execution_stage}</span>}
-                      <span>approval: {run.approval_state}</span>
-                      {run.error_message && <span className="text-destructive">{run.error_message}</span>}
-                    </div>
-                  </button>
-
-                  {selected && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {['queued', 'running', 'awaiting_approval'].includes(run.status) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 gap-1 text-[11px]"
-                          disabled={actingOnRun === run.id}
-                          onClick={() => void handleCancelRun(run.id)}
-                        >
-                          {actingOnRun === run.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <StopCircle className="h-3 w-3" />}
-                          Cancel
-                        </Button>
-                      )}
-                      {run.approval_state === 'pending' && proposal && (
-                        <Button
-                          size="sm"
-                          className="h-7 gap-1 text-[11px]"
-                          disabled={confirming}
-                          onClick={() => void handleConfirm()}
-                        >
-                          {confirming ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                          Create Stories
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+      <div className="mt-4">
+        <PlanningActivityLog
+          runs={runs}
+          loadingRuns={loadingRuns}
+          selectedRunId={selectedRunId}
+          onSelectRun={setSelectedRunId}
+          selectedRun={selectedRun}
+          artifacts={artifacts}
+          actingOnRun={actingOnRun}
+          onCancelRun={(id) => void handleCancelRun(id)}
+        />
       </div>
-
-      {selectedRun && proposal && (
-        <div className="mt-4 space-y-3 rounded-md border border-border/60 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h4 className="text-sm font-medium">Proposal</h4>
-              <p className="text-xs text-muted-foreground">
-                {editedStories.length} proposed stories · {proposal.tokens_used.toLocaleString()} tokens
-              </p>
-            </div>
-            {selectedRun.approval_state === 'pending' ? (
-              <Badge variant="secondary" className="gap-1 text-[10px]">
-                <ShieldCheck className="h-3 w-3" />
-                Awaiting review
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-[10px]">Reviewed</Badge>
-            )}
-          </div>
-
-          {proposal.summary && (
-            <p className="rounded bg-muted/30 p-2 text-xs text-muted-foreground">{proposal.summary}</p>
-          )}
-
-          <div className="space-y-2">
-            {editedStories.map((story, index) => (
-              <div key={`${index}-${story.name}`} className="rounded-md border border-border/60 p-3 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <input
-                    value={story.name}
-                    onChange={(event) => updateStory(index, 'name', event.target.value)}
-                    className="flex-1 bg-transparent text-sm font-medium outline-none"
-                  />
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Badge variant="secondary" className="text-[10px]">{story.story_type || 'feature'}</Badge>
-                    {story.estimate != null && <Badge variant="outline" className="text-[10px]">{story.estimate}pt</Badge>}
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeStory(index)}>
-                      <Trash2 className="h-3 w-3 text-muted-foreground" />
-                    </Button>
-                  </div>
-                </div>
-                <textarea
-                  value={story.description}
-                  onChange={(event) => updateStory(index, 'description', event.target.value)}
-                  className="w-full resize-none bg-transparent text-xs text-muted-foreground outline-none min-h-[44px]"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {selectedRun && otherArtifacts.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-muted-foreground" />
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Artifacts</h4>
-          </div>
-          {otherArtifacts.map((artifact) => (
-            <div key={artifact.id} className="rounded border border-border/60 bg-muted/20 p-2">
-              <div className="mb-1 text-[11px] font-medium">
-                {artifact.artifact_type.replace(/_/g, ' ')} <span className="text-muted-foreground">({artifact.format})</span>
-              </div>
-              {artifact.inline_content && (
-                <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all text-[10px] text-muted-foreground">
-                  {artifact.inline_content.slice(0, 2000)}
-                  {artifact.inline_content.length > 2000 ? '...' : ''}
-                </pre>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

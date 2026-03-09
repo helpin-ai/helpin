@@ -26,6 +26,9 @@ const normalizeWorkspaceSettings = (raw: RawWorkspaceSettings): WorkspaceSetting
     notifications_enabled: true,
     auto_calculate_bonuses: false,
     team_weight: 50,
+    planning_methodology: 'structured_v1',
+    planning_web_search_enabled: false,
+    planning_web_search_provider: 'brave',
   },
   teams: raw.teams ?? [],
   people: raw.people ?? [],
@@ -78,7 +81,7 @@ export const settingsService = {
     api.put('/settings/job-roles', { workspace_id: workspaceId, job_role: jobRole, criteria }),
   deleteJobRole: (workspaceId: string, jobRole: string) =>
     api.del(`/settings/job-roles?workspace_id=${encodeURIComponent(workspaceId)}&job_role=${encodeURIComponent(jobRole)}`),
-  updateSystem: (workspaceId: string, data: { team_weight?: number; sprint_duration_weeks?: number; notifications_enabled?: boolean; auto_calculate_bonuses?: boolean }) =>
+  updateSystem: (workspaceId: string, data: { team_weight?: number; sprint_duration_weeks?: number; notifications_enabled?: boolean; auto_calculate_bonuses?: boolean; planning_methodology?: 'structured_v1' | 'basic_v1'; planning_web_search_enabled?: boolean; planning_web_search_provider?: 'brave' }) =>
     api.put(`/settings/system?workspace_id=${encodeURIComponent(workspaceId)}`, data),
   addTeamInvitation: (teamId: string, invitationId: string) =>
     api.post<InvitationTeamPreassignment>(`/settings/teams/${teamId}/invitations`, { invitation_id: invitationId }),

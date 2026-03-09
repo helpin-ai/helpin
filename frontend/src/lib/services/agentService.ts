@@ -11,6 +11,8 @@ import type {
   HandoffAgentRunRequest,
   PaginatedResponse,
   RunnerHealth,
+  ApprovedSpecSummary,
+  KickoffExecutionResult,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -51,8 +53,16 @@ export const agentService = {
     api.get<AgentRun[]>(`/pm/epics/${epicId}/agent-runs${qs(workspaceId)}`),
   runEpicAgent: (workspaceId: string, epicId: string, additionalContext?: string) =>
     api.post<AgentRun>(`/pm/epics/${epicId}/run-agent${qs(workspaceId)}`, { additional_context: additionalContext ?? '' }),
+  draftEpicSpec: (workspaceId: string, epicId: string, additionalContext?: string) =>
+    api.post<AgentRun>(`/pm/epics/${epicId}/draft-spec${qs(workspaceId)}`, { additional_context: additionalContext ?? '' }),
+  approveEpicSpec: (workspaceId: string, epicId: string, versionId?: string) =>
+    api.post<ApprovedSpecSummary>(`/pm/epics/${epicId}/approve-spec${qs(workspaceId)}`, versionId ? { version_id: versionId } : {}),
+  planEpicStories: (workspaceId: string, epicId: string, additionalContext?: string) =>
+    api.post<AgentRun>(`/pm/epics/${epicId}/plan-stories${qs(workspaceId)}`, { additional_context: additionalContext ?? '' }),
   confirmOrchestrationRun: (workspaceId: string, runId: string, proposedStories: ProposedStory[]) =>
     api.post(`/pm/agent-runs/${runId}/confirm-orchestration${qs(workspaceId)}`, { proposed_stories: proposedStories }),
+  kickoffEpicExecution: (workspaceId: string, epicId: string, runId: string, storyIds?: string[]) =>
+    api.post<KickoffExecutionResult>(`/pm/epics/${epicId}/kickoff-execution${qs(workspaceId)}`, { run_id: runId, story_ids: storyIds ?? [] }),
   assignOrchestrator: (workspaceId: string, epicId: string, agentId: string) =>
     api.post(`/pm/epics/${epicId}/assign-orchestrator${qs(workspaceId)}`, { agent_id: agentId }),
 };

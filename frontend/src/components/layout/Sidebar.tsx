@@ -2,12 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import {
-  Award,
   BarChart3,
   Bot,
   Briefcase,
   Building2,
-  Calendar,
   ChevronDown,
   Clock,
   ChevronRight,
@@ -35,7 +33,6 @@ import {
   Tag,
   Target,
   User,
-  UserPlus,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -152,7 +149,7 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
                       navigate({
                         to: '/w/$slug/docs/spaces/$spaceId' as string,
                         params: { slug: wsSlug, spaceId },
-                        search: { collection: col.id },
+                        search: { collection: col.id } as Record<string, string>,
                       });
                     }}
                   >
@@ -439,6 +436,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/story-templates`, label: 'Story Templates', icon: FileText },
           { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/delivery`, label: 'Delivery', icon: Globe },
+          { link: `/w/${wsSlug}/settings/ai`, label: 'AI', icon: Bot },
         ],
       },
       {

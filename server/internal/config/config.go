@@ -26,7 +26,8 @@ type Config struct {
 	AWSEndpointURL     string // For MinIO / local dev
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
-	AnthropicAPIKey string
+	AnthropicAPIKey   string
+	BraveSearchAPIKey string
 
 	// GitHub App (optional — required for shared-runner repo mutation).
 	// GITHUB_APP_PRIVATE_KEY should be provided as a base64-encoded PEM value.
@@ -101,6 +102,7 @@ func Load() (*Config, error) {
 		AWSRegion:             os.Getenv("AWS_REGION"),
 		AWSEndpointURL:        os.Getenv("AWS_S3_ENDPOINT_URL"),
 		AnthropicAPIKey:       os.Getenv("ANTHROPIC_API_KEY"),
+		BraveSearchAPIKey:     strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
 		GitHubAppID:           os.Getenv("GITHUB_APP_ID"),
 		GitHubAppSlug:         os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:   os.Getenv("GITHUB_APP_PRIVATE_KEY"),

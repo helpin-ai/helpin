@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bot, Plus } from 'lucide-react';
+import { Collapsible } from 'radix-ui';
+import { Bot, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { agentService } from '@/lib/services/agentService';
-import type { Agent, AgentKind, AgentRuntimeKind, AgentTriggerMode, CreateAgentRequest, RuntimeProfile, UpdateAgentRequest } from '@/lib/pmTypes';
+import type {
+  Agent,
+  AgentClass,
+  AgentRuntimeKind,
+  AgentTriggerMode,
+  CreateAgentRequest,
+  UpdateAgentRequest,
+} from '@/lib/pmTypes';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -32,6 +40,170 @@ const STATUS_DOT: Record<string, string> = {
   error: 'bg-red-500',
   paused: 'bg-gray-400',
 };
+
+const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['native_claude', 'claude_code', 'openclaw', 'zeroclaw'];
+const ADVANCED_DEFAULT_RUNTIME: Record<AgentClass, AgentRuntimeKind> = {
+  product_planner: 'native_claude',
+  engineer: 'native_claude',
+  reviewer: 'native_claude',
+  support: 'native_claude',
+  human: 'native_claude',
+};
+const ENGINE_TRIGGER_MODE_OPTIONS: AgentTriggerMode[] = ['manual', 'auto_on_assignment', 'auto_on_event'];
+const AGENT_CLASS_LABELS: Record<AgentClass, string> = {
+  product_planner: 'Product Planner',
+  engineer: 'Engineer',
+  reviewer: 'Reviewer',
+  support: 'Support',
+  human: 'Human',
+};
+const AGENT_CLASS_DESCRIPTIONS: Record<AgentClass, string> = {
+  product_planner: 'Epic-only PRD, spec, and story planning.',
+  engineer: 'Story-only implementation and delivery.',
+  reviewer: 'Story-only review, testing, and readiness checks.',
+  support: 'Support-ticket triage and draft replies.',
+  human: 'Non-runnable placeholder for explicit handoffs.',
+};
+
+interface AgentFormData {
+  name: string;
+  agent_class: AgentClass;
+  runtime_kind: AgentRuntimeKind;
+  trigger_mode: AgentTriggerMode;
+  backing_user_id: string;
+  skills: string;
+  model: string;
+  system_prompt: string;
+  planning_notes: string;
+  monthly_token_budget: string;
+}
+
+function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
+  return {
+    name: '',
+    agent_class: agentClass,
+    runtime_kind: ADVANCED_DEFAULT_RUNTIME[agentClass],
+    trigger_mode: defaultTriggerModeForClass(agentClass),
+    backing_user_id: '',
+    skills: '',
+    model: '',
+    system_prompt: '',
+    planning_notes: '',
+    monthly_token_budget: '',
+  };
+}
+
+function isLLMAgentClass(agentClass: AgentClass): boolean {
+  return agentClass !== 'human';
+}
+
+function showsTriggerMode(agentClass: AgentClass): boolean {
+  return agentClass === 'engineer' || agentClass === 'reviewer';
+}
+
+function defaultTriggerModeForClass(agentClass: AgentClass): AgentTriggerMode {
+  return agentClass === 'engineer' || agentClass === 'reviewer' ? 'manual' : 'manual';
+}
+
+function allowedTriggerModesForClass(agentClass: AgentClass): AgentTriggerMode[] {
+  return showsTriggerMode(agentClass) ? ENGINE_TRIGGER_MODE_OPTIONS : ['manual'];
+}
+
+function parseSkills(skills: string): string[] {
+  return skills
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function hasConfiguredAdvancedFields(agent: Agent | null): boolean {
+  if (!agent || agent.agent_class === 'human') return false;
+  return (
+    agent.runtime_kind !== ADVANCED_DEFAULT_RUNTIME[agent.agent_class] ||
+    Boolean(agent.system_prompt?.trim()) ||
+    agent.skills.length > 0 ||
+    Boolean(agent.monthly_token_budget)
+  );
+}
+
+function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentFormData {
+  const next: AgentFormData = {
+    ...current,
+    agent_class: nextClass,
+    runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
+    trigger_mode: allowedTriggerModesForClass(nextClass).includes(current.trigger_mode)
+      ? current.trigger_mode
+      : defaultTriggerModeForClass(nextClass),
+  };
+
+  if (nextClass === 'human') {
+    return {
+      ...next,
+      runtime_kind: ADVANCED_DEFAULT_RUNTIME[nextClass],
+      trigger_mode: 'manual',
+      model: '',
+      system_prompt: '',
+      planning_notes: '',
+      skills: '',
+      monthly_token_budget: '',
+    };
+  }
+
+  if (nextClass === 'product_planner') {
+    return {
+      ...next,
+      backing_user_id: '',
+      system_prompt: '',
+      trigger_mode: 'manual',
+    };
+  }
+
+  return {
+    ...next,
+    backing_user_id: '',
+    planning_notes: '',
+  };
+}
+
+function buildAdvancedFields(form: AgentFormData, advancedOpen: boolean): Partial<CreateAgentRequest> {
+  if (!advancedOpen || form.agent_class === 'human') {
+    return {};
+  }
+
+  return {
+    runtime_kind: form.runtime_kind,
+    system_prompt: form.system_prompt,
+    skills: parseSkills(form.skills),
+    monthly_token_budget: form.monthly_token_budget.trim()
+      ? Number.parseInt(form.monthly_token_budget, 10)
+      : 0,
+  };
+}
+
+function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOpen: boolean): CreateAgentRequest {
+  return {
+    workspace_id: workspaceId,
+    name: form.name.trim(),
+    agent_class: form.agent_class,
+    backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : undefined,
+    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : undefined,
+    model: isLLMAgentClass(form.agent_class) ? form.model.trim() : undefined,
+    planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
+    ...buildAdvancedFields(form, advancedOpen),
+  };
+}
+
+function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean): UpdateAgentRequest {
+  return {
+    name: form.name.trim(),
+    agent_class: form.agent_class,
+    backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : undefined,
+    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : undefined,
+    model: isLLMAgentClass(form.agent_class) ? form.model.trim() : undefined,
+    planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
+    ...buildAdvancedFields(form, advancedOpen),
+  };
+}
 
 function AgentCard({
   agent,
@@ -72,19 +244,18 @@ function AgentCard({
           >
             {agent.agent_kind === 'llm' ? 'LLM' : 'Human'}
           </Badge>
-          {agent.role && (
-            <span className="text-xs text-muted-foreground">{agent.role}</span>
-          )}
+          <span className="text-xs text-muted-foreground">
+            {AGENT_CLASS_LABELS[agent.agent_class] ?? agent.agent_class}
+          </span>
         </div>
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
         {agent.agent_kind === 'llm' && agent.model && (
           <p className="text-xs text-muted-foreground">Model: {agent.model}</p>
         )}
-        <p className="text-xs text-muted-foreground">
-          Runtime: {agent.runtime_kind} · Profile: {agent.capability_profile}
-        </p>
-        <p className="text-xs text-muted-foreground">Trigger: {agent.trigger_mode}</p>
+        {showsTriggerMode(agent.agent_class) && (
+          <p className="text-xs text-muted-foreground">Trigger: {agent.trigger_mode}</p>
+        )}
         {budgetPct !== null && (
           <div className="space-y-1">
             <div className="flex justify-between text-[11px] text-muted-foreground">
@@ -104,50 +275,19 @@ function AgentCard({
   );
 }
 
-interface AgentFormData {
-  name: string;
-  agent_kind: AgentKind;
-  role: string;
-  runtime_kind: AgentRuntimeKind;
-  capability_profile: string;
-  trigger_mode: AgentTriggerMode;
-  backing_user_id: string;
-  skills: string;
-  model: string;
-  system_prompt: string;
-  monthly_token_budget: string;
-}
-
-const EMPTY_FORM: AgentFormData = {
-  name: '',
-  agent_kind: 'human',
-  role: '',
-  runtime_kind: 'native_claude',
-  capability_profile: 'engineer',
-  trigger_mode: 'manual',
-  backing_user_id: '',
-  skills: '',
-  model: '',
-  system_prompt: '',
-  monthly_token_budget: '',
-};
-
-const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['native_claude', 'claude_code', 'openclaw', 'zeroclaw'];
-const TRIGGER_MODE_OPTIONS: AgentTriggerMode[] = ['manual', 'auto_on_assignment', 'auto_on_event'];
-
 export function AgentsPage() {
   useTitle('Agents');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
 
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [runtimeProfiles, setRuntimeProfiles] = useState<RuntimeProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
-  const [form, setForm] = useState<AgentFormData>(EMPTY_FORM);
+  const [form, setForm] = useState<AgentFormData>(createEmptyForm());
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
@@ -155,17 +295,11 @@ export function AgentsPage() {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
-    const [agentsRes, profilesRes] = await Promise.all([
-      agentService.list(workspaceId),
-      agentService.listRuntimeProfiles(workspaceId),
-    ]);
+    const agentsRes = await agentService.list(workspaceId);
     if (agentsRes.error) {
       setError(agentsRes.error);
     } else {
       setAgents(agentsRes.data ?? []);
-    }
-    if (!profilesRes.error) {
-      setRuntimeProfiles(profilesRes.data ?? []);
     }
     setLoading(false);
   }, [workspaceId]);
@@ -176,23 +310,24 @@ export function AgentsPage() {
 
   const openCreateDialog = () => {
     setEditingAgent(null);
-    setForm(EMPTY_FORM);
+    setAdvancedOpen(false);
+    setForm(createEmptyForm());
     setDialogOpen(true);
   };
 
   const openEditDialog = (agent: Agent) => {
     setEditingAgent(agent);
+    setAdvancedOpen(false);
     setForm({
       name: agent.name,
-      agent_kind: agent.agent_kind,
-      role: agent.role,
+      agent_class: agent.agent_class,
       runtime_kind: agent.runtime_kind,
-      capability_profile: agent.capability_profile,
       trigger_mode: agent.trigger_mode,
       backing_user_id: agent.backing_user_id ?? '',
       skills: agent.skills.join(', '),
       model: agent.model ?? '',
       system_prompt: agent.system_prompt ?? '',
+      planning_notes: agent.planning_notes ?? '',
       monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
     });
     setDialogOpen(true);
@@ -203,50 +338,14 @@ export function AgentsPage() {
     setSaving(true);
 
     if (editingAgent) {
-      const payload: UpdateAgentRequest = {
-        name: form.name,
-        role: form.role || undefined,
-        backing_user_id: form.backing_user_id || undefined,
-        runtime_kind: form.runtime_kind,
-        capability_profile: form.capability_profile || undefined,
-        trigger_mode: form.trigger_mode,
-        skills: form.skills
-          .split(',')
-          .map((entry) => entry.trim())
-          .filter(Boolean),
-        model: form.agent_kind === 'llm' ? form.model || undefined : undefined,
-        system_prompt: form.agent_kind === 'llm' ? form.system_prompt || undefined : undefined,
-        monthly_token_budget:
-          form.agent_kind === 'llm' && form.monthly_token_budget
-            ? parseInt(form.monthly_token_budget, 10)
-            : undefined,
-      };
+      const payload = buildUpdatePayload(form, advancedOpen);
       const res = await agentService.update(workspaceId, editingAgent.id, payload);
       if (!res.error) {
         setDialogOpen(false);
         loadAgents();
       }
     } else {
-      const payload: CreateAgentRequest = {
-        workspace_id: workspaceId,
-        name: form.name,
-        agent_kind: form.agent_kind,
-        role: form.role,
-        backing_user_id: form.backing_user_id || undefined,
-        runtime_kind: form.runtime_kind,
-        capability_profile: form.capability_profile || undefined,
-        trigger_mode: form.trigger_mode,
-        skills: form.skills
-          .split(',')
-          .map((entry) => entry.trim())
-          .filter(Boolean),
-        model: form.agent_kind === 'llm' ? form.model || undefined : undefined,
-        system_prompt: form.agent_kind === 'llm' ? form.system_prompt || undefined : undefined,
-        monthly_token_budget:
-          form.agent_kind === 'llm' && form.monthly_token_budget
-            ? parseInt(form.monthly_token_budget, 10)
-            : undefined,
-      };
+      const payload = buildCreatePayload(workspaceId, form, advancedOpen);
       const res = await agentService.create(workspaceId, payload);
       if (!res.error) {
         setDialogOpen(false);
@@ -270,6 +369,8 @@ export function AgentsPage() {
   if (!workspace) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
+
+  const advancedConfigured = hasConfiguredAdvancedFields(editingAgent);
 
   return (
     <div className="space-y-4">
@@ -309,163 +410,182 @@ export function AgentsPage() {
             <DialogTitle>{editingAgent ? 'Edit Agent' : 'Create Agent'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Choose the agent class based on where it will run. Teampulse handles permissions and runtime defaults automatically.
+            </p>
+
             <div className="space-y-1.5">
               <Label htmlFor="agent-name">Name</Label>
               <Input
                 id="agent-name"
                 value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
                 placeholder="Agent name"
               />
             </div>
 
-            {!editingAgent && (
-              <div className="space-y-1.5">
-                <Label>Kind</Label>
-                <Select
-                  value={form.agent_kind}
-                  onValueChange={(v) =>
-                    setForm((f) => ({ ...f, agent_kind: v as AgentKind }))
+            <div className="space-y-1.5">
+              <Label>Agent Class</Label>
+              <Select
+                value={form.agent_class}
+                onValueChange={(value) => {
+                  const nextClass = value as AgentClass;
+                  setForm((current) => nextFormForClass(current, nextClass));
+                  if (nextClass === 'human') {
+                    setAdvancedOpen(false);
                   }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="human">Human</SelectItem>
-                    <SelectItem value="llm">LLM</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label htmlFor="agent-role">Role</Label>
-              <Input
-                id="agent-role"
-                value={form.role}
-                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                placeholder="e.g. Coder, Tester, Reviewer"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Runtime Kind</Label>
-              <Select
-                value={form.runtime_kind}
-                onValueChange={(v) => setForm((f) => ({ ...f, runtime_kind: v as AgentRuntimeKind }))}
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {RUNTIME_KIND_OPTIONS.map((runtimeKind) => (
-                    <SelectItem key={runtimeKind} value={runtimeKind}>
-                      {runtimeKind}
+                  {(Object.keys(AGENT_CLASS_LABELS) as AgentClass[]).map((agentClass) => (
+                    <SelectItem key={agentClass} value={agentClass}>
+                      {AGENT_CLASS_LABELS[agentClass]}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">{AGENT_CLASS_DESCRIPTIONS[form.agent_class]}</p>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Capability Profile</Label>
-              <Select
-                value={form.capability_profile}
-                onValueChange={(v) => setForm((f) => ({ ...f, capability_profile: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {runtimeProfiles.map((profile) => (
-                    <SelectItem key={profile.name} value={profile.name}>
-                      {profile.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Trigger Mode</Label>
-              <Select
-                value={form.trigger_mode}
-                onValueChange={(v) => setForm((f) => ({ ...f, trigger_mode: v as AgentTriggerMode }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TRIGGER_MODE_OPTIONS.map((triggerMode) => (
-                    <SelectItem key={triggerMode} value={triggerMode}>
-                      {triggerMode}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {form.agent_kind === 'human' && (
+            {form.agent_class === 'human' ? (
               <div className="space-y-1.5">
                 <Label htmlFor="agent-backing-user">Backing User ID</Label>
                 <Input
                   id="agent-backing-user"
                   value={form.backing_user_id}
-                  onChange={(e) => setForm((f) => ({ ...f, backing_user_id: e.target.value }))}
+                  onChange={(e) => setForm((current) => ({ ...current, backing_user_id: e.target.value }))}
                   placeholder="Workspace user ID"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="agent-model">Model</Label>
+                <Input
+                  id="agent-model"
+                  value={form.model}
+                  onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
+                  placeholder="e.g. claude-sonnet-4-20250514"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave blank to use the runtime default model.
+                </p>
+              </div>
+            )}
+
+            {showsTriggerMode(form.agent_class) && (
+              <div className="space-y-1.5">
+                <Label>Trigger Mode</Label>
+                <Select
+                  value={form.trigger_mode}
+                  onValueChange={(value) => setForm((current) => ({ ...current, trigger_mode: value as AgentTriggerMode }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allowedTriggerModesForClass(form.agent_class).map((triggerMode) => (
+                      <SelectItem key={triggerMode} value={triggerMode}>
+                        {triggerMode}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {form.agent_class === 'product_planner' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="agent-planning-notes">Planning Notes</Label>
+                <Textarea
+                  id="agent-planning-notes"
+                  value={form.planning_notes}
+                  onChange={(e) => setForm((current) => ({ ...current, planning_notes: e.target.value }))}
+                  placeholder="Optional planner preferences or context that should be appended to the workspace methodology."
+                  rows={4}
                 />
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="agent-skills">Skills</Label>
-              <Input
-                id="agent-skills"
-                value={form.skills}
-                onChange={(e) => setForm((f) => ({ ...f, skills: e.target.value }))}
-                placeholder="Comma-separated skill pack IDs"
-              />
-            </div>
+            {form.agent_class !== 'human' && (
+              <Collapsible.Root open={advancedOpen} onOpenChange={setAdvancedOpen}>
+                <Collapsible.Trigger asChild>
+                  <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
+                    <span className="flex items-center gap-2 text-sm">
+                      {advancedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      Advanced
+                    </span>
+                    {advancedConfigured && !advancedOpen && (
+                      <span className="text-xs text-muted-foreground">Configured</span>
+                    )}
+                  </Button>
+                </Collapsible.Trigger>
+                <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3">
+                  <div className="space-y-1.5">
+                    <Label>Runtime Kind</Label>
+                    <Select
+                      value={form.runtime_kind}
+                      onValueChange={(value) => setForm((current) => ({ ...current, runtime_kind: value as AgentRuntimeKind }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {RUNTIME_KIND_OPTIONS.map((runtimeKind) => (
+                          <SelectItem key={runtimeKind} value={runtimeKind}>
+                            {runtimeKind}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-            {form.agent_kind === 'llm' && (
-              <>
-                <div className="space-y-1.5">
-                  <Label htmlFor="agent-model">Model</Label>
-                  <Input
-                    id="agent-model"
-                    value={form.model}
-                    onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
-                    placeholder="e.g. claude-opus-4-6"
-                  />
-                </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="agent-skills">Skills</Label>
+                    <Input
+                      id="agent-skills"
+                      value={form.skills}
+                      onChange={(e) => setForm((current) => ({ ...current, skills: e.target.value }))}
+                      placeholder="Comma-separated skill pack IDs"
+                    />
+                  </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="agent-prompt">System Prompt</Label>
-                  <Textarea
-                    id="agent-prompt"
-                    value={form.system_prompt}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, system_prompt: e.target.value }))
-                    }
-                    placeholder="Instructions for the agent..."
-                    rows={4}
-                  />
-                </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="agent-prompt">
+                      {form.agent_class === 'product_planner' ? 'Advanced Planner Prompt' : 'System Prompt'}
+                    </Label>
+                    <Textarea
+                      id="agent-prompt"
+                      value={form.system_prompt}
+                      onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
+                      placeholder={
+                        form.agent_class === 'product_planner'
+                          ? 'Optional secondary notes. Workspace planning methodology remains authoritative.'
+                          : 'Optional additional instructions for this agent.'
+                      }
+                      rows={4}
+                    />
+                    {form.agent_class === 'product_planner' && (
+                      <p className="text-xs text-muted-foreground">
+                        This is secondary to the workspace planning methodology and stage rules.
+                      </p>
+                    )}
+                  </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="agent-budget">Monthly Token Budget</Label>
-                  <Input
-                    id="agent-budget"
-                    type="number"
-                    value={form.monthly_token_budget}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, monthly_token_budget: e.target.value }))
-                    }
-                    placeholder="e.g. 1000000"
-                  />
-                </div>
-              </>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="agent-budget">Monthly Token Budget</Label>
+                    <Input
+                      id="agent-budget"
+                      type="number"
+                      value={form.monthly_token_budget}
+                      onChange={(e) => setForm((current) => ({ ...current, monthly_token_budget: e.target.value }))}
+                      placeholder="Optional budget limit"
+                    />
+                  </div>
+                </Collapsible.Content>
+              </Collapsible.Root>
             )}
 
             <div className="flex justify-between pt-2">

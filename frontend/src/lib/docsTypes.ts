@@ -2,7 +2,7 @@
 
 // ─── Doc type and status constants ──────────────────────────────────────────
 
-export type DocType = 'wiki' | 'sop' | 'feature_doc' | 'support_article' | 'help_center_article';
+export type DocType = 'wiki' | 'sop' | 'feature_doc' | 'product_spec' | 'support_article' | 'help_center_article';
 export type DocStatus = 'draft' | 'published' | 'archived';
 export type SpaceType = 'internal' | 'external_capable';
 export type SpaceVisibility = 'workspace_wide' | 'team_only';
@@ -243,6 +243,7 @@ export const DOC_TYPE_LABELS: Record<DocType, string> = {
   wiki: 'Wiki',
   sop: 'SOP',
   feature_doc: 'Feature Doc',
+  product_spec: 'Product Spec',
   support_article: 'Support Article',
   help_center_article: 'Help Center Article',
 };

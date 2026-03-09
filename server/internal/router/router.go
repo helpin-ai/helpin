@@ -40,9 +40,9 @@ type Handlers struct {
 	PMChecklistItem *handler.PMChecklistItemHandler
 	PMExternalLink  *handler.PMExternalLinkHandler
 	PMView          *handler.PMViewHandler
-	PMAutomation      *handler.PMAutomationHandler
-	PMStoryTemplate   *handler.PMStoryTemplateHandler
-	Search            *handler.SearchHandler
+	PMAutomation    *handler.PMAutomationHandler
+	PMStoryTemplate *handler.PMStoryTemplateHandler
+	Search          *handler.SearchHandler
 	Agent           *handler.AgentHandler
 	Support         *handler.SupportHandler
 	Widget          *handler.WidgetHandler
@@ -343,8 +343,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/epics/{id}", h.PMEpic.Delete)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/stories", h.PMEpic.ListStories)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.CRMAssociation.ListEpicAssociations)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/agent-runs", h.Agent.ListEpicRuns)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/draft-spec", h.Agent.DraftEpicSpec)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/approve-spec", h.Agent.ApproveEpicSpec)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/plan-stories", h.Agent.PlanEpicStories)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/kickoff-execution", h.Agent.KickoffEpicExecution)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/assign-orchestrator", h.Orchestration.AssignOrchestrator)
 
 				// Sprints (PM) — pm.read / pm.edit
@@ -373,6 +378,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/followers", h.PMStory.RemoveFollower)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/labels", h.PMStory.AddLabel)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/labels/{labelId}", h.PMStory.RemoveLabel)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/associations", h.CRMAssociation.ListStoryAssociations)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/activity", h.PMStory.ListActivity)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/git-links", h.Git.GetStoryGitLinks)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/delivery-target", h.Git.GetStoryDeliveryTarget)
@@ -423,6 +429,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/automations", h.PMAutomation.List)
 				r.With(requirePerm(authorization.PermPMAdminAutomations)).Put("/automations", h.PMAutomation.Upsert)
 				r.With(requirePerm(authorization.PermPMAdminAutomations)).Delete("/automations", h.PMAutomation.Delete)
+
+				// Associations (PM-side) — pm.edit
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/associations", h.CRMAssociation.Create)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/associations/{id}", h.CRMAssociation.Delete)
 
 				// Agents — pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents", h.Agent.ListAgents)

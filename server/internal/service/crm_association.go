@@ -60,9 +60,17 @@ func (s *CRMAssociationService) ListByObject(ctx context.Context, workspaceID, o
 
 func isValidObjectType(t string) bool {
 	switch t {
-	case model.CRMObjectContact, model.CRMObjectCompany, model.CRMObjectDeal:
+	case model.CRMObjectContact, model.CRMObjectCompany, model.CRMObjectDeal, model.CRMObjectEpic, model.CRMObjectStory:
 		return true
 	default:
 		return false
 	}
+}
+
+// ListByObjectEnriched returns enriched associations for a given object.
+func (s *CRMAssociationService) ListByObjectEnriched(ctx context.Context, workspaceID, objectType, objectID string) ([]model.CRMAssociationEnriched, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.assocRepo.ListByObjectEnriched(ctx, workspaceID, objectType, objectID)
 }

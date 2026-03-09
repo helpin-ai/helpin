@@ -82,7 +82,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
       if (agentsRes.error) {
         toast.error(agentsRes.error);
       } else {
-        setAgents(agentsRes.data ?? []);
+        setAgents((agentsRes.data ?? []).filter((agent) => agent.agent_class === 'engineer' || agent.agent_class === 'reviewer'));
       }
 
       if (reposRes.error) {
@@ -120,7 +120,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
   );
 
   const resolvedBaseBranch = baseBranch.trim() || selectedRepository?.default_branch || 'main';
-  const requiresRepo = Boolean(selectedAgent && selectedAgent.agent_kind === 'llm' && requiresRepoProfile(selectedAgent.capability_profile));
+  const requiresRepo = Boolean(selectedAgent && selectedAgent.agent_kind === 'llm' && requiresRepoProfile(selectedAgent.agent_class));
   const hasDeliveryTarget = Boolean(repositoryId && resolvedBaseBranch);
   const branchPreview = target?.working_branch || buildBranchPreview(storyDetail.story.display_id, storyDetail.story.name);
   const isConfigured = Boolean(assignedAgentId || target?.repository_id);
@@ -495,8 +495,8 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
   );
 }
 
-function requiresRepoProfile(profile: string) {
-  return profile === 'engineer' || profile === 'reviewer_tester';
+function requiresRepoProfile(agentClass: string) {
+  return agentClass === 'engineer' || agentClass === 'reviewer';
 }
 
 function buildBranchPreview(displayId: number, storyName: string) {

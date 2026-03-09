@@ -15,13 +15,14 @@ const (
 	DocTypeWiki              = "wiki"
 	DocTypeSOP               = "sop"
 	DocTypeFeatureDoc        = "feature_doc"
+	DocTypeProductSpec       = "product_spec"
 	DocTypeSupportArticle    = "support_article"
 	DocTypeHelpCenterArticle = "help_center_article"
 )
 
 // AllDocTypes returns every valid doc_type value.
 func AllDocTypes() []string {
-	return []string{DocTypeWiki, DocTypeSOP, DocTypeFeatureDoc, DocTypeSupportArticle, DocTypeHelpCenterArticle}
+	return []string{DocTypeWiki, DocTypeSOP, DocTypeFeatureDoc, DocTypeProductSpec, DocTypeSupportArticle, DocTypeHelpCenterArticle}
 }
 
 // IsValidDocType checks whether a doc_type string is canonical.
@@ -42,7 +43,7 @@ func IsExternalCapableDocType(t string) bool {
 // OwnerRequired returns true if the doc type requires an owner.
 func OwnerRequired(docType string) bool {
 	switch docType {
-	case DocTypeSOP, DocTypeFeatureDoc, DocTypeSupportArticle, DocTypeHelpCenterArticle:
+	case DocTypeSOP, DocTypeFeatureDoc, DocTypeProductSpec, DocTypeSupportArticle, DocTypeHelpCenterArticle:
 		return true
 	default:
 		return false

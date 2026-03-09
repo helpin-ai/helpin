@@ -21,6 +21,7 @@ import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { StoryListView } from '@/components/pm/StoryListView';
 import { StoryDetailPanel } from '@/components/pm/StoryDetailPanel';
+import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
@@ -28,12 +29,13 @@ import { useWorkflows, useEpicStates } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { EpicWithStats, EpicHealth, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import type { EpicWithStats, EpicHealth, GitRepository, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { EpicOrchestrationPanel } from '@/components/pm/EpicOrchestrationPanel';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
+import { LinkedDeals } from '@/components/pm/LinkedDeals';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -117,6 +119,7 @@ interface EpicFormState {
   team_id: string;
   epic_state_id: string;
   owner_member_id: string;
+  planning_repository_id: string;
   health: EpicHealth;
   planned_start_date: string;
   deadline: string;
@@ -128,6 +131,7 @@ const buildForm = (epic: EpicWithStats): EpicFormState => ({
   team_id: epic.epic.team_id ?? '',
   epic_state_id: epic.epic.epic_state_id ?? '',
   owner_member_id: epic.epic.owner_member_id ?? '',
+  planning_repository_id: epic.epic.planning_repository_id ?? '',
   health: epic.epic.health,
   planned_start_date: epic.epic.planned_start_date ?? '',
   deadline: epic.epic.deadline ? epic.epic.deadline.slice(0, 10) : '',
@@ -147,6 +151,7 @@ export function EpicDetailPage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
   const [allSprints, setAllSprints] = useState<SprintWithStats[]>([]);
+  const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -177,11 +182,12 @@ export function EpicDetailPage() {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
-    const [epicRes, storiesRes, epicsRes, sprintsRes] = await Promise.all([
+    const [epicRes, storiesRes, epicsRes, sprintsRes, reposRes] = await Promise.all([
       pmEpicService.get(workspaceId, epicId),
       pmEpicService.listStories(workspaceId, epicId),
       pmEpicService.list(workspaceId, { archived: false }),
       pmSprintService.list(workspaceId, { archived: false }),
+      gitService.listRepositories(workspaceId),
     ]);
     if (epicRes.error || !epicRes.data) {
       setError(epicRes.error ?? 'Epic not found');
@@ -193,6 +199,7 @@ export function EpicDetailPage() {
     setStories(storiesRes.data ?? []);
     setAllEpics(epicsRes.data ?? []);
     setAllSprints(sprintsRes.data ?? []);
+    setRepositories(reposRes.data ?? []);
     setLoading(false);
   }, [workspaceId, epicId]);
 
@@ -252,6 +259,10 @@ export function EpicDetailPage() {
     if (!form?.owner_member_id) return 'Nobody';
     return assignableMemberNames.get(form.owner_member_id) ?? 'Unknown';
   }, [form?.owner_member_id, assignableMemberNames]);
+  const currentPlanningRepositoryName = useMemo(() => {
+    if (!form?.planning_repository_id) return 'Not configured';
+    return repositories.find((repo) => repo.id === form.planning_repository_id)?.full_name ?? 'Unknown repository';
+  }, [form?.planning_repository_id, repositories]);
 
   const workflow = workflows[0] ?? null;
   const selectedStoryStates = useMemo(() => {
@@ -436,9 +447,9 @@ export function EpicDetailPage() {
 
           {/* Orchestration */}
           <EpicOrchestrationPanel
-            epicId={epicId}
+            epic={epic.epic}
             workspaceId={workspaceId!}
-            orchestratorAgentId={epic.epic.orchestrator_agent_id}
+            workspaceSlug={slug}
             onStoriesCreated={() => fetchData()}
           />
         </div>
@@ -515,6 +526,22 @@ export function EpicDetailPage() {
               />
             </MetadataRow>
 
+            {/* Planning Repo */}
+            <MetadataRow icon={Hexagon} label="Plan repo">
+              <SidebarPopoverSelect
+                value={form.planning_repository_id || '__none__'}
+                options={[
+                  { value: '__none__', label: 'Not configured' },
+                  ...repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
+                ]}
+                onChange={(v) => {
+                  const val = v === '__none__' ? '' : v;
+                  updateField('planning_repository_id', val, { planning_repository_id: val || undefined });
+                }}
+                renderTrigger={() => <span>{currentPlanningRepositoryName}</span>}
+              />
+            </MetadataRow>
+
             {/* Start Date */}
             <MetadataRow icon={CalendarDays} label="Start date">
               <DatePicker
@@ -548,6 +575,11 @@ export function EpicDetailPage() {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Linked Deals */}
+          {workspaceId && (
+            <LinkedDeals objectType="epic" objectId={epicId} workspaceId={workspaceId} />
           )}
         </aside>
       </div>

@@ -10,6 +10,7 @@ import type {
   TicketStatus,
   TicketPriority,
   CreateTicketRequest,
+  Agent,
   AgentRun,
   AgentRunArtifact,
 } from '@/lib/pmTypes';
@@ -165,6 +166,7 @@ export function SupportPage() {
   const [runArtifacts, setRunArtifacts] = useState<AgentRunArtifact[]>([]);
   const [runningAgent, setRunningAgent] = useState(false);
   const [approvingRun, setApprovingRun] = useState<string | null>(null);
+  const [supportAgents, setSupportAgents] = useState<Agent[]>([]);
 
   // ── Reply state ──
   const [replyContent, setReplyContent] = useState('');
@@ -206,9 +208,20 @@ export function SupportPage() {
     setLoading(false);
   }, [workspaceId, statusFilter]);
 
+  const loadSupportAgents = useCallback(async () => {
+    if (!workspaceId) return;
+    const res = await agentService.list(workspaceId);
+    if (res.error) return;
+    setSupportAgents((res.data ?? []).filter((agent) => agent.agent_kind === 'llm' && agent.agent_class === 'support'));
+  }, [workspaceId]);
+
   useEffect(() => {
     loadTickets();
   }, [loadTickets]);
+
+  useEffect(() => {
+    loadSupportAgents();
+  }, [loadSupportAgents]);
 
   // ── Load messages ──
   const loadMessages = useCallback(async () => {
@@ -346,6 +359,10 @@ export function SupportPage() {
     setMobileShowThread(true);
   };
 
+  const assignedAgent = selectedTicket?.assigned_agent_id
+    ? supportAgents.find((agent) => agent.id === selectedTicket.assigned_agent_id)
+    : null;
+
   if (!workspace) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
@@ -436,7 +453,7 @@ export function SupportPage() {
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                   {selectedTicket.customer_name && <span>Customer: {selectedTicket.customer_name}</span>}
                   {selectedTicket.assigned_agent_id && (
-                    <span>Agent: {selectedTicket.assigned_agent_id.slice(0, 8)}...</span>
+                    <span>Agent: {assignedAgent?.name ?? selectedTicket.assigned_agent_id.slice(0, 8)}</span>
                   )}
                   {selectedTicket.linked_story_id && (
                     <span>Story: {selectedTicket.linked_story_id.slice(0, 8)}...</span>
@@ -462,13 +479,25 @@ export function SupportPage() {
                   </Select>
 
                   <div className="flex items-center gap-1">
-                    <Input
-                      className="h-7 w-28 text-xs"
-                      placeholder="Agent ID"
-                      value={assignAgentId}
-                      onChange={(e) => setAssignAgentId(e.target.value)}
-                    />
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleAssignAgent}>
+                    <Select value={assignAgentId} onValueChange={setAssignAgentId} disabled={supportAgents.length === 0}>
+                      <SelectTrigger className="h-7 w-40 text-xs">
+                        <SelectValue placeholder="Support agent" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {supportAgents.map((agent) => (
+                          <SelectItem key={agent.id} value={agent.id}>
+                            {agent.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      disabled={!assignAgentId}
+                      onClick={handleAssignAgent}
+                    >
                       Assign
                     </Button>
                   </div>

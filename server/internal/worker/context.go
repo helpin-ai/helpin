@@ -9,35 +9,41 @@ import (
 
 // ExecutionContext holds all state for a single agent run execution.
 type ExecutionContext struct {
-	Context             context.Context
-	WorkDir             string // path to cloned repo on disk
-	WorkspaceID         string
-	AgentID             string
-	RunID               string
-	TargetType          string
-	TargetID            string
-	StoryID             string
-	TicketID            string
-	Agent               *model.Agent
-	Story               *model.PMStory
-	Epic                *model.PMEpic
-	EpicStories         []model.PMStory
-	Ticket              *model.SupportTicket
-	GitIntegration      *model.GitIntegration
-	GitAccessToken      string
-	Repo                string // e.g. "owner/repo"
-	BaseBranch          string
-	WorkingBranch       string
-	InitialInstructions string
-	Config              *WorkflowConfig
-	RuntimeProfile      model.RuntimeProfile
-	AllowedTools        map[string]bool
-	Services            *ServiceBridge
-	PendingSupportDraft *SupportDraftReply
-	LatestPRMetadata    *PRMetadata
-	Heartbeat           func(stage string) error
-	OnGitPush           func(branch, sha string) error
-	OnPROpen            func(metadata PRMetadata, title string) error
+	Context                   context.Context
+	WorkDir                   string // path to cloned repo on disk
+	WorkspaceID               string
+	AgentID                   string
+	RunID                     string
+	TargetType                string
+	TargetID                  string
+	StoryID                   string
+	TicketID                  string
+	Agent                     *model.Agent
+	Story                     *model.PMStory
+	Epic                      *model.PMEpic
+	EpicStories               []model.PMStory
+	Ticket                    *model.SupportTicket
+	GitIntegration            *model.GitIntegration
+	GitAccessToken            string
+	Repo                      string // e.g. "owner/repo"
+	BaseBranch                string
+	WorkingBranch             string
+	InitialInstructions       string
+	PlanningStage             string
+	PlanningMethodology       string
+	PlanningSpecDocumentID    string
+	PlanningSpecVersionID     string
+	PlanningWebSearchEnabled  bool
+	PlanningWebSearchProvider string
+	Config                    *WorkflowConfig
+	RuntimeProfile            model.RuntimeProfile
+	AllowedTools              map[string]bool
+	Services                  *ServiceBridge
+	PendingSupportDraft       *SupportDraftReply
+	LatestPRMetadata          *PRMetadata
+	Heartbeat                 func(stage string) error
+	OnGitPush                 func(branch, sha string) error
+	OnPROpen                  func(metadata PRMetadata, title string) error
 }
 
 // WorkflowConfig holds settings from WORKFLOW.md or defaults.
