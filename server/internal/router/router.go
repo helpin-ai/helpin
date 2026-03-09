@@ -55,6 +55,9 @@ type Handlers struct {
 	CRMDeal         *handler.CRMDealHandler
 	CRMAssociation  *handler.CRMAssociationHandler
 	CRMActivity     *handler.CRMActivityHandler
+	CRMProperty     *handler.CRMPropertyHandler
+	CRMList         *handler.CRMListHandler
+	CRMImport       *handler.CRMImportHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -574,6 +577,34 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/activities/{id}", h.CRMActivity.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/activities/{id}", h.CRMActivity.Update)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/activities/{id}", h.CRMActivity.Delete)
+
+				// Properties — crm.read / crm.admin
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/properties", h.CRMProperty.ListDefinitions)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/properties", h.CRMProperty.CreateDefinition)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Put("/properties/{id}", h.CRMProperty.UpdateDefinition)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Delete("/properties/{id}", h.CRMProperty.DeleteDefinition)
+
+				// Property Groups — crm.read / crm.admin
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/property-groups", h.CRMProperty.ListGroups)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/property-groups", h.CRMProperty.CreateGroup)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Put("/property-groups/{id}", h.CRMProperty.UpdateGroup)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Delete("/property-groups/{id}", h.CRMProperty.DeleteGroup)
+
+				// Lists — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/lists", h.CRMList.List)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/lists", h.CRMList.Create)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/lists/{id}", h.CRMList.Get)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/lists/{id}", h.CRMList.Update)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/lists/{id}", h.CRMList.Delete)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/lists/{id}/members", h.CRMList.ListMembers)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/lists/{id}/members", h.CRMList.AddMember)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/lists/{id}/members/{objectId}", h.CRMList.RemoveMember)
+
+				// Imports — crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/imports", h.CRMImport.List)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/imports", h.CRMImport.Create)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/imports/{id}", h.CRMImport.Get)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/imports/{id}/process", h.CRMImport.Process)
 			})
 		})
 	})

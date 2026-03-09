@@ -182,6 +182,11 @@ func main() {
 		&model.CRMDeal{},
 		&model.CRMAssociation{},
 		&model.CRMActivity{},
+		&model.CRMPropertyDefinition{},
+		&model.CRMPropertyGroup{},
+		&model.CRMList{},
+		&model.CRMListMember{},
+		&model.CRMImportJob{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -277,6 +282,9 @@ func main() {
 	crmDealRepo := repository.NewCRMDealRepository(db)
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
+	crmPropertyRepo := repository.NewCRMPropertyRepository(db)
+	crmListRepo := repository.NewCRMListRepository(db)
+	crmImportRepo := repository.NewCRMImportRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -370,6 +378,9 @@ func main() {
 	crmDealService := service.NewCRMDealService(crmDealRepo)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	crmPropertyService := service.NewCRMPropertyService(crmPropertyRepo)
+	crmListService := service.NewCRMListService(crmListRepo)
+	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo)
 
 	orgService := service.NewOrganizationService(orgRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, pmWorkflowService)
@@ -431,6 +442,9 @@ func main() {
 		CRMDeal:        handler.NewCRMDealHandler(crmDealService),
 		CRMAssociation: handler.NewCRMAssociationHandler(crmAssociationService),
 		CRMActivity:    handler.NewCRMActivityHandler(crmActivityService),
+		CRMProperty:    handler.NewCRMPropertyHandler(crmPropertyService),
+		CRMList:        handler.NewCRMListHandler(crmListService),
+		CRMImport:      handler.NewCRMImportHandler(crmImportService),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,

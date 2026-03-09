@@ -129,6 +129,19 @@ export const queryKeys = {
 
     activities: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['crm', wsId, 'activities', filters] as const) : (['crm', wsId, 'activities'] as const),
+
+    properties: (wsId: string, objectType?: string) =>
+      objectType ? (['crm', wsId, 'properties', objectType] as const) : (['crm', wsId, 'properties'] as const),
+    propertyGroups: (wsId: string, objectType?: string) =>
+      objectType ? (['crm', wsId, 'propertyGroups', objectType] as const) : (['crm', wsId, 'propertyGroups'] as const),
+
+    lists: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'lists', filters] as const) : (['crm', wsId, 'lists'] as const),
+    list: (wsId: string, id: string) => ['crm', wsId, 'lists', id] as const,
+    listMembers: (wsId: string, listId: string) => ['crm', wsId, 'lists', listId, 'members'] as const,
+
+    imports: (wsId: string) => ['crm', wsId, 'imports'] as const,
+    import: (wsId: string, id: string) => ['crm', wsId, 'imports', id] as const,
   },
 
   notifications: {

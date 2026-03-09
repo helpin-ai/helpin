@@ -18,6 +18,19 @@ import type {
   CreateCRMActivityRequest,
   UpdateCRMActivityRequest,
   CRMPaginatedResponse,
+  CRMPropertyDefinition,
+  CRMPropertyGroup,
+  CreateCRMPropertyDefinitionRequest,
+  UpdateCRMPropertyDefinitionRequest,
+  CreateCRMPropertyGroupRequest,
+  UpdateCRMPropertyGroupRequest,
+  CRMList,
+  CRMListMember,
+  CreateCRMListRequest,
+  UpdateCRMListRequest,
+  CRMImportJob,
+  CreateCRMImportRequest,
+  ProcessCRMImportRequest,
 } from '../crmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -114,4 +127,53 @@ export const crmActivityService = {
     api.put<CRMActivity>(`/crm/activities/${id}${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) =>
     api.del(`/crm/activities/${id}${qs(workspaceId)}`),
+};
+
+export const crmPropertyService = {
+  listDefinitions: (workspaceId: string, objectType?: string) =>
+    api.get<CRMPropertyDefinition[]>(`/crm/properties${qs(workspaceId)}${objectType ? `&object_type=${objectType}` : ''}`),
+  createDefinition: (payload: CreateCRMPropertyDefinitionRequest) =>
+    api.post<CRMPropertyDefinition>(`/crm/properties${qs(payload.workspace_id)}`, payload),
+  updateDefinition: (workspaceId: string, id: string, payload: UpdateCRMPropertyDefinitionRequest) =>
+    api.put<CRMPropertyDefinition>(`/crm/properties/${id}${qs(workspaceId)}`, payload),
+  deleteDefinition: (workspaceId: string, id: string) =>
+    api.del(`/crm/properties/${id}${qs(workspaceId)}`),
+  listGroups: (workspaceId: string, objectType?: string) =>
+    api.get<CRMPropertyGroup[]>(`/crm/property-groups${qs(workspaceId)}${objectType ? `&object_type=${objectType}` : ''}`),
+  createGroup: (payload: CreateCRMPropertyGroupRequest) =>
+    api.post<CRMPropertyGroup>(`/crm/property-groups${qs(payload.workspace_id)}`, payload),
+  updateGroup: (workspaceId: string, id: string, payload: UpdateCRMPropertyGroupRequest) =>
+    api.put<CRMPropertyGroup>(`/crm/property-groups/${id}${qs(workspaceId)}`, payload),
+  deleteGroup: (workspaceId: string, id: string) =>
+    api.del(`/crm/property-groups/${id}${qs(workspaceId)}`),
+};
+
+export const crmListService = {
+  list: (workspaceId: string, filters?: { object_type?: string; list_type?: string; search?: string; page?: number; per_page?: number }) =>
+    api.get<CRMPaginatedResponse<CRMList[]>>(`/crm/lists${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  get: (workspaceId: string, id: string) =>
+    api.get<CRMList>(`/crm/lists/${id}${qs(workspaceId)}`),
+  create: (payload: CreateCRMListRequest) =>
+    api.post<CRMList>(`/crm/lists${qs(payload.workspace_id)}`, payload),
+  update: (workspaceId: string, id: string, payload: UpdateCRMListRequest) =>
+    api.put<CRMList>(`/crm/lists/${id}${qs(workspaceId)}`, payload),
+  remove: (workspaceId: string, id: string) =>
+    api.del(`/crm/lists/${id}${qs(workspaceId)}`),
+  listMembers: (workspaceId: string, listId: string, page?: number) =>
+    api.get<CRMPaginatedResponse<CRMListMember[]>>(`/crm/lists/${listId}/members${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  addMember: (workspaceId: string, listId: string, objectId: string) =>
+    api.post<CRMListMember>(`/crm/lists/${listId}/members${qs(workspaceId)}`, { object_id: objectId }),
+  removeMember: (workspaceId: string, listId: string, objectId: string) =>
+    api.del(`/crm/lists/${listId}/members/${objectId}${qs(workspaceId)}`),
+};
+
+export const crmImportService = {
+  list: (workspaceId: string, page?: number) =>
+    api.get<CRMPaginatedResponse<CRMImportJob[]>>(`/crm/imports${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  get: (workspaceId: string, id: string) =>
+    api.get<CRMImportJob>(`/crm/imports/${id}${qs(workspaceId)}`),
+  create: (payload: CreateCRMImportRequest) =>
+    api.post<CRMImportJob>(`/crm/imports${qs(payload.workspace_id)}`, payload),
+  process: (workspaceId: string, id: string, payload: ProcessCRMImportRequest) =>
+    api.post<CRMImportJob>(`/crm/imports/${id}/process${qs(workspaceId)}`, payload),
 };

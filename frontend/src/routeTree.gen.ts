@@ -47,6 +47,7 @@ import { Route as AuthenticatedWSlugPmStoriesIndexRouteImport } from './routes/_
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
+import { Route as AuthenticatedWSlugCrmListsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/lists/index'
 import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/deals/index'
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
 import { Route as AuthenticatedWSlugCrmCompaniesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/companies/index'
@@ -274,6 +275,12 @@ const AuthenticatedWSlugPmEpicsIndexRoute =
     path: '/pm/epics/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugCrmListsIndexRoute =
+  AuthenticatedWSlugCrmListsIndexRouteImport.update({
+    id: '/crm/lists/',
+    path: '/crm/lists/',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugCrmDealsIndexRoute =
   AuthenticatedWSlugCrmDealsIndexRouteImport.update({
     id: '/crm/deals/',
@@ -393,6 +400,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/lists/': typeof AuthenticatedWSlugCrmListsIndexRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -442,6 +450,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/companies': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/lists': typeof AuthenticatedWSlugCrmListsIndexRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -495,6 +504,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/_authenticated/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/_authenticated/w/$slug/crm/lists/': typeof AuthenticatedWSlugCrmListsIndexRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -548,6 +558,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/'
     | '/w/$slug/crm/contacts/'
     | '/w/$slug/crm/deals/'
+    | '/w/$slug/crm/lists/'
     | '/w/$slug/pm/epics/'
     | '/w/$slug/pm/objectives/'
     | '/w/$slug/pm/sprints/'
@@ -597,6 +608,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies'
     | '/w/$slug/crm/contacts'
     | '/w/$slug/crm/deals'
+    | '/w/$slug/crm/lists'
     | '/w/$slug/pm/epics'
     | '/w/$slug/pm/objectives'
     | '/w/$slug/pm/sprints'
@@ -649,6 +661,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/companies/'
     | '/_authenticated/w/$slug/crm/contacts/'
     | '/_authenticated/w/$slug/crm/deals/'
+    | '/_authenticated/w/$slug/crm/lists/'
     | '/_authenticated/w/$slug/pm/epics/'
     | '/_authenticated/w/$slug/pm/objectives/'
     | '/_authenticated/w/$slug/pm/sprints/'
@@ -931,6 +944,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/crm/lists/': {
+      id: '/_authenticated/w/$slug/crm/lists/'
+      path: '/crm/lists'
+      fullPath: '/w/$slug/crm/lists/'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmListsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/crm/deals/': {
       id: '/_authenticated/w/$slug/crm/deals/'
       path: '/crm/deals'
@@ -1077,6 +1097,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugCrmCompaniesIndexRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   AuthenticatedWSlugCrmContactsIndexRoute: typeof AuthenticatedWSlugCrmContactsIndexRoute
   AuthenticatedWSlugCrmDealsIndexRoute: typeof AuthenticatedWSlugCrmDealsIndexRoute
+  AuthenticatedWSlugCrmListsIndexRoute: typeof AuthenticatedWSlugCrmListsIndexRoute
   AuthenticatedWSlugPmEpicsIndexRoute: typeof AuthenticatedWSlugPmEpicsIndexRoute
   AuthenticatedWSlugPmObjectivesIndexRoute: typeof AuthenticatedWSlugPmObjectivesIndexRoute
   AuthenticatedWSlugPmSprintsIndexRoute: typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -1126,6 +1147,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugCrmContactsIndexRoute:
     AuthenticatedWSlugCrmContactsIndexRoute,
   AuthenticatedWSlugCrmDealsIndexRoute: AuthenticatedWSlugCrmDealsIndexRoute,
+  AuthenticatedWSlugCrmListsIndexRoute: AuthenticatedWSlugCrmListsIndexRoute,
   AuthenticatedWSlugPmEpicsIndexRoute: AuthenticatedWSlugPmEpicsIndexRoute,
   AuthenticatedWSlugPmObjectivesIndexRoute:
     AuthenticatedWSlugPmObjectivesIndexRoute,

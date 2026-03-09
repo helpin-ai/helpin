@@ -370,6 +370,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/crm/contacts`, label: 'Contacts', icon: Users },
           { link: `/w/${wsSlug}/crm/companies`, label: 'Companies', icon: Building2 },
           { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarSign },
+          { link: `/w/${wsSlug}/crm/lists`, label: 'Lists', icon: LayoutList },
         ],
       },
     ],

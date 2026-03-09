@@ -6,6 +6,9 @@ import {
   crmPipelineService,
   crmAssociationService,
   crmActivityService,
+  crmPropertyService,
+  crmListService,
+  crmImportService,
 } from '@/lib/services/crmService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
@@ -21,6 +24,15 @@ import type {
   CreateCRMAssociationRequest,
   CreateCRMActivityRequest,
   UpdateCRMActivityRequest,
+  CreateCRMPropertyDefinitionRequest,
+  UpdateCRMPropertyDefinitionRequest,
+  CreateCRMPropertyGroupRequest,
+  UpdateCRMPropertyGroupRequest,
+  CreateCRMListRequest,
+  UpdateCRMListRequest,
+  CreateCRMImportRequest,
+  ProcessCRMImportRequest,
+  CRMObjectType,
 } from '@/lib/crmTypes'
 
 // ── Contacts ──
@@ -369,6 +381,217 @@ export function useDeleteCRMActivity(wsId: string) {
     mutationFn: async (id: string) => unwrap(await crmActivityService.remove(wsId, id)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.activities(wsId) })
+      qc.invalidateQueries({ queryKey: ['crm', wsId] })
+    },
+  })
+}
+
+// ── Properties ──
+
+export function useCRMProperties(wsId: string, objectType?: CRMObjectType) {
+  return useQuery({
+    queryKey: queryKeys.crm.properties(wsId, objectType),
+    queryFn: async () => unwrap(await crmPropertyService.listDefinitions(wsId, objectType)),
+    enabled: !!wsId,
+  })
+}
+
+export function useCreateCRMProperty(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMPropertyDefinitionRequest) =>
+      unwrap(await crmPropertyService.createDefinition(data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.properties(wsId) })
+    },
+  })
+}
+
+export function useUpdateCRMProperty(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateCRMPropertyDefinitionRequest & { id: string }) =>
+      unwrap(await crmPropertyService.updateDefinition(wsId, id, data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.properties(wsId) })
+    },
+  })
+}
+
+export function useDeleteCRMProperty(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await crmPropertyService.deleteDefinition(wsId, id)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.properties(wsId) })
+    },
+  })
+}
+
+export function useCRMPropertyGroups(wsId: string, objectType?: CRMObjectType) {
+  return useQuery({
+    queryKey: queryKeys.crm.propertyGroups(wsId, objectType),
+    queryFn: async () => unwrap(await crmPropertyService.listGroups(wsId, objectType)),
+    enabled: !!wsId,
+  })
+}
+
+export function useCreateCRMPropertyGroup(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMPropertyGroupRequest) =>
+      unwrap(await crmPropertyService.createGroup(data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.propertyGroups(wsId) })
+    },
+  })
+}
+
+export function useUpdateCRMPropertyGroup(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateCRMPropertyGroupRequest & { id: string }) =>
+      unwrap(await crmPropertyService.updateGroup(wsId, id, data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.propertyGroups(wsId) })
+    },
+  })
+}
+
+export function useDeleteCRMPropertyGroup(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await crmPropertyService.deleteGroup(wsId, id)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.propertyGroups(wsId) })
+    },
+  })
+}
+
+// ── Lists ──
+
+interface ListFilters {
+  object_type?: string
+  list_type?: string
+  search?: string
+  page?: number
+  per_page?: number
+}
+
+export function useCRMLists(wsId: string, filters?: ListFilters) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.lists(wsId), filters],
+    queryFn: async () => unwrap(await crmListService.list(wsId, filters)),
+    enabled: !!wsId,
+  })
+}
+
+export function useCRMList(wsId: string, id: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.list(wsId, id),
+    queryFn: async () => unwrap(await crmListService.get(wsId, id)),
+    enabled: !!wsId && !!id,
+  })
+}
+
+export function useCRMListMembers(wsId: string, listId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.listMembers(wsId, listId),
+    queryFn: async () => unwrap(await crmListService.listMembers(wsId, listId)),
+    enabled: !!wsId && !!listId,
+  })
+}
+
+export function useCreateCRMList(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMListRequest) => unwrap(await crmListService.create(data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.lists(wsId) })
+    },
+  })
+}
+
+export function useUpdateCRMList(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateCRMListRequest & { id: string }) =>
+      unwrap(await crmListService.update(wsId, id, data)),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.lists(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.list(wsId, id) })
+    },
+  })
+}
+
+export function useDeleteCRMList(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await crmListService.remove(wsId, id)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.lists(wsId) })
+    },
+  })
+}
+
+export function useAddCRMListMember(wsId: string, listId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (objectId: string) => unwrap(await crmListService.addMember(wsId, listId, objectId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.listMembers(wsId, listId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.list(wsId, listId) })
+    },
+  })
+}
+
+export function useRemoveCRMListMember(wsId: string, listId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (objectId: string) => unwrap(await crmListService.removeMember(wsId, listId, objectId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.listMembers(wsId, listId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.list(wsId, listId) })
+    },
+  })
+}
+
+// ── Imports ──
+
+export function useCRMImports(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.imports(wsId),
+    queryFn: async () => unwrap(await crmImportService.list(wsId)),
+    enabled: !!wsId,
+  })
+}
+
+export function useCRMImport(wsId: string, id: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.import(wsId, id),
+    queryFn: async () => unwrap(await crmImportService.get(wsId, id)),
+    enabled: !!wsId && !!id,
+  })
+}
+
+export function useCreateCRMImport(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMImportRequest) => unwrap(await crmImportService.create(data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.imports(wsId) })
+    },
+  })
+}
+
+export function useProcessCRMImport(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: ProcessCRMImportRequest & { id: string }) =>
+      unwrap(await crmImportService.process(wsId, id, data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.imports(wsId) })
+      // Also invalidate the objects that were imported
       qc.invalidateQueries({ queryKey: ['crm', wsId] })
     },
   })

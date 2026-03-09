@@ -262,3 +262,154 @@ export interface CRMPaginatedResponse<T> {
   total: number;
   page: number;
 }
+
+// ── Phase 2: Properties, Lists, Import ──
+
+export type CRMFieldType =
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'select'
+  | 'multiselect'
+  | 'boolean'
+  | 'url'
+  | 'email'
+  | 'phone'
+  | 'currency';
+
+export interface CRMPropertyDefinition {
+  id: string;
+  workspace_id: string;
+  object_type: CRMObjectType;
+  internal_name: string;
+  label: string;
+  field_type: CRMFieldType;
+  options: Record<string, unknown>;
+  group_name?: string;
+  is_required: boolean;
+  is_system: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMPropertyDefinitionRequest {
+  workspace_id: string;
+  object_type: CRMObjectType;
+  internal_name: string;
+  label: string;
+  field_type: CRMFieldType;
+  options?: Record<string, unknown>;
+  group_name?: string;
+  is_required?: boolean;
+  position?: number;
+}
+
+export interface UpdateCRMPropertyDefinitionRequest {
+  label?: string;
+  field_type?: CRMFieldType;
+  options?: Record<string, unknown>;
+  group_name?: string;
+  is_required?: boolean;
+  position?: number;
+}
+
+export interface CRMPropertyGroup {
+  id: string;
+  workspace_id: string;
+  object_type: CRMObjectType;
+  name: string;
+  position: number;
+  is_system: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMPropertyGroupRequest {
+  workspace_id: string;
+  object_type: CRMObjectType;
+  name: string;
+  position?: number;
+}
+
+export interface UpdateCRMPropertyGroupRequest {
+  name?: string;
+  position?: number;
+}
+
+export type CRMListType = 'static' | 'smart';
+
+export interface CRMList {
+  id: string;
+  workspace_id: string;
+  name: string;
+  list_type: CRMListType;
+  object_type: CRMObjectType;
+  filter_criteria: Record<string, unknown>;
+  member_count: number;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMListRequest {
+  workspace_id: string;
+  name: string;
+  list_type: CRMListType;
+  object_type: CRMObjectType;
+  filter_criteria?: Record<string, unknown>;
+}
+
+export interface UpdateCRMListRequest {
+  name?: string;
+  filter_criteria?: Record<string, unknown>;
+}
+
+export interface CRMListMember {
+  id: string;
+  list_id: string;
+  object_id: string;
+  created_at: string;
+}
+
+export type CRMImportSource = 'csv' | 'hubspot';
+export type CRMImportStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface CRMImportJob {
+  id: string;
+  workspace_id: string;
+  source: CRMImportSource;
+  status: CRMImportStatus;
+  object_type: CRMObjectType;
+  file_url?: string;
+  column_mapping: Record<string, unknown>;
+  total_rows: number;
+  processed_rows: number;
+  created_rows: number;
+  updated_rows: number;
+  error_count: number;
+  error_log: Record<string, unknown>;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMImportRequest {
+  workspace_id: string;
+  source: CRMImportSource;
+  object_type: CRMObjectType;
+  file_url?: string;
+  column_mapping?: Record<string, unknown>;
+  total_rows?: number;
+}
+
+export interface ImportColumnMapping {
+  csv_column: string;
+  crm_field: string;
+  is_custom: boolean;
+}
+
+export interface ProcessCRMImportRequest {
+  column_mapping: ImportColumnMapping[];
+  csv_data: string[][];
+}
