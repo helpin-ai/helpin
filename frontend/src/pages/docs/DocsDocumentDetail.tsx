@@ -52,7 +52,6 @@ import {
   useRevertDocsVersion,
 } from '@/hooks/queries'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
-import { UserAvatar } from '@/components/pm/UserAvatar'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
