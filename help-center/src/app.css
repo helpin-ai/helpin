@@ -1,0 +1,78 @@
+@import 'tailwindcss';
+
+/*
+ * Help Center Design Tokens
+ * Mintlify-inspired dark-mode-first documentation theme
+ */
+:root {
+  --hc-bg: #ffffff;
+  --hc-bg-secondary: #f8f9fa;
+  --hc-bg-tertiary: #f1f3f5;
+  --hc-text: #1a1a2e;
+  --hc-text-secondary: #64748b;
+  --hc-text-muted: #94a3b8;
+  --hc-border: #e2e8f0;
+  --hc-border-light: #f1f5f9;
+  --hc-accent: #6366f1;
+  --hc-accent-hover: #4f46e5;
+  --hc-accent-light: #eef2ff;
+  --hc-sidebar-width: 260px;
+  --hc-toc-width: 220px;
+  --hc-header-height: 56px;
+  --hc-content-max-width: 720px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hc-bg: #0f1117;
+    --hc-bg-secondary: #161822;
+    --hc-bg-tertiary: #1e2030;
+    --hc-text: #e2e8f0;
+    --hc-text-secondary: #94a3b8;
+    --hc-text-muted: #64748b;
+    --hc-border: #2a2d3a;
+    --hc-border-light: #1e2030;
+    --hc-accent: #818cf8;
+    --hc-accent-hover: #6366f1;
+    --hc-accent-light: rgba(99, 102, 241, 0.1);
+  }
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--hc-bg);
+  color: var(--hc-text);
+  line-height: 1.6;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--hc-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hc-text-muted);
+}

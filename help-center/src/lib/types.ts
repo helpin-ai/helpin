@@ -1,0 +1,92 @@
+// ─── Help Center Config ─────────────────────────────────────────────────────
+
+export interface HelpCenterConfig {
+  id: string
+  workspace_id: string
+  subdomain: string
+  custom_domain: string | null
+  brand_name: string
+  brand_logo_url: string | null
+  brand_color: string
+  is_published: boolean
+  seo_title: string | null
+  seo_description: string | null
+  support_email: string | null
+}
+
+// ─── Collections (Categories) ───────────────────────────────────────────────
+
+export interface Collection {
+  id: string
+  space_id: string
+  name: string
+  description: string | null
+  icon: string | null
+  slug: string
+  position: number
+  article_count?: number
+}
+
+// ─── Articles ───────────────────────────────────────────────────────────────
+
+export interface Article {
+  id: string
+  title: string
+  slug: string
+  excerpt: string | null
+  icon: string | null
+  status: string
+  collection_id: string | null
+  collection_name?: string
+  published_at: string | null
+  seo_title: string | null
+  seo_description: string | null
+  helpful_count: number
+  not_helpful_count: number
+  view_count: number
+}
+
+export interface ArticleDetail extends Article {
+  content: Record<string, unknown> | null
+  content_html?: string
+}
+
+// ─── Navigation ─────────────────────────────────────────────────────────────
+
+export interface NavItem {
+  id: string
+  name: string
+  slug: string
+  icon: string | null
+  articles: NavArticle[]
+}
+
+export interface NavArticle {
+  id: string
+  title: string
+  slug: string
+}
+
+// ─── Search ─────────────────────────────────────────────────────────────────
+
+export interface SearchResult {
+  id: string
+  title: string
+  slug: string
+  excerpt: string | null
+  collection_name: string | null
+  highlights?: string[]
+}
+
+// ─── Bootstrap ──────────────────────────────────────────────────────────────
+
+export interface HelpCenterBootstrap {
+  config: HelpCenterConfig
+  navigation: NavItem[]
+}
+
+// ─── Router Context ─────────────────────────────────────────────────────────
+
+export interface HelpCenterContext {
+  subdomain: string
+}

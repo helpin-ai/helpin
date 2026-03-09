@@ -30,6 +30,13 @@ build-frontend:
     cd frontend && npm install && npm run build
     @echo "✅ frontend built → frontend/dist"
 
+help-center:
+    cd help-center && npm run dev
+
+build-help-center:
+    cd help-center && npm install && npm run build
+    @echo "✅ help-center built → help-center/dist"
+
 claude:
     tmux new-session -s claude "claude"
 
