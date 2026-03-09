@@ -6,9 +6,10 @@ import type { NavItem } from '@/lib/types'
 
 interface SidebarProps {
   navigation: NavItem[]
+  spaceSlug: string
 }
 
-export function Sidebar({ navigation }: SidebarProps) {
+export function Sidebar({ navigation, spaceSlug }: SidebarProps) {
   return (
     <aside
       className="sticky top-[var(--hc-header-height)] hidden lg:block shrink-0 overflow-y-auto border-r"
@@ -18,66 +19,81 @@ export function Sidebar({ navigation }: SidebarProps) {
         borderColor: 'var(--hc-border)',
       }}
     >
-      <nav className="py-4 px-3">
+      <nav className="py-5 px-3">
         {navigation.map((collection) => (
-          <CollectionGroup key={collection.id} collection={collection} />
+          <CollectionGroup
+            key={collection.id}
+            collection={collection}
+            spaceSlug={spaceSlug}
+          />
         ))}
       </nav>
     </aside>
   )
 }
 
-function CollectionGroup({ collection }: { collection: NavItem }) {
+function CollectionGroup({
+  collection,
+  spaceSlug,
+}: {
+  collection: NavItem
+  spaceSlug: string
+}) {
   const [isOpen, setIsOpen] = useState(true)
   const matchRoute = useMatchRoute()
 
   const hasActiveArticle = collection.articles.some((a) =>
-    matchRoute({ to: '/articles/$articleSlug', params: { articleSlug: a.slug } }),
+    matchRoute({
+      to: '/$spaceSlug/$articleSlug',
+      params: { spaceSlug, articleSlug: a.slug },
+    }),
   )
 
   return (
-    <div className="mb-2">
+    <div className="mb-1">
+      {/* Collection header */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors',
+          'flex w-full items-center gap-1.5 rounded-md px-2 py-[7px] text-[13px] font-semibold transition-colors',
           hasActiveArticle
-            ? 'text-[var(--hc-accent)]'
+            ? 'text-[var(--hc-text)]'
             : 'text-[var(--hc-text-secondary)] hover:text-[var(--hc-text)]',
         )}
       >
         <ChevronRight
           size={14}
           className={cn(
-            'transition-transform shrink-0',
+            'transition-transform shrink-0 text-[var(--hc-text-muted)]',
             isOpen && 'rotate-90',
           )}
         />
-        {collection.icon && <span className="shrink-0">{collection.icon}</span>}
+        {collection.icon && <span className="shrink-0 text-sm">{collection.icon}</span>}
         <span className="truncate">{collection.name}</span>
       </button>
 
+      {/* Article list */}
       {isOpen && (
-        <div className="ml-2 mt-0.5 border-l" style={{ borderColor: 'var(--hc-border-light)' }}>
+        <div className="ml-[11px] border-l border-[var(--hc-border-light)]">
           {collection.articles.map((article) => {
             const isActive = !!matchRoute({
-              to: '/articles/$articleSlug',
-              params: { articleSlug: article.slug },
+              to: '/$spaceSlug/$articleSlug',
+              params: { spaceSlug, articleSlug: article.slug },
             })
 
             return (
               <Link
                 key={article.id}
-                to="/articles/$articleSlug"
-                params={{ articleSlug: article.slug }}
+                to="/$spaceSlug/$articleSlug"
+                params={{ spaceSlug, articleSlug: article.slug }}
                 className={cn(
-                  'flex items-center gap-2 rounded-md ml-1 px-2 py-1.5 text-sm transition-colors',
+                  'flex items-center gap-2 px-2.5 py-[6px] text-[13px] transition-colors border-l-2 -ml-px',
                   isActive
-                    ? 'bg-[var(--hc-accent-light)] text-[var(--hc-accent)] font-medium'
-                    : 'text-[var(--hc-text-secondary)] hover:text-[var(--hc-text)] hover:bg-[var(--hc-bg-secondary)]',
+                    ? 'border-[var(--hc-accent)] text-[var(--hc-accent)] font-medium bg-[var(--hc-accent-light)]'
+                    : 'border-transparent text-[var(--hc-text-secondary)] hover:text-[var(--hc-text)] hover:border-[var(--hc-border)]',
                 )}
               >
-                <FileText size={14} className="shrink-0" />
+                <FileText size={14} className="shrink-0 opacity-60" />
                 <span className="truncate">{article.title}</span>
               </Link>
             )

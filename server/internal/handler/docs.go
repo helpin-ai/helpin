@@ -620,66 +620,80 @@ func (h *DocsHandler) SubmitArticleFeedback(w http.ResponseWriter, r *http.Reque
 
 // ─── Public Help Center routes ──────────────────────────────────────────────
 
-func (h *DocsHandler) PublicGetArticle(w http.ResponseWriter, r *http.Request) {
+// resolveSubdomain resolves a subdomain to its help center config.
+// Returns nil config with a 404 written if not found or not published.
+func (h *DocsHandler) resolveSubdomain(w http.ResponseWriter, r *http.Request) *model.DocsHelpcenterConfig {
 	subdomain := chi.URLParam(r, "subdomain")
-	slug := chi.URLParam(r, "slug")
+	cfg, err := h.helpcenterSvc.GetConfigBySubdomain(r.Context(), subdomain)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return nil
+	}
+	if cfg == nil {
+		writeError(w, http.StatusNotFound, "help center not found")
+		return nil
+	}
+	return cfg
+}
 
-	cfg, err := h.helpcenterSvc.GetConfig(r.Context(), "")
+func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	spaces, err := h.helpcenterSvc.ListPublicSpaces(r.Context(), cfg.WorkspaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// Lookup config by subdomain.
-	if cfg == nil || cfg.Subdomain != subdomain {
-		// Try subdomain-based lookup via direct query.
-		cfg = nil
+	writeJSON(w, http.StatusOK, spaces)
+}
+
+func (h *DocsHandler) PublicGetSpaceNavigation(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
 	}
-
-	// Resolve the workspace from subdomain — need to use hcRepo directly.
-	// For public routes, we pass through with a special handler.
-	_ = cfg
-
-	// Resolve slug to document ID.
-	docID, isAlias, err := h.helpcenterSvc.ResolveSlug(r.Context(), "", slug)
+	spaceSlug := chi.URLParam(r, "spaceSlug")
+	nav, err := h.helpcenterSvc.GetSpaceNavigation(r.Context(), cfg.WorkspaceID, spaceSlug)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	_ = isAlias
+	writeJSON(w, http.StatusOK, nav)
+}
 
-	if docID == "" {
+func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	spaceSlug := chi.URLParam(r, "spaceSlug")
+	articleSlug := chi.URLParam(r, "articleSlug")
+
+	article, err := h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, spaceSlug, articleSlug)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "article not found")
 		return
 	}
-
-	// Verify article is publicly published.
-	art, err := h.helpcenterSvc.GetArticle(r.Context(), docID)
-	if err != nil || art == nil || art.PublicPublishedAt == nil {
-		writeError(w, http.StatusNotFound, "article not found")
-		return
-	}
-
-	doc, err := h.documentSvc.Get(r.Context(), docID)
-	if err != nil || doc == nil || doc.Status != model.DocStatusPublished {
-		writeError(w, http.StatusNotFound, "article not found")
-		return
-	}
-
-	content, _ := h.contentSvc.Get(r.Context(), docID)
-
-	// Increment view count asynchronously.
-	go func() { _ = h.helpcenterSvc.IncrementViewCount(r.Context(), docID) }()
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"document": doc,
-		"content":  content,
-		"article":  art,
-	})
+	writeJSON(w, http.StatusOK, article)
 }
 
 func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Request) {
-	subdomain := chi.URLParam(r, "subdomain")
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
 	query := r.URL.Query().Get("q")
+	spaceSlug := r.URL.Query().Get("space")
 	limit := 50
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil {
@@ -687,16 +701,48 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Resolve workspace from subdomain — for now, search requires knowing workspaceID.
-	// In production, the public route middleware will resolve this.
-	_ = subdomain
+	// Resolve space slug to ID if provided.
+	spaceID := ""
+	if spaceSlug != "" {
+		space, err := h.spaceSvc.GetBySlug(r.Context(), cfg.WorkspaceID, spaceSlug)
+		if err == nil && space != nil {
+			spaceID = space.ID
+		}
+	}
 
-	results, err := h.searchSvc.PublicSearch(r.Context(), "", query, limit)
+	results, err := h.searchSvc.PublicSearch(r.Context(), cfg.WorkspaceID, query, spaceID, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, results)
+}
+
+func (h *DocsHandler) PublicSubmitFeedback(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	articleSlug := chi.URLParam(r, "articleSlug")
+	spaceSlug := chi.URLParam(r, "spaceSlug")
+
+	// Resolve article.
+	article, err := h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, spaceSlug, articleSlug)
+	if err != nil || article == nil {
+		writeError(w, http.StatusNotFound, "article not found")
+		return
+	}
+
+	var req model.DocsArticleFeedbackRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.helpcenterSvc.SubmitFeedback(r.Context(), article.ID, req); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // ─── Share Toggle ────────────────────────────────────────────────────────────

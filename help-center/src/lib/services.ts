@@ -1,30 +1,29 @@
 import { api } from './api'
 import type {
   HelpCenterConfig,
+  Space,
   ArticleDetail,
   SearchResult,
   NavItem,
-  Collection,
-  Article,
 } from './types'
 
 export const helpCenterService = {
   getConfig: (subdomain: string) =>
     api.get<HelpCenterConfig>(`/hc/${subdomain}/config`),
 
-  getNavigation: (subdomain: string) =>
-    api.get<NavItem[]>(`/hc/${subdomain}/navigation`),
+  getSpaces: (subdomain: string) =>
+    api.get<Space[]>(`/hc/${subdomain}/spaces`),
 
-  getArticle: (subdomain: string, slug: string) =>
-    api.get<ArticleDetail>(`/hc/${subdomain}/articles/${slug}`),
+  getSpaceNavigation: (subdomain: string, spaceSlug: string) =>
+    api.get<NavItem[]>(`/hc/${subdomain}/spaces/${spaceSlug}/navigation`),
 
-  search: (subdomain: string, query: string) =>
-    api.get<SearchResult[]>(
-      `/hc/${subdomain}/search?q=${encodeURIComponent(query)}`,
+  getArticle: (subdomain: string, spaceSlug: string, articleSlug: string) =>
+    api.get<ArticleDetail>(
+      `/hc/${subdomain}/spaces/${spaceSlug}/articles/${articleSlug}`,
     ),
 
-  getCollection: (subdomain: string, slug: string) =>
-    api.get<{ collection: Collection; articles: Article[] }>(
-      `/hc/${subdomain}/collections/${slug}`,
+  search: (subdomain: string, query: string, spaceSlug?: string) =>
+    api.get<SearchResult[]>(
+      `/hc/${subdomain}/search?q=${encodeURIComponent(query)}${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}`,
     ),
 }

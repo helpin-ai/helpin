@@ -31,6 +31,8 @@ type UpdateCommentRequest struct {
 
 // CommentWithAuthor is a comment enriched with author info.
 type CommentWithAuthor struct {
-	Comment PMComment `json:"comment"`
-	Author  User      `json:"author"`
+	Comment    PMComment          `json:"comment"`
+	Author     User               `json:"author"`
+	ReplyCount int                `json:"reply_count"`
+	Replies    []CommentWithAuthor `json:"replies,omitempty"`
 }

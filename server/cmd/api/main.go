@@ -397,7 +397,7 @@ func main() {
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo)
-	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo)
+	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)

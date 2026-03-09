@@ -38,9 +38,7 @@ export function Header() {
     const subRoute = segments.slice(2);
     const workspaceLabel = currentWorkspace?.name ?? "Workspace";
 
-    const crumbs: Crumb[] = [
-      { label: workspaceLabel, to: `/w/${slug}/pm/stories` },
-    ];
+    const crumbs: Crumb[] = [];
     if (subRoute.length === 0) {
       crumbs.push({ label: "Dashboard" });
       return crumbs;
@@ -144,12 +142,12 @@ export function Header() {
 
   return (
     <header className="relative h-14 border-b border-border/70 bg-background/95 px-3 flex items-center gap-3">
-      <div className="flex min-w-0 items-center gap-2 z-10">
+      <div className="flex min-w-0 max-w-[45%] items-center gap-2 z-10">
         <SidebarTrigger className="-ml-1" />
         {breadcrumbs.length > 0 && (
           <nav
             aria-label="Breadcrumb"
-            className="hidden min-w-0 items-center gap-1 text-sm md:flex"
+            className="hidden min-w-0 items-center gap-1 text-sm md:flex overflow-hidden"
           >
             {breadcrumbs.map((crumb, index) => {
               const isLast = index === breadcrumbs.length - 1;

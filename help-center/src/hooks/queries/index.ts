@@ -15,38 +15,49 @@ export function useHelpCenterConfig(subdomain: string) {
   })
 }
 
-export function useNavigation(subdomain: string) {
+export function useSpaces(subdomain: string) {
   return useQuery({
-    queryKey: queryKeys.helpCenter.navigation(subdomain),
-    queryFn: async () =>
-      unwrap(await helpCenterService.getNavigation(subdomain)),
+    queryKey: queryKeys.helpCenter.spaces(subdomain),
+    queryFn: async () => unwrap(await helpCenterService.getSpaces(subdomain)),
     enabled: !!subdomain,
   })
 }
 
-export function useArticle(subdomain: string, slug: string) {
+export function useSpaceNavigation(subdomain: string, spaceSlug: string) {
   return useQuery({
-    queryKey: queryKeys.articles.bySlug(subdomain, slug),
+    queryKey: queryKeys.spaces.navigation(subdomain, spaceSlug),
     queryFn: async () =>
-      unwrap(await helpCenterService.getArticle(subdomain, slug)),
-    enabled: !!subdomain && !!slug,
+      unwrap(
+        await helpCenterService.getSpaceNavigation(subdomain, spaceSlug),
+      ),
+    enabled: !!subdomain && !!spaceSlug,
   })
 }
 
-export function useSearchArticles(subdomain: string, query: string) {
+export function useArticle(
+  subdomain: string,
+  spaceSlug: string,
+  articleSlug: string,
+) {
   return useQuery({
-    queryKey: queryKeys.articles.search(subdomain, query),
+    queryKey: queryKeys.articles.bySlug(subdomain, spaceSlug, articleSlug),
     queryFn: async () =>
-      unwrap(await helpCenterService.search(subdomain, query)),
+      unwrap(
+        await helpCenterService.getArticle(subdomain, spaceSlug, articleSlug),
+      ),
+    enabled: !!subdomain && !!spaceSlug && !!articleSlug,
+  })
+}
+
+export function useSearchArticles(
+  subdomain: string,
+  query: string,
+  spaceSlug?: string,
+) {
+  return useQuery({
+    queryKey: queryKeys.articles.search(subdomain, query, spaceSlug),
+    queryFn: async () =>
+      unwrap(await helpCenterService.search(subdomain, query, spaceSlug)),
     enabled: !!subdomain && query.length >= 2,
-  })
-}
-
-export function useCollection(subdomain: string, slug: string) {
-  return useQuery({
-    queryKey: queryKeys.collections.bySlug(subdomain, slug),
-    queryFn: async () =>
-      unwrap(await helpCenterService.getCollection(subdomain, slug)),
-    enabled: !!subdomain && !!slug,
   })
 }

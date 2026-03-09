@@ -251,6 +251,8 @@ export interface CommentWithAuthor {
     created_at: string;
     updated_at: string;
   };
+  reply_count: number;
+  replies?: CommentWithAuthor[];
 }
 
 export interface PMActivity {

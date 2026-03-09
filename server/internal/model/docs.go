@@ -310,6 +310,7 @@ func (DocsHelpcenterConfig) TableName() string { return "docs_helpcenter_configs
 type DocsHelpcenterArticle struct {
 	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	DocumentID        string     `json:"document_id" gorm:"type:uuid;not null;uniqueIndex"`
+	Slug              string     `json:"slug" gorm:"not null;default:''"`
 	SEOTitle          *string    `json:"seo_title"`
 	SEODescription    *string    `json:"seo_description"`
 	HelpfulCount      int        `json:"helpful_count" gorm:"not null;default:0"`
@@ -509,4 +510,61 @@ type ToggleDocLockRequest struct {
 type PublicDocResponse struct {
 	Document *DocsDocument `json:"document"`
 	Content  *DocsContent  `json:"content"`
+}
+
+// ─── Public Help Center Response DTOs ────────────────────────────────────────
+
+// PublicSpaceResponse is the public-facing space for help center top nav.
+type PublicSpaceResponse struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Slug        string  `json:"slug"`
+	Icon        *string `json:"icon"`
+	Description *string `json:"description"`
+}
+
+// PublicNavArticle is a published article within a collection for sidebar navigation.
+type PublicNavArticle struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Slug  string `json:"slug"`
+}
+
+// PublicNavCollection is a collection with its published articles for sidebar navigation.
+type PublicNavCollection struct {
+	ID       string             `json:"id"`
+	Name     string             `json:"name"`
+	Slug     string             `json:"slug"`
+	Icon     *string            `json:"icon"`
+	Articles []PublicNavArticle  `json:"articles"`
+}
+
+// PublicArticleResponse is the full article detail for the help center content area.
+type PublicArticleResponse struct {
+	ID              string  `json:"id"`
+	Title           string  `json:"title"`
+	Slug            string  `json:"slug"`
+	Excerpt         *string `json:"excerpt"`
+	Icon            *string `json:"icon"`
+	Status          string  `json:"status"`
+	CollectionID    *string `json:"collection_id"`
+	CollectionName  *string `json:"collection_name"`
+	PublishedAt     *string `json:"published_at"`
+	SEOTitle        *string `json:"seo_title"`
+	SEODescription  *string `json:"seo_description"`
+	HelpfulCount    int     `json:"helpful_count"`
+	NotHelpfulCount int     `json:"not_helpful_count"`
+	ViewCount       int     `json:"view_count"`
+	ContentHTML     *string `json:"content_html"`
+}
+
+// PublicSearchResultResponse is a search result with space context.
+type PublicSearchResultResponse struct {
+	ID             string  `json:"id"`
+	Title          string  `json:"title"`
+	Slug           string  `json:"slug"`
+	Excerpt        *string `json:"excerpt"`
+	CollectionName *string `json:"collection_name"`
+	SpaceSlug      string  `json:"space_slug"`
+	SpaceName      string  `json:"space_name"`
 }

@@ -5,19 +5,21 @@ import { LoadingState } from '@/components/LoadingState'
 
 interface SearchParams {
   q?: string
+  space?: string
 }
 
 export const Route = createFileRoute('/search')({
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     q: typeof search.q === 'string' ? search.q : undefined,
+    space: typeof search.space === 'string' ? search.space : undefined,
   }),
   component: SearchPage,
 })
 
 function SearchPage() {
-  const { q = '' } = Route.useSearch()
+  const { q = '', space } = Route.useSearch()
   const subdomain = Route.useRouteContext({ select: (s) => s.subdomain })
-  const { data: results, isLoading } = useSearchArticles(subdomain, q)
+  const { data: results, isLoading } = useSearchArticles(subdomain, q, space)
 
   return (
     <div

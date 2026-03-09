@@ -150,6 +150,141 @@ func (r *DocsHelpcenterRepository) IncrementFeedbackCount(ctx context.Context, d
 	return nil
 }
 
+// ─── Public Help Center Queries ──────────────────────────────────────────────
+
+// ListSpaceNavigation returns collections with their published articles for sidebar navigation.
+func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spaceID string) ([]model.PublicNavCollection, error) {
+	// 1. Get collections in this space, ordered by position.
+	var collections []model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("space_id = ? AND deleted_at IS NULL", spaceID).
+		Order("position ASC, created_at ASC").
+		Find(&collections).Error; err != nil {
+		return nil, fmt.Errorf("list space collections: %w", err)
+	}
+
+	// 2. Get all published articles in this space that are externally published.
+	type navArticleRow struct {
+		ID           string  `gorm:"column:id"`
+		Title        string  `gorm:"column:title"`
+		Slug         string  `gorm:"column:slug"`
+		CollectionID *string `gorm:"column:collection_id"`
+	}
+	var articles []navArticleRow
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT d.id, d.title, ha.slug, d.collection_id
+		FROM docs_documents d
+		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		WHERE d.space_id = ?
+		  AND d.status = 'published'
+		  AND d.deleted_at IS NULL
+		  AND ha.public_published_at IS NOT NULL
+		  AND ha.slug != ''
+		ORDER BY d.collection_id, d.created_at ASC
+	`, spaceID).Scan(&articles).Error; err != nil {
+		return nil, fmt.Errorf("list space nav articles: %w", err)
+	}
+
+	// 3. Group articles by collection_id.
+	articlesByCollection := map[string][]model.PublicNavArticle{}
+	var uncategorized []model.PublicNavArticle
+	for _, a := range articles {
+		na := model.PublicNavArticle{ID: a.ID, Title: a.Title, Slug: a.Slug}
+		if a.CollectionID != nil {
+			articlesByCollection[*a.CollectionID] = append(articlesByCollection[*a.CollectionID], na)
+		} else {
+			uncategorized = append(uncategorized, na)
+		}
+	}
+
+	// 4. Build response — only include collections that have published articles.
+	var result []model.PublicNavCollection
+	for _, c := range collections {
+		arts, ok := articlesByCollection[c.ID]
+		if !ok || len(arts) == 0 {
+			continue
+		}
+		result = append(result, model.PublicNavCollection{
+			ID:       c.ID,
+			Name:     c.Name,
+			Slug:     c.ID, // collections don't have slugs; use ID as identifier
+			Icon:     c.Icon,
+			Articles: arts,
+		})
+	}
+
+	// Add uncategorized articles if any.
+	if len(uncategorized) > 0 {
+		result = append(result, model.PublicNavCollection{
+			ID:       "uncategorized",
+			Name:     "General",
+			Slug:     "uncategorized",
+			Articles: uncategorized,
+		})
+	}
+
+	return result, nil
+}
+
+// GetPublicArticleBySlug finds a publicly published article by space and slug.
+func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, spaceID, slug string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
+	// Find the helpcenter article by slug.
+	var ha model.DocsHelpcenterArticle
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN docs_documents d ON d.id = docs_helpcenter_articles.document_id").
+		Where("d.space_id = ? AND docs_helpcenter_articles.slug = ? AND d.status = 'published' AND d.deleted_at IS NULL AND docs_helpcenter_articles.public_published_at IS NOT NULL",
+			spaceID, slug).
+		First(&ha).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, nil
+		}
+		return nil, nil, nil, fmt.Errorf("get public article by slug: %w", err)
+	}
+
+	// Get the document.
+	var doc model.DocsDocument
+	if err := r.db.WithContext(ctx).Where("id = ?", ha.DocumentID).First(&doc).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("get article document: %w", err)
+	}
+
+	// Get the content.
+	var content model.DocsContent
+	if err := r.db.WithContext(ctx).Where("document_id = ?", ha.DocumentID).First(&content).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, fmt.Errorf("get article content: %w", err)
+		}
+		return &doc, &ha, nil, nil
+	}
+
+	return &doc, &ha, &content, nil
+}
+
+// SetSlug updates the public slug for a helpcenter article.
+func (r *DocsHelpcenterRepository) SetSlug(ctx context.Context, documentID, slug string) error {
+	if err := r.db.WithContext(ctx).Model(&model.DocsHelpcenterArticle{}).
+		Where("document_id = ?", documentID).
+		Update("slug", slug).Error; err != nil {
+		return fmt.Errorf("set helpcenter article slug: %w", err)
+	}
+	return nil
+}
+
+// SlugExistsInSpace checks if a slug is already used by another published article in the same space.
+// Returns true if the slug is taken by a different document.
+func (r *DocsHelpcenterRepository) SlugExistsInSpace(ctx context.Context, spaceID, slug, excludeDocumentID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterArticle{}).
+		Joins("JOIN docs_documents d ON d.id = docs_helpcenter_articles.document_id").
+		Where("d.space_id = ? AND docs_helpcenter_articles.slug = ? AND docs_helpcenter_articles.document_id != ? AND d.deleted_at IS NULL",
+			spaceID, slug, excludeDocumentID).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("check slug exists: %w", err)
+	}
+	return count > 0, nil
+}
+
 // ─── Slug Aliases ───────────────────────────────────────────────────────────
 
 // CreateSlugAlias inserts a slug alias record.

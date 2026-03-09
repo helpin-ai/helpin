@@ -81,8 +81,8 @@ func (r *DocsSearchRepository) Search(ctx context.Context, workspaceID, query st
 	return results, nil
 }
 
-// PublicSearch searches published help center articles by subdomain.
-func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchResult, error) {
+// PublicSearch searches published help center articles by subdomain, optionally filtered by space.
+func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, query, spaceID string, limit int) ([]DocsSearchResult, error) {
 	if query == "" {
 		return nil, nil
 	}
@@ -105,16 +105,24 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, qu
 		  AND d.deleted_at IS NULL
 		  AND d.status = 'published'
 		  AND ha.public_published_at IS NOT NULL
+		  AND ha.slug != ''
 		  AND (
 			to_tsvector('english', COALESCE(d.title, '')) ||
 			to_tsvector('english', COALESCE(c.content_text, ''))
 		  ) @@ to_tsquery('english', ?)
-		ORDER BY rank DESC
-		LIMIT ?
 	`
+	args := []interface{}{tsQuery, workspaceID, tsQuery}
+
+	if spaceID != "" {
+		sql += " AND d.space_id = ?"
+		args = append(args, spaceID)
+	}
+
+	sql += " ORDER BY rank DESC LIMIT ?"
+	args = append(args, limit)
 
 	var results []DocsSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, tsQuery, workspaceID, tsQuery, limit).Scan(&results).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("docs public search: %w", err)
 	}
 	return results, nil

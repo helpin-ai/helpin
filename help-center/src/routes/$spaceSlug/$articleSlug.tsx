@@ -1,19 +1,26 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useArticle } from '@/hooks/queries'
 import { ArticleContent } from '@/components/ArticleContent'
-import { TableOfContents, type TocItem } from '@/components/layout/TableOfContents'
+import {
+  TableOfContents,
+  type TocItem,
+} from '@/components/layout/TableOfContents'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { useMemo } from 'react'
 
-export const Route = createFileRoute('/articles/$articleSlug')({
+export const Route = createFileRoute('/$spaceSlug/$articleSlug')({
   component: ArticlePage,
 })
 
 function ArticlePage() {
-  const { articleSlug } = Route.useParams()
+  const { spaceSlug, articleSlug } = Route.useParams()
   const subdomain = Route.useRouteContext({ select: (s) => s.subdomain })
-  const { data: article, isLoading, error } = useArticle(subdomain, articleSlug)
+  const {
+    data: article,
+    isLoading,
+    error,
+  } = useArticle(subdomain, spaceSlug, articleSlug)
 
   // Extract TOC headings from HTML content
   const tocItems = useMemo<TocItem[]>(() => {

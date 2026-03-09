@@ -10,13 +10,19 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as SpaceSlugRouteImport } from './routes/$spaceSlug'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as CollectionSlugIndexRouteImport } from './routes/$collectionSlug/index'
-import { Route as ArticlesArticleSlugRouteImport } from './routes/articles/$articleSlug'
+import { Route as SpaceSlugIndexRouteImport } from './routes/$spaceSlug/index'
+import { Route as SpaceSlugArticleSlugRouteImport } from './routes/$spaceSlug/$articleSlug'
 
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpaceSlugRoute = SpaceSlugRouteImport.update({
+  id: '/$spaceSlug',
+  path: '/$spaceSlug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -24,54 +30,61 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CollectionSlugIndexRoute = CollectionSlugIndexRouteImport.update({
-  id: '/$collectionSlug/',
-  path: '/$collectionSlug/',
-  getParentRoute: () => rootRouteImport,
+const SpaceSlugIndexRoute = SpaceSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SpaceSlugRoute,
 } as any)
-const ArticlesArticleSlugRoute = ArticlesArticleSlugRouteImport.update({
-  id: '/articles/$articleSlug',
-  path: '/articles/$articleSlug',
-  getParentRoute: () => rootRouteImport,
+const SpaceSlugArticleSlugRoute = SpaceSlugArticleSlugRouteImport.update({
+  id: '/$articleSlug',
+  path: '/$articleSlug',
+  getParentRoute: () => SpaceSlugRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$spaceSlug': typeof SpaceSlugRouteWithChildren
   '/search': typeof SearchRoute
-  '/articles/$articleSlug': typeof ArticlesArticleSlugRoute
-  '/$collectionSlug/': typeof CollectionSlugIndexRoute
+  '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
+  '/$spaceSlug/': typeof SpaceSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/search': typeof SearchRoute
-  '/articles/$articleSlug': typeof ArticlesArticleSlugRoute
-  '/$collectionSlug': typeof CollectionSlugIndexRoute
+  '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
+  '/$spaceSlug': typeof SpaceSlugIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$spaceSlug': typeof SpaceSlugRouteWithChildren
   '/search': typeof SearchRoute
-  '/articles/$articleSlug': typeof ArticlesArticleSlugRoute
-  '/$collectionSlug/': typeof CollectionSlugIndexRoute
+  '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
+  '/$spaceSlug/': typeof SpaceSlugIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/search' | '/articles/$articleSlug' | '/$collectionSlug/'
+  fullPaths:
+    | '/'
+    | '/$spaceSlug'
+    | '/search'
+    | '/$spaceSlug/$articleSlug'
+    | '/$spaceSlug/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/search' | '/articles/$articleSlug' | '/$collectionSlug'
+  to: '/' | '/search' | '/$spaceSlug/$articleSlug' | '/$spaceSlug'
   id:
     | '__root__'
     | '/'
+    | '/$spaceSlug'
     | '/search'
-    | '/articles/$articleSlug'
-    | '/$collectionSlug/'
+    | '/$spaceSlug/$articleSlug'
+    | '/$spaceSlug/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SpaceSlugRoute: typeof SpaceSlugRouteWithChildren
   SearchRoute: typeof SearchRoute
-  ArticlesArticleSlugRoute: typeof ArticlesArticleSlugRoute
-  CollectionSlugIndexRoute: typeof CollectionSlugIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -83,6 +96,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$spaceSlug': {
+      id: '/$spaceSlug'
+      path: '/$spaceSlug'
+      fullPath: '/$spaceSlug'
+      preLoaderRoute: typeof SpaceSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -90,28 +110,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/$collectionSlug/': {
-      id: '/$collectionSlug/'
-      path: '/$collectionSlug'
-      fullPath: '/$collectionSlug/'
-      preLoaderRoute: typeof CollectionSlugIndexRouteImport
-      parentRoute: typeof rootRouteImport
+    '/$spaceSlug/': {
+      id: '/$spaceSlug/'
+      path: '/'
+      fullPath: '/$spaceSlug/'
+      preLoaderRoute: typeof SpaceSlugIndexRouteImport
+      parentRoute: typeof SpaceSlugRoute
     }
-    '/articles/$articleSlug': {
-      id: '/articles/$articleSlug'
-      path: '/articles/$articleSlug'
-      fullPath: '/articles/$articleSlug'
-      preLoaderRoute: typeof ArticlesArticleSlugRouteImport
-      parentRoute: typeof rootRouteImport
+    '/$spaceSlug/$articleSlug': {
+      id: '/$spaceSlug/$articleSlug'
+      path: '/$articleSlug'
+      fullPath: '/$spaceSlug/$articleSlug'
+      preLoaderRoute: typeof SpaceSlugArticleSlugRouteImport
+      parentRoute: typeof SpaceSlugRoute
     }
   }
 }
 
+interface SpaceSlugRouteChildren {
+  SpaceSlugArticleSlugRoute: typeof SpaceSlugArticleSlugRoute
+  SpaceSlugIndexRoute: typeof SpaceSlugIndexRoute
+}
+
+const SpaceSlugRouteChildren: SpaceSlugRouteChildren = {
+  SpaceSlugArticleSlugRoute: SpaceSlugArticleSlugRoute,
+  SpaceSlugIndexRoute: SpaceSlugIndexRoute,
+}
+
+const SpaceSlugRouteWithChildren = SpaceSlugRoute._addFileChildren(
+  SpaceSlugRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SpaceSlugRoute: SpaceSlugRouteWithChildren,
   SearchRoute: SearchRoute,
-  ArticlesArticleSlugRoute: ArticlesArticleSlugRoute,
-  CollectionSlugIndexRoute: CollectionSlugIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

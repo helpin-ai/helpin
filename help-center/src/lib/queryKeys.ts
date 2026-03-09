@@ -1,19 +1,16 @@
 export const queryKeys = {
   helpCenter: {
     config: (subdomain: string) => ['helpCenter', 'config', subdomain] as const,
-    navigation: (subdomain: string) =>
-      ['helpCenter', 'navigation', subdomain] as const,
-    bootstrap: (subdomain: string) =>
-      ['helpCenter', 'bootstrap', subdomain] as const,
+    spaces: (subdomain: string) => ['helpCenter', 'spaces', subdomain] as const,
+  },
+  spaces: {
+    navigation: (subdomain: string, spaceSlug: string) =>
+      ['spaces', subdomain, spaceSlug, 'navigation'] as const,
   },
   articles: {
-    bySlug: (subdomain: string, slug: string) =>
-      ['articles', subdomain, slug] as const,
-    search: (subdomain: string, query: string) =>
-      ['articles', 'search', subdomain, query] as const,
-  },
-  collections: {
-    bySlug: (subdomain: string, slug: string) =>
-      ['collections', subdomain, slug] as const,
+    bySlug: (subdomain: string, spaceSlug: string, articleSlug: string) =>
+      ['articles', subdomain, spaceSlug, articleSlug] as const,
+    search: (subdomain: string, query: string, spaceSlug?: string) =>
+      ['articles', 'search', subdomain, query, spaceSlug] as const,
   },
 }

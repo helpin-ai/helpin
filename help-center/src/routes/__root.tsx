@@ -2,7 +2,7 @@ import { createRootRouteWithContext } from '@tanstack/react-router'
 import { AppShell } from '@/components/layout/AppShell'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
-import { useHelpCenterConfig, useNavigation } from '@/hooks/queries'
+import { useHelpCenterConfig, useSpaces } from '@/hooks/queries'
 import type { HelpCenterContext } from '@/lib/types'
 
 export const Route = createRootRouteWithContext<HelpCenterContext>()({
@@ -19,12 +19,12 @@ function RootLayout() {
   } = useHelpCenterConfig(subdomain)
 
   const {
-    data: navigation,
-    isLoading: navLoading,
-  } = useNavigation(subdomain)
+    data: spaces,
+    isLoading: spacesLoading,
+  } = useSpaces(subdomain)
 
   // Loading
-  if (configLoading || navLoading) {
+  if (configLoading || spacesLoading) {
     return <LoadingState message="Loading help center..." />
   }
 
@@ -49,5 +49,5 @@ function RootLayout() {
     )
   }
 
-  return <AppShell config={config} navigation={navigation ?? []} />
+  return <AppShell config={config} spaces={spaces ?? []} />
 }

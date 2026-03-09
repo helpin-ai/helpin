@@ -76,9 +76,8 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
-import { CommentEditor } from '@/components/pm/CommentEditor';
+import { CommentThread } from '@/components/pm/CommentThread';
 import { LinkedDeals } from '@/components/pm/LinkedDeals';
-import { MentionText } from '@/components/pm/MentionText';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import type {
   ActivityLogEntry,
@@ -322,9 +321,6 @@ function StoryDetailPanelBody({
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
 
-  const [commentLoading, setCommentLoading] = useState(false);
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editingCommentBody, setEditingCommentBody] = useState('');
   const currentUser = useAuthStore((s) => s.user);
 
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
@@ -447,53 +443,6 @@ function StoryDetailPanelBody({
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateStoryRequest) => {
     setForm((current) => ({ ...current, [key]: value }));
     queuePatch(patch);
-  };
-
-  // ── Comments ───────────────────────────────────────────────────
-  const addComment = async (body: string) => {
-    if (!body.trim()) return;
-    setCommentLoading(true);
-    const { data, error } = await pmCommentService.create(workspaceId, {
-      entity_type: 'story',
-      entity_id: storyDetail.story.id,
-      body: body.trim(),
-    });
-    setCommentLoading(false);
-    if (error || !data) return;
-    setComments((current) => [...current, data]);
-  };
-
-  const startEditComment = (comment: CommentWithAuthor) => {
-    setEditingCommentId(comment.comment.id);
-    setEditingCommentBody(comment.comment.body);
-  };
-
-  const cancelEditComment = () => {
-    setEditingCommentId(null);
-    setEditingCommentBody('');
-  };
-
-  const saveEditComment = async () => {
-    if (!editingCommentId || !editingCommentBody.trim()) return;
-    const { error } = await pmCommentService.update(workspaceId, editingCommentId, {
-      body: editingCommentBody.trim(),
-    });
-    if (error) return;
-    setComments((current) =>
-      current.map((c) =>
-        c.comment.id === editingCommentId
-          ? { ...c, comment: { ...c.comment, body: editingCommentBody.trim() } }
-          : c,
-      ),
-    );
-    setEditingCommentId(null);
-    setEditingCommentBody('');
-  };
-
-  const deleteComment = async (id: string) => {
-    const { error } = await pmCommentService.remove(workspaceId, id);
-    if (error) return;
-    setComments((current) => current.filter((c) => c.comment.id !== id));
   };
 
   // ── Archive ────────────────────────────────────────────────────
@@ -780,83 +729,16 @@ function StoryDetailPanelBody({
           {/* Comments + Activity */}
           <div>
             {/* Comments card */}
-            <div className="rounded-lg border border-border/60">
-              {comments.map((entry, idx) => {
-                const isOwn = currentUser?.id === entry.comment.author_id;
-                const isEditing = editingCommentId === entry.comment.id;
-                return (
-                  <div key={entry.comment.id}>
-                    {idx > 0 && <Separator />}
-                    <div className="group px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-800 text-[9px] font-medium text-white">
-                          {userInitials(entry.author)}
-                        </div>
-                        <span className="text-xs font-semibold">{entry.author.full_name || entry.author.email}</span>
-                        <span className="text-[11px] text-muted-foreground">{formatRelativeTime(entry.comment.created_at)}</span>
-                        {isOwn && !isEditing && (
-                          <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              type="button"
-                              className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                              onClick={() => startEditComment(entry)}
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </button>
-                            <button
-                              type="button"
-                              className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
-                              onClick={() => deleteComment(entry.comment.id)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      {isEditing ? (
-                        <div className="mt-1.5 pl-8">
-                          <textarea
-                            value={editingCommentBody}
-                            rows={2}
-                            className="w-full resize-none rounded-md border border-border/60 bg-transparent px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            onChange={(e) => setEditingCommentBody(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                                e.preventDefault();
-                                saveEditComment();
-                              }
-                              if (e.key === 'Escape') cancelEditComment();
-                            }}
-                          />
-                          <div className="mt-1 flex items-center gap-1.5">
-                            <Button variant="default" size="sm" className="h-6 px-2 text-xs" onClick={saveEditComment}>
-                              Save
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={cancelEditComment}>
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="mt-1.5 pl-8 text-sm"><MentionText text={entry.comment.body} members={assignableMembers} /></p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Comment input */}
-              {comments.length > 0 && <Separator />}
-              <div className="px-4 py-3">
-                <CommentEditor
-                  onSubmit={addComment}
-                  loading={commentLoading}
-                  placeholder="Leave a comment... (type @ to mention)"
-                  teams={teams}
-                  members={assignableMembers}
-                />
-              </div>
-            </div>
+            <CommentThread
+              workspaceId={workspaceId}
+              entityType="story"
+              entityId={storyDetail.story.id}
+              comments={comments}
+              currentUserId={currentUser?.id}
+              teams={teams}
+              members={assignableMembers}
+              onCommentsChange={setComments}
+            />
 
             {/* Activity section */}
             {activity.length > 0 && (

@@ -22,7 +22,7 @@ func (s *DocsSearchService) Search(ctx context.Context, workspaceID, query strin
 	return s.searchRepo.Search(ctx, workspaceID, query, spaceIDs, docType, status, limit)
 }
 
-// PublicSearch searches published help center articles.
-func (s *DocsSearchService) PublicSearch(ctx context.Context, workspaceID, query string, limit int) ([]repository.DocsSearchResult, error) {
-	return s.searchRepo.PublicSearch(ctx, workspaceID, query, limit)
+// PublicSearch searches published help center articles, optionally filtered by space.
+func (s *DocsSearchService) PublicSearch(ctx context.Context, workspaceID, query, spaceID string, limit int) ([]repository.DocsSearchResult, error) {
+	return s.searchRepo.PublicSearch(ctx, workspaceID, query, spaceID, limit)
 }

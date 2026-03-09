@@ -145,6 +145,18 @@ func (r *DocsSpaceRepository) Restore(ctx context.Context, id string) (*model.Do
 	return r.GetByID(ctx, id)
 }
 
+// ListPublicByWorkspace returns external-capable spaces for the public help center.
+func (r *DocsSpaceRepository) ListPublicByWorkspace(ctx context.Context, workspaceID string) ([]model.DocsSpace, error) {
+	var spaces []model.DocsSpace
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND type = ? AND deleted_at IS NULL", workspaceID, model.SpaceTypeExternalCapable).
+		Order("position ASC, created_at ASC").
+		Find(&spaces).Error; err != nil {
+		return nil, fmt.Errorf("list public docs spaces: %w", err)
+	}
+	return spaces, nil
+}
+
 // AccessibleSpaceIDs returns the IDs of spaces a user can access based on team memberships.
 // workspace_wide spaces are accessible to everyone.
 // team_only spaces are accessible if the user is a member of at least one associated team.

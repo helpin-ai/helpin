@@ -77,6 +77,11 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 	return s.withTeams(ctx, created)
 }
 
+// GetBySlug returns a space by workspace ID + slug (no auth check, for public use).
+func (s *DocsSpaceService) GetBySlug(ctx context.Context, workspaceID, slug string) (*model.DocsSpace, error) {
+	return s.spaceRepo.GetBySlug(ctx, workspaceID, slug)
+}
+
 // Get returns a space by ID, checking team access for the actor.
 func (s *DocsSpaceService) Get(ctx context.Context, id string, actor *authorization.Actor) (*model.DocsSpaceWithTeams, error) {
 	space, err := s.spaceRepo.GetByID(ctx, id)

@@ -7,13 +7,15 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 // DocsHelpcenterService handles help center publishing, config, and slug management.
 type DocsHelpcenterService struct {
-	hcRepo    *repository.DocsHelpcenterRepository
-	docRepo   *repository.DocsDocumentRepository
-	spaceRepo *repository.DocsSpaceRepository
+	hcRepo         *repository.DocsHelpcenterRepository
+	docRepo        *repository.DocsDocumentRepository
+	spaceRepo      *repository.DocsSpaceRepository
+	collectionRepo *repository.DocsCollectionRepository
 }
 
 // NewDocsHelpcenterService creates a new DocsHelpcenterService.
@@ -21,8 +23,9 @@ func NewDocsHelpcenterService(
 	hcRepo *repository.DocsHelpcenterRepository,
 	docRepo *repository.DocsDocumentRepository,
 	spaceRepo *repository.DocsSpaceRepository,
+	collectionRepo *repository.DocsCollectionRepository,
 ) *DocsHelpcenterService {
-	return &DocsHelpcenterService{hcRepo: hcRepo, docRepo: docRepo, spaceRepo: spaceRepo}
+	return &DocsHelpcenterService{hcRepo: hcRepo, docRepo: docRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo}
 }
 
 // GetConfig returns the help center config for a workspace.
@@ -105,14 +108,32 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 		}
 	}
 
-	// Handle slug change → alias old slug.
-	existingDoc, _ := s.docRepo.GetByID(ctx, documentID)
-	if existingDoc != nil {
-		// Check if document had a different slug stored (via title-based slug).
-		// Slug aliasing: handled by caller passing the new slug.
+	// Enforce slug uniqueness within the space — append -2, -3, etc. on collision.
+	baseSlug := slug
+	for i := 2; ; i++ {
+		taken, err := s.hcRepo.SlugExistsInSpace(ctx, doc.SpaceID, slug, documentID)
+		if err != nil {
+			return fmt.Errorf("check slug uniqueness: %w", err)
+		}
+		if !taken {
+			break
+		}
+		slug = fmt.Sprintf("%s-%d", baseSlug, i)
 	}
 
-	// Set public_published_at.
+	// Alias the old slug if it changed (so old URLs redirect).
+	if art.Slug != "" && art.Slug != slug {
+		_ = s.hcRepo.CreateSlugAlias(ctx, &model.DocsSlugAlias{
+			WorkspaceID: doc.WorkspaceID,
+			DocumentID:  documentID,
+			OldSlug:     art.Slug,
+		})
+	}
+
+	// Set slug and public_published_at.
+	if err := s.hcRepo.SetSlug(ctx, documentID, slug); err != nil {
+		return err
+	}
 	now := time.Now()
 	return s.hcRepo.SetPublicPublishedAt(ctx, documentID, &now)
 }
@@ -160,6 +181,108 @@ func (s *DocsHelpcenterService) GetArticle(ctx context.Context, documentID strin
 // IncrementViewCount increments article view count.
 func (s *DocsHelpcenterService) IncrementViewCount(ctx context.Context, documentID string) error {
 	return s.hcRepo.IncrementViewCount(ctx, documentID)
+}
+
+// ─── Public Help Center API ──────────────────────────────────────────────────
+
+// GetConfigBySubdomain returns the help center config by subdomain.
+func (s *DocsHelpcenterService) GetConfigBySubdomain(ctx context.Context, subdomain string) (*model.DocsHelpcenterConfig, error) {
+	return s.hcRepo.GetConfigBySubdomain(ctx, subdomain)
+}
+
+// ListPublicSpaces returns external-capable spaces for the public help center.
+func (s *DocsHelpcenterService) ListPublicSpaces(ctx context.Context, workspaceID string) ([]model.PublicSpaceResponse, error) {
+	spaces, err := s.spaceRepo.ListPublicByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]model.PublicSpaceResponse, len(spaces))
+	for i, sp := range spaces {
+		result[i] = model.PublicSpaceResponse{
+			ID:          sp.ID,
+			Name:        sp.Name,
+			Slug:        sp.Slug,
+			Icon:        sp.Icon,
+			Description: nil, // DocsSpace doesn't have Description — omit
+		}
+	}
+	return result, nil
+}
+
+// GetSpaceNavigation returns the sidebar navigation tree for a space.
+func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspaceID, spaceSlug string) ([]model.PublicNavCollection, error) {
+	space, err := s.spaceRepo.GetBySlug(ctx, workspaceID, spaceSlug)
+	if err != nil {
+		return nil, err
+	}
+	if space == nil {
+		return nil, fmt.Errorf("space not found")
+	}
+	return s.hcRepo.ListSpaceNavigation(ctx, space.ID)
+}
+
+// GetPublicArticle returns the full article detail for the help center.
+func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceID, spaceSlug, articleSlug string) (*model.PublicArticleResponse, error) {
+	space, err := s.spaceRepo.GetBySlug(ctx, workspaceID, spaceSlug)
+	if err != nil {
+		return nil, err
+	}
+	if space == nil {
+		return nil, fmt.Errorf("space not found")
+	}
+
+	doc, ha, content, err := s.hcRepo.GetPublicArticleBySlug(ctx, space.ID, articleSlug)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil || ha == nil {
+		return nil, fmt.Errorf("article not found")
+	}
+
+	// Resolve collection name if present.
+	var collectionName *string
+	if doc.CollectionID != nil {
+		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
+		if err == nil && coll != nil {
+			collectionName = &coll.Name
+		}
+	}
+
+	// Render TipTap JSON → HTML for public display.
+	var contentHTML *string
+	if content != nil && len(content.Content) > 0 {
+		rendered, err := tiptap.RenderHTML(content.Content)
+		if err == nil && rendered != "" {
+			contentHTML = &rendered
+		}
+	}
+
+	var publishedAt *string
+	if ha.PublicPublishedAt != nil {
+		s := ha.PublicPublishedAt.Format(time.RFC3339)
+		publishedAt = &s
+	}
+
+	// Increment view count asynchronously.
+	go func() { _ = s.hcRepo.IncrementViewCount(ctx, doc.ID) }()
+
+	return &model.PublicArticleResponse{
+		ID:              doc.ID,
+		Title:           doc.Title,
+		Slug:            ha.Slug,
+		Excerpt:         doc.Excerpt,
+		Icon:            doc.Icon,
+		Status:          doc.Status,
+		CollectionID:    doc.CollectionID,
+		CollectionName:  collectionName,
+		PublishedAt:     publishedAt,
+		SEOTitle:        ha.SEOTitle,
+		SEODescription:  ha.SEODescription,
+		HelpfulCount:    ha.HelpfulCount,
+		NotHelpfulCount: ha.NotHelpfulCount,
+		ViewCount:       ha.ViewCount,
+		ContentHTML:     contentHTML,
+	}, nil
 }
 
 // SubmitFeedback records article feedback and updates counts.

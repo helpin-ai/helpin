@@ -14,6 +14,16 @@ export interface HelpCenterConfig {
   support_email: string | null
 }
 
+// ─── Spaces ─────────────────────────────────────────────────────────────────
+
+export interface Space {
+  id: string
+  name: string
+  slug: string
+  icon: string | null
+  description: string | null
+}
+
 // ─── Collections (Categories) ───────────────────────────────────────────────
 
 export interface Collection {
@@ -75,14 +85,9 @@ export interface SearchResult {
   slug: string
   excerpt: string | null
   collection_name: string | null
+  space_slug: string
+  space_name?: string
   highlights?: string[]
-}
-
-// ─── Bootstrap ──────────────────────────────────────────────────────────────
-
-export interface HelpCenterBootstrap {
-  config: HelpCenterConfig
-  navigation: NavItem[]
 }
 
 // ─── Router Context ─────────────────────────────────────────────────────────
