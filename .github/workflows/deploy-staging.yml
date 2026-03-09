@@ -1,71 +1,304 @@
-name: Deploy Staging
+name: Staging Release
+
 on:
   push:
-    branches: [develop]
+    branches:
+      - develop
+    paths-ignore:
+      - "k8s/**"
+      - "**.md"
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
+concurrency:
+  group: staging-build
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/helpin-ai/helpin
 
 jobs:
-  detect-changes:
+  version:
+    name: Determine RC Version
     runs-on: ubuntu-latest
     outputs:
-      server: ${{ steps.changes.outputs.server }}
-      frontend: ${{ steps.changes.outputs.frontend }}
+      rc_tag: ${{ steps.rc_version.outputs.rc_tag }}
+      base_version: ${{ steps.rc_version.outputs.base_version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: changes
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          filters: |
-            server:
-              - 'server/**'
-            frontend:
-              - 'frontend/**'
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: stg-version
 
-  deploy-server:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.server == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v5
-        with:
-          context: ./server
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/server:stage-${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/server:stage-latest
+      - name: Determine RC version
+        id: rc_version
+        working-directory: stg-version
+        run: |
+          # Get the latest stable tag (exclude RC and dev tags)
+          LATEST_STABLE=$(git tag -l 'v*' --sort=-v:refname | grep -vE '\-(rc|dev)\.' | head -n1 || echo "v0.0.0")
+          echo "Latest stable tag: $LATEST_STABLE"
 
-  deploy-frontend:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.frontend == 'true'
+          # Get commit messages since last stable tag
+          if [ "$LATEST_STABLE" = "v0.0.0" ]; then
+            COMMITS=$(git log --pretty=format:"%s" -20)
+          else
+            COMMITS=$(git log "$LATEST_STABLE"..HEAD --pretty=format:"%s")
+          fi
+
+          echo "Analyzing commits for version bump:"
+          echo "$COMMITS"
+
+          # Determine bump type
+          BUMP_TYPE="patch"
+          if echo "$COMMITS" | grep -qiE "^(BREAKING CHANGE|breaking|major):"; then
+            BUMP_TYPE="major"
+          elif echo "$COMMITS" | grep -qiE "^(feat|feature|minor):"; then
+            BUMP_TYPE="minor"
+          fi
+          echo "Bump type: $BUMP_TYPE"
+
+          # Parse current version
+          VERSION=${LATEST_STABLE#v}
+          IFS='.' read -ra PARTS <<< "$VERSION"
+          MAJOR=${PARTS[0]:-0}
+          MINOR=${PARTS[1]:-0}
+          PATCH=${PARTS[2]:-0}
+
+          # Apply bump
+          case $BUMP_TYPE in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          BASE_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "Base version: $BASE_VERSION"
+
+          # Find the highest existing RC number for this base version
+          LATEST_RC=$(git tag -l "${BASE_VERSION}-rc.*" --sort=-v:refname | head -n1 || echo "")
+          if [ -n "$LATEST_RC" ]; then
+            RC_NUM=$(echo "$LATEST_RC" | sed "s/${BASE_VERSION}-rc\.//")
+            RC_NUM=$((RC_NUM + 1))
+          else
+            RC_NUM=1
+          fi
+
+          RC_TAG="${BASE_VERSION}-rc.${RC_NUM}"
+          echo "RC tag: $RC_TAG"
+
+          echo "rc_tag=$RC_TAG" >> "$GITHUB_OUTPUT"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+
+  build-server:
+    name: Build Server Image
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    needs: version
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v5
+          path: build-stg-server
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push server image
+        run: |
+          docker buildx build \
+            -f build-stg-server/server/Dockerfile \
+            -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.rc_tag }} \
+            -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
+            -t ${{ env.IMAGE_PREFIX }}/server:stage-latest \
+            --push \
+            build-stg-server/server/
+
+  deploy-netlify:
+    name: Build & Deploy Frontend to Netlify
+    runs-on: ubuntu-latest
+    needs: version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          context: ./frontend
-          push: true
-          build-args: |
-            VITE_API_URL=https://stage.helpin.ai/api
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/frontend:stage-${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/frontend:stage-latest
+          path: build-stg-netlify
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Doppler CLI
+        run: curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sudo sh
+
+      - name: Download secrets to .env
+        run: |
+          cd build-stg-netlify/frontend
+          doppler secrets download -t ${{ secrets.DOPPLER_TOKEN_FRONTEND_STAGE }} --format=env-no-quotes --no-file > .env
+
+      - name: Install dependencies and build
+        run: |
+          cd build-stg-netlify/frontend
+          npm ci
+          NODE_OPTIONS=--max-old-space-size=8192 npm run build
+
+      - name: Deploy to Netlify
+        run: |
+          cd build-stg-netlify/frontend
+          npx netlify-cli deploy --dir=dist --no-build --prod-if-unlocked --auth=${{ secrets.NETLIFY_AUTH_TOKEN }} --site=${{ secrets.NETLIFY_SITE_ID_STAGE }}
+
+  release:
+    name: Create RC Release & Update Manifests
+    runs-on: ubuntu-latest
+    needs: [version, build-server]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: stg-release
+
+      - name: Configure git
+        working-directory: stg-release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push RC tag
+        working-directory: stg-release
+        run: |
+          RC_TAG="${{ needs.version.outputs.rc_tag }}"
+          if git rev-parse "$RC_TAG" >/dev/null 2>&1; then
+            echo "Tag $RC_TAG already exists, deleting and recreating"
+            git tag -d "$RC_TAG" || true
+            git push origin ":refs/tags/$RC_TAG" || true
+          fi
+          git tag -a "$RC_TAG" -m "Release Candidate $RC_TAG"
+          git push origin "$RC_TAG"
+
+      - name: Generate release notes
+        id: release_notes
+        working-directory: stg-release
+        run: |
+          RC_TAG="${{ needs.version.outputs.rc_tag }}"
+
+          # Get the previous tag
+          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -v "$RC_TAG" | head -n1 || echo "")
+
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s (%h)")
+          else
+            COMMITS=$(git log --pretty=format:"- %s (%h)" -20)
+          fi
+
+          cat > release_notes.md << 'NOTES_EOF'
+          ## Release Candidate: $RC_TAG
+
+          ### Changes
+          NOTES_EOF
+
+          # Replace placeholder
+          sed -i "s/\$RC_TAG/$RC_TAG/" release_notes.md
+
+          echo "$COMMITS" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Images" >> release_notes.md
+          echo "- \`${{ env.IMAGE_PREFIX }}/server:$RC_TAG\`" >> release_notes.md
+
+      - name: Create GitHub pre-release
+        working-directory: stg-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete existing release if it exists
+          gh release delete "${{ needs.version.outputs.rc_tag }}" --yes 2>/dev/null || true
+          gh release create "${{ needs.version.outputs.rc_tag }}" \
+            --title "Release Candidate ${{ needs.version.outputs.rc_tag }}" \
+            --notes-file release_notes.md \
+            --prerelease
+
+      - name: Update K8s manifests
+        run: |
+          RC_TAG="${{ needs.version.outputs.rc_tag }}"
+          SERVER_IMAGE="${{ env.IMAGE_PREFIX }}/server:${RC_TAG}"
+
+          # Checkout develop branch for manifest updates
+          MANIFEST_CLONE="${GITHUB_WORKSPACE}/../k8s-helpin-stg"
+          rm -rf "$MANIFEST_CLONE"
+          git clone --depth 1 --branch develop "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" "$MANIFEST_CLONE"
+          cd "$MANIFEST_CLONE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          MANIFEST_DIR="k8s/stage"
+
+          # Update server image references
+          find "$MANIFEST_DIR" -name "*.yaml" -exec \
+            sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" {} +
+
+          # Commit and push to develop
+          git add k8s/
+          git commit -m "chore: update helpin stage images to ${RC_TAG} [skip ci]" || echo "No manifest changes"
+          git pull --rebase origin develop
+          git push origin develop
+
+      - name: Send Mattermost notification
+        if: success()
+        env:
+          MATTERMOST_WEBHOOK: ${{ secrets.MATTERMOST_RELEASE_WEBHOOK }}
+        run: |
+          RC_TAG="${{ needs.version.outputs.rc_tag }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$RC_TAG"
+          COMMIT_SHA="${{ github.sha }}"
+          ACTOR="${{ github.actor }}"
+
+          MESSAGE=$(cat <<EOF
+          {
+            "text": "### :building_construction: Helpin Staging RC: $RC_TAG",
+            "attachments": [
+              {
+                "color": "#FFA500",
+                "fields": [
+                  {
+                    "short": true,
+                    "title": "Version",
+                    "value": "$RC_TAG"
+                  },
+                  {
+                    "short": true,
+                    "title": "Type",
+                    "value": "Release Candidate"
+                  },
+                  {
+                    "short": true,
+                    "title": "Triggered by",
+                    "value": "@$ACTOR"
+                  },
+                  {
+                    "short": true,
+                    "title": "Commit",
+                    "value": "\`${COMMIT_SHA:0:7}\`"
+                  }
+                ],
+                "text": "**Images:**\n- \`${{ env.IMAGE_PREFIX }}/server:$RC_TAG\`\n\n[View Release]($RELEASE_URL)"
+              }
+            ]
+          }
+          EOF
+          )
+
+          if [ -n "$MATTERMOST_WEBHOOK" ]; then
+            curl -X POST -H 'Content-Type: application/json' \
+              -d "$MESSAGE" \
+              "$MATTERMOST_WEBHOOK"
+            echo "Mattermost notification sent"
+          else
+            echo "Mattermost webhook not configured, skipping notification"
+          fi

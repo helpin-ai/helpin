@@ -17,7 +17,7 @@ spec:
         env: stage
     spec:
       imagePullSecrets:
-        - name: ghcr-pull-secret
+        - name: ghcr-helpin-key
       containers:
         - name: helpin-frontend
           image: ghcr.io/helpin-ai/helpin/frontend:stage-latest

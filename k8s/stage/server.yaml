@@ -24,7 +24,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
-        - name: ghcr-pull-secret
+        - name: ghcr-helpin-key
       volumes:
         - name: tmp
           emptyDir: {}
