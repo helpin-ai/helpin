@@ -76,7 +76,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-type RailId = 'projects' | 'support' | /* 'rewards' | */ 'docs' | 'settings';
+type RailId = 'projects' | 'support' | 'crm' | /* 'rewards' | */ 'docs' | 'settings';
 
 type RailItem = {
   id: RailId;
@@ -87,7 +87,8 @@ type RailItem = {
 
 function deriveActiveRail(pathname: string): RailId {
   if (pathname.includes('/support')) return 'support';
-if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
+  if (pathname.includes('/crm')) return 'crm';
+  if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
   if (pathname.includes('/docs')) return 'docs';
   if (pathname.includes('/settings')) return 'settings';
   return 'projects';
@@ -343,6 +344,7 @@ export function Sidebar() {
 
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/stories` },
+    { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
 // { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
@@ -358,6 +360,16 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },
           { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
+        ],
+      },
+    ],
+    crm: [
+      {
+        label: '',
+        items: [
+          { link: `/w/${wsSlug}/crm/contacts`, label: 'Contacts', icon: Users },
+          { link: `/w/${wsSlug}/crm/companies`, label: 'Companies', icon: Building2 },
+          { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarSign },
         ],
       },
     ],

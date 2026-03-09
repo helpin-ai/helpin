@@ -1,0 +1,105 @@
+package handler
+
+import (
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/service"
+)
+
+// CRMContactHandler handles CRM contact HTTP endpoints.
+type CRMContactHandler struct {
+	contactService *service.CRMContactService
+}
+
+// NewCRMContactHandler creates a new CRMContactHandler.
+func NewCRMContactHandler(contactService *service.CRMContactService) *CRMContactHandler {
+	return &CRMContactHandler{contactService: contactService}
+}
+
+// List handles GET /api/crm/contacts.
+func (h *CRMContactHandler) List(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	filters := model.CRMContactListFilters{
+		LifecycleStage: queryStringPtr(r, "lifecycle_stage"),
+		LeadStatus:     queryStringPtr(r, "lead_status"),
+		OwnerMemberID:  queryStringPtr(r, "owner_member_id"),
+		Search:         queryStringPtr(r, "search"),
+	}
+	pagination := queryPagination(r)
+
+	contacts, total, err := h.contactService.List(r.Context(), workspaceID, filters, pagination)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if contacts == nil {
+		contacts = []model.CRMContact{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data":  contacts,
+		"total": total,
+		"page":  pagination.Page,
+	})
+}
+
+// Create handles POST /api/crm/contacts.
+func (h *CRMContactHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var req model.CreateCRMContactRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.WorkspaceID == "" {
+		req.WorkspaceID = getWorkspaceID(r)
+	}
+	contact, err := h.contactService.Create(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, contact)
+}
+
+// Get handles GET /api/crm/contacts/{id}.
+func (h *CRMContactHandler) Get(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	contact, err := h.contactService.GetByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, contact)
+}
+
+// Update handles PUT /api/crm/contacts/{id}.
+func (h *CRMContactHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req model.UpdateCRMContactRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	contact, err := h.contactService.Update(r.Context(), id, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, contact)
+}
+
+// Delete handles DELETE /api/crm/contacts/{id}.
+func (h *CRMContactHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.contactService.Delete(r.Context(), id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "contact deleted"})
+}

@@ -174,6 +174,14 @@ func main() {
 		&model.NotificationDelivery{},
 		&model.NotificationPreference{},
 		&model.EntityFollower{},
+		// CRM module
+		&model.CRMContact{},
+		&model.CRMCompany{},
+		&model.CRMPipeline{},
+		&model.CRMPipelineStage{},
+		&model.CRMDeal{},
+		&model.CRMAssociation{},
+		&model.CRMActivity{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -264,6 +272,11 @@ func main() {
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
+	crmContactRepo := repository.NewCRMContactRepository(db)
+	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
+	crmDealRepo := repository.NewCRMDealRepository(db)
+	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
+	crmActivityRepo := repository.NewCRMActivityRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -352,6 +365,12 @@ func main() {
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 
+	crmContactService := service.NewCRMContactService(crmContactRepo)
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
+	crmDealService := service.NewCRMDealService(crmDealRepo)
+	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
+	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+
 	orgService := service.NewOrganizationService(orgRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, pmWorkflowService)
 	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
@@ -407,6 +426,11 @@ func main() {
 		Git:             handler.NewGitHandler(gitService),
 		Orchestration:   handler.NewOrchestrationHandler(orchestrationService),
 		Notification: handler.NewNotificationHandler(notificationService, followerService),
+		CRMContact:     handler.NewCRMContactHandler(crmContactService),
+		CRMCompany:     handler.NewCRMCompanyHandler(crmCompanyService),
+		CRMDeal:        handler.NewCRMDealHandler(crmDealService),
+		CRMAssociation: handler.NewCRMAssociationHandler(crmAssociationService),
+		CRMActivity:    handler.NewCRMActivityHandler(crmActivityService),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-type CreateModal = 'story' | 'epic' | 'sprint' | 'objective' | 'docs_document' | 'docs_space' | 'docs_collection' | null;
+type CreateModal = 'story' | 'epic' | 'sprint' | 'objective' | 'docs_document' | 'docs_space' | 'docs_collection' | 'crm_contact' | 'crm_company' | 'crm_deal' | null;
 
 interface GlobalCreateState {
   activeModal: CreateModal;

@@ -105,6 +105,32 @@ export const queryKeys = {
     helpcenterConfig: (wsId: string) => ['docs', wsId, 'helpcenter', 'config'] as const,
   },
 
+  crm: {
+    contacts: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'contacts', filters] as const) : (['crm', wsId, 'contacts'] as const),
+    contact: (wsId: string, id: string) => ['crm', wsId, 'contacts', id] as const,
+    contactActivities: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'activities'] as const,
+    contactAssociations: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'associations'] as const,
+
+    companies: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'companies', filters] as const) : (['crm', wsId, 'companies'] as const),
+    company: (wsId: string, id: string) => ['crm', wsId, 'companies', id] as const,
+    companyActivities: (wsId: string, companyId: string) => ['crm', wsId, 'companies', companyId, 'activities'] as const,
+    companyAssociations: (wsId: string, companyId: string) => ['crm', wsId, 'companies', companyId, 'associations'] as const,
+
+    deals: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'deals', filters] as const) : (['crm', wsId, 'deals'] as const),
+    deal: (wsId: string, id: string) => ['crm', wsId, 'deals', id] as const,
+    dealActivities: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'activities'] as const,
+    dealAssociations: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'associations'] as const,
+
+    pipelines: (wsId: string) => ['crm', wsId, 'pipelines'] as const,
+    pipeline: (wsId: string, id: string) => ['crm', wsId, 'pipelines', id] as const,
+
+    activities: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'activities', filters] as const) : (['crm', wsId, 'activities'] as const),
+  },
+
   notifications: {
     all: (wsId: string) => ['notifications', wsId] as const,
     list: (wsId: string, filter?: string) =>
