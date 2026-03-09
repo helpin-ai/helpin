@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: helpin-server
-  namespace: helpin
+  namespace: default
   labels:
     app: helpin-server
 spec:
@@ -24,7 +24,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
-        - name: ghcr-helpin-key
+        - name: ghcr-helpin-json-key
       volumes:
         - name: tmp
           emptyDir: {}
@@ -60,7 +60,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: helpin-server-svc
-  namespace: helpin
+  namespace: default
   labels:
     app: helpin-server
 spec:

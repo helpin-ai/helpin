@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: helpin-temporal-worker-engineer
-  namespace: helpin
+  namespace: default
   labels:
     app: helpin-temporal-worker
     pool: engineer
@@ -27,7 +27,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
-        - name: ghcr-helpin-key
+        - name: ghcr-helpin-json-key
       volumes:
         - name: tmp
           emptyDir: {}
@@ -55,7 +55,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: helpin-temporal-worker-planner
-  namespace: helpin
+  namespace: default
   labels:
     app: helpin-temporal-worker
     pool: planner
@@ -80,7 +80,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
-        - name: ghcr-helpin-key
+        - name: ghcr-helpin-json-key
       volumes:
         - name: tmp
           emptyDir: {}
@@ -108,7 +108,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: helpin-temporal-worker-reviewer
-  namespace: helpin
+  namespace: default
   labels:
     app: helpin-temporal-worker
     pool: reviewer
@@ -133,7 +133,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
-        - name: ghcr-helpin-key
+        - name: ghcr-helpin-json-key
       volumes:
         - name: tmp
           emptyDir: {}
@@ -161,7 +161,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: helpin-temporal-worker-support
-  namespace: helpin
+  namespace: default
   labels:
     app: helpin-temporal-worker
     pool: support
@@ -186,7 +186,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
-        - name: ghcr-helpin-key
+        - name: ghcr-helpin-json-key
       volumes:
         - name: tmp
           emptyDir: {}
@@ -214,7 +214,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: helpin-temporal-worker-automation
-  namespace: helpin
+  namespace: default
   labels:
     app: helpin-temporal-worker
     pool: automation
@@ -239,7 +239,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       imagePullSecrets:
-        - name: ghcr-helpin-key
+        - name: ghcr-helpin-json-key
       volumes:
         - name: tmp
           emptyDir: {}
