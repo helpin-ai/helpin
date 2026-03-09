@@ -637,7 +637,7 @@ export function StoryDetailPage() {
           {/* Checklist */}
           {showChecklist && (
             <div className="mt-6">
-              <ChecklistItems workspaceId={workspaceId!} storyId={storyDetail.story.id} />
+              <ChecklistItems workspaceId={workspaceId!} storyId={storyDetail.story.id} members={assignableMembers} />
             </div>
           )}
 

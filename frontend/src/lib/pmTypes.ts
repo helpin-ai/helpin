@@ -534,6 +534,7 @@ export interface ChecklistItem {
   text: string;
   completed: boolean;
   position: number;
+  assignee_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -541,12 +542,14 @@ export interface ChecklistItem {
 export interface CreateChecklistItemRequest {
   text: string;
   position?: number;
+  assignee_id?: string;
 }
 
 export interface UpdateChecklistItemRequest {
   text?: string;
   completed?: boolean;
   position?: number;
+  assignee_id?: string;
 }
 
 // ── External Links ──────────────────────────────────────────────────
