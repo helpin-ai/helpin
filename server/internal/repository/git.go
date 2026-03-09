@@ -207,9 +207,16 @@ func (r *StoryDeliveryTargetRepository) GetByID(ctx context.Context, workspaceID
 // Save persists a delivery target, upserting on the story_id unique index.
 func (r *StoryDeliveryTargetRepository) Save(ctx context.Context, target *model.StoryDeliveryTarget) error {
 	if err := r.db.WithContext(ctx).
-		Where("story_id = ?", target.StoryID).
-		Assign(target).
-		FirstOrCreate(target).Error; err != nil {
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "story_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"repository_id", "repo_full_name", "integration_id",
+				"base_branch", "working_branch", "delivery_state",
+				"active_pr_number", "active_pr_title", "active_pr_url", "active_pr_status",
+				"last_commit_sha", "last_run_id", "last_synced_at", "updated_at",
+			}),
+		}).
+		Create(target).Error; err != nil {
 		return fmt.Errorf("save story delivery target: %w", err)
 	}
 	return nil
