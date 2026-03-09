@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Mail, MessageSquare, Phone, Calendar, CheckSquare, Trash2, Plus } from 'lucide-react';
+import { Mail, MessageSquare, Phone, Calendar, CheckSquare, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

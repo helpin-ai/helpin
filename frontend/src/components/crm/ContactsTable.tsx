@@ -64,7 +64,7 @@ export function ContactsTable({ contacts, total, isLoading, onRowClick, onCreate
         av = (a[sortField] as string) ?? '';
         bv = (b[sortField] as string) ?? '';
       }
-      const cmp = typeof av === 'number' ? av - (bv as number) : String(av).localeCompare(String(bv));
+      const cmp = typeof av === 'number' ? av - Number(bv) : String(av).localeCompare(String(bv));
       return sortDir === 'asc' ? cmp : -cmp;
     });
   }, [contacts, sortField, sortDir]);

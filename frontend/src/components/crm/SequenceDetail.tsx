@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Play, Pause, Edit } from 'lucide-react';
+import { ArrowLeft, Play, Pause } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';

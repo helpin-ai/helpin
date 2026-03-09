@@ -2508,8 +2508,6 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
   const [teamWeight, setTeamWeight] = useState(config.team_weight);
   const [notifications, setNotifications] = useState(config.notifications_enabled);
   const [autoCalc, setAutoCalc] = useState(config.auto_calculate_bonuses);
-  const [saving, setSaving] = useState(false);
-
   useEffect(() => {
     setSprintDuration(config.sprint_duration_weeks);
     setTeamWeight(config.team_weight);
@@ -2518,14 +2516,12 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
   }, [config]);
 
   const handleSave = async () => {
-    setSaving(true);
     const { error } = await settingsService.updateSystem(workspaceId, {
       sprint_duration_weeks: sprintDuration,
       team_weight: teamWeight,
       notifications_enabled: notifications,
       auto_calculate_bonuses: autoCalc,
     });
-    setSaving(false);
     if (error) toast.error(error);
     else { toast.success('System settings updated'); onRefresh(); }
   };

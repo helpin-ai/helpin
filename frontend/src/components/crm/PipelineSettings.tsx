@@ -6,23 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { usePipelines, useCreatePipeline, useUpdatePipeline, useDeletePipeline } from '@/hooks/queries';
-import type { PipelineStageType } from '@/lib/crmTypes';
-
-interface StageInput {
-  id?: string;
-  name: string;
-  stage_type: PipelineStageType;
-  position: number;
-  probability: number;
-}
+import { usePipelines, useCreatePipeline, useDeletePipeline } from '@/hooks/queries';
 
 export function PipelineSettings() {
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const { data: pipelines, isLoading } = usePipelines(wsId);
   const createPipeline = useCreatePipeline(wsId);
-  const updatePipeline = useUpdatePipeline(wsId);
   const deletePipeline = useDeletePipeline(wsId);
 
   const [newPipelineName, setNewPipelineName] = useState('');

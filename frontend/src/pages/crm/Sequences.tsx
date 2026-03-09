@@ -27,7 +27,7 @@ export function SequencesPage() {
   const handleCreate = () => {
     if (!name.trim()) return;
     createSequence.mutate(
-      { workspace_id: wsId, name, description, steps: [], status: 'draft' },
+      { workspace_id: wsId, name, description, steps: {}, status: 'draft' },
       {
         onSuccess: () => {
           setShowCreate(false);

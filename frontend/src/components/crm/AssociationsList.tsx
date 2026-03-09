@@ -54,12 +54,13 @@ export function AssociationsList({
   };
 
   const handleNavigate = (type: CRMObjectType, id: string) => {
-    const routes: Record<CRMObjectType, { to: string; params: Record<string, string> }> = {
+    const routes: Partial<Record<CRMObjectType, { to: string; params: Record<string, string> }>> = {
       contact: { to: '/w/$slug/crm/contacts/$contactId', params: { slug, contactId: id } },
       company: { to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: id } },
       deal: { to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: id } },
     };
-    navigate(routes[type] as any);
+    const route = routes[type];
+    if (route) navigate(route as any);
   };
 
   const handleRemove = async () => {

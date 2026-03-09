@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import {
   useCRMLists,
   useCreateCRMList,
-  useUpdateCRMList,
+
   useDeleteCRMList,
   useCRMListMembers,
   useAddCRMListMember,
