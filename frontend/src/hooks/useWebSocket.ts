@@ -18,7 +18,7 @@ interface UseWebSocketOptions {
 
 function getWSUrl(workspaceId: string): string {
   const token = localStorage.getItem('access_token')
-  if (!token) return ''
+  if (!token || !workspaceId) return ''
 
   // Swap http(s) → ws(s) and replace trailing /api with /api/ws
   const base = API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '/api')

@@ -20,7 +20,6 @@ import {
   Paperclip,
   Pencil,
   RefreshCw,
-  Send,
   ShieldAlert,
   Tag,
   Target,
@@ -76,7 +75,7 @@ import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
-import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { CommentEditor } from '@/components/pm/CommentEditor';
 import { MentionText } from '@/components/pm/MentionText';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -337,10 +336,6 @@ function StoryDetailPanelBody({
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
-  const memberOptions = useMemo(
-    () => buildAssignableMemberOptions(assignableMembers),
-    [assignableMembers],
-  );
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],

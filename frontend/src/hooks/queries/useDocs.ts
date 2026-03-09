@@ -114,7 +114,7 @@ export function useUpdateDocsCollection(wsId: string) {
 export function useDeleteDocsCollection(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, spaceId }: { id: string; spaceId: string }) =>
+    mutationFn: async ({ id }: { id: string; spaceId: string }) =>
       unwrap(await docsService.deleteCollection(wsId, id)),
     onSuccess: (_, { spaceId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
@@ -125,7 +125,7 @@ export function useDeleteDocsCollection(wsId: string) {
 export function useRestoreDocsCollection(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, spaceId }: { id: string; spaceId: string }) =>
+    mutationFn: async ({ id }: { id: string; spaceId: string }) =>
       unwrap(await docsService.restoreCollection(wsId, id)),
     onSuccess: (_, { spaceId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
@@ -419,7 +419,7 @@ export function useCreateDocsLink(wsId: string) {
 export function useDeleteDocsLink(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ linkId, docId }: { linkId: string; docId: string }) =>
+    mutationFn: async ({ linkId }: { linkId: string; docId: string }) =>
       unwrap(await docsService.deleteLink(wsId, linkId)),
     onSuccess: (_, { docId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.links(wsId, docId) })

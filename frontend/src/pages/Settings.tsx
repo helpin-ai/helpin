@@ -33,7 +33,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Award, Bell, Briefcase, Camera, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, UserPlus, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bell, Camera, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, Users, X, Zap, type LucideIcon } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
@@ -173,7 +173,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const { data: access } = useWorkspaceAccess(wsId);
-  const { isAdmin, canManageSettings, canManageMembers, canManageTeams, canManageTeamMembers, canManageInvites, canAdminWorkflows, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
+  const { canManageSettings, canManageMembers, canManageTeams, canAdminWorkflows, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -1304,7 +1304,7 @@ function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignment
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [membersLoading, setMembersLoading] = useState(false);
+  const [, setMembersLoading] = useState(false);
   const [savingMember, setSavingMember] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const [deleteTeamConfirm, setDeleteTeamConfirm] = useState<string | null>(null);

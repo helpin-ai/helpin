@@ -22,7 +22,6 @@ import {
   Paperclip,
   Pencil,
   RefreshCw,
-  Send,
   ShieldAlert,
   Tag,
   Target,
@@ -86,7 +85,7 @@ import type {
   UpdateStoryRequest,
   WorkflowState,
 } from '@/lib/pmTypes';
-import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
 import { CommentEditor } from '@/components/pm/CommentEditor';
 import { MentionText } from '@/components/pm/MentionText';
@@ -287,10 +286,6 @@ export function StoryDetailPage() {
 
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId ?? '');
-  const memberOptions = useMemo(
-    () => buildAssignableMemberOptions(assignableMembers),
-    [assignableMembers],
-  );
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],

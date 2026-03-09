@@ -262,6 +262,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
 function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const { teams } = useWorkspaceTeams(workspaceId);
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const storeTeamId = useGlobalCreateStore((s) => s.initialTeamId);
 
   const [form, setForm] = useState({

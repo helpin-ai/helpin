@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, isThisYear } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
 import {
   ArrowLeft,
@@ -136,7 +136,7 @@ export function DocsDocumentDetail() {
   // Title state — local draft synced from server, debounced save
   const [titleDraft, setTitleDraft] = useState('')
   const titleInitRef = useRef(false)
-  const titleTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const titleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // Sync title from server on first load (or when doc changes externally)
   useEffect(() => {
@@ -632,14 +632,14 @@ export function DocsDocumentDetail() {
               <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Created</span>
               <div className="min-w-0 self-center">
-                <span className="text-xs">{format(parseISO(doc.created_at), 'MMM d, yyyy')}</span>
+                <span className="text-xs">{format(parseISO(doc.created_at), isThisYear(parseISO(doc.created_at)) ? 'MMM d, h:mm a' : 'MMM d, yyyy h:mm a')}</span>
               </div>
 
               {/* Updated */}
               <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Updated</span>
               <div className="min-w-0 self-center">
-                <span className="text-xs">{format(parseISO(doc.updated_at), 'MMM d, yyyy')}</span>
+                <span className="text-xs">{format(parseISO(doc.updated_at), isThisYear(parseISO(doc.updated_at)) ? 'MMM d, h:mm a' : 'MMM d, yyyy h:mm a')}</span>
               </div>
 
               {/* Published */}
@@ -648,7 +648,7 @@ export function DocsDocumentDetail() {
                   <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                   <span className="text-xs text-muted-foreground self-center">Published</span>
                   <div className="min-w-0 self-center">
-                    <span className="text-xs">{format(parseISO(doc.published_at), 'MMM d, yyyy')}</span>
+                    <span className="text-xs">{format(parseISO(doc.published_at), isThisYear(parseISO(doc.published_at)) ? 'MMM d, h:mm a' : 'MMM d, yyyy h:mm a')}</span>
                   </div>
                 </>
               )}

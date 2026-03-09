@@ -107,8 +107,6 @@ export function CreateCollectionDialog({
     }
   }
 
-  const selectedSpace = spaces?.find((s) => s.id === selectedSpaceId)
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>

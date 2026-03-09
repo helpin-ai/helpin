@@ -2,16 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import {
-  Award,
   BarChart3,
   Bot,
-  Briefcase,
   Building2,
-  Calendar,
   ChevronDown,
   Clock,
   ChevronRight,
-  DollarSign,
   FileText,
   FolderKanban,
   FolderOpen,
@@ -21,12 +17,10 @@ import {
   Hexagon,
   Import,
   Layers,
-  LayoutDashboard,
   LogOut,
   MessageSquare,
   LayoutList,
   Moon,
-  PenLine,
   Plus,
   RefreshCw,
   Settings,
@@ -36,7 +30,6 @@ import {
   Tag,
   Target,
   User,
-  UserPlus,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -158,7 +151,7 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
                       navigate({
                         to: '/w/$slug/docs/spaces/$spaceId' as string,
                         params: { slug: wsSlug, spaceId },
-                        search: { collection: col.id },
+                        search: { collection: col.id } as Record<string, string>,
                       });
                     }}
                   >
@@ -190,7 +183,7 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
 
 // ── Docs spaces nav (extracted to avoid conditional hook calls) ──
 
-function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggleTeam, setExpandedTeams, openCreate }: {
+function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggleTeam: _toggleTeam, setExpandedTeams, openCreate }: {
   wsId: string;
   wsSlug: string;
   navigate: ReturnType<typeof useNavigate>;
@@ -275,7 +268,7 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
       {internalSpaces.length > 0 && (
         <SidebarGroup className="p-0 pb-3">
           <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-            Internal
+            Internal Spaces
           </SidebarGroupLabel>
           <SidebarMenu>
             {internalSpaces.map(renderSpaceItem)}
@@ -285,7 +278,7 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
       {externalSpaces.length > 0 && (
         <SidebarGroup className="p-0 pb-3">
           <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-            External
+            External Spaces
           </SidebarGroupLabel>
           <SidebarMenu>
             {externalSpaces.map(renderSpaceItem)}

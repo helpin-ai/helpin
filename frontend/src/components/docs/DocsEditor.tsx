@@ -276,54 +276,88 @@ function FloatingToolbar({ editor, uploadConfig, onInsertImage }: {
   )
 }
 
-// ── Markdown menu ──────────────────────────────────────────────────────────
+// ── Import / Export menu ───────────────────────────────────────────────────
 
-function MarkdownMenu({
-  onCopyMarkdown,
-  onImportMarkdown,
+function ImportExportMenu({
+  getMarkdown,
   onDownloadMarkdown,
+  onDownloadDocx,
+  onImportMarkdown,
   onUploadMarkdownFile,
+  onUploadDocxFile,
   onToggleSource,
   sourceView,
 }: {
-  onCopyMarkdown: () => void
-  onImportMarkdown: () => void
+  getMarkdown: () => string
   onDownloadMarkdown: () => void
+  onDownloadDocx: () => void
+  onImportMarkdown: () => void
   onUploadMarkdownFile: () => void
+  onUploadDocxFile: () => void
   onToggleSource: () => void
   sourceView: boolean
 }) {
+  const [open, setOpen] = useState(false)
+
+  const handleCopyMarkdown = (e: Event) => {
+    e.preventDefault()
+    const md = getMarkdown()
+    if (!md) {
+      toast.error('No content to copy')
+      setOpen(false)
+      return
+    }
+    // Intercept the copy event to inject our text directly into clipboardData
+    const handler = (evt: ClipboardEvent) => {
+      evt.clipboardData?.setData('text/plain', md)
+      evt.preventDefault()
+    }
+    document.addEventListener('copy', handler, true)
+    document.execCommand('copy')
+    document.removeEventListener('copy', handler, true)
+    setOpen(false)
+    toast.success('Copied as Markdown')
+  }
+
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="inline-flex items-center gap-1 rounded-md bg-background/80 backdrop-blur-sm px-2 py-1 text-[11px] text-muted-foreground shadow-sm border border-border/40 transition-colors hover:bg-muted hover:text-foreground"
         >
-          MD
+          Import / Export
           <ChevronDown className="h-3 w-3" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuItem onClick={onCopyMarkdown}>
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuItem onSelect={handleCopyMarkdown}>
           <Copy className="h-3.5 w-3.5 mr-2" />
           Copy as Markdown
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onDownloadMarkdown}>
+        <DropdownMenuItem onSelect={onDownloadMarkdown}>
           <FileDown className="h-3.5 w-3.5 mr-2" />
           Download as .md
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onImportMarkdown}>
-          <FileUp className="h-3.5 w-3.5 mr-2" />
-          Import from text
+        <DropdownMenuItem onSelect={onDownloadDocx}>
+          <FileDown className="h-3.5 w-3.5 mr-2" />
+          Download as .doc
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onUploadMarkdownFile}>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onImportMarkdown}>
+          <FileUp className="h-3.5 w-3.5 mr-2" />
+          Import Markdown
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onUploadMarkdownFile}>
           <FileUp className="h-3.5 w-3.5 mr-2" />
           Upload .md file
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onUploadDocxFile}>
+          <FileUp className="h-3.5 w-3.5 mr-2" />
+          Upload .docx file
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onToggleSource}>
+        <DropdownMenuItem onSelect={onToggleSource}>
           <Code2 className="h-3.5 w-3.5 mr-2" />
           {sourceView ? 'Back to Rich Editor' : 'Markdown Source'}
           <span className="ml-auto text-[10px] text-muted-foreground">
@@ -358,8 +392,8 @@ export function DocsEditor({
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const savingRef = useRef(false)
   const pendingContentRef = useRef<JSONContent | null>(null)
 
@@ -473,11 +507,6 @@ export function DocsEditor({
         heading: { levels: [1, 2, 3] },
       }),
       Placeholder.configure({ placeholder: 'Start writing your document...' }),
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
-      }),
-      ResizableImageExtension,
       Markdown.configure({
         html: true,
         tightLists: true,
@@ -485,6 +514,13 @@ export function DocsEditor({
         transformPastedText: true,
         transformCopiedText: false, // Don't force clipboard to markdown — we have explicit "Copy as Markdown"
       }),
+      // Register Link AFTER Markdown so our full extension (with setLink command) takes precedence
+      // over tiptap-markdown's minimal link mark
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
+      }),
+      ResizableImageExtension,
     ],
     content: initialContent ?? { type: 'doc', content: [{ type: 'paragraph' }] },
     editable: !readOnly,
@@ -492,14 +528,14 @@ export function DocsEditor({
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-6 py-4',
       },
-      handlePaste(view, event) {
+      handlePaste(_view, event) {
         const items = event.clipboardData?.items
         if (!items) return false
         for (const item of items) {
           if (item.type.startsWith('image/')) {
             event.preventDefault()
             const file = item.getAsFile()
-            if (file) {
+            if (file && editorRef.current) {
               handleImageUpload(file, editorRef.current)
             }
             return true
@@ -507,13 +543,13 @@ export function DocsEditor({
         }
         return false
       },
-      handleDrop(view, event) {
+      handleDrop(_view, event) {
         const files = event.dataTransfer?.files
         if (!files?.length) return false
         for (const file of files) {
           if (file.type.startsWith('image/')) {
             event.preventDefault()
-            handleImageUpload(file, editorRef.current)
+            if (editorRef.current) handleImageUpload(file, editorRef.current)
             return true
           }
         }
@@ -566,16 +602,8 @@ export function DocsEditor({
 
   const getMarkdown = useCallback((): string => {
     if (!editor) return ''
-    return editor.storage.markdown.getMarkdown()
+    return (editor.storage as Record<string, any>).markdown.getMarkdown()
   }, [editor])
-
-  const copyAsMarkdown = useCallback(() => {
-    const md = getMarkdown()
-    navigator.clipboard.writeText(md).then(
-      () => toast.success('Copied as Markdown'),
-      () => toast.error('Failed to copy'),
-    )
-  }, [getMarkdown])
 
   const handleImportMarkdown = useCallback(() => {
     if (!editor || !importText.trim()) return
@@ -589,11 +617,9 @@ export function DocsEditor({
   const toggleSourceView = useCallback(() => {
     if (!editor) return
     if (!sourceView) {
-      // Entering source view — snapshot current markdown
       setSourceMarkdown(getMarkdown())
       setSourceView(true)
     } else {
-      // Leaving source view — apply markdown changes back to editor
       editor.commands.setContent(sourceMarkdown)
       scheduleSave(editor.getJSON())
       setSourceView(false)
@@ -640,6 +666,66 @@ export function DocsEditor({
     input.click()
   }, [editor, scheduleSave])
 
+  // ── .docx export ──────────────────────────────────────────────────────────
+
+  const downloadAsDocx = useCallback(() => {
+    if (!editor) return
+    const html = editor.getHTML()
+    const docHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><style>
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.6; color: #1a1a1a; }
+h1 { font-size: 20pt; font-weight: bold; margin: 16pt 0 8pt; }
+h2 { font-size: 16pt; font-weight: bold; margin: 14pt 0 6pt; }
+h3 { font-size: 13pt; font-weight: bold; margin: 12pt 0 4pt; }
+p { margin: 0 0 8pt; }
+ul, ol { margin: 4pt 0 8pt 20pt; }
+li { margin: 2pt 0; }
+blockquote { border-left: 3pt solid #ccc; padding-left: 10pt; margin: 8pt 0; color: #555; }
+code { font-family: Consolas, monospace; font-size: 10pt; background: #f4f4f4; padding: 1pt 3pt; }
+pre { font-family: Consolas, monospace; font-size: 10pt; background: #f4f4f4; padding: 8pt; margin: 8pt 0; }
+a { color: #1a73e8; }
+img { max-width: 100%; }
+</style></head>
+<body>${html}</body></html>`
+    const blob = new Blob([docHtml], { type: 'application/msword' })
+    const filename = `${(title || 'document').replace(/[^a-z0-9_-]/gi, '_').toLowerCase()}.doc`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [editor, title])
+
+  // ── .docx import ──────────────────────────────────────────────────────────
+
+  const uploadDocxFile = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file || !editor) return
+      try {
+        const mammoth = await import('mammoth')
+        const arrayBuffer = await file.arrayBuffer()
+        const result = await mammoth.convertToHtml({ arrayBuffer })
+        editor.commands.setContent(result.value)
+        scheduleSave(editor.getJSON())
+        toast.success(`Imported "${file.name}"`)
+        if (result.messages.length > 0) {
+          const warnings = result.messages.filter((m) => m.type === 'warning').length
+          if (warnings > 0) {
+            toast.info(`${warnings} formatting warning${warnings > 1 ? 's' : ''} — some styles may have been simplified`)
+          }
+        }
+      } catch {
+        toast.error('Failed to import .docx file')
+      }
+    }
+    input.click()
+  }, [editor, scheduleSave])
+
   // ── Keyboard shortcut: Ctrl+Shift+M → toggle source view ──────────────────
 
   useEffect(() => {
@@ -680,95 +766,89 @@ export function DocsEditor({
       )}
 
       {/* Editor content with title */}
-      <div className="relative flex-1 overflow-y-auto">
-        {/* Save indicator + Markdown menu — top-right floating */}
-        {!readOnly ? (
-          <div className="sticky top-2 z-10 flex justify-end px-4 pointer-events-none">
-            <div className="pointer-events-auto flex items-center gap-1.5 rounded-md bg-background/80 backdrop-blur-sm px-2 py-0.5 shadow-sm border border-border/40">
-              <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
-              <MarkdownMenu
-                onCopyMarkdown={copyAsMarkdown}
-                onImportMarkdown={() => setImportDialogOpen(true)}
+      <div className={`relative flex-1 ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'}`}>
+        {/* Markdown menu (left) + Save indicator (right) — floating */}
+        {!readOnly && (
+          <div className="sticky top-2 z-10 flex items-center justify-between px-4 pointer-events-none">
+            <div className="pointer-events-auto">
+              <ImportExportMenu
+                getMarkdown={getMarkdown}
                 onDownloadMarkdown={downloadAsMarkdown}
+                onDownloadDocx={downloadAsDocx}
+                onImportMarkdown={() => setImportDialogOpen(true)}
                 onUploadMarkdownFile={uploadMarkdownFile}
+                onUploadDocxFile={uploadDocxFile}
                 onToggleSource={toggleSourceView}
                 sourceView={sourceView}
               />
             </div>
-          </div>
-        ) : (
-          <div className="sticky top-2 z-10 flex justify-end px-4 pointer-events-none">
-            <div className="pointer-events-auto">
-              <QuickTooltip label="Copy as Markdown" side="left">
-                <button
-                  type="button"
-                  onClick={copyAsMarkdown}
-                  className="inline-flex items-center gap-1 rounded-md bg-background/80 backdrop-blur-sm px-2 py-1 text-[11px] text-muted-foreground shadow-sm border border-border/40 transition-colors hover:text-foreground"
-                >
-                  <Copy className="h-3 w-3" />
-                  MD
-                </button>
-              </QuickTooltip>
+            <div className="pointer-events-auto rounded-md bg-background/80 backdrop-blur-sm px-2 py-0.5 shadow-sm border border-border/40">
+              <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
             </div>
           </div>
         )}
 
-        <div className="mx-auto max-w-3xl">
-          {/* Title */}
-          {title !== undefined && (
-            <div className="px-6 pt-10 pb-1">
-              {onTitleChange && !readOnly ? (
-                <input
-                  value={title}
-                  onChange={(e) => onTitleChange(e.target.value)}
-                  placeholder="Untitled"
-                  className="w-full bg-transparent text-3xl font-bold text-left outline-none placeholder:text-muted-foreground/40"
-                />
-              ) : (
+        {sourceView ? (
+          /* Source view — full width, fills remaining height */
+          <div className="flex flex-1 flex-col px-6 py-4 min-h-0">
+            {/* Title (read-only in source view) */}
+            {title !== undefined && (
+              <div className="pb-3 shrink-0">
                 <h1 className="text-3xl font-bold text-left">{title || 'Untitled'}</h1>
-              )}
-            </div>
-          )}
-
-          {/* Rich editor (default) or Markdown source view */}
-          {sourceView ? (
-            <div className="px-6 py-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Markdown Source
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs"
-                    onClick={discardSourceView}
-                  >
-                    <X className="h-3 w-3" />
-                    Discard
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs"
-                    onClick={toggleSourceView}
-                  >
-                    <Check className="h-3 w-3" />
-                    Apply
-                  </Button>
-                </div>
               </div>
-              <textarea
-                value={sourceMarkdown}
-                onChange={(e) => setSourceMarkdown(e.target.value)}
-                className="w-full min-h-[400px] rounded-lg border border-border/60 bg-muted/30 p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-y"
-                placeholder="Markdown content..."
-                spellCheck={false}
-              />
+            )}
+            <div className="flex items-center justify-between mb-3 shrink-0">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Markdown Source
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={discardSourceView}
+                >
+                  <X className="h-3 w-3" />
+                  Discard
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={toggleSourceView}
+                >
+                  <Check className="h-3 w-3" />
+                  Apply
+                </Button>
+              </div>
             </div>
-          ) : (
+            <textarea
+              value={sourceMarkdown}
+              onChange={(e) => setSourceMarkdown(e.target.value)}
+              className="flex-1 w-full min-h-0 rounded-lg border border-border/60 bg-muted/30 p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              placeholder="Markdown content..."
+              spellCheck={false}
+            />
+          </div>
+        ) : (
+          <div className="mx-auto max-w-3xl">
+            {/* Title */}
+            {title !== undefined && (
+              <div className="px-6 pt-10 pb-1">
+                {onTitleChange && !readOnly ? (
+                  <input
+                    value={title}
+                    onChange={(e) => onTitleChange(e.target.value)}
+                    placeholder="Untitled"
+                    className="w-full bg-transparent text-3xl font-bold text-left outline-none placeholder:text-muted-foreground/40"
+                  />
+                ) : (
+                  <h1 className="text-3xl font-bold text-left">{title || 'Untitled'}</h1>
+                )}
+              </div>
+            )}
             <EditorContent editor={editor} />
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Import Markdown dialog */}

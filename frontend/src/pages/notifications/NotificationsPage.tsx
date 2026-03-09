@@ -12,7 +12,6 @@ import {
   Inbox,
   AtSign,
   UserPlus,
-  Filter,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -276,12 +275,12 @@ function NotificationDetail({ notification }: { notification: Notification }) {
             )}
             {notification.metadata && Object.keys(notification.metadata).length > 0 && (
               <div className="mt-3 space-y-1">
-                {notification.metadata.comment_preview && (
+                {!!notification.metadata.comment_preview && (
                   <blockquote className="border-l-2 border-muted-foreground/30 pl-3 text-sm italic text-muted-foreground">
                     {String(notification.metadata.comment_preview)}
                   </blockquote>
                 )}
-                {notification.metadata.old_value && notification.metadata.new_value && (
+                {!!notification.metadata.old_value && !!notification.metadata.new_value && (
                   <p className="text-xs text-muted-foreground">
                     Changed from <span className="font-medium">{String(notification.metadata.old_value)}</span> to{' '}
                     <span className="font-medium">{String(notification.metadata.new_value)}</span>

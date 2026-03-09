@@ -60,7 +60,7 @@ export function useUpdateTeamEstimateSettings(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ teamId, settings }: { teamId: string; settings: Partial<TeamEstimateSettings> }) =>
-      unwrap(await settingsService.updateTeamEstimateSettings(wsId, teamId, settings)),
+      unwrap(await settingsService.updateTeamEstimateSettings(teamId, settings)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.workspaces.settings(wsId) })
     },
@@ -71,7 +71,7 @@ export function useUpdateTeamFieldVisibility(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ teamId, settings }: { teamId: string; settings: Partial<TeamFieldVisibility> }) =>
-      unwrap(await settingsService.updateTeamFieldVisibility(wsId, teamId, settings)),
+      unwrap(await settingsService.updateTeamFieldVisibility(teamId, settings)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.workspaces.settings(wsId) })
     },

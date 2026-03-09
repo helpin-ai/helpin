@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspacesService } from '@/lib/services/workspacesService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
-import type { Workspace, MemberWithUser } from '@/lib/types'
 
 export function useWorkspaces(organizationId?: string) {
   return useQuery({
@@ -40,7 +39,7 @@ export function useAssignableMembers(wsId: string) {
 export function useCreateWorkspace() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: { name: string; slug?: string; organization_id?: string }) =>
+    mutationFn: async (data: { name: string; slug: string; organization_id: string; description?: string; timezone?: string }) =>
       unwrap(await workspacesService.create(data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] })
@@ -53,7 +52,7 @@ export function useUpdateWorkspace() {
   return useMutation({
     mutationFn: async ({ wsId, ...data }: { wsId: string; name?: string; slug?: string }) =>
       unwrap(await workspacesService.update(wsId, data)),
-    onSuccess: (_, { wsId }) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] })
     },
   })
