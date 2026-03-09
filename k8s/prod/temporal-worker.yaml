@@ -41,6 +41,13 @@ spec:
           envFrom:
             - secretRef:
                 name: helpin-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -94,6 +101,13 @@ spec:
           envFrom:
             - secretRef:
                 name: helpin-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -147,6 +161,13 @@ spec:
           envFrom:
             - secretRef:
                 name: helpin-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -200,6 +221,13 @@ spec:
           envFrom:
             - secretRef:
                 name: helpin-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -253,6 +281,13 @@ spec:
           envFrom:
             - secretRef:
                 name: helpin-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
