@@ -396,6 +396,7 @@ export function DocsEditor({
   const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const savingRef = useRef(false)
   const pendingContentRef = useRef<JSONContent | null>(null)
+  const skipNextSaveRef = useRef(false)
 
   // Markdown feature state
   const [sourceView, setSourceView] = useState(false)
@@ -557,6 +558,10 @@ export function DocsEditor({
       },
     },
     onUpdate: ({ editor: e }) => {
+      if (skipNextSaveRef.current) {
+        skipNextSaveRef.current = false
+        return
+      }
       if (!readOnly) {
         scheduleSave(e.getJSON())
       }
@@ -578,6 +583,7 @@ export function DocsEditor({
       const currentJson = JSON.stringify(editor.getJSON())
       const newJson = JSON.stringify(initialContent)
       if (currentJson !== newJson) {
+        skipNextSaveRef.current = true
         editor.commands.setContent(initialContent)
         setSaveStatus('idle')
       }

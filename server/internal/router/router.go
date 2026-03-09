@@ -76,6 +76,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	}
 	wsAccess := authorization.RequireWorkspaceAccess(authz)
 
+	// Root endpoint — responds on bare domain requests.
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"name":"Helpin API","status":"running"}`))
+	})
+	r.Get("/health", h.Health.Check)
+
 	r.Route("/api", func(r chi.Router) {
 		// ---- Public routes ----
 		r.Post("/auth/signup", h.Auth.Signup)

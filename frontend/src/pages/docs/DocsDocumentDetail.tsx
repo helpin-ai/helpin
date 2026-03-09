@@ -458,7 +458,7 @@ export function DocsDocumentDetail() {
 
         {/* Metadata sidebar */}
         {metaOpen && (
-          <aside className="w-64 shrink-0 overflow-y-auto border-l border-border/60 px-4 py-6">
+          <aside className="w-64 shrink-0 overflow-y-auto border-l border-border/60 px-4 py-5">
             {/* ── Sharing ── */}
             {canEditDocs && (
               <>
@@ -503,7 +503,7 @@ export function DocsDocumentDetail() {
             )}
 
             {/* ── Properties ── */}
-            <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
+            <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
               {/* Type */}
               <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Type</span>
@@ -527,17 +527,9 @@ export function DocsDocumentDetail() {
                       const owner = members.find((m) => m.id === doc.owner_id)
                       if (!owner) return <span className="text-xs text-muted-foreground">Unassigned</span>
                       return (
-                        <>
-                          <UserAvatar
-                            name={owner.display_name || owner.email}
-                            avatarUrl={owner.avatar_url}
-                            className="h-4 w-4"
-                            fallbackClassName="text-[7px]"
-                          />
-                          <span className="truncate max-w-[100px] text-xs">
-                            {formatAssignableMemberName(owner)}
-                          </span>
-                        </>
+                        <span className="truncate text-xs">
+                          {formatAssignableMemberName(owner)}
+                        </span>
                       )
                     }}
                   />
@@ -545,15 +537,7 @@ export function DocsDocumentDetail() {
                   (() => {
                     const owner = members.find((m) => m.id === doc.owner_id)
                     return owner ? (
-                      <span className="flex items-center gap-1 text-xs">
-                        <UserAvatar
-                          name={owner.display_name || owner.email}
-                          avatarUrl={owner.avatar_url}
-                          className="h-4 w-4"
-                          fallbackClassName="text-[7px]"
-                        />
-                        {formatAssignableMemberName(owner)}
-                      </span>
+                      <span className="truncate text-xs">{formatAssignableMemberName(owner)}</span>
                     ) : (
                       <span className="text-xs text-muted-foreground">Unassigned</span>
                     )
@@ -568,15 +552,7 @@ export function DocsDocumentDetail() {
                 {(() => {
                   const creator = members.find((m) => m.user_id === doc.created_by)
                   return creator ? (
-                    <span className="flex items-center gap-1 text-xs">
-                      <UserAvatar
-                        name={creator.display_name || creator.email}
-                        avatarUrl={creator.avatar_url}
-                        className="h-4 w-4"
-                        fallbackClassName="text-[7px]"
-                      />
-                      {formatAssignableMemberName(creator)}
-                    </span>
+                    <span className="truncate text-xs">{formatAssignableMemberName(creator)}</span>
                   ) : (
                     <span className="text-xs text-muted-foreground">Unknown</span>
                   )
