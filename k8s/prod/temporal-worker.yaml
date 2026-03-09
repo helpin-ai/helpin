@@ -33,7 +33,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          image: ghcr.io/helpin-ai/helpin/server:v0.0.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -86,7 +86,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          image: ghcr.io/helpin-ai/helpin/server:v0.0.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -139,7 +139,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          image: ghcr.io/helpin-ai/helpin/server:v0.0.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -192,7 +192,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          image: ghcr.io/helpin-ai/helpin/server:v0.0.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -245,7 +245,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:prod-latest
+          image: ghcr.io/helpin-ai/helpin/server:v0.0.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
