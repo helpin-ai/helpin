@@ -187,6 +187,20 @@ func main() {
 		&model.CRMList{},
 		&model.CRMListMember{},
 		&model.CRMImportJob{},
+		// CRM Phase 3: Email & Calendar
+		&model.CRMEmailAccount{},
+		&model.CRMEmailThread{},
+		&model.CRMEmailMessage{},
+		&model.CRMCalendarEvent{},
+		// CRM Phase 4: Intelligence
+		&model.CRMEnrichmentResult{},
+		&model.CRMBuyerSignal{},
+		&model.CRMDealHealthScore{},
+		&model.CRMSuggestion{},
+		// CRM Phase 5: Sequences & Writing
+		&model.CRMSequence{},
+		&model.CRMSequenceEnrollment{},
+		&model.CRMWritingProfile{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -285,6 +299,13 @@ func main() {
 	crmPropertyRepo := repository.NewCRMPropertyRepository(db)
 	crmListRepo := repository.NewCRMListRepository(db)
 	crmImportRepo := repository.NewCRMImportRepository(db)
+	crmEmailRepo := repository.NewCRMEmailRepository(db)
+	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
+	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
+	crmSignalRepo := repository.NewCRMSignalRepository(db)
+	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
+	crmSequenceRepo := repository.NewCRMSequenceRepository(db)
+	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -381,6 +402,14 @@ func main() {
 	crmPropertyService := service.NewCRMPropertyService(crmPropertyRepo)
 	crmListService := service.NewCRMListService(crmListRepo)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo)
+	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo)
+	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
+	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
+	crmSignalService := service.NewCRMSignalService(crmSignalRepo)
+	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo)
+	crmSequenceService := service.NewCRMSequenceService(crmSequenceRepo)
+	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
+	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
 
 	orgService := service.NewOrganizationService(orgRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, pmWorkflowService)
@@ -445,6 +474,14 @@ func main() {
 		CRMProperty:    handler.NewCRMPropertyHandler(crmPropertyService),
 		CRMList:        handler.NewCRMListHandler(crmListService),
 		CRMImport:      handler.NewCRMImportHandler(crmImportService),
+		CRMEmail:       handler.NewCRMEmailHandler(crmEmailService),
+		CRMCalendar:    handler.NewCRMCalendarHandler(crmCalendarService),
+		CRMEnrichment:  handler.NewCRMEnrichmentHandler(crmEnrichmentService),
+		CRMSignal:      handler.NewCRMSignalHandler(crmSignalService),
+		CRMSuggestion:  handler.NewCRMSuggestionHandler(crmSuggestionService),
+		CRMSequence:    handler.NewCRMSequenceHandler(crmSequenceService),
+		CRMWritingProfile: handler.NewCRMWritingProfileHandler(crmWritingProfileService),
+		CRMSearch:      handler.NewCRMSearchHandler(crmSearchService),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,

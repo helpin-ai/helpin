@@ -31,6 +31,33 @@ import type {
   CRMImportJob,
   CreateCRMImportRequest,
   ProcessCRMImportRequest,
+  CRMEmailAccount,
+  CreateCRMEmailAccountRequest,
+  CRMEmailThread,
+  CRMEmailMessage,
+  CreateCRMEmailMessageRequest,
+  CRMCalendarEvent,
+  CreateCRMCalendarEventRequest,
+  UpdateCRMCalendarEventRequest,
+  CRMEnrichmentResult,
+  CreateCRMEnrichmentRequest,
+  CRMBuyerSignal,
+  CreateCRMBuyerSignalRequest,
+  CRMDealHealthScore,
+  CreateCRMDealHealthScoreRequest,
+  CRMSuggestion,
+  CreateCRMSuggestionRequest,
+  UpdateCRMSuggestionRequest,
+  CRMSequence,
+  CreateCRMSequenceRequest,
+  UpdateCRMSequenceRequest,
+  CRMSequenceEnrollment,
+  CreateCRMSequenceEnrollmentRequest,
+  UpdateCRMSequenceEnrollmentRequest,
+  CRMWritingProfile,
+  CreateCRMWritingProfileRequest,
+  UpdateCRMWritingProfileRequest,
+  CRMSearchResult,
 } from '../crmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -176,4 +203,131 @@ export const crmImportService = {
     api.post<CRMImportJob>(`/crm/imports${qs(payload.workspace_id)}`, payload),
   process: (workspaceId: string, id: string, payload: ProcessCRMImportRequest) =>
     api.post<CRMImportJob>(`/crm/imports/${id}/process${qs(workspaceId)}`, payload),
+};
+
+// ── Phase 3: Email & Calendar ──
+
+export const crmEmailService = {
+  listAccounts: (workspaceId: string, filters?: { member_id?: string; provider?: string }) =>
+    api.get<CRMEmailAccount[]>(`/crm/email/accounts${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  getAccount: (workspaceId: string, id: string) =>
+    api.get<CRMEmailAccount>(`/crm/email/accounts/${id}${qs(workspaceId)}`),
+  createAccount: (payload: CreateCRMEmailAccountRequest) =>
+    api.post<CRMEmailAccount>(`/crm/email/accounts${qs(payload.workspace_id)}`, payload),
+  deleteAccount: (workspaceId: string, id: string) =>
+    api.del(`/crm/email/accounts/${id}${qs(workspaceId)}`),
+  listThreads: (workspaceId: string, filters?: { email_account_id?: string; deal_id?: string; search?: string; page?: number }) =>
+    api.get<CRMPaginatedResponse<CRMEmailThread[]>>(`/crm/email/threads${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  listMessages: (workspaceId: string, filters?: { thread_id?: string; email_account_id?: string; contact_id?: string; deal_id?: string; direction?: string; page?: number }) =>
+    api.get<CRMPaginatedResponse<CRMEmailMessage[]>>(`/crm/email/messages${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  createMessage: (payload: CreateCRMEmailMessageRequest) =>
+    api.post<CRMEmailMessage>(`/crm/email/messages${qs(payload.workspace_id)}`, payload),
+  listByContact: (workspaceId: string, contactId: string, page?: number) =>
+    api.get<CRMPaginatedResponse<CRMEmailMessage[]>>(`/crm/contacts/${contactId}/emails${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listByDeal: (workspaceId: string, dealId: string, page?: number) =>
+    api.get<CRMPaginatedResponse<CRMEmailMessage[]>>(`/crm/deals/${dealId}/emails${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+};
+
+export const crmCalendarService = {
+  list: (workspaceId: string, filters?: { email_account_id?: string; deal_id?: string; start_after?: string; start_before?: string; page?: number }) =>
+    api.get<CRMPaginatedResponse<CRMCalendarEvent[]>>(`/crm/calendar/events${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  get: (workspaceId: string, id: string) =>
+    api.get<CRMCalendarEvent>(`/crm/calendar/events/${id}${qs(workspaceId)}`),
+  create: (payload: CreateCRMCalendarEventRequest) =>
+    api.post<CRMCalendarEvent>(`/crm/calendar/events${qs(payload.workspace_id)}`, payload),
+  update: (workspaceId: string, id: string, payload: UpdateCRMCalendarEventRequest) =>
+    api.put<CRMCalendarEvent>(`/crm/calendar/events/${id}${qs(workspaceId)}`, payload),
+  remove: (workspaceId: string, id: string) =>
+    api.del(`/crm/calendar/events/${id}${qs(workspaceId)}`),
+  listByContact: (workspaceId: string, contactId: string, page?: number) =>
+    api.get<CRMPaginatedResponse<CRMCalendarEvent[]>>(`/crm/contacts/${contactId}/calendar${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listByDeal: (workspaceId: string, dealId: string, page?: number) =>
+    api.get<CRMPaginatedResponse<CRMCalendarEvent[]>>(`/crm/deals/${dealId}/calendar${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+};
+
+// ── Phase 4: Intelligence ──
+
+export const crmEnrichmentService = {
+  list: (workspaceId: string, filters?: { object_type?: string; object_id?: string; source?: string; page?: number }) =>
+    api.get<CRMPaginatedResponse<CRMEnrichmentResult[]>>(`/crm/enrichments${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  create: (payload: CreateCRMEnrichmentRequest) =>
+    api.post<CRMEnrichmentResult>(`/crm/enrichments${qs(payload.workspace_id)}`, payload),
+};
+
+export const crmSignalService = {
+  list: (workspaceId: string, filters?: { contact_id?: string; deal_id?: string; signal_type?: string; source_type?: string; page?: number }) =>
+    api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/signals${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  create: (payload: CreateCRMBuyerSignalRequest) =>
+    api.post<CRMBuyerSignal>(`/crm/signals${qs(payload.workspace_id)}`, payload),
+  remove: (workspaceId: string, id: string) =>
+    api.del(`/crm/signals/${id}${qs(workspaceId)}`),
+  listByContact: (workspaceId: string, contactId: string, page?: number) =>
+    api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listByDeal: (workspaceId: string, dealId: string, page?: number) =>
+    api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+};
+
+export const crmHealthScoreService = {
+  list: (workspaceId: string, page?: number) =>
+    api.get<CRMPaginatedResponse<CRMDealHealthScore[]>>(`/crm/health-scores${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  getForDeal: (workspaceId: string, dealId: string) =>
+    api.get<CRMDealHealthScore>(`/crm/deals/${dealId}/health-score${qs(workspaceId)}`),
+  create: (payload: CreateCRMDealHealthScoreRequest) =>
+    api.post<CRMDealHealthScore>(`/crm/health-scores${qs(payload.workspace_id)}`, payload),
+};
+
+export const crmSuggestionService = {
+  list: (workspaceId: string, filters?: { user_id?: string; suggestion_type?: string; object_type?: string; object_id?: string; status?: string; page?: number }) =>
+    api.get<CRMPaginatedResponse<CRMSuggestion[]>>(`/crm/suggestions${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  get: (workspaceId: string, id: string) =>
+    api.get<CRMSuggestion>(`/crm/suggestions/${id}${qs(workspaceId)}`),
+  create: (payload: CreateCRMSuggestionRequest) =>
+    api.post<CRMSuggestion>(`/crm/suggestions${qs(payload.workspace_id)}`, payload),
+  update: (workspaceId: string, id: string, payload: UpdateCRMSuggestionRequest) =>
+    api.put<CRMSuggestion>(`/crm/suggestions/${id}${qs(workspaceId)}`, payload),
+  remove: (workspaceId: string, id: string) =>
+    api.del(`/crm/suggestions/${id}${qs(workspaceId)}`),
+};
+
+// ── Phase 5: Sequences & Writing ──
+
+export const crmSequenceService = {
+  list: (workspaceId: string, filters?: { status?: string; search?: string; page?: number }) =>
+    api.get<CRMPaginatedResponse<CRMSequence[]>>(`/crm/sequences${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  get: (workspaceId: string, id: string) =>
+    api.get<CRMSequence>(`/crm/sequences/${id}${qs(workspaceId)}`),
+  create: (payload: CreateCRMSequenceRequest) =>
+    api.post<CRMSequence>(`/crm/sequences${qs(payload.workspace_id)}`, payload),
+  update: (workspaceId: string, id: string, payload: UpdateCRMSequenceRequest) =>
+    api.put<CRMSequence>(`/crm/sequences/${id}${qs(workspaceId)}`, payload),
+  remove: (workspaceId: string, id: string) =>
+    api.del(`/crm/sequences/${id}${qs(workspaceId)}`),
+  listEnrollments: (workspaceId: string, sequenceId: string, filters?: { status?: string; page?: number }) =>
+    api.get<CRMPaginatedResponse<CRMSequenceEnrollment[]>>(`/crm/sequences/${sequenceId}/enrollments${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  createEnrollment: (workspaceId: string, sequenceId: string, payload: CreateCRMSequenceEnrollmentRequest) =>
+    api.post<CRMSequenceEnrollment>(`/crm/sequences/${sequenceId}/enrollments${qs(workspaceId)}`, payload),
+  updateEnrollment: (workspaceId: string, id: string, payload: UpdateCRMSequenceEnrollmentRequest) =>
+    api.put<CRMSequenceEnrollment>(`/crm/enrollments/${id}${qs(workspaceId)}`, payload),
+  deleteEnrollment: (workspaceId: string, id: string) =>
+    api.del(`/crm/enrollments/${id}${qs(workspaceId)}`),
+};
+
+export const crmWritingProfileService = {
+  list: (workspaceId: string) =>
+    api.get<CRMWritingProfile[]>(`/crm/writing-profiles${qs(workspaceId)}`),
+  getByMember: (workspaceId: string, memberId: string) =>
+    api.get<CRMWritingProfile>(`/crm/writing-profiles/member/${memberId}${qs(workspaceId)}`),
+  create: (payload: CreateCRMWritingProfileRequest) =>
+    api.post<CRMWritingProfile>(`/crm/writing-profiles${qs(payload.workspace_id)}`, payload),
+  update: (workspaceId: string, id: string, payload: UpdateCRMWritingProfileRequest) =>
+    api.put<CRMWritingProfile>(`/crm/writing-profiles/${id}${qs(workspaceId)}`, payload),
+  remove: (workspaceId: string, id: string) =>
+    api.del(`/crm/writing-profiles/${id}${qs(workspaceId)}`),
+};
+
+// ── Phase 6: Search ──
+
+export const crmSearchService = {
+  search: (workspaceId: string, q: string) =>
+    api.get<CRMSearchResult[]>(`/crm/search${qs(workspaceId)}&q=${encodeURIComponent(q)}`),
 };

@@ -43,10 +43,12 @@ import { Route as AuthenticatedWSlugPmAgentsRouteImport } from './routes/_authen
 import { Route as AuthenticatedWSlugDocsRecentRouteImport } from './routes/_authenticated/w/$slug/docs/recent'
 import { Route as AuthenticatedWSlugDocsMyRouteImport } from './routes/_authenticated/w/$slug/docs/my'
 import { Route as AuthenticatedWSlugDocsDraftsRouteImport } from './routes/_authenticated/w/$slug/docs/drafts'
+import { Route as AuthenticatedWSlugCrmInsightsRouteImport } from './routes/_authenticated/w/$slug/crm/insights'
 import { Route as AuthenticatedWSlugPmStoriesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/stories/index'
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
+import { Route as AuthenticatedWSlugCrmSequencesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/sequences/index'
 import { Route as AuthenticatedWSlugCrmListsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/lists/index'
 import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/deals/index'
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
@@ -57,6 +59,7 @@ import { Route as AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport } from '.
 import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_authenticated/w/$slug/pm/epics/$epicId'
 import { Route as AuthenticatedWSlugDocsSpacesSpaceIdRouteImport } from './routes/_authenticated/w/$slug/docs/spaces/$spaceId'
 import { Route as AuthenticatedWSlugDocsDocumentsDocIdRouteImport } from './routes/_authenticated/w/$slug/docs/documents/$docId'
+import { Route as AuthenticatedWSlugCrmSequencesSequenceIdRouteImport } from './routes/_authenticated/w/$slug/crm/sequences/$sequenceId'
 import { Route as AuthenticatedWSlugCrmDealsDealIdRouteImport } from './routes/_authenticated/w/$slug/crm/deals/$dealId'
 import { Route as AuthenticatedWSlugCrmContactsContactIdRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/$contactId'
 import { Route as AuthenticatedWSlugCrmCompaniesCompanyIdRouteImport } from './routes/_authenticated/w/$slug/crm/companies/$companyId'
@@ -251,6 +254,12 @@ const AuthenticatedWSlugDocsDraftsRoute =
     path: '/drafts',
     getParentRoute: () => AuthenticatedWSlugDocsRoute,
   } as any)
+const AuthenticatedWSlugCrmInsightsRoute =
+  AuthenticatedWSlugCrmInsightsRouteImport.update({
+    id: '/crm/insights',
+    path: '/crm/insights',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugPmStoriesIndexRoute =
   AuthenticatedWSlugPmStoriesIndexRouteImport.update({
     id: '/pm/stories/',
@@ -273,6 +282,12 @@ const AuthenticatedWSlugPmEpicsIndexRoute =
   AuthenticatedWSlugPmEpicsIndexRouteImport.update({
     id: '/pm/epics/',
     path: '/pm/epics/',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugCrmSequencesIndexRoute =
+  AuthenticatedWSlugCrmSequencesIndexRouteImport.update({
+    id: '/crm/sequences/',
+    path: '/crm/sequences/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugCrmListsIndexRoute =
@@ -335,6 +350,12 @@ const AuthenticatedWSlugDocsDocumentsDocIdRoute =
     path: '/documents/$docId',
     getParentRoute: () => AuthenticatedWSlugDocsRoute,
   } as any)
+const AuthenticatedWSlugCrmSequencesSequenceIdRoute =
+  AuthenticatedWSlugCrmSequencesSequenceIdRouteImport.update({
+    id: '/crm/sequences/$sequenceId',
+    path: '/crm/sequences/$sequenceId',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugCrmDealsDealIdRoute =
   AuthenticatedWSlugCrmDealsDealIdRouteImport.update({
     id: '/crm/deals/$dealId',
@@ -372,6 +393,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
+  '/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
   '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
@@ -391,6 +413,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  '/w/$slug/crm/sequences/$sequenceId': typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
@@ -401,6 +424,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
   '/w/$slug/crm/lists/': typeof AuthenticatedWSlugCrmListsIndexRoute
+  '/w/$slug/crm/sequences/': typeof AuthenticatedWSlugCrmSequencesIndexRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -422,6 +446,7 @@ export interface FileRoutesByTo {
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
+  '/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
   '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
@@ -441,6 +466,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  '/w/$slug/crm/sequences/$sequenceId': typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
@@ -451,6 +477,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals': typeof AuthenticatedWSlugCrmDealsIndexRoute
   '/w/$slug/crm/lists': typeof AuthenticatedWSlugCrmListsIndexRoute
+  '/w/$slug/crm/sequences': typeof AuthenticatedWSlugCrmSequencesIndexRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -476,6 +503,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/_authenticated/w/$slug/': typeof AuthenticatedWSlugIndexRoute
+  '/_authenticated/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
   '/_authenticated/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/_authenticated/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/_authenticated/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
@@ -495,6 +523,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/_authenticated/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/_authenticated/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  '/_authenticated/w/$slug/crm/sequences/$sequenceId': typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   '/_authenticated/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/_authenticated/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/_authenticated/w/$slug/pm/epics/$epicId': typeof AuthenticatedWSlugPmEpicsEpicIdRoute
@@ -505,6 +534,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/_authenticated/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
   '/_authenticated/w/$slug/crm/lists/': typeof AuthenticatedWSlugCrmListsIndexRoute
+  '/_authenticated/w/$slug/crm/sequences/': typeof AuthenticatedWSlugCrmSequencesIndexRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -530,6 +560,7 @@ export interface FileRouteTypes {
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug/'
+    | '/w/$slug/crm/insights'
     | '/w/$slug/docs/drafts'
     | '/w/$slug/docs/my'
     | '/w/$slug/docs/recent'
@@ -549,6 +580,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
+    | '/w/$slug/crm/sequences/$sequenceId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/epics/$epicId'
@@ -559,6 +591,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/contacts/'
     | '/w/$slug/crm/deals/'
     | '/w/$slug/crm/lists/'
+    | '/w/$slug/crm/sequences/'
     | '/w/$slug/pm/epics/'
     | '/w/$slug/pm/objectives/'
     | '/w/$slug/pm/sprints/'
@@ -580,6 +613,7 @@ export interface FileRouteTypes {
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug'
+    | '/w/$slug/crm/insights'
     | '/w/$slug/docs/drafts'
     | '/w/$slug/docs/my'
     | '/w/$slug/docs/recent'
@@ -599,6 +633,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
+    | '/w/$slug/crm/sequences/$sequenceId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/epics/$epicId'
@@ -609,6 +644,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/contacts'
     | '/w/$slug/crm/deals'
     | '/w/$slug/crm/lists'
+    | '/w/$slug/crm/sequences'
     | '/w/$slug/pm/epics'
     | '/w/$slug/pm/objectives'
     | '/w/$slug/pm/sprints'
@@ -633,6 +669,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/tasks'
     | '/_authenticated/w/$slug/team-goals'
     | '/_authenticated/w/$slug/'
+    | '/_authenticated/w/$slug/crm/insights'
     | '/_authenticated/w/$slug/docs/drafts'
     | '/_authenticated/w/$slug/docs/my'
     | '/_authenticated/w/$slug/docs/recent'
@@ -652,6 +689,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/companies/$companyId'
     | '/_authenticated/w/$slug/crm/contacts/$contactId'
     | '/_authenticated/w/$slug/crm/deals/$dealId'
+    | '/_authenticated/w/$slug/crm/sequences/$sequenceId'
     | '/_authenticated/w/$slug/docs/documents/$docId'
     | '/_authenticated/w/$slug/docs/spaces/$spaceId'
     | '/_authenticated/w/$slug/pm/epics/$epicId'
@@ -662,6 +700,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/contacts/'
     | '/_authenticated/w/$slug/crm/deals/'
     | '/_authenticated/w/$slug/crm/lists/'
+    | '/_authenticated/w/$slug/crm/sequences/'
     | '/_authenticated/w/$slug/pm/epics/'
     | '/_authenticated/w/$slug/pm/objectives/'
     | '/_authenticated/w/$slug/pm/sprints/'
@@ -916,6 +955,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugDocsDraftsRouteImport
       parentRoute: typeof AuthenticatedWSlugDocsRoute
     }
+    '/_authenticated/w/$slug/crm/insights': {
+      id: '/_authenticated/w/$slug/crm/insights'
+      path: '/crm/insights'
+      fullPath: '/w/$slug/crm/insights'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmInsightsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/pm/stories/': {
       id: '/_authenticated/w/$slug/pm/stories/'
       path: '/pm/stories'
@@ -942,6 +988,13 @@ declare module '@tanstack/react-router' {
       path: '/pm/epics'
       fullPath: '/w/$slug/pm/epics/'
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/crm/sequences/': {
+      id: '/_authenticated/w/$slug/crm/sequences/'
+      path: '/crm/sequences'
+      fullPath: '/w/$slug/crm/sequences/'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmSequencesIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/crm/lists/': {
@@ -1014,6 +1067,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugDocsDocumentsDocIdRouteImport
       parentRoute: typeof AuthenticatedWSlugDocsRoute
     }
+    '/_authenticated/w/$slug/crm/sequences/$sequenceId': {
+      id: '/_authenticated/w/$slug/crm/sequences/$sequenceId'
+      path: '/crm/sequences/$sequenceId'
+      fullPath: '/w/$slug/crm/sequences/$sequenceId'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmSequencesSequenceIdRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/crm/deals/$dealId': {
       id: '/_authenticated/w/$slug/crm/deals/$dealId'
       path: '/crm/deals/$dealId'
@@ -1075,6 +1135,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugTasksRoute: typeof AuthenticatedWSlugTasksRoute
   AuthenticatedWSlugTeamGoalsRoute: typeof AuthenticatedWSlugTeamGoalsRoute
   AuthenticatedWSlugIndexRoute: typeof AuthenticatedWSlugIndexRoute
+  AuthenticatedWSlugCrmInsightsRoute: typeof AuthenticatedWSlugCrmInsightsRoute
   AuthenticatedWSlugPmAgentsRoute: typeof AuthenticatedWSlugPmAgentsRoute
   AuthenticatedWSlugPmLabelsRoute: typeof AuthenticatedWSlugPmLabelsRoute
   AuthenticatedWSlugPmReportsRoute: typeof AuthenticatedWSlugPmReportsRoute
@@ -1090,6 +1151,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugCrmCompaniesCompanyIdRoute: typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   AuthenticatedWSlugCrmContactsContactIdRoute: typeof AuthenticatedWSlugCrmContactsContactIdRoute
   AuthenticatedWSlugCrmDealsDealIdRoute: typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  AuthenticatedWSlugCrmSequencesSequenceIdRoute: typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   AuthenticatedWSlugPmEpicsEpicIdRoute: typeof AuthenticatedWSlugPmEpicsEpicIdRoute
   AuthenticatedWSlugPmObjectivesObjectiveIdRoute: typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   AuthenticatedWSlugPmSprintsSprintIdRoute: typeof AuthenticatedWSlugPmSprintsSprintIdRoute
@@ -1098,6 +1160,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugCrmContactsIndexRoute: typeof AuthenticatedWSlugCrmContactsIndexRoute
   AuthenticatedWSlugCrmDealsIndexRoute: typeof AuthenticatedWSlugCrmDealsIndexRoute
   AuthenticatedWSlugCrmListsIndexRoute: typeof AuthenticatedWSlugCrmListsIndexRoute
+  AuthenticatedWSlugCrmSequencesIndexRoute: typeof AuthenticatedWSlugCrmSequencesIndexRoute
   AuthenticatedWSlugPmEpicsIndexRoute: typeof AuthenticatedWSlugPmEpicsIndexRoute
   AuthenticatedWSlugPmObjectivesIndexRoute: typeof AuthenticatedWSlugPmObjectivesIndexRoute
   AuthenticatedWSlugPmSprintsIndexRoute: typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -1115,6 +1178,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugTasksRoute: AuthenticatedWSlugTasksRoute,
   AuthenticatedWSlugTeamGoalsRoute: AuthenticatedWSlugTeamGoalsRoute,
   AuthenticatedWSlugIndexRoute: AuthenticatedWSlugIndexRoute,
+  AuthenticatedWSlugCrmInsightsRoute: AuthenticatedWSlugCrmInsightsRoute,
   AuthenticatedWSlugPmAgentsRoute: AuthenticatedWSlugPmAgentsRoute,
   AuthenticatedWSlugPmLabelsRoute: AuthenticatedWSlugPmLabelsRoute,
   AuthenticatedWSlugPmReportsRoute: AuthenticatedWSlugPmReportsRoute,
@@ -1135,6 +1199,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugCrmContactsContactIdRoute:
     AuthenticatedWSlugCrmContactsContactIdRoute,
   AuthenticatedWSlugCrmDealsDealIdRoute: AuthenticatedWSlugCrmDealsDealIdRoute,
+  AuthenticatedWSlugCrmSequencesSequenceIdRoute:
+    AuthenticatedWSlugCrmSequencesSequenceIdRoute,
   AuthenticatedWSlugPmEpicsEpicIdRoute: AuthenticatedWSlugPmEpicsEpicIdRoute,
   AuthenticatedWSlugPmObjectivesObjectiveIdRoute:
     AuthenticatedWSlugPmObjectivesObjectiveIdRoute,
@@ -1148,6 +1214,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugCrmContactsIndexRoute,
   AuthenticatedWSlugCrmDealsIndexRoute: AuthenticatedWSlugCrmDealsIndexRoute,
   AuthenticatedWSlugCrmListsIndexRoute: AuthenticatedWSlugCrmListsIndexRoute,
+  AuthenticatedWSlugCrmSequencesIndexRoute:
+    AuthenticatedWSlugCrmSequencesIndexRoute,
   AuthenticatedWSlugPmEpicsIndexRoute: AuthenticatedWSlugPmEpicsIndexRoute,
   AuthenticatedWSlugPmObjectivesIndexRoute:
     AuthenticatedWSlugPmObjectivesIndexRoute,

@@ -6,6 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useContact, useContactActivities, useContactAssociations } from '@/hooks/queries';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
+import { EmailTimeline } from '@/components/crm/EmailTimeline';
+import { BuyerSignals } from '@/components/crm/BuyerSignals';
+import { EnrichmentCard } from '@/components/crm/EnrichmentCard';
 import { useTitle } from '@/hooks/useTitle';
 
 export function ContactDetailPage({ contactId }: { contactId: string }) {
@@ -87,9 +90,14 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
               <ActivityTimeline activities={activitiesData?.data ?? []} />
             </CardContent>
           </Card>
+
+          <EmailTimeline workspaceId={wsId} contactId={contactId} />
         </div>
 
         <div className="space-y-6">
+          <EnrichmentCard workspaceId={wsId} objectType="contact" objectId={contactId} />
+          <BuyerSignals workspaceId={wsId} contactId={contactId} />
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Associations</CardTitle>

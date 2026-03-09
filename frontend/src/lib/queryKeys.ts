@@ -142,6 +142,36 @@ export const queryKeys = {
 
     imports: (wsId: string) => ['crm', wsId, 'imports'] as const,
     import: (wsId: string, id: string) => ['crm', wsId, 'imports', id] as const,
+
+    // Phase 3
+    emailAccounts: (wsId: string) => ['crm', wsId, 'emailAccounts'] as const,
+    emailThreads: (wsId: string) => ['crm', wsId, 'emailThreads'] as const,
+    emailMessages: (wsId: string) => ['crm', wsId, 'emailMessages'] as const,
+    contactEmails: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'emails'] as const,
+    dealEmails: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'emails'] as const,
+    calendarEvents: (wsId: string) => ['crm', wsId, 'calendarEvents'] as const,
+    contactCalendar: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'calendar'] as const,
+    dealCalendar: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'calendar'] as const,
+
+    // Phase 4
+    enrichments: (wsId: string) => ['crm', wsId, 'enrichments'] as const,
+    signals: (wsId: string) => ['crm', wsId, 'signals'] as const,
+    contactSignals: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'signals'] as const,
+    dealSignals: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'signals'] as const,
+    healthScores: (wsId: string) => ['crm', wsId, 'healthScores'] as const,
+    dealHealthScore: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'healthScore'] as const,
+    suggestions: (wsId: string) => ['crm', wsId, 'suggestions'] as const,
+    suggestion: (wsId: string, id: string) => ['crm', wsId, 'suggestions', id] as const,
+
+    // Phase 5
+    sequences: (wsId: string) => ['crm', wsId, 'sequences'] as const,
+    sequence: (wsId: string, id: string) => ['crm', wsId, 'sequences', id] as const,
+    sequenceEnrollments: (wsId: string, seqId: string) => ['crm', wsId, 'sequences', seqId, 'enrollments'] as const,
+    writingProfiles: (wsId: string) => ['crm', wsId, 'writingProfiles'] as const,
+    writingProfile: (wsId: string, memberId: string) => ['crm', wsId, 'writingProfiles', memberId] as const,
+
+    // Phase 6
+    search: (wsId: string, q: string) => ['crm', wsId, 'search', q] as const,
   },
 
   notifications: {

@@ -58,6 +58,14 @@ type Handlers struct {
 	CRMProperty     *handler.CRMPropertyHandler
 	CRMList         *handler.CRMListHandler
 	CRMImport       *handler.CRMImportHandler
+	CRMEmail        *handler.CRMEmailHandler
+	CRMCalendar     *handler.CRMCalendarHandler
+	CRMEnrichment   *handler.CRMEnrichmentHandler
+	CRMSignal       *handler.CRMSignalHandler
+	CRMSuggestion   *handler.CRMSuggestionHandler
+	CRMSequence     *handler.CRMSequenceHandler
+	CRMWritingProfile *handler.CRMWritingProfileHandler
+	CRMSearch       *handler.CRMSearchHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -605,6 +613,71 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/imports", h.CRMImport.Create)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/imports/{id}", h.CRMImport.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/imports/{id}/process", h.CRMImport.Process)
+
+				// Email — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts", h.CRMEmail.ListAccounts)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts", h.CRMEmail.CreateAccount)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}", h.CRMEmail.GetAccount)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/email/accounts/{id}", h.CRMEmail.DeleteAccount)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts/{id}/oauth-callback", h.CRMEmail.OAuthCallback)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/threads", h.CRMEmail.ListThreads)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/messages", h.CRMEmail.ListMessages)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/messages", h.CRMEmail.CreateMessage)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/emails", h.CRMEmail.ListByContact)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/emails", h.CRMEmail.ListByDeal)
+
+				// Calendar — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/calendar/events", h.CRMCalendar.List)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/calendar/events", h.CRMCalendar.Create)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/calendar/events/{id}", h.CRMCalendar.Get)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/calendar/events/{id}", h.CRMCalendar.Update)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/calendar/events/{id}", h.CRMCalendar.Delete)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/calendar", h.CRMCalendar.ListByContact)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/calendar", h.CRMCalendar.ListByDeal)
+
+				// Enrichments — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/enrichments", h.CRMEnrichment.List)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/enrichments", h.CRMEnrichment.Create)
+
+				// Signals — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals", h.CRMSignal.ListSignals)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals", h.CRMSignal.CreateSignal)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/signals/{id}", h.CRMSignal.DeleteSignal)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/signals", h.CRMSignal.ListByContact)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/signals", h.CRMSignal.ListByDeal)
+
+				// Health Scores — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/health-scores", h.CRMSignal.ListHealthScores)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/health-scores", h.CRMSignal.CreateHealthScore)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/health-score", h.CRMSignal.GetDealHealthScore)
+
+				// Suggestions — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/suggestions", h.CRMSuggestion.List)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/suggestions/{id}", h.CRMSuggestion.Get)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/suggestions", h.CRMSuggestion.Create)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/suggestions/{id}", h.CRMSuggestion.Update)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/suggestions/{id}", h.CRMSuggestion.Delete)
+
+				// Sequences — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/sequences", h.CRMSequence.List)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/sequences", h.CRMSequence.Create)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/sequences/{id}", h.CRMSequence.Get)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/sequences/{id}", h.CRMSequence.Update)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/sequences/{id}", h.CRMSequence.Delete)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/sequences/{id}/enrollments", h.CRMSequence.ListEnrollments)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/sequences/{id}/enrollments", h.CRMSequence.CreateEnrollment)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/enrollments/{id}", h.CRMSequence.UpdateEnrollment)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/enrollments/{id}", h.CRMSequence.DeleteEnrollment)
+
+				// Writing Profiles — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/writing-profiles", h.CRMWritingProfile.List)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/writing-profiles", h.CRMWritingProfile.Create)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/writing-profiles/member/{memberId}", h.CRMWritingProfile.GetByMember)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/writing-profiles/{id}", h.CRMWritingProfile.Update)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/writing-profiles/{id}", h.CRMWritingProfile.Delete)
+
+				// Search — crm.read
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/search", h.CRMSearch.Search)
 			})
 		})
 	})

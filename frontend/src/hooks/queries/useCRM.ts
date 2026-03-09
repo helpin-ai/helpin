@@ -9,6 +9,15 @@ import {
   crmPropertyService,
   crmListService,
   crmImportService,
+  crmEmailService,
+  crmCalendarService,
+  crmEnrichmentService,
+  crmSignalService,
+  crmHealthScoreService,
+  crmSuggestionService,
+  crmSequenceService,
+  crmWritingProfileService,
+  crmSearchService,
 } from '@/lib/services/crmService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
@@ -33,6 +42,21 @@ import type {
   CreateCRMImportRequest,
   ProcessCRMImportRequest,
   CRMObjectType,
+  CreateCRMEmailAccountRequest,
+  CreateCRMEmailMessageRequest,
+  CreateCRMCalendarEventRequest,
+  UpdateCRMCalendarEventRequest,
+  CreateCRMEnrichmentRequest,
+  CreateCRMBuyerSignalRequest,
+  CreateCRMDealHealthScoreRequest,
+  CreateCRMSuggestionRequest,
+  UpdateCRMSuggestionRequest,
+  CreateCRMSequenceRequest,
+  UpdateCRMSequenceRequest,
+  CreateCRMSequenceEnrollmentRequest,
+  UpdateCRMSequenceEnrollmentRequest,
+  CreateCRMWritingProfileRequest,
+  UpdateCRMWritingProfileRequest,
 } from '@/lib/crmTypes'
 
 // ── Contacts ──
@@ -591,8 +615,310 @@ export function useProcessCRMImport(wsId: string) {
       unwrap(await crmImportService.process(wsId, id, data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.imports(wsId) })
-      // Also invalidate the objects that were imported
       qc.invalidateQueries({ queryKey: ['crm', wsId] })
     },
+  })
+}
+
+// ── Phase 3: Email & Calendar ──
+
+export function useEmailAccounts(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.emailAccounts(wsId),
+    queryFn: async () => unwrap(await crmEmailService.listAccounts(wsId)),
+    enabled: !!wsId,
+  })
+}
+
+export function useCreateEmailAccount(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMEmailAccountRequest) => unwrap(await crmEmailService.createAccount(data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.emailAccounts(wsId) }) },
+  })
+}
+
+export function useDeleteEmailAccount(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await crmEmailService.deleteAccount(wsId, id)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.emailAccounts(wsId) }) },
+  })
+}
+
+export function useContactEmails(wsId: string, contactId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.contactEmails(wsId, contactId),
+    queryFn: async () => unwrap(await crmEmailService.listByContact(wsId, contactId)),
+    enabled: !!wsId && !!contactId,
+  })
+}
+
+export function useDealEmails(wsId: string, dealId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.dealEmails(wsId, dealId),
+    queryFn: async () => unwrap(await crmEmailService.listByDeal(wsId, dealId)),
+    enabled: !!wsId && !!dealId,
+  })
+}
+
+export function useCreateEmailMessage(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMEmailMessageRequest) => unwrap(await crmEmailService.createMessage(data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
+  })
+}
+
+export function useContactCalendar(wsId: string, contactId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.contactCalendar(wsId, contactId),
+    queryFn: async () => unwrap(await crmCalendarService.listByContact(wsId, contactId)),
+    enabled: !!wsId && !!contactId,
+  })
+}
+
+export function useDealCalendar(wsId: string, dealId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.dealCalendar(wsId, dealId),
+    queryFn: async () => unwrap(await crmCalendarService.listByDeal(wsId, dealId)),
+    enabled: !!wsId && !!dealId,
+  })
+}
+
+export function useCreateCalendarEvent(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMCalendarEventRequest) => unwrap(await crmCalendarService.create(data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
+  })
+}
+
+export function useUpdateCalendarEvent(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateCRMCalendarEventRequest & { id: string }) =>
+      unwrap(await crmCalendarService.update(wsId, id, data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
+  })
+}
+
+// ── Phase 4: Intelligence ──
+
+export function useEnrichments(wsId: string, filters?: { object_type?: string; object_id?: string }) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.enrichments(wsId), filters],
+    queryFn: async () => unwrap(await crmEnrichmentService.list(wsId, filters)),
+    enabled: !!wsId,
+  })
+}
+
+export function useCreateEnrichment(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMEnrichmentRequest) => unwrap(await crmEnrichmentService.create(data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.enrichments(wsId) }) },
+  })
+}
+
+export function useBuyerSignals(wsId: string, filters?: { contact_id?: string; deal_id?: string; signal_type?: string }) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.signals(wsId), filters],
+    queryFn: async () => unwrap(await crmSignalService.list(wsId, filters)),
+    enabled: !!wsId,
+  })
+}
+
+export function useContactSignals(wsId: string, contactId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.contactSignals(wsId, contactId),
+    queryFn: async () => unwrap(await crmSignalService.listByContact(wsId, contactId)),
+    enabled: !!wsId && !!contactId,
+  })
+}
+
+export function useDealSignals(wsId: string, dealId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.dealSignals(wsId, dealId),
+    queryFn: async () => unwrap(await crmSignalService.listByDeal(wsId, dealId)),
+    enabled: !!wsId && !!dealId,
+  })
+}
+
+export function useCreateBuyerSignal(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMBuyerSignalRequest) => unwrap(await crmSignalService.create(data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }) },
+  })
+}
+
+export function useHealthScores(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.healthScores(wsId),
+    queryFn: async () => unwrap(await crmHealthScoreService.list(wsId)),
+    enabled: !!wsId,
+  })
+}
+
+export function useDealHealthScore(wsId: string, dealId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.dealHealthScore(wsId, dealId),
+    queryFn: async () => unwrap(await crmHealthScoreService.getForDeal(wsId, dealId)),
+    enabled: !!wsId && !!dealId,
+  })
+}
+
+export function useCreateHealthScore(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMDealHealthScoreRequest) => unwrap(await crmHealthScoreService.create(data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.healthScores(wsId) }) },
+  })
+}
+
+export function useSuggestions(wsId: string, filters?: { status?: string; suggestion_type?: string }) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.suggestions(wsId), filters],
+    queryFn: async () => unwrap(await crmSuggestionService.list(wsId, filters)),
+    enabled: !!wsId,
+  })
+}
+
+export function useCreateSuggestion(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMSuggestionRequest) => unwrap(await crmSuggestionService.create(data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.suggestions(wsId) }) },
+  })
+}
+
+export function useUpdateSuggestion(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateCRMSuggestionRequest & { id: string }) =>
+      unwrap(await crmSuggestionService.update(wsId, id, data)),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.suggestions(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.suggestion(wsId, id) })
+    },
+  })
+}
+
+// ── Phase 5: Sequences ──
+
+interface SequenceFilters {
+  status?: string
+  search?: string
+  page?: number
+}
+
+export function useSequences(wsId: string, filters?: SequenceFilters) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.sequences(wsId), filters],
+    queryFn: async () => unwrap(await crmSequenceService.list(wsId, filters)),
+    enabled: !!wsId,
+  })
+}
+
+export function useSequence(wsId: string, id: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.sequence(wsId, id),
+    queryFn: async () => unwrap(await crmSequenceService.get(wsId, id)),
+    enabled: !!wsId && !!id,
+  })
+}
+
+export function useCreateSequence(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMSequenceRequest) => unwrap(await crmSequenceService.create(data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.sequences(wsId) }) },
+  })
+}
+
+export function useUpdateSequence(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateCRMSequenceRequest & { id: string }) =>
+      unwrap(await crmSequenceService.update(wsId, id, data)),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.sequences(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.sequence(wsId, id) })
+    },
+  })
+}
+
+export function useDeleteSequence(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await crmSequenceService.remove(wsId, id)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.sequences(wsId) }) },
+  })
+}
+
+export function useSequenceEnrollments(wsId: string, seqId: string, filters?: { status?: string }) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.sequenceEnrollments(wsId, seqId), filters],
+    queryFn: async () => unwrap(await crmSequenceService.listEnrollments(wsId, seqId, filters)),
+    enabled: !!wsId && !!seqId,
+  })
+}
+
+export function useCreateEnrollment(wsId: string, seqId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMSequenceEnrollmentRequest) =>
+      unwrap(await crmSequenceService.createEnrollment(wsId, seqId, data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.sequenceEnrollments(wsId, seqId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.sequence(wsId, seqId) })
+    },
+  })
+}
+
+export function useUpdateEnrollment(wsId: string, seqId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateCRMSequenceEnrollmentRequest & { id: string }) =>
+      unwrap(await crmSequenceService.updateEnrollment(wsId, id, data)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.sequenceEnrollments(wsId, seqId) })
+    },
+  })
+}
+
+export function useWritingProfiles(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.writingProfiles(wsId),
+    queryFn: async () => unwrap(await crmWritingProfileService.list(wsId)),
+    enabled: !!wsId,
+  })
+}
+
+export function useCreateWritingProfile(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateCRMWritingProfileRequest) => unwrap(await crmWritingProfileService.create(data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.writingProfiles(wsId) }) },
+  })
+}
+
+export function useUpdateWritingProfile(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateCRMWritingProfileRequest & { id: string }) =>
+      unwrap(await crmWritingProfileService.update(wsId, id, data)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.writingProfiles(wsId) }) },
+  })
+}
+
+// ── Phase 6: Search ──
+
+export function useCRMSearch(wsId: string, q: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.search(wsId, q),
+    queryFn: async () => unwrap(await crmSearchService.search(wsId, q)),
+    enabled: !!wsId && !!q && q.length >= 2,
   })
 }

@@ -6,6 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDeal, useDealActivities, useDealAssociations } from '@/hooks/queries';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
+import { DealHealthScore } from '@/components/crm/DealHealthScore';
+import { BuyerSignals } from '@/components/crm/BuyerSignals';
+import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { useTitle } from '@/hooks/useTitle';
 
 export function DealDetailPage({ dealId }: { dealId: string }) {
@@ -83,9 +86,14 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
               <ActivityTimeline activities={activitiesData?.data ?? []} />
             </CardContent>
           </Card>
+
+          <EmailTimeline workspaceId={wsId} dealId={dealId} />
         </div>
 
         <div className="space-y-6">
+          <DealHealthScore workspaceId={wsId} dealId={dealId} />
+          <BuyerSignals workspaceId={wsId} dealId={dealId} />
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Associations</CardTitle>

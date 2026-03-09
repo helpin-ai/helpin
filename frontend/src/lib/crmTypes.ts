@@ -413,3 +413,335 @@ export interface ProcessCRMImportRequest {
   column_mapping: ImportColumnMapping[];
   csv_data: string[][];
 }
+
+// ── Phase 3: Email & Calendar ──
+
+export type CRMEmailProvider = 'gmail' | 'microsoft';
+export type CRMEmailDirection = 'inbound' | 'outbound';
+
+export interface CRMEmailAccount {
+  id: string;
+  workspace_id: string;
+  member_id: string;
+  provider: CRMEmailProvider;
+  email_address: string;
+  sync_state: Record<string, unknown>;
+  last_synced_at?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMEmailAccountRequest {
+  workspace_id: string;
+  member_id: string;
+  provider: CRMEmailProvider;
+  email_address: string;
+}
+
+export interface CRMEmailThread {
+  id: string;
+  workspace_id: string;
+  email_account_id: string;
+  thread_external_id: string;
+  subject: string;
+  last_message_at: string;
+  message_count: number;
+  contact_ids: Record<string, unknown>;
+  deal_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CRMEmailMessage {
+  id: string;
+  workspace_id: string;
+  email_account_id: string;
+  thread_id?: string;
+  message_external_id: string;
+  from_address: string;
+  from_name?: string;
+  to_addresses: Record<string, unknown>;
+  cc_addresses: Record<string, unknown>;
+  subject: string;
+  body_text?: string;
+  body_html?: string;
+  direction: CRMEmailDirection;
+  sent_at: string;
+  contact_id?: string;
+  deal_id?: string;
+  created_at: string;
+}
+
+export interface CreateCRMEmailMessageRequest {
+  workspace_id: string;
+  email_account_id: string;
+  thread_id?: string;
+  from_address: string;
+  from_name?: string;
+  to_addresses?: Record<string, unknown>;
+  cc_addresses?: Record<string, unknown>;
+  subject: string;
+  body_text?: string;
+  body_html?: string;
+  direction: CRMEmailDirection;
+  sent_at?: string;
+  contact_id?: string;
+  deal_id?: string;
+}
+
+export interface CRMCalendarEvent {
+  id: string;
+  workspace_id: string;
+  email_account_id: string;
+  external_event_id?: string;
+  title: string;
+  description?: string;
+  start_time: string;
+  end_time: string;
+  location?: string;
+  attendees: Record<string, unknown>;
+  contact_ids: Record<string, unknown>;
+  deal_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMCalendarEventRequest {
+  workspace_id: string;
+  email_account_id: string;
+  title: string;
+  description?: string;
+  start_time: string;
+  end_time: string;
+  location?: string;
+  attendees?: Record<string, unknown>;
+  contact_ids?: Record<string, unknown>;
+  deal_id?: string;
+}
+
+export interface UpdateCRMCalendarEventRequest {
+  title?: string;
+  description?: string;
+  start_time?: string;
+  end_time?: string;
+  location?: string;
+  attendees?: Record<string, unknown>;
+  contact_ids?: Record<string, unknown>;
+  deal_id?: string;
+}
+
+// ── Phase 4: AI Intelligence ──
+
+export type CRMEnrichmentSource = 'apollo' | 'ai' | 'manual';
+
+export interface CRMEnrichmentResult {
+  id: string;
+  workspace_id: string;
+  object_type: CRMObjectType;
+  object_id: string;
+  source: CRMEnrichmentSource;
+  data: Record<string, unknown>;
+  confidence: number;
+  created_at: string;
+}
+
+export interface CreateCRMEnrichmentRequest {
+  workspace_id: string;
+  object_type: CRMObjectType;
+  object_id: string;
+  source: CRMEnrichmentSource;
+  data?: Record<string, unknown>;
+  confidence?: number;
+}
+
+export type CRMSignalType =
+  | 'buying_intent'
+  | 'objection'
+  | 'competitor_mention'
+  | 'budget_signal'
+  | 'timeline_signal'
+  | 'champion_signal'
+  | 'risk_signal';
+
+export type CRMSignalSourceType = 'email' | 'meeting' | 'note' | 'manual';
+
+export interface CRMBuyerSignal {
+  id: string;
+  workspace_id: string;
+  contact_id?: string;
+  deal_id?: string;
+  signal_type: CRMSignalType;
+  source_type: CRMSignalSourceType;
+  source_id?: string;
+  summary: string;
+  confidence: number;
+  detected_at: string;
+  created_at: string;
+}
+
+export interface CreateCRMBuyerSignalRequest {
+  workspace_id: string;
+  contact_id?: string;
+  deal_id?: string;
+  signal_type: CRMSignalType;
+  source_type?: CRMSignalSourceType;
+  source_id?: string;
+  summary: string;
+  confidence?: number;
+}
+
+export interface CRMDealHealthScore {
+  id: string;
+  workspace_id: string;
+  deal_id: string;
+  score: number;
+  factors: Record<string, unknown>;
+  calculated_at: string;
+  created_at: string;
+}
+
+export interface CreateCRMDealHealthScoreRequest {
+  workspace_id: string;
+  deal_id: string;
+  score: number;
+  factors?: Record<string, unknown>;
+}
+
+export type CRMSuggestionType =
+  | 'follow_up'
+  | 'deal_create'
+  | 'deal_advance'
+  | 'enrichment'
+  | 'risk_alert';
+
+export type CRMSuggestionStatus = 'pending' | 'accepted' | 'dismissed';
+
+export interface CRMSuggestion {
+  id: string;
+  workspace_id: string;
+  user_id?: string;
+  suggestion_type: CRMSuggestionType;
+  object_type?: CRMObjectType;
+  object_id?: string;
+  title: string;
+  description?: string;
+  context: Record<string, unknown>;
+  status: CRMSuggestionStatus;
+  confidence: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMSuggestionRequest {
+  workspace_id: string;
+  user_id?: string;
+  suggestion_type: CRMSuggestionType;
+  object_type?: CRMObjectType;
+  object_id?: string;
+  title: string;
+  description?: string;
+  context?: Record<string, unknown>;
+  confidence?: number;
+}
+
+export interface UpdateCRMSuggestionRequest {
+  status?: CRMSuggestionStatus;
+}
+
+// ── Phase 5: Sequences & Writing ──
+
+export type CRMSequenceStatus = 'draft' | 'active' | 'paused';
+export type CRMEnrollmentStatus =
+  | 'active'
+  | 'completed'
+  | 'paused'
+  | 'bounced'
+  | 'unsubscribed'
+  | 'exited';
+
+export interface CRMSequence {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description?: string;
+  status: CRMSequenceStatus;
+  steps: Record<string, unknown>;
+  enrollment_count: number;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMSequenceRequest {
+  workspace_id: string;
+  name: string;
+  description?: string;
+  status?: CRMSequenceStatus;
+  steps?: Record<string, unknown>;
+}
+
+export interface UpdateCRMSequenceRequest {
+  name?: string;
+  description?: string;
+  status?: CRMSequenceStatus;
+  steps?: Record<string, unknown>;
+}
+
+export interface CRMSequenceEnrollment {
+  id: string;
+  workspace_id: string;
+  sequence_id: string;
+  contact_id: string;
+  current_step: number;
+  status: CRMEnrollmentStatus;
+  enrolled_at: string;
+  completed_at?: string;
+  exit_reason?: string;
+  last_step_executed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMSequenceEnrollmentRequest {
+  workspace_id: string;
+  sequence_id: string;
+  contact_id: string;
+}
+
+export interface UpdateCRMSequenceEnrollmentRequest {
+  status?: CRMEnrollmentStatus;
+  exit_reason?: string;
+}
+
+export interface CRMWritingProfile {
+  id: string;
+  workspace_id: string;
+  member_id: string;
+  style_attributes: Record<string, unknown>;
+  sample_count: number;
+  last_analyzed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCRMWritingProfileRequest {
+  workspace_id: string;
+  member_id: string;
+  style_attributes?: Record<string, unknown>;
+}
+
+export interface UpdateCRMWritingProfileRequest {
+  style_attributes?: Record<string, unknown>;
+  sample_count?: number;
+}
+
+// ── Phase 6: Search ──
+
+export interface CRMSearchResult {
+  type: CRMObjectType;
+  id: string;
+  name: string;
+  detail: string;
+  object: CRMContact | CRMCompany | CRMDeal;
+}
