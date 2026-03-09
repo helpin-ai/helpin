@@ -401,7 +401,7 @@ func main() {
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
-	crmDealService := service.NewCRMDealService(crmDealRepo)
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	crmPropertyService := service.NewCRMPropertyService(crmPropertyRepo)

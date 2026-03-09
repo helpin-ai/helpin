@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useCreateDeal, usePipelines } from '@/hooks/queries';
+import { useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
 
 interface CreateDealDialogProps {
   open: boolean;
@@ -20,8 +20,10 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
   const wsId = currentWorkspace?.id ?? '';
   const createDeal = useCreateDeal(wsId);
   const { data: pipelines } = usePipelines(wsId);
+  const { data: contacts } = useContacts(wsId);
 
   const [name, setName] = useState('');
+  const [contactId, setContactId] = useState('');
   const [pipelineId, setPipelineId] = useState('');
   const [stageId, setStageId] = useState('');
   const [amount, setAmount] = useState('');
@@ -42,6 +44,7 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
 
   const resetForm = () => {
     setName('');
+    setContactId('');
     setAmount('');
     setCurrency('USD');
     setCloseDate('');
@@ -50,12 +53,13 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !pipelineId || !stageId) return;
+    if (!name.trim() || !contactId || !pipelineId || !stageId) return;
 
     try {
       await createDeal.mutateAsync({
         workspace_id: wsId,
         name: name.trim(),
+        contact_id: contactId,
         pipeline_id: pipelineId,
         stage_id: stageId,
         amount: amount ? parseFloat(amount) : undefined,
@@ -81,6 +85,19 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
           <div className="space-y-2">
             <Label htmlFor="dealName">Deal Name *</Label>
             <Input id="dealName" value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label>Contact *</Label>
+            <Select value={contactId} onValueChange={setContactId}>
+              <SelectTrigger><SelectValue placeholder="Select contact" /></SelectTrigger>
+              <SelectContent>
+                {contacts?.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.first_name} {c.last_name}{c.email ? ` (${c.email})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           {pipelines && pipelines.length > 0 && (
             <div className="space-y-2">
@@ -137,7 +154,7 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={createDeal.isPending || !name.trim() || !pipelineId || !stageId}>
+            <Button type="submit" disabled={createDeal.isPending || !name.trim() || !contactId || !pipelineId || !stageId}>
               {createDeal.isPending ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>

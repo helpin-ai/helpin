@@ -11,12 +11,13 @@ import (
 
 // CRMDealService contains CRM deal and pipeline business logic.
 type CRMDealService struct {
-	dealRepo *repository.CRMDealRepository
+	dealRepo  *repository.CRMDealRepository
+	assocRepo *repository.CRMAssociationRepository
 }
 
 // NewCRMDealService creates a new CRMDealService.
-func NewCRMDealService(dealRepo *repository.CRMDealRepository) *CRMDealService {
-	return &CRMDealService{dealRepo: dealRepo}
+func NewCRMDealService(dealRepo *repository.CRMDealRepository, assocRepo *repository.CRMAssociationRepository) *CRMDealService {
+	return &CRMDealService{dealRepo: dealRepo, assocRepo: assocRepo}
 }
 
 // SeedWorkspaceDefaults creates a default sales pipeline for a new workspace.
@@ -165,6 +166,9 @@ func (s *CRMDealService) Create(ctx context.Context, req model.CreateCRMDealRequ
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
+	if req.ContactID == "" {
+		return nil, fmt.Errorf("contact_id is required")
+	}
 	if req.PipelineID == "" || req.StageID == "" {
 		return nil, fmt.Errorf("pipeline_id and stage_id are required")
 	}
@@ -214,6 +218,18 @@ func (s *CRMDealService) Create(ctx context.Context, req model.CreateCRMDealRequ
 	if err := s.dealRepo.Create(ctx, deal); err != nil {
 		return nil, err
 	}
+
+	assoc := &model.CRMAssociation{
+		WorkspaceID:    req.WorkspaceID,
+		FromObjectType: model.CRMObjectDeal,
+		FromObjectID:   deal.ID,
+		ToObjectType:   model.CRMObjectContact,
+		ToObjectID:     req.ContactID,
+	}
+	if err := s.assocRepo.Create(ctx, assoc); err != nil {
+		return nil, err
+	}
+
 	return s.dealRepo.GetByID(ctx, deal.ID)
 }
 

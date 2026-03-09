@@ -175,6 +175,7 @@ export interface CRMDeal {
 export interface CreateCRMDealRequest {
   workspace_id: string;
   name: string;
+  contact_id: string;
   pipeline_id: string;
   stage_id: string;
   amount?: number;

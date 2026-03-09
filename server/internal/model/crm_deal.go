@@ -95,6 +95,7 @@ type UpdateCRMPipelineStageItem struct {
 type CreateCRMDealRequest struct {
 	WorkspaceID      string                 `json:"workspace_id"`
 	Name             string                 `json:"name"`
+	ContactID        string                 `json:"contact_id"`
 	PipelineID       string                 `json:"pipeline_id"`
 	StageID          string                 `json:"stage_id"`
 	Amount           *float64               `json:"amount"`
