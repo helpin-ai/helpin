@@ -554,11 +554,11 @@ func suggestedStateType(name string) string {
 	switch normalizeShortcutName(name) {
 	case "backlog":
 		return model.PMStateTypeBacklog
-	case "refinement", "up next", "ready for development":
+	case "refinement", "up next", "ready for development", "to do", "todo", "open", "new", "triage", "icebox":
 		return model.PMStateTypeUnstarted
-	case "in development", "ready for review", "ready for deploy":
+	case "in development", "in progress", "in review", "ready for review", "ready for deploy", "in qa", "in testing", "started", "active", "code review", "review":
 		return model.PMStateTypeStarted
-	case "completed", "done", "abandoned":
+	case "completed", "done", "abandoned", "closed", "resolved", "merged", "deployed", "released", "cancelled", "archived":
 		return model.PMStateTypeDone
 	default:
 		return model.PMStateTypeUnstarted

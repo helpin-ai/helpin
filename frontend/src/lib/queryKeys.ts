@@ -98,6 +98,7 @@ export const queryKeys = {
     document: (wsId: string, id: string) => ['docs', wsId, 'documents', id] as const,
     content: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'content'] as const,
     versions: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'versions'] as const,
+    version: (wsId: string, docId: string, versionId: string) => ['docs', wsId, 'documents', docId, 'versions', versionId] as const,
     links: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'links'] as const,
     linkedDocs: (wsId: string, objectType: string, objectId: string) =>
       ['docs', wsId, 'linkedDocs', objectType, objectId] as const,

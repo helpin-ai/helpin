@@ -53,7 +53,7 @@ func (r *DocsDocumentRepository) GetByIDIncludeDeleted(ctx context.Context, id s
 }
 
 // List returns documents for a workspace with optional filters.
-func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, docType, status, teamID *string) ([]model.DocsDocument, error) {
+func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, docType, status, teamID *string, draftViewerID string) ([]model.DocsDocument, error) {
 	query := r.db.WithContext(ctx).Where("workspace_id = ? AND deleted_at IS NULL", workspaceID)
 	if spaceID != nil && *spaceID != "" {
 		query = query.Where("space_id = ?", *spaceID)
@@ -72,6 +72,11 @@ func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, s
 	}
 	if teamID != nil && *teamID != "" {
 		query = query.Where("team_id = ?", *teamID)
+	}
+
+	// If draftViewerID is set, hide other users' drafts (admins/owners pass empty to see all).
+	if draftViewerID != "" {
+		query = query.Where("status != ? OR created_by = ?", model.DocStatusDraft, draftViewerID)
 	}
 
 	var docs []model.DocsDocument
@@ -127,4 +132,18 @@ func (r *DocsDocumentRepository) Restore(ctx context.Context, id string) (*model
 		return nil, fmt.Errorf("restore docs document: %w", err)
 	}
 	return r.GetByID(ctx, id)
+}
+
+// GetByShareToken returns a published, non-deleted document by its share token.
+func (r *DocsDocumentRepository) GetByShareToken(ctx context.Context, token string) (*model.DocsDocument, error) {
+	var doc model.DocsDocument
+	if err := r.db.WithContext(ctx).
+		Where("share_token = ? AND is_publicly_shared = true AND deleted_at IS NULL", token).
+		First(&doc).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get docs document by share token: %w", err)
+	}
+	return &doc, nil
 }

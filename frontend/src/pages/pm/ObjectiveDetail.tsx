@@ -37,6 +37,7 @@ import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import type {
   EpicWithStats,
   KeyResult,
@@ -303,15 +304,16 @@ function KeyResultRow({
               {readOnly ? (
                 <span className="w-14 text-center font-medium text-foreground">{kr.current_value}</span>
               ) : (
-                <input
-                  type="number"
-                  value={currentValue}
-                  onChange={(e) => setCurrentValue(e.target.value)}
-                  onBlur={saveValue}
-                  onKeyDown={(e) => e.key === 'Enter' && saveValue()}
-                  title="Current value — edit to update progress"
-                  className="w-14 rounded border border-border bg-transparent px-1.5 py-0.5 text-[11px] text-center font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
+                <QuickTooltip label="Current value — edit to update progress">
+                  <input
+                    type="number"
+                    value={currentValue}
+                    onChange={(e) => setCurrentValue(e.target.value)}
+                    onBlur={saveValue}
+                    onKeyDown={(e) => e.key === 'Enter' && saveValue()}
+                    className="w-14 rounded border border-border bg-transparent px-1.5 py-0.5 text-[11px] text-center font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </QuickTooltip>
               )}
               <span>→ {kr.target_value}</span>
             </div>
@@ -943,8 +945,6 @@ export function ObjectiveDetailPage() {
 
         {/* ── Right column — metadata sidebar ────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
-          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
-
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* State */}
             <MetadataRow icon={Hash} label="State">

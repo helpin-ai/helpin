@@ -20,6 +20,7 @@ import {
 import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
 import { toast } from 'sonner'
+import { QuickTooltip } from '@/components/ui/quick-tooltip'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 
@@ -35,29 +36,52 @@ function ToolbarButton({
   title: string
 }) {
   return (
-    <button
-      type="button"
-      title={title}
-      onMouseDown={(e) => {
-        e.preventDefault() // prevent losing selection
-        onClick()
-      }}
-      className={`rounded p-1.5 transition-colors ${
-        active
-          ? 'bg-white/20 text-white'
-          : 'text-white/70 hover:bg-white/10 hover:text-white'
-      }`}
-    >
-      {children}
-    </button>
+    <QuickTooltip label={title} side="bottom">
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault() // prevent losing selection
+          onClick()
+        }}
+        className={`rounded p-1.5 transition-colors ${
+          active
+            ? 'bg-white/20 text-white'
+            : 'text-white/70 hover:bg-white/10 hover:text-white'
+        }`}
+      >
+        {children}
+      </button>
+    </QuickTooltip>
   )
 }
 
 // ── Save status indicator ───────────────────────────────────────────────────
 
-type SaveStatus = 'saved' | 'saving' | 'unsaved'
+type SaveStatus = 'idle' | 'saved' | 'saving' | 'unsaved'
 
-function SaveIndicator({ status }: { status: SaveStatus }) {
+function formatLastSaved(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
+  if (seconds < 60) return 'a few seconds ago'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes === 1) return '1 minute ago'
+  if (minutes < 60) return `${minutes} minutes ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours === 1) return '1 hour ago'
+  return `${hours} hours ago`
+}
+
+function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; lastSavedAt: Date | null }) {
+  const [, setTick] = useState(0)
+
+  // Re-render every 30s to update "last saved X ago"
+  useEffect(() => {
+    if (!lastSavedAt || status === 'saving') return
+    const interval = setInterval(() => setTick((t) => t + 1), 30_000)
+    return () => clearInterval(interval)
+  }, [lastSavedAt, status])
+
+  if (status === 'idle' && !lastSavedAt) return null
+
   switch (status) {
     case 'saving':
       return (
@@ -73,10 +97,20 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
           Saved
         </span>
       )
-    default:
+    case 'unsaved':
       return (
         <span className="text-[11px] text-muted-foreground">Unsaved changes</span>
       )
+    default:
+      // idle but has lastSavedAt — show "Last saved X ago"
+      if (lastSavedAt) {
+        return (
+          <span className="text-[11px] text-muted-foreground">
+            Last saved {formatLastSaved(lastSavedAt)}
+          </span>
+        )
+      }
+      return null
   }
 }
 
@@ -241,8 +275,10 @@ export function DocsEditor({
   readOnly = false,
   uploadConfig,
 }: DocsEditorProps) {
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved')
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const savingRef = useRef(false)
   const pendingContentRef = useRef<JSONContent | null>(null)
 
@@ -257,6 +293,9 @@ export function DocsEditor({
       try {
         await onSave(json)
         setSaveStatus('saved')
+        setLastSavedAt(new Date())
+        if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
+        savedFadeTimerRef.current = setTimeout(() => setSaveStatus('idle'), 5000)
       } catch {
         setSaveStatus('unsaved')
       } finally {
@@ -280,9 +319,10 @@ export function DocsEditor({
     [doSave, autoSaveMs],
   )
 
-  // Cleanup timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
   }, [])
 
   const uploadConfigRef = useRef(uploadConfig)
@@ -395,6 +435,13 @@ export function DocsEditor({
 
   editorRef.current = editor
 
+  // Sync editable state when readOnly prop changes (e.g. after unlock)
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(!readOnly)
+    }
+  }, [editor, readOnly])
+
   // Update content if initial content changes (e.g. after revert)
   useEffect(() => {
     if (editor && initialContent) {
@@ -402,7 +449,7 @@ export function DocsEditor({
       const newJson = JSON.stringify(initialContent)
       if (currentJson !== newJson) {
         editor.commands.setContent(initialContent)
-        setSaveStatus('saved')
+        setSaveStatus('idle')
       }
     }
   }, [editor, initialContent])
@@ -435,7 +482,16 @@ export function DocsEditor({
       )}
 
       {/* Editor content with title */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="relative flex-1 overflow-y-auto">
+        {/* Save indicator — top-right floating */}
+        {!readOnly && (
+          <div className="sticky top-2 z-10 flex justify-end px-4 pointer-events-none">
+            <div className="pointer-events-auto rounded-md bg-background/80 backdrop-blur-sm px-2 py-0.5 shadow-sm border border-border/40">
+              <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
+            </div>
+          </div>
+        )}
+
         <div className="mx-auto max-w-3xl">
           {/* Title */}
           {title !== undefined && (
@@ -456,13 +512,6 @@ export function DocsEditor({
           <EditorContent editor={editor} />
         </div>
       </div>
-
-      {/* Save indicator */}
-      {!readOnly && (
-        <div className="flex items-center justify-end border-t border-border/40 px-4 py-1">
-          <SaveIndicator status={saveStatus} />
-        </div>
-      )}
     </div>
   )
 }

@@ -18,9 +18,11 @@ import type {
   MoveDocsDocumentRequest,
   SaveDocsContentRequest,
   CreateDocsVersionRequest,
+  UpdateDocsVersionRequest,
   CreateDocsLinkRequest,
   UpdateDocsHelpcenterConfigRequest,
   DocsArticleFeedbackRequest,
+  PublicDocResponse,
 } from '../docsTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -91,8 +93,12 @@ export const docsService = {
   // ── Versions ────────────────────────────────────────────────────────────
   listVersions: (wsId: string, docId: string) =>
     api.get<DocsVersion[]>(`/docs/documents/${docId}/versions${qs(wsId)}`),
+  getVersion: (wsId: string, docId: string, versionId: string) =>
+    api.get<DocsVersion>(`/docs/documents/${docId}/versions/${versionId}${qs(wsId)}`),
   createVersion: (wsId: string, docId: string, payload: CreateDocsVersionRequest) =>
     api.post<DocsVersion>(`/docs/documents/${docId}/versions${qs(wsId)}`, payload),
+  updateVersionLabel: (wsId: string, docId: string, versionId: string, payload: UpdateDocsVersionRequest) =>
+    api.patch<DocsVersion>(`/docs/documents/${docId}/versions/${versionId}${qs(wsId)}`, payload),
   revertVersion: (wsId: string, docId: string, versionId: string) =>
     api.post<DocsContent>(`/docs/documents/${docId}/revert/${versionId}${qs(wsId)}`),
 
@@ -128,6 +134,18 @@ export const docsService = {
     api.get<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`),
   updateHelpcenterConfig: (wsId: string, payload: UpdateDocsHelpcenterConfigRequest) =>
     api.put<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`, payload),
+
+  // ── Share Toggle ────────────────────────────────────────────────────────
+  toggleDocShare: (wsId: string, docId: string, isPubliclyShared: boolean) =>
+    api.post<DocsDocument>(`/docs/documents/${docId}/toggle-share${qs(wsId)}`, { is_publicly_shared: isPubliclyShared }),
+
+  // ── Lock Toggle ────────────────────────────────────────────────────────
+  toggleDocLock: (wsId: string, docId: string, isLocked: boolean) =>
+    api.post<DocsDocument>(`/docs/documents/${docId}/toggle-lock${qs(wsId)}`, { is_locked: isLocked }),
+
+  // ── Public Shared Document (no auth) ──────────────────────────────────
+  getSharedDoc: (shareToken: string) =>
+    api.get<PublicDocResponse>(`/docs/shared/${shareToken}`),
 
   // ── Help Center Article ─────────────────────────────────────────────────
   submitArticleFeedback: (wsId: string, docId: string, payload: DocsArticleFeedbackRequest) =>

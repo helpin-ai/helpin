@@ -157,6 +157,7 @@ func main() {
 		&authorization.AuthorizationRelation{},
 		// Docs module
 		&model.DocsSpace{},
+		&model.DocsSpaceTeam{},
 		&model.DocsCollection{},
 		&model.DocsDocument{},
 		&model.DocsContent{},
@@ -429,7 +430,7 @@ func main() {
 	})
 
 	// Set up router.
-	r := router.New(handlers, jwtManager, authzService, slugResolver, cfg.CORSOrigin)
+	r := router.New(handlers, jwtManager, authzService, slugResolver, cfg.CORSOrigins)
 
 	// Start background ticker for iteration automations.
 	automationDone := make(chan struct{})

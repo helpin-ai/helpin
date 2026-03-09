@@ -80,7 +80,7 @@ func (d *shortcutHTTPMediaDownloader) Download(ctx context.Context, rawURL, apiT
 	}
 
 	contentType := normalizeMediaType(resp.Header.Get("Content-Type"))
-	if contentType == "" {
+	if contentType == "" || contentType == "application/octet-stream" {
 		contentType = normalizeMediaType(http.DetectContentType(data))
 	}
 

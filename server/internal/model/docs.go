@@ -83,6 +83,14 @@ const (
 	SpaceVisibilityTeamOnly      = "team_only"
 )
 
+// Version type values.
+const (
+	VersionTypeManual  = "manual"
+	VersionTypeAuto    = "auto"
+	VersionTypePublish = "publish"
+	VersionTypeRevert  = "revert"
+)
+
 // Link context values.
 const (
 	LinkContextAttached        = "attached"
@@ -172,6 +180,21 @@ type DocsSpace struct {
 
 func (DocsSpace) TableName() string { return "docs_spaces" }
 
+// DocsSpaceTeam is the many-to-many join between spaces and teams.
+type DocsSpaceTeam struct {
+	SpaceID   string    `json:"space_id" gorm:"type:uuid;primaryKey"`
+	TeamID    string    `json:"team_id" gorm:"type:uuid;primaryKey"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (DocsSpaceTeam) TableName() string { return "docs_space_teams" }
+
+// DocsSpaceWithTeams is a space with its associated team IDs.
+type DocsSpaceWithTeams struct {
+	DocsSpace
+	TeamIDs []string `json:"team_ids" gorm:"-"`
+}
+
 // DocsCollection groups documents inside a space.
 type DocsCollection struct {
 	ID          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -191,28 +214,32 @@ func (DocsCollection) TableName() string { return "docs_collections" }
 
 // DocsDocument is the core document metadata.
 type DocsDocument struct {
-	ID             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_doc_ws_space_status,priority:1;index:idx_docs_doc_ws_type_status,priority:1;index:idx_docs_doc_ws_team_updated,priority:1"`
-	SpaceID        string          `json:"space_id" gorm:"type:uuid;not null;index:idx_docs_doc_ws_space_status,priority:2"`
-	CollectionID   *string         `json:"collection_id" gorm:"type:uuid"`
-	Title          string          `json:"title" gorm:"not null"`
-	DocType        string          `json:"doc_type" gorm:"not null;index:idx_docs_doc_ws_type_status,priority:2"`
-	Status         string          `json:"status" gorm:"not null;default:'draft';index:idx_docs_doc_ws_space_status,priority:3;index:idx_docs_doc_ws_type_status,priority:3"`
-	Visibility     string          `json:"visibility" gorm:"not null;default:'workspace_wide'"`
-	OwnerID        *string         `json:"owner_id" gorm:"type:uuid;index:idx_docs_doc_owner_review,priority:1"`
-	TeamID         *string         `json:"team_id" gorm:"type:uuid;index:idx_docs_doc_ws_team_updated,priority:2"`
-	TemplateKey    *string         `json:"template_key"`
-	Excerpt        *string         `json:"excerpt"`
-	Icon           *string         `json:"icon"`
-	Tags           DocsStringArray `json:"tags" gorm:"type:text[]"`
-	IsPinned       bool            `json:"is_pinned" gorm:"not null;default:false"`
-	LastReviewedAt *time.Time      `json:"last_reviewed_at"`
-	NextReviewAt   *time.Time      `json:"next_review_at" gorm:"index:idx_docs_doc_owner_review,priority:2"`
-	PublishedAt    *time.Time      `json:"published_at"`
-	CreatedBy      string          `json:"created_by" gorm:"type:uuid;not null"`
-	CreatedAt      time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt      time.Time       `json:"updated_at" gorm:"autoUpdateTime;index:idx_docs_doc_ws_team_updated,priority:3"`
-	DeletedAt      *time.Time      `json:"deleted_at" gorm:"index"`
+	ID               string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_doc_ws_space_status,priority:1;index:idx_docs_doc_ws_type_status,priority:1;index:idx_docs_doc_ws_team_updated,priority:1"`
+	SpaceID          string          `json:"space_id" gorm:"type:uuid;not null;index:idx_docs_doc_ws_space_status,priority:2"`
+	CollectionID     *string         `json:"collection_id" gorm:"type:uuid"`
+	Title            string          `json:"title" gorm:"not null"`
+	DocType          string          `json:"doc_type" gorm:"not null;index:idx_docs_doc_ws_type_status,priority:2"`
+	Status           string          `json:"status" gorm:"not null;default:'draft';index:idx_docs_doc_ws_space_status,priority:3;index:idx_docs_doc_ws_type_status,priority:3"`
+	Visibility       string          `json:"visibility" gorm:"not null;default:'workspace_wide'"`
+	OwnerID          *string         `json:"owner_id" gorm:"type:uuid;index:idx_docs_doc_owner_review,priority:1"`
+	TeamID           *string         `json:"team_id" gorm:"type:uuid;index:idx_docs_doc_ws_team_updated,priority:2"`
+	TemplateKey      *string         `json:"template_key"`
+	Excerpt          *string         `json:"excerpt"`
+	Icon             *string         `json:"icon"`
+	Tags             DocsStringArray `json:"tags" gorm:"type:text[]"`
+	IsPinned         bool            `json:"is_pinned" gorm:"not null;default:false"`
+	IsPubliclyShared bool            `json:"is_publicly_shared" gorm:"not null;default:false"`
+	ShareToken       *string         `json:"share_token" gorm:"uniqueIndex"`
+	IsLocked         bool            `json:"is_locked" gorm:"not null;default:false"`
+	LockedBy         *string         `json:"locked_by" gorm:"type:uuid"`
+	LastReviewedAt   *time.Time      `json:"last_reviewed_at"`
+	NextReviewAt     *time.Time      `json:"next_review_at" gorm:"index:idx_docs_doc_owner_review,priority:2"`
+	PublishedAt      *time.Time      `json:"published_at"`
+	CreatedBy        string          `json:"created_by" gorm:"type:uuid;not null"`
+	CreatedAt        time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt        time.Time       `json:"updated_at" gorm:"autoUpdateTime;index:idx_docs_doc_ws_team_updated,priority:3"`
+	DeletedAt        *time.Time      `json:"deleted_at" gorm:"index"`
 }
 
 func (DocsDocument) TableName() string { return "docs_documents" }
@@ -237,6 +264,8 @@ type DocsVersion struct {
 	Content       json.RawMessage `json:"content" gorm:"type:jsonb"`
 	ContentText   string          `json:"content_text" gorm:"type:text"`
 	SnapshotLabel *string         `json:"snapshot_label"`
+	VersionType   string          `json:"version_type" gorm:"not null;default:'manual'"`
+	WordCount     int             `json:"word_count" gorm:"not null;default:0"`
 	CreatedBy     string          `json:"created_by" gorm:"type:uuid;not null"`
 	CreatedAt     time.Time       `json:"created_at" gorm:"autoCreateTime;index:idx_docs_version_doc_created,priority:2,sort:desc"`
 }
@@ -348,24 +377,28 @@ func (DocsComment) TableName() string { return "docs_comments" }
 
 // CreateDocsSpaceRequest is the payload for creating a space.
 type CreateDocsSpaceRequest struct {
-	TeamID            *string `json:"team_id"`
-	Name              string  `json:"name"`
-	Slug              string  `json:"slug"`
-	Icon              *string `json:"icon"`
-	Visibility        string  `json:"visibility"`
-	Type              string  `json:"type"`
-	RestrictToOwners  bool    `json:"restrict_to_owners"`
-	DefaultReviewDays *int    `json:"default_review_days"`
+	TeamID            *string  `json:"team_id"`
+	TeamIDs           []string `json:"team_ids"`
+	Name              string   `json:"name"`
+	Slug              string   `json:"slug"`
+	Icon              *string  `json:"icon"`
+	Visibility        string   `json:"visibility"`
+	Type              string   `json:"type"`
+	RestrictToOwners  bool     `json:"restrict_to_owners"`
+	DefaultReviewDays *int     `json:"default_review_days"`
 }
 
 // UpdateDocsSpaceRequest is the payload for updating a space.
 type UpdateDocsSpaceRequest struct {
-	Name              *string `json:"name"`
-	Slug              *string `json:"slug"`
-	Icon              *string `json:"icon"`
-	Visibility        *string `json:"visibility"`
-	RestrictToOwners  *bool   `json:"restrict_to_owners"`
-	DefaultReviewDays *int    `json:"default_review_days"`
+	Name              *string  `json:"name"`
+	Slug              *string  `json:"slug"`
+	Icon              *string  `json:"icon"`
+	Type              *string  `json:"type"`
+	Visibility        *string  `json:"visibility"`
+	RestrictToOwners  *bool    `json:"restrict_to_owners"`
+	DefaultReviewDays *int     `json:"default_review_days"`
+	TeamIDs           []string `json:"team_ids"`
+	SetTeamIDs        bool     `json:"set_team_ids"`
 }
 
 // CreateDocsCollectionRequest is the payload for creating a collection.
@@ -423,6 +456,11 @@ type CreateDocsVersionRequest struct {
 	SnapshotLabel *string `json:"snapshot_label"`
 }
 
+// UpdateDocsVersionRequest is the payload for renaming a manual version's label.
+type UpdateDocsVersionRequest struct {
+	SnapshotLabel *string `json:"snapshot_label"`
+}
+
 // CreateDocsLinkRequest is the payload for creating a document link.
 type CreateDocsLinkRequest struct {
 	LinkedObjectType string `json:"linked_object_type"`
@@ -448,4 +486,20 @@ type DocsArticleFeedbackRequest struct {
 	IsHelpful bool    `json:"is_helpful"`
 	Comment   *string `json:"comment"`
 	SessionID *string `json:"session_id"`
+}
+
+// ToggleDocShareRequest is the payload for toggling public share on a document.
+type ToggleDocShareRequest struct {
+	IsPubliclyShared bool `json:"is_publicly_shared"`
+}
+
+// ToggleDocLockRequest is the payload for locking/unlocking a document.
+type ToggleDocLockRequest struct {
+	IsLocked bool `json:"is_locked"`
+}
+
+// PublicDocResponse is the response for a publicly shared document.
+type PublicDocResponse struct {
+	Document *DocsDocument `json:"document"`
+	Content  *DocsContent  `json:"content"`
 }

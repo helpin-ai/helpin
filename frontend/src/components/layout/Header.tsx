@@ -1,32 +1,11 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
-  Bell,
-  CircleHelp,
-  LogOut,
-  Moon,
   Search,
-  Sun,
-  User,
-  Users,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { getInitials } from "@/lib/utils";
-import { QuarterSelector } from "@/components/quarter/QuarterSelector";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import { useAuthStore } from "@/stores/authStore";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SearchCommandPalette } from "@/components/search/SearchCommandPalette";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 type Crumb = {
   label: string;
@@ -37,10 +16,6 @@ export function Header() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
-  const { user, signOut } = useAuthStore();
-  const { theme, setTheme } = useTheme();
-
-  const initials = getInitials(user?.full_name || user?.email);
   const [searchOpen, setSearchOpen] = useState(false);
 
   // Cmd+K / Ctrl+K shortcut
@@ -93,7 +68,7 @@ export function Header() {
     }
 
     const pmSubMap: Record<string, string> = {
-      stories: "Work Items",
+      stories: "Stories",
       epics: "Epics",
       sprints: "Sprints",
       objectives: "Objectives",
@@ -194,69 +169,6 @@ export function Header() {
       </div>
 
       <SearchCommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
-
-      <div className="ml-auto flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 text-muted-foreground"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          <Sun className="h-4 w-4 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
-          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">Toggle theme</span>
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 text-muted-foreground"
-        >
-          <Bell className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 text-muted-foreground"
-        >
-          <CircleHelp className="h-4 w-4" />
-        </Button>
-        <QuarterSelector />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ml-1 size-8 rounded-full border border-border/70 p-0"
-            >
-              <Avatar className="size-7">
-                <AvatarFallback className="text-[11px]">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="truncate">
-              {user?.full_name || user?.email || "Account"}
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate({ to: '/w/$slug/settings/$section', params: { slug: currentWorkspace?.slug ?? '', section: 'profile' } })}>
-              <User className="h-4 w-4" />
-              <span>Profile</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate({ to: "/workspaces" })}>
-              <Users className="h-4 w-4" />
-              <span>All Workspaces</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut} variant="destructive">
-              <LogOut className="h-4 w-4" />
-              <span>Sign out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
     </header>
   );
 }

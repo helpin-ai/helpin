@@ -7,6 +7,7 @@ import {
   DISPLAY_PROPERTY_LABELS,
   BOARD_PROPERTY_KEYS,
 } from '@/stores/boardDisplayStore';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 export function BoardDisplayMenu() {
   const { properties, showEmptyColumns, toggleProperty, toggleShowEmptyColumns } =
@@ -14,11 +15,13 @@ export function BoardDisplayMenu() {
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7" title="Display settings">
-          <Settings2 className="h-4 w-4" />
-        </Button>
-      </PopoverTrigger>
+      <QuickTooltip label="Display settings">
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-7 w-7">
+            <Settings2 className="h-4 w-4" />
+          </Button>
+        </PopoverTrigger>
+      </QuickTooltip>
       <PopoverContent className="w-[240px] p-3" align="end">
         <div className="space-y-3">
           <div>

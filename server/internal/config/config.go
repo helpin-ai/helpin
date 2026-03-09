@@ -10,7 +10,7 @@ type Config struct {
 	DatabaseURL       string
 	JWTSecret         string
 	Port              string
-	CORSOrigin        string
+	CORSOrigins       []string
 	TemporalAddress   string
 	TemporalNamespace string
 
@@ -55,9 +55,13 @@ func Load() (*Config, error) {
 		port = "8080"
 	}
 
-	corsOrigin := os.Getenv("CORS_ORIGIN")
-	if corsOrigin == "" {
-		corsOrigin = "http://localhost:5173"
+	corsOrigins := []string{
+		"http://app.helpin.ai",
+		"https://app.helpin.ai",
+		"http://stage.helpin.ai",
+		"https://stage.helpin.ai",
+		"http://91.98.85.12",
+		"http://localhost:5173",
 	}
 
 	appBaseURL := os.Getenv("APP_BASE_URL")
@@ -79,7 +83,7 @@ func Load() (*Config, error) {
 		DatabaseURL:         dbURL,
 		JWTSecret:           jwtSecret,
 		Port:                port,
-		CORSOrigin:          corsOrigin,
+		CORSOrigins:         corsOrigins,
 		TemporalAddress:     temporalAddress,
 		TemporalNamespace:   temporalNamespace,
 		AWSAccessKeyID:      os.Getenv("AWS_ACCESS_KEY_ID"),

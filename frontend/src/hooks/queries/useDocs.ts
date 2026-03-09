@@ -12,6 +12,7 @@ import type {
   MoveDocsDocumentRequest,
   SaveDocsContentRequest,
   CreateDocsVersionRequest,
+  UpdateDocsVersionRequest,
   CreateDocsLinkRequest,
   UpdateDocsHelpcenterConfigRequest,
   DocsArticleFeedbackRequest,
@@ -344,6 +345,25 @@ export function useCreateDocsVersion(wsId: string) {
   })
 }
 
+export function useDocsVersion(wsId: string, docId: string, versionId: string) {
+  return useQuery({
+    queryKey: queryKeys.docs.version(wsId, docId, versionId),
+    queryFn: async () => unwrap(await docsService.getVersion(wsId, docId, versionId)),
+    enabled: !!wsId && !!docId && !!versionId,
+  })
+}
+
+export function useUpdateDocsVersionLabel(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, versionId, ...data }: UpdateDocsVersionRequest & { docId: string; versionId: string }) =>
+      unwrap(await docsService.updateVersionLabel(wsId, docId, versionId, data)),
+    onSuccess: (_, { docId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.versions(wsId, docId) })
+    },
+  })
+}
+
 export function useRevertDocsVersion(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -416,6 +436,32 @@ export function useUnpublishDocsExternally(wsId: string) {
       unwrap(await docsService.unpublishExternally(wsId, docId)),
     onSuccess: (_, docId) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
+    },
+  })
+}
+
+// ── Lock Toggle ──────────────────────────────────────────────────────────────
+
+export function useToggleDocLock(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, isLocked }: { docId: string; isLocked: boolean }) =>
+      unwrap(await docsService.toggleDocLock(wsId, docId, isLocked)),
+    onSuccess: (updatedDoc, { docId }) => {
+      qc.setQueryData(queryKeys.docs.document(wsId, docId), updatedDoc)
+    },
+  })
+}
+
+// ── Share Toggle ─────────────────────────────────────────────────────────────
+
+export function useToggleDocShare(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, isPubliclyShared }: { docId: string; isPubliclyShared: boolean }) =>
+      unwrap(await docsService.toggleDocShare(wsId, docId, isPubliclyShared)),
+    onSuccess: (updatedDoc, { docId }) => {
+      qc.setQueryData(queryKeys.docs.document(wsId, docId), updatedDoc)
     },
   })
 }

@@ -7,6 +7,7 @@ import {
   LIST_PROPERTY_KEYS,
   type DisplayPropertyKey,
 } from '@/stores/boardDisplayStore';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 interface ListDisplayMenuProps {
   /** Keys hidden at team-field-visibility level — these won't appear as toggleable. */
@@ -22,11 +23,13 @@ export function ListDisplayMenu({ disabledKeys }: ListDisplayMenuProps) {
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7" title="Display columns">
-          <Settings2 className="h-4 w-4" />
-        </Button>
-      </PopoverTrigger>
+      <QuickTooltip label="Display columns">
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-7 w-7">
+            <Settings2 className="h-4 w-4" />
+          </Button>
+        </PopoverTrigger>
+      </QuickTooltip>
       <PopoverContent className="w-[240px] p-3" align="end">
         <div>
           <p className="mb-2 text-xs font-medium text-muted-foreground">Display columns</p>

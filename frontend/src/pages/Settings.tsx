@@ -17,6 +17,7 @@ import { StateTypeIcon } from '@/lib/pmConstants';
 import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { UserAvatar, getAvatarColor } from '@/components/pm/UserAvatar';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import type { StateType, WorkflowState, WorkflowWithStates, EpicWorkflowState, PMAutomation, AutomationType, GitIntegration, GitRepository, RunnerHealth } from '@/lib/pmTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -743,13 +744,13 @@ function MembersTab({ workspaceId, editable }: {
   };
 
   const handleResend = async (id: string) => {
-    const { error } = await inviteService.resend(id);
+    const { error } = await inviteService.resend(id, workspaceId);
     if (error) toast.error(error);
     else { toast.success('Invitation resent'); loadData(); }
   };
 
   const handleRevoke = async (id: string) => {
-    const { error } = await inviteService.revoke(id);
+    const { error } = await inviteService.revoke(id, workspaceId);
     if (error) toast.error(error);
     else { toast.success('Invitation revoked'); loadData(); }
   };
@@ -829,16 +830,22 @@ function MembersTab({ workspaceId, editable }: {
                       <TableCell>
                         <div className="flex gap-1">
                           {inv.join_url && (
-                            <Button size="icon" variant="ghost" onClick={() => handleCopyLink(inv.join_url!)} title="Copy invite link">
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
+                            <QuickTooltip label="Copy invite link">
+                              <Button size="icon" variant="ghost" onClick={() => handleCopyLink(inv.join_url!)}>
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                            </QuickTooltip>
                           )}
-                          <Button size="icon" variant="ghost" onClick={() => handleResend(inv.id)} title="Resend">
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => handleRevoke(inv.id)} title="Revoke">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          <QuickTooltip label="Resend">
+                            <Button size="icon" variant="ghost" onClick={() => handleResend(inv.id)}>
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            </Button>
+                          </QuickTooltip>
+                          <QuickTooltip label="Revoke">
+                            <Button size="icon" variant="ghost" onClick={() => handleRevoke(inv.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </QuickTooltip>
                         </div>
                       </TableCell>
                     </TableRow>

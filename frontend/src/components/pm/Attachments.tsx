@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
 import type { AttachmentResponse } from '@/lib/pmTypes';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 // File type icons from Plane.so
 import pdfIcon from '@/assets/attachment/pdf-icon.png';
@@ -241,24 +242,26 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
                 />
               </button>
               <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="h-5 w-5 bg-background/80 backdrop-blur-sm"
-                  onClick={() => window.open(resolveUrl(entry), '_blank')}
-                  title="Download"
-                >
-                  <Download className="h-2.5 w-2.5" />
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="h-5 w-5 bg-background/80 backdrop-blur-sm"
-                  onClick={() => handleDelete(entry.attachment.id)}
-                  title="Delete"
-                >
-                  <Trash2 className="h-2.5 w-2.5 text-destructive" />
-                </Button>
+                <QuickTooltip label="Download">
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="h-5 w-5 bg-background/80 backdrop-blur-sm"
+                    onClick={() => window.open(resolveUrl(entry), '_blank')}
+                  >
+                    <Download className="h-2.5 w-2.5" />
+                  </Button>
+                </QuickTooltip>
+                <QuickTooltip label="Delete">
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="h-5 w-5 bg-background/80 backdrop-blur-sm"
+                    onClick={() => handleDelete(entry.attachment.id)}
+                  >
+                    <Trash2 className="h-2.5 w-2.5 text-destructive" />
+                  </Button>
+                </QuickTooltip>
               </div>
               <p className="mt-1 truncate text-[11px] text-muted-foreground" title={entry.attachment.file_name}>
                 {entry.attachment.file_name}
@@ -306,30 +309,32 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
                   <span className="shrink-0 text-[11px] text-muted-foreground">
                     {formatFileSize(entry.attachment.file_size)}
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      window.open(resolveUrl(entry), '_blank');
-                    }}
-                    title="Download"
-                  >
-                    <Download className="h-3 w-3 text-muted-foreground" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleDelete(entry.attachment.id);
-                    }}
-                    title="Delete"
-                  >
-                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                  </Button>
+                  <QuickTooltip label="Download">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        window.open(resolveUrl(entry), '_blank');
+                      }}
+                    >
+                      <Download className="h-3 w-3 text-muted-foreground" />
+                    </Button>
+                  </QuickTooltip>
+                  <QuickTooltip label="Delete">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleDelete(entry.attachment.id);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                    </Button>
+                  </QuickTooltip>
                 </div>
               </div>
             );

@@ -22,6 +22,7 @@ import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { StateTypeIcon } from '@/lib/pmConstants';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useAuthStore } from '@/stores/authStore';
@@ -85,10 +86,10 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
 
   if (collapsed) {
     return (
+      <QuickTooltip label={`Expand ${column.state.name}`}>
       <section
         className="flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-4 transition-colors hover:bg-muted/50"
         onClick={() => onToggleCollapse(column.state.id)}
-        title={`Expand ${column.state.name}`}
       >
         <Maximize2 className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
@@ -102,6 +103,7 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
           </span>
         </div>
       </section>
+      </QuickTooltip>
     );
   }
 
@@ -125,15 +127,16 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
           </p>
         </div>
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => onToggleCollapse(column.state.id)}
-            title="Collapse column"
-          >
-            <Minimize2 className="h-3.5 w-3.5" />
-          </Button>
+          <QuickTooltip label="Collapse column">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onToggleCollapse(column.state.id)}
+            >
+              <Minimize2 className="h-3.5 w-3.5" />
+            </Button>
+          </QuickTooltip>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreate(column.state.id)}>
             <Plus className="h-4 w-4" />
           </Button>
@@ -489,24 +492,26 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
         <div className="ml-auto flex items-center gap-1">
           <BoardDisplayMenu />
-          <Button
-            variant={viewMode === 'board' ? 'default' : 'ghost'}
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setViewMode('board')}
-            title="Board view"
-          >
-            <Columns2 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'default' : 'ghost'}
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setViewMode('list')}
-            title="List view"
-          >
-            <LayoutList className="h-4 w-4" />
-          </Button>
+          <QuickTooltip label="Board view">
+            <Button
+              variant={viewMode === 'board' ? 'default' : 'ghost'}
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setViewMode('board')}
+            >
+              <Columns2 className="h-4 w-4" />
+            </Button>
+          </QuickTooltip>
+          <QuickTooltip label="List view">
+            <Button
+              variant={viewMode === 'list' ? 'default' : 'ghost'}
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setViewMode('list')}
+            >
+              <LayoutList className="h-4 w-4" />
+            </Button>
+          </QuickTooltip>
         </div>
 
       </header>

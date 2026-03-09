@@ -1,23 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { format, parseISO } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
 import {
   ArrowLeft,
   Archive,
   ArchiveRestore,
+  CalendarDays,
+  Check,
   ChevronRight,
   Clock,
+  Copy,
+  Eye,
   ExternalLink,
   FileText,
+  FolderOpen,
   Globe,
   Link2,
+  Lock,
   MoreHorizontal,
+  RotateCcw,
   Send,
   Trash2,
+  Unlock,
+  User,
+  UserCheck,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
+import { useAuthStore } from '@/stores/authStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import {
   useDocsDocument,
@@ -34,12 +47,16 @@ import {
   useAssignableMembers,
   useWorkspaceAccess,
   usePermissions,
+  useToggleDocShare,
+  useToggleDocLock,
+  useRevertDocsVersion,
 } from '@/hooks/queries'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import {
   Select,
   SelectContent,
@@ -47,21 +64,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { DocsEditor } from '@/components/docs/DocsEditor'
-import { VersionHistoryPanel } from '@/components/docs/VersionHistoryPanel'
+import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { ExternalPublishPanel } from '@/components/docs/ExternalPublishPanel'
 import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
+import type { DocsVersion } from '@/lib/docsTypes'
+import { QuickTooltip } from '@/components/ui/quick-tooltip'
 
 export function DocsDocumentDetail() {
   const navigate = useNavigate()
+  const router = useRouter()
   const { docId } = useParams({ strict: false }) as { docId: string }
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
 
   const { data: access } = useWorkspaceAccess(wsId)
-  const { canEditDocs, canPublishDocs } = usePermissions(access)
+  const { canEditDocs, canPublishDocs, isAdmin } = usePermissions(access)
+  const currentUserId = useAuthStore((s) => s.user?.id)
 
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
@@ -78,10 +100,38 @@ export function DocsDocumentDetail() {
   const { data: collections = [] } = useDocsCollections(wsId, doc?.space_id ?? '')
   const createCollection = useCreateDocsCollection(wsId, doc?.space_id ?? '')
 
+  const toggleShare = useToggleDocShare(wsId)
+  const toggleLock = useToggleDocLock(wsId)
+
+  // Lock-aware editing: locked docs are read-only for everyone — unlock to edit
+  const effectiveReadOnly = !canEditDocs || doc?.status === 'archived' || !!doc?.is_locked
+  const canUnlock = doc?.is_locked && (doc.locked_by === currentUserId || isAdmin)
+
   const [metaOpen, setMetaOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
   const [publishOpen, setPublishOpen] = useState(false)
+  const { copied: linkCopied, copy: copyLink } = useCopyToClipboard()
+
+  // Version preview state — when set, the editor shows version content read-only
+  const [previewVersion, setPreviewVersion] = useState<DocsVersion | null>(null)
+  const revertVersion = useRevertDocsVersion(wsId)
+
+  const handlePreview = useCallback((version: DocsVersion) => {
+    setPreviewVersion((prev) => prev?.id === version.id ? null : version)
+  }, [])
+
+  const handleRestoreFromPreview = useCallback(async () => {
+    if (!previewVersion) return
+    try {
+      await revertVersion.mutateAsync({ docId, versionId: previewVersion.id })
+      toast.success('Reverted to selected version')
+      setPreviewVersion(null)
+      setVersionsOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to revert')
+    }
+  }, [previewVersion, revertVersion, docId])
 
   // Title state — local draft synced from server, debounced save
   const [titleDraft, setTitleDraft] = useState('')
@@ -210,7 +260,7 @@ export function DocsDocumentDetail() {
           variant="ghost"
           size="icon"
           className="h-8 w-8 shrink-0"
-          onClick={() => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })}
+          onClick={() => router.history.back()}
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -272,15 +322,16 @@ export function DocsDocumentDetail() {
           </Button>
         )}
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          onClick={() => setMetaOpen((v) => !v)}
-          title="Document details"
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
+        <QuickTooltip label="Document details">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={() => setMetaOpen((v) => !v)}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </QuickTooltip>
       </div>
 
       {/* Archive banner */}
@@ -305,218 +356,397 @@ export function DocsDocumentDetail() {
         </div>
       )}
 
+      {/* Lock banner */}
+      {doc.is_locked && (
+        <div className="flex items-center gap-2 border-b border-blue-500/30 bg-blue-500/10 px-4 py-2">
+          <Lock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm text-blue-700 dark:text-blue-300">
+            This document is locked{doc.locked_by ? ` by ${(() => {
+              const locker = members.find((m) => m.user_id === doc.locked_by)
+              return locker ? formatAssignableMemberName(locker) : 'someone'
+            })()}` : ''}.
+            {' Unlock to edit.'}
+          </span>
+          {canUnlock && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto h-7 gap-1.5 text-xs"
+              onClick={() => {
+                toggleLock.mutate(
+                  { docId, isLocked: false },
+                  {
+                    onSuccess: () => toast.success('Document unlocked'),
+                    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unlock'),
+                  },
+                )
+              }}
+              disabled={toggleLock.isPending}
+            >
+              <Unlock className="h-3 w-3" />
+              Unlock
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Version preview banner */}
+      {previewVersion && (
+        <div className="flex items-center gap-3 border-b border-purple-500/30 bg-purple-500/10 px-4 py-2">
+          <Eye className="h-4 w-4 text-purple-600 dark:text-purple-400 shrink-0" />
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="text-sm font-medium text-purple-700 dark:text-purple-300 truncate">
+              Previewing: {previewVersion.snapshot_label || 'Untitled snapshot'}
+            </span>
+            <VersionTypeBadge type={previewVersion.version_type} />
+            <AuthorDisplay userId={previewVersion.created_by} members={members} />
+            <span className="text-[11px] text-muted-foreground">
+              {format(parseISO(previewVersion.created_at), 'MMM d, yyyy h:mm a')}
+            </span>
+          </div>
+          {canEditDocs && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 text-xs shrink-0"
+              onClick={handleRestoreFromPreview}
+              disabled={revertVersion.isPending}
+            >
+              <RotateCcw className="h-3 w-3" />
+              Restore
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 text-xs shrink-0"
+            onClick={() => setPreviewVersion(null)}
+          >
+            <X className="h-3 w-3" />
+            Exit preview
+          </Button>
+        </div>
+      )}
+
       {/* Main content area */}
       <div className="flex min-h-0 flex-1">
         {/* Editor */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <DocsEditor
-            title={titleDraft}
-            onTitleChange={canEditDocs && doc.status !== 'archived' ? handleTitleChange : undefined}
-            initialContent={content?.content as JSONContent | null}
-            onSave={handleSave}
-            readOnly={!canEditDocs || doc.status === 'archived'}
-            uploadConfig={
-              canEditDocs && doc.status !== 'archived'
-                ? { workspaceId: wsId, entityType: 'editor_upload', entityId: docId }
-                : undefined
-            }
-          />
+          {previewVersion ? (
+            <DocsEditor
+              key={`preview-${previewVersion.id}`}
+              title={titleDraft}
+              initialContent={previewVersion.content as JSONContent | null}
+              onSave={handleSave}
+              readOnly
+            />
+          ) : (
+            <DocsEditor
+              title={titleDraft}
+              onTitleChange={!effectiveReadOnly ? handleTitleChange : undefined}
+              initialContent={content?.content as JSONContent | null}
+              onSave={handleSave}
+              readOnly={effectiveReadOnly}
+              uploadConfig={
+                !effectiveReadOnly
+                  ? { workspaceId: wsId, entityType: 'editor_upload', entityId: docId }
+                  : undefined
+              }
+            />
+          )}
         </div>
 
         {/* Metadata sidebar */}
         {metaOpen && (
-          <div className="w-64 shrink-0 overflow-y-auto border-l border-border/60 bg-muted/20 p-4">
-            <div className="space-y-5">
-              {/* Document info */}
-              <section className="space-y-2">
-                <dl className="space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Type</dt>
-                    <dd>{DOC_TYPE_LABELS[doc.doc_type] ?? doc.doc_type}</dd>
-                  </div>
-
-                  {/* Owner */}
+          <aside className="w-64 shrink-0 overflow-y-auto border-l border-border/60 px-4 py-6">
+            {/* ── Sharing ── */}
+            {canEditDocs && (
+              <>
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <dt className="text-muted-foreground">Owner</dt>
-                    <dd>
-                      {canEditDocs ? (
-                        <MemberPickerPopover
-                          value={doc.owner_id ?? '__none__'}
-                          members={members}
-                          onChange={(id) =>
-                            patchDoc({ owner_id: id === '__none__' ? null : id })
-                          }
-                          noneLabel="Unassigned"
-                          renderTrigger={() => {
-                            const owner = members.find((m) => m.id === doc.owner_id)
-                            if (!owner) return <span className="text-muted-foreground">Unassigned</span>
-                            return (
-                              <>
-                                <UserAvatar
-                                  name={owner.display_name || owner.email}
-                                  avatarUrl={owner.avatar_url}
-                                  className="h-4 w-4"
-                                  fallbackClassName="text-[7px]"
-                                />
-                                <span className="truncate max-w-[100px]">
-                                  {formatAssignableMemberName(owner)}
-                                </span>
-                              </>
-                            )
-                          }}
-                        />
-                      ) : (
-                        (() => {
-                          const owner = members.find((m) => m.id === doc.owner_id)
-                          return owner ? (
-                            <span className="flex items-center gap-1">
-                              <UserAvatar
-                                name={owner.display_name || owner.email}
-                                avatarUrl={owner.avatar_url}
-                                className="h-4 w-4"
-                                fallbackClassName="text-[7px]"
-                              />
-                              {formatAssignableMemberName(owner)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">Unassigned</span>
-                          )
-                        })()
-                      )}
-                    </dd>
-                  </div>
-
-                  {/* Collection */}
-                  <div className="flex items-center justify-between">
-                    <dt className="text-muted-foreground">Collection</dt>
-                    <dd>
-                      {canEditDocs ? (
-                        <Select
-                          value={doc.collection_id ?? '__none__'}
-                          onValueChange={async (v) => {
-                            if (v === '__create__') {
-                              const name = window.prompt('Collection name')
-                              if (!name?.trim()) return
-                              try {
-                                const created = await createCollection.mutateAsync({ name: name.trim() })
-                                patchDoc({ collection_id: created.id })
-                                toast.success(`Collection "${name.trim()}" created`)
-                              } catch (err) {
-                                toast.error(err instanceof Error ? err.message : 'Failed to create')
-                              }
-                              return
-                            }
-                            patchDoc({ collection_id: v === '__none__' ? null : v })
-                          }}
-                        >
-                          <SelectTrigger className="h-6 w-auto min-w-[80px] max-w-[130px] border-0 bg-transparent px-1 py-0 text-xs shadow-none hover:bg-accent">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {collections.map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.name}
-                              </SelectItem>
-                            ))}
-                            <SelectItem value="__create__" className="text-primary">
-                              + New collection
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <span>
-                          {collections.find((c) => c.id === doc.collection_id)?.name ?? 'None'}
-                        </span>
-                      )}
-                    </dd>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Created</dt>
-                    <dd>{format(parseISO(doc.created_at), 'MMM d, yyyy')}</dd>
-                  </div>
-                  {doc.published_at && (
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Published</dt>
-                      <dd>{format(parseISO(doc.published_at), 'MMM d, yyyy')}</dd>
+                    <div className="flex items-center gap-1.5">
+                      <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Public link</span>
                     </div>
+                    <Switch
+                      checked={doc.is_publicly_shared}
+                      onCheckedChange={(checked) => {
+                        toggleShare.mutate(
+                          { docId, isPubliclyShared: checked },
+                          {
+                            onSuccess: () => toast.success(checked ? 'Public link enabled' : 'Public link disabled'),
+                            onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to toggle share'),
+                          },
+                        )
+                      }}
+                      disabled={toggleShare.isPending}
+                    />
+                  </div>
+                  {doc.is_publicly_shared && doc.share_token && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full h-7 gap-1.5 text-xs"
+                      onClick={() => {
+                        const url = `${window.location.origin}/share/${doc.share_token}`
+                        copyLink(url)
+                        toast.success('Link copied to clipboard')
+                      }}
+                    >
+                      {linkCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      {linkCopied ? 'Copied!' : 'Copy link'}
+                    </Button>
                   )}
-                </dl>
-              </section>
+                </div>
+                <Separator className="my-4" />
+              </>
+            )}
 
+            {/* ── Properties ── */}
+            <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
+              {/* Type */}
+              <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <span className="text-xs text-muted-foreground self-center">Type</span>
+              <div className="min-w-0 self-center">
+                <span className="text-xs">{DOC_TYPE_LABELS[doc.doc_type] ?? doc.doc_type}</span>
+              </div>
 
-              {/* Actions */}
-              <section className="space-y-2">
-                <h3 className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Link2 className="h-3 w-3" />
-                  Actions
-                </h3>
+              {/* Owner */}
+              <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <span className="text-xs text-muted-foreground self-center">Owner</span>
+              <div className="min-w-0 self-center">
+                {canEditDocs ? (
+                  <MemberPickerPopover
+                    value={doc.owner_id ?? '__none__'}
+                    members={members}
+                    onChange={(id) =>
+                      patchDoc({ owner_id: id === '__none__' ? null : id })
+                    }
+                    noneLabel="Unassigned"
+                    renderTrigger={() => {
+                      const owner = members.find((m) => m.id === doc.owner_id)
+                      if (!owner) return <span className="text-xs text-muted-foreground">Unassigned</span>
+                      return (
+                        <>
+                          <UserAvatar
+                            name={owner.display_name || owner.email}
+                            avatarUrl={owner.avatar_url}
+                            className="h-4 w-4"
+                            fallbackClassName="text-[7px]"
+                          />
+                          <span className="truncate max-w-[100px] text-xs">
+                            {formatAssignableMemberName(owner)}
+                          </span>
+                        </>
+                      )
+                    }}
+                  />
+                ) : (
+                  (() => {
+                    const owner = members.find((m) => m.id === doc.owner_id)
+                    return owner ? (
+                      <span className="flex items-center gap-1 text-xs">
+                        <UserAvatar
+                          name={owner.display_name || owner.email}
+                          avatarUrl={owner.avatar_url}
+                          className="h-4 w-4"
+                          fallbackClassName="text-[7px]"
+                        />
+                        {formatAssignableMemberName(owner)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Unassigned</span>
+                    )
+                  })()
+                )}
+              </div>
+
+              {/* Created by */}
+              <UserCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <span className="text-xs text-muted-foreground self-center">Created by</span>
+              <div className="min-w-0 self-center">
+                {(() => {
+                  const creator = members.find((m) => m.user_id === doc.created_by)
+                  return creator ? (
+                    <span className="flex items-center gap-1 text-xs">
+                      <UserAvatar
+                        name={creator.display_name || creator.email}
+                        avatarUrl={creator.avatar_url}
+                        className="h-4 w-4"
+                        fallbackClassName="text-[7px]"
+                      />
+                      {formatAssignableMemberName(creator)}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Unknown</span>
+                  )
+                })()}
+              </div>
+
+              {/* Collection */}
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <span className="text-xs text-muted-foreground self-center">Collection</span>
+              <div className="min-w-0 self-center">
+                {canEditDocs ? (
+                  <Select
+                    value={doc.collection_id ?? '__none__'}
+                    onValueChange={async (v) => {
+                      if (v === '__create__') {
+                        const name = window.prompt('Collection name')
+                        if (!name?.trim()) return
+                        try {
+                          const created = await createCollection.mutateAsync({ name: name.trim() })
+                          patchDoc({ collection_id: created.id })
+                          toast.success(`Collection "${name.trim()}" created`)
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : 'Failed to create')
+                        }
+                        return
+                      }
+                      patchDoc({ collection_id: v === '__none__' ? null : v })
+                    }}
+                  >
+                    <SelectTrigger className="h-auto w-auto min-w-[80px] max-w-[130px] border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {collections.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__create__" className="text-primary">
+                        + New collection
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span className="text-xs">
+                    {collections.find((c) => c.id === doc.collection_id)?.name ?? 'None'}
+                  </span>
+                )}
+              </div>
+
+              {/* Created */}
+              <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <span className="text-xs text-muted-foreground self-center">Created</span>
+              <div className="min-w-0 self-center">
+                <span className="text-xs">{format(parseISO(doc.created_at), 'MMM d, yyyy')}</span>
+              </div>
+
+              {/* Updated */}
+              <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+              <span className="text-xs text-muted-foreground self-center">Updated</span>
+              <div className="min-w-0 self-center">
+                <span className="text-xs">{format(parseISO(doc.updated_at), 'MMM d, yyyy')}</span>
+              </div>
+
+              {/* Published */}
+              {doc.published_at && (
+                <>
+                  <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                  <span className="text-xs text-muted-foreground self-center">Published</span>
+                  <div className="min-w-0 self-center">
+                    <span className="text-xs">{format(parseISO(doc.published_at), 'MMM d, yyyy')}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <Separator className="my-4" />
+
+            {/* ── History & Links ── */}
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => { setVersionsOpen(true); setMetaOpen(false) }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Version History
+              </button>
+              <button
+                type="button"
+                onClick={() => setLinksOpen(true)}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Linked Items
+              </button>
+              {space?.type !== 'internal' && (
+                <button
+                  type="button"
+                  onClick={() => setPublishOpen(true)}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  External Publish
+                </button>
+              )}
+            </div>
+
+            {/* ── Document Actions ── */}
+            {canEditDocs && (
+              <>
+                <Separator className="my-4" />
                 <div className="space-y-1">
                   <button
                     type="button"
-                    onClick={() => setVersionsOpen(true)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                    onClick={() => {
+                      const newLocked = !doc.is_locked
+                      toggleLock.mutate(
+                        { docId, isLocked: newLocked },
+                        {
+                          onSuccess: () => toast.success(newLocked ? 'Document locked' : 'Document unlocked'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to toggle lock'),
+                        },
+                      )
+                    }}
+                    disabled={toggleLock.isPending || (doc.is_locked && !canUnlock)}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <Clock className="h-3.5 w-3.5" />
-                    Version History
+                    {doc.is_locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                    {doc.is_locked ? 'Unlock document' : 'Lock document'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setPublishOpen(true)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                  >
-                    <Globe className="h-3.5 w-3.5" />
-                    External Publish
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLinksOpen(true)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Linked Items
-                  </button>
-                </div>
-              </section>
-
-              {/* Danger zone */}
-              {canEditDocs && (
-                <section className="space-y-2">
-                  <div className="space-y-1">
-                    {doc.status !== 'archived' && (
-                      <button
-                        type="button"
-                        onClick={handleArchive}
-                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                      >
-                        <Archive className="h-3.5 w-3.5" />
-                        Archive
-                      </button>
-                    )}
+                  {doc.status !== 'archived' && (
                     <button
                       type="button"
-                      onClick={handleDelete}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10"
+                      onClick={handleArchive}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Delete
+                      <Archive className="h-3.5 w-3.5" />
+                      Archive
                     </button>
-                  </div>
-                </section>
-              )}
-            </div>
-          </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </aside>
         )}
+
+        {/* Version history — inline sidebar */}
+        <VersionHistoryPanel
+          wsId={wsId}
+          docId={docId}
+          open={versionsOpen}
+          onClose={() => { setVersionsOpen(false); setPreviewVersion(null) }}
+          onPreview={handlePreview}
+          members={members}
+          canEdit={canEditDocs}
+          previewingVersionId={previewVersion?.id}
+        />
       </div>
 
       {/* Slide-out panels */}
-      <VersionHistoryPanel
-        wsId={wsId}
-        docId={docId}
-        open={versionsOpen}
-        onOpenChange={setVersionsOpen}
-      />
       <DocumentLinksPanel
         wsId={wsId}
         docId={docId}

@@ -219,14 +219,9 @@ export function StoryCard({
         <span className="flex-1" />
 
         {teamName && (
-          <Tooltip>
-            <TooltipTrigger asChild>
               <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
                 {teamName}
               </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">Team: {teamName}</TooltipContent>
-          </Tooltip>
         )}
 
         {/* Priority pill — clickable dropdown */}
@@ -319,8 +314,6 @@ export function StoryCard({
         {/* Severity pill — clickable dropdown */}
         {vis.severity && (severityCfg && workspaceId ? (
           <Popover open={severityOpen} onOpenChange={setSeverityOpen}>
-            <Tooltip open={severityOpen ? false : undefined}>
-              <TooltipTrigger asChild>
                 <PopoverTrigger asChild>
                   <button
                     type="button"
@@ -331,9 +324,6 @@ export function StoryCard({
                     {severityCfg.label}
                   </button>
                 </PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top">Severity: {severityCfg.label}</TooltipContent>
-            </Tooltip>
             {severityOpen && (
               <PopoverContent
                 className="w-[180px] p-0"
@@ -369,27 +359,17 @@ export function StoryCard({
             )}
           </Popover>
         ) : severityCfg ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-border bg-muted/50', severityCfg.color)}>
                 <SeverityIcon severity={story.severity} className="h-3 w-3" />
                 {severityCfg.label}
               </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">Severity: {severityCfg.label}</TooltipContent>
-          </Tooltip>
         ) : null)}
 
         {vis.blocked && story.blocked && (
-          <Tooltip>
-            <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400')}>
                 <AlertTriangle className="h-3 w-3" />
                 Blocked
               </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">This story is blocked</TooltipContent>
-          </Tooltip>
         )}
 
         {/* Labels */}
@@ -421,14 +401,9 @@ export function StoryCard({
           </Tooltip>
         )}
         {vis.estimate && story.estimate != null && (
-          <Tooltip>
-            <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
                 {formatEstimateDisplay(story.estimate, story.team_id)}
               </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">Estimate: {formatEstimateDisplay(story.estimate, story.team_id)}</TooltipContent>
-          </Tooltip>
         )}
         <span className="flex-1" />
         {/* Assignee avatar / assign button */}
