@@ -8,7 +8,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/crm/companies/$com
 function CompanyDetailRoute() {
   const { companyId } = Route.useParams();
   return (
-    <div className="h-full overflow-auto pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <CompanyDetailPage companyId={companyId} />
     </div>
   );

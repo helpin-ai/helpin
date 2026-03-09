@@ -36,10 +36,11 @@ export function GenerateStoriesStep({
   const isRunning = latestPlanRun && ['queued', 'running'].includes(latestPlanRun.status);
   const hasFailed = latestPlanRun?.status === 'failed';
   const storyCount = proposal?.proposed_stories?.length ?? 0;
+  const effectiveStatus: StepStatus = isRunning || hasFailed ? 'current' : status;
 
-  if (status === 'upcoming') {
+  if (effectiveStatus === 'upcoming') {
     return (
-      <StepCard status={status}>
+      <StepCard status={effectiveStatus}>
         <div className="flex items-center gap-2">
           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">4</span>
           <span className="text-sm text-muted-foreground">Generate stories</span>
@@ -48,9 +49,9 @@ export function GenerateStoriesStep({
     );
   }
 
-  if (status === 'completed' && !expanded) {
+  if (effectiveStatus === 'completed' && !expanded) {
     return (
-      <StepCard status={status}>
+      <StepCard status={effectiveStatus}>
         <button type="button" className="flex w-full items-center justify-between" onClick={() => setExpanded(true)}>
           <div className="flex items-center gap-2">
             <Check className="h-4 w-4 text-emerald-500" />
@@ -66,10 +67,10 @@ export function GenerateStoriesStep({
   }
 
   return (
-    <StepCard status={status}>
+    <StepCard status={effectiveStatus}>
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-medium">Generate stories</h4>
-        {status === 'completed' && (
+        {effectiveStatus === 'completed' && (
           <button type="button" onClick={() => setExpanded(false)}>
             <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
           </button>

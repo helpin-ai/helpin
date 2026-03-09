@@ -5,47 +5,31 @@ import {
   ArrowLeft,
   Calendar,
   Check,
+  ChevronRight,
   DollarSign,
   Gauge,
-  Layers,
-  MoreHorizontal,
-  Percent,
+  Loader2,
+  Tag,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import {
-  useDeal,
-  useDealActivities,
-  useDealAssociations,
-  useUpdateDeal,
-  useDeleteDeal,
-  usePipelines,
-} from '@/hooks/queries';
+import { useDeal, useUpdateDeal, useDeleteDeal, useDealActivities, useDealAssociations, usePipelines } from '@/hooks/queries';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { DealHealthScore } from '@/components/crm/DealHealthScore';
 import { BuyerSignals } from '@/components/crm/BuyerSignals';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
-import { LinkedPMItems } from '@/components/crm/LinkedPMItems';
+import { AssociationsList } from '@/components/crm/AssociationsList';
 import { useTitle } from '@/hooks/useTitle';
-import type { UpdateCRMDealRequest, CRMPipelineStage, CRMAssociationEnriched } from '@/lib/crmTypes';
-
-// ── Types ──
+import type { UpdateCRMDealRequest } from '@/lib/crmTypes';
 
 interface FormState {
   name: string;
-  pipeline_id: string;
   stage_id: string;
   amount: string;
   currency: string;
@@ -53,67 +37,15 @@ interface FormState {
   probability: string;
 }
 
-// ── Helpers ──
-
 function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
   return (
     <>
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-xs text-muted-foreground self-center">{label}</span>
+      <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
+      <span className="self-center text-xs text-muted-foreground">{label}</span>
       <div className="min-w-0 self-center">{children}</div>
     </>
   );
 }
-
-function SidebarPopoverSelect<T extends string>({
-  value,
-  options,
-  onChange,
-  renderTrigger,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-  renderTrigger: () => React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-        >
-          {renderTrigger()}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors cursor-pointer ${
-                value === option.value
-                  ? 'bg-accent text-foreground font-medium'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              <span className="truncate">{option.label}</span>
-              {value === option.value && <Check className="ml-auto h-3 w-3 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-// ── Main Page ──
 
 export function DealDetailPage({ dealId }: { dealId: string }) {
   const { currentWorkspace } = useWorkspaceStore();
@@ -122,44 +54,31 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
   const navigate = useNavigate();
 
   const { data: deal, isLoading } = useDeal(wsId, dealId);
-  const { data: activitiesData } = useDealActivities(wsId, dealId);
-  const { data: associations } = useDealAssociations(wsId, dealId);
+  const { data: activitiesData, refetch: refetchActivities } = useDealActivities(wsId, dealId);
+  const { data: associations, refetch: refetchAssociations } = useDealAssociations(wsId, dealId);
   const { data: pipelines } = usePipelines(wsId);
-  const updateMutation = useUpdateDeal(wsId);
-  const deleteMutation = useDeleteDeal(wsId);
+  const updateDeal = useUpdateDeal(wsId);
+  const deleteDeal = useDeleteDeal(wsId);
 
   const [form, setForm] = useState<FormState | null>(null);
   const [pendingPatch, setPendingPatch] = useState<UpdateCRMDealRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [stageOpen, setStageOpen] = useState(false);
 
-  useTitle(deal?.name ?? 'Deal');
+  useTitle(form?.name ?? 'Deal');
 
-  // Derive stages from selected pipeline
-  const currentPipeline = useMemo(
-    () => pipelines?.find((p) => p.id === form?.pipeline_id),
-    [pipelines, form?.pipeline_id],
+  const currentPipeline = useMemo(() => pipelines?.find((p) => p.id === deal?.pipeline_id), [pipelines, deal?.pipeline_id]);
+  const stageOptions = useMemo(
+    () => (currentPipeline?.stages ?? []).sort((a, b) => a.position - b.position).map((s) => ({ value: s.id, label: s.name })),
+    [currentPipeline],
   );
 
-  const stageOptions = useMemo<{ value: string; label: string }[]>(() => {
-    if (!currentPipeline?.stages) return [];
-    return currentPipeline.stages
-      .sort((a: CRMPipelineStage, b: CRMPipelineStage) => a.position - b.position)
-      .map((s: CRMPipelineStage) => ({ value: s.id, label: s.name }));
-  }, [currentPipeline]);
-
-  const currentStageName = useMemo(() => {
-    if (!form?.stage_id || !currentPipeline?.stages) return '--';
-    return currentPipeline.stages.find((s: CRMPipelineStage) => s.id === form.stage_id)?.name ?? '--';
-  }, [form?.stage_id, currentPipeline]);
-
-  // Initialize form from deal data
   useEffect(() => {
     if (deal && !form) {
       setForm({
         name: deal.name,
-        pipeline_id: deal.pipeline_id,
         stage_id: deal.stage_id,
         amount: deal.amount != null ? String(deal.amount) : '',
         currency: deal.currency ?? 'USD',
@@ -169,7 +88,6 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
     }
   }, [deal, form]);
 
-  // Auto-save debounce
   useEffect(() => {
     if (saving || Object.keys(pendingPatch).length === 0 || !wsId || !dealId) return;
     const timer = window.setTimeout(async () => {
@@ -177,7 +95,7 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
       setPendingPatch({});
       setSaving(true);
       try {
-        await updateMutation.mutateAsync({ id: dealId, ...patch });
+        await updateDeal.mutateAsync({ id: dealId, ...patch });
         setSaveError(null);
       } catch {
         setSaveError('Failed to save');
@@ -188,9 +106,7 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
     return () => window.clearTimeout(timer);
   }, [wsId, dealId, pendingPatch, saving]);
 
-  const queuePatch = (patch: UpdateCRMDealRequest) => {
-    setPendingPatch((current) => ({ ...current, ...patch }));
-  };
+  const queuePatch = (patch: UpdateCRMDealRequest) => setPendingPatch((current) => ({ ...current, ...patch }));
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateCRMDealRequest) => {
     setForm((current) => (current ? { ...current, [key]: value } : current));
@@ -199,7 +115,7 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
 
   const handleDelete = async () => {
     try {
-      await deleteMutation.mutateAsync(dealId);
+      await deleteDeal.mutateAsync(dealId);
       toast.success('Deal deleted');
       navigate({ to: '/w/$slug/crm/deals', params: { slug: wsSlug } });
     } catch {
@@ -209,223 +125,172 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
 
   const goBack = () => navigate({ to: '/w/$slug/crm/deals', params: { slug: wsSlug } });
 
-  // Split associations into CRM vs PM
-  const crmAssocs = useMemo(() => {
-    return (associations ?? []).filter((a: CRMAssociationEnriched) => {
-      const otherType = a.from_object_type === 'deal' ? a.to_object_type : a.from_object_type;
-      return otherType === 'contact' || otherType === 'company';
-    });
-  }, [associations]);
+  const probabilityValue = form?.probability ? parseInt(form.probability) : 0;
+  const currentStageName = stageOptions.find((s) => s.value === form?.stage_id)?.label ?? deal?.stage?.name ?? '—';
+  const formattedAmount = form?.amount
+    ? new Intl.NumberFormat('en-US', { style: 'currency', currency: form.currency || 'USD', minimumFractionDigits: 0 }).format(parseFloat(form.amount))
+    : '';
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-5xl px-4 md:px-6">
-        <Skeleton className="mb-4 h-8 w-48" />
-        <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
-          <div className="space-y-4">
-            <Skeleton className="h-10 w-3/4" />
-            <Skeleton className="h-32 w-full" />
-          </div>
-          <div className="space-y-3">
-            <Skeleton className="h-48 w-full" />
-          </div>
-        </div>
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (!deal || !form) {
-    return <div className="flex items-center justify-center p-8 text-muted-foreground">Deal not found</div>;
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3">
+        <p className="text-sm text-muted-foreground">Deal not found</p>
+        <Button variant="outline" size="sm" onClick={goBack}>
+          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          Back to Deals
+        </Button>
+      </div>
+    );
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 md:px-6">
-      {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={goBack}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <p className="text-xs text-muted-foreground">{deal.display_id}</p>
-            <input
-              className="text-2xl font-bold bg-transparent border-none outline-none focus:outline-none w-full"
-              value={form.name}
-              onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-              placeholder="Deal name"
-            />
-          </div>
+    <div className="flex h-full flex-col">
+      {/* Header bar */}
+      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+
+        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+          <DollarSign className="h-3.5 w-3.5 shrink-0 text-green-500" />
+          <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
+            Deals
+          </button>
+          <ChevronRight className="h-3 w-3 shrink-0" />
+          <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() => setDeleteConfirmOpen(true)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete deal
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 hover:text-destructive" onClick={() => setDeleteConfirmOpen(true)}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
       {/* Two-column layout */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
-        {/* Main content */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Activity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ActivityTimeline activities={activitiesData?.data ?? []} />
-            </CardContent>
-          </Card>
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]">
+        {/* Left column */}
+        <div className="min-h-0 overflow-y-auto px-8 py-6">
+          {/* Name */}
+          <input
+            className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+            value={form.name}
+            onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
+            placeholder="Deal name"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">{deal.display_id}</p>
 
-          <EmailTimeline workspaceId={wsId} dealId={dealId} />
-        </div>
+          <Separator className="my-6" />
 
-        {/* Sidebar */}
-        <div className="space-y-4">
-          {/* Details */}
-          <div className="rounded-lg border p-4">
-            <h3 className="mb-3 text-sm font-medium">Details</h3>
-            <div className="grid grid-cols-[16px_72px_1fr] gap-x-3 gap-y-2.5">
-              <MetadataRow icon={Layers} label="Pipeline">
-                <span className="text-xs">{currentPipeline?.name ?? '--'}</span>
-              </MetadataRow>
+          {/* Stage Progress */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stage Progress</h3>
+              <span className="text-xs text-muted-foreground">{probabilityValue}%</span>
+            </div>
+            <Progress value={probabilityValue} />
+            <p className="text-xs text-muted-foreground">
+              {currentStageName}{formattedAmount ? ` · ${formattedAmount}` : ''}
+            </p>
+          </div>
 
-              <MetadataRow icon={Gauge} label="Stage">
-                <SidebarPopoverSelect
-                  value={form.stage_id}
-                  options={stageOptions}
-                  onChange={(v) => updateField('stage_id', v, { stage_id: v })}
-                  renderTrigger={() => (
-                    <span className="text-xs">{currentStageName}</span>
-                  )}
-                />
-              </MetadataRow>
+          <Separator className="my-6" />
 
-              <MetadataRow icon={DollarSign} label="Amount">
-                <input
-                  type="number"
-                  className="w-full bg-transparent text-xs outline-none border-none focus:outline-none py-0.5"
-                  value={form.amount}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setForm((current) => (current ? { ...current, amount: val } : current));
-                    queuePatch({ amount: val ? Number(val) : undefined });
-                  }}
-                  placeholder="--"
-                />
-              </MetadataRow>
-
-              <MetadataRow icon={DollarSign} label="Currency">
-                <input
-                  className="w-full bg-transparent text-xs outline-none border-none focus:outline-none py-0.5"
-                  value={form.currency}
-                  onChange={(e) => updateField('currency', e.target.value, { currency: e.target.value })}
-                  placeholder="USD"
-                />
-              </MetadataRow>
-
-              <MetadataRow icon={Calendar} label="Close date">
-                <input
-                  type="date"
-                  className="w-full bg-transparent text-xs outline-none border-none focus:outline-none py-0.5"
-                  value={form.close_date}
-                  onChange={(e) => updateField('close_date', e.target.value, { close_date: e.target.value || undefined })}
-                />
-              </MetadataRow>
-
-              <MetadataRow icon={Percent} label="Probability">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  className="w-full bg-transparent text-xs outline-none border-none focus:outline-none py-0.5"
-                  value={form.probability}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setForm((current) => (current ? { ...current, probability: val } : current));
-                    queuePatch({ probability: val ? Number(val) : undefined });
-                  }}
-                  placeholder="--"
-                />
-              </MetadataRow>
+          {/* Activity */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Activity</h3>
+            <div className="mt-3">
+              <ActivityTimeline
+                activities={activitiesData?.data ?? []}
+                workspaceId={wsId}
+                dealId={dealId}
+                onActivityCreated={() => refetchActivities()}
+                onActivityDeleted={() => refetchActivities()}
+              />
             </div>
           </div>
 
-          {/* Health Score */}
+          <Separator className="my-6" />
+
+          {/* Email Timeline */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Emails</h3>
+            <div className="mt-3">
+              <EmailTimeline workspaceId={wsId} dealId={dealId} />
+            </div>
+          </div>
+        </div>
+
+        {/* Right sidebar */}
+        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
+          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
+
+          <div className="grid grid-cols-[16px_80px_1fr] gap-x-2 gap-y-3">
+            <MetadataRow icon={Tag} label="Stage">
+              <Popover open={stageOpen} onOpenChange={setStageOpen}>
+                <PopoverTrigger asChild>
+                  <button type="button" className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent">
+                    {currentStageName}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-40 p-0.5" align="start">
+                  <div className="flex max-h-60 flex-col overflow-y-auto">
+                    {stageOptions.map((option) => (
+                      <button key={option.value} type="button"
+                        className={`flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors ${form.stage_id === option.value ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                        onClick={() => { updateField('stage_id', option.value, { stage_id: option.value }); setStageOpen(false); }}>
+                        <span className="truncate">{option.label}</span>
+                        {form.stage_id === option.value && <Check className="ml-auto h-3 w-3 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </MetadataRow>
+            <MetadataRow icon={DollarSign} label="Amount">
+              <div className="flex items-center gap-1">
+                <input className="w-full bg-transparent text-xs outline-none" type="number" step="0.01" value={form.amount}
+                  onChange={(e) => updateField('amount', e.target.value, { amount: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder="—" />
+                <span className="text-xs text-muted-foreground">{form.currency}</span>
+              </div>
+            </MetadataRow>
+            <MetadataRow icon={Calendar} label="Close Date">
+              <input className="w-full bg-transparent text-xs outline-none" type="date" value={form.close_date}
+                onChange={(e) => updateField('close_date', e.target.value, { close_date: e.target.value ? `${e.target.value}T00:00:00Z` : undefined })} />
+            </MetadataRow>
+            <MetadataRow icon={Gauge} label="Probability">
+              <div className="flex items-center gap-1">
+                <input className="w-16 bg-transparent text-xs outline-none" type="number" min="0" max="100" value={form.probability}
+                  onChange={(e) => updateField('probability', e.target.value, { probability: e.target.value ? parseInt(e.target.value) : undefined })} placeholder="—" />
+                <span className="text-xs text-muted-foreground">%</span>
+              </div>
+            </MetadataRow>
+          </div>
+
+          <Separator className="my-4" />
           <DealHealthScore workspaceId={wsId} dealId={dealId} />
 
-          {/* Buyer Signals */}
+          <Separator className="my-4" />
           <BuyerSignals workspaceId={wsId} dealId={dealId} />
 
-          {/* Associations */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Associations</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {crmAssocs.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No CRM associations yet</p>
-              ) : (
-                <ul className="space-y-2">
-                  {crmAssocs.map((assoc: CRMAssociationEnriched) => {
-                    const targetType = assoc.from_object_type === 'deal' ? assoc.to_object_type : assoc.from_object_type;
-                    const targetId = assoc.from_object_type === 'deal' ? assoc.to_object_id : assoc.from_object_id;
-                    return (
-                      <li key={assoc.id}>
-                        <button
-                          type="button"
-                          className="text-sm hover:underline cursor-pointer text-left"
-                          onClick={() => {
-                            if (targetType === 'contact') {
-                              navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug: wsSlug, contactId: targetId } });
-                            } else if (targetType === 'company') {
-                              navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug: wsSlug, companyId: targetId } });
-                            }
-                          }}
-                        >
-                          <span className="capitalize">{targetType}</span>
-                          {assoc.linked_object_name && <span className="font-medium ml-1">{assoc.linked_object_name}</span>}
-                          {assoc.linked_object_display_id && <span className="text-muted-foreground ml-1">({assoc.linked_object_display_id})</span>}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-
-              <LinkedPMItems
-                dealId={dealId}
-                workspaceId={wsId}
-                workspaceSlug={wsSlug}
-                associations={(associations ?? []) as CRMAssociationEnriched[]}
-              />
-            </CardContent>
-          </Card>
-        </div>
+          <Separator className="my-4" />
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Associations</h3>
+          <AssociationsList workspaceId={wsId} slug={wsSlug} associations={associations ?? []}
+            currentObjectType="deal" currentObjectId={dealId} onAssociationRemoved={() => refetchAssociations()} />
+        </aside>
       </div>
 
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
-        title="Delete deal"
-        description="Are you sure? This action cannot be undone."
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={handleDelete}
-      />
+      <ConfirmDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen} title="Delete deal"
+        description="Are you sure? This action cannot be undone." confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} />
     </div>
   );
 }

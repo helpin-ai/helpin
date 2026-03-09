@@ -32,13 +32,14 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Bell, Bot, Camera, ChevronRight, Copy, Eye, FileText, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bell, Bot, Camera, ChevronRight, Copy, Eye, FileText, FolderKanban, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, Users, X, Zap, type LucideIcon } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
+import { PipelineSettings } from '@/components/crm/PipelineSettings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -131,6 +132,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     description: 'Configure your public help center branding, domain, and SEO.',
     icon: Globe,
     group: 'Docs',
+  },
+  {
+    id: 'crm-pipelines',
+    label: 'Pipelines',
+    description: 'Configure deal pipelines and stages.',
+    icon: FolderKanban,
+    group: 'CRM Settings',
   },
   /* {
     id: 'people',
@@ -340,6 +348,8 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return <ImportTab workspaceId={workspaceId} editable={canImport} />;
       case 'helpcenter':
         return <HelpcenterTab workspaceId={workspaceId} />;
+      case 'crm-pipelines':
+        return <PipelineSettings />;
       case 'notifications':
         return <NotificationsTab workspaceId={workspaceId} />;
       default:

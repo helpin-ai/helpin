@@ -19,8 +19,9 @@ export function CalendarEvents({ workspaceId, contactId, dealId }: CalendarEvent
   if (events.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-        <Calendar className="mb-2 h-8 w-8" />
-        <p className="text-sm">No calendar events</p>
+        <Calendar className="mb-2 h-8 w-8 opacity-40" />
+        <p className="text-sm">No calendar events linked</p>
+        <p className="mt-1 text-xs text-muted-foreground/70">Calendar integration coming soon</p>
       </div>
     );
   }

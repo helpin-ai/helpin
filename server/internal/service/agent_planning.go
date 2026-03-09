@@ -612,6 +612,11 @@ func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID s
 		}
 	}
 
+	teamID := epic.TeamID
+	if teamID == nil {
+		teamID = strPtr(actorID)
+	}
+
 	doc, err := s.docsDocumentRepo.Create(ctx, &model.DocsDocument{
 		WorkspaceID: workspaceID,
 		SpaceID:     space.ID,
@@ -620,6 +625,7 @@ func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID s
 		Status:      model.DocStatusDraft,
 		Visibility:  model.SpaceVisibilityWorkspaceWide,
 		OwnerID:     strPtr(actorID),
+		TeamID:      teamID,
 		TemplateKey: strPtr(model.DocTypeProductSpec),
 		Tags:        model.DocsStringArray{"product-spec", "epic"},
 		CreatedBy:   actorID,

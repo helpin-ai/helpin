@@ -19,8 +19,9 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
   if (messages.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-        <Mail className="mb-2 h-8 w-8" />
-        <p className="text-sm">No email messages yet</p>
+        <Mail className="mb-2 h-8 w-8 opacity-40" />
+        <p className="text-sm">No emails tracked</p>
+        <p className="mt-1 text-xs text-muted-foreground/70">Connect your email to see conversations here</p>
       </div>
     );
   }

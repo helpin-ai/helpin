@@ -23,11 +23,21 @@ function hasActiveStageRun(runs: AgentRun[], stage: string): boolean {
   return runs.some((run) => getRunStage(run) === stage && ['queued', 'running'].includes(run.status));
 }
 
+function latestStageRun(runs: AgentRun[], stage: string): AgentRun | null {
+  return runs.find((run) => getRunStage(run) === stage) ?? null;
+}
+
 export function computeCurrentStep(epic: Epic, _agents: Agent[], runs: AgentRun[]): PlanningStep {
   if (!epic.orchestrator_agent_id) return 'setup';
 
   if (hasActiveStageRun(runs, 'draft_spec')) return 'draft';
   if (hasActiveStageRun(runs, 'plan_stories')) return 'generate';
+
+  const latestDraftRun = latestStageRun(runs, 'draft_spec');
+  if (latestDraftRun && ['failed', 'cancelled'].includes(latestDraftRun.status)) return 'draft';
+
+  const latestPlanRun = latestStageRun(runs, 'plan_stories');
+  if (latestPlanRun && ['failed', 'cancelled'].includes(latestPlanRun.status)) return 'generate';
 
   if (epic.planning_state === 'awaiting_spec_approval') return 'approve';
   if (!epic.approved_spec_version_id) return 'draft';

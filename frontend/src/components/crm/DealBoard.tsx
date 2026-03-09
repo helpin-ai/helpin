@@ -1,15 +1,18 @@
 import { useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { SquareKanban, Plus } from 'lucide-react';
 import type { CRMDeal, CRMPipeline } from '@/lib/crmTypes';
 
 interface DealBoardProps {
   deals: CRMDeal[];
   pipeline?: CRMPipeline;
   onDealClick: (id: string) => void;
+  onCreateClick?: () => void;
 }
 
-export function DealBoard({ deals, pipeline, onDealClick }: DealBoardProps) {
+export function DealBoard({ deals, pipeline, onDealClick, onCreateClick }: DealBoardProps) {
   const stages = useMemo(() => {
     if (!pipeline?.stages) return [];
     return [...pipeline.stages].sort((a, b) => a.position - b.position);
@@ -31,9 +34,14 @@ export function DealBoard({ deals, pipeline, onDealClick }: DealBoardProps) {
 
   if (!pipeline || stages.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center">
-        <p className="text-muted-foreground">No pipeline configured</p>
-        <p className="mt-1 text-sm text-muted-foreground/70">Create a pipeline in settings to use the board view</p>
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+          <SquareKanban className="h-8 w-8 text-muted-foreground/50" />
+        </div>
+        <h3 className="mt-4 text-base font-medium">No pipeline configured</h3>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+          Create a pipeline in settings to use the board view
+        </p>
       </div>
     );
   }
@@ -58,7 +66,7 @@ export function DealBoard({ deals, pipeline, onDealClick }: DealBoardProps) {
               )}
             </div>
 
-            <div className="flex flex-col gap-2 rounded-lg bg-muted/30 p-2 min-h-[200px]">
+            <div className="flex min-h-[200px] flex-col gap-2 rounded-lg bg-muted/30 p-2">
               {stageDeals.map((deal) => (
                 <Card
                   key={deal.id}
@@ -78,12 +86,28 @@ export function DealBoard({ deals, pipeline, onDealClick }: DealBoardProps) {
                         Close: {new Date(deal.close_date).toLocaleDateString()}
                       </p>
                     )}
+                    {deal.probability != null && (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary/60"
+                            style={{ width: `${deal.probability}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">{deal.probability}%</span>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}
               {stageDeals.length === 0 && (
-                <div className="flex items-center justify-center p-4 text-xs text-muted-foreground">
-                  No deals
+                <div className="flex flex-col items-center justify-center p-4 text-center">
+                  <p className="text-xs text-muted-foreground">No deals in this stage</p>
+                  {onCreateClick && (
+                    <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={onCreateClick}>
+                      <Plus className="mr-1 h-3 w-3" /> Add deal
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

@@ -129,13 +129,34 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 			}
 		}
 
-		// Call Claude API.
+		// Call Claude API with background heartbeat to prevent Temporal timeout.
+		var hbStop chan struct{}
+		if execCtx.Heartbeat != nil {
+			hbStop = make(chan struct{})
+			go func() {
+				ticker := time.NewTicker(15 * time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ticker.C:
+						_ = execCtx.Heartbeat(fmt.Sprintf("llm_call_%d", iteration+1))
+					case <-hbStop:
+						return
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+		}
 		resp, err := e.claude.CreateMessage(ctx, CreateMessageRequest{
 			Model:    derefOrEmpty(execCtx.Agent.Model),
 			System:   systemPrompt,
 			Messages: messages,
 			Tools:    e.tools.DefinitionsFor(execCtx.AllowedTools),
 		})
+		if hbStop != nil {
+			close(hbStop)
+		}
 		if err != nil {
 			return fmt.Errorf("claude API call: %w", err)
 		}

@@ -75,6 +75,94 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"pattern"},
 	}, toolSearchFiles)
 
+	r.register("read_file_range", "Read specific line range from a file. Much more token-efficient than read_file for large files.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "File path relative to the workspace root",
+			},
+			"start_line": map[string]interface{}{
+				"type":        "integer",
+				"description": "First line number to read (1-based)",
+			},
+			"end_line": map[string]interface{}{
+				"type":        "integer",
+				"description": "Last line number to read (1-based, inclusive)",
+			},
+		},
+		"required": []string{"path", "start_line", "end_line"},
+	}, toolReadFileRange)
+
+	r.register("ripgrep", "Fast regex code search using ripgrep. Preferred over search_files for content search.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"pattern": map[string]interface{}{
+				"type":        "string",
+				"description": "Search pattern (regex by default, literal if fixed_strings is true)",
+			},
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional subdirectory to search within (relative to workspace root)",
+			},
+			"file_type": map[string]interface{}{
+				"type":        "string",
+				"description": "Restrict to file type (e.g. 'go', 'ts', 'py', 'js', 'rust', 'java')",
+			},
+			"context_lines": map[string]interface{}{
+				"type":        "integer",
+				"description": "Lines of context around each match (0-5, default 0)",
+			},
+			"max_results": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum result lines to return (default 50, max 200)",
+			},
+			"case_insensitive": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Case-insensitive search (default false)",
+			},
+			"fixed_strings": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Treat pattern as literal string instead of regex (default false)",
+			},
+		},
+		"required": []string{"pattern"},
+	}, toolRipgrep)
+
+	r.register("grep", "Simple text/regex search (Go-native, no external dependencies). Use ripgrep for better performance if available.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"pattern": map[string]interface{}{
+				"type":        "string",
+				"description": "Search pattern (substring or regex)",
+			},
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional subdirectory to search within (relative to workspace root)",
+			},
+			"include": map[string]interface{}{
+				"type":        "string",
+				"description": "Filename glob filter (e.g. '*.go', '*.ts')",
+			},
+			"max_results": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum results to return (default 50)",
+			},
+		},
+		"required": []string{"pattern"},
+	}, toolGrep)
+
+	r.register("list_symbols", "Extract function, type, and class declarations from a source file. Returns only signature lines with line numbers.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "File path relative to the workspace root",
+			},
+		},
+		"required": []string{"path"},
+	}, toolListSymbols)
+
 	// Command tools
 	r.register("run_command", "Run an allowlisted command in the workspace directory. Prefer program + args; shell syntax is not supported.", map[string]interface{}{
 		"type": "object",

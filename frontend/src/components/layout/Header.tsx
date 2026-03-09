@@ -84,6 +84,7 @@ export function Header() {
       pm: "Projects",
       support: "Support",
       docs: "Docs",
+      crm: "CRM",
     };
 
     if (section === "sprints" && subRoute[1]) {
@@ -91,6 +92,13 @@ export function Header() {
       crumbs.push({ label: "Sprint Detail" });
       return crumbs;
     }
+
+    const crmSubMap: Record<string, string> = {
+      contacts: "Contacts",
+      companies: "Companies",
+      deals: "Deals",
+      insights: "Insights",
+    };
 
     const pmSubMap: Record<string, string> = {
       stories: "Work Items",
@@ -124,6 +132,21 @@ export function Header() {
           crumbs.push({ label: `${pmLabel.replace(/s$/, "")} Detail` });
         } else {
           crumbs.push({ label: pmLabel });
+        }
+      }
+      return crumbs;
+    }
+
+    if (section === "crm") {
+      crumbs.push({ label: "CRM", to: `/w/${slug}/crm/contacts` });
+      if (subRoute[1]) {
+        const crmSub = subRoute[1];
+        const crmLabel = crmSubMap[crmSub] ?? crmSub.replace(/-/g, " ");
+        if (subRoute[2]) {
+          crumbs.push({ label: crmLabel, to: `/w/${slug}/crm/${crmSub}` });
+          crumbs.push({ label: `${crmLabel.replace(/s$/, "")} Detail` });
+        } else {
+          crumbs.push({ label: crmLabel });
         }
       }
       return crumbs;

@@ -74,7 +74,8 @@ export function CRMImportWizard({ workspaceId, onComplete }: CRMImportWizardProp
 
   const handleMapChange = (index: number, field: string) => {
     const updated = [...columnMapping];
-    updated[index] = { ...updated[index], crm_field: field, is_custom: !availableFields.includes(field) && field !== '' };
+    const resolvedField = field === '__skip__' ? '' : field;
+    updated[index] = { ...updated[index], crm_field: resolvedField, is_custom: !availableFields.includes(resolvedField) && resolvedField !== '' };
     setColumnMapping(updated);
   };
 
@@ -183,14 +184,14 @@ export function CRMImportWizard({ workspaceId, onComplete }: CRMImportWizardProp
                     </TableCell>
                     <TableCell>
                       <Select
-                        value={columnMapping[idx]?.crm_field ?? ''}
+                        value={columnMapping[idx]?.crm_field || '__skip__'}
                         onValueChange={(v) => handleMapChange(idx, v)}
                       >
                         <SelectTrigger className="w-[200px]">
                           <SelectValue placeholder="Skip this column" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Skip</SelectItem>
+                          <SelectItem value="__skip__">Skip</SelectItem>
                           {availableFields.map((field) => (
                             <SelectItem key={field} value={field}>{field}</SelectItem>
                           ))}

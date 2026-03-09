@@ -446,6 +446,12 @@ export function Sidebar() {
         ],
       },
       {
+        label: 'CRM Settings',
+        items: [
+          { link: `/w/${wsSlug}/settings/crm-pipelines`, label: 'Pipelines', icon: FolderKanban },
+        ],
+      },
+      {
         label: 'Data',
         items: [
           { link: `/w/${wsSlug}/settings/import`, label: 'Import / Export', icon: Import },
@@ -593,7 +599,7 @@ export function Sidebar() {
                         asChild
                         tooltip={item.label}
                         isActive={isActive(item.link)}
-                        className="h-8 rounded-md px-2 text-xs"
+                        className="h-8 rounded-md px-2 text-[13px]"
                       >
                         <a
                           href={item.link}

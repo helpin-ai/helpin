@@ -13,6 +13,8 @@ interface CreateDealDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const currencyOptions = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
+
 export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) {
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
@@ -38,6 +40,14 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
     }
   }
 
+  const resetForm = () => {
+    setName('');
+    setAmount('');
+    setCurrency('USD');
+    setCloseDate('');
+    setProbability('');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !pipelineId || !stageId) return;
@@ -49,18 +59,14 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
         pipeline_id: pipelineId,
         stage_id: stageId,
         amount: amount ? parseFloat(amount) : undefined,
-        currency: currency,
-        close_date: closeDate || undefined,
+        currency,
+        close_date: closeDate ? `${closeDate}T00:00:00Z` : undefined,
         probability: probability ? parseInt(probability) : undefined,
       });
       toast.success('Deal created');
       onOpenChange(false);
-      setName('');
-      setAmount('');
-      setCurrency('USD');
-      setCloseDate('');
-      setProbability('');
-    } catch (err) {
+      resetForm();
+    } catch {
       toast.error('Failed to create deal');
     }
   };
@@ -102,7 +108,7 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
               </Select>
             </div>
           )}
-          <div className="grid grid-cols-[1fr_100px] gap-4">
+          <div className="grid grid-cols-[1fr_100px] gap-2">
             <div className="space-y-2">
               <Label htmlFor="dealAmount">Amount</Label>
               <Input id="dealAmount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
@@ -112,11 +118,9 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
               <Select value={currency} onValueChange={setCurrency}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="EUR">EUR</SelectItem>
-                  <SelectItem value="GBP">GBP</SelectItem>
-                  <SelectItem value="CAD">CAD</SelectItem>
-                  <SelectItem value="AUD">AUD</SelectItem>
+                  {currencyOptions.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -127,7 +131,7 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
               <Input id="closeDate" type="date" value={closeDate} onChange={(e) => setCloseDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="probability">Probability (%)</Label>
+              <Label htmlFor="probability">Probability %</Label>
               <Input id="probability" type="number" min="0" max="100" value={probability} onChange={(e) => setProbability(e.target.value)} placeholder="0" />
             </div>
           </div>

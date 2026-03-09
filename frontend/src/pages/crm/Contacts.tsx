@@ -23,7 +23,7 @@ export function ContactsPage() {
   return (
     <div className="flex h-full flex-col px-4 md:px-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Contacts</h1>
+        <h1 className="text-xl font-medium">Contacts</h1>
         <Button size="sm" onClick={() => setShowCreate(true)}>
           <Plus className="mr-1 h-4 w-4" />
           Contact
@@ -48,6 +48,7 @@ export function ContactsPage() {
           total={data?.total ?? 0}
           isLoading={isLoading}
           onRowClick={(id) => navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug: wsSlug, contactId: id } })}
+          onCreateClick={() => setShowCreate(true)}
         />
       </div>
 

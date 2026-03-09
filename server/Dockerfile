@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/temp
 # ---- Run stage ----
 FROM alpine:3.19
 
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata ripgrep \
     && addgroup -S app -g 10001 \
     && adduser -S app -u 10001 -G app
 

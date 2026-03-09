@@ -1103,6 +1103,11 @@ func (a *AgentRunActivities) ensureEpicSpecDocument(ctx context.Context, state *
 		}
 	}
 
+	teamID := state.epic.TeamID
+	if teamID == nil {
+		teamID = strPtr(actorID)
+	}
+
 	doc, err := a.docsDocRepo.Create(ctx, &model.DocsDocument{
 		WorkspaceID: state.run.WorkspaceID,
 		SpaceID:     space.ID,
@@ -1111,6 +1116,7 @@ func (a *AgentRunActivities) ensureEpicSpecDocument(ctx context.Context, state *
 		Status:      model.DocStatusDraft,
 		Visibility:  model.SpaceVisibilityWorkspaceWide,
 		OwnerID:     strPtr(actorID),
+		TeamID:      teamID,
 		TemplateKey: strPtr(model.DocTypeProductSpec),
 		Tags:        model.DocsStringArray{"product-spec", "epic"},
 		CreatedBy:   actorID,

@@ -30,7 +30,7 @@ export function DealsPage() {
   return (
     <div className="flex h-full flex-col px-4 md:px-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Deals</h1>
+        <h1 className="text-xl font-medium">Deals</h1>
         <div className="flex items-center gap-2">
           <div className="flex rounded-md border">
             <Button
@@ -76,12 +76,14 @@ export function DealsPage() {
             total={data?.total ?? 0}
             isLoading={isLoading}
             onRowClick={(id) => navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug: wsSlug, dealId: id } })}
+            onCreateClick={() => setShowCreate(true)}
           />
         ) : (
           <DealBoard
             deals={data?.data ?? []}
             pipeline={pipelines?.find((p) => p.id === activePipelineId)}
             onDealClick={(id) => navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug: wsSlug, dealId: id } })}
+            onCreateClick={() => setShowCreate(true)}
           />
         )}
       </div>

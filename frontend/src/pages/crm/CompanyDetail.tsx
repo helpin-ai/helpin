@@ -4,38 +4,24 @@ import { toast } from 'sonner';
 import {
   ArrowLeft,
   Building2,
-  Check,
+  ChevronRight,
   DollarSign,
   Globe,
-  MoreHorizontal,
+  Loader2,
   Trash2,
-  User,
   Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { Separator } from '@/components/ui/separator';
+import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import {
-  useCompany,
-  useCompanyActivities,
-  useCompanyAssociations,
-  useUpdateCompany,
-  useDeleteCompany,
-} from '@/hooks/queries';
+import { useCompany, useUpdateCompany, useDeleteCompany, useCompanyActivities, useCompanyAssociations } from '@/hooks/queries';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
+import { AssociationsList } from '@/components/crm/AssociationsList';
 import { useTitle } from '@/hooks/useTitle';
 import type { UpdateCRMCompanyRequest } from '@/lib/crmTypes';
-
-// ── Types ──
 
 interface FormState {
   name: string;
@@ -44,22 +30,17 @@ interface FormState {
   employee_count: string;
   annual_revenue: string;
   description: string;
-  owner_member_id: string;
 }
-
-// ── Helpers ──
 
 function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
   return (
     <>
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-xs text-muted-foreground self-center">{label}</span>
+      <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
+      <span className="self-center text-xs text-muted-foreground">{label}</span>
       <div className="min-w-0 self-center">{children}</div>
     </>
   );
 }
-
-// ── Main Page ──
 
 export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const { currentWorkspace } = useWorkspaceStore();
@@ -68,10 +49,10 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const navigate = useNavigate();
 
   const { data: company, isLoading } = useCompany(wsId, companyId);
-  const { data: activitiesData } = useCompanyActivities(wsId, companyId);
-  const { data: associations } = useCompanyAssociations(wsId, companyId);
-  const updateMutation = useUpdateCompany(wsId);
-  const deleteMutation = useDeleteCompany(wsId);
+  const { data: activitiesData, refetch: refetchActivities } = useCompanyActivities(wsId, companyId);
+  const { data: associations, refetch: refetchAssociations } = useCompanyAssociations(wsId, companyId);
+  const updateCompany = useUpdateCompany(wsId);
+  const deleteCompany = useDeleteCompany(wsId);
 
   const [form, setForm] = useState<FormState | null>(null);
   const [pendingPatch, setPendingPatch] = useState<UpdateCRMCompanyRequest>({});
@@ -79,9 +60,8 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  useTitle(company?.name ?? 'Company');
+  useTitle(form?.name ?? 'Company');
 
-  // Initialize form from company data
   useEffect(() => {
     if (company && !form) {
       setForm({
@@ -91,12 +71,10 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
         employee_count: company.employee_count != null ? String(company.employee_count) : '',
         annual_revenue: company.annual_revenue != null ? String(company.annual_revenue) : '',
         description: company.description ?? '',
-        owner_member_id: company.owner_member_id ?? '',
       });
     }
   }, [company, form]);
 
-  // Auto-save debounce
   useEffect(() => {
     if (saving || Object.keys(pendingPatch).length === 0 || !wsId || !companyId) return;
     const timer = window.setTimeout(async () => {
@@ -104,7 +82,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
       setPendingPatch({});
       setSaving(true);
       try {
-        await updateMutation.mutateAsync({ id: companyId, ...patch });
+        await updateCompany.mutateAsync({ id: companyId, ...patch });
         setSaveError(null);
       } catch {
         setSaveError('Failed to save');
@@ -115,9 +93,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
     return () => window.clearTimeout(timer);
   }, [wsId, companyId, pendingPatch, saving]);
 
-  const queuePatch = (patch: UpdateCRMCompanyRequest) => {
-    setPendingPatch((current) => ({ ...current, ...patch }));
-  };
+  const queuePatch = (patch: UpdateCRMCompanyRequest) => setPendingPatch((current) => ({ ...current, ...patch }));
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateCRMCompanyRequest) => {
     setForm((current) => (current ? { ...current, [key]: value } : current));
@@ -126,7 +102,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
 
   const handleDelete = async () => {
     try {
-      await deleteMutation.mutateAsync(companyId);
+      await deleteCompany.mutateAsync(companyId);
       toast.success('Company deleted');
       navigate({ to: '/w/$slug/crm/companies', params: { slug: wsSlug } });
     } catch {
@@ -138,201 +114,126 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-5xl px-4 md:px-6">
-        <Skeleton className="mb-4 h-8 w-48" />
-        <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
-          <div className="space-y-4">
-            <Skeleton className="h-10 w-3/4" />
-            <Skeleton className="h-32 w-full" />
-          </div>
-          <div className="space-y-3">
-            <Skeleton className="h-48 w-full" />
-          </div>
-        </div>
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (!company || !form) {
-    return <div className="flex items-center justify-center p-8 text-muted-foreground">Company not found</div>;
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3">
+        <p className="text-sm text-muted-foreground">Company not found</p>
+        <Button variant="outline" size="sm" onClick={goBack}>
+          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          Back to Companies
+        </Button>
+      </div>
+    );
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 md:px-6">
-      {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={goBack}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <p className="text-xs text-muted-foreground">{company.display_id}</p>
-            <input
-              className="text-2xl font-bold bg-transparent border-none outline-none focus:outline-none w-full"
-              value={form.name}
-              onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-              placeholder="Company name"
-            />
-          </div>
+    <div className="flex h-full flex-col">
+      {/* Header bar */}
+      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+
+        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+          <Building2 className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+          <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
+            Companies
+          </button>
+          <ChevronRight className="h-3 w-3 shrink-0" />
+          <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() => setDeleteConfirmOpen(true)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete company
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 hover:text-destructive" onClick={() => setDeleteConfirmOpen(true)}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
       {/* Two-column layout */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
-        {/* Main content */}
-        <div className="space-y-6">
-          {form.description !== undefined && (
-            <div className="rounded-lg border p-4">
-              <h3 className="mb-2 text-sm font-medium">Description</h3>
-              <textarea
-                className="w-full bg-transparent text-sm outline-none border-none focus:outline-none resize-none min-h-[60px]"
-                value={form.description}
-                onChange={(e) => updateField('description', e.target.value, { description: e.target.value })}
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]">
+        {/* Left column */}
+        <div className="min-h-0 overflow-y-auto px-8 py-6">
+          {/* Name */}
+          <input
+            className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+            value={form.name}
+            onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
+            placeholder="Company name"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">{company.display_id}</p>
+
+          <Separator className="my-6" />
+
+          {/* Description */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</h3>
+            <div className="mt-3">
+              <TiptapEditor
+                content={form.description}
+                onChange={(html) => updateField('description', html, { description: html })}
                 placeholder="Add a description..."
+                className="border-transparent shadow-none"
               />
-            </div>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Activity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ActivityTimeline activities={activitiesData?.data ?? []} />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-4">
-          {/* Details */}
-          <div className="rounded-lg border p-4">
-            <h3 className="mb-3 text-sm font-medium">Details</h3>
-            <div className="grid grid-cols-[16px_72px_1fr] gap-x-3 gap-y-2.5">
-              <MetadataRow icon={Globe} label="Domain">
-                <input
-                  className="w-full bg-transparent text-xs outline-none border-none focus:outline-none py-0.5"
-                  value={form.domain}
-                  onChange={(e) => updateField('domain', e.target.value, { domain: e.target.value })}
-                  placeholder="--"
-                />
-              </MetadataRow>
-
-              <MetadataRow icon={Building2} label="Industry">
-                <input
-                  className="w-full bg-transparent text-xs outline-none border-none focus:outline-none py-0.5"
-                  value={form.industry}
-                  onChange={(e) => updateField('industry', e.target.value, { industry: e.target.value })}
-                  placeholder="--"
-                />
-              </MetadataRow>
-
-              <MetadataRow icon={Users} label="Employees">
-                <input
-                  type="number"
-                  className="w-full bg-transparent text-xs outline-none border-none focus:outline-none py-0.5"
-                  value={form.employee_count}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setForm((current) => (current ? { ...current, employee_count: val } : current));
-                    queuePatch({ employee_count: val ? Number(val) : undefined });
-                  }}
-                  placeholder="--"
-                />
-              </MetadataRow>
-
-              <MetadataRow icon={DollarSign} label="Revenue">
-                <input
-                  type="number"
-                  className="w-full bg-transparent text-xs outline-none border-none focus:outline-none py-0.5"
-                  value={form.annual_revenue}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setForm((current) => (current ? { ...current, annual_revenue: val } : current));
-                    queuePatch({ annual_revenue: val ? Number(val) : undefined });
-                  }}
-                  placeholder="--"
-                />
-              </MetadataRow>
-
-              <MetadataRow icon={User} label="Owner">
-                <input
-                  className="w-full bg-transparent text-xs outline-none border-none focus:outline-none py-0.5"
-                  value={form.owner_member_id}
-                  onChange={(e) => updateField('owner_member_id', e.target.value, { owner_member_id: e.target.value })}
-                  placeholder="--"
-                />
-              </MetadataRow>
             </div>
           </div>
 
-          {/* Associations */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Associations</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {(!associations || associations.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No associations yet</p>
-              ) : (
-                <ul className="space-y-2">
-                  {associations.map((assoc) => {
-                    const targetType = assoc.from_object_type === 'company' ? assoc.to_object_type : assoc.from_object_type;
-                    const targetId = assoc.from_object_type === 'company' ? assoc.to_object_id : assoc.from_object_id;
-                    return (
-                      <li key={assoc.id}>
-                        <button
-                          type="button"
-                          className="text-sm hover:underline cursor-pointer text-left"
-                          onClick={() => {
-                            if (targetType === 'contact') {
-                              navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug: wsSlug, contactId: targetId } });
-                            } else if (targetType === 'deal') {
-                              navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug: wsSlug, dealId: targetId } });
-                            }
-                          }}
-                        >
-                          <span className="capitalize">{targetType}</span>
-                          {assoc.association_label && <span className="text-muted-foreground"> ({assoc.association_label})</span>}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          <Separator className="my-6" />
+
+          {/* Activity */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Activity</h3>
+            <div className="mt-3">
+              <ActivityTimeline
+                activities={activitiesData?.data ?? []}
+                workspaceId={wsId}
+                companyId={companyId}
+                onActivityCreated={() => refetchActivities()}
+                onActivityDeleted={() => refetchActivities()}
+              />
+            </div>
+          </div>
         </div>
+
+        {/* Right sidebar */}
+        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
+          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
+
+          <div className="grid grid-cols-[16px_80px_1fr] gap-x-2 gap-y-3">
+            <MetadataRow icon={Globe} label="Domain">
+              <input className="w-full bg-transparent text-xs outline-none" value={form.domain}
+                onChange={(e) => updateField('domain', e.target.value, { domain: e.target.value })} placeholder="—" />
+            </MetadataRow>
+            <MetadataRow icon={Building2} label="Industry">
+              <input className="w-full bg-transparent text-xs outline-none" value={form.industry}
+                onChange={(e) => updateField('industry', e.target.value, { industry: e.target.value })} placeholder="—" />
+            </MetadataRow>
+            <MetadataRow icon={Users} label="Employees">
+              <input className="w-full bg-transparent text-xs outline-none" type="number" value={form.employee_count}
+                onChange={(e) => updateField('employee_count', e.target.value, { employee_count: e.target.value ? parseInt(e.target.value) : undefined })} placeholder="—" />
+            </MetadataRow>
+            <MetadataRow icon={DollarSign} label="Revenue">
+              <input className="w-full bg-transparent text-xs outline-none" type="number" value={form.annual_revenue}
+                onChange={(e) => updateField('annual_revenue', e.target.value, { annual_revenue: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder="—" />
+            </MetadataRow>
+          </div>
+
+          <Separator className="my-4" />
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Associations</h3>
+          <AssociationsList workspaceId={wsId} slug={wsSlug} associations={associations ?? []}
+            currentObjectType="company" currentObjectId={companyId} onAssociationRemoved={() => refetchAssociations()} />
+        </aside>
       </div>
 
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
-        title="Delete company"
-        description="Are you sure? This action cannot be undone."
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={handleDelete}
-      />
+      <ConfirmDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen} title="Delete company"
+        description="Are you sure? This action cannot be undone." confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} />
     </div>
   );
 }

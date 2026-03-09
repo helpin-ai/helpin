@@ -27,11 +27,11 @@ interface ListManagerProps {
 export function ListManager({ workspaceId }: ListManagerProps) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedList, setSelectedList] = useState<CRMList | null>(null);
-  const [objectTypeFilter, setObjectTypeFilter] = useState<string>('');
+  const [objectTypeFilter, setObjectTypeFilter] = useState<string>('all');
   const [searchFilter, setSearchFilter] = useState('');
 
   const { data: listsData } = useCRMLists(workspaceId, {
-    object_type: objectTypeFilter || undefined,
+    object_type: objectTypeFilter === 'all' ? undefined : objectTypeFilter || undefined,
     search: searchFilter || undefined,
   });
 
@@ -53,7 +53,7 @@ export function ListManager({ workspaceId }: ListManagerProps) {
               <SelectValue placeholder="All types" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All types</SelectItem>
+              <SelectItem value="all">All types</SelectItem>
               <SelectItem value="contact">Contacts</SelectItem>
               <SelectItem value="company">Companies</SelectItem>
               <SelectItem value="deal">Deals</SelectItem>

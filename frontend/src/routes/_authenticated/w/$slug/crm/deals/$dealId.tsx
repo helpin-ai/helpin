@@ -8,7 +8,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/crm/deals/$dealId'
 function DealDetailRoute() {
   const { dealId } = Route.useParams();
   return (
-    <div className="h-full overflow-auto pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <DealDetailPage dealId={dealId} />
     </div>
   );

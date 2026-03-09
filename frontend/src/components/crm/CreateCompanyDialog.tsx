@@ -4,8 +4,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCreateCompany } from '@/hooks/queries';
 
@@ -14,7 +14,7 @@ interface CreateCompanyDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const INDUSTRIES = [
+const industryOptions = [
   'Technology',
   'Healthcare',
   'Finance',
@@ -39,6 +39,15 @@ export function CreateCompanyDialog({ open, onOpenChange }: CreateCompanyDialogP
   const [annualRevenue, setAnnualRevenue] = useState('');
   const [description, setDescription] = useState('');
 
+  const resetForm = () => {
+    setName('');
+    setDomain('');
+    setIndustry('');
+    setEmployeeCount('');
+    setAnnualRevenue('');
+    setDescription('');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -55,13 +64,8 @@ export function CreateCompanyDialog({ open, onOpenChange }: CreateCompanyDialogP
       });
       toast.success('Company created');
       onOpenChange(false);
-      setName('');
-      setDomain('');
-      setIndustry('');
-      setEmployeeCount('');
-      setAnnualRevenue('');
-      setDescription('');
-    } catch (err) {
+      resetForm();
+    } catch {
       toast.error('Failed to create company');
     }
   };
@@ -86,7 +90,7 @@ export function CreateCompanyDialog({ open, onOpenChange }: CreateCompanyDialogP
             <Select value={industry} onValueChange={setIndustry}>
               <SelectTrigger><SelectValue placeholder="Select industry" /></SelectTrigger>
               <SelectContent>
-                {INDUSTRIES.map((ind) => (
+                {industryOptions.map((ind) => (
                   <SelectItem key={ind} value={ind}>{ind}</SelectItem>
                 ))}
               </SelectContent>
@@ -94,8 +98,8 @@ export function CreateCompanyDialog({ open, onOpenChange }: CreateCompanyDialogP
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="employeeCount">Employee Count</Label>
-              <Input id="employeeCount" type="number" min="0" value={employeeCount} onChange={(e) => setEmployeeCount(e.target.value)} />
+              <Label htmlFor="employeeCount">Employees</Label>
+              <Input id="employeeCount" type="number" min="0" placeholder="0" value={employeeCount} onChange={(e) => setEmployeeCount(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="annualRevenue">Annual Revenue</Label>
@@ -104,7 +108,7 @@ export function CreateCompanyDialog({ open, onOpenChange }: CreateCompanyDialogP
           </div>
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
-            <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+            <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Brief description of the company..." />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

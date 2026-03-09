@@ -14,6 +14,25 @@ interface CreateContactDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const lifecycleOptions: { value: LifecycleStage; label: string }[] = [
+  { value: 'subscriber', label: 'Subscriber' },
+  { value: 'lead', label: 'Lead' },
+  { value: 'marketing_qualified', label: 'Marketing Qualified' },
+  { value: 'sales_qualified', label: 'Sales Qualified' },
+  { value: 'opportunity', label: 'Opportunity' },
+  { value: 'customer', label: 'Customer' },
+  { value: 'evangelist', label: 'Evangelist' },
+];
+
+const leadStatusOptions: { value: LeadStatus; label: string }[] = [
+  { value: 'new', label: 'New' },
+  { value: 'open', label: 'Open' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'unqualified', label: 'Unqualified' },
+];
+
+const sourceOptions = ['web', 'referral', 'social', 'event', 'cold_outreach', 'other'];
+
 export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogProps) {
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
@@ -27,6 +46,17 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
   const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>('subscriber');
   const [leadStatus, setLeadStatus] = useState<LeadStatus>('new');
   const [source, setSource] = useState('');
+
+  const resetForm = () => {
+    setFirstName('');
+    setLastName('');
+    setEmail('');
+    setPhone('');
+    setJobTitle('');
+    setLifecycleStage('subscriber');
+    setLeadStatus('new');
+    setSource('');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,15 +76,8 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
       });
       toast.success('Contact created');
       onOpenChange(false);
-      setFirstName('');
-      setLastName('');
-      setEmail('');
-      setPhone('');
-      setJobTitle('');
-      setLifecycleStage('subscriber');
-      setLeadStatus('new');
-      setSource('');
-    } catch (err) {
+      resetForm();
+    } catch {
       toast.error('Failed to create contact');
     }
   };
@@ -80,13 +103,15 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
             <Label htmlFor="email">Email</Label>
             <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="phone">Phone</Label>
-            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="jobTitle">Job Title</Label>
-            <Input id="jobTitle" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone</Label>
+              <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="jobTitle">Job Title</Label>
+              <Input id="jobTitle" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -94,13 +119,9 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
               <Select value={lifecycleStage} onValueChange={(v) => setLifecycleStage(v as LifecycleStage)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="subscriber">Subscriber</SelectItem>
-                  <SelectItem value="lead">Lead</SelectItem>
-                  <SelectItem value="marketing_qualified">Marketing Qualified</SelectItem>
-                  <SelectItem value="sales_qualified">Sales Qualified</SelectItem>
-                  <SelectItem value="opportunity">Opportunity</SelectItem>
-                  <SelectItem value="customer">Customer</SelectItem>
-                  <SelectItem value="evangelist">Evangelist</SelectItem>
+                  {lifecycleOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -109,10 +130,9 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
               <Select value={leadStatus} onValueChange={(v) => setLeadStatus(v as LeadStatus)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="unqualified">Unqualified</SelectItem>
+                  {leadStatusOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -122,12 +142,9 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
             <Select value={source} onValueChange={setSource}>
               <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="web">Web</SelectItem>
-                <SelectItem value="referral">Referral</SelectItem>
-                <SelectItem value="social">Social</SelectItem>
-                <SelectItem value="event">Event</SelectItem>
-                <SelectItem value="cold_outreach">Cold Outreach</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
+                {sourceOptions.map((s) => (
+                  <SelectItem key={s} value={s}>{s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
