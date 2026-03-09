@@ -1,0 +1,97 @@
+package repository
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"gorm.io/gorm"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+)
+
+// CRMContactRepository handles DB operations for CRM contacts.
+type CRMContactRepository struct {
+	db *gorm.DB
+}
+
+// NewCRMContactRepository creates a new CRMContactRepository.
+func NewCRMContactRepository(db *gorm.DB) *CRMContactRepository {
+	return &CRMContactRepository{db: db}
+}
+
+// GetNextDisplayID generates the next sequential display ID for contacts in a workspace.
+func (r *CRMContactRepository) GetNextDisplayID(ctx context.Context, workspaceID string) (string, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.CRMContact{}).Where("workspace_id = ?", workspaceID).Count(&count).Error; err != nil {
+		return "", fmt.Errorf("count contacts: %w", err)
+	}
+	return fmt.Sprintf("CON-%d", count+1), nil
+}
+
+// List returns contacts in a workspace with optional filters.
+func (r *CRMContactRepository) List(ctx context.Context, workspaceID string, filters model.CRMContactListFilters, pagination model.PMPagination) ([]model.CRMContact, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.CRMContact{}).Where("workspace_id = ?", workspaceID)
+
+	if filters.LifecycleStage != nil && *filters.LifecycleStage != "" {
+		query = query.Where("lifecycle_stage = ?", *filters.LifecycleStage)
+	}
+	if filters.LeadStatus != nil && *filters.LeadStatus != "" {
+		query = query.Where("lead_status = ?", *filters.LeadStatus)
+	}
+	if filters.OwnerMemberID != nil && *filters.OwnerMemberID != "" {
+		query = query.Where("owner_member_id = ?", *filters.OwnerMemberID)
+	}
+	if filters.Search != nil && *filters.Search != "" {
+		search := "%" + *filters.Search + "%"
+		query = query.Where("(first_name ILIKE ? OR last_name ILIKE ? OR email ILIKE ?)", search, search, search)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count contacts: %w", err)
+	}
+
+	var contacts []model.CRMContact
+	offset := (pagination.Page - 1) * pagination.PerPage
+	if err := query.Order("created_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&contacts).Error; err != nil {
+		return nil, 0, fmt.Errorf("list contacts: %w", err)
+	}
+	return contacts, total, nil
+}
+
+// GetByID returns a contact by ID.
+func (r *CRMContactRepository) GetByID(ctx context.Context, id string) (*model.CRMContact, error) {
+	var contact model.CRMContact
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&contact).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get contact: %w", err)
+	}
+	return &contact, nil
+}
+
+// Create inserts a contact.
+func (r *CRMContactRepository) Create(ctx context.Context, contact *model.CRMContact) error {
+	if err := r.db.WithContext(ctx).Create(contact).Error; err != nil {
+		return fmt.Errorf("create contact: %w", err)
+	}
+	return nil
+}
+
+// Update updates a contact.
+func (r *CRMContactRepository) Update(ctx context.Context, contact *model.CRMContact) error {
+	if err := r.db.WithContext(ctx).Save(contact).Error; err != nil {
+		return fmt.Errorf("update contact: %w", err)
+	}
+	return nil
+}
+
+// Delete removes a contact.
+func (r *CRMContactRepository) Delete(ctx context.Context, id string) error {
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.CRMContact{}).Error; err != nil {
+		return fmt.Errorf("delete contact: %w", err)
+	}
+	return nil
+}

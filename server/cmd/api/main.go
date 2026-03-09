@@ -173,6 +173,33 @@ func main() {
 		&model.NotificationDelivery{},
 		&model.NotificationPreference{},
 		&model.EntityFollower{},
+		// CRM module
+		&model.CRMContact{},
+		&model.CRMCompany{},
+		&model.CRMPipeline{},
+		&model.CRMPipelineStage{},
+		&model.CRMDeal{},
+		&model.CRMAssociation{},
+		&model.CRMActivity{},
+		&model.CRMPropertyDefinition{},
+		&model.CRMPropertyGroup{},
+		&model.CRMList{},
+		&model.CRMListMember{},
+		&model.CRMImportJob{},
+		// CRM Phase 3: Email & Calendar
+		&model.CRMEmailAccount{},
+		&model.CRMEmailThread{},
+		&model.CRMEmailMessage{},
+		&model.CRMCalendarEvent{},
+		// CRM Phase 4: Intelligence
+		&model.CRMEnrichmentResult{},
+		&model.CRMBuyerSignal{},
+		&model.CRMDealHealthScore{},
+		&model.CRMSuggestion{},
+		// CRM Phase 5: Sequences & Writing
+		&model.CRMSequence{},
+		&model.CRMSequenceEnrollment{},
+		&model.CRMWritingProfile{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -263,6 +290,21 @@ func main() {
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
+	crmContactRepo := repository.NewCRMContactRepository(db)
+	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
+	crmDealRepo := repository.NewCRMDealRepository(db)
+	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
+	crmActivityRepo := repository.NewCRMActivityRepository(db)
+	crmPropertyRepo := repository.NewCRMPropertyRepository(db)
+	crmListRepo := repository.NewCRMListRepository(db)
+	crmImportRepo := repository.NewCRMImportRepository(db)
+	crmEmailRepo := repository.NewCRMEmailRepository(db)
+	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
+	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
+	crmSignalRepo := repository.NewCRMSignalRepository(db)
+	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
+	crmSequenceRepo := repository.NewCRMSequenceRepository(db)
+	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -348,6 +390,23 @@ func main() {
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 
+	crmContactService := service.NewCRMContactService(crmContactRepo)
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
+	crmDealService := service.NewCRMDealService(crmDealRepo)
+	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
+	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	crmPropertyService := service.NewCRMPropertyService(crmPropertyRepo)
+	crmListService := service.NewCRMListService(crmListRepo)
+	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo)
+	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo)
+	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
+	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
+	crmSignalService := service.NewCRMSignalService(crmSignalRepo)
+	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo)
+	crmSequenceService := service.NewCRMSequenceService(crmSequenceRepo)
+	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
+	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
+
 	orgService := service.NewOrganizationService(orgRepo)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, pmWorkflowService)
 	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
@@ -403,6 +462,22 @@ func main() {
 		Git:             handler.NewGitHandler(gitService),
 		Orchestration:   handler.NewOrchestrationHandler(orchestrationService),
 		Notification: handler.NewNotificationHandler(notificationService, followerService),
+		CRMContact:     handler.NewCRMContactHandler(crmContactService),
+		CRMCompany:     handler.NewCRMCompanyHandler(crmCompanyService),
+		CRMDeal:        handler.NewCRMDealHandler(crmDealService),
+		CRMAssociation: handler.NewCRMAssociationHandler(crmAssociationService),
+		CRMActivity:    handler.NewCRMActivityHandler(crmActivityService),
+		CRMProperty:    handler.NewCRMPropertyHandler(crmPropertyService),
+		CRMList:        handler.NewCRMListHandler(crmListService),
+		CRMImport:      handler.NewCRMImportHandler(crmImportService),
+		CRMEmail:       handler.NewCRMEmailHandler(crmEmailService),
+		CRMCalendar:    handler.NewCRMCalendarHandler(crmCalendarService),
+		CRMEnrichment:  handler.NewCRMEnrichmentHandler(crmEnrichmentService),
+		CRMSignal:      handler.NewCRMSignalHandler(crmSignalService),
+		CRMSuggestion:  handler.NewCRMSuggestionHandler(crmSuggestionService),
+		CRMSequence:    handler.NewCRMSequenceHandler(crmSequenceService),
+		CRMWritingProfile: handler.NewCRMWritingProfileHandler(crmWritingProfileService),
+		CRMSearch:      handler.NewCRMSearchHandler(crmSearchService),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,

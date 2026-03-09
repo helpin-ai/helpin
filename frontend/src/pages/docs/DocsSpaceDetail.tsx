@@ -19,13 +19,14 @@ import {
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useGlobalCreateStore } from '@/stores/globalCreateStore'
 import {
   useDocsSpace,
   useDocsCollections,
   useDocsDocuments,
-  useCreateDocsCollection,
   useUpdateDocsCollection,
   useDeleteDocsCollection,
+  useUpdateDocsSpace,
   useDeleteDocsSpace,
   useWorkspaceAccess,
   usePermissions,
@@ -36,8 +37,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DocsDocument, DocType, DocStatus } from '@/lib/docsTypes'
 import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
@@ -60,6 +63,8 @@ export function DocsSpaceDetail() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
+
+  const openCreate = useGlobalCreateStore((s) => s.openCreate)
 
   const { data: access } = useWorkspaceAccess(wsId)
   const { canEditDocs } = usePermissions(access)
@@ -102,19 +107,35 @@ export function DocsSpaceDetail() {
     setActiveCollection(collectionParam)
   }, [collectionParam])
 
-  // Inline collection creation
-  const [addingCollection, setAddingCollection] = useState(false)
-  const [newCollName, setNewCollName] = useState('')
-  const newCollRef = useRef<HTMLInputElement>(null)
-  const createCollection = useCreateDocsCollection(wsId, spaceId)
-
   // Inline collection rename
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameRef = useRef<HTMLInputElement>(null)
   const updateCollection = useUpdateDocsCollection(wsId)
   const deleteCollection = useDeleteDocsCollection(wsId)
+  const updateSpace = useUpdateDocsSpace(wsId)
   const deleteSpace = useDeleteDocsSpace(wsId)
+
+  // Inline space rename
+  const [renamingSpace, setRenamingSpace] = useState(false)
+  const [spaceNameValue, setSpaceNameValue] = useState('')
+
+  const startRenameSpace = () => {
+    setRenamingSpace(true)
+    setSpaceNameValue(space?.name ?? '')
+  }
+
+  const commitRenameSpace = async () => {
+    setRenamingSpace(false)
+    const name = spaceNameValue.trim()
+    if (!name || !space || name === space.name) return
+    try {
+      await updateSpace.mutateAsync({ id: spaceId, name })
+      toast.success('Space renamed')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to rename space')
+    }
+  }
 
   // Typed confirm dialog state
   const [confirmDelete, setConfirmDelete] = useState<{
@@ -122,24 +143,6 @@ export function DocsSpaceDetail() {
     id: string
     name: string
   } | null>(null)
-
-  const startAddCollection = () => {
-    setAddingCollection(true)
-    setNewCollName('')
-    requestAnimationFrame(() => newCollRef.current?.focus())
-  }
-
-  const commitAddCollection = async () => {
-    const name = newCollName.trim()
-    setAddingCollection(false)
-    if (!name) return
-    try {
-      await createCollection.mutateAsync({ name })
-      toast.success(`Collection "${name}" created`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create collection')
-    }
-  }
 
   const startRename = (id: string, currentName: string) => {
     setRenamingId(id)
@@ -215,12 +218,43 @@ export function DocsSpaceDetail() {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xl">{space.icon ?? '📁'}</span>
-              <h2 className="text-xl font-semibold">{space.name}</h2>
+              {renamingSpace ? (
+                <input
+                  key="space-rename-input"
+                  autoFocus
+                  value={spaceNameValue}
+                  onChange={(e) => setSpaceNameValue(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  onBlur={commitRenameSpace}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRenameSpace()
+                    if (e.key === 'Escape') setRenamingSpace(false)
+                  }}
+                  className="text-xl font-semibold bg-transparent border-b border-primary/40 outline-none px-0 py-0 min-w-0"
+                />
+              ) : (
+                <h2
+                  className="text-xl font-semibold cursor-text hover:text-foreground/80 transition-colors"
+                  onClick={() => canEditDocs && startRenameSpace()}
+                >
+                  {space.name}
+                </h2>
+              )}
               {space.type === 'external_capable' && (
-                <Globe className="h-4 w-4 text-blue-500" title="External capable" />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Globe className="h-4 w-4 text-blue-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>External capable</TooltipContent>
+                </Tooltip>
               )}
               {space.restrict_to_owners && (
-                <Lock className="h-4 w-4 text-amber-500" title="Restricted" />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Lock className="h-4 w-4 text-amber-500" />
+                  </TooltipTrigger>
+                  <TooltipContent>Restricted</TooltipContent>
+                </Tooltip>
               )}
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
@@ -236,7 +270,37 @@ export function DocsSpaceDetail() {
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuContent align="end" className="w-44">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <DropdownMenuItem
+                      disabled={!(collections ?? []).length}
+                      onClick={() => openCreate('docs_document', {
+                        spaceId,
+                        collectionId: activeCollection && activeCollection !== '__uncollected__' ? activeCollection : undefined,
+                      })}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      New document
+                    </DropdownMenuItem>
+                  </div>
+                </TooltipTrigger>
+                {!(collections ?? []).length && (
+                  <TooltipContent side="left">
+                    Create a collection first
+                  </TooltipContent>
+                )}
+              </Tooltip>
+              <DropdownMenuItem onClick={() => openCreate('docs_collection', { spaceId })}>
+                <Plus className="h-3.5 w-3.5" />
+                New collection
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setTimeout(startRenameSpace, 100)}>
+                <Pencil className="h-3.5 w-3.5" />
+                Rename space
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setConfirmDelete({ type: 'space', id: spaceId, name: space.name })}
                 className="text-destructive focus:text-destructive"
@@ -249,13 +313,14 @@ export function DocsSpaceDetail() {
         )}
       </header>
 
-      {/* Collection tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1">
+      {/* Collection tabs — hidden scrollbar */}
+      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
-          onClick={() => { setActiveCollection(null);  }}
+          onClick={() => setActiveCollection(null)}
           className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-            !activeCollection              ? 'bg-foreground text-background'
+            !activeCollection
+              ? 'bg-foreground text-background'
               : 'bg-muted/60 text-muted-foreground hover:bg-muted'
           }`}
         >
@@ -279,9 +344,10 @@ export function DocsSpaceDetail() {
             ) : (
               <button
                 type="button"
-                onClick={() => { setActiveCollection(col.id);  }}
+                onClick={() => setActiveCollection(col.id)}
                 className={`shrink-0 rounded-full px-3 py-1 pr-7 text-xs font-medium transition-colors ${
-                  activeCollection === col.id                    ? 'bg-foreground text-background'
+                  activeCollection === col.id
+                    ? 'bg-foreground text-background'
                     : 'bg-muted/60 text-muted-foreground hover:bg-muted'
                 }`}
               >
@@ -326,9 +392,10 @@ export function DocsSpaceDetail() {
         {uncollected.length > 0 && (collections ?? []).length > 0 && (
           <button
             type="button"
-            onClick={() => { setActiveCollection('__uncollected__');  }}
+            onClick={() => setActiveCollection('__uncollected__')}
             className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              activeCollection === '__uncollected__'                ? 'bg-foreground text-background'
+              activeCollection === '__uncollected__'
+                ? 'bg-foreground text-background'
                 : 'bg-muted/60 text-muted-foreground hover:bg-muted'
             }`}
           >
@@ -336,127 +403,110 @@ export function DocsSpaceDetail() {
           </button>
         )}
 
-        {/* Inline add collection */}
+        {/* Add collection */}
         {canEditDocs && (
-          addingCollection ? (
-            <div className="flex shrink-0 items-center gap-1">
-              <input
-                ref={newCollRef}
-                value={newCollName}
-                onChange={(e) => setNewCollName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitAddCollection()
-                  if (e.key === 'Escape') setAddingCollection(false)
-                }}
-                onBlur={commitAddCollection}
-                placeholder="Collection name…"
-                className="h-7 w-36 rounded-full border border-primary/40 bg-background px-3 text-xs font-medium outline-none placeholder:text-muted-foreground/50"
-              />
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={startAddCollection}
-              className="flex shrink-0 items-center gap-1 rounded-full bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="Add collection"
-            >
-              <Plus className="h-3 w-3" />
-              Collection
-            </button>
-          )
+          <button
+            type="button"
+            onClick={() => openCreate('docs_collection', { spaceId })}
+            className="flex shrink-0 items-center gap-1 rounded-full bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Add collection"
+          >
+            <Plus className="h-3 w-3" />
+            Collection
+          </button>
         )}
+      </div>
 
-        {/* Type & Status filters (right-aligned) */}
-        {(() => {
-          const hasActiveFilters = filterType !== null || filterStatus !== null
-          return (
-            <div className="flex shrink-0 items-center gap-2 ml-auto pl-3">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                      filterType
-                        ? 'border-primary/30 bg-primary/5 text-foreground'
-                        : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
-                    }`}
-                  >
-                    <ListFilter className="h-3 w-3" />
-                    {filterType ? DOC_TYPE_LABELS[filterType] : 'Type'}
-                    <ChevronDown className="h-3 w-3 opacity-50" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem
-                    onClick={() => setFilterType(null)}
-                    className={!filterType ? 'font-medium' : ''}
-                  >
-                    All Types
-                    {!filterType && <Check className="ml-auto h-3.5 w-3.5" />}
-                  </DropdownMenuItem>
-                  {(Object.entries(DOC_TYPE_LABELS) as [DocType, string][]).map(([key, label]) => (
-                    <DropdownMenuItem
-                      key={key}
-                      onClick={() => setFilterType(key)}
-                      className={filterType === key ? 'font-medium' : ''}
-                    >
-                      {label}
-                      {filterType === key && <Check className="ml-auto h-3.5 w-3.5" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                      filterStatus
-                        ? 'border-primary/30 bg-primary/5 text-foreground'
-                        : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
-                    }`}
-                  >
-                    <ListFilter className="h-3 w-3" />
-                    {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
-                    <ChevronDown className="h-3 w-3 opacity-50" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-36">
-                  <DropdownMenuItem
-                    onClick={() => setFilterStatus(null)}
-                    className={!filterStatus ? 'font-medium' : ''}
-                  >
-                    All Statuses
-                    {!filterStatus && <Check className="ml-auto h-3.5 w-3.5" />}
-                  </DropdownMenuItem>
-                  {(Object.entries(DOC_STATUS_LABELS) as [DocStatus, string][]).map(([key, label]) => (
-                    <DropdownMenuItem
-                      key={key}
-                      onClick={() => setFilterStatus(key)}
-                      className={filterStatus === key ? 'font-medium' : ''}
-                    >
-                      {label}
-                      {filterStatus === key && <Check className="ml-auto h-3.5 w-3.5" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {hasActiveFilters && (
+      {/* Filters row */}
+      {(() => {
+        const hasActiveFilters = filterType !== null || filterStatus !== null
+        return (
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => { setFilterType(null); setFilterStatus(null) }}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    filterType
+                      ? 'border-primary/30 bg-primary/5 text-foreground'
+                      : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                  }`}
                 >
-                  <X className="h-3 w-3" />
-                  Clear
+                  <ListFilter className="h-3 w-3" />
+                  {filterType ? DOC_TYPE_LABELS[filterType] : 'Type'}
+                  <ChevronDown className="h-3 w-3 opacity-50" />
                 </button>
-              )}
-            </div>
-          )
-        })()}
-      </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-44">
+                <DropdownMenuItem
+                  onClick={() => setFilterType(null)}
+                  className={!filterType ? 'font-medium' : ''}
+                >
+                  All Types
+                  {!filterType && <Check className="ml-auto h-3.5 w-3.5" />}
+                </DropdownMenuItem>
+                {(Object.entries(DOC_TYPE_LABELS) as [DocType, string][]).map(([key, label]) => (
+                  <DropdownMenuItem
+                    key={key}
+                    onClick={() => setFilterType(key)}
+                    className={filterType === key ? 'font-medium' : ''}
+                  >
+                    {label}
+                    {filterType === key && <Check className="ml-auto h-3.5 w-3.5" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    filterStatus
+                      ? 'border-primary/30 bg-primary/5 text-foreground'
+                      : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                >
+                  <ListFilter className="h-3 w-3" />
+                  {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-36">
+                <DropdownMenuItem
+                  onClick={() => setFilterStatus(null)}
+                  className={!filterStatus ? 'font-medium' : ''}
+                >
+                  All Statuses
+                  {!filterStatus && <Check className="ml-auto h-3.5 w-3.5" />}
+                </DropdownMenuItem>
+                {(Object.entries(DOC_STATUS_LABELS) as [DocStatus, string][]).map(([key, label]) => (
+                  <DropdownMenuItem
+                    key={key}
+                    onClick={() => setFilterStatus(key)}
+                    className={filterStatus === key ? 'font-medium' : ''}
+                  >
+                    {label}
+                    {filterStatus === key && <Check className="ml-auto h-3.5 w-3.5" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => { setFilterType(null); setFilterStatus(null) }}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+                Clear
+              </button>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Document list */}
       {(() => {
@@ -474,10 +524,41 @@ export function DocsSpaceDetail() {
         })
 
         if (displayDocs.length === 0) {
+          const hasCollections = (collections ?? []).length > 0
           return (
             <div className="flex flex-col items-center justify-center py-12 px-4">
-              <FileText className="h-10 w-10 text-muted-foreground/30 mb-3" />
-              <p className="text-sm text-muted-foreground">No documents found.</p>
+              {hasCollections ? (
+                <FileText className="h-10 w-10 text-muted-foreground/30 mb-3" />
+              ) : (
+                <FolderOpen className="h-10 w-10 text-muted-foreground/30 mb-3" />
+              )}
+              <p className="text-sm text-muted-foreground">
+                {hasCollections ? 'No documents found.' : 'No collections yet.'}
+              </p>
+              {canEditDocs && (
+                hasCollections ? (
+                  <button
+                    type="button"
+                    onClick={() => openCreate('docs_document', {
+                      spaceId,
+                      collectionId: activeCollection && activeCollection !== '__uncollected__' ? activeCollection : undefined,
+                    })}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Create a document
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openCreate('docs_collection', { spaceId })}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Create a collection
+                  </button>
+                )
+              )}
             </div>
           )
         }

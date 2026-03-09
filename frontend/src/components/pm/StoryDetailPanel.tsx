@@ -77,6 +77,8 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { CommentEditor } from '@/components/pm/CommentEditor';
+import { MentionText } from '@/components/pm/MentionText';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -318,7 +320,7 @@ function StoryDetailPanelBody({
   }, [storyDetail, pendingPatch, saving]);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
-  const [newComment, setNewComment] = useState('');
+
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentBody, setEditingCommentBody] = useState('');
@@ -451,18 +453,17 @@ function StoryDetailPanelBody({
   };
 
   // ── Comments ───────────────────────────────────────────────────
-  const addComment = async () => {
-    if (!newComment.trim()) return;
+  const addComment = async (body: string) => {
+    if (!body.trim()) return;
     setCommentLoading(true);
     const { data, error } = await pmCommentService.create(workspaceId, {
       entity_type: 'story',
       entity_id: storyDetail.story.id,
-      body: newComment.trim(),
+      body: body.trim(),
     });
     setCommentLoading(false);
     if (error || !data) return;
     setComments((current) => [...current, data]);
-    setNewComment('');
   };
 
   const startEditComment = (comment: CommentWithAuthor) => {
@@ -686,6 +687,7 @@ function StoryDetailPanelBody({
               className="border-transparent shadow-none"
               uploadConfig={{ workspaceId, entityType: 'story', entityId: storyDetail.story.id }}
               teams={teams}
+              members={assignableMembers}
             />
           </div>
 
@@ -836,7 +838,7 @@ function StoryDetailPanelBody({
                           </div>
                         </div>
                       ) : (
-                        <p className="mt-1.5 pl-8 text-sm">{entry.comment.body}</p>
+                        <p className="mt-1.5 pl-8 text-sm"><MentionText text={entry.comment.body} members={assignableMembers} /></p>
                       )}
                     </div>
                   </div>
@@ -846,29 +848,13 @@ function StoryDetailPanelBody({
               {/* Comment input */}
               {comments.length > 0 && <Separator />}
               <div className="px-4 py-3">
-                <textarea
-                  value={newComment}
-                  placeholder="Leave a comment..."
-                  rows={2}
-                  className="w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
-                  onChange={(e) => setNewComment(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      e.preventDefault();
-                      addComment();
-                    }
-                  }}
+                <CommentEditor
+                  onSubmit={addComment}
+                  loading={commentLoading}
+                  placeholder="Leave a comment... (type @ to mention)"
+                  teams={teams}
+                  members={assignableMembers}
                 />
-                <div className="flex items-center justify-end gap-1">
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:opacity-40"
-                    disabled={commentLoading || !newComment.trim()}
-                    onClick={addComment}
-                  >
-                    {commentLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
               </div>
             </div>
 

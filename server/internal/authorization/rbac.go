@@ -11,12 +11,12 @@ func NewRBACEngine() *RBACEngine {
 	viewerPerms := permsSet(
 		PermWorkspaceRead, PermSettingsRead, PermWorkspaceMembersRead,
 		PermTeamRead, PermTeamMembersRead,
-		PermPMRead, PermDocsRead, PermSearchRead, PermWSConnect,
+		PermPMRead, PermDocsRead, PermCRMRead, PermSearchRead, PermWSConnect,
 		PermNotificationsRead, PermNotificationsManage,
 	)
 
 	memberPerms := copyPerms(viewerPerms)
-	addPerms(memberPerms, PermPMEdit, PermDocsEdit, PermRewardsRead)
+	addPerms(memberPerms, PermPMEdit, PermDocsEdit, PermCRMEdit, PermRewardsRead)
 
 	managerPerms := copyPerms(memberPerms)
 	addPerms(managerPerms, PermRewardsManage, PermDocsPublish)
@@ -28,7 +28,7 @@ func NewRBACEngine() *RBACEngine {
 		PermWorkspaceMembersManage, PermWorkspaceInvitesManage,
 		PermWorkspaceRolesManage,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
-		PermDocsAdmin,
+		PermDocsAdmin, PermCRMAdmin,
 	)
 
 	ownerPerms := copyPerms(adminPerms)

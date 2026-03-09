@@ -9,6 +9,7 @@ import {
   Building2,
   Calendar,
   ChevronDown,
+  Clock,
   ChevronRight,
   DollarSign,
   FileText,
@@ -21,9 +22,11 @@ import {
   Import,
   Layers,
   LayoutDashboard,
+  Lightbulb,
   MessageSquare,
   LayoutList,
   PenLine,
+  Play,
   Plus,
   RefreshCw,
   Settings,
@@ -60,6 +63,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 
@@ -74,7 +78,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-type RailId = 'projects' | 'support' | /* 'rewards' | */ 'docs' | 'settings';
+type RailId = 'projects' | 'support' | 'crm' | /* 'rewards' | */ 'docs' | 'settings';
 
 type RailItem = {
   id: RailId;
@@ -85,7 +89,8 @@ type RailItem = {
 
 function deriveActiveRail(pathname: string): RailId {
   if (pathname.includes('/support')) return 'support';
-if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
+  if (pathname.includes('/crm')) return 'crm';
+  if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
   if (pathname.includes('/docs')) return 'docs';
   if (pathname.includes('/settings')) return 'settings';
   return 'projects';
@@ -133,26 +138,33 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
         const link = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=${col.id}`;
         return (
           <SidebarMenuSubItem key={col.id}>
-            <SidebarMenuSubButton
-              asChild
-              size="sm"
-              isActive={isActive(link)}
-            >
-              <a
-                href={link}
-                onClick={(event) => {
-                  event.preventDefault();
-                  navigate({
-                    to: '/w/$slug/docs/spaces/$spaceId' as string,
-                    params: { slug: wsSlug, spaceId },
-                    search: { collection: col.id },
-                  });
-                }}
-              >
-                <FolderOpen className="h-3.5 w-3.5" />
-                <span>{col.icon ? `${col.icon} ` : ''}{col.name}</span>
-              </a>
-            </SidebarMenuSubButton>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <SidebarMenuSubButton
+                  asChild
+                  size="sm"
+                  isActive={isActive(link)}
+                >
+                  <a
+                    href={link}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate({
+                        to: '/w/$slug/docs/spaces/$spaceId' as string,
+                        params: { slug: wsSlug, spaceId },
+                        search: { collection: col.id },
+                      });
+                    }}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    <span className="truncate">{col.icon ? `${col.icon} ` : ''}{col.name}</span>
+                  </a>
+                </SidebarMenuSubButton>
+              </TooltipTrigger>
+              <TooltipContent side="right" align="center">
+                {col.name}
+              </TooltipContent>
+            </Tooltip>
           </SidebarMenuSubItem>
         );
       })}
@@ -172,16 +184,33 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
 
 // ── Docs spaces nav (extracted to avoid conditional hook calls) ──
 
-function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggleTeam, openCreate }: {
+function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggleTeam, setExpandedTeams, openCreate }: {
   wsId: string;
   wsSlug: string;
   navigate: ReturnType<typeof useNavigate>;
   isActive: (link: string) => boolean;
   expandedTeams: Set<string>;
   toggleTeam: (id: string) => void;
+  setExpandedTeams: React.Dispatch<React.SetStateAction<Set<string>>>;
   openCreate: (modal: 'docs_collection', options?: { spaceId?: string }) => void;
 }) {
   const { data: spaces } = useDocsSpaces(wsId);
+
+  const toggleDocSpace = (spaceKey: string) => {
+    setExpandedTeams((prev) => {
+      const next = new Set(prev);
+      // Close all other doc spaces
+      for (const key of prev) {
+        if (key.startsWith('docs_space_') && key !== spaceKey) {
+          next.delete(key);
+        }
+      }
+      // Toggle the clicked one
+      if (next.has(spaceKey)) next.delete(spaceKey);
+      else next.add(spaceKey);
+      return next;
+    });
+  };
 
   if (!spaces || spaces.length === 0) return null;
 
@@ -201,28 +230,27 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
               key={space.id}
               asChild
               open={isExpanded}
-              onOpenChange={() => toggleTeam(spaceKey)}
             >
               <SidebarMenuItem>
                 <div className="group/space relative flex items-center">
-                  <Collapsible.Trigger asChild>
-                    <SidebarMenuButton
-                      className="h-8 rounded-md px-2 flex-1"
-                      isActive={isActive(spaceLink)}
-                    >
-                      <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                      <span className="text-sm">{space.icon ?? '📁'}</span>
-                      <span className="truncate">{space.name}</span>
-                    </SidebarMenuButton>
-                  </Collapsible.Trigger>
-                  <button
-                    type="button"
-                    className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/space:opacity-100"
-                    title="Open space"
-                    onClick={() => navigate({ to: '/w/$slug/docs/spaces/$spaceId' as string, params: { slug: wsSlug, spaceId: space.id } })}
-                  >
-                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <SidebarMenuButton
+                        className="h-8 rounded-md px-2 flex-1"
+                        isActive={isActive(spaceLink)}
+                        onClick={() => {
+                          toggleDocSpace(spaceKey);
+                          navigate({ to: '/w/$slug/docs/spaces/$spaceId' as string, params: { slug: wsSlug, spaceId: space.id } });
+                        }}
+                      >
+                        <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        <span className="truncate">{space.name}</span>
+                      </SidebarMenuButton>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" align="center">
+                      {space.name}
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <Collapsible.Content>
                   <DocsSpaceCollections
@@ -318,6 +346,7 @@ export function Sidebar() {
 
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/stories` },
+    { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
 // { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
@@ -333,6 +362,19 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },
           { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
+        ],
+      },
+    ],
+    crm: [
+      {
+        label: '',
+        items: [
+          { link: `/w/${wsSlug}/crm/contacts`, label: 'Contacts', icon: Users },
+          { link: `/w/${wsSlug}/crm/companies`, label: 'Companies', icon: Building2 },
+          { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarSign },
+          { link: `/w/${wsSlug}/crm/lists`, label: 'Lists', icon: LayoutList },
+          { link: `/w/${wsSlug}/crm/sequences`, label: 'Sequences', icon: Play },
+          { link: `/w/${wsSlug}/crm/insights`, label: 'Insights', icon: Lightbulb },
         ],
       },
     ],
@@ -366,9 +408,9 @@ export function Sidebar() {
       {
         label: '',
         items: [
-          { link: `/w/${wsSlug}/docs`, label: 'All Docs', icon: FileText },
+          { link: `/w/${wsSlug}/docs/recent`, label: 'Recent Docs', icon: Clock },
           { link: `/w/${wsSlug}/docs/my`, label: 'My Documents', icon: User },
-          { link: `/w/${wsSlug}/docs/drafts`, label: 'Drafts', icon: PenLine },
+          { link: `/w/${wsSlug}/docs`, label: 'All Docs', icon: FileText },
         ],
       },
     ],
@@ -724,7 +766,7 @@ export function Sidebar() {
             )}
 
             {/* ── Docs spaces navigation (docs rail only) ── */}
-            {activeRail === 'docs' && <DocsSpacesNav wsId={workspaceId ?? ''} wsSlug={wsSlug} navigate={navigate} isActive={isActive} expandedTeams={expandedTeams} toggleTeam={toggleTeam} openCreate={openCreate} />}
+            {activeRail === 'docs' && <DocsSpacesNav wsId={workspaceId ?? ''} wsSlug={wsSlug} navigate={navigate} isActive={isActive} expandedTeams={expandedTeams} toggleTeam={toggleTeam} setExpandedTeams={setExpandedTeams} openCreate={openCreate} />}
           </div>
         </div>
       </SidebarContent>

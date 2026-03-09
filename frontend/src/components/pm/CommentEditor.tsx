@@ -1,6 +1,7 @@
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import { MentionHighlight } from '@/components/pm/mention-highlight'
 import { useRef, useState, useCallback, useEffect } from 'react'
 import { Loader2, Send } from 'lucide-react'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
@@ -24,6 +25,74 @@ interface CommentEditorProps {
 
 function buildMemberHandle(member: AssignableMember): string {
   return member.display_name.toLowerCase().replace(/\s+/g, '.')
+}
+
+function detectMentions(
+  editorInstance: ReturnType<typeof useEditor>,
+  teams: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[],
+  members: AssignableMember[],
+): { from: number; to: number; items: MentionItem[]; selectedIndex: number } | null {
+  if (!editorInstance) return null
+  if (teams.length === 0 && members.length === 0) return null
+
+  const { selection } = editorInstance.state
+  if (!selection.empty) return null
+
+  const textBefore = selection.$from.parent.textBetween(
+    0,
+    selection.$from.parentOffset,
+    undefined,
+    '\ufffc',
+  )
+  const match = textBefore.match(/(?:^|\s)@([a-z0-9._-]*)$/i)
+  if (!match) return null
+
+  const query = match[1].toLowerCase()
+  const items: MentionItem[] = []
+
+  for (const m of members) {
+    if (m.status !== 'active') continue
+    const handle = buildMemberHandle(m)
+    if (
+      !query ||
+      handle.includes(query) ||
+      m.display_name.toLowerCase().includes(query) ||
+      m.email.toLowerCase().includes(query)
+    ) {
+      items.push({
+        id: m.user_id || m.id,
+        name: m.display_name,
+        handle,
+        type: 'member',
+        avatarUrl: m.avatar_url,
+      })
+    }
+  }
+
+  for (const t of teams) {
+    if (!t.handle) continue
+    if (
+      !query ||
+      t.handle.toLowerCase().includes(query) ||
+      t.name.toLowerCase().includes(query)
+    ) {
+      items.push({
+        id: t.id,
+        name: t.name,
+        handle: t.handle,
+        type: 'team',
+      })
+    }
+  }
+
+  if (items.length === 0) return null
+
+  return {
+    from: selection.from - (query.length + 1),
+    to: selection.from,
+    items: items.slice(0, 8),
+    selectedIndex: 0,
+  }
 }
 
 export function CommentEditor({
@@ -76,6 +145,7 @@ export function CommentEditor({
         listItem: false,
       }),
       Placeholder.configure({ placeholder }),
+      MentionHighlight,
     ],
     editorProps: {
       attributes: {
@@ -134,89 +204,23 @@ export function CommentEditor({
         return false
       },
     },
+    onUpdate: () => {
+      setMentionState(detectMentions(editorRef.current, teamsRef.current, membersRef.current))
+    },
+    onBlur: () => setMentionState(null),
   })
 
-  // Register mention detection via useEffect — avoids TipTap v3 stale-closure issue
-  // where onUpdate passed in useEditor options is only captured once at creation time.
+  const editorRef = useRef(editor)
+  editorRef.current = editor
+
+  // Also register via editor.on() as backup — TipTap v3 may not call
+  // the onUpdate option reliably in all cases.
   useEffect(() => {
     if (!editor) return
 
     const handleUpdate = () => {
-      const currentTeams = teamsRef.current
-      const currentMembers = membersRef.current
-      if (currentTeams.length === 0 && currentMembers.length === 0) {
-        setMentionState(null)
-        return
-      }
-      const { selection } = editor.state
-      if (!selection.empty) {
-        setMentionState(null)
-        return
-      }
-      const textBefore = selection.$from.parent.textBetween(
-        0,
-        selection.$from.parentOffset,
-        undefined,
-        '\ufffc',
-      )
-      const match = textBefore.match(/(?:^|\s)@([a-z0-9._-]*)$/i)
-      if (!match) {
-        setMentionState(null)
-        return
-      }
-      const query = match[1].toLowerCase()
-
-      // Build combined mention list: members first, then teams
-      const items: MentionItem[] = []
-
-      for (const m of currentMembers) {
-        if (m.status !== 'active') continue
-        const handle = buildMemberHandle(m)
-        if (
-          !query ||
-          handle.includes(query) ||
-          m.display_name.toLowerCase().includes(query) ||
-          m.email.toLowerCase().includes(query)
-        ) {
-          items.push({
-            id: m.user_id || m.id,
-            name: m.display_name,
-            handle,
-            type: 'member',
-            avatarUrl: m.avatar_url,
-          })
-        }
-      }
-
-      for (const t of currentTeams) {
-        if (!t.handle) continue
-        if (
-          !query ||
-          t.handle.toLowerCase().includes(query) ||
-          t.name.toLowerCase().includes(query)
-        ) {
-          items.push({
-            id: t.id,
-            name: t.name,
-            handle: t.handle,
-            type: 'team',
-          })
-        }
-      }
-
-      if (items.length === 0) {
-        setMentionState(null)
-        return
-      }
-
-      setMentionState({
-        from: selection.from - (query.length + 1),
-        to: selection.from,
-        items: items.slice(0, 8),
-        selectedIndex: 0,
-      })
+      setMentionState(detectMentions(editor, teamsRef.current, membersRef.current))
     }
-
     const handleBlur = () => setMentionState(null)
 
     editor.on('update', handleUpdate)
@@ -227,9 +231,6 @@ export function CommentEditor({
       editor.off('blur', handleBlur)
     }
   }, [editor])
-
-  const editorRef = useRef(editor)
-  editorRef.current = editor
 
   if (!editor) return null
 

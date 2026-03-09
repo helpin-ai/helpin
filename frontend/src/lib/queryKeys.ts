@@ -105,6 +105,75 @@ export const queryKeys = {
     helpcenterConfig: (wsId: string) => ['docs', wsId, 'helpcenter', 'config'] as const,
   },
 
+  crm: {
+    contacts: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'contacts', filters] as const) : (['crm', wsId, 'contacts'] as const),
+    contact: (wsId: string, id: string) => ['crm', wsId, 'contacts', id] as const,
+    contactActivities: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'activities'] as const,
+    contactAssociations: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'associations'] as const,
+
+    companies: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'companies', filters] as const) : (['crm', wsId, 'companies'] as const),
+    company: (wsId: string, id: string) => ['crm', wsId, 'companies', id] as const,
+    companyActivities: (wsId: string, companyId: string) => ['crm', wsId, 'companies', companyId, 'activities'] as const,
+    companyAssociations: (wsId: string, companyId: string) => ['crm', wsId, 'companies', companyId, 'associations'] as const,
+
+    deals: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'deals', filters] as const) : (['crm', wsId, 'deals'] as const),
+    deal: (wsId: string, id: string) => ['crm', wsId, 'deals', id] as const,
+    dealActivities: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'activities'] as const,
+    dealAssociations: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'associations'] as const,
+
+    pipelines: (wsId: string) => ['crm', wsId, 'pipelines'] as const,
+    pipeline: (wsId: string, id: string) => ['crm', wsId, 'pipelines', id] as const,
+
+    activities: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'activities', filters] as const) : (['crm', wsId, 'activities'] as const),
+
+    properties: (wsId: string, objectType?: string) =>
+      objectType ? (['crm', wsId, 'properties', objectType] as const) : (['crm', wsId, 'properties'] as const),
+    propertyGroups: (wsId: string, objectType?: string) =>
+      objectType ? (['crm', wsId, 'propertyGroups', objectType] as const) : (['crm', wsId, 'propertyGroups'] as const),
+
+    lists: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['crm', wsId, 'lists', filters] as const) : (['crm', wsId, 'lists'] as const),
+    list: (wsId: string, id: string) => ['crm', wsId, 'lists', id] as const,
+    listMembers: (wsId: string, listId: string) => ['crm', wsId, 'lists', listId, 'members'] as const,
+
+    imports: (wsId: string) => ['crm', wsId, 'imports'] as const,
+    import: (wsId: string, id: string) => ['crm', wsId, 'imports', id] as const,
+
+    // Phase 3
+    emailAccounts: (wsId: string) => ['crm', wsId, 'emailAccounts'] as const,
+    emailThreads: (wsId: string) => ['crm', wsId, 'emailThreads'] as const,
+    emailMessages: (wsId: string) => ['crm', wsId, 'emailMessages'] as const,
+    contactEmails: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'emails'] as const,
+    dealEmails: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'emails'] as const,
+    calendarEvents: (wsId: string) => ['crm', wsId, 'calendarEvents'] as const,
+    contactCalendar: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'calendar'] as const,
+    dealCalendar: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'calendar'] as const,
+
+    // Phase 4
+    enrichments: (wsId: string) => ['crm', wsId, 'enrichments'] as const,
+    signals: (wsId: string) => ['crm', wsId, 'signals'] as const,
+    contactSignals: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'signals'] as const,
+    dealSignals: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'signals'] as const,
+    healthScores: (wsId: string) => ['crm', wsId, 'healthScores'] as const,
+    dealHealthScore: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'healthScore'] as const,
+    suggestions: (wsId: string) => ['crm', wsId, 'suggestions'] as const,
+    suggestion: (wsId: string, id: string) => ['crm', wsId, 'suggestions', id] as const,
+
+    // Phase 5
+    sequences: (wsId: string) => ['crm', wsId, 'sequences'] as const,
+    sequence: (wsId: string, id: string) => ['crm', wsId, 'sequences', id] as const,
+    sequenceEnrollments: (wsId: string, seqId: string) => ['crm', wsId, 'sequences', seqId, 'enrollments'] as const,
+    writingProfiles: (wsId: string) => ['crm', wsId, 'writingProfiles'] as const,
+    writingProfile: (wsId: string, memberId: string) => ['crm', wsId, 'writingProfiles', memberId] as const,
+
+    // Phase 6
+    search: (wsId: string, q: string) => ['crm', wsId, 'search', q] as const,
+  },
+
   notifications: {
     all: (wsId: string) => ['notifications', wsId] as const,
     list: (wsId: string, filter?: string) =>

@@ -704,6 +704,7 @@ export function ObjectiveDetailPage() {
                     placeholder="Add a description..."
                     className="border-transparent shadow-none"
                     teams={teams}
+                    members={assignableMembers}
                   />
                   <div className="mt-2 flex justify-end">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>

@@ -60,12 +60,19 @@ func (r *DocsCollectionRepository) Update(ctx context.Context, id string, update
 	return r.GetByID(ctx, id)
 }
 
-// Delete soft-deletes a collection.
+// Delete soft-deletes a collection and uncategorizes its documents.
 func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Exec("UPDATE docs_collections SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL", id).Error; err != nil {
-		return fmt.Errorf("delete docs collection: %w", err)
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Uncategorize documents in this collection
+		if err := tx.Exec("UPDATE docs_documents SET collection_id = NULL WHERE collection_id = ? AND deleted_at IS NULL", id).Error; err != nil {
+			return fmt.Errorf("uncategorize docs in collection: %w", err)
+		}
+		// Soft-delete the collection
+		if err := tx.Exec("UPDATE docs_collections SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL", id).Error; err != nil {
+			return fmt.Errorf("delete docs collection: %w", err)
+		}
+		return nil
+	})
 }
 
 // Restore un-deletes a collection.

@@ -332,6 +332,7 @@ export function SprintDetailPage() {
               placeholder="Add a description..."
               className="border-transparent shadow-none"
               teams={teams}
+              members={assignableMembers}
             />
           </div>
 
