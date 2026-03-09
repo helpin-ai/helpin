@@ -75,20 +75,125 @@ func (c *Client) SendEmail(to, subject, htmlBody, textBody string) error {
 func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string) error {
 	subject := fmt.Sprintf("%s invited you to join %s on Helpin", inviterName, workspaceName)
 
+	// Get the first letter of workspace name for the avatar.
+	wsInitial := string([]rune(workspaceName)[0])
+
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #f4f4f5;">
-  <div style="max-width: 480px; margin: 40px auto; background: #fff; border-radius: 8px; border: 1px solid #e4e4e7; overflow: hidden;">
-    <div style="padding: 32px 24px; text-align: center;">
-      <h1 style="font-size: 20px; font-weight: 600; color: #18181b; margin: 0 0 8px;">You're invited to join</h1>
-      <h2 style="font-size: 24px; font-weight: 700; color: #18181b; margin: 0 0 16px;">%s</h2>
-      <p style="color: #71717a; font-size: 14px; margin: 0 0 24px;">%s has invited you to collaborate on Helpin.</p>
-      <a href="%s" style="display: inline-block; background: #18181b; color: #fff; text-decoration: none; padding: 12px 32px; border-radius: 6px; font-size: 14px; font-weight: 500;">Join Workspace</a>
-      <p style="color: #a1a1aa; font-size: 12px; margin: 24px 0 0;">This invitation expires in 7 days.</p>
-    </div>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Workspace Invitation</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f0f3; -webkit-font-smoothing: antialiased;">
+  <!-- Preheader text (hidden) -->
+  <div style="display: none; max-height: 0; overflow: hidden;">
+    %s has invited you to collaborate on %s &mdash; click to join the workspace.
   </div>
+
+  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
+    <tr>
+      <td align="center" style="padding: 48px 16px;">
+        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
+
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding-bottom: 32px;">
+              <span style="font-size: 22px; font-weight: 700; color: #18181b; letter-spacing: -0.5px;">Helpin</span>
+            </td>
+          </tr>
+
+          <!-- Main Card -->
+          <tr>
+            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
+              <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+
+                <!-- Top accent bar -->
+                <tr>
+                  <td style="height: 4px; background: linear-gradient(90deg, #18181b 0%%, #3b3b3f 100%%); border-radius: 12px 12px 0 0; font-size: 0; line-height: 0;">&nbsp;</td>
+                </tr>
+
+                <!-- Content -->
+                <tr>
+                  <td style="padding: 40px 36px 36px;">
+                    <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+
+                      <!-- Workspace avatar -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 24px;">
+                          <div style="display: inline-block; width: 56px; height: 56px; line-height: 56px; border-radius: 14px; background-color: #18181b; color: #ffffff; font-size: 22px; font-weight: 700; text-align: center;">%s</div>
+                        </td>
+                      </tr>
+
+                      <!-- Heading -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 8px;">
+                          <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #18181b; line-height: 1.3;">You're invited to join</h1>
+                        </td>
+                      </tr>
+
+                      <!-- Workspace name -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 16px;">
+                          <h2 style="margin: 0; font-size: 26px; font-weight: 800; color: #18181b; line-height: 1.2;">%s</h2>
+                        </td>
+                      </tr>
+
+                      <!-- Description -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 32px;">
+                          <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #52525b;">
+                            <strong style="color: #18181b;">%s</strong> has invited you to collaborate on this workspace. Join the team to get started.
+                          </p>
+                        </td>
+                      </tr>
+
+                      <!-- CTA Button -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 24px;">
+                          <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                              <td style="border-radius: 8px; background-color: #18181b;">
+                                <a href="%s" target="_blank" style="display: inline-block; padding: 14px 40px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 0.2px;">Accept Invitation</a>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+
+                      <!-- Expiry notice -->
+                      <tr>
+                        <td align="center">
+                          <p style="margin: 0; font-size: 13px; color: #a1a1aa;">This invitation expires in 7 days.</p>
+                        </td>
+                      </tr>
+
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding: 28px 16px 0;">
+              <p style="margin: 0 0 6px; font-size: 12px; color: #a1a1aa; line-height: 1.5;">
+                You received this email because someone invited you to a workspace on Helpin.
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #a1a1aa;">
+                If you didn't expect this, you can safely ignore it.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
-</html>`, workspaceName, inviterName, joinURL)
+</html>`, inviterName, workspaceName, wsInitial, workspaceName, inviterName, joinURL)
 
 	textBody := fmt.Sprintf(`%s invited you to join %s on Helpin.
 

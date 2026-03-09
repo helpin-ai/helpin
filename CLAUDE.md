@@ -194,6 +194,59 @@ All dependencies are wired in `cmd/api/main.go`:
 - Methods: `PutObject`, `DeleteObject`, `PublicURL`, `GeneratePresignedPutURL/GetURL`
 - Public URLs via `HasPublicURL()` check
 
+### Logging
+
+**Library**: `log/slog` (Go stdlib, available since Go 1.21)
+
+**Why `slog`**: Zero dependencies, structured JSON output, leveled logging, context-aware, and has native integrations for Chi and GORM. No need for `zap` or `zerolog`.
+
+**Setup** (in `cmd/api/main.go`):
+```go
+import "log/slog"
+
+// Production: JSON handler
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelInfo, // Use LOG_LEVEL env to override
+}))
+slog.SetDefault(logger)
+```
+
+**Usage patterns**:
+```go
+// Basic structured logging
+slog.Info("story created", "story_id", story.ID, "workspace_id", story.WorkspaceID)
+slog.Error("failed to save", "error", err, "story_id", id)
+
+// Context-aware (carries request_id, user_id from middleware)
+slog.InfoContext(ctx, "comment added", "entity_id", entityID)
+slog.ErrorContext(ctx, "notification emit failed", "error", err)
+
+// With persistent attributes (in service constructors)
+logger := slog.Default().With("service", "notification")
+logger.Info("emitting notification", "event_type", event.EventType)
+```
+
+**Where to log**:
+- **Handlers**: Log incoming requests with key params at DEBUG, errors at ERROR
+- **Services**: Log business operations (create, update, delete) at INFO, failures at ERROR
+- **Repository**: Log slow queries or failures at WARN/ERROR (not every query)
+- **Middleware**: Log request/response summary (method, path, status, duration) at INFO
+- **Background workers**: Log job start/complete at INFO, failures at ERROR
+- **External calls**: Log S3, email, Temporal, GitHub API calls at INFO, failures at ERROR
+
+**Levels**:
+- `DEBUG`: Detailed diagnostic info (request params, intermediate values)
+- `INFO`: Normal operations (story created, email sent, workflow started)
+- `WARN`: Recoverable issues (slow query, retry, deprecated usage)
+- `ERROR`: Failures requiring attention (DB error, external API failure)
+
+**Rules**:
+- Always use structured key-value pairs, never `fmt.Sprintf` in log messages
+- Include `workspace_id`, `user_id`, `entity_id` for traceability
+- Do NOT log sensitive data (passwords, tokens, email bodies)
+- Do NOT silently discard errors with `_ =` — log them at minimum
+- Use `slog.ErrorContext` instead of `log.Printf` for new code
+
 ---
 
 ## Frontend Patterns

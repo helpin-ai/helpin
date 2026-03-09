@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -24,6 +24,7 @@ type NotificationService struct {
 	prefRepo  *repository.NotificationPreferenceRepository
 	followerRepo *repository.FollowerRepository
 	wsPublisher  *ws.Publisher
+	logger       *slog.Logger
 }
 
 // NewNotificationService creates a new notification service.
@@ -38,17 +39,39 @@ func NewNotificationService(
 		prefRepo:     prefRepo,
 		followerRepo: followerRepo,
 		wsPublisher:  wsPublisher,
+		logger:       slog.Default().With("service", "notification"),
 	}
 }
 
 // Emit creates notifications for all recipients of an event.
 func (s *NotificationService) Emit(ctx context.Context, event model.NotificationEventInput) error {
+	s.logger.InfoContext(ctx, "emitting notification",
+		"event_type", event.EventType,
+		"entity_type", event.EntityType,
+		"entity_id", event.EntityID,
+		"actor_id", event.ActorID,
+		"workspace_id", event.WorkspaceID,
+		"explicit_recipients", len(event.ExplicitRecipients),
+		"category", event.Category,
+		"priority", event.Priority,
+	)
+
 	// 1. Resolve recipients: followers + explicit recipients
 	followers, err := s.followerRepo.GetFollowers(ctx, event.EntityType, event.EntityID)
 	if err != nil {
-		log.Printf("[notifications] failed to get followers: %v", err)
+		s.logger.ErrorContext(ctx, "failed to get followers",
+			"error", err,
+			"entity_type", event.EntityType,
+			"entity_id", event.EntityID,
+		)
 		followers = []string{}
 	}
+
+	s.logger.DebugContext(ctx, "resolved followers",
+		"entity_id", event.EntityID,
+		"follower_count", len(followers),
+		"followers", followers,
+	)
 
 	// Merge followers with explicit recipients, deduplicate
 	recipientSet := make(map[string]struct{})
@@ -63,8 +86,26 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 	delete(recipientSet, event.ActorID)
 
 	if len(recipientSet) == 0 {
+		s.logger.InfoContext(ctx, "no recipients after filtering",
+			"event_type", event.EventType,
+			"entity_id", event.EntityID,
+			"actor_id", event.ActorID,
+			"follower_count", len(followers),
+			"explicit_count", len(event.ExplicitRecipients),
+		)
 		return nil
 	}
+
+	recipients := make([]string, 0, len(recipientSet))
+	for uid := range recipientSet {
+		recipients = append(recipients, uid)
+	}
+	s.logger.InfoContext(ctx, "delivering to recipients",
+		"event_type", event.EventType,
+		"entity_id", event.EntityID,
+		"recipient_count", len(recipients),
+		"recipients", recipients,
+	)
 
 	priority := event.Priority
 	if priority == "" {
@@ -74,20 +115,23 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 	now := time.Now()
 
 	for recipientID := range recipientSet {
+		log := s.logger.With("recipient_id", recipientID, "entity_id", event.EntityID)
+
 		// Check user preferences
 		shouldNotify, err := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "in_app")
 		if err != nil {
-			log.Printf("[notifications] failed to check preferences for user %s: %v", recipientID, err)
+			log.ErrorContext(ctx, "failed to check preferences", "error", err)
 			continue
 		}
 		if !shouldNotify {
+			log.DebugContext(ctx, "skipped by user preferences", "event_type", event.EventType)
 			continue
 		}
 
 		// Check existing notification for this entity+recipient
 		existing, err := s.notifRepo.GetExisting(ctx, recipientID, event.EntityType, event.EntityID, event.WorkspaceID)
 		if err != nil {
-			log.Printf("[notifications] failed to check existing notification: %v", err)
+			log.ErrorContext(ctx, "failed to check existing notification", "error", err)
 		}
 
 		actorID := &event.ActorID
@@ -124,9 +168,15 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 			existing.UpdatedAt = now
 
 			if err := s.notifRepo.Upsert(ctx, existing); err != nil {
-				log.Printf("[notifications] failed to upsert notification: %v", err)
+				log.ErrorContext(ctx, "failed to upsert notification", "error", err, "notification_id", existing.ID)
 				continue
 			}
+
+			log.InfoContext(ctx, "notification updated",
+				"notification_id", existing.ID,
+				"event_count", existing.EventCount,
+				"status", newStatus,
+			)
 
 			// Create event record
 			notifEvent := &model.NotificationEvent{
@@ -140,7 +190,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 				Priority:       priority,
 			}
 			if err := s.notifRepo.CreateEvent(ctx, notifEvent); err != nil {
-				log.Printf("[notifications] failed to create event: %v", err)
+				log.ErrorContext(ctx, "failed to create event record", "error", err)
 			}
 
 			// Create delivery record
@@ -151,7 +201,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 				DeliveredAt:         &now,
 			}
 			if err := s.notifRepo.CreateDelivery(ctx, delivery); err != nil {
-				log.Printf("[notifications] failed to create delivery: %v", err)
+				log.ErrorContext(ctx, "failed to create delivery record", "error", err)
 			}
 
 			// Push via WebSocket
@@ -185,9 +235,15 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 			}
 
 			if err := s.notifRepo.Upsert(ctx, notif); err != nil {
-				log.Printf("[notifications] failed to create notification: %v", err)
+				log.ErrorContext(ctx, "failed to create notification", "error", err)
 				continue
 			}
+
+			log.InfoContext(ctx, "notification created",
+				"notification_id", notif.ID,
+				"status", "unread",
+				"event_type", event.EventType,
+			)
 
 			// Create event record
 			notifEvent := &model.NotificationEvent{
@@ -201,7 +257,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 				Priority:       priority,
 			}
 			if err := s.notifRepo.CreateEvent(ctx, notifEvent); err != nil {
-				log.Printf("[notifications] failed to create event: %v", err)
+				log.ErrorContext(ctx, "failed to create event record", "error", err)
 			}
 
 			// Create delivery record
@@ -212,7 +268,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 				DeliveredAt:         &now,
 			}
 			if err := s.notifRepo.CreateDelivery(ctx, delivery); err != nil {
-				log.Printf("[notifications] failed to create delivery: %v", err)
+				log.ErrorContext(ctx, "failed to create delivery record", "error", err)
 			}
 
 			// Push via WebSocket

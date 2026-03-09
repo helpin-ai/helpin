@@ -772,13 +772,16 @@ function MembersTab({ workspaceId, editable }: {
   const handleResend = async (id: string) => {
     const { error } = await inviteService.resend(id, workspaceId);
     if (error) toast.error(error);
-    else { toast.success('Invitation resent'); loadData(); }
+    else toast.success('Invitation resent');
   };
 
   const handleRevoke = async (id: string) => {
     const { error } = await inviteService.revoke(id, workspaceId);
     if (error) toast.error(error);
-    else { toast.success('Invitation revoked'); loadData(); }
+    else {
+      toast.success('Invitation revoked');
+      setInvitations((prev) => prev.filter((inv) => inv.id !== id));
+    }
   };
 
   if (loading) return <Skeleton className="h-96" />;

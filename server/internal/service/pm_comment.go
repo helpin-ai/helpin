@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -73,6 +74,16 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	if len(mentions) > 0 {
 		metadata["mentions"] = mentions
 	}
+
+	slog.InfoContext(ctx, "comment created",
+		"comment_id", comment.ID,
+		"entity_type", req.EntityType,
+		"entity_id", req.EntityID,
+		"workspace_id", workspaceID,
+		"author_id", authorID,
+		"mentions", mentions,
+	)
+
 	_ = s.activityService.Log(ctx, workspaceID, req.EntityType, req.EntityID, optionalActor(authorID), "comment_added", nil, nil, nil, metadata)
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "comment", EntityID: comment.ID, WorkspaceID: workspaceID, ActorID: authorID, ParentType: req.EntityType, ParentID: req.EntityID})
 
@@ -89,9 +100,28 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		var mentionedUserIDs []string
 		if len(mentions) > 0 && s.workspaceRepo != nil {
 			for _, handle := range mentions {
-				if uid, err := s.workspaceRepo.GetUserIDByHandle(ctx, workspaceID, handle); err == nil && uid != "" {
-					mentionedUserIDs = append(mentionedUserIDs, uid)
+				uid, err := s.workspaceRepo.GetUserIDByHandle(ctx, workspaceID, handle)
+				if err != nil {
+					slog.ErrorContext(ctx, "failed to resolve mention handle",
+						"handle", handle,
+						"workspace_id", workspaceID,
+						"error", err,
+					)
+					continue
 				}
+				if uid == "" {
+					slog.WarnContext(ctx, "mention handle not found",
+						"handle", handle,
+						"workspace_id", workspaceID,
+					)
+					continue
+				}
+				slog.InfoContext(ctx, "mention resolved",
+					"handle", handle,
+					"user_id", uid,
+					"workspace_id", workspaceID,
+				)
+				mentionedUserIDs = append(mentionedUserIDs, uid)
 			}
 		}
 
@@ -105,7 +135,14 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 			notifPriority = "high"
 		}
 
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		slog.InfoContext(ctx, "emitting comment notification",
+			"event_type", eventType,
+			"entity_id", req.EntityID,
+			"mentioned_user_ids", mentionedUserIDs,
+			"priority", notifPriority,
+		)
+
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID:        workspaceID,
 			ActorID:            authorID,
 			EventType:          eventType,
@@ -119,7 +156,13 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 			EntitySnapshot: model.JSONB{
 				"title": entityTitle,
 			},
-		})
+		}); err != nil {
+			slog.ErrorContext(ctx, "failed to emit comment notification",
+				"error", err,
+				"entity_id", req.EntityID,
+				"event_type", eventType,
+			)
+		}
 	}
 
 	comments, err := s.commentRepo.List(ctx, req.EntityType, req.EntityID)

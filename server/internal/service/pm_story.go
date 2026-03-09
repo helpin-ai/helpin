@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -279,21 +280,59 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		_ = s.followerService.Follow(ctx, actorID, "story", story.ID, story.WorkspaceID, "creator")
 	}
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
-			WorkspaceID: story.WorkspaceID,
-			ActorID:     actorID,
-			EventType:   "story.created",
-			EntityType:  "story",
-			EntityID:    story.ID,
-			Title:       "created " + story.Name,
-			Category:    "activity",
-			Priority:    "normal",
+		// Check for @mentions in description.
+		var mentionedUserIDs []string
+		if story.Description != nil {
+			mentions := extractMentions(*story.Description)
+			slog.InfoContext(ctx, "story created with mentions",
+				"story_id", story.ID,
+				"workspace_id", story.WorkspaceID,
+				"mentions", mentions,
+			)
+			if len(mentions) > 0 && s.workspaceRepo != nil {
+				for _, handle := range mentions {
+					uid, err := s.workspaceRepo.GetUserIDByHandle(ctx, story.WorkspaceID, handle)
+					if err != nil {
+						slog.ErrorContext(ctx, "failed to resolve mention in story", "handle", handle, "error", err)
+						continue
+					}
+					if uid == "" {
+						slog.WarnContext(ctx, "mention handle not found in story", "handle", handle, "workspace_id", story.WorkspaceID)
+						continue
+					}
+					slog.InfoContext(ctx, "story mention resolved", "handle", handle, "user_id", uid)
+					mentionedUserIDs = append(mentionedUserIDs, uid)
+				}
+			}
+		}
+
+		eventType := "story.created"
+		category := "activity"
+		priority := "normal"
+		if len(mentionedUserIDs) > 0 {
+			eventType = "story.mention"
+			category = "mention"
+			priority = "high"
+		}
+
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
+			WorkspaceID:        story.WorkspaceID,
+			ActorID:            actorID,
+			EventType:          eventType,
+			EntityType:         "story",
+			EntityID:           story.ID,
+			Title:              "created " + story.Name,
+			Category:           category,
+			Priority:           priority,
+			ExplicitRecipients: mentionedUserIDs,
 			EntitySnapshot: model.JSONB{
 				"title":      story.Name,
 				"display_id": story.DisplayID,
 				"type":       story.StoryType,
 			},
-		})
+		}); err != nil {
+			slog.ErrorContext(ctx, "failed to emit story created notification", "error", err, "story_id", story.ID)
+		}
 	}
 
 	return s.storyRepo.GetByID(ctx, story.ID)
@@ -556,6 +595,52 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 				"type":       current.StoryType,
 			},
 		})
+	}
+
+	// Emit mention notification when description is updated with @mentions.
+	if s.notificationService != nil && req.Description != nil {
+		mentions := extractMentions(*req.Description)
+		slog.InfoContext(ctx, "story updated with mentions",
+			"story_id", current.ID,
+			"workspace_id", current.WorkspaceID,
+			"mentions", mentions,
+		)
+		if len(mentions) > 0 && s.workspaceRepo != nil {
+			var mentionedUserIDs []string
+			for _, handle := range mentions {
+				uid, err := s.workspaceRepo.GetUserIDByHandle(ctx, current.WorkspaceID, handle)
+				if err != nil {
+					slog.ErrorContext(ctx, "failed to resolve mention in story update", "handle", handle, "error", err)
+					continue
+				}
+				if uid == "" {
+					slog.WarnContext(ctx, "mention handle not found in story update", "handle", handle, "workspace_id", current.WorkspaceID)
+					continue
+				}
+				slog.InfoContext(ctx, "story update mention resolved", "handle", handle, "user_id", uid)
+				mentionedUserIDs = append(mentionedUserIDs, uid)
+			}
+			if len(mentionedUserIDs) > 0 {
+				if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
+					WorkspaceID:        current.WorkspaceID,
+					ActorID:            actorID,
+					EventType:          "story.mention",
+					EntityType:         "story",
+					EntityID:           current.ID,
+					Title:              "mentioned you in " + current.Name,
+					Category:           "mention",
+					Priority:           "high",
+					ExplicitRecipients: mentionedUserIDs,
+					EntitySnapshot: model.JSONB{
+						"title":      current.Name,
+						"display_id": current.DisplayID,
+						"type":       current.StoryType,
+					},
+				}); err != nil {
+					slog.ErrorContext(ctx, "failed to emit story mention notification", "error", err, "story_id", current.ID)
+				}
+			}
+		}
 	}
 
 	return s.storyRepo.GetByID(ctx, current.ID)

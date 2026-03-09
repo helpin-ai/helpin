@@ -66,7 +66,10 @@ func Load() (*Config, error) {
 		"http://stage.helpin.ai",
 		"https://stage.helpin.ai",
 		"http://91.98.85.12",
+		"http://91.98.85.12:5173",
+		"http://91.98.85.12:5174",
 		"http://localhost:5173",
+		"http://localhost:5174",
 	}
 
 	appBaseURL := os.Getenv("APP_BASE_URL")

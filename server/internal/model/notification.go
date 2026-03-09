@@ -14,7 +14,11 @@ func (j JSONB) Value() (driver.Value, error) {
 	if j == nil {
 		return "{}", nil
 	}
-	return json.Marshal(j)
+	b, err := json.Marshal(j)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
 }
 
 func (j *JSONB) Scan(value interface{}) error {
@@ -38,22 +42,22 @@ func (j *JSONB) Scan(value interface{}) error {
 // Entity-centric: one notification per (recipient, entity) pair, updated on new events.
 type Notification struct {
 	ID          string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	RecipientID string  `json:"recipient_id" gorm:"type:uuid;not null"`
+	WorkspaceID string  `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_notif_recipient_entity,priority:4"`
+	RecipientID string  `json:"recipient_id" gorm:"type:uuid;not null;uniqueIndex:idx_notif_recipient_entity,priority:1"`
 	ActorID     *string `json:"actor_id" gorm:"type:uuid"`
 
-	EntityType string `json:"entity_type" gorm:"type:varchar(50);not null"`
-	EntityID   string `json:"entity_id" gorm:"type:uuid;not null"`
+	EntityType string `json:"entity_type" gorm:"type:varchar(50);not null;uniqueIndex:idx_notif_recipient_entity,priority:2"`
+	EntityID   string `json:"entity_id" gorm:"type:uuid;not null;uniqueIndex:idx_notif_recipient_entity,priority:3"`
 
 	EventType           string `json:"event_type" gorm:"type:varchar(100);not null"`
 	Title               string `json:"title" gorm:"not null"`
 	Body                *string `json:"body"`
-	Metadata            JSONB  `json:"metadata" gorm:"type:jsonb;default:'{}'"`
+	Metadata            JSONB  `json:"metadata" gorm:"type:jsonb"`
 	LatestEventCategory string `json:"latest_event_category" gorm:"type:varchar(50);not null"`
 
 	// Denormalized render snapshots for inbox rendering without joins.
-	ActorSnapshot        JSONB `json:"actor_snapshot" gorm:"type:jsonb;default:'{}'"`
-	EntitySnapshot       JSONB `json:"entity_snapshot" gorm:"type:jsonb;default:'{}'"`
+	ActorSnapshot        JSONB `json:"actor_snapshot" gorm:"type:jsonb"`
+	EntitySnapshot       JSONB `json:"entity_snapshot" gorm:"type:jsonb"`
 	ParentEntitySnapshot JSONB `json:"parent_entity_snapshot,omitempty" gorm:"type:jsonb"`
 
 	EventCount  int       `json:"event_count" gorm:"default:1"`
