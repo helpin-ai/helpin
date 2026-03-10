@@ -840,7 +840,8 @@ img { max-width: 100%; }
             {title !== undefined && (
               <div className="group/title px-6 pt-10 pb-1">
                 {slug && (
-                  <p className="text-xs text-muted-foreground/60 font-mono mb-1 opacity-0 group-hover/title:opacity-100 transition-opacity">
+                  <p className="text-[13px] text-muted-foreground/60 font-mono mb-3 opacity-0 group-hover/title:opacity-100 transition-opacity flex items-center gap-1.5">
+                    <Link2 className="h-3.5 w-3.5" />
                     /{slug}
                   </p>
                 )}
