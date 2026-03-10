@@ -275,6 +275,11 @@ func main() {
 	wsPublisher := ws.NewPublisher(wsHub)
 	wsHandler := ws.NewHandler(wsHub, jwtManager)
 
+	// Start PG LISTEN → WS bridge for cross-process events (e.g. Temporal worker).
+	pgListenerCtx, pgListenerCancel := context.WithCancel(context.Background())
+	pgListener := ws.NewPGListener(cfg.DatabaseURL, wsHub)
+	go pgListener.Start(pgListenerCtx)
+
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
@@ -466,7 +471,7 @@ func main() {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
 	}
 
-	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, gmailOAuth, encryptionKey, gmailSyncClient)
+	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, gmailOAuth, encryptionKey, gmailSyncClient)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo)
@@ -557,7 +562,7 @@ func main() {
 		CRMProperty:       handler.NewCRMPropertyHandler(crmPropertyService),
 		CRMList:           handler.NewCRMListHandler(crmListService),
 		CRMImport:         handler.NewCRMImportHandler(crmImportService),
-		CRMEmail:          handler.NewCRMEmailHandler(crmEmailService),
+		CRMEmail:          handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
 		CRMCalendar:       handler.NewCRMCalendarHandler(crmCalendarService),
 		CRMEnrichment:     handler.NewCRMEnrichmentHandler(crmEnrichmentService),
 		CRMSignal:         handler.NewCRMSignalHandler(crmSignalService),
@@ -693,6 +698,7 @@ func main() {
 
 	<-done
 	slog.Info("server shutting down")
+	pgListenerCancel()
 	close(automationDone)
 	close(digestDone)
 	close(cleanupDone)

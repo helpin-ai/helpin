@@ -4,6 +4,7 @@ import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Separator } from '@/components/ui/separator';
+import type { WSEvent } from '@/hooks/useWebSocket';
 import { useDocsDocument, useDocsLinkedDocs } from '@/hooks/queries/useDocs';
 import { agentService } from '@/lib/services/agentService';
 import type {
@@ -23,7 +24,6 @@ import { DraftSpecStep } from './DraftSpecStep';
 import { ExecuteStep } from './ExecuteStep';
 import { GenerateStoriesStep } from './GenerateStoriesStep';
 import { PlannerSetupStep } from './PlannerSetupStep';
-import { PlanningActivityLog } from './PlanningActivityLog';
 import { PlanningProgress } from './PlanningProgress';
 import { computeCurrentStep, getStepStatus } from './planningStepUtils';
 import { ReviewStoriesStep } from './ReviewStoriesStep';
@@ -194,11 +194,23 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   useEffect(() => { void fetchAgents(); }, [fetchAgents]);
   useEffect(() => { void fetchRuns(); }, [fetchRuns]);
 
-  // Poll active runs
+  // Listen for WebSocket agent_run events targeting this epic
   useEffect(() => {
-    const active = runs.some((run) => ['queued', 'running', 'awaiting_approval'].includes(run.status));
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<WSEvent>).detail;
+      if (detail.parent_type === 'epic' && detail.parent_id === epic.id) {
+        void fetchRuns();
+      }
+    };
+    window.addEventListener('agent_run-updated', handler);
+    return () => window.removeEventListener('agent_run-updated', handler);
+  }, [epic.id, fetchRuns]);
+
+  // Fallback poll at 30s for Temporal-driven terminal states (no WS event yet)
+  useEffect(() => {
+    const active = runs.some((r) => ['queued', 'running'].includes(r.status));
     if (!active) return;
-    const interval = window.setInterval(() => { void fetchRuns(); }, 5000);
+    const interval = window.setInterval(() => { void fetchRuns(); }, 30_000);
     return () => window.clearInterval(interval);
   }, [runs, fetchRuns]);
 
@@ -523,18 +535,6 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
         />
       </div>
 
-      <div className="mt-4">
-        <PlanningActivityLog
-          runs={runs}
-          loadingRuns={loadingRuns}
-          selectedRunId={selectedRunId}
-          onSelectRun={setSelectedRunId}
-          selectedRun={selectedRun}
-          artifacts={artifacts}
-          actingOnRun={actingOnRun}
-          onCancelRun={(id) => void handleCancelRun(id)}
-        />
-      </div>
     </div>
   );
 }

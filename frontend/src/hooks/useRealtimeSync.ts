@@ -71,6 +71,12 @@ export function useRealtimeSync(workspaceId: string) {
     } else if (event.entity === 'notification') {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
+    } else if (event.entity === 'agent_run') {
+      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'epics'] })
+      queryClient.invalidateQueries({ queryKey: ['agent_runs', workspaceId] })
+      if (event.parent_type === 'story' && event.parent_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.parent_id) })
+      }
     }
 
     // Child entity events → invalidate parent query cache

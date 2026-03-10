@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import Link from '@tiptap/extension-link'
 import { Markdown } from 'tiptap-markdown'
 import {
   Bold,
@@ -506,6 +505,10 @@ export function DocsEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
+        link: {
+          openOnClick: false,
+          HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
+        },
       }),
       Placeholder.configure({ placeholder: 'Start writing your document...' }),
       Markdown.configure({
@@ -514,12 +517,6 @@ export function DocsEditor({
         bulletListMarker: '-',
         transformPastedText: true,
         transformCopiedText: false, // Don't force clipboard to markdown — we have explicit "Copy as Markdown"
-      }),
-      // Register Link AFTER Markdown so our full extension (with setLink command) takes precedence
-      // over tiptap-markdown's minimal link mark
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
       }),
       ResizableImageExtension,
     ],

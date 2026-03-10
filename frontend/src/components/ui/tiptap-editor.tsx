@@ -1,7 +1,6 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import Link from '@tiptap/extension-link';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import {
   Bold,
@@ -155,12 +154,12 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     const exts = [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
+        link: {
+          openOnClick: false,
+          HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
+        },
       }),
       Placeholder.configure({ placeholder }),
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
-      }),
       MentionHighlight,
     ];
     if (uploadConfig) {

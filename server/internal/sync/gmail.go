@@ -113,6 +113,17 @@ func (c *GmailSyncClient) GetValidToken(ctx context.Context, account *model.CRME
 	return newPair.AccessToken, nil
 }
 
+// GetEmailAddress fetches the authenticated user's email address from the Gmail API.
+func (c *GmailSyncClient) GetEmailAddress(ctx context.Context, accessToken string) (string, error) {
+	var profile struct {
+		EmailAddress string `json:"emailAddress"`
+	}
+	if err := c.apiGet(ctx, accessToken, gmailAPIBase+"/profile", &profile); err != nil {
+		return "", fmt.Errorf("get gmail profile: %w", err)
+	}
+	return profile.EmailAddress, nil
+}
+
 // ListMessages fetches messages from Gmail matching the query.
 func (c *GmailSyncClient) ListMessages(ctx context.Context, accessToken, query string, maxResults int, pageToken string) ([]GmailMessage, string, error) {
 	// First, list message IDs.

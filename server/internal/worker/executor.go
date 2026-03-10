@@ -139,7 +139,9 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 				for {
 					select {
 					case <-ticker.C:
-						_ = execCtx.Heartbeat(fmt.Sprintf("llm_call_%d", iteration+1))
+						if err := execCtx.Heartbeat(fmt.Sprintf("llm_call_%d", iteration+1)); err != nil {
+							return // context cancelled or activity timed out, stop heartbeating
+						}
 					case <-hbStop:
 						return
 					case <-ctx.Done():

@@ -21,16 +21,18 @@ import (
 type CRMEmailService struct {
 	emailRepo     *repository.CRMEmailRepository
 	contactRepo   *repository.CRMContactRepository
+	workspaceRepo *repository.WorkspaceRepository
 	oauthClient   *oauth.GmailOAuthClient
 	encryptionKey []byte
 	gmailSync     *sync.GmailSyncClient
 }
 
 // NewCRMEmailService creates a new CRMEmailService.
-func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository, oauthClient *oauth.GmailOAuthClient, encryptionKey []byte, gmailSync *sync.GmailSyncClient) *CRMEmailService {
+func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository, workspaceRepo *repository.WorkspaceRepository, oauthClient *oauth.GmailOAuthClient, encryptionKey []byte, gmailSync *sync.GmailSyncClient) *CRMEmailService {
 	return &CRMEmailService{
 		emailRepo:     emailRepo,
 		contactRepo:   contactRepo,
+		workspaceRepo: workspaceRepo,
 		oauthClient:   oauthClient,
 		encryptionKey: encryptionKey,
 		gmailSync:     gmailSync,
@@ -148,37 +150,48 @@ func (s *CRMEmailService) InitiateOAuth(ctx context.Context, workspaceID, member
 }
 
 // CompleteOAuth handles the OAuth callback, exchanging code for tokens.
-func (s *CRMEmailService) CompleteOAuth(ctx context.Context, state, code string) error {
+// Returns the workspace slug for redirect purposes.
+func (s *CRMEmailService) CompleteOAuth(ctx context.Context, state, code string) (string, error) {
 	if s.oauthClient == nil {
-		return fmt.Errorf("Gmail OAuth not configured")
+		return "", fmt.Errorf("Gmail OAuth not configured")
 	}
 	if len(s.encryptionKey) == 0 {
-		return fmt.Errorf("encryption key not configured")
+		return "", fmt.Errorf("encryption key not configured")
 	}
 
 	// Find the account by state.
 	account, err := s.emailRepo.GetAccountByOAuthState(ctx, state)
 	if err != nil {
-		return fmt.Errorf("lookup oauth state: %w", err)
+		return "", fmt.Errorf("lookup oauth state: %w", err)
 	}
 	if account == nil {
-		return fmt.Errorf("invalid or expired OAuth state")
+		return "", fmt.Errorf("invalid or expired OAuth state")
 	}
 
 	// Exchange code for tokens.
 	tokenPair, err := s.oauthClient.ExchangeCode(ctx, code)
 	if err != nil {
-		return fmt.Errorf("exchange code: %w", err)
+		return "", fmt.Errorf("exchange code: %w", err)
 	}
 
 	// Encrypt tokens.
 	encAccessToken, err := crypto.EncryptString(tokenPair.AccessToken, s.encryptionKey)
 	if err != nil {
-		return fmt.Errorf("encrypt access token: %w", err)
+		return "", fmt.Errorf("encrypt access token: %w", err)
 	}
 	encRefreshToken, err := crypto.EncryptString(tokenPair.RefreshToken, s.encryptionKey)
 	if err != nil {
-		return fmt.Errorf("encrypt refresh token: %w", err)
+		return "", fmt.Errorf("encrypt refresh token: %w", err)
+	}
+
+	// Fetch the actual email address from Gmail.
+	if s.gmailSync != nil {
+		emailAddr, err := s.gmailSync.GetEmailAddress(ctx, tokenPair.AccessToken)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to fetch Gmail email address, will update on first sync", "error", err)
+		} else if emailAddr != "" {
+			account.EmailAddress = emailAddr
+		}
 	}
 
 	// Update account.
@@ -189,16 +202,19 @@ func (s *CRMEmailService) CompleteOAuth(ctx context.Context, state, code string)
 	account.IsActive = true
 	account.SyncState = model.JSONB{"status": "connected"}
 
-	// TODO: Fetch the actual email address from the Gmail API userinfo.
-	// For now, the email will be updated on first sync.
-
 	if err := s.emailRepo.UpdateAccount(ctx, account); err != nil {
-		return fmt.Errorf("update account: %w", err)
+		return "", fmt.Errorf("update account: %w", err)
 	}
 
 	slog.InfoContext(ctx, "completed Gmail OAuth flow", "account_id", account.ID, "workspace_id", account.WorkspaceID)
 
-	return nil
+	// Look up workspace slug for redirect.
+	ws, err := s.workspaceRepo.GetByID(ctx, account.WorkspaceID)
+	if err != nil {
+		return "", fmt.Errorf("lookup workspace: %w", err)
+	}
+
+	return ws.Slug, nil
 }
 
 // SendEmail sends an email via Gmail API and stores the outbound message.

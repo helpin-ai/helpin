@@ -178,9 +178,9 @@ export function EpicDetailPage() {
 
   useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (showLoading = true) => {
     if (!workspaceId) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setError(null);
     const [epicRes, storiesRes, epicsRes, sprintsRes, reposRes] = await Promise.all([
       pmEpicService.get(workspaceId, epicId),
@@ -195,7 +195,7 @@ export function EpicDetailPage() {
       return;
     }
     setEpic(epicRes.data);
-    setForm(buildForm(epicRes.data));
+    setForm((current) => current ? current : buildForm(epicRes.data));
     setStories(storiesRes.data ?? []);
     setAllEpics(epicsRes.data ?? []);
     setAllSprints(sprintsRes.data ?? []);
@@ -450,7 +450,7 @@ export function EpicDetailPage() {
             epic={epic.epic}
             workspaceId={workspaceId!}
             workspaceSlug={slug}
-            onStoriesCreated={() => fetchData()}
+            onStoriesCreated={() => fetchData(false)}
           />
         </div>
 

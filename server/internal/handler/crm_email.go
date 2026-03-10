@@ -13,11 +13,12 @@ import (
 // CRMEmailHandler handles CRM email HTTP endpoints.
 type CRMEmailHandler struct {
 	emailService *service.CRMEmailService
+	appBaseURL   string
 }
 
 // NewCRMEmailHandler creates a new CRMEmailHandler.
-func NewCRMEmailHandler(emailService *service.CRMEmailService) *CRMEmailHandler {
-	return &CRMEmailHandler{emailService: emailService}
+func NewCRMEmailHandler(emailService *service.CRMEmailService, appBaseURL string) *CRMEmailHandler {
+	return &CRMEmailHandler{emailService: emailService, appBaseURL: appBaseURL}
 }
 
 // ListAccounts handles GET /api/crm/email/accounts.
@@ -130,14 +131,15 @@ func (h *CRMEmailHandler) OAuthCallbackRedirect(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if err := h.emailService.CompleteOAuth(r.Context(), state, code); err != nil {
+	slug, err := h.emailService.CompleteOAuth(r.Context(), state, code)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"message": "Gmail connected successfully",
-	})
+	// Redirect browser back to the CRM email settings page.
+	redirectURL := h.appBaseURL + "/w/" + slug + "/crm?oauth=success"
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 // SendEmail handles POST /api/crm/email/send.

@@ -255,6 +255,9 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		AllowedTools:              allowedTools,
 		Services:                  bridge,
 		Heartbeat: func(stage string) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			now := time.Now()
 			activity.RecordHeartbeat(ctx, stage)
 			return a.runRepo.UpdateStage(ctx, state.run.WorkspaceID, state.run.ID, stage, &now)
@@ -286,10 +289,12 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	err = adapter.Execute(execCtx, state.run)
 	if err != nil {
 		if err == workerpkg.ErrRunCancelled || ctx.Err() != nil {
-			_ = a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed)
+			bgCtx := context.Background()
+			_ = a.markAgentIdle(bgCtx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed)
 			return ExecuteRunResult{}, nil
 		}
-		_ = a.failRun(ctx, state, err.Error())
+		bgCtx := context.Background()
+		_ = a.failRun(bgCtx, state, err.Error())
 		return ExecuteRunResult{}, err
 	}
 
@@ -321,6 +326,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	if err := a.runRepo.Update(ctx, state.run); err != nil {
 		return ExecuteRunResult{}, err
 	}
+	a.runRepo.Notify(ctx, state.run)
 
 	if err := a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed); err != nil {
 		return ExecuteRunResult{}, err
@@ -2005,6 +2011,7 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 	if err := a.runRepo.Update(ctx, state.run); err != nil {
 		return err
 	}
+	a.runRepo.Notify(ctx, state.run)
 	if state.deliveryTarget != nil {
 		state.deliveryTarget.DeliveryState = "failed"
 		state.deliveryTarget.LastRunID = &state.run.ID

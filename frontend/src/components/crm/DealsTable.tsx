@@ -4,25 +4,44 @@ import {
   getCoreRowModel,
   getGroupedRowModel,
   getExpandedRowModel,
+  getSortedRowModel,
   flexRender,
   createColumnHelper,
   type GroupingState,
   type ExpandedState,
   type Row,
+  type RowSelectionState,
+  type SortingState,
+  type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { CalendarDays, Check, ChevronDown, ChevronRight, DollarSign, EllipsisVertical, ExternalLink, Loader2, Plus, Trash2, UserPlus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronRight, DollarSign, EllipsisVertical, ExternalLink, Loader2, Plus, Trash2, UserPlus } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
+import { Checkbox } from '@/components/ui/checkbox';
 import { format, parseISO } from 'date-fns';
 import { crmDealService } from '@/lib/services/crmService';
 import { StageTypeIcon, STAGE_TYPE_CONFIG } from '@/lib/crmConstants';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { useDealDisplayStore } from '@/stores/dealDisplayStore';
+import {
+  TABLE_CONTAINER,
+  TABLE_HEADER,
+  TABLE_HEADER_CELL,
+  TABLE_ROW,
+  TABLE_CELL,
+  TABLE_GROUP_ROW,
+  TABLE_HEADER_CELL_SORTABLE,
+  TABLE_RESIZE_HANDLE,
+  ROW_HEIGHT,
+  GROUP_ROW_HEIGHT,
+  CHECKBOX_COL_SIZE,
+  dynamicCellStyle,
+} from '@/lib/tableStyles';
 import type { CRMDeal, CRMPipeline, CRMPipelineStage } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
 
@@ -75,6 +94,9 @@ export function DealsTable({
   const [localDeals, setLocalDeals] = useState<CRMDeal[]>(deals);
   const [groupBy, setGroupBy] = useState<GroupByOption>('none');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setLocalDeals(deals); }, [deals]);
@@ -94,9 +116,6 @@ export function DealsTable({
     async (dealId: string, patch: Partial<CRMDeal>) => {
       let snapshot: CRMDeal[] = [];
       const optimisticPatch: Partial<CRMDeal> = { ...patch };
-      if (patch.owner_member_id !== undefined) {
-        // No owner_name on deal, handled via ownerNameMap
-      }
       if (patch.stage_id) {
         const stage = stageMap.get(patch.stage_id);
         if (stage) optimisticPatch.stage = stage;
@@ -125,6 +144,28 @@ export function DealsTable({
 
   const tableColumns = useMemo(
     () => [
+      columnHelper.display({
+        id: 'select',
+        size: CHECKBOX_COL_SIZE,
+        enableGrouping: false,
+        enableSorting: false,
+        enableResizing: false,
+        header: ({ table }) => (
+          <Checkbox
+            checked={table.getIsAllPageRowsSelected()}
+            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+            aria-label="Select all"
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Select row"
+          />
+        ),
+      }),
       columnHelper.accessor('display_id', {
         id: 'displayId',
         header: 'ID',
@@ -140,13 +181,14 @@ export function DealsTable({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="max-w-full truncate text-left text-sm hover:text-primary hover:underline"
+            className="flex max-w-full cursor-pointer items-center gap-2 truncate text-left text-sm hover:text-primary"
             onClick={(e) => {
               e.stopPropagation();
               onDealClick(info.row.original.id);
             }}
           >
-            {info.getValue()}
+            <UserAvatar name={info.getValue()} className="h-6 w-6 shrink-0" />
+            <span className="truncate">{info.getValue()}</span>
           </button>
         ),
       }),
@@ -224,14 +266,14 @@ export function DealsTable({
       columnHelper.accessor('created_at', {
         id: 'createdAt',
         header: 'Created',
-        size: 120,
+        size: 160,
         enableGrouping: false,
         cell: (info) => {
           const val = info.getValue();
           if (!val) return null;
           return (
             <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {format(parseISO(val), 'MMM d, yyyy')}
+              {format(parseISO(val), 'MMM d, yyyy, h:mm a')}
             </span>
           );
         },
@@ -254,6 +296,8 @@ export function DealsTable({
         header: '',
         size: 44,
         enableGrouping: false,
+        enableSorting: false,
+        enableResizing: false,
         cell: (info) => (
           <InlineActionsCell
             deal={info.row.original}
@@ -289,12 +333,22 @@ export function DealsTable({
       grouping,
       expanded,
       columnVisibility,
+      rowSelection,
+      sorting,
+      columnSizing,
     },
     onExpandedChange: setExpanded,
+    onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
+    onColumnSizingChange: setColumnSizing,
+    enableRowSelection: true,
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
     autoResetExpanded: false,
     getRowId: (row) => row.id,
     getExpandedRowModel: getExpandedRowModel(),
     getGroupedRowModel: getGroupedRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     getCoreRowModel: getCoreRowModel(),
   });
 
@@ -305,7 +359,7 @@ export function DealsTable({
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
       const row = rows[index];
-      return row?.getIsGrouped() ? 40 : 36;
+      return row?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT;
     },
     overscan: 20,
   });
@@ -362,29 +416,48 @@ export function DealsTable({
       </div>
 
       {/* Table */}
-      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border/70">
+      <div className={TABLE_CONTAINER}>
         <div className="min-w-fit">
           {/* Header */}
-          <div className="sticky top-0 z-10 border-b border-border/70 bg-muted/50">
+          <div className={TABLE_HEADER}>
             {table.getHeaderGroups().map((headerGroup) => (
               <div key={headerGroup.id} className="flex items-center">
                 {headerGroup.headers.map((header) => {
                   if (header.column.getIsGrouped()) return null;
-                  const size = header.getSize();
-                  if (size === 0) return null;
+                  const defSize = header.column.columnDef.size ?? 150;
+                  const runtimeSize = header.getSize();
+                  const isResized = !!columnSizing[header.column.id];
+                  const canSort = header.column.getCanSort();
+                  const sorted = header.column.getIsSorted();
                   return (
                     <div
                       key={header.id}
-                      className={`px-2 py-1.5 text-xs font-medium text-muted-foreground ${size !== 999 ? 'text-center' : ''}`}
-                      style={{
-                        width: size === 999 ? undefined : size,
-                        flex: size === 999 ? '1 1 0%' : undefined,
-                        minWidth: size === 999 ? 300 : undefined,
-                      }}
+                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''}`}
+                      style={dynamicCellStyle(defSize, runtimeSize, isResized, 300)}
+                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                     >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      <div className="flex items-center gap-1">
+                        {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                        {canSort && (
+                          <span className="ml-auto shrink-0">
+                            {sorted === 'asc' ? (
+                              <ArrowUp className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            ) : sorted === 'desc' ? (
+                              <ArrowDown className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            ) : (
+                              <ArrowUpDown className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                            )}
+                          </span>
+                        )}
+                      </div>
+                      {header.column.getCanResize() && (
+                        <div
+                          onMouseDown={header.getResizeHandler()}
+                          onTouchStart={header.getResizeHandler()}
+                          onClick={(e) => e.stopPropagation()}
+                          className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -395,7 +468,7 @@ export function DealsTable({
           {/* Virtualized body */}
           <div
             ref={parentRef}
-            className="overflow-auto"
+            className="overflow-auto scrollbar-hide"
             style={{ height: 'calc(100% - 30px)' }}
           >
             <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
@@ -419,7 +492,7 @@ export function DealsTable({
                     {isGrouped ? (
                       <GroupHeaderRow row={row} stageMap={stageMap} groupBy={groupBy} />
                     ) : (
-                      <DataRow row={row} />
+                      <DataRow row={row} columnSizing={columnSizing} />
                     )}
                   </div>
                 );
@@ -459,7 +532,7 @@ function GroupHeaderRow({
 
   return (
     <div
-      className="flex h-10 cursor-pointer items-center gap-2 border-b border-border/50 bg-muted/40 px-3 text-sm font-semibold hover:bg-muted/60"
+      className={TABLE_GROUP_ROW}
       onClick={() => row.toggleExpanded()}
     >
       {row.getIsExpanded() ? (
@@ -479,24 +552,19 @@ function GroupHeaderRow({
 
 // ── Data Row ──────────────────────────────────────────────────────
 
-function DataRow({ row }: { row: Row<CRMDeal> }) {
+function DataRow({ row, columnSizing }: { row: Row<CRMDeal>; columnSizing: ColumnSizingState }) {
   return (
-    <div
-      className="flex h-9 items-center border-b border-border/30 transition-colors hover:bg-muted/30"
-    >
+    <div className={TABLE_ROW}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
-        const size = cell.column.getSize();
-        if (size === 0) return null;
+        const defSize = cell.column.columnDef.size ?? 150;
+        const runtimeSize = cell.column.getSize();
+        const isResized = !!columnSizing[cell.column.id];
         return (
           <div
             key={cell.id}
-            className={`flex items-center px-2 ${size !== 999 ? 'justify-center' : ''}`}
-            style={{
-              width: size === 999 ? undefined : size,
-              flex: size === 999 ? '1 1 0%' : undefined,
-              minWidth: size === 999 ? 300 : undefined,
-            }}
+            className={TABLE_CELL}
+            style={dynamicCellStyle(defSize, runtimeSize, isResized, 300)}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </div>
@@ -569,7 +637,7 @@ function InlineAmountCell({
   if (!editing) {
     return (
       <button
-        className="w-full text-center text-xs hover:text-primary"
+        className="w-full text-left text-xs hover:text-primary"
         onClick={(e) => { e.stopPropagation(); setEditing(true); }}
       >
         {deal.amount != null ? `${deal.currency} ${new Intl.NumberFormat().format(deal.amount)}` : '-'}
@@ -588,7 +656,7 @@ function InlineAmountCell({
   return (
     <input
       ref={inputRef}
-      className="w-full rounded border border-primary/40 bg-background px-1 py-0.5 text-center text-xs outline-none"
+      className="w-full rounded border border-primary/40 bg-background px-1 py-0.5 text-left text-xs outline-none"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onBlur={commit}
@@ -697,7 +765,7 @@ function InlineProbabilityCell({
   if (!editing) {
     return (
       <button
-        className="flex w-full items-center justify-center gap-1.5 text-xs hover:text-primary"
+        className="flex w-full items-center gap-1.5 text-xs hover:text-primary"
         onClick={(e) => { e.stopPropagation(); setEditing(true); }}
       >
         {deal.probability != null ? (
@@ -723,7 +791,7 @@ function InlineProbabilityCell({
   return (
     <input
       ref={inputRef}
-      className="w-full rounded border border-primary/40 bg-background px-1 py-0.5 text-center text-xs outline-none"
+      className="w-full rounded border border-primary/40 bg-background px-1 py-0.5 text-left text-xs outline-none"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onBlur={commit}
@@ -751,7 +819,7 @@ function InlineCloseDateCell({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className="flex w-full items-center justify-center gap-1 text-xs text-muted-foreground hover:text-primary"
+          className="flex w-full items-center gap-1 text-xs text-muted-foreground hover:text-primary"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           <CalendarDays className="h-3 w-3 shrink-0" />
@@ -794,7 +862,7 @@ function InlineActionsCell({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 [div:hover>&]:opacity-100"
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
           <EllipsisVertical className="h-3.5 w-3.5" />

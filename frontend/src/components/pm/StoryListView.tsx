@@ -4,14 +4,17 @@ import {
   getCoreRowModel,
   getGroupedRowModel,
   getExpandedRowModel,
+  getSortedRowModel,
   flexRender,
   createColumnHelper,
   type GroupingState,
   type ExpandedState,
   type Row,
+  type SortingState,
+  type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Archive, BarChart3, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, EllipsisVertical, ExternalLink, Link2, Loader2, StickyNote, UserPlus } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, EllipsisVertical, ExternalLink, Link2, Loader2, StickyNote, UserPlus } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -48,6 +51,19 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
+import {
+  TABLE_CONTAINER,
+  TABLE_HEADER,
+  TABLE_HEADER_CELL,
+  TABLE_HEADER_CELL_SORTABLE,
+  TABLE_RESIZE_HANDLE,
+  TABLE_ROW,
+  TABLE_CELL,
+  TABLE_GROUP_ROW,
+  ROW_HEIGHT,
+  GROUP_ROW_HEIGHT,
+  dynamicCellStyle,
+} from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 
@@ -140,6 +156,8 @@ export function StoryListView({
   const parentRef = useRef<HTMLDivElement>(null);
   const pinnedGroupRef = useRef<number | null>(null);
   const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [allLabels, setAllLabels] = useState<Label[]>([]);
 
   useEffect(() => {
@@ -318,6 +336,8 @@ export function StoryListView({
         header: '',
         size: 40,
         enableGrouping: false,
+        enableSorting: false,
+        enableResizing: false,
         cell: (info) => <StoryTypeIcon storyType={info.getValue()} className="h-4 w-4" />,
       }),
       columnHelper.accessor('name', {
@@ -327,7 +347,7 @@ export function StoryListView({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="max-w-full truncate text-left text-sm hover:text-primary hover:underline"
+            className="max-w-full cursor-pointer truncate text-left text-sm hover:text-primary"
             onClick={(e) => {
               e.stopPropagation();
               onOpenStory(info.row.original);
@@ -504,6 +524,7 @@ export function StoryListView({
         header: 'Labels',
         size: 260,
         enableGrouping: false,
+        enableSorting: false,
         cell: (info) => (
           <InlineLabelsCell
             story={info.row.original}
@@ -534,6 +555,8 @@ export function StoryListView({
         header: '',
         size: 44,
         enableGrouping: false,
+        enableSorting: false,
+        enableResizing: false,
         cell: (info) => (
           <InlineActionsCell
             story={info.row.original}
@@ -603,12 +626,19 @@ export function StoryListView({
       grouping,
       expanded,
       columnVisibility,
+      sorting,
+      columnSizing,
     },
     onExpandedChange: setExpanded,
+    onSortingChange: setSorting,
+    onColumnSizingChange: setColumnSizing,
+    enableColumnResizing: true,
+    columnResizeMode: 'onChange',
     autoResetExpanded: false,
     getRowId: (row) => row.id,
     getExpandedRowModel: getExpandedRowModel(),
     getGroupedRowModel: getGroupedRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     getCoreRowModel: getCoreRowModel(),
   });
 
@@ -620,7 +650,7 @@ export function StoryListView({
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
       const row = rows[index];
-      return row?.getIsGrouped() ? 40 : 36;
+      return row?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT;
     },
     overscan: 20,
   });
@@ -669,29 +699,51 @@ export function StoryListView({
       </div>
 
       {/* Table */}
-      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border/70">
+      <div className={TABLE_CONTAINER}>
         <div className="min-w-fit">
         {/* Header */}
-        <div className="sticky top-0 z-10 border-b border-border/70 bg-muted/50">
+        <div className={TABLE_HEADER}>
           {table.getHeaderGroups().map((headerGroup) => (
             <div key={headerGroup.id} className="flex items-center">
               {headerGroup.headers.map((header) => {
                 if (header.column.getIsGrouped()) return null;
-                const size = header.getSize();
-                if (size === 0) return null;
+                const defSize = header.column.columnDef.size ?? 150;
+                const runtimeSize = header.getSize();
+                if (defSize === 0 && runtimeSize === 0) return null;
+                const isResized = !!columnSizing[header.column.id];
+                const canSort = header.column.getCanSort();
+                const sorted = header.column.getIsSorted();
                 return (
                   <div
                     key={header.id}
-                    className={`px-2 py-1.5 text-xs font-medium text-muted-foreground ${size !== 999 ? 'text-center' : ''}`}
-                    style={{
-                      width: size === 999 ? undefined : size,
-                      flex: size === 999 ? '1 1 0%' : undefined,
-                      minWidth: size === 999 ? 400 : undefined,
-                    }}
+                    className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''}`}
+                    style={dynamicCellStyle(defSize, runtimeSize, isResized, 400)}
+                    onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                   >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                    <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                      {canSort && (
+                        <span className="ml-auto shrink-0">
+                          {sorted === 'asc' ? (
+                            <ArrowUp className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                          ) : sorted === 'desc' ? (
+                            <ArrowDown className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                          ) : (
+                            <ArrowUpDown className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    {header.column.getCanResize() && (
+                      <div
+                        onMouseDown={header.getResizeHandler()}
+                        onTouchStart={header.getResizeHandler()}
+                        onClick={(e) => e.stopPropagation()}
+                        className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -762,7 +814,7 @@ export function StoryListView({
                   {isGrouped ? (
                     <GroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} />
                   ) : (
-                    <DataRow row={row} onOpenStory={onOpenStory} />
+                    <DataRow row={row} onOpenStory={onOpenStory} columnSizing={columnSizing} />
                   )}
                 </div>
               );
@@ -806,7 +858,7 @@ function GroupHeaderRow({
 
   return (
     <button
-      className="flex w-full items-center gap-2 border-b border-border/50 bg-muted/30 px-3 py-2 text-left text-xs font-semibold hover:bg-muted/50"
+      className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
       onClick={row.getToggleExpandedHandler()}
     >
       {row.getIsExpanded() ? (
@@ -831,26 +883,24 @@ function GroupHeaderRow({
   );
 }
 
-function DataRow({ row, onOpenStory }: { row: Row<Story>; onOpenStory: (story: Story) => void }) {
+function DataRow({ row, onOpenStory, columnSizing }: { row: Row<Story>; onOpenStory: (story: Story) => void; columnSizing: ColumnSizingState }) {
   return (
     <div
-      className="group/row flex cursor-pointer items-center border-b border-border/30 transition-colors hover:bg-muted/30"
+      className={`group/row ${TABLE_ROW} cursor-pointer`}
       onClick={() => onOpenStory(row.original)}
     >
       {row.getVisibleCells().map((cell) => {
         // Skip the grouped column entirely — header does the same, keeping alignment
         if (cell.column.getIsGrouped()) return null;
-        const size = cell.column.getSize();
-        if (size === 0) return null;
+        const defSize = cell.column.columnDef.size ?? 150;
+        const runtimeSize = cell.column.getSize();
+        const isResized = !!columnSizing[cell.column.id];
+        if (defSize === 0 && runtimeSize === 0) return null;
         return (
           <div
             key={cell.id}
-            className={`overflow-hidden px-2 py-1.5 ${size !== 999 ? 'text-center flex items-center justify-center' : ''}`}
-            style={{
-              width: size === 999 ? undefined : size,
-              flex: size === 999 ? '1 1 0%' : undefined,
-              minWidth: size === 999 ? 400 : undefined,
-            }}
+            className={`${TABLE_CELL} overflow-hidden`}
+            style={dynamicCellStyle(defSize, runtimeSize, isResized, 400)}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </div>
