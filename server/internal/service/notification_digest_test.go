@@ -69,9 +69,9 @@ func TestProcessPendingDigests_SendsDueDigestAndSkipsResolvedNotifications(t *te
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 
-	mustExec(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+	mustExecDigest(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		"user-1", "user@example.com", "hash", "Digest User", now, now)
-	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
 
@@ -119,12 +119,12 @@ func TestProcessPendingDigests_RespectsCurrentWorkspaceEmailPreferences(t *testi
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 
-	mustExec(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+	mustExecDigest(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		"user-1", "user@example.com", "hash", "Digest User", now, now)
-	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
-	mustExec(t, db, `INSERT INTO notification_preferences (id, user_id, workspace_id, mute_workspace, channel_preferences, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO notification_preferences (id, user_id, workspace_id, mute_workspace, channel_preferences, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		"pref-1", "user-1", "ws-1", false, `{"comments":{"in_app":true,"email":false}}`, now, now)
 
@@ -160,9 +160,9 @@ func TestProcessPendingDigests_SkipsWhenAccountEmailDisabled(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 
-	mustExec(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+	mustExecDigest(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		"user-1", "user@example.com", "hash", "Digest User", now, now)
-	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"settings-1", "user-1", false, "daily", "09:00", 1, false, "all", "UTC", now, now)
 
@@ -198,9 +198,9 @@ func TestProcessPendingDigests_SkipsWhenDNDUntilIsActive(t *testing.T) {
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 	future := now.Add(30 * time.Minute)
 
-	mustExec(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+	mustExecDigest(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		"user-1", "user@example.com", "hash", "Digest User", now, now)
-	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, dnd_until, badge_mode, timezone, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, dnd_until, badge_mode, timezone, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"settings-1", "user-1", true, "daily", "09:00", 1, false, future, "all", "UTC", now, now)
 
@@ -235,7 +235,7 @@ func TestProcessPendingDigests_FailsWhenUserRepositoryMissing(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 
-	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
 
@@ -266,9 +266,9 @@ func TestProcessPendingDigests_MarksIncludedRowsFailedOnSendError(t *testing.T) 
 	ctx := context.Background()
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 
-	mustExec(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+	mustExecDigest(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		"user-1", "user@example.com", "hash", "Digest User", now, now)
-	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
 
@@ -398,7 +398,7 @@ func newNotificationDigestTestDB(t *testing.T) *gorm.DB {
 	}
 
 	for _, stmt := range statements {
-		mustExec(t, db, stmt)
+		mustExecDigest(t, db, stmt)
 	}
 
 	return db
@@ -410,33 +410,33 @@ func seedNotificationDigestCase(t *testing.T, db *gorm.DB, now time.Time) {
 	dueAt := time.Date(2026, time.March, 10, 8, 30, 0, 0, time.UTC)
 	futureAt := time.Date(2026, time.March, 10, 9, 30, 0, 0, time.UTC)
 
-	mustExec(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"notif-due-unread", "ws-1", "user-1", "story", "story-1", "story.comment", "Story A was updated", "comments", 1, dueAt, "unread", "normal", dueAt, dueAt)
-	mustExec(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"notif-due-read", "ws-1", "user-1", "story", "story-2", "story.comment", "Story B was resolved", "comments", 1, dueAt, "read", "normal", dueAt, dueAt)
-	mustExec(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"notif-future-unread", "ws-1", "user-1", "story", "story-3", "story.comment", "Story C will wait", "comments", 1, futureAt, "unread", "normal", futureAt, futureAt)
 
-	mustExec(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
+	mustExecDigest(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		"event-due-unread", "notif-due-unread", "story.comment", "Story A was updated", "comments", "normal", dueAt)
-	mustExec(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
+	mustExecDigest(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		"event-due-read", "notif-due-read", "story.comment", "Story B was resolved", "comments", "normal", dueAt)
-	mustExec(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
+	mustExecDigest(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		"event-future-unread", "notif-future-unread", "story.comment", "Story C will wait", "comments", "normal", futureAt)
 
-	mustExec(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		"delivery-due-unread", "event-due-unread", "digest", "pending", dueAt, dueAt)
-	mustExec(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		"delivery-due-read", "event-due-read", "digest", "pending", dueAt, dueAt)
-	mustExec(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
+	mustExecDigest(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		"delivery-future-unread", "event-future-unread", "digest", "pending", futureAt, now)
 }
@@ -455,7 +455,7 @@ func assertDeliveryStatus(t *testing.T, db *gorm.DB, deliveryID, expectedStatus 
 	}
 }
 
-func mustExec(t *testing.T, db *gorm.DB, query string, args ...any) {
+func mustExecDigest(t *testing.T, db *gorm.DB, query string, args ...any) {
 	t.Helper()
 	if err := db.Exec(query, args...).Error; err != nil {
 		t.Fatalf("exec %q: %v", query, err)
