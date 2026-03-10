@@ -112,6 +112,7 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 			Title:       "created sprint " + sprint.Name,
 			Category:    "activity",
 			Priority:    "normal",
+			TeamID:      derefString(sprint.TeamID),
 			EntitySnapshot: model.JSONB{
 				"title": sprint.Name,
 			},
@@ -195,6 +196,7 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 			Title:       "updated sprint " + sprint.Name,
 			Category:    "activity",
 			Priority:    "normal",
+			TeamID:      derefString(sprint.TeamID),
 			EntitySnapshot: model.JSONB{
 				"title": sprint.Name,
 			},

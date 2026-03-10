@@ -96,3 +96,18 @@ export interface EntityFollower {
 }
 
 export type NotificationFilter = 'all' | 'mentions' | 'assigned'
+
+export interface NotificationCategory {
+  key: string
+  label: string
+  description: string
+}
+
+export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
+  { key: 'assignments', label: 'Assignments', description: 'Assignments and ownership changes' },
+  { key: 'status_changes', label: 'Status changes', description: 'Changes to status, priority, and blocking' },
+  { key: 'comments', label: 'Comments and replies', description: 'New comments on items you follow' },
+  { key: 'mentions', label: 'Mentions', description: 'Mentions in comments, descriptions, or checklists' },
+  { key: 'subscriptions', label: 'Subscriptions', description: 'Updates to items you follow' },
+  { key: 'sprints', label: 'Sprints', description: 'Sprint creation and updates' },
+]

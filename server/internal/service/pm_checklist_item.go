@@ -165,9 +165,11 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 	}
 
 	entityTitle := item.StoryID
+	var entityTeamID string
 	if s.storyRepo != nil {
 		if story, _ := s.storyRepo.GetRawByID(ctx, item.StoryID); story != nil {
 			entityTitle = story.Name
+			entityTeamID = derefString(story.TeamID)
 		}
 	}
 
@@ -187,6 +189,7 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 		Body:               truncate(item.Text, 200),
 		Category:           "mention",
 		Priority:           "high",
+		TeamID:             entityTeamID,
 		ExplicitRecipients: mentionedUserIDs,
 		EntitySnapshot: model.JSONB{
 			"title":           entityTitle,
