@@ -488,6 +488,7 @@ export function DocsDocumentDetail() {
             <DocsEditor
               title={titleDraft}
               onTitleChange={!effectiveReadOnly ? handleTitleChange : undefined}
+              slug={doc?.hc_slug}
               initialContent={content?.content as JSONContent | null}
               onSave={handleSave}
               readOnly={effectiveReadOnly}
@@ -542,18 +543,6 @@ export function DocsDocumentDetail() {
                     </Button>
                   )}
                 </div>
-                <Separator className="my-4" />
-              </>
-            )}
-
-            {/* ── Help Center Slug ── */}
-            {doc.hc_slug && (
-              <>
-                <div className="flex items-center gap-1.5">
-                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Slug</span>
-                </div>
-                <p className="text-xs text-foreground font-mono">/{doc.hc_slug}</p>
                 <Separator className="my-4" />
               </>
             )}
