@@ -306,11 +306,21 @@ type HelpcenterFooterConfig struct {
 	Links         []HelpcenterFooterLink `json:"links"`
 }
 
-// HelpcenterHomepageConfig stores homepage hero and featured spaces.
+// HomepageFeaturedCard is a single card on the help center homepage.
+type HomepageFeaturedCard struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Icon        string `json:"icon"`
+	LinkType    string `json:"link_type"`
+	LinkValue   string `json:"link_value"`
+	SpaceSlug   string `json:"space_slug"`
+}
+
+// HelpcenterHomepageConfig stores homepage hero and featured cards.
 type HelpcenterHomepageConfig struct {
-	HeroTitle        string   `json:"hero_title"`
-	HeroSubtitle     string   `json:"hero_subtitle"`
-	FeaturedSpaceIDs []string `json:"featured_space_ids"`
+	HeroTitle     string                 `json:"hero_title"`
+	HeroSubtitle  string                 `json:"hero_subtitle"`
+	FeaturedCards []HomepageFeaturedCard  `json:"featured_cards"`
 }
 
 // HelpcenterSpaceNavConfig stores client-side space ordering and hiding.

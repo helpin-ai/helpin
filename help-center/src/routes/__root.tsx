@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { createRootRouteWithContext } from '@tanstack/react-router'
 import { AppShell } from '@/components/layout/AppShell'
 import { LoadingState } from '@/components/LoadingState'
@@ -20,6 +21,60 @@ function RootLayout() {
   } = useHelpCenterConfig(subdomain)
 
   const { data: spaces, isLoading: spacesLoading } = useSpaces(subdomain)
+
+  // Inject brand color as CSS custom property overrides
+  useEffect(() => {
+    if (!config?.brand_color) return
+
+    const hex = config.brand_color.replace('#', '')
+    if (hex.length !== 6) return
+
+    const r = parseInt(hex.substring(0, 2), 16)
+    const g = parseInt(hex.substring(2, 4), 16)
+    const b = parseInt(hex.substring(4, 6), 16)
+
+    // Lighter version for dark mode
+    const lighten = (c: number, amount: number) => Math.round(c + (255 - c) * amount)
+    const lr = lighten(r, 0.35)
+    const lg = lighten(g, 0.35)
+    const lb = lighten(b, 0.35)
+    const lightColor = `rgb(${lr}, ${lg}, ${lb})`
+
+    const style = document.createElement('style')
+    style.id = 'brand-color-override'
+    style.textContent = `
+      :root {
+        --primary: ${config.brand_color};
+        --ring: ${config.brand_color};
+        --sidebar-active: rgba(${r}, ${g}, ${b}, 0.08);
+        --sidebar-active-foreground: ${config.brand_color};
+      }
+      .dark {
+        --primary: ${lightColor};
+        --ring: ${lightColor};
+        --sidebar-active: rgba(${lr}, ${lg}, ${lb}, 0.12);
+        --sidebar-active-foreground: ${lightColor};
+      }
+    `
+    document.getElementById('brand-color-override')?.remove()
+    document.head.appendChild(style)
+
+    return () => {
+      document.getElementById('brand-color-override')?.remove()
+    }
+  }, [config?.brand_color])
+
+  // Set favicon from config
+  useEffect(() => {
+    if (!config?.favicon_url) return
+    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']")
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'icon'
+      document.head.appendChild(link)
+    }
+    link.href = config.favicon_url
+  }, [config?.favicon_url])
 
   if (configLoading || spacesLoading) {
     return <LoadingState message="Loading help center..." fullScreen />

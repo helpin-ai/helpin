@@ -22,6 +22,13 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
+  // Allow child components (e.g. homepage) to open search via custom event
+  useEffect(() => {
+    const handler = () => setSearchOpen(true)
+    window.addEventListener('open-help-search', handler)
+    return () => window.removeEventListener('open-help-search', handler)
+  }, [])
+
   return (
     <div className="min-h-screen flex flex-col">
       <TopBar onSearchClick={openSearch} />

@@ -1,5 +1,7 @@
 // ─── Help Center Config ─────────────────────────────────────────────────────
 
+export type HelpcenterThemeMode = 'light' | 'dark' | 'system'
+
 export interface HelpCenterConfig {
   id: string
   workspace_id: string
@@ -8,10 +10,33 @@ export interface HelpCenterConfig {
   brand_name: string
   brand_logo_url: string | null
   brand_color: string
+  favicon_url: string | null
+  theme_mode: HelpcenterThemeMode
+  search_placeholder: string | null
   is_published: boolean
   seo_title: string | null
   seo_description: string | null
   support_email: string | null
+  homepage_config?: HomepageConfig
+}
+
+// ─── Homepage Config ────────────────────────────────────────────────────────
+
+export type HomepageFeaturedCardLinkType = 'space' | 'collection' | 'article' | 'url'
+
+export interface HomepageFeaturedCard {
+  title: string
+  description: string
+  icon: string
+  link_type: HomepageFeaturedCardLinkType
+  link_value: string
+  space_slug: string
+}
+
+export interface HomepageConfig {
+  hero_title?: string
+  hero_subtitle?: string
+  featured_cards?: HomepageFeaturedCard[]
 }
 
 // ─── Spaces ─────────────────────────────────────────────────────────────────

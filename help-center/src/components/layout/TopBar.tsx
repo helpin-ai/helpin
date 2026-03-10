@@ -12,22 +12,23 @@ export function TopBar({ onSearchClick }: TopBarProps) {
   const { config, spaces } = useDocsContext()
   const params = useParams({ strict: false }) as { spaceSlug?: string }
   const activeSpaceSlug = params.spaceSlug
-  const { theme, toggleTheme } = useTheme()
+  const { theme, toggleTheme, canToggle } = useTheme(config.theme_mode)
 
   return (
     <header className="sticky top-0 z-30 flex items-center border-b border-border bg-background/95 backdrop-blur-sm px-5 h-[var(--hc-header-height)]">
       {/* Brand */}
       <Link to="/" className="flex items-center gap-2.5 shrink-0 mr-8">
-        {config.brand_logo_url && (
+        {config.brand_logo_url ? (
           <img
             src={config.brand_logo_url}
             alt={config.brand_name}
-            className="h-6 w-auto object-contain"
+            className="h-8 w-auto object-contain"
           />
+        ) : (
+          <span className="font-semibold text-[15px] tracking-tight text-foreground">
+            {config.brand_name || 'Docs'}
+          </span>
         )}
-        <span className="font-semibold text-[15px] tracking-tight text-foreground">
-          {config.brand_name || 'Docs'}
-        </span>
       </Link>
 
       {/* Space tabs */}
@@ -62,21 +63,23 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       >
         <Search size={14} className="text-muted-foreground shrink-0" />
         <span className="flex-1 text-left text-[13px] text-muted-foreground">
-          Search...
+          {config.search_placeholder || 'Search...'}
         </span>
         <kbd className="hidden sm:inline-flex items-center rounded-[4px] px-1.5 py-0.5 text-[10px] font-mono font-medium bg-background border border-border text-muted-foreground">
           ⌘K
         </kbd>
       </button>
 
-      {/* Theme toggle */}
-      <button
-        onClick={toggleTheme}
-        className="ml-3 inline-flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-        aria-label="Toggle dark mode"
-      >
-        {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-      </button>
+      {/* Theme toggle — hidden when admin forces a specific theme */}
+      {canToggle && (
+        <button
+          onClick={toggleTheme}
+          className="ml-3 inline-flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          aria-label="Toggle dark mode"
+        >
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+      )}
     </header>
   )
 }

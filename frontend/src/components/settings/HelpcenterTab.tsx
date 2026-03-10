@@ -8,11 +8,19 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Plus, Trash2, GripVertical, ExternalLink, Upload, X } from 'lucide-react';
+import {
+  Plus, Trash2, GripVertical, ExternalLink, Upload, X, Info,
+} from 'lucide-react';
+import { IconPicker } from '@/components/ui/icon-picker';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type {
   HelpcenterHeaderLink,
   HelpcenterFooterLink,
   HelpcenterThemeMode,
+  HomepageFeaturedCard,
+  DocsSpace,
+  DocsCollection,
+  DocsDocument,
 } from '@/lib/docsTypes';
 
 interface ConfigState {
@@ -28,7 +36,7 @@ interface ConfigState {
   footer_links: HelpcenterFooterLink[];
   homepage_hero_title: string;
   homepage_hero_subtitle: string;
-  homepage_featured_space_ids: string[];
+  homepage_featured_cards: HomepageFeaturedCard[];
   search_placeholder: string;
   is_published: boolean;
   seo_title: string;
@@ -49,7 +57,7 @@ const DEFAULT_CONFIG: ConfigState = {
   footer_links: [],
   homepage_hero_title: '',
   homepage_hero_subtitle: '',
-  homepage_featured_space_ids: [],
+  homepage_featured_cards: [],
   search_placeholder: '',
   is_published: false,
   seo_title: '',
@@ -61,6 +69,9 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
+  const [spaces, setSpaces] = useState<DocsSpace[]>([]);
+  const [collectionsCache, setCollectionsCache] = useState<Record<string, DocsCollection[]>>({});
+  const [articlesCache, setArticlesCache] = useState<Record<string, DocsDocument[]>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -82,7 +93,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
           footer_links: d.footer_config?.links ?? [],
           homepage_hero_title: d.homepage_config?.hero_title ?? '',
           homepage_hero_subtitle: d.homepage_config?.hero_subtitle ?? '',
-          homepage_featured_space_ids: d.homepage_config?.featured_space_ids ?? [],
+          homepage_featured_cards: d.homepage_config?.featured_cards ?? [],
           search_placeholder: d.search_placeholder ?? '',
           is_published: d.is_published ?? false,
           seo_title: d.seo_title ?? '',
@@ -90,6 +101,12 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
           support_email: d.support_email ?? '',
         });
       }
+      // Load external_capable spaces for featured card pickers
+      const spacesRes = await docsService.listSpaces(workspaceId);
+      if (spacesRes.data) {
+        setSpaces(spacesRes.data.filter(s => s.type === 'external_capable'));
+      }
+
       setLoading(false);
     };
     load();
@@ -115,7 +132,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
       homepage_config: {
         hero_title: config.homepage_hero_title,
         hero_subtitle: config.homepage_hero_subtitle,
-        featured_space_ids: config.homepage_featured_space_ids,
+        featured_cards: config.homepage_featured_cards,
       },
       search_placeholder: config.search_placeholder || undefined,
       is_published: config.is_published,
@@ -167,6 +184,93 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
     setConfig({ ...config, footer_links: config.footer_links.filter((_, i) => i !== index) });
   };
 
+  // ── Featured card helpers ──
+  const addFeaturedCard = () => {
+    setConfig({
+      ...config,
+      homepage_featured_cards: [
+        ...config.homepage_featured_cards,
+        { title: '', description: '', icon: '', link_type: 'space', link_value: '', space_slug: '' },
+      ],
+    });
+  };
+
+  const updateFeaturedCard = (index: number, patch: Partial<HomepageFeaturedCard>) => {
+    const cards = [...config.homepage_featured_cards];
+    cards[index] = { ...cards[index], ...patch };
+    setConfig({ ...config, homepage_featured_cards: cards });
+  };
+
+  const removeFeaturedCard = (index: number) => {
+    setConfig({
+      ...config,
+      homepage_featured_cards: config.homepage_featured_cards.filter((_, i) => i !== index),
+    });
+  };
+
+  const ensureSubEntities = async (spaceSlug: string, linkType: string) => {
+    const space = spaces.find(s => s.slug === spaceSlug);
+    if (!space) return;
+    const { docsService } = await import('@/lib/services/docsService');
+    if (linkType === 'collection' && !collectionsCache[space.id]) {
+      const res = await docsService.listCollections(workspaceId, space.id);
+      if (res.data) setCollectionsCache(prev => ({ ...prev, [space.id]: res.data! }));
+    }
+    if (linkType === 'article' && !articlesCache[space.id]) {
+      const res = await docsService.listDocuments(workspaceId, { space_id: space.id, doc_type: 'help_center_article', status: 'published' });
+      if (res.data) setArticlesCache(prev => ({ ...prev, [space.id]: res.data! }));
+    }
+  };
+
+  const handleCardSpaceChange = (index: number, card: HomepageFeaturedCard, slug: string) => {
+    const space = spaces.find(s => s.slug === slug);
+    if (!space) return;
+    if (card.link_type === 'space') {
+      updateFeaturedCard(index, {
+        link_value: space.slug,
+        title: space.name,
+        description: '',
+        icon: space.icon ?? '',
+      });
+    } else {
+      updateFeaturedCard(index, { space_slug: space.slug });
+      ensureSubEntities(space.slug, card.link_type);
+    }
+  };
+
+  const handleCardCollectionChange = (index: number, spaceSlug: string, collectionId: string) => {
+    const space = spaces.find(s => s.slug === spaceSlug);
+    if (!space) return;
+    const col = collectionsCache[space.id]?.find(c => c.id === collectionId);
+    if (!col) return;
+    updateFeaturedCard(index, {
+      title: col.name,
+      description: col.description ?? '',
+      icon: col.icon ?? '',
+    });
+  };
+
+  const handleCardArticleChange = (index: number, spaceSlug: string, docId: string) => {
+    const space = spaces.find(s => s.slug === spaceSlug);
+    if (!space) return;
+    const doc = articlesCache[space.id]?.find(d => d.id === docId);
+    if (!doc) return;
+    updateFeaturedCard(index, {
+      link_value: doc.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+      title: doc.title,
+      description: doc.excerpt ?? '',
+      icon: doc.icon ?? '',
+    });
+  };
+
+  const handleCardLinkTypeChange = (index: number, card: HomepageFeaturedCard, newType: string) => {
+    updateFeaturedCard(index, { link_type: newType as HomepageFeaturedCard['link_type'] });
+    const spaceSlug = newType === 'space' ? card.link_value : card.space_slug;
+    if (spaceSlug && (newType === 'collection' || newType === 'article')) {
+      ensureSubEntities(spaceSlug, newType);
+    }
+  };
+
   // ── Asset upload helpers ──
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
@@ -214,25 +318,26 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
-      {/* ── Publishing (prominent at top) ── */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Help Center Published</p>
-              <p className="text-xs text-muted-foreground">
-                {config.is_published
-                  ? 'Your help center is publicly accessible.'
-                  : 'Your help center is not visible to the public.'}
-              </p>
-            </div>
-            <Switch
-              checked={config.is_published}
-              onCheckedChange={(v) => setConfig({ ...config, is_published: v })}
-            />
+      {/* ── Top bar: Publishing + Save ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={config.is_published}
+            onCheckedChange={(v) => setConfig({ ...config, is_published: v })}
+          />
+          <div>
+            <p className="text-sm font-medium">Help Center Published</p>
+            <p className="text-xs text-muted-foreground">
+              {config.is_published
+                ? 'Your help center is publicly accessible.'
+                : 'Your help center is not visible to the public.'}
+            </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        <Button type="submit" disabled={saving}>
+          {saving ? 'Saving...' : 'Save Settings'}
+        </Button>
+      </div>
 
       {/* ── Branding ── */}
       <Card>
@@ -248,50 +353,52 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
               <p className="text-xs text-muted-foreground">
                 Recommended: 200 &times; 50 px (SVG or PNG). Max 2 MB.
               </p>
-              <div className="flex items-center gap-3">
-                {config.brand_logo_url ? (
-                  <div className="relative h-12 w-24 shrink-0 rounded border bg-muted/30 p-1">
-                    <img src={config.brand_logo_url} alt="Logo preview" className="h-full w-full object-contain" />
-                    <button
-                      type="button"
-                      className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-0.5 text-destructive-foreground shadow"
-                      onClick={() => setConfig({ ...config, brand_logo_url: '' })}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+              {config.brand_logo_url ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex h-14 w-28 items-center justify-center rounded-md border bg-muted/40 p-1.5">
+                    <img src={config.brand_logo_url} alt="Logo preview" className="max-h-full max-w-full object-contain" />
                   </div>
-                ) : null}
+                  <Button type="button" variant="outline" size="sm" disabled={uploadingLogo} onClick={() => logoInputRef.current?.click()}>
+                    <Upload className="mr-1.5 h-3.5 w-3.5" />
+                    {uploadingLogo ? 'Uploading...' : 'Replace'}
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setConfig({ ...config, brand_logo_url: '' })} title="Remove logo">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
                 <Button type="button" variant="outline" size="sm" disabled={uploadingLogo} onClick={() => logoInputRef.current?.click()}>
                   <Upload className="mr-1.5 h-4 w-4" />
                   {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
                 </Button>
-                <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => handleAssetUpload(e, 'logo', setUploadingLogo, 'brand_logo_url')} />
-              </div>
+              )}
+              <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => handleAssetUpload(e, 'logo', setUploadingLogo, 'brand_logo_url')} />
             </div>
             <div className="space-y-2">
               <Label>Favicon</Label>
               <p className="text-xs text-muted-foreground">
                 Recommended: 32 &times; 32 px (ICO, PNG, or SVG). Max 2 MB.
               </p>
-              <div className="flex items-center gap-3">
-                {config.favicon_url ? (
-                  <div className="relative h-8 w-8 shrink-0 rounded border bg-muted/30 p-0.5">
-                    <img src={config.favicon_url} alt="Favicon preview" className="h-full w-full object-contain" />
-                    <button
-                      type="button"
-                      className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-0.5 text-destructive-foreground shadow"
-                      onClick={() => setConfig({ ...config, favicon_url: '' })}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+              {config.favicon_url ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-md border bg-muted/40 p-1">
+                    <img src={config.favicon_url} alt="Favicon preview" className="max-h-full max-w-full object-contain" />
                   </div>
-                ) : null}
+                  <Button type="button" variant="outline" size="sm" disabled={uploadingFavicon} onClick={() => faviconInputRef.current?.click()}>
+                    <Upload className="mr-1.5 h-3.5 w-3.5" />
+                    {uploadingFavicon ? 'Uploading...' : 'Replace'}
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setConfig({ ...config, favicon_url: '' })} title="Remove favicon">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
                 <Button type="button" variant="outline" size="sm" disabled={uploadingFavicon} onClick={() => faviconInputRef.current?.click()}>
                   <Upload className="mr-1.5 h-4 w-4" />
                   {uploadingFavicon ? 'Uploading...' : 'Upload Favicon'}
                 </Button>
-                <input ref={faviconInputRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/x-icon,image/vnd.microsoft.icon" className="hidden" onChange={(e) => handleAssetUpload(e, 'favicon', setUploadingFavicon, 'favicon_url')} />
-              </div>
+              )}
+              <input ref={faviconInputRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/x-icon,image/vnd.microsoft.icon" className="hidden" onChange={(e) => handleAssetUpload(e, 'favicon', setUploadingFavicon, 'favicon_url')} />
             </div>
           </div>
           {/* Row 2: Brand Name + Color + Theme */}
@@ -324,7 +431,21 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="hc-theme-mode">Theme Mode</Label>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="hc-theme-mode">Theme Mode</Label>
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                      <p><strong>Light</strong> — Forces light theme, hides toggle</p>
+                      <p><strong>Dark</strong> — Forces dark theme, hides toggle</p>
+                      <p><strong>System</strong> — Follows visitor&apos;s OS preference, shows a toggle so they can switch</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <Select
                 value={config.theme_mode}
                 onValueChange={(v) => setConfig({ ...config, theme_mode: v as HelpcenterThemeMode })}
@@ -450,6 +571,124 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
               placeholder="Search our knowledge base or browse topics below"
             />
           </div>
+
+          {/* Featured Cards */}
+          <div className="space-y-3 pt-2">
+            <div>
+              <Label>Featured Cards</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Cards displayed on the homepage grid. Leave empty to auto-generate from spaces.
+              </p>
+            </div>
+            {config.homepage_featured_cards.map((card, i) => {
+              const spaceSlug = card.link_type === 'space' ? card.link_value : card.space_slug;
+              const selectedSpace = spaces.find(s => s.slug === spaceSlug);
+
+              return (
+                <div key={i} className="rounded-lg border p-4 space-y-3">
+                  {/* Row 1: Link configuration */}
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={card.link_type}
+                      onValueChange={(v) => handleCardLinkTypeChange(i, card, v)}
+                    >
+                      <SelectTrigger className="w-[130px] shrink-0">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="space">Space</SelectItem>
+                        <SelectItem value="collection">Collection</SelectItem>
+                        <SelectItem value="article">Article</SelectItem>
+                        <SelectItem value="url">External URL</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {card.link_type !== 'url' ? (
+                      <>
+                        <Select
+                          value={spaceSlug}
+                          onValueChange={(v) => handleCardSpaceChange(i, card, v)}
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Pick a space..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {spaces.map(s => (
+                              <SelectItem key={s.id} value={s.slug}>
+                                {s.icon ? `${s.icon} ${s.name}` : s.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        {card.link_type === 'collection' && selectedSpace && (
+                          <Select onValueChange={(v) => handleCardCollectionChange(i, card.space_slug, v)}>
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="Pick a collection..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(collectionsCache[selectedSpace.id] ?? []).map(c => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {c.icon ? `${c.icon} ${c.name}` : c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+
+                        {card.link_type === 'article' && selectedSpace && (
+                          <Select onValueChange={(v) => handleCardArticleChange(i, card.space_slug, v)}>
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="Pick an article..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(articlesCache[selectedSpace.id] ?? []).map(d => (
+                                <SelectItem key={d.id} value={d.id}>
+                                  {d.icon ? `${d.icon} ${d.title}` : d.title}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </>
+                    ) : (
+                      <Input
+                        className="flex-1"
+                        value={card.link_value}
+                        onChange={(e) => updateFeaturedCard(i, { link_value: e.target.value })}
+                        placeholder="https://..."
+                      />
+                    )}
+
+                    <Button type="button" variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={() => removeFeaturedCard(i)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+
+                  {/* Row 2: Card display details */}
+                  <div className="grid gap-2 grid-cols-[160px_1fr_1fr]">
+                    <IconPicker
+                      value={card.icon}
+                      onChange={(v) => updateFeaturedCard(i, { icon: v })}
+                    />
+                    <Input
+                      value={card.title}
+                      onChange={(e) => updateFeaturedCard(i, { title: e.target.value })}
+                      placeholder="Card title"
+                    />
+                    <Input
+                      value={card.description}
+                      onChange={(e) => updateFeaturedCard(i, { description: e.target.value })}
+                      placeholder="Short description"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            <Button type="button" variant="outline" size="sm" onClick={addFeaturedCard}>
+              <Plus className="mr-1 h-4 w-4" /> Add Card
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -541,11 +780,6 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
         </Card>
       </div>
 
-      <div className="flex justify-end">
-        <Button type="submit" disabled={saving}>
-          {saving ? 'Saving...' : 'Save Settings'}
-        </Button>
-      </div>
     </form>
   );
 }

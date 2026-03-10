@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import type { HelpcenterThemeMode } from '@/lib/types'
 
 type Theme = 'light' | 'dark'
 
@@ -13,21 +14,33 @@ function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle('dark', theme === 'dark')
 }
 
-export function useTheme() {
-  const [theme, setThemeState] = useState<Theme>(getStoredTheme)
+export function useTheme(configThemeMode?: HelpcenterThemeMode) {
+  const isForced = configThemeMode === 'light' || configThemeMode === 'dark'
+
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (isForced) return configThemeMode as Theme
+    return getStoredTheme()
+  })
+
+  useEffect(() => {
+    if (isForced) {
+      setThemeState(configThemeMode as Theme)
+    }
+  }, [isForced, configThemeMode])
 
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
 
   const setTheme = useCallback((t: Theme) => {
+    if (isForced) return
     localStorage.setItem('hc-theme', t)
     setThemeState(t)
-  }, [])
+  }, [isForced])
 
   const toggleTheme = useCallback(() => {
     setTheme(theme === 'light' ? 'dark' : 'light')
   }, [theme, setTheme])
 
-  return { theme, setTheme, toggleTheme }
+  return { theme, setTheme, toggleTheme, canToggle: !isForced }
 }

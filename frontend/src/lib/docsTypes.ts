@@ -126,10 +126,21 @@ export interface HelpcenterFooterConfig {
   links: HelpcenterFooterLink[];
 }
 
+export type HomepageFeaturedCardLinkType = 'space' | 'collection' | 'article' | 'url';
+
+export interface HomepageFeaturedCard {
+  title: string;
+  description: string;
+  icon: string;
+  link_type: HomepageFeaturedCardLinkType;
+  link_value: string;
+  space_slug: string;
+}
+
 export interface HelpcenterHomepageConfig {
   hero_title: string;
   hero_subtitle: string;
-  featured_space_ids: string[];
+  featured_cards: HomepageFeaturedCard[];
 }
 
 export interface HelpcenterSpaceNavConfig {

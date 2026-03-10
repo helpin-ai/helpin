@@ -1,5 +1,6 @@
 import { Link, useMatchRoute } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
+import { PhIcon } from '@/components/PhIcon'
 import type { NavItem } from '@/lib/types'
 
 interface NavTreeProps {
@@ -45,7 +46,7 @@ function CollectionGroup({
     <div className={cn(!isFirst && 'mt-5')}>
       <div className="flex items-center gap-2 px-3 py-[7px] text-[14px] font-medium text-foreground">
         {collection.icon && (
-          <span className="shrink-0 text-[15px]">{collection.icon}</span>
+          <PhIcon name={collection.icon} size={16} weight="regular" className="shrink-0 text-muted-foreground" />
         )}
         <span className="truncate">{collection.name}</span>
       </div>
@@ -64,7 +65,7 @@ function CollectionGroup({
               params={{ spaceSlug, articleSlug: article.slug }}
               onClick={onArticleClick}
               className={cn(
-                'block rounded-lg px-3 py-[7px] text-[14px] transition-colors',
+                'block rounded-lg px-3 py-[7px] text-[13px] transition-colors',
                 isActive
                   ? 'bg-sidebar-active text-sidebar-active-foreground font-medium'
                   : 'text-muted-foreground hover:text-foreground',
