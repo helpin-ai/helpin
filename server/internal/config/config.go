@@ -43,7 +43,7 @@ type Config struct {
 
 // Load reads configuration from environment variables.
 // DATABASE_URL and JWT_SECRET are required; PORT defaults to "8080",
-// CORS_ORIGIN defaults to "http://localhost:5173".
+// CORS_ORIGINS is a comma-separated list of allowed origins (defaults to "http://localhost:5173").
 func Load() (*Config, error) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -60,17 +60,7 @@ func Load() (*Config, error) {
 		port = "8080"
 	}
 
-	corsOrigins := []string{
-		"http://app.helpin.ai",
-		"https://app.helpin.ai",
-		"http://stage.helpin.ai",
-		"https://stage.helpin.ai",
-		"http://91.98.85.12",
-		"http://91.98.85.12:5173",
-		"http://91.98.85.12:5174",
-		"http://localhost:5173",
-		"http://localhost:5174",
-	}
+	corsOrigins := parseCORSOrigins(os.Getenv("CORS_ORIGINS"))
 
 	appBaseURL := os.Getenv("APP_BASE_URL")
 	if appBaseURL == "" {
@@ -117,6 +107,23 @@ func Load() (*Config, error) {
 		PostmarkFromEmail:     os.Getenv("POSTMARK_FROM_EMAIL"),
 		AppBaseURL:            appBaseURL,
 	}, nil
+}
+
+func parseCORSOrigins(value string) []string {
+	if value == "" {
+		return []string{"http://localhost:5173"}
+	}
+	var origins []string
+	for _, o := range strings.Split(value, ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			origins = append(origins, o)
+		}
+	}
+	if len(origins) == 0 {
+		return []string{"http://localhost:5173"}
+	}
+	return origins
 }
 
 func parseBoolEnv(value string) bool {

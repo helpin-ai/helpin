@@ -64,9 +64,13 @@ if [[ -n "$SERVER_IP" ]]; then
   ORIGINS+=("http://${SERVER_IP}:5173")
   ORIGINS+=("http://${SERVER_IP}")
 fi
-# Add CORS_ORIGIN from env if set and not already in the list
-if [[ -n "${CORS_ORIGIN:-}" ]]; then
-  ORIGINS+=("$CORS_ORIGIN")
+# Add CORS_ORIGINS from env if set (comma-separated)
+if [[ -n "${CORS_ORIGINS:-}" ]]; then
+  IFS=',' read -ra EXTRA_ORIGINS <<< "$CORS_ORIGINS"
+  for o in "${EXTRA_ORIGINS[@]}"; do
+    o="$(echo "$o" | xargs)"  # trim whitespace
+    [[ -n "$o" ]] && ORIGINS+=("$o")
+  done
 fi
 
 # Deduplicate

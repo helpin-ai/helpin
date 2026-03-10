@@ -6,7 +6,7 @@ services:
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET=dev-secret-change-in-prod
-      - CORS_ORIGIN=http://localhost:5173
+      - CORS_ORIGINS=http://localhost:5173
       - PORT=8080
 
   frontend:
