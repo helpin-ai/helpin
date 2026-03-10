@@ -39,6 +39,7 @@ import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/esti
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
+import { WorkspaceMuteNotificationsCard } from '@/components/settings/NotificationPreferencesPanels';
 
 export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'system' | 'account';
 
@@ -631,6 +632,12 @@ function GeneralTab({ workspaceId, editable }: {
           )}
         </CardContent>
       </Card>
+
+      <WorkspaceMuteNotificationsCard
+        workspaceId={workspaceId}
+        workspaceName={workspace?.name}
+        cardClassName={LINEAR_CARD_CLASS}
+      />
 
       {editable && (
         <Card className={cn(LINEAR_CARD_CLASS, 'border-destructive/30')}>
@@ -2556,8 +2563,8 @@ function SystemTab({ workspaceId, config, editable, onRefresh }: {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <Label>Notifications</Label>
-                <p className="text-xs text-muted-foreground">Send email notifications for sprint events</p>
+                <Label>Sprint event emails</Label>
+                <p className="text-xs text-muted-foreground">Control workspace-level emails for sprint-related events.</p>
               </div>
               <Switch checked={notifications} onCheckedChange={setNotifications} disabled={!editable} />
             </div>
@@ -4496,4 +4503,3 @@ function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
     </form>
   );
 }
-

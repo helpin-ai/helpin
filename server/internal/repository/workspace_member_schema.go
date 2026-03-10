@@ -73,20 +73,22 @@ BEGIN
           AND LOWER(wi.email) = LOWER(wm.email);
     END IF;
 
-    IF to_regclass('public.team_workspace_memberships') IS NULL THEN
-        CREATE TABLE team_workspace_memberships (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            team_id UUID NOT NULL REFERENCES workspace_teams(id) ON DELETE CASCADE,
-            workspace_member_id UUID NOT NULL REFERENCES workspace_members(id) ON DELETE CASCADE,
-            role TEXT NOT NULL DEFAULT 'member',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
+    IF to_regclass('public.workspace_teams') IS NOT NULL THEN
+        IF to_regclass('public.team_workspace_memberships') IS NULL THEN
+            CREATE TABLE team_workspace_memberships (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                team_id UUID NOT NULL REFERENCES workspace_teams(id) ON DELETE CASCADE,
+                workspace_member_id UUID NOT NULL REFERENCES workspace_members(id) ON DELETE CASCADE,
+                role TEXT NOT NULL DEFAULT 'member',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+        END IF;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_team_workspace_member_unique
+            ON team_workspace_memberships (team_id, workspace_member_id);
+        CREATE INDEX IF NOT EXISTS idx_team_workspace_member_member
+            ON team_workspace_memberships (workspace_member_id);
     END IF;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_team_workspace_member_unique
-        ON team_workspace_memberships (team_id, workspace_member_id);
-    CREATE INDEX IF NOT EXISTS idx_team_workspace_member_member
-        ON team_workspace_memberships (workspace_member_id);
 
     IF to_regclass('public.reward_profiles') IS NULL THEN
         CREATE TABLE reward_profiles (

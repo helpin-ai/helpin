@@ -11,9 +11,31 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+func eventTypesForCategory(category string) []string {
+	eventTypes := make([]string, 0)
+	for eventType, mappedCategory := range model.EventTypeToCategory {
+		if mappedCategory == category {
+			eventTypes = append(eventTypes, eventType)
+		}
+	}
+	return eventTypes
+}
+
 // NotificationRepository handles notification CRUD operations.
 type NotificationRepository struct {
 	db *gorm.DB
+}
+
+// PendingDigestDelivery is a pending digest delivery joined with the current notification state.
+type PendingDigestDelivery struct {
+	DeliveryID         string
+	RecipientID        string
+	NotificationID     string
+	WorkspaceID        string
+	NotificationStatus string
+	SnoozedUntil       *time.Time
+	EventTitle         string
+	CreatedAt          time.Time
 }
 
 // NewNotificationRepository creates a new notification repository.
@@ -82,7 +104,12 @@ func (r *NotificationRepository) List(ctx context.Context, recipientID, workspac
 	// Tab filters
 	switch filter {
 	case "mentions":
-		q = q.Where("event_type LIKE '%.mentioned'")
+		mentionTypes := eventTypesForCategory(model.NotifCategoryMentions)
+		if len(mentionTypes) == 0 {
+			q = q.Where("1 = 0")
+		} else {
+			q = q.Where("event_type IN ?", mentionTypes)
+		}
 	case "assigned":
 		q = q.Where("event_type LIKE '%.assigned'")
 	}
@@ -106,16 +133,80 @@ func (r *NotificationRepository) List(ctx context.Context, recipientID, workspac
 }
 
 // UnreadCount returns the number of unread notifications for a user.
-func (r *NotificationRepository) UnreadCount(ctx context.Context, recipientID, workspaceID string) (int, error) {
+func (r *NotificationRepository) UnreadCount(ctx context.Context, recipientID, workspaceID, badgeMode string) (int, error) {
+	if badgeMode == "none" {
+		return 0, nil
+	}
+
 	var count int64
-	err := r.db.WithContext(ctx).Model(&model.Notification{}).
+	q := r.db.WithContext(ctx).Model(&model.Notification{}).
 		Where("recipient_id = ? AND workspace_id = ? AND status = 'unread'", recipientID, workspaceID).
-		Where("(snoozed_until IS NULL OR snoozed_until <= ?)", time.Now()).
-		Count(&count).Error
+		Where("(snoozed_until IS NULL OR snoozed_until <= ?)", time.Now())
+
+	if badgeMode == "mentions_only" {
+		mentionTypes := eventTypesForCategory(model.NotifCategoryMentions)
+		if len(mentionTypes) == 0 {
+			return 0, nil
+		}
+		q = q.Where("event_type IN ?", mentionTypes)
+	}
+
+	err := q.Count(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("unread count: %w", err)
 	}
 	return int(count), nil
+}
+
+// ListPendingDigestDeliveries returns pending digest deliveries joined with the current notification state.
+func (r *NotificationRepository) ListPendingDigestDeliveries(ctx context.Context) ([]PendingDigestDelivery, error) {
+	var deliveries []PendingDigestDelivery
+	err := r.db.WithContext(ctx).
+		Table("notification_deliveries nd").
+		Select(`
+			nd.id AS delivery_id,
+			n.recipient_id,
+			n.id AS notification_id,
+			n.workspace_id,
+			n.status AS notification_status,
+			n.snoozed_until,
+			ne.title AS event_title,
+			nd.created_at
+		`).
+		Joins("JOIN notification_events ne ON ne.id = nd.notification_event_id").
+		Joins("JOIN notifications n ON n.id = ne.notification_id").
+		Where("nd.channel = ? AND nd.status = ?", "digest", "pending").
+		Order("nd.created_at ASC").
+		Scan(&deliveries).Error
+	if err != nil {
+		return nil, fmt.Errorf("list pending digest deliveries: %w", err)
+	}
+	return deliveries, nil
+}
+
+// UpdateDeliveryStatus updates a batch of delivery rows to the same status.
+func (r *NotificationRepository) UpdateDeliveryStatus(ctx context.Context, deliveryIDs []string, status string, deliveredAt *time.Time, errorMessage *string) error {
+	if len(deliveryIDs) == 0 {
+		return nil
+	}
+
+	updates := map[string]any{
+		"status": status,
+		"error":  errorMessage,
+	}
+	if deliveredAt != nil {
+		updates["delivered_at"] = *deliveredAt
+	} else {
+		updates["delivered_at"] = nil
+	}
+
+	if err := r.db.WithContext(ctx).
+		Model(&model.NotificationDelivery{}).
+		Where("id IN ?", deliveryIDs).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update delivery status: %w", err)
+	}
+	return nil
 }
 
 // MarkAsRead marks a single notification as read.

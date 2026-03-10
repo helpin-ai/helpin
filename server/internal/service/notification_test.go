@@ -161,3 +161,53 @@ func TestEscalatePriority(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeEmailDigestFrequency(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "default empty to daily", input: "", expected: "daily"},
+		{name: "daily", input: "daily", expected: "daily"},
+		{name: "weekly", input: "weekly", expected: "weekly"},
+		{name: "immediate", input: "immediate", expected: "immediate"},
+		{name: "never maps to none", input: "never", expected: "none"},
+		{name: "none", input: "none", expected: "none"},
+		{name: "unknown defaults to daily", input: "monthly", expected: "daily"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeEmailDigestFrequency(tt.input); got != tt.expected {
+				t.Fatalf("normalizeEmailDigestFrequency(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSelectEmailDeliveryChannel(t *testing.T) {
+	tests := []struct {
+		name            string
+		priority        string
+		digestFrequency string
+		expected        string
+	}{
+		{name: "urgent bypasses digest", priority: "urgent", digestFrequency: "daily", expected: "email"},
+		{name: "high bypasses digest", priority: "high", digestFrequency: "weekly", expected: "email"},
+		{name: "normal daily uses digest", priority: "normal", digestFrequency: "daily", expected: "digest"},
+		{name: "low weekly uses digest", priority: "low", digestFrequency: "weekly", expected: "digest"},
+		{name: "normal immediate uses email", priority: "normal", digestFrequency: "immediate", expected: "email"},
+		{name: "normal never disables email", priority: "normal", digestFrequency: "never", expected: ""},
+		{name: "low none disables email", priority: "low", digestFrequency: "none", expected: ""},
+		{name: "urgent still emails when digest disabled", priority: "urgent", digestFrequency: "never", expected: "email"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := selectEmailDeliveryChannel(tt.priority, tt.digestFrequency); got != tt.expected {
+				t.Fatalf("selectEmailDeliveryChannel(%q, %q) = %q, want %q", tt.priority, tt.digestFrequency, got, tt.expected)
+			}
+		})
+	}
+}

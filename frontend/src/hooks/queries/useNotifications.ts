@@ -16,8 +16,8 @@ export function useUserNotificationSettings() {
 export function useUpdateUserNotificationSettings() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: UpdateUserNotificationSettingsRequest) =>
-      notificationsService.updateUserSettings(data),
+    mutationFn: async (data: UpdateUserNotificationSettingsRequest) =>
+      unwrap(await notificationsService.updateUserSettings(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.userNotificationSettings.all() })
     },
@@ -50,7 +50,8 @@ export function useUnreadCount(wsId: string) {
 export function useMarkAsRead(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (notifId: string) => notificationsService.update(wsId, notifId, { status: 'read' }),
+    mutationFn: async (notifId: string) =>
+      unwrap(await notificationsService.update(wsId, notifId, { status: 'read' })),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(wsId) })
     },
@@ -60,7 +61,8 @@ export function useMarkAsRead(wsId: string) {
 export function useMarkAsUnread(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (notifId: string) => notificationsService.update(wsId, notifId, { status: 'unread' }),
+    mutationFn: async (notifId: string) =>
+      unwrap(await notificationsService.update(wsId, notifId, { status: 'unread' })),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(wsId) })
     },
@@ -70,7 +72,8 @@ export function useMarkAsUnread(wsId: string) {
 export function useArchiveNotification(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (notifId: string) => notificationsService.update(wsId, notifId, { status: 'archived' }),
+    mutationFn: async (notifId: string) =>
+      unwrap(await notificationsService.update(wsId, notifId, { status: 'archived' })),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(wsId) })
     },
@@ -80,8 +83,8 @@ export function useArchiveNotification(wsId: string) {
 export function useSnoozeNotification(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ notifId, until }: { notifId: string; until: string }) =>
-      notificationsService.update(wsId, notifId, { snoozed_until: until }),
+    mutationFn: async ({ notifId, until }: { notifId: string; until: string }) =>
+      unwrap(await notificationsService.update(wsId, notifId, { snoozed_until: until })),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(wsId) })
     },
@@ -91,7 +94,8 @@ export function useSnoozeNotification(wsId: string) {
 export function useMarkAllAsRead(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => notificationsService.markAllRead(wsId),
+    mutationFn: async () =>
+      unwrap(await notificationsService.markAllRead(wsId)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(wsId) })
     },
@@ -101,7 +105,8 @@ export function useMarkAllAsRead(wsId: string) {
 export function useArchiveAllRead(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => notificationsService.archiveAllRead(wsId),
+    mutationFn: async () =>
+      unwrap(await notificationsService.archiveAllRead(wsId)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(wsId) })
     },
@@ -111,7 +116,8 @@ export function useArchiveAllRead(wsId: string) {
 export function useDeleteNotification(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (notifId: string) => notificationsService.delete(wsId, notifId),
+    mutationFn: async (notifId: string) =>
+      unwrap(await notificationsService.delete(wsId, notifId)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(wsId) })
     },
@@ -130,8 +136,8 @@ export function useNotificationPreferences(wsId: string) {
 export function useUpdateNotificationPreferences(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: UpdateNotificationPreferencesRequest) =>
-      notificationsService.updatePreferences(wsId, data),
+    mutationFn: async (data: UpdateNotificationPreferencesRequest) =>
+      unwrap(await notificationsService.updatePreferences(wsId, data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.preferences(wsId) })
     },
@@ -141,8 +147,8 @@ export function useUpdateNotificationPreferences(wsId: string) {
 export function useFollowEntity(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ entityType, entityId }: { entityType: string; entityId: string }) =>
-      notificationsService.follow(wsId, entityType, entityId),
+    mutationFn: async ({ entityType, entityId }: { entityType: string; entityId: string }) =>
+      unwrap(await notificationsService.follow(wsId, entityType, entityId)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.following(wsId) })
     },
@@ -152,8 +158,8 @@ export function useFollowEntity(wsId: string) {
 export function useUnfollowEntity(wsId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ entityType, entityId }: { entityType: string; entityId: string }) =>
-      notificationsService.unfollow(wsId, entityType, entityId),
+    mutationFn: async ({ entityType, entityId }: { entityType: string; entityId: string }) =>
+      unwrap(await notificationsService.unfollow(wsId, entityType, entityId)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.following(wsId) })
     },

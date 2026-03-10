@@ -318,7 +318,7 @@ func main() {
 	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
-	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, wsPublisher)
+	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, emailClient)
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
 	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
@@ -532,6 +532,29 @@ func main() {
 		}
 	}()
 
+	// Start background ticker for digest email delivery.
+	digestDone := make(chan struct{})
+	go func() {
+		runDigestSweep := func() {
+			if err := notificationService.ProcessPendingDigests(context.Background(), time.Now()); err != nil {
+				log.Printf("notification digest sweep failed: %v", err)
+			}
+		}
+
+		runDigestSweep()
+
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runDigestSweep()
+			case <-digestDone:
+				return
+			}
+		}
+	}()
+
 	// Wrap router so /api/ws bypasses Chi middleware (Recoverer strips
 	// http.Hijacker which WebSocket upgrade requires).
 	var topHandler http.Handler = r
@@ -571,6 +594,7 @@ func main() {
 	<-done
 	log.Println("server shutting down...")
 	close(automationDone)
+	close(digestDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
