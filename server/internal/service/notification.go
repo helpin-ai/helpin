@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +14,9 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+// emailMentionPattern matches @mentions in email body text for styling.
+var emailMentionPattern = regexp.MustCompile(`(@[A-Za-z0-9._-]+)`)
 
 // priorityOrder defines priority ranking for escalation.
 var priorityOrder = map[string]int{
@@ -118,6 +122,21 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 	}
 	for _, uid := range event.ExplicitRecipients {
 		recipientSet[uid] = struct{}{}
+	}
+
+	// Auto-populate ActorSnapshot if not provided
+	if len(event.ActorSnapshot) == 0 && event.ActorID != "" {
+		if actor, err := s.userRepo.GetByID(ctx, event.ActorID); err == nil && actor != nil {
+			event.ActorSnapshot = model.JSONB{
+				"name":       actor.FullName,
+				"avatar_url": actor.AvatarURL,
+			}
+		} else {
+			s.logger.WarnContext(ctx, "failed to resolve actor for snapshot",
+				"error", err,
+				"actor_id", event.ActorID,
+			)
+		}
 	}
 
 	// Remove actor (don't self-notify)
@@ -510,12 +529,16 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 	// Body paragraph (only if non-empty).
 	bodyHTML := ""
 	if trimmedBody := strings.TrimSpace(event.Body); trimmedBody != "" {
+		escapedBody := html.EscapeString(trimmedBody)
+		// Highlight @mentions with blue color
+		escapedBody = emailMentionPattern.ReplaceAllString(escapedBody,
+			`<span style="color: #2563eb; font-weight: 600;">$1</span>`)
 		bodyHTML = fmt.Sprintf(`
                       <tr>
                         <td align="center" style="padding-bottom: 24px;">
                           <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #52525b;">%s</p>
                         </td>
-                      </tr>`, html.EscapeString(trimmedBody))
+                      </tr>`, escapedBody)
 	}
 
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
