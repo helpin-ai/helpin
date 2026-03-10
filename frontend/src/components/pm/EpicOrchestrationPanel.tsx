@@ -414,8 +414,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     } finally { setKickingOff(false); }
   }, [epic.id, fetchRuns, latestPlanRun, onStoriesCreated, selectedRun, selectedRunStage, selectedStoryIds, workspaceId]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleCancelRun = useCallback(async (runId: string) => {
+  const _handleCancelRun = useCallback(async (runId: string) => {
     setActingOnRun(runId);
     try {
       const res = await agentService.cancelRun(workspaceId, runId);
