@@ -1,37 +1,73 @@
 // Shared table design tokens for consistent styling across all tables
 
-/** Outer scrollable container (replaces rounded-md border border-border/70) */
+/** Outer scrollable container */
 export const TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto';
 
-/** Sticky header bar – darker background to stand out from data rows */
-export const TABLE_HEADER = 'sticky top-0 z-10 border-b border-border/60 bg-muted/80';
+/** Sticky header bar */
+export const TABLE_HEADER = 'sticky top-0 z-10 border-b border-border/60 bg-muted/50';
 
-/** Individual header cell – always left-aligned, right border for grid lines */
-export const TABLE_HEADER_CELL = 'relative px-3 py-2.5 text-left text-xs font-semibold text-foreground/70 border-r border-border/60 last:border-r-0';
+/** Individual header cell – compact, subtle text */
+export const TABLE_HEADER_CELL =
+  'relative px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground border-r border-border/60 last:border-r-0';
 
 /** Sortable header cell – adds cursor pointer */
 export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted/40';
 
-/** Data row – taller (h-11 = 44px), `group` class for hover-reveal actions */
-export const TABLE_ROW = 'group flex h-11 items-center border-b border-border/50 transition-colors hover:bg-muted/70';
+/** Data row – compact h-9 (36px), `group` class for hover-reveal actions */
+export const TABLE_ROW =
+  'group flex h-9 items-center border-b border-border/50 transition-colors hover:bg-muted/50';
 
-/** Data cell – always left-aligned, right border for grid lines */
-export const TABLE_CELL = 'flex items-center px-3 self-stretch border-r border-border/60 last:border-r-0';
+/** Data cell – right border for grid lines, cell-level hover */
+export const TABLE_CELL =
+  'flex items-center px-2.5 self-stretch border-r border-border/60 last:border-r-0 transition-colors';
 
 /** Group header row (for grouped/expandable tables) */
 export const TABLE_GROUP_ROW =
-  'flex h-10 cursor-pointer items-center gap-2 border-b border-border/50 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted/40';
+  'flex h-9 cursor-pointer items-center gap-2 border-b border-border/50 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted/40';
 
-/** Column resize handle */
+/** Column resize handle – always-visible 1px separator, expands on hover */
 export const TABLE_RESIZE_HANDLE =
-  'absolute right-0 top-0 h-full w-1 cursor-col-resize touch-none select-none bg-transparent hover:bg-primary/30 active:bg-primary/50';
+  'absolute right-0 top-0 h-full w-px cursor-col-resize touch-none select-none bg-border/40 hover:w-1 hover:bg-primary/30 active:bg-primary/50';
 
 /** Row height for virtualizer estimateSize */
-export const ROW_HEIGHT = 44;
-export const GROUP_ROW_HEIGHT = 40;
+export const ROW_HEIGHT = 36;
+export const GROUP_ROW_HEIGHT = 36;
 
 /** Checkbox column width */
 export const CHECKBOX_COL_SIZE = 40;
+
+/** Actions column width */
+export const ACTIONS_COL_SIZE = 44;
+
+// --- Pinned column tokens ---
+
+/** Pinned cell (left) – sticky with background so content doesn't bleed through */
+export const TABLE_PINNED_LEFT =
+  'sticky z-[2] bg-background group-hover:bg-muted/50';
+
+/** Pinned cell (right) – sticky right with background */
+export const TABLE_PINNED_RIGHT =
+  'sticky right-0 z-[2] bg-background group-hover:bg-muted/50';
+
+/** Pinned header cell (left) – higher z-index than both header and pinned cells */
+export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-muted/50';
+
+/** Pinned header cell (right) – higher z-index, sticky right */
+export const TABLE_PINNED_HEADER_RIGHT = 'sticky right-0 z-[11] bg-muted/50';
+
+/** Checkbox hover-reveal – hidden by default, visible on row hover or when checked */
+export const TABLE_CHECKBOX_HOVER =
+  'opacity-0 group-hover:opacity-100 transition-opacity data-[state=checked]:opacity-100 data-[state=indeterminate]:opacity-100';
+
+/**
+ * Returns inline style for pinned columns.
+ */
+export function pinnedStyle(
+  position: 'left' | 'right',
+  offset: number,
+): React.CSSProperties {
+  return { position: 'sticky', [position]: offset, zIndex: 2 };
+}
 
 /**
  * Returns inline style for a column cell/header based on the size convention.
