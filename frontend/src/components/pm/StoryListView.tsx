@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -660,13 +660,15 @@ export function StoryListView({
   const { rows } = table.getRowModel();
   const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Story> | undefined) : undefined;
 
+  const estimateSize = useCallback(
+    (index: number) => rows[index]?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT,
+    [rows],
+  );
+
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) => {
-      const row = rows[index];
-      return row?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT;
-    },
+    estimateSize,
     overscan: 20,
   });
 
@@ -813,7 +815,7 @@ export function StoryListView({
             {pinnedGroupRow && (
               <div className="sticky z-[5]" style={{ top: headerRef.current?.offsetHeight ?? 0, height: 0, overflow: 'visible' }}>
                 <div className="bg-background border-b border-border/50">
-                  <GroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} />
+                  <MemoGroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} />
                 </div>
               </div>
             )}
@@ -835,9 +837,9 @@ export function StoryListView({
                   }}
                 >
                   {isGrouped ? (
-                    <GroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} />
+                    <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} />
                   ) : (
-                    <DataRow row={row} onOpenStory={onOpenStory} columnSizing={columnSizing} />
+                    <MemoDataRow row={row} onOpenStory={onOpenStory} />
                   )}
                 </div>
               );
@@ -855,7 +857,7 @@ export function StoryListView({
   );
 }
 
-function GroupHeaderRow({
+const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   row,
   groupBy,
   stateMap,
@@ -903,9 +905,9 @@ function GroupHeaderRow({
       </span>
     </button>
   );
-}
+});
 
-function DataRow({ row, onOpenStory, columnSizing }: { row: Row<Story>; onOpenStory: (story: Story) => void; columnSizing: ColumnSizingState }) {
+const MemoDataRow = memo(function DataRow({ row, onOpenStory }: { row: Row<Story>; onOpenStory: (story: Story) => void }) {
   return (
     <div
       className={`group/row ${TABLE_ROW} cursor-pointer`}
@@ -916,7 +918,7 @@ function DataRow({ row, onOpenStory, columnSizing }: { row: Row<Story>; onOpenSt
         if (cell.column.getIsGrouped()) return null;
         const defSize = cell.column.columnDef.size ?? 150;
         const runtimeSize = cell.column.getSize();
-        const isResized = !!columnSizing[cell.column.id];
+        const isResized = runtimeSize !== defSize;
         if (defSize === 0 && runtimeSize === 0) return null;
         const colId = cell.column.id;
         const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
@@ -938,7 +940,7 @@ function DataRow({ row, onOpenStory, columnSizing }: { row: Row<Story>; onOpenSt
       })}
     </div>
   );
-}
+});
 
 // ── Inline editable cells ──────────────────────────────────────────
 
