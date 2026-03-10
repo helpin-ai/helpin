@@ -1,4 +1,4 @@
-import { api } from '../api';
+import { api, API_BASE } from '../api';
 import type {
   DocsSpace,
   DocsCollection,
@@ -140,7 +140,7 @@ export const docsService = {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/docs/helpcenter/upload?workspace_id=${encodeURIComponent(wsId)}&type=${assetType}`, {
+      const res = await fetch(`${API_BASE}/docs/helpcenter/upload?workspace_id=${encodeURIComponent(wsId)}&type=${assetType}`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
