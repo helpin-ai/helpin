@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Plus, Trash2, GripVertical, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, GripVertical, ExternalLink, Upload, X } from 'lucide-react';
 import type {
   HelpcenterHeaderLink,
   HelpcenterFooterLink,
@@ -167,6 +167,41 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
     setConfig({ ...config, footer_links: config.footer_links.filter((_, i) => i !== index) });
   };
 
+  // ── Asset upload helpers ──
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const faviconInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingFavicon, setUploadingFavicon] = useState(false);
+
+  const handleAssetUpload = async (
+    e: ChangeEvent<HTMLInputElement>,
+    assetType: 'logo' | 'favicon',
+    setUploading: (v: boolean) => void,
+    field: 'brand_logo_url' | 'favicon_url',
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image must be under 2 MB');
+      return;
+    }
+    setUploading(true);
+    const { docsService } = await import('@/lib/services/docsService');
+    const res = await docsService.uploadHelpcenterAsset(workspaceId, assetType, file);
+    setUploading(false);
+    e.target.value = '';
+    if (res.error || !res.data) {
+      toast.error(res.error ?? 'Upload failed');
+      return;
+    }
+    setConfig((prev) => ({ ...prev, [field]: res.data!.url }));
+    toast.success(`${assetType === 'logo' ? 'Logo' : 'Favicon'} uploaded`);
+  };
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -196,22 +231,86 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="hc-brand-logo">Logo URL</Label>
-            <Input
-              id="hc-brand-logo"
-              value={config.brand_logo_url}
-              onChange={(e) => setConfig({ ...config, brand_logo_url: e.target.value })}
-              placeholder="https://..."
-            />
+            <Label>Logo</Label>
+            <p className="text-xs text-muted-foreground">
+              Recommended: 200 &times; 50 px (SVG or PNG). Max 2 MB.
+            </p>
+            <div className="flex items-center gap-3">
+              {config.brand_logo_url ? (
+                <div className="relative h-12 w-24 shrink-0 rounded border bg-muted/30 p-1">
+                  <img
+                    src={config.brand_logo_url}
+                    alt="Logo preview"
+                    className="h-full w-full object-contain"
+                  />
+                  <button
+                    type="button"
+                    className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-0.5 text-destructive-foreground shadow"
+                    onClick={() => setConfig({ ...config, brand_logo_url: '' })}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploadingLogo}
+                onClick={() => logoInputRef.current?.click()}
+              >
+                <Upload className="mr-1.5 h-4 w-4" />
+                {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
+              </Button>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                className="hidden"
+                onChange={(e) => handleAssetUpload(e, 'logo', setUploadingLogo, 'brand_logo_url')}
+              />
+            </div>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="hc-favicon">Favicon URL</Label>
-            <Input
-              id="hc-favicon"
-              value={config.favicon_url}
-              onChange={(e) => setConfig({ ...config, favicon_url: e.target.value })}
-              placeholder="https://... (.ico or .png)"
-            />
+            <Label>Favicon</Label>
+            <p className="text-xs text-muted-foreground">
+              Recommended: 32 &times; 32 px (ICO, PNG, or SVG). Max 2 MB.
+            </p>
+            <div className="flex items-center gap-3">
+              {config.favicon_url ? (
+                <div className="relative h-8 w-8 shrink-0 rounded border bg-muted/30 p-0.5">
+                  <img
+                    src={config.favicon_url}
+                    alt="Favicon preview"
+                    className="h-full w-full object-contain"
+                  />
+                  <button
+                    type="button"
+                    className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-0.5 text-destructive-foreground shadow"
+                    onClick={() => setConfig({ ...config, favicon_url: '' })}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploadingFavicon}
+                onClick={() => faviconInputRef.current?.click()}
+              >
+                <Upload className="mr-1.5 h-4 w-4" />
+                {uploadingFavicon ? 'Uploading...' : 'Upload Favicon'}
+              </Button>
+              <input
+                ref={faviconInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
+                className="hidden"
+                onChange={(e) => handleAssetUpload(e, 'favicon', setUploadingFavicon, 'favicon_url')}
+              />
+            </div>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="hc-brand-color">Brand Color</Label>

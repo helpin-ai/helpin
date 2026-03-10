@@ -3,10 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
@@ -16,6 +19,7 @@ type DocsHelpcenterService struct {
 	docRepo        *repository.DocsDocumentRepository
 	spaceRepo      *repository.DocsSpaceRepository
 	collectionRepo *repository.DocsCollectionRepository
+	s3Client       *storage.S3Client
 }
 
 // NewDocsHelpcenterService creates a new DocsHelpcenterService.
@@ -24,8 +28,35 @@ func NewDocsHelpcenterService(
 	docRepo *repository.DocsDocumentRepository,
 	spaceRepo *repository.DocsSpaceRepository,
 	collectionRepo *repository.DocsCollectionRepository,
+	s3Client *storage.S3Client,
 ) *DocsHelpcenterService {
-	return &DocsHelpcenterService{hcRepo: hcRepo, docRepo: docRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo}
+	return &DocsHelpcenterService{hcRepo: hcRepo, docRepo: docRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, s3Client: s3Client}
+}
+
+// UploadAsset uploads a help center asset (logo or favicon) to S3 and returns the public URL.
+func (s *DocsHelpcenterService) UploadAsset(ctx context.Context, workspaceID, assetType, contentType string, size int64, body io.Reader) (string, error) {
+	if s.s3Client == nil {
+		return "", fmt.Errorf("file storage not configured")
+	}
+
+	ext := ".png"
+	switch contentType {
+	case "image/jpeg":
+		ext = ".jpg"
+	case "image/webp":
+		ext = ".webp"
+	case "image/svg+xml":
+		ext = ".svg"
+	case "image/x-icon", "image/vnd.microsoft.icon":
+		ext = ".ico"
+	}
+
+	key := fmt.Sprintf("helpcenter/%s/%s/%s%s", workspaceID, assetType, uuid.New().String(), ext)
+	if err := s.s3Client.PutObject(ctx, key, contentType, size, body, true); err != nil {
+		return "", fmt.Errorf("upload helpcenter asset: %w", err)
+	}
+
+	return s.s3Client.PublicURL(key), nil
 }
 
 // GetConfig returns the help center config for a workspace.

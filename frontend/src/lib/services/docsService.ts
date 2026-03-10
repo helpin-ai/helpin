@@ -135,6 +135,26 @@ export const docsService = {
     api.get<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`),
   updateHelpcenterConfig: (wsId: string, payload: UpdateDocsHelpcenterConfigRequest) =>
     api.put<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`, payload),
+  uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'favicon', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
+    const token = localStorage.getItem('access_token');
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/docs/helpcenter/upload?workspace_id=${encodeURIComponent(wsId)}&type=${assetType}`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        return { data: null, error: err.error || res.statusText };
+      }
+      const data = await res.json();
+      return { data, error: null };
+    } catch (e) {
+      return { data: null, error: e instanceof Error ? e.message : 'Upload failed' };
+    }
+  },
 
   // ── Share Toggle ────────────────────────────────────────────────────────
   toggleDocShare: (wsId: string, docId: string, isPubliclyShared: boolean) =>

@@ -602,6 +602,48 @@ func (h *DocsHandler) UpdateHelpcenterConfig(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, cfg)
 }
 
+// UploadHelpcenterAsset handles POST /docs/helpcenter/upload?type={logo|favicon}.
+func (h *DocsHandler) UploadHelpcenterAsset(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+
+	assetType := r.URL.Query().Get("type")
+	if assetType != "logo" && assetType != "favicon" {
+		writeError(w, http.StatusBadRequest, "type must be 'logo' or 'favicon'")
+		return
+	}
+
+	maxSize := int64(2 << 20) // 2 MB
+	if err := r.ParseMultipartForm(maxSize); err != nil {
+		writeError(w, http.StatusBadRequest, "file too large (max 2MB)")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing file")
+		return
+	}
+	defer file.Close()
+
+	ct := header.Header.Get("Content-Type")
+	allowed := map[string]bool{
+		"image/png": true, "image/jpeg": true, "image/webp": true,
+		"image/svg+xml": true, "image/x-icon": true, "image/vnd.microsoft.icon": true,
+	}
+	if !allowed[ct] {
+		writeError(w, http.StatusBadRequest, "only PNG, JPEG, WebP, SVG, and ICO images are allowed")
+		return
+	}
+
+	publicURL, err := h.helpcenterSvc.UploadAsset(r.Context(), wsID, assetType, ct, header.Size, file)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"url": publicURL})
+}
+
 // ─── Article Feedback ───────────────────────────────────────────────────────
 
 func (h *DocsHandler) SubmitArticleFeedback(w http.ResponseWriter, r *http.Request) {
