@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -87,6 +88,27 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	}
 	if v, ok := updates["support_email"].(*string); ok {
 		cfg.SupportEmail = v
+	}
+	if v, ok := updates["favicon_url"].(*string); ok {
+		cfg.FaviconURL = v
+	}
+	if v, ok := updates["theme_mode"].(string); ok {
+		cfg.ThemeMode = v
+	}
+	if v, ok := updates["header_links"].(json.RawMessage); ok {
+		cfg.HeaderLinks = v
+	}
+	if v, ok := updates["footer_config"].(json.RawMessage); ok {
+		cfg.FooterConfig = v
+	}
+	if v, ok := updates["homepage_config"].(json.RawMessage); ok {
+		cfg.HomepageConfig = v
+	}
+	if v, ok := updates["space_nav_config"].(json.RawMessage); ok {
+		cfg.SpaceNavConfig = v
+	}
+	if v, ok := updates["search_placeholder"].(*string); ok {
+		cfg.SearchPlaceholder = v
 	}
 	if err := r.db.WithContext(ctx).Create(cfg).Error; err != nil {
 		return nil, fmt.Errorf("create helpcenter config: %w", err)

@@ -63,6 +63,27 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	if req.SupportEmail != nil {
 		updates["support_email"] = req.SupportEmail
 	}
+	if req.FaviconURL != nil {
+		updates["favicon_url"] = req.FaviconURL
+	}
+	if req.ThemeMode != nil {
+		updates["theme_mode"] = *req.ThemeMode
+	}
+	if req.HeaderLinks != nil {
+		updates["header_links"] = req.HeaderLinks
+	}
+	if req.FooterConfig != nil {
+		updates["footer_config"] = req.FooterConfig
+	}
+	if req.HomepageConfig != nil {
+		updates["homepage_config"] = req.HomepageConfig
+	}
+	if req.SpaceNavConfig != nil {
+		updates["space_nav_config"] = req.SpaceNavConfig
+	}
+	if req.SearchPlaceholder != nil {
+		updates["search_placeholder"] = req.SearchPlaceholder
+	}
 	return s.hcRepo.UpsertConfig(ctx, workspaceID, updates)
 }
 

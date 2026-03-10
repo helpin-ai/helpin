@@ -108,6 +108,35 @@ export interface DocsLink {
   created_at: string;
 }
 
+export type HelpcenterThemeMode = 'light' | 'dark' | 'system';
+
+export interface HelpcenterHeaderLink {
+  label: string;
+  url: string;
+  external: boolean;
+}
+
+export interface HelpcenterFooterLink {
+  label: string;
+  url: string;
+}
+
+export interface HelpcenterFooterConfig {
+  copyright_text: string;
+  links: HelpcenterFooterLink[];
+}
+
+export interface HelpcenterHomepageConfig {
+  hero_title: string;
+  hero_subtitle: string;
+  featured_space_ids: string[];
+}
+
+export interface HelpcenterSpaceNavConfig {
+  order: string[];
+  hidden: string[];
+}
+
 export interface DocsHelpcenterConfig {
   id: string;
   workspace_id: string;
@@ -116,6 +145,13 @@ export interface DocsHelpcenterConfig {
   brand_name: string;
   brand_logo_url?: string;
   brand_color: string;
+  favicon_url?: string;
+  theme_mode: HelpcenterThemeMode;
+  header_links: HelpcenterHeaderLink[];
+  footer_config: HelpcenterFooterConfig;
+  homepage_config: HelpcenterHomepageConfig;
+  space_nav_config: HelpcenterSpaceNavConfig;
+  search_placeholder?: string;
   is_published: boolean;
   seo_title?: string;
   seo_description?: string;
@@ -241,6 +277,13 @@ export interface UpdateDocsHelpcenterConfigRequest {
   brand_name?: string;
   brand_logo_url?: string;
   brand_color?: string;
+  favicon_url?: string;
+  theme_mode?: HelpcenterThemeMode;
+  header_links?: HelpcenterHeaderLink[];
+  footer_config?: HelpcenterFooterConfig;
+  homepage_config?: HelpcenterHomepageConfig;
+  space_nav_config?: HelpcenterSpaceNavConfig;
+  search_placeholder?: string;
   is_published?: boolean;
   seo_title?: string;
   seo_description?: string;

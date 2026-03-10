@@ -6,32 +6,61 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { Plus, Trash2, GripVertical, ExternalLink } from 'lucide-react';
+import type {
+  HelpcenterHeaderLink,
+  HelpcenterFooterLink,
+  HelpcenterThemeMode,
+} from '@/lib/docsTypes';
+
+interface ConfigState {
+  subdomain: string;
+  custom_domain: string;
+  brand_name: string;
+  brand_logo_url: string;
+  brand_color: string;
+  favicon_url: string;
+  theme_mode: HelpcenterThemeMode;
+  header_links: HelpcenterHeaderLink[];
+  footer_copyright_text: string;
+  footer_links: HelpcenterFooterLink[];
+  homepage_hero_title: string;
+  homepage_hero_subtitle: string;
+  homepage_featured_space_ids: string[];
+  search_placeholder: string;
+  is_published: boolean;
+  seo_title: string;
+  seo_description: string;
+  support_email: string;
+}
+
+const DEFAULT_CONFIG: ConfigState = {
+  subdomain: '',
+  custom_domain: '',
+  brand_name: '',
+  brand_logo_url: '',
+  brand_color: '#3b82f6',
+  favicon_url: '',
+  theme_mode: 'system',
+  header_links: [],
+  footer_copyright_text: '',
+  footer_links: [],
+  homepage_hero_title: '',
+  homepage_hero_subtitle: '',
+  homepage_featured_space_ids: [],
+  search_placeholder: '',
+  is_published: false,
+  seo_title: '',
+  seo_description: '',
+  support_email: '',
+};
 
 export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [config, setConfig] = useState<{
-    subdomain: string;
-    custom_domain: string;
-    brand_name: string;
-    brand_logo_url: string;
-    brand_color: string;
-    is_published: boolean;
-    seo_title: string;
-    seo_description: string;
-    support_email: string;
-  }>({
-    subdomain: '',
-    custom_domain: '',
-    brand_name: '',
-    brand_logo_url: '',
-    brand_color: '#3b82f6',
-    is_published: false,
-    seo_title: '',
-    seo_description: '',
-    support_email: '',
-  });
+  const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
 
   useEffect(() => {
     const load = async () => {
@@ -39,16 +68,26 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
       const { docsService } = await import('@/lib/services/docsService');
       const res = await docsService.getHelpcenterConfig(workspaceId);
       if (res.data) {
+        const d = res.data;
         setConfig({
-          subdomain: res.data.subdomain ?? '',
-          custom_domain: res.data.custom_domain ?? '',
-          brand_name: res.data.brand_name ?? '',
-          brand_logo_url: res.data.brand_logo_url ?? '',
-          brand_color: res.data.brand_color ?? '#3b82f6',
-          is_published: res.data.is_published ?? false,
-          seo_title: res.data.seo_title ?? '',
-          seo_description: res.data.seo_description ?? '',
-          support_email: res.data.support_email ?? '',
+          subdomain: d.subdomain ?? '',
+          custom_domain: d.custom_domain ?? '',
+          brand_name: d.brand_name ?? '',
+          brand_logo_url: d.brand_logo_url ?? '',
+          brand_color: d.brand_color ?? '#3b82f6',
+          favicon_url: d.favicon_url ?? '',
+          theme_mode: d.theme_mode ?? 'system',
+          header_links: d.header_links ?? [],
+          footer_copyright_text: d.footer_config?.copyright_text ?? '',
+          footer_links: d.footer_config?.links ?? [],
+          homepage_hero_title: d.homepage_config?.hero_title ?? '',
+          homepage_hero_subtitle: d.homepage_config?.hero_subtitle ?? '',
+          homepage_featured_space_ids: d.homepage_config?.featured_space_ids ?? [],
+          search_placeholder: d.search_placeholder ?? '',
+          is_published: d.is_published ?? false,
+          seo_title: d.seo_title ?? '',
+          seo_description: d.seo_description ?? '',
+          support_email: d.support_email ?? '',
         });
       }
       setLoading(false);
@@ -66,6 +105,19 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
       brand_name: config.brand_name || undefined,
       brand_logo_url: config.brand_logo_url || undefined,
       brand_color: config.brand_color || undefined,
+      favicon_url: config.favicon_url || undefined,
+      theme_mode: config.theme_mode,
+      header_links: config.header_links,
+      footer_config: {
+        copyright_text: config.footer_copyright_text,
+        links: config.footer_links,
+      },
+      homepage_config: {
+        hero_title: config.homepage_hero_title,
+        hero_subtitle: config.homepage_hero_subtitle,
+        featured_space_ids: config.homepage_featured_space_ids,
+      },
+      search_placeholder: config.search_placeholder || undefined,
       is_published: config.is_published,
       seo_title: config.seo_title || undefined,
       seo_description: config.seo_description || undefined,
@@ -77,6 +129,42 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
     } else {
       toast.success('Help center settings saved');
     }
+  };
+
+  // ── Header link helpers ──
+  const addHeaderLink = () => {
+    setConfig({
+      ...config,
+      header_links: [...config.header_links, { label: '', url: '', external: false }],
+    });
+  };
+
+  const updateHeaderLink = (index: number, patch: Partial<HelpcenterHeaderLink>) => {
+    const links = [...config.header_links];
+    links[index] = { ...links[index], ...patch };
+    setConfig({ ...config, header_links: links });
+  };
+
+  const removeHeaderLink = (index: number) => {
+    setConfig({ ...config, header_links: config.header_links.filter((_, i) => i !== index) });
+  };
+
+  // ── Footer link helpers ──
+  const addFooterLink = () => {
+    setConfig({
+      ...config,
+      footer_links: [...config.footer_links, { label: '', url: '' }],
+    });
+  };
+
+  const updateFooterLink = (index: number, patch: Partial<HelpcenterFooterLink>) => {
+    const links = [...config.footer_links];
+    links[index] = { ...links[index], ...patch };
+    setConfig({ ...config, footer_links: links });
+  };
+
+  const removeFooterLink = (index: number) => {
+    setConfig({ ...config, footer_links: config.footer_links.filter((_, i) => i !== index) });
   };
 
   if (loading) {
@@ -91,6 +179,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
 
   return (
     <form onSubmit={handleSave} className="space-y-6">
+      {/* ── Branding ── */}
       <Card>
         <CardHeader>
           <CardTitle>Branding</CardTitle>
@@ -116,6 +205,15 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
             />
           </div>
           <div className="grid gap-2">
+            <Label htmlFor="hc-favicon">Favicon URL</Label>
+            <Input
+              id="hc-favicon"
+              value={config.favicon_url}
+              onChange={(e) => setConfig({ ...config, favicon_url: e.target.value })}
+              placeholder="https://... (.ico or .png)"
+            />
+          </div>
+          <div className="grid gap-2">
             <Label htmlFor="hc-brand-color">Brand Color</Label>
             <div className="flex items-center gap-2">
               <input
@@ -133,9 +231,150 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
               />
             </div>
           </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-theme-mode">Theme Mode</Label>
+            <Select
+              value={config.theme_mode}
+              onValueChange={(v) => setConfig({ ...config, theme_mode: v as HelpcenterThemeMode })}
+            >
+              <SelectTrigger id="hc-theme-mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Light</SelectItem>
+                <SelectItem value="dark">Dark</SelectItem>
+                <SelectItem value="system">System (visitor preference)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 
+      {/* ── Homepage ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Homepage</CardTitle>
+          <CardDescription>Configure the hero section visitors see first.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="hc-hero-title">Hero Title</Label>
+            <Input
+              id="hc-hero-title"
+              value={config.homepage_hero_title}
+              onChange={(e) => setConfig({ ...config, homepage_hero_title: e.target.value })}
+              placeholder="How can we help?"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-hero-subtitle">Hero Subtitle</Label>
+            <Input
+              id="hc-hero-subtitle"
+              value={config.homepage_hero_subtitle}
+              onChange={(e) => setConfig({ ...config, homepage_hero_subtitle: e.target.value })}
+              placeholder="Search our knowledge base or browse topics below"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="hc-search-placeholder">Search Placeholder</Label>
+            <Input
+              id="hc-search-placeholder"
+              value={config.search_placeholder}
+              onChange={(e) => setConfig({ ...config, search_placeholder: e.target.value })}
+              placeholder="Search articles..."
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Header Links ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Header Links</CardTitle>
+          <CardDescription>Add navigation links to the help center top bar.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {config.header_links.map((link, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <Input
+                value={link.label}
+                onChange={(e) => updateHeaderLink(i, { label: e.target.value })}
+                placeholder="Label"
+                className="w-32"
+              />
+              <Input
+                value={link.url}
+                onChange={(e) => updateHeaderLink(i, { url: e.target.value })}
+                placeholder="https://..."
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={link.external ? 'text-primary' : 'text-muted-foreground'}
+                onClick={() => updateHeaderLink(i, { external: !link.external })}
+                title={link.external ? 'Opens in new tab' : 'Opens in same tab'}
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => removeHeaderLink(i)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" onClick={addHeaderLink}>
+            <Plus className="mr-1 h-4 w-4" /> Add Link
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* ── Footer ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Footer</CardTitle>
+          <CardDescription>Customize the help center footer.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="hc-footer-copyright">Copyright Text</Label>
+            <Input
+              id="hc-footer-copyright"
+              value={config.footer_copyright_text}
+              onChange={(e) => setConfig({ ...config, footer_copyright_text: e.target.value })}
+              placeholder="© 2026 Your Company. All rights reserved."
+            />
+          </div>
+          <div className="space-y-3">
+            <Label>Footer Links</Label>
+            {config.footer_links.map((link, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Input
+                  value={link.label}
+                  onChange={(e) => updateFooterLink(i, { label: e.target.value })}
+                  placeholder="Label"
+                  className="w-32"
+                />
+                <Input
+                  value={link.url}
+                  onChange={(e) => updateFooterLink(i, { url: e.target.value })}
+                  placeholder="https://..."
+                  className="flex-1"
+                />
+                <Button type="button" variant="ghost" size="icon" onClick={() => removeFooterLink(i)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={addFooterLink}>
+              <Plus className="mr-1 h-4 w-4" /> Add Link
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Domain ── */}
       <Card>
         <CardHeader>
           <CardTitle>Domain</CardTitle>
@@ -176,6 +415,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
         </CardContent>
       </Card>
 
+      {/* ── SEO ── */}
       <Card>
         <CardHeader>
           <CardTitle>SEO</CardTitle>
@@ -204,6 +444,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
         </CardContent>
       </Card>
 
+      {/* ── Publishing ── */}
       <Card>
         <CardHeader>
           <CardTitle>Publishing</CardTitle>
