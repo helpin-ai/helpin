@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,6 +41,10 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
+	// Initialize structured logger.
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+
 	// Connect to PostgreSQL via GORM.
 	// PreferSimpleProtocol avoids pgx prepared-statement cache errors when
 	// AutoMigrate changes table schemas between restarts.
@@ -63,22 +68,27 @@ func main() {
 	log.Println("connected to database")
 
 	// Ensure pgcrypto extension is available for gen_random_uuid().
+	slog.Info("startup: enabling pgcrypto extension")
 	db.Exec(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
 
+	slog.Info("startup: running MigrateLegacyRewardSchema")
 	if err := repository.MigrateLegacyRewardSchema(db); err != nil {
 		log.Fatalf("failed to migrate legacy reward schema: %v", err)
 	}
 
+	slog.Info("startup: running MigrateAgentRunTargets")
 	if err := repository.MigrateAgentRunTargets(db); err != nil {
 		log.Fatalf("failed to migrate agent run targets: %v", err)
 	}
 
+	slog.Info("startup: running MigratePMImportSchema")
 	if err := repository.MigratePMImportSchema(db); err != nil {
 		log.Fatalf("failed to migrate pm import schema: %v", err)
 	}
 
 	// Auto-migrate all models.
 	// The SQL migration files in server/migrations/ are kept as reference documentation.
+	slog.Info("startup: running AutoMigrate")
 	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Organization{},
@@ -199,25 +209,24 @@ func main() {
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
-	log.Println("database migration complete")
+	slog.Info("startup: AutoMigrate complete")
 
 	// Post-AutoMigrate schema migrations that reference tables created above.
+	slog.Info("startup: running MigrateWorkspaceMemberSchema")
 	if err := repository.MigrateWorkspaceMemberSchema(db); err != nil {
 		log.Fatalf("failed to migrate workspace member schema: %v", err)
 	}
+	slog.Info("startup: running DropLegacyWorkspaceIdentitySchema")
 	if err := repository.DropLegacyWorkspaceIdentitySchema(db); err != nil {
 		log.Fatalf("failed to drop legacy workspace identity schema: %v", err)
 	}
 
-	// Migrate legacy objective states to lifecycle states + health (idempotent).
-	db.Exec("UPDATE pm_objectives SET state = 'not_started' WHERE state = 'to_do'")
-	db.Exec("UPDATE pm_objectives SET state = 'active' WHERE state IN ('in_progress', 'on_track', 'behind', 'at_risk')")
-	db.Exec("UPDATE pm_objectives SET state = 'closed' WHERE state = 'done'")
-
 	// Migrate existing workspaces to organizations (one-time, idempotent).
+	slog.Info("startup: running MigrateWorkspacesToOrganizations")
 	if err := repository.MigrateWorkspacesToOrganizations(db); err != nil {
 		log.Fatalf("failed to migrate workspaces to organizations: %v", err)
 	}
+	slog.Info("startup: all migrations complete")
 
 	// Initialize email client (nil if not configured).
 	emailClient := email.NewClient(cfg.PostmarkServerToken, cfg.PostmarkFromEmail)
@@ -335,6 +344,7 @@ func main() {
 	searchService := service.NewSearchService(searchRepo)
 	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, agentRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher)
 
+	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
 		log.Fatalf("failed to initialize github app client: %v", err)

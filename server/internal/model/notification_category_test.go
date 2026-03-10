@@ -2,6 +2,7 @@ package model
 
 import (
 	"testing"
+	"time"
 )
 
 func TestEventTypeToCategory_AllEventTypesHaveCategory(t *testing.T) {
@@ -58,6 +59,7 @@ func TestEventTypeToCategory_KnownMappings(t *testing.T) {
 		eventType string
 		want      string
 	}{
+		{"story.created", NotifCategorySubscriptions},
 		{"story.assigned", NotifCategoryAssignments},
 		{"story.status_changed", NotifCategoryStatusChanges},
 		{"comment.created", NotifCategoryComments},
@@ -126,6 +128,7 @@ func TestEventTypeToCategory_AllMentions(t *testing.T) {
 // TestEventTypeToCategory_AllSubscriptions verifies all subscription event types.
 func TestEventTypeToCategory_AllSubscriptions(t *testing.T) {
 	subEvents := []string{
+		"story.created",
 		"epic.created", "epic.updated", "epic.deleted",
 		"objective.created", "objective.updated", "objective.deleted",
 	}
@@ -133,6 +136,35 @@ func TestEventTypeToCategory_AllSubscriptions(t *testing.T) {
 		got := EventTypeToCategory[e]
 		if got != NotifCategorySubscriptions {
 			t.Errorf("EventTypeToCategory[%q] = %q, want %q", e, got, NotifCategorySubscriptions)
+		}
+	}
+}
+
+func TestEmittedNotificationEventTypes_AreMapped(t *testing.T) {
+	emittedEventTypes := []string{
+		"story.created",
+		"story.updated",
+		"story.mention",
+		"story.status_changed",
+		"story.blocked",
+		"story.assigned",
+		"comment.created",
+		"comment.mention",
+		"checklist.mention",
+		"sprint.created",
+		"sprint.updated",
+		"epic.created",
+		"epic.updated",
+		"epic.deleted",
+		"objective.created",
+		"objective.updated",
+		"objective.deleted",
+		"objective.assigned",
+	}
+
+	for _, eventType := range emittedEventTypes {
+		if EventTypeToCategory[eventType] == "" {
+			t.Errorf("emitted event type %q is not mapped to a notification category", eventType)
 		}
 	}
 }
@@ -199,5 +231,31 @@ func TestNotificationEventInput_EmptyTeamID(t *testing.T) {
 	}
 	if input.TeamID != "" {
 		t.Errorf("expected empty TeamID for epic, got %q", input.TeamID)
+	}
+}
+
+func TestIsDNDActive(t *testing.T) {
+	now := time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC)
+	future := now.Add(30 * time.Minute)
+	past := now.Add(-30 * time.Minute)
+
+	tests := []struct {
+		name          string
+		doNotDisturb  bool
+		until         *time.Time
+		expectedValue bool
+	}{
+		{name: "boolean dnd enabled", doNotDisturb: true, expectedValue: true},
+		{name: "boolean dnd disabled", doNotDisturb: false, expectedValue: false},
+		{name: "future dnd until enables dnd", doNotDisturb: false, until: &future, expectedValue: true},
+		{name: "expired dnd until disables dnd", doNotDisturb: true, until: &past, expectedValue: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsDNDActive(tt.doNotDisturb, tt.until, now); got != tt.expectedValue {
+				t.Fatalf("IsDNDActive(%v, %v, %v) = %v, want %v", tt.doNotDisturb, tt.until, now, got, tt.expectedValue)
+			}
+		})
 	}
 }

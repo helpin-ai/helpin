@@ -34,6 +34,7 @@ type PendingDigestDelivery struct {
 	WorkspaceID        string
 	NotificationStatus string
 	SnoozedUntil       *time.Time
+	EventType          string
 	EventTitle         string
 	CreatedAt          time.Time
 }
@@ -170,6 +171,7 @@ func (r *NotificationRepository) ListPendingDigestDeliveries(ctx context.Context
 			n.workspace_id,
 			n.status AS notification_status,
 			n.snoozed_until,
+			ne.event_type,
 			ne.title AS event_title,
 			nd.created_at
 		`).

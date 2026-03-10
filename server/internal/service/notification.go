@@ -532,6 +532,11 @@ func (s *NotificationService) processRecipientDigests(
 		return s.notifRepo.UpdateDeliveryStatus(ctx, deliveryIDs(deliveries), "skipped", nil, &reason)
 	}
 
+	if model.IsDNDActive(userSettings.DoNotDisturb, userSettings.DNDUntil, now) {
+		reason := "digest delivery skipped while do not disturb is active"
+		return s.notifRepo.UpdateDeliveryStatus(ctx, deliveryIDs(deliveries), "skipped", nil, &reason)
+	}
+
 	digestFrequency := normalizeEmailDigestFrequency(userSettings.EmailDigestFrequency)
 	if digestFrequency != "daily" && digestFrequency != "weekly" {
 		reason := "digest delivery disabled by account settings"
@@ -549,9 +554,18 @@ func (s *NotificationService) processRecipientDigests(
 		return nil
 	}
 
-	if userSettings.DoNotDisturb {
-		reason := "digest delivery skipped while do not disturb is enabled"
-		return s.notifRepo.UpdateDeliveryStatus(ctx, deliveryIDs(dueDeliveries), "skipped", nil, &reason)
+	dueDeliveries, skippedForPrefs, err := s.filterDigestDeliveriesByCurrentPreferences(ctx, recipientID, dueDeliveries)
+	if err != nil {
+		return err
+	}
+	if len(skippedForPrefs) > 0 {
+		reason := "email delivery disabled by current notification preferences"
+		if err := s.notifRepo.UpdateDeliveryStatus(ctx, skippedForPrefs, "skipped", nil, &reason); err != nil {
+			return err
+		}
+	}
+	if len(dueDeliveries) == 0 {
+		return nil
 	}
 
 	if s.emailClient == nil {
@@ -592,6 +606,32 @@ func (s *NotificationService) processRecipientDigests(
 
 	deliveredAt := now
 	return s.notifRepo.UpdateDeliveryStatus(ctx, includedIDs, "delivered", &deliveredAt, nil)
+}
+
+func (s *NotificationService) filterDigestDeliveriesByCurrentPreferences(
+	ctx context.Context,
+	recipientID string,
+	deliveries []repository.PendingDigestDelivery,
+) ([]repository.PendingDigestDelivery, []string, error) {
+	if s.prefRepo == nil {
+		return deliveries, nil, nil
+	}
+
+	allowed := make([]repository.PendingDigestDelivery, 0, len(deliveries))
+	skipped := make([]string, 0)
+	for _, delivery := range deliveries {
+		shouldEmail, err := s.prefRepo.ShouldNotify(ctx, recipientID, delivery.WorkspaceID, delivery.EventType, "email", "")
+		if err != nil {
+			return nil, nil, fmt.Errorf("check digest preferences: %w", err)
+		}
+		if !shouldEmail {
+			skipped = append(skipped, delivery.DeliveryID)
+			continue
+		}
+		allowed = append(allowed, delivery)
+	}
+
+	return allowed, skipped, nil
 }
 
 func buildDigestItems(deliveries []repository.PendingDigestDelivery, now time.Time) ([]digestNotificationItem, []string, []string) {
@@ -904,9 +944,15 @@ func (s *NotificationService) UpdatePreferences(ctx context.Context, userID, wor
 		userSettings.UserID = userID
 		if req.DoNotDisturb != nil {
 			userSettings.DoNotDisturb = *req.DoNotDisturb
+			if !*req.DoNotDisturb && req.DNDUntil == nil {
+				userSettings.DNDUntil = nil
+			}
 		}
 		if req.DNDUntil != nil {
 			userSettings.DNDUntil = req.DNDUntil
+			if req.DoNotDisturb == nil {
+				userSettings.DoNotDisturb = model.IsDNDActive(false, req.DNDUntil, time.Now())
+			}
 		}
 		if req.EmailEnabled != nil {
 			userSettings.EmailEnabled = *req.EmailEnabled

@@ -49,11 +49,11 @@ type Notification struct {
 	EntityType string `json:"entity_type" gorm:"type:varchar(50);not null;uniqueIndex:idx_notif_recipient_entity,priority:2"`
 	EntityID   string `json:"entity_id" gorm:"type:uuid;not null;uniqueIndex:idx_notif_recipient_entity,priority:3"`
 
-	EventType           string `json:"event_type" gorm:"type:varchar(100);not null"`
-	Title               string `json:"title" gorm:"not null"`
+	EventType           string  `json:"event_type" gorm:"type:varchar(100);not null"`
+	Title               string  `json:"title" gorm:"not null"`
 	Body                *string `json:"body"`
-	Metadata            JSONB  `json:"metadata" gorm:"type:jsonb"`
-	LatestEventCategory string `json:"latest_event_category" gorm:"type:varchar(50);not null"`
+	Metadata            JSONB   `json:"metadata" gorm:"type:jsonb"`
+	LatestEventCategory string  `json:"latest_event_category" gorm:"type:varchar(50);not null"`
 
 	// Denormalized render snapshots for inbox rendering without joins.
 	ActorSnapshot        JSONB `json:"actor_snapshot" gorm:"type:jsonb"`
@@ -176,34 +176,45 @@ const (
 
 // EventTypeToCategory maps individual event types to their notification category.
 var EventTypeToCategory = map[string]string{
-	"story.assigned":      NotifCategoryAssignments,
-	"objective.assigned":  NotifCategoryAssignments,
+	"story.created":      NotifCategorySubscriptions,
+	"story.assigned":     NotifCategoryAssignments,
+	"objective.assigned": NotifCategoryAssignments,
 
 	"story.status_changed": NotifCategoryStatusChanges,
-	"story.blocked":         NotifCategoryStatusChanges,
-	"story.updated":         NotifCategoryStatusChanges,
+	"story.blocked":        NotifCategoryStatusChanges,
+	"story.updated":        NotifCategoryStatusChanges,
 
-	"comment.created":    NotifCategoryComments,
-	"story.comment":      NotifCategoryComments,
-	"objective.comment":  NotifCategoryComments,
-	"epic.comment":       NotifCategoryComments,
-	"sprint.comment":     NotifCategoryComments,
+	"comment.created":   NotifCategoryComments,
+	"story.comment":     NotifCategoryComments,
+	"objective.comment": NotifCategoryComments,
+	"epic.comment":      NotifCategoryComments,
+	"sprint.comment":    NotifCategoryComments,
 
-	"story.mention":      NotifCategoryMentions,
-	"comment.mention":    NotifCategoryMentions,
-	"checklist.mention":  NotifCategoryMentions,
-	"objective.mention":  NotifCategoryMentions,
-	"epic.mention":       NotifCategoryMentions,
+	"story.mention":     NotifCategoryMentions,
+	"comment.mention":   NotifCategoryMentions,
+	"checklist.mention": NotifCategoryMentions,
+	"objective.mention": NotifCategoryMentions,
+	"epic.mention":      NotifCategoryMentions,
 
-	"epic.created":       NotifCategorySubscriptions,
-	"epic.updated":       NotifCategorySubscriptions,
-	"epic.deleted":       NotifCategorySubscriptions,
-	"objective.created":  NotifCategorySubscriptions,
-	"objective.updated":  NotifCategorySubscriptions,
-	"objective.deleted":  NotifCategorySubscriptions,
+	"epic.created":      NotifCategorySubscriptions,
+	"epic.updated":      NotifCategorySubscriptions,
+	"epic.deleted":      NotifCategorySubscriptions,
+	"objective.created": NotifCategorySubscriptions,
+	"objective.updated": NotifCategorySubscriptions,
+	"objective.deleted": NotifCategorySubscriptions,
 
-	"sprint.created":     NotifCategorySprints,
-	"sprint.updated":     NotifCategorySprints,
+	"sprint.created": NotifCategorySprints,
+	"sprint.updated": NotifCategorySprints,
+}
+
+// IsDNDActive returns true when a notification pause is currently active.
+// A future DNDUntil takes precedence over the boolean flag so temporary DND
+// windows stop automatically after they expire.
+func IsDNDActive(doNotDisturb bool, until *time.Time, now time.Time) bool {
+	if until != nil {
+		return until.After(now)
+	}
+	return doNotDisturb
 }
 
 // EntityFollower tracks who follows which entity for notification purposes.
@@ -221,26 +232,26 @@ func (EntityFollower) TableName() string { return "entity_followers" }
 
 // NotificationEventInput is the input to NotificationService.Emit().
 type NotificationEventInput struct {
-	WorkspaceID        string
-	ActorID            string
-	EventType          string // e.g. "story.assigned"
-	EntityType         string // e.g. "story"
-	EntityID           string
-	Title              string
-	Body               string
-	Category           string // e.g. "assignment", "comment", "status_change"
-	Priority           string // "urgent", "high", "normal", "low"
-	TeamID             string // optional, set when entity belongs to a team
-	Metadata           JSONB
-	ActorSnapshot      JSONB
-	EntitySnapshot     JSONB
+	WorkspaceID          string
+	ActorID              string
+	EventType            string // e.g. "story.assigned"
+	EntityType           string // e.g. "story"
+	EntityID             string
+	Title                string
+	Body                 string
+	Category             string // e.g. "assignment", "comment", "status_change"
+	Priority             string // "urgent", "high", "normal", "low"
+	TeamID               string // optional, set when entity belongs to a team
+	Metadata             JSONB
+	ActorSnapshot        JSONB
+	EntitySnapshot       JSONB
 	ParentEntitySnapshot JSONB
-	ExplicitRecipients []string // Additional recipients beyond followers
+	ExplicitRecipients   []string // Additional recipients beyond followers
 }
 
 // UpdateNotificationRequest is the payload for updating a notification.
 type UpdateNotificationRequest struct {
-	Status       *string    `json:"status"`        // "read", "unread", "archived"
+	Status       *string    `json:"status"` // "read", "unread", "archived"
 	SnoozedUntil *time.Time `json:"snoozed_until"`
 }
 

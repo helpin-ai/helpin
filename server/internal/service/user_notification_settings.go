@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -50,9 +51,15 @@ func (s *UserNotificationSettingsService) Update(ctx context.Context, userID str
 	}
 	if req.DoNotDisturb != nil {
 		settings.DoNotDisturb = *req.DoNotDisturb
+		if !*req.DoNotDisturb && req.DNDUntil == nil {
+			settings.DNDUntil = nil
+		}
 	}
 	if req.DNDUntil != nil {
 		settings.DNDUntil = req.DNDUntil
+		if req.DoNotDisturb == nil {
+			settings.DoNotDisturb = model.IsDNDActive(false, req.DNDUntil, time.Now())
+		}
 	}
 	if req.BadgeMode != nil {
 		settings.BadgeMode = *req.BadgeMode

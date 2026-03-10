@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -151,7 +152,11 @@ func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, use
 		return false, err
 	}
 
-	if userSettings.DoNotDisturb {
+	if model.IsDNDActive(userSettings.DoNotDisturb, userSettings.DNDUntil, time.Now()) {
+		return false, nil
+	}
+
+	if channel == "email" && !userSettings.EmailEnabled {
 		return false, nil
 	}
 

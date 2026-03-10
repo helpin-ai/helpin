@@ -49,6 +49,37 @@ func setupNotificationRepoTestDB(t *testing.T) *gorm.DB {
 	`).Error; err != nil {
 		t.Fatalf("create notifications table: %v", err)
 	}
+	if err := db.Exec(`
+		CREATE TABLE notification_events (
+			id TEXT PRIMARY KEY,
+			notification_id TEXT NOT NULL,
+			actor_id TEXT,
+			event_type TEXT NOT NULL,
+			title TEXT NOT NULL,
+			metadata TEXT,
+			category TEXT NOT NULL,
+			actor_snapshot TEXT,
+			priority TEXT NOT NULL,
+			created_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create notification_events table: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE notification_deliveries (
+			id TEXT PRIMARY KEY,
+			notification_event_id TEXT NOT NULL,
+			channel TEXT NOT NULL,
+			status TEXT NOT NULL,
+			delivered_at DATETIME,
+			error TEXT,
+			external_message_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create notification_deliveries table: %v", err)
+	}
 	return db
 }
 
@@ -197,6 +228,141 @@ func TestNotificationRepositoryList_MentionsFilterMatchesMentionEvents(t *testin
 	for _, notif := range results {
 		if notif.EventType != "story.mention" && notif.EventType != "comment.mention" {
 			t.Fatalf("unexpected event type in mentions filter: %s", notif.EventType)
+		}
+	}
+}
+
+func TestNotificationRepositoryListPendingDigestDeliveries(t *testing.T) {
+	db := setupNotificationRepoTestDB(t)
+	repo := NewNotificationRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+	later := now.Add(time.Minute)
+
+	notifs := []model.Notification{
+		{
+			ID:                  "notif-1",
+			WorkspaceID:         "ws-1",
+			RecipientID:         "user-1",
+			EntityType:          "story",
+			EntityID:            "story-1",
+			EventType:           "comment.created",
+			Title:               "Story comment",
+			LatestEventCategory: model.NotifCategoryComments,
+			Status:              "unread",
+			LastEventAt:         now,
+			Priority:            "normal",
+		},
+		{
+			ID:                  "notif-2",
+			WorkspaceID:         "ws-1",
+			RecipientID:         "user-1",
+			EntityType:          "story",
+			EntityID:            "story-2",
+			EventType:           "comment.created",
+			Title:               "Story comment 2",
+			LatestEventCategory: model.NotifCategoryComments,
+			Status:              "read",
+			LastEventAt:         later,
+			Priority:            "normal",
+		},
+	}
+	for i := range notifs {
+		if err := db.WithContext(ctx).Create(&notifs[i]).Error; err != nil {
+			t.Fatalf("seed notification %d: %v", i, err)
+		}
+	}
+
+	events := []model.NotificationEvent{
+		{ID: "event-1", NotificationID: "notif-1", EventType: "comment.created", Title: "Story comment", Category: model.NotifCategoryComments, Priority: "normal", CreatedAt: now},
+		{ID: "event-2", NotificationID: "notif-2", EventType: "comment.created", Title: "Story comment 2", Category: model.NotifCategoryComments, Priority: "normal", CreatedAt: later},
+	}
+	for i := range events {
+		if err := db.WithContext(ctx).Create(&events[i]).Error; err != nil {
+			t.Fatalf("seed event %d: %v", i, err)
+		}
+	}
+
+	deliveries := []model.NotificationDelivery{
+		{ID: "delivery-1", NotificationEventID: "event-1", Channel: "digest", Status: "pending", CreatedAt: now, UpdatedAt: now},
+		{ID: "delivery-2", NotificationEventID: "event-2", Channel: "digest", Status: "pending", CreatedAt: later, UpdatedAt: later},
+		{ID: "delivery-3", NotificationEventID: "event-2", Channel: "email", Status: "pending", CreatedAt: later, UpdatedAt: later},
+	}
+	for i := range deliveries {
+		if err := db.WithContext(ctx).Create(&deliveries[i]).Error; err != nil {
+			t.Fatalf("seed delivery %d: %v", i, err)
+		}
+	}
+
+	results, err := repo.ListPendingDigestDeliveries(ctx)
+	if err != nil {
+		t.Fatalf("ListPendingDigestDeliveries: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("pending digest delivery count = %d, want 2", len(results))
+	}
+	if results[0].DeliveryID != "delivery-1" || results[0].EventType != "comment.created" || results[0].NotificationStatus != "unread" {
+		t.Fatalf("first pending digest row = %+v, want delivery-1 unread comment.created", results[0])
+	}
+	if results[1].DeliveryID != "delivery-2" || results[1].NotificationStatus != "read" {
+		t.Fatalf("second pending digest row = %+v, want delivery-2 read", results[1])
+	}
+}
+
+func TestNotificationRepositoryUpdateDeliveryStatus(t *testing.T) {
+	db := setupNotificationRepoTestDB(t)
+	repo := NewNotificationRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	if err := db.WithContext(ctx).Create(&model.NotificationDelivery{
+		ID:                  "delivery-1",
+		NotificationEventID: "event-1",
+		Channel:             "digest",
+		Status:              "pending",
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}).Error; err != nil {
+		t.Fatalf("seed delivery 1: %v", err)
+	}
+	if err := db.WithContext(ctx).Create(&model.NotificationDelivery{
+		ID:                  "delivery-2",
+		NotificationEventID: "event-2",
+		Channel:             "digest",
+		Status:              "pending",
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}).Error; err != nil {
+		t.Fatalf("seed delivery 2: %v", err)
+	}
+
+	deliveredAt := now.Add(5 * time.Minute)
+	errorMessage := "sent in digest"
+	if err := repo.UpdateDeliveryStatus(ctx, []string{"delivery-1", "delivery-2"}, "delivered", &deliveredAt, &errorMessage); err != nil {
+		t.Fatalf("UpdateDeliveryStatus: %v", err)
+	}
+
+	var rows []struct {
+		ID          string
+		Status      string
+		DeliveredAt *time.Time
+		Error       *string
+	}
+	if err := db.Raw(`SELECT id, status, delivered_at, error FROM notification_deliveries ORDER BY id`).Scan(&rows).Error; err != nil {
+		t.Fatalf("load updated deliveries: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("updated delivery count = %d, want 2", len(rows))
+	}
+	for _, row := range rows {
+		if row.Status != "delivered" {
+			t.Fatalf("delivery %s status = %q, want delivered", row.ID, row.Status)
+		}
+		if row.DeliveredAt == nil || !row.DeliveredAt.Equal(deliveredAt) {
+			t.Fatalf("delivery %s delivered_at = %v, want %v", row.ID, row.DeliveredAt, deliveredAt)
+		}
+		if row.Error == nil || *row.Error != errorMessage {
+			t.Fatalf("delivery %s error = %v, want %q", row.ID, row.Error, errorMessage)
 		}
 	}
 }

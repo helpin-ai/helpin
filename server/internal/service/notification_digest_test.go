@@ -80,7 +80,7 @@ func TestProcessPendingDigests_SendsDueDigestAndSkipsResolvedNotifications(t *te
 	emailer := &stubEmailSender{}
 	service := NewNotificationService(
 		repository.NewNotificationRepository(db),
-		nil,
+		repository.NewNotificationPreferenceRepository(db),
 		repository.NewUserNotificationSettingsRepository(db),
 		nil,
 		repository.NewUserRepository(db),
@@ -110,6 +110,187 @@ func TestProcessPendingDigests_SendsDueDigestAndSkipsResolvedNotifications(t *te
 	}
 
 	assertDeliveryStatus(t, db, "delivery-due-unread", "delivered")
+	assertDeliveryStatus(t, db, "delivery-due-read", "skipped")
+	assertDeliveryStatus(t, db, "delivery-future-unread", "pending")
+}
+
+func TestProcessPendingDigests_RespectsCurrentWorkspaceEmailPreferences(t *testing.T) {
+	db := newNotificationDigestTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+
+	mustExec(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"user-1", "user@example.com", "hash", "Digest User", now, now)
+	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
+	mustExec(t, db, `INSERT INTO notification_preferences (id, user_id, workspace_id, mute_workspace, channel_preferences, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"pref-1", "user-1", "ws-1", false, `{"comments":{"in_app":true,"email":false}}`, now, now)
+
+	seedNotificationDigestCase(t, db, now)
+
+	emailer := &stubEmailSender{}
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		emailer,
+	)
+
+	if err := service.ProcessPendingDigests(ctx, now); err != nil {
+		t.Fatalf("ProcessPendingDigests: %v", err)
+	}
+
+	if len(emailer.sent) != 0 {
+		t.Fatalf("expected no digest email when workspace email category is disabled, got %d", len(emailer.sent))
+	}
+
+	assertDeliveryStatus(t, db, "delivery-due-unread", "skipped")
+	assertDeliveryStatus(t, db, "delivery-due-read", "skipped")
+	assertDeliveryStatus(t, db, "delivery-future-unread", "pending")
+}
+
+func TestProcessPendingDigests_SkipsWhenAccountEmailDisabled(t *testing.T) {
+	db := newNotificationDigestTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+
+	mustExec(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"user-1", "user@example.com", "hash", "Digest User", now, now)
+	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-1", "user-1", false, "daily", "09:00", 1, false, "all", "UTC", now, now)
+
+	seedNotificationDigestCase(t, db, now)
+
+	emailer := &stubEmailSender{}
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		emailer,
+	)
+
+	if err := service.ProcessPendingDigests(ctx, now); err != nil {
+		t.Fatalf("ProcessPendingDigests: %v", err)
+	}
+
+	if len(emailer.sent) != 0 {
+		t.Fatalf("expected no digest email when account email is disabled, got %d", len(emailer.sent))
+	}
+	assertDeliveryStatus(t, db, "delivery-due-unread", "skipped")
+	assertDeliveryStatus(t, db, "delivery-due-read", "skipped")
+	assertDeliveryStatus(t, db, "delivery-future-unread", "skipped")
+}
+
+func TestProcessPendingDigests_SkipsWhenDNDUntilIsActive(t *testing.T) {
+	db := newNotificationDigestTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+	future := now.Add(30 * time.Minute)
+
+	mustExec(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"user-1", "user@example.com", "hash", "Digest User", now, now)
+	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, dnd_until, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-1", "user-1", true, "daily", "09:00", 1, false, future, "all", "UTC", now, now)
+
+	seedNotificationDigestCase(t, db, now)
+
+	emailer := &stubEmailSender{}
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		emailer,
+	)
+
+	if err := service.ProcessPendingDigests(ctx, now); err != nil {
+		t.Fatalf("ProcessPendingDigests: %v", err)
+	}
+
+	if len(emailer.sent) != 0 {
+		t.Fatalf("expected no digest email while dnd_until is active, got %d", len(emailer.sent))
+	}
+	assertDeliveryStatus(t, db, "delivery-due-unread", "skipped")
+	assertDeliveryStatus(t, db, "delivery-due-read", "skipped")
+	assertDeliveryStatus(t, db, "delivery-future-unread", "skipped")
+}
+
+func TestProcessPendingDigests_FailsWhenUserRepositoryMissing(t *testing.T) {
+	db := newNotificationDigestTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+
+	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
+
+	seedNotificationDigestCase(t, db, now)
+
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		&stubEmailSender{},
+	)
+
+	if err := service.ProcessPendingDigests(ctx, now); err != nil {
+		t.Fatalf("ProcessPendingDigests: %v", err)
+	}
+
+	assertDeliveryStatus(t, db, "delivery-due-unread", "failed")
+	assertDeliveryStatus(t, db, "delivery-due-read", "failed")
+	assertDeliveryStatus(t, db, "delivery-future-unread", "pending")
+}
+
+func TestProcessPendingDigests_MarksIncludedRowsFailedOnSendError(t *testing.T) {
+	db := newNotificationDigestTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+
+	mustExec(t, db, `INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"user-1", "user@example.com", "hash", "Digest User", now, now)
+	mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
+
+	seedNotificationDigestCase(t, db, now)
+
+	emailer := &stubEmailSender{err: fmt.Errorf("postmark timeout")}
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		emailer,
+	)
+
+	if err := service.ProcessPendingDigests(ctx, now); err != nil {
+		t.Fatalf("ProcessPendingDigests: %v", err)
+	}
+
+	assertDeliveryStatus(t, db, "delivery-due-unread", "failed")
 	assertDeliveryStatus(t, db, "delivery-due-read", "skipped")
 	assertDeliveryStatus(t, db, "delivery-future-unread", "pending")
 }
@@ -145,6 +326,24 @@ func newNotificationDigestTestDB(t *testing.T) *gorm.DB {
 			dnd_until DATETIME,
 			badge_mode TEXT NOT NULL,
 			timezone TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE notification_preferences (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			team_id TEXT,
+			mute_workspace BOOLEAN NOT NULL,
+			do_not_disturb BOOLEAN NOT NULL DEFAULT 0,
+			dnd_until DATETIME,
+			email_enabled BOOLEAN NOT NULL DEFAULT 1,
+			email_digest_frequency TEXT,
+			email_digest_time TEXT,
+			email_digest_day INTEGER,
+			timezone TEXT,
+			channel_preferences TEXT,
+			badge_mode TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
