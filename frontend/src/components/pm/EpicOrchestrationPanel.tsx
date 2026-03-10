@@ -139,14 +139,14 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   const [clarifications, setClarifications] = useState<SpecClarification[]>(epic.spec_clarifications ?? []);
   const [additionalContext, setAdditionalContext] = useState('');
   const [assigning, setAssigning] = useState(false);
-  const [loadingRuns, setLoadingRuns] = useState(true);
+  const [, setLoadingRuns] = useState(true);
   const [triggeringDraft, setTriggeringDraft] = useState(false);
   const [savingClarifications, setSavingClarifications] = useState(false);
   const [approvingSpec, setApprovingSpec] = useState(false);
   const [triggeringPlan, setTriggeringPlan] = useState(false);
   const [confirmingPlan, setConfirmingPlan] = useState(false);
   const [kickingOff, setKickingOff] = useState(false);
-  const [actingOnRun, setActingOnRun] = useState<string | null>(null);
+  const [_actingOnRun, setActingOnRun] = useState<string | null>(null);
   const [lastExecutionResult, setLastExecutionResult] = useState<KickoffExecutionResult | null>(null);
   const lastDraftRefreshKey = useRef<string>('');
   const lastPlanRefreshKey = useRef<string>('');
@@ -414,6 +414,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     } finally { setKickingOff(false); }
   }, [epic.id, fetchRuns, latestPlanRun, onStoriesCreated, selectedRun, selectedRunStage, selectedStoryIds, workspaceId]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleCancelRun = useCallback(async (runId: string) => {
     setActingOnRun(runId);
     try {

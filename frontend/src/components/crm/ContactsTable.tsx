@@ -13,7 +13,6 @@ import {
   type RowSelectionState,
   type SortingState,
   type ColumnSizingState,
-  type Header,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, EllipsisVertical, ExternalLink, Loader2, Plus, Trash2, UserPlus, Users } from 'lucide-react';

@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
-  Plus, Trash2, GripVertical, ExternalLink, Upload, X, Info,
+  Plus, Trash2, GripVertical, ExternalLink, Upload, Info,
 } from 'lucide-react';
 import { IconPicker } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';

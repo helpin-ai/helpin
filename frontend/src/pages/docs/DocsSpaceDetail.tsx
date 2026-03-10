@@ -10,7 +10,6 @@ import {
   Check,
   ChevronDown,
   Copy,
-  EllipsisVertical,
   FileText,
   FolderOpen,
   Globe,
@@ -22,7 +21,6 @@ import {
   Send,
   Settings,
   Trash2,
-  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Folder as PhFolder } from '@phosphor-icons/react'

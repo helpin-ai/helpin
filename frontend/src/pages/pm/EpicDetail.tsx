@@ -195,7 +195,7 @@ export function EpicDetailPage() {
       return;
     }
     setEpic(epicRes.data);
-    setForm((current) => current ? current : buildForm(epicRes.data));
+    setForm((current) => current ? current : buildForm(epicRes.data!));
     setStories(storiesRes.data ?? []);
     setAllEpics(epicsRes.data ?? []);
     setAllSprints(sprintsRes.data ?? []);
