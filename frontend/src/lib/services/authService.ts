@@ -11,4 +11,6 @@ export const authService = {
     api.put<User>('/auth/me', data),
   refresh: (refreshToken: string) =>
     api.post<AuthResponse>('/auth/refresh', { refresh_token: refreshToken }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.put<{ message: string }>('/auth/change-password', { current_password: currentPassword, new_password: newPassword }),
 };

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
+import { authService } from '@/lib/services/authService';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +18,11 @@ export default function Profile() {
   const [fullName, setFullName] = useState(user?.full_name ?? '');
   const [saving, setSaving] = useState(false);
 
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
   const initials = getInitials(user?.full_name || user?.email);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -29,6 +35,29 @@ export default function Profile() {
       toast.error('Failed to update profile');
     }
     setSaving(false);
+  };
+
+  const handleChangePassword = async (e: FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    setChangingPassword(true);
+    const { error } = await authService.changePassword(currentPassword, newPassword);
+    if (error) {
+      toast.error(error);
+    } else {
+      toast.success('Password updated successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    }
+    setChangingPassword(false);
   };
 
   return (
@@ -68,14 +97,60 @@ export default function Profile() {
               <Input value={user?.email ?? ''} disabled />
               <p className="text-xs text-muted-foreground">Email cannot be changed.</p>
             </div>
-            <Separator />
-            <div className="space-y-2">
-              <Label>Change Password</Label>
-              <p className="text-sm text-muted-foreground">Password change functionality coming soon.</p>
-            </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={saving}>
                 {saving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Change Password</CardTitle>
+          <CardDescription>Update your account password.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Current Password</Label>
+              <Input
+                id="current-password"
+                type="password"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                placeholder="Enter current password"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New Password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Enter new password"
+                required
+                minLength={8}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirm New Password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                required
+                minLength={8}
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={changingPassword}>
+                {changingPassword ? 'Updating...' : 'Update Password'}
               </Button>
             </div>
           </form>

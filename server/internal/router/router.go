@@ -107,6 +107,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Get("/health", h.Health.Check)
 		r.Get("/invitations/info", h.Invite.GetInfo)
+		r.Post("/invitations/accept-with-signup", h.Invite.AcceptWithSignup)
 
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
@@ -147,6 +148,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Auth / profile
 			r.Get("/auth/me", h.Auth.Me)
 			r.Put("/auth/me", h.Auth.UpdateProfile)
+			r.Put("/auth/change-password", h.Auth.ChangePassword)
 
 			// Organizations
 			r.Get("/organizations", h.Organization.List)
