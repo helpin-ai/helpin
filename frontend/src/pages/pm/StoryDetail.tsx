@@ -88,6 +88,10 @@ import { FollowButton } from '@/components/notifications/FollowButton';
 import { CommentThread } from '@/components/pm/CommentThread';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { StoryRelationshipsSection } from '@/components/pm/StoryRelationshipsSection';
+import { StoryDeliveryPanel } from '@/components/pm/StoryDeliveryPanel';
+import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
+import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
+import { useTeamFieldVisibilityForTeam } from '@/hooks/queries/useSettings';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/stories/$storyId');
 
@@ -280,6 +284,7 @@ export function StoryDetailPage() {
   const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
 
+  const fieldVis = useTeamFieldVisibilityForTeam(workspaceId!, storyDetail?.story.team_id);
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId ?? '');
   const memberNameMap = useMemo(
@@ -963,6 +968,27 @@ export function StoryDetailPage() {
             includeStoryRelationships={false}
             className="mt-6"
           />
+
+          {/* Delivery */}
+          {fieldVis.delivery && (
+            <StoryDeliveryPanel
+              workspaceId={workspaceId!}
+              storyDetail={storyDetail}
+              onStoryUpdated={setStoryDetail}
+            />
+          )}
+
+          {/* Git Links & Agent Runs */}
+          {fieldVis.dev_history && (
+            <>
+              <StoryGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId!} />
+              <AgentRunPanel
+                storyId={storyDetail.story.id}
+                workspaceId={workspaceId!}
+                assignedAgentId={storyDetail.story.assigned_agent_id}
+              />
+            </>
+          )}
         </aside>
       </div>
 

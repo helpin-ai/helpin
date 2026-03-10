@@ -91,21 +91,44 @@ const UPDATE_TYPE_OPTIONS: Array<{
   { value: 'relates_to', label: 'Relates to', icon: ArrowRightLeft },
 ];
 
+const RELATIONSHIP_COLORS: Record<StoryRelationshipAction, { active: string; icon: string }> = {
+  relates_to: {
+    active: 'border-blue-200/80 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300',
+    icon: 'text-blue-500',
+  },
+  blocks: {
+    active: 'border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300',
+    icon: 'text-amber-500',
+  },
+  is_blocked_by: {
+    active: 'border-red-200/80 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300',
+    icon: 'text-red-500',
+  },
+  duplicates: {
+    active: 'border-violet-200/80 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300',
+    icon: 'text-violet-500',
+  },
+  is_duplicated_by: {
+    active: 'border-violet-200/80 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300',
+    icon: 'text-violet-500',
+  },
+};
+
 function getRelationshipMeta(linkType: string) {
   switch (linkType) {
     case 'blocks':
-      return { label: 'Blocks', icon: TriangleAlert, color: 'text-amber-500' };
+      return { label: 'Blocks', icon: TriangleAlert, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40' };
     case 'is_blocked_by':
-      return { label: 'Blocked by', icon: ShieldAlert, color: 'text-red-500' };
+      return { label: 'Blocked by', icon: ShieldAlert, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950/40' };
     case 'relates_to':
     case 'related_by':
-      return { label: 'Relates to', icon: ArrowRightLeft, color: 'text-blue-500' };
+      return { label: 'Relates to', icon: ArrowRightLeft, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40' };
     case 'duplicates':
-      return { label: 'Duplicates', icon: Copy, color: 'text-violet-500' };
+      return { label: 'Duplicates', icon: Copy, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
     case 'is_duplicated_by':
-      return { label: 'Duplicated by', icon: Copy, color: 'text-violet-500' };
+      return { label: 'Duplicated by', icon: Copy, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
     default:
-      return { label: linkType, icon: ArrowRightLeft, color: 'text-muted-foreground' };
+      return { label: linkType, icon: ArrowRightLeft, color: 'text-muted-foreground', bg: 'bg-muted/60' };
   }
 }
 
@@ -125,6 +148,25 @@ function FloatingPopover({
   children: ReactNode;
 }) {
   const popoverRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+  // Track anchor position on scroll / resize
+  useEffect(() => {
+    if (!open || !anchorEl) return;
+    const update = () => {
+      const rect = anchorEl.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left });
+    };
+    update();
+    // Listen on the nearest scrollable ancestor + window resize
+    const scrollParent = anchorEl.closest('[class*="overflow"]') ?? window;
+    scrollParent.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    return () => {
+      scrollParent.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [open, anchorEl]);
 
   // Close on outside click
   useEffect(() => {
@@ -155,15 +197,13 @@ function FloatingPopover({
 
   if (!open || !anchorEl) return null;
 
-  const rect = anchorEl.getBoundingClientRect();
-
   return (
     <div
       ref={popoverRef}
-      className="fixed z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 slide-in-from-top-2"
+      className="fixed z-50 w-[min(38rem,calc(100vw-2rem))] rounded-xl border border-border/60 bg-popover text-popover-foreground shadow-lg ring-1 ring-black/[0.04] dark:ring-white/[0.04] animate-in fade-in-0 zoom-in-95 slide-in-from-top-2"
       style={{
-        top: rect.bottom + 4,
-        left: rect.left,
+        top: pos.top,
+        left: pos.left,
       }}
     >
       {children}
@@ -351,7 +391,7 @@ export function StoryRelationshipsSection({
 
   const popoverBody: ReactNode = (
     <>
-      <div className="border-b border-border/70 px-4 pt-3 pb-0">
+      <div className="border-b border-border/60 bg-muted/20 px-3 pt-2.5 pb-2">
         <Tabs
           value={popoverTab}
           onValueChange={(v) => {
@@ -361,16 +401,16 @@ export function StoryRelationshipsSection({
             setDocResults([]);
           }}
         >
-          <TabsList className="h-8 bg-transparent p-0">
+          <TabsList className="h-8 w-fit gap-0.5 rounded-lg bg-muted/60 p-0.5">
             <TabsTrigger
               value="stories"
-              className="h-7 rounded-none border-b-2 border-transparent px-3 text-xs data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              className="h-7 rounded-md px-3.5 text-xs font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm"
             >
               Stories
             </TabsTrigger>
             <TabsTrigger
               value="docs"
-              className="h-7 rounded-none border-b-2 border-transparent px-3 text-xs data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              className="h-7 rounded-md px-3.5 text-xs font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm"
             >
               Docs
             </TabsTrigger>
@@ -378,26 +418,28 @@ export function StoryRelationshipsSection({
         </Tabs>
       </div>
 
-      <div className="space-y-3 px-4 py-3">
+      <div className="space-y-2.5 px-3 py-2.5">
         {popoverTab === 'stories' ? (
           <>
-            <p className="text-sm font-medium">This Story...</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">This Story...</p>
             <div className="flex flex-wrap gap-1.5">
               {RELATIONSHIP_OPTIONS.map((option) => {
                 const OptionIcon = option.icon;
+                const isActive = relationshipType === option.value;
+                const colors = RELATIONSHIP_COLORS[option.value];
                 return (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => setRelationshipType(option.value)}
                     className={cn(
-                      'inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs transition-colors',
-                      relationshipType === option.value
-                        ? 'border-primary bg-primary/10 text-primary font-medium'
-                        : 'border-border/70 bg-background text-muted-foreground hover:bg-accent',
+                      'inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-all',
+                      isActive
+                        ? `${colors.active} shadow-sm`
+                        : 'border-border/60 bg-background text-muted-foreground hover:border-border hover:bg-accent/50',
                     )}
                   >
-                    <OptionIcon className="h-3.5 w-3.5" />
+                    <OptionIcon className={cn('h-3.5 w-3.5', isActive ? colors.icon : 'text-muted-foreground/60')} />
                     {option.label}
                   </button>
                 );
@@ -412,7 +454,7 @@ export function StoryRelationshipsSection({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={popoverTab === 'stories' ? 'Search Story Title or ID' : 'Search documents'}
-            className="h-9 rounded-lg pl-8 text-sm"
+            className="pl-8"
           />
         </div>
 
@@ -431,11 +473,11 @@ export function StoryRelationshipsSection({
                 key={story.id}
                 type="button"
                 onClick={() => handleCreateRelationship(story.id)}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition hover:bg-accent/50"
+                className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{story.name}</span>
                 {story.display_id ? (
-                  <Badge variant="outline" className="h-5 shrink-0 rounded-full px-1.5 text-[10px]">
+                  <Badge variant="outline" className="h-5 shrink-0 rounded-full px-1.5 text-[10px] text-muted-foreground">
                     TP-{story.display_id}
                   </Badge>
                 ) : null}
@@ -449,7 +491,7 @@ export function StoryRelationshipsSection({
                 key={doc.id}
                 type="button"
                 onClick={() => handleLinkDoc(doc.id)}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition hover:bg-accent/50"
+                className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
               >
                 <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{doc.name}</span>
@@ -467,15 +509,16 @@ export function StoryRelationshipsSection({
         </div>
 
         {popoverTab === 'stories' ? (
-          <div className="flex items-center justify-between gap-3 border-t border-border/70 pt-3">
-            <span className="text-xs text-muted-foreground">Search for an existing story or</span>
+          <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
+            <span className="text-xs text-muted-foreground/70">Search for an existing story or</span>
             <Button
               type="button"
               variant="outline"
-              className="h-7 rounded-lg px-2.5 text-xs"
+              className="h-7 gap-1 rounded-lg border-border/60 px-2.5 text-xs font-medium transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
               disabled={query.trim().length === 0}
               onClick={handleCreateRelatedStory}
             >
+              <Plus className="h-3 w-3" />
               Create Related Story
             </Button>
           </div>
@@ -491,7 +534,10 @@ export function StoryRelationshipsSection({
 
   return (
     <section id="story-relationships-section" className={cn('mt-6', className)}>
-      <h3 className="text-sm font-semibold">Story Relationships</h3>
+      <div className="flex items-center gap-1.5">
+        <ArrowRightLeft className="h-3.5 w-3.5 text-muted-foreground" />
+        <h3 className="text-sm font-semibold">Story Relationships</h3>
+      </div>
 
       {associationsQuery.error ? (
         <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
@@ -509,17 +555,17 @@ export function StoryRelationshipsSection({
             <div
               key={item.relationship_id}
               className={cn(
-                'group flex items-center gap-1 py-0.5 transition-colors',
-                resolved && 'opacity-60',
+                'group flex items-center gap-1.5 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-accent/40',
+                resolved && 'opacity-50',
               )}
             >
-              <div className="flex min-w-0 flex-1 items-center gap-1">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
                 <Icon className={cn('h-3.5 w-3.5 shrink-0', meta.color)} />
-                <span className="shrink-0 text-xs text-muted-foreground">{meta.label}</span>
+                <span className={cn('shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium', meta.bg, meta.color)}>{meta.label}</span>
                 <button
                   type="button"
                   onClick={() => handleOpenStory(item.story.object_id)}
-                  className="min-w-0 truncate text-sm font-medium hover:underline text-left"
+                  className="min-w-0 truncate text-sm font-medium text-left transition-colors hover:text-primary"
                 >
                   {item.story.title}
                 </button>
@@ -578,10 +624,10 @@ export function StoryRelationshipsSection({
         {linkedDocs.map((doc) => (
           <div
             key={`doc-${doc.object_id}-${doc.association_id ?? 'f'}`}
-            className="group flex items-center gap-2 py-1.5 transition-colors"
+            className="group flex items-center gap-1.5 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-accent/40"
           >
             <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">Doc</span>
+            <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
             <span className="min-w-0 flex-1 truncate text-sm font-medium">{doc.title}</span>
             {doc.association_id ? (
               <div className="ml-auto flex shrink-0 items-center">
