@@ -67,7 +67,7 @@ export interface UserNotificationSettings {
   email_digest_time: string
   email_digest_day: number
   do_not_disturb: boolean
-  dnd_until?: string
+  dnd_until?: string | null
   badge_mode: 'all' | 'mentions_only' | 'none'
   timezone: string
 }
@@ -78,7 +78,7 @@ export interface UpdateUserNotificationSettingsRequest {
   email_digest_time?: string
   email_digest_day?: number
   do_not_disturb?: boolean
-  dnd_until?: string
+  dnd_until?: string | null
   badge_mode?: string
   timezone?: string
 }
@@ -92,7 +92,7 @@ export interface NotificationPreferences {
   channel_preferences: Record<string, { in_app?: boolean; email?: boolean }>
   // Backward compat: account-level fields overlaid by backend
   do_not_disturb: boolean
-  dnd_until?: string
+  dnd_until?: string | null
   email_enabled: boolean
   email_digest_frequency: string
   email_digest_time: string

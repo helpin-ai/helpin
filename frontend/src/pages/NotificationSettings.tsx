@@ -9,7 +9,7 @@ export default function NotificationSettings() {
       <div>
         <h2 className="text-xl font-semibold">Notifications</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Manage notification delivery for your account across all workspaces. Workspace-specific mute is available in workspace settings.
+          Manage account-wide notification delivery here. Workspace-specific mute and notification types live in Workspace Settings under General.
         </p>
       </div>
       <AccountNotificationPreferences />

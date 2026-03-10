@@ -74,7 +74,7 @@ func TestUserNotificationSettingsRepository_Upsert_Creates(t *testing.T) {
 
 	settings := &model.UserNotificationSettings{
 		UserID:               "user-1",
-		EmailEnabled:         false,
+		EmailEnabled:         true,
 		EmailDigestFrequency: "weekly",
 		EmailDigestTime:      "10:00",
 		EmailDigestDay:       3,
@@ -89,14 +89,17 @@ func TestUserNotificationSettingsRepository_Upsert_Creates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get after create: %v", err)
 	}
-	if fetched.EmailEnabled {
-		t.Fatal("expected email_enabled=false")
+	if !fetched.EmailEnabled {
+		t.Fatal("expected email_enabled=true")
 	}
 	if fetched.EmailDigestFrequency != "weekly" {
 		t.Fatalf("digest_frequency = %q, want weekly", fetched.EmailDigestFrequency)
 	}
 	if fetched.BadgeMode != "mentions_only" {
 		t.Fatalf("badge_mode = %q, want mentions_only", fetched.BadgeMode)
+	}
+	if fetched.Timezone != "America/New_York" {
+		t.Fatalf("timezone = %q, want America/New_York", fetched.Timezone)
 	}
 }
 
