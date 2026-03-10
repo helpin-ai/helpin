@@ -413,6 +413,16 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     } finally { setKickingOff(false); }
   }, [epic.id, fetchRuns, latestPlanRun, onStoriesCreated, selectedRun, selectedRunStage, selectedStoryIds, workspaceId]);
 
+  // TODO: Wire up cancel run UI
+  // const handleCancelRun = useCallback(async (runId: string) => {
+  //   try {
+  //     const res = await agentService.cancelRun(workspaceId, runId);
+  //     if (res.error) { toast.error(res.error); return; }
+  //     toast.success('Run cancelled');
+  //     await fetchRuns();
+  //   } catch { /* noop */ }
+  // }, [fetchRuns, workspaceId]);
+
   const openSpecDoc = useCallback(() => {
     if (!epic.spec_document_id) { toast.error('No spec document yet'); return; }
     navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug: workspaceSlug, docId: epic.spec_document_id } });
