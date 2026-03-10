@@ -36,7 +36,7 @@ export function ExecuteStep({ status, createdStories, selectedStoryIds, onToggle
     return (
       <StepCard status={status}>
         <div className="flex items-center gap-2">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">6</span>
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">7</span>
           <span className="text-sm text-muted-foreground">Start execution</span>
         </div>
       </StepCard>

@@ -1,10 +1,11 @@
-import { Mail, Trash2, Plus } from 'lucide-react';
+import { Mail, Trash2, Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useEmailAccounts, useDeleteEmailAccount } from '@/hooks/queries/useCRM';
+import { crmEmailService } from '@/lib/services/crmService';
 import type { CRMEmailAccount } from '@/lib/crmTypes';
 import { useState } from 'react';
 
@@ -17,9 +18,26 @@ export function EmailAccountConnect({ workspaceId }: EmailAccountConnectProps) {
   const { data: accounts = [] } = useEmailAccounts(workspaceId);
   const deleteAccount = useDeleteEmailAccount(workspaceId);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<'gmail' | 'microsoft' | null>(null);
 
-  const handleConnect = (provider: 'gmail' | 'microsoft') => {
-    toast.info(`${provider === 'gmail' ? 'Gmail' : 'Microsoft'} integration coming soon`);
+  const handleConnect = async (provider: 'gmail' | 'microsoft') => {
+    if (provider === 'microsoft') {
+      toast.info('Microsoft integration coming soon');
+      return;
+    }
+    setConnecting(provider);
+    try {
+      const { data, error } = await crmEmailService.initiateOAuth(workspaceId, provider);
+      if (error || !data) {
+        toast.error(error || 'Failed to initiate OAuth');
+        return;
+      }
+      window.location.href = data.redirect_url;
+    } catch {
+      toast.error('Failed to connect Gmail');
+    } finally {
+      setConnecting(null);
+    }
   };
 
   const handleDelete = async () => {
@@ -44,7 +62,7 @@ export function EmailAccountConnect({ workspaceId }: EmailAccountConnectProps) {
           <div className="py-4 text-center">
             <Mail className="mx-auto h-8 w-8 text-muted-foreground/40" />
             <p className="mt-2 text-sm text-muted-foreground">No email accounts connected</p>
-            <p className="text-xs text-muted-foreground/70">Connect your email to sync conversations</p>
+            <p className="text-xs text-muted-foreground/70">Connect your Gmail to sync conversations and detect signals</p>
           </div>
         )}
 
@@ -55,9 +73,9 @@ export function EmailAccountConnect({ workspaceId }: EmailAccountConnectProps) {
               <div>
                 <p className="text-sm font-medium">{account.email_address}</p>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">{account.provider}</Badge>
+                  <Badge variant="outline" className="text-xs capitalize">{account.provider}</Badge>
                   <Badge variant={account.is_active ? 'default' : 'secondary'} className="text-xs">
-                    {account.is_active ? 'Active' : 'Inactive'}
+                    {account.is_active ? 'Connected' : 'Inactive'}
                   </Badge>
                 </div>
               </div>
@@ -69,11 +87,11 @@ export function EmailAccountConnect({ workspaceId }: EmailAccountConnectProps) {
         ))}
 
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleConnect('gmail')}>
-            <Plus className="mr-1 h-3 w-3" /> Gmail
-            <Badge variant="secondary" className="ml-1.5 text-[10px]">Soon</Badge>
+          <Button variant="outline" size="sm" onClick={() => handleConnect('gmail')} disabled={!!connecting}>
+            {connecting === 'gmail' ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />}
+            Connect Gmail
           </Button>
-          <Button variant="outline" size="sm" onClick={() => handleConnect('microsoft')}>
+          <Button variant="outline" size="sm" onClick={() => handleConnect('microsoft')} disabled={!!connecting}>
             <Plus className="mr-1 h-3 w-3" /> Microsoft
             <Badge variant="secondary" className="ml-1.5 text-[10px]">Soon</Badge>
           </Button>
@@ -83,7 +101,7 @@ export function EmailAccountConnect({ workspaceId }: EmailAccountConnectProps) {
           open={!!deleteId}
           onOpenChange={(open) => !open && setDeleteId(null)}
           title="Remove email account"
-          description="Are you sure you want to disconnect this email account?"
+          description="Are you sure you want to disconnect this email account? Email sync will stop and existing data will be removed."
           confirmLabel="Remove"
           variant="destructive"
           onConfirm={handleDelete}

@@ -13,6 +13,7 @@ import type {
   RunnerHealth,
   ApprovedSpecSummary,
   KickoffExecutionResult,
+  SpecClarification,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -55,6 +56,8 @@ export const agentService = {
     api.post<AgentRun>(`/pm/epics/${epicId}/run-agent${qs(workspaceId)}`, { additional_context: additionalContext ?? '' }),
   draftEpicSpec: (workspaceId: string, epicId: string, additionalContext?: string) =>
     api.post<AgentRun>(`/pm/epics/${epicId}/draft-spec${qs(workspaceId)}`, { additional_context: additionalContext ?? '' }),
+  clarifyEpicSpec: (workspaceId: string, epicId: string, clarifications: SpecClarification[]) =>
+    api.post<ApprovedSpecSummary>(`/pm/epics/${epicId}/clarify-spec${qs(workspaceId)}`, { clarifications }),
   approveEpicSpec: (workspaceId: string, epicId: string, versionId?: string) =>
     api.post<ApprovedSpecSummary>(`/pm/epics/${epicId}/approve-spec${qs(workspaceId)}`, versionId ? { version_id: versionId } : {}),
   planEpicStories: (workspaceId: string, epicId: string, additionalContext?: string) =>

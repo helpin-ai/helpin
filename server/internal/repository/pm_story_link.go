@@ -29,6 +29,9 @@ func (r *PMStoryLinkRepository) Create(ctx context.Context, link *model.PMStoryL
 		First(&existing).Error
 	switch {
 	case err == nil:
+		link.ID = existing.ID
+		link.CreatedAt = existing.CreatedAt
+		link.UpdatedAt = existing.UpdatedAt
 		return nil
 	case !errors.Is(err, gorm.ErrRecordNotFound):
 		return fmt.Errorf("check story link: %w", err)
@@ -50,4 +53,52 @@ func (r *PMStoryLinkRepository) ListByStory(ctx context.Context, workspaceID, st
 		return nil, fmt.Errorf("list story links: %w", err)
 	}
 	return links, nil
+}
+
+// ListByStories returns links where either endpoint belongs to the provided story set.
+func (r *PMStoryLinkRepository) ListByStories(ctx context.Context, workspaceID string, storyIDs []string) ([]model.PMStoryLink, error) {
+	if len(storyIDs) == 0 {
+		return []model.PMStoryLink{}, nil
+	}
+
+	var links []model.PMStoryLink
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND (source_story_id IN ? OR target_story_id IN ?)", workspaceID, storyIDs, storyIDs).
+		Order("created_at ASC").
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list story links by stories: %w", err)
+	}
+	return links, nil
+}
+
+// ListByWorkspaceAndType returns all links of a given type for a workspace.
+func (r *PMStoryLinkRepository) ListByWorkspaceAndType(ctx context.Context, workspaceID, linkType string) ([]model.PMStoryLink, error) {
+	var links []model.PMStoryLink
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND link_type = ?", workspaceID, linkType).
+		Order("created_at ASC").
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list story links by workspace/type: %w", err)
+	}
+	return links, nil
+}
+
+// GetByID returns a story relationship by ID.
+func (r *PMStoryLinkRepository) GetByID(ctx context.Context, id string) (*model.PMStoryLink, error) {
+	var link model.PMStoryLink
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&link).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get story link: %w", err)
+	}
+	return &link, nil
+}
+
+// Delete removes a story relationship by ID.
+func (r *PMStoryLinkRepository) Delete(ctx context.Context, id string) error {
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.PMStoryLink{}).Error; err != nil {
+		return fmt.Errorf("delete story link: %w", err)
+	}
+	return nil
 }

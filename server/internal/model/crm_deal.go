@@ -16,6 +16,7 @@ type CRMPipeline struct {
 	Name        string             `json:"name" gorm:"not null"`
 	IsDefault   bool               `json:"is_default" gorm:"not null;default:false"`
 	Position    int                `json:"position" gorm:"not null;default:0"`
+	DealCount   int64              `json:"deal_count" gorm:"-"`
 	Stages      []CRMPipelineStage `json:"stages,omitempty" gorm:"foreignKey:PipelineID"`
 	CreatedAt   time.Time          `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt   time.Time          `json:"updated_at" gorm:"autoUpdateTime"`

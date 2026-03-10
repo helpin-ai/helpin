@@ -125,7 +125,18 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
 
   const goBack = () => navigate({ to: '/w/$slug/crm/deals', params: { slug: wsSlug } });
 
-  const probabilityValue = form?.probability ? parseInt(form.probability) : 0;
+  const sortedStages = useMemo(
+    () => (currentPipeline?.stages ?? []).sort((a, b) => a.position - b.position),
+    [currentPipeline],
+  );
+  const stageProgressValue = useMemo(() => {
+    if (sortedStages.length === 0) return 0;
+    const idx = sortedStages.findIndex((s) => s.id === form?.stage_id);
+    if (idx < 0) return 0;
+    // Position 0 → some progress, last stage → 100%
+    return Math.round(((idx + 1) / sortedStages.length) * 100);
+  }, [sortedStages, form?.stage_id]);
+  const probabilityValue = form?.probability ? parseInt(form.probability) : null;
   const currentStageName = stageOptions.find((s) => s.value === form?.stage_id)?.label ?? deal?.stage?.name ?? '—';
   const formattedAmount = form?.amount
     ? new Intl.NumberFormat('en-US', { style: 'currency', currency: form.currency || 'USD', minimumFractionDigits: 0 }).format(parseFloat(form.amount))
@@ -195,11 +206,11 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stage Progress</h3>
-              <span className="text-xs text-muted-foreground">{probabilityValue}%</span>
+              <span className="text-xs text-muted-foreground">{stageProgressValue}%</span>
             </div>
-            <Progress value={probabilityValue} />
+            <Progress value={stageProgressValue} />
             <p className="text-xs text-muted-foreground">
-              {currentStageName}{formattedAmount ? ` · ${formattedAmount}` : ''}
+              {currentStageName}{probabilityValue != null ? ` · ${probabilityValue}% prob.` : ''}{formattedAmount ? ` · ${formattedAmount}` : ''}
             </p>
           </div>
 

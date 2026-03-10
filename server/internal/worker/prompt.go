@@ -42,7 +42,7 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 		}
 		switch planningStage {
 		case model.PlanningStageDraftSpec:
-			parts = append(parts, `Respond with valid JSON in this shape: {"title":"...","summary":"...","spec_markdown":"# ...","risks":["..."],"open_questions":["..."],"sources":[{"title":"...","url":"https://...","note":"why this matters","published_at":"optional"}]}.`)
+			parts = append(parts, `Respond with valid JSON in this shape: {"title":"...","summary":"...","spec_markdown":"# ...","risks":["..."],"assumptions":["..."],"open_questions":["..."],"sources":[{"title":"...","url":"https://...","note":"why this matters","published_at":"optional"}]}.`)
 		case model.PlanningStagePlanStories:
 			parts = append(parts, `Respond with valid JSON in this shape: {"summary":"...","spec_version_id":"optional","proposed_stories":[{"ref":"story_1","name":"...","description":"...","story_type":"feature|bug|chore","estimate":1,"priority":"none|low|medium|high|urgent","acceptance_criteria":["..."],"dependency_refs":["story_0"],"source_refs":[{"type":"spec_section","title":"..."}],"assign_agent_id":"optional-agent-id"}],"open_questions":["..."],"risks":["..."]}.`)
 		default:
@@ -84,12 +84,15 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 		case model.PlanningStageDraftSpec:
 			parts = append(parts, "- Produce a structured product spec draft, not implementation tasks.")
 			parts = append(parts, "- The spec markdown must be well organized with headings and scenario-style acceptance language.")
+			parts = append(parts, "- Return assumptions separately from open questions so a human can resolve them before approval.")
 			parts = append(parts, "- If the web_search tool is available and you use it, return sources in the JSON sources field.")
 			parts = append(parts, "- Do not embed a Research Sources section inside spec_markdown; the system will append a normalized citations section.")
 			parts = append(parts, "- Return JSON only, with no markdown fences.")
 		case model.PlanningStagePlanStories:
 			parts = append(parts, "- Propose implementation-ready stories grounded in the approved spec and the current codebase.")
 			parts = append(parts, "- Use stable story refs so dependencies can be mapped deterministically.")
+			parts = append(parts, "- Prefer vertical, user-visible slices. Only introduce enabler stories when a vertical slice would be misleading or unsafe.")
+			parts = append(parts, "- Keep story names flat and outcome-oriented. Do not use phase prefixes or sequencing labels in titles.")
 			parts = append(parts, "- Align stories with the existing module boundaries, naming patterns, and architecture when the code context is clear.")
 			parts = append(parts, "- If the approved spec conflicts with the current implementation or the code context is ambiguous, surface that as risks or open questions.")
 			parts = append(parts, "- Avoid duplicating or overlapping existing stories.")
@@ -187,7 +190,7 @@ func BuildUserPrompt(
 	} else if epic != nil {
 		switch planningStage {
 		case model.PlanningStageDraftSpec:
-			parts = append(parts, "\nCreate a structured product spec draft that a human can edit and approve in Docs.")
+			parts = append(parts, "\nCreate a structured product spec draft that a human can edit and approve in Docs. Separate assumptions from open questions so the human owner can clarify the draft before approval.")
 		case model.PlanningStagePlanStories:
 			parts = append(parts, "\nUse the approved spec and the current codebase context to produce a reviewable story plan with acceptance criteria, dependencies, risks, and open questions.")
 		default:

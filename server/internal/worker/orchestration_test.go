@@ -64,7 +64,7 @@ func TestExtractProductSpecDraftParsesJSON(t *testing.T) {
 	}{
 		{
 			name:    "plain json",
-			content: `{"title":"Payments Spec","summary":"Summary","spec_markdown":"# Payments\n\n## Goals\n- Ship it","risks":["scope"],"open_questions":["migration?"],"sources":[{"title":"PCI DSS","url":"https://example.com/pci","note":"compliance baseline"}]}`,
+			content: `{"title":"Payments Spec","summary":"Summary","spec_markdown":"# Payments\n\n## Goals\n- Ship it","risks":["scope"],"assumptions":["paid plans only"],"open_questions":["migration?"],"sources":[{"title":"PCI DSS","url":"https://example.com/pci","note":"compliance baseline"}]}`,
 		},
 		{
 			name:    "prefixed prose",
@@ -94,6 +94,9 @@ func TestExtractProductSpecDraftParsesJSON(t *testing.T) {
 			}
 			if draft.SpecMarkdown == "" {
 				t.Fatal("expected spec markdown to be populated")
+			}
+			if tc.name == "plain json" && len(draft.Assumptions) != 1 {
+				t.Fatalf("expected assumptions to be parsed, got %#v", draft.Assumptions)
 			}
 			if tc.name == "plain json" && len(draft.Sources) != 1 {
 				t.Fatalf("expected sources to be parsed, got %#v", draft.Sources)

@@ -47,6 +47,7 @@ export const queryKeys = {
     sprintStories: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', sprintId, 'stories'] as const,
 
     storyAssociations: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'associations'] as const,
+    storyRelationships: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'relationships'] as const,
 
     labels: (wsId: string) => ['pm', wsId, 'labels'] as const,
     labelsWithStats: (wsId: string) => ['pm', wsId, 'labels', 'withStats'] as const,
@@ -89,6 +90,7 @@ export const queryKeys = {
   support: {
     tickets: (wsId: string) => ['support', wsId, 'tickets'] as const,
     ticket: (wsId: string, id: string) => ['support', wsId, 'tickets', id] as const,
+    ticketAssociations: (wsId: string, id: string) => ['support', wsId, 'tickets', id, 'associations'] as const,
     messages: (wsId: string, ticketId: string) => ['support', wsId, 'tickets', ticketId, 'messages'] as const,
   },
 
@@ -115,6 +117,7 @@ export const queryKeys = {
     contact: (wsId: string, id: string) => ['crm', wsId, 'contacts', id] as const,
     contactActivities: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'activities'] as const,
     contactAssociations: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'associations'] as const,
+    contactSupportTickets: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'support-tickets'] as const,
 
     companies: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['crm', wsId, 'companies', filters] as const) : (['crm', wsId, 'companies'] as const),
@@ -164,8 +167,10 @@ export const queryKeys = {
     dealSignals: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'signals'] as const,
     healthScores: (wsId: string) => ['crm', wsId, 'healthScores'] as const,
     dealHealthScore: (wsId: string, dealId: string) => ['crm', wsId, 'deals', dealId, 'healthScore'] as const,
-    suggestions: (wsId: string) => ['crm', wsId, 'suggestions'] as const,
+    suggestions: (wsId: string, status?: string) =>
+      status ? (['crm', wsId, 'suggestions', { status }] as const) : (['crm', wsId, 'suggestions'] as const),
     suggestion: (wsId: string, id: string) => ['crm', wsId, 'suggestions', id] as const,
+    autonomySettings: (wsId: string) => ['crm', wsId, 'autonomy-settings'] as const,
 
     // Phase 5
     sequences: (wsId: string) => ['crm', wsId, 'sequences'] as const,

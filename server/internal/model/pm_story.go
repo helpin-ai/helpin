@@ -21,39 +21,45 @@ const (
 
 // PMStory represents a single work item.
 type PMStory struct {
-	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	DisplayID         int        `json:"display_id" gorm:"not null;index"`
-	Name              string     `json:"name" gorm:"not null"`
-	Description       *string    `json:"description"`
-	StoryType         string     `json:"story_type" gorm:"not null;default:'feature'"`
-	WorkflowID        string     `json:"workflow_id" gorm:"type:uuid;not null;index"`
-	WorkflowStateID   string     `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
-	EpicID            *string    `json:"epic_id" gorm:"type:uuid;index"`
-	SprintID          *string    `json:"sprint_id" gorm:"type:uuid;index"`
-	TeamID            *string    `json:"team_id" gorm:"type:uuid;index"`
-	OwnerID           *string    `json:"owner_id" gorm:"type:uuid;index"`
-	OwnerMemberID     *string    `json:"owner_member_id" gorm:"type:uuid;index"`
-	RequesterID       *string    `json:"requester_id" gorm:"type:uuid"`
-	RequesterMemberID *string    `json:"requester_member_id" gorm:"type:uuid;index"`
-	Estimate          *int       `json:"estimate"`
-	Priority          string     `json:"priority" gorm:"not null;default:'none'"`
-	Severity          string     `json:"severity" gorm:"not null;default:'none'"`
-	Deadline          *time.Time `json:"deadline" gorm:"type:date"`
-	Position          int        `json:"position" gorm:"not null;default:0"`
-	Started           bool       `json:"started" gorm:"not null;default:false"`
-	StartedAt         *time.Time `json:"started_at"`
-	Completed         bool       `json:"completed" gorm:"not null;default:false"`
-	CompletedAt       *time.Time `json:"completed_at"`
-	MovedAt           *time.Time `json:"moved_at"`
-	Blocked           bool       `json:"blocked" gorm:"not null;default:false"`
-	Blocker           *string    `json:"blocker"`
-	Archived          bool       `json:"archived" gorm:"not null;default:false"`
-	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid;index"`
-	TemplateID        *string    `json:"template_id"`
-	ExternalID        *string    `json:"external_id"`
-	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                string                 `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string                 `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	DisplayID         int                    `json:"display_id" gorm:"not null;index"`
+	Name              string                 `json:"name" gorm:"not null"`
+	Description       *string                `json:"description"`
+	StoryType         string                 `json:"story_type" gorm:"not null;default:'feature'"`
+	WorkflowID        string                 `json:"workflow_id" gorm:"type:uuid;not null;index"`
+	WorkflowStateID   string                 `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
+	EpicID            *string                `json:"epic_id" gorm:"type:uuid;index"`
+	SprintID          *string                `json:"sprint_id" gorm:"type:uuid;index"`
+	TeamID            *string                `json:"team_id" gorm:"type:uuid;index"`
+	OwnerID           *string                `json:"owner_id" gorm:"type:uuid;index"`
+	OwnerMemberID     *string                `json:"owner_member_id" gorm:"type:uuid;index"`
+	RequesterID       *string                `json:"requester_id" gorm:"type:uuid"`
+	RequesterMemberID *string                `json:"requester_member_id" gorm:"type:uuid;index"`
+	Estimate          *int                   `json:"estimate"`
+	Priority          string                 `json:"priority" gorm:"not null;default:'none'"`
+	Severity          string                 `json:"severity" gorm:"not null;default:'none'"`
+	Deadline          *time.Time             `json:"deadline" gorm:"type:date"`
+	Position          int                    `json:"position" gorm:"not null;default:0"`
+	Started           bool                   `json:"started" gorm:"not null;default:false"`
+	StartedAt         *time.Time             `json:"started_at"`
+	Completed         bool                   `json:"completed" gorm:"not null;default:false"`
+	CompletedAt       *time.Time             `json:"completed_at"`
+	MovedAt           *time.Time             `json:"moved_at"`
+	Blocked           bool                   `json:"blocked" gorm:"not null;default:false"`
+	Blocker           *string                `json:"blocker"`
+	Archived          bool                   `json:"archived" gorm:"not null;default:false"`
+	AssignedAgentID   *string                `json:"assigned_agent_id" gorm:"type:uuid;index"`
+	TemplateID        *string                `json:"template_id"`
+	ExternalID        *string                `json:"external_id"`
+	IsBlockedByStory  bool                   `json:"is_blocked_by_story" gorm:"-"`
+	BlockedByCount    int                    `json:"blocked_by_count" gorm:"-"`
+	IsBlockingOther   bool                   `json:"is_blocking_other_story" gorm:"-"`
+	BlockingCount     int                    `json:"blocking_count" gorm:"-"`
+	BlockedByStories  []StoryDependencyStory `json:"blocked_by_stories,omitempty" gorm:"-"`
+	BlockingStories   []StoryDependencyStory `json:"blocking_stories,omitempty" gorm:"-"`
+	CreatedAt         time.Time              `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time              `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMStory) TableName() string { return "pm_stories" }
@@ -101,6 +107,7 @@ type PMStoryFilters struct {
 	Priority          *string
 	Severity          *string
 	Blocked           *string
+	Blocking          *string
 	UpdatedAfter      *string
 	Archived          *bool
 }
@@ -203,6 +210,15 @@ type StoryDetail struct {
 	ObjectiveName   *string           `json:"objective_name"`
 	ObjectiveID     *string           `json:"objective_id"`
 	State           *PMWorkflowState  `json:"state"`
+}
+
+// StoryDependencyStory is the lightweight story payload used in dependency read models.
+type StoryDependencyStory struct {
+	ID              string `json:"id"`
+	DisplayID       int    `json:"display_id"`
+	Name            string `json:"name"`
+	WorkflowStateID string `json:"workflow_state_id"`
+	Completed       bool   `json:"completed"`
 }
 
 // BoardStory is a story enriched with relation names for board display.

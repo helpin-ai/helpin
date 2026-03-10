@@ -12,6 +12,7 @@ The planning model is:
 - `agent_run` is the execution and audit container
 - story creation is a confirmation step, not a model side effect
 - story execution remains story-scoped
+- open questions and assumptions must be resolved by a human before spec approval
 
 Teampulse exposes one user-visible planning class, `product_planner`, while applying stage-specific prompt packs internally.
 
@@ -80,6 +81,7 @@ Rules:
 - align work to the approved spec and live code context
 - prefer module-boundary-aware story decomposition
 - require explicit dependency edges, risks, and open questions
+- keep story titles flat and outcome-oriented instead of using phase prefixes
 - include a built-in self-check before final output
 
 ### `basic_v1`
@@ -105,6 +107,7 @@ The product planner must return JSON with:
 - `summary`
 - `spec_markdown`
 - `risks`
+- `assumptions`
 - `open_questions`
 - `sources`
 
@@ -155,7 +158,8 @@ After a successful `draft_spec` run:
 3. current document content is upserted
 4. a `DocsVersion` snapshot labeled `AI Draft` is created
 5. document title and excerpt are refreshed from the draft output
-6. the epic is moved to `awaiting_spec_approval`
+6. `assumptions` and `open_questions` are converted into persisted epic clarification items
+7. the epic is moved to `awaiting_spec_clarification` when clarification items exist, otherwise to `awaiting_spec_approval`
 
 Important:
 
@@ -171,17 +175,44 @@ That value means:
 - all downstream planning and execution handoff should be traceable to this exact version
 - later document edits do not retroactively change the approved planning snapshot
 - a new draft can exist while an older version remains the approved one until a human approves a newer version
+- the spec cannot be approved while unresolved clarification items remain
+- when clarification items exist, Teampulse appends a normalized `Clarifications` section into the current Docs content before creating the approved version
+
+## Clarification Loop
+
+Clarification items are first-class workflow state on the epic.
+
+Each item stores:
+
+- kind: `open_question` or `assumption`
+- prompt
+- disposition
+- optional response
+
+Resolution rules:
+
+- open questions must be marked `answered` and include a response
+- assumptions must be marked `accepted` or `rejected`
+- rejected assumptions require an explanatory response
+
+Planning implications:
+
+- unresolved clarification items block spec approval
+- resolved clarification items are injected into `plan_stories`
+- clarification items are refreshed on every successful `draft_spec` rerun
 
 ## Story Plan Validation
 
 Before a story plan is accepted as a reviewable proposal, the runtime normalizes and validates:
 
 - each story has a name
+- each story has at least one acceptance criterion
 - each story has a stable `ref`
 - refs are unique
 - dependency refs point to known stories
 - a story cannot depend on itself
 - circular `blocks` chains are rejected
+- story names should remain flat and avoid phase-style prefixes
 
 This keeps confirmation deterministic and avoids creating invalid story graphs later.
 
@@ -211,7 +242,20 @@ The output is a temporary prompt block describing:
 - existing patterns to follow
 - ambiguity or conflicts that should become risks or open questions
 
+For `plan_stories`, the approved spec snapshot is augmented with resolved clarification items so the planner decomposes from explicit human decisions instead of stale ambiguity.
+
 This context is ephemeral by design and is never persisted as canonical Docs content.
+
+## Story Dependency Semantics
+
+Teampulse follows Shortcut-style dependency semantics for stories:
+
+- `blocks` means the source story must complete before the target story can start
+- `blocked_by` and `blocking` are derived read-model views on top of `pm_story_links`
+- board/list `blocked` badges only represent active unresolved inbound blockers
+- completed blockers remain visible in story detail/history, but no longer keep the story actively blocked
+- external blocker notes remain separate from story-to-story relationships
+- story relationships are managed in the shared `Associations` surface alongside support, CRM, and docs links
 
 ## External Research
 
@@ -244,7 +288,8 @@ This matters because planning approval is a human step and retries can happen th
 - create a new Docs content snapshot
 - create another `AI Draft` version
 - update `last_planning_run_id`
-- move the epic back to `awaiting_spec_approval`
+- replace the current clarification item set with the new draft's assumptions and open questions
+- move the epic back to `awaiting_spec_clarification` when clarification is needed, otherwise `awaiting_spec_approval`
 
 ### Plan reruns
 

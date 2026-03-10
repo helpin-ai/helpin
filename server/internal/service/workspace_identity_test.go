@@ -236,6 +236,109 @@ func TestPMStoryServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 	}
 }
 
+func TestPMStoryRepositoryDerivesShortcutStyleBlockingSemantics(t *testing.T) {
+	db := newWorkspaceIdentityTestDB(t)
+	ctx := context.Background()
+
+	seedWorkspaceIdentityWorkspace(t, db, "ws-1", "user-owner")
+	seedWorkflowForStoryTest(t, db, "ws-1", "wf-1", "state-backlog")
+
+	doneState := model.PMWorkflowState{
+		ID:         "state-done",
+		WorkflowID: "wf-1",
+		Name:       "Done",
+		StateType:  model.PMStateTypeDone,
+		Position:   1,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+	}
+	if err := db.Create(&doneState).Error; err != nil {
+		t.Fatalf("seed done state: %v", err)
+	}
+
+	stories := []model.PMStory{
+		{ID: "source-active", WorkspaceID: "ws-1", DisplayID: 1, Name: "Source active", StoryType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "target-active", WorkspaceID: "ws-1", DisplayID: 2, Name: "Target active", StoryType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "source-done", WorkspaceID: "ws-1", DisplayID: 3, Name: "Source done", StoryType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-done", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, Completed: true, CompletedAt: timePtr(time.Now().UTC()), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "target-cleared", WorkspaceID: "ws-1", DisplayID: 4, Name: "Target cleared", StoryType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "legacy-external", WorkspaceID: "ws-1", DisplayID: 5, Name: "Legacy external", StoryType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, Blocked: true, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "external-note", WorkspaceID: "ws-1", DisplayID: 6, Name: "External note", StoryType: model.PMStoryTypeFeature, WorkflowID: "wf-1", WorkflowStateID: "state-backlog", Priority: model.PMStoryPriorityNone, Severity: model.PMStorySeverityNone, Blocker: strPtr("Waiting on vendor"), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+	}
+	for _, story := range stories {
+		if err := db.Create(&story).Error; err != nil {
+			t.Fatalf("seed story %s: %v", story.ID, err)
+		}
+	}
+
+	links := []model.PMStoryLink{
+		{ID: "link-1", WorkspaceID: "ws-1", SourceStoryID: "source-active", TargetStoryID: "target-active", LinkType: model.PMStoryLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: "link-2", WorkspaceID: "ws-1", SourceStoryID: "source-done", TargetStoryID: "target-cleared", LinkType: model.PMStoryLinkTypeBlocks, CreatedBy: "user-owner", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+	}
+	for _, link := range links {
+		if err := db.Create(&link).Error; err != nil {
+			t.Fatalf("seed story link %s: %v", link.ID, err)
+		}
+	}
+
+	repo := repository.NewPMStoryRepository(db)
+
+	active, err := repo.GetByID(ctx, "target-active")
+	if err != nil {
+		t.Fatalf("get active blocked story: %v", err)
+	}
+	if !active.Story.Blocked || !active.Story.IsBlockedByStory || active.Story.BlockedByCount != 1 {
+		t.Fatalf("active dependency state mismatch: %#v", active.Story)
+	}
+	if len(active.Story.BlockedByStories) != 1 || active.Story.BlockedByStories[0].ID != "source-active" {
+		t.Fatalf("expected active blocker to be visible in detail: %#v", active.Story.BlockedByStories)
+	}
+
+	cleared, err := repo.GetByID(ctx, "target-cleared")
+	if err != nil {
+		t.Fatalf("get cleared blocked story: %v", err)
+	}
+	if cleared.Story.Blocked || cleared.Story.IsBlockedByStory || cleared.Story.BlockedByCount != 0 {
+		t.Fatalf("completed blocker should not keep story blocked: %#v", cleared.Story)
+	}
+	if len(cleared.Story.BlockedByStories) != 1 || !cleared.Story.BlockedByStories[0].Completed {
+		t.Fatalf("completed blocker should remain visible in detail: %#v", cleared.Story.BlockedByStories)
+	}
+
+	legacy, err := repo.GetByID(ctx, "legacy-external")
+	if err != nil {
+		t.Fatalf("get legacy blocked story: %v", err)
+	}
+	if !legacy.Story.Blocked || legacy.Story.BlockedByCount != 0 {
+		t.Fatalf("legacy blocked fallback mismatch: %#v", legacy.Story)
+	}
+
+	_, total, err := repo.List(ctx, "ws-1", model.PMStoryFilters{Blocked: strPtr("true")}, model.PMPagination{Page: 1, PerPage: 20})
+	if err != nil {
+		t.Fatalf("list blocked stories: %v", err)
+	}
+	if total != 3 {
+		t.Fatalf("blocked story total = %d, want 3", total)
+	}
+
+	blockingStories, total, err := repo.List(ctx, "ws-1", model.PMStoryFilters{Blocking: strPtr("true")}, model.PMPagination{Page: 1, PerPage: 20})
+	if err != nil {
+		t.Fatalf("list blocking stories: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("blocking story total = %d, want 2", total)
+	}
+	foundActiveBlocker := false
+	for _, story := range blockingStories {
+		if story.ID == "source-active" && story.IsBlockingOther {
+			foundActiveBlocker = true
+			break
+		}
+	}
+	if !foundActiveBlocker {
+		t.Fatalf("expected source-active to be marked as blocking others: %#v", blockingStories)
+	}
+}
+
 func TestPMEpicServiceCreateSupportsWorkspaceMemberOwners(t *testing.T) {
 	db := newWorkspaceIdentityTestDB(t)
 	createPMEpicObjectiveTables(t, db)
@@ -521,6 +624,7 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			password_hash TEXT NOT NULL,
 			full_name TEXT NOT NULL,
 			avatar_url TEXT,
+			default_workspace_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -531,6 +635,7 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,
+			logo_url TEXT,
 			timezone TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -645,6 +750,16 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			label_id TEXT NOT NULL,
 			created_at DATETIME,
 			PRIMARY KEY (story_id, label_id)
+		)`,
+		`CREATE TABLE pm_story_links (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			source_story_id TEXT NOT NULL,
+			target_story_id TEXT NOT NULL,
+			link_type TEXT NOT NULL,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
 		)`,
 		`CREATE TABLE pm_labels (
 			id TEXT PRIMARY KEY,

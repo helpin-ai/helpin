@@ -22,6 +22,9 @@ interface StoryFilters {
   requester_member_id?: string
   label_id?: string
   priority?: string
+  severity?: string
+  blocked?: string
+  blocking?: string
   archived?: boolean
 }
 

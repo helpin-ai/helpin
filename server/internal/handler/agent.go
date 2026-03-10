@@ -210,6 +210,26 @@ func (h *AgentHandler) ApproveEpicSpec(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, summary)
 }
 
+// ClarifyEpicSpec handles POST /api/pm/epics/{id}/clarify-spec.
+func (h *AgentHandler) ClarifyEpicSpec(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	epicID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.ClarifyEpicSpecRequest
+	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	summary, err := h.agentService.ClarifyEpicSpec(r.Context(), workspaceID, epicID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
 // PlanEpicStories handles POST /api/pm/epics/{id}/plan-stories.
 func (h *AgentHandler) PlanEpicStories(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

@@ -85,11 +85,22 @@ export interface Epic {
   spec_document_id?: string;
   planning_repository_id?: string;
   planning_state: string;
+  spec_clarifications?: SpecClarification[];
+  spec_clarified_at?: string;
+  spec_clarified_by?: string;
   approved_spec_version_id?: string;
   last_planning_run_id?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SpecClarification {
+  id: string;
+  kind: 'open_question' | 'assumption';
+  prompt: string;
+  disposition?: 'pending' | 'answered' | 'accepted' | 'rejected';
+  response?: string;
 }
 
 export interface EpicStats {
@@ -162,6 +173,12 @@ export interface Story {
   moved_at?: string;
   blocked: boolean;
   blocker?: string;
+  is_blocked_by_story?: boolean;
+  blocked_by_count?: number;
+  is_blocking_other_story?: boolean;
+  blocking_count?: number;
+  blocked_by_stories?: StoryDependencyStory[];
+  blocking_stories?: StoryDependencyStory[];
   archived: boolean;
   assigned_agent_id?: string;
   template_id?: string;
@@ -172,6 +189,71 @@ export interface Story {
   epic_name?: string;
   owner_name?: string;
   labels?: Label[];
+}
+
+export interface StoryDependencyStory {
+  id: string;
+  display_id: number;
+  name: string;
+  workflow_state_id: string;
+  completed: boolean;
+}
+
+export type AssociationEntityType =
+  | 'story'
+  | 'epic'
+  | 'support_ticket'
+  | 'contact'
+  | 'company'
+  | 'deal'
+  | 'document';
+
+export type StoryRelationshipAction =
+  | 'relates_to'
+  | 'blocks'
+  | 'is_blocked_by'
+  | 'duplicates'
+  | 'is_duplicated_by';
+
+export interface AssociationObjectSummary {
+  association_id?: string;
+  object_type: AssociationEntityType | string;
+  object_id: string;
+  display_id?: string;
+  title: string;
+  status?: string;
+  workflow_state_id?: string;
+  completed?: boolean;
+  story_type?: StoryType;
+}
+
+export interface StoryRelationshipSummary {
+  relationship_id: string;
+  link_type: string;
+  is_active: boolean;
+  story: AssociationObjectSummary;
+}
+
+export interface StoryRelationshipGroups {
+  blocked_by: StoryRelationshipSummary[];
+  blocking: StoryRelationshipSummary[];
+  relates_to: StoryRelationshipSummary[];
+  related_by: StoryRelationshipSummary[];
+  duplicates: StoryRelationshipSummary[];
+  duplicated_by: StoryRelationshipSummary[];
+}
+
+export interface GroupedAssociations {
+  story_relationships: StoryRelationshipGroups;
+  stories: AssociationObjectSummary[];
+  support_tickets: AssociationObjectSummary[];
+  crm_records: AssociationObjectSummary[];
+  docs: AssociationObjectSummary[];
+}
+
+export interface CreateStoryRelationshipRequest {
+  relationship_type: StoryRelationshipAction;
+  other_story_id: string;
 }
 
 export interface StoryDetail {
@@ -902,8 +984,10 @@ export interface OrchestrationProposal {
 export interface ApprovedSpecSummary {
   stage: string;
   spec_document_id: string;
-  spec_version_id: string;
+  spec_version_id?: string;
   summary?: string;
+  clarifications?: SpecClarification[];
+  pending_clarify_count?: number;
 }
 
 export interface PlanningExecutionStart {
@@ -1053,6 +1137,7 @@ export interface SupportTicket {
   assigned_agent_id?: string;
   linked_story_id?: string;
   source: TicketSource;
+  crm_contact_id?: string;
   created_at: string;
   updated_at: string;
 }

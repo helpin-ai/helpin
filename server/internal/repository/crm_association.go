@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -21,6 +22,20 @@ func NewCRMAssociationRepository(db *gorm.DB) *CRMAssociationRepository {
 
 // Create inserts an association.
 func (r *CRMAssociationRepository) Create(ctx context.Context, assoc *model.CRMAssociation) error {
+	var existing model.CRMAssociation
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND from_object_type = ? AND from_object_id = ? AND to_object_type = ? AND to_object_id = ?",
+			assoc.WorkspaceID, assoc.FromObjectType, assoc.FromObjectID, assoc.ToObjectType, assoc.ToObjectID).
+		First(&existing).Error
+	switch {
+	case err == nil:
+		assoc.ID = existing.ID
+		assoc.CreatedAt = existing.CreatedAt
+		return nil
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return fmt.Errorf("check association: %w", err)
+	}
+
 	if err := r.db.WithContext(ctx).Create(assoc).Error; err != nil {
 		return fmt.Errorf("create association: %w", err)
 	}
@@ -88,6 +103,8 @@ func (r *CRMAssociationRepository) ListByObjectEnriched(ctx context.Context, wor
 			r.db.WithContext(ctx).Raw("SELECT id, name, '' AS display_id FROM pm_epics WHERE id IN (?)", ids).Scan(&rows)
 		case model.CRMObjectStory:
 			r.db.WithContext(ctx).Raw("SELECT id, name, CAST(display_id AS TEXT) AS display_id FROM pm_stories WHERE id IN (?)", ids).Scan(&rows)
+		case model.CRMObjectSupportTicket:
+			r.db.WithContext(ctx).Raw("SELECT id, subject AS name, CAST(display_id AS TEXT) AS display_id FROM support_tickets WHERE id IN (?)", ids).Scan(&rows)
 		}
 		for _, row := range rows {
 			nameMap[row.ID] = row

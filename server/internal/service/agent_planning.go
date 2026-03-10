@@ -30,16 +30,18 @@ type planningRunInput struct {
 }
 
 type epicPlanningRunSummary struct {
-	Stage               string                       `json:"stage"`
-	SpecDocumentID      string                       `json:"spec_document_id,omitempty"`
-	SpecVersionID       string                       `json:"spec_version_id,omitempty"`
-	PlanningMethodology string                       `json:"planning_methodology,omitempty"`
-	Summary             string                       `json:"summary,omitempty"`
-	Risks               []string                     `json:"risks,omitempty"`
-	OpenQuestions       []string                     `json:"open_questions,omitempty"`
-	Proposal            *model.OrchestrationProposal `json:"proposal,omitempty"`
-	CreatedStoryIDs     []string                     `json:"created_story_ids,omitempty"`
-	CreatedStories      []createdPlanningStory       `json:"created_stories,omitempty"`
+	Stage               string                        `json:"stage"`
+	SpecDocumentID      string                        `json:"spec_document_id,omitempty"`
+	SpecVersionID       string                        `json:"spec_version_id,omitempty"`
+	PlanningMethodology string                        `json:"planning_methodology,omitempty"`
+	Summary             string                        `json:"summary,omitempty"`
+	Risks               []string                      `json:"risks,omitempty"`
+	Assumptions         []string                      `json:"assumptions,omitempty"`
+	OpenQuestions       []string                      `json:"open_questions,omitempty"`
+	Clarifications      []model.SpecClarificationItem `json:"clarifications,omitempty"`
+	Proposal            *model.OrchestrationProposal  `json:"proposal,omitempty"`
+	CreatedStoryIDs     []string                      `json:"created_story_ids,omitempty"`
+	CreatedStories      []createdPlanningStory        `json:"created_stories,omitempty"`
 }
 
 type createdPlanningStory struct {
@@ -99,6 +101,73 @@ func (s *AgentService) DraftEpicSpec(ctx context.Context, workspaceID, epicID, a
 	return run, nil
 }
 
+// ClarifyEpicSpec persists human decisions on open questions and assumptions before approval.
+func (s *AgentService) ClarifyEpicSpec(ctx context.Context, workspaceID, epicID, actorID string, req model.ClarifyEpicSpecRequest) (*model.ApprovedSpecSummary, error) {
+	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, fmt.Errorf("get epic: %w", err)
+	}
+	if epicWithStats == nil {
+		return nil, fmt.Errorf("epic not found")
+	}
+	epic := &epicWithStats.Epic
+	if epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
+		return nil, fmt.Errorf("epic does not have a product spec document yet")
+	}
+
+	current := model.ParseSpecClarifications(epic.SpecClarifications)
+	if len(current) == 0 {
+		epic.PlanningState = model.EpicPlanningStateAwaitingSpecApproval
+		if err := s.epicRepo.Update(ctx, epic); err != nil {
+			return nil, err
+		}
+		return &model.ApprovedSpecSummary{
+			Stage:          model.PlanningStageDraftSpec,
+			SpecDocumentID: *epic.SpecDocumentID,
+			Clarifications: []model.SpecClarificationItem{},
+		}, nil
+	}
+
+	updated, pendingCount, err := validateSpecClarifications(req.Clarifications, current)
+	if err != nil {
+		return nil, err
+	}
+
+	epic.SpecClarifications = model.MarshalSpecClarifications(updated)
+	if pendingCount == 0 {
+		now := time.Now()
+		epic.SpecClarifiedAt = &now
+		epic.SpecClarifiedBy = &actorID
+		epic.PlanningState = model.EpicPlanningStateAwaitingSpecApproval
+	} else {
+		epic.SpecClarifiedAt = nil
+		epic.SpecClarifiedBy = nil
+		epic.PlanningState = model.EpicPlanningStateAwaitingClarification
+	}
+	if err := s.epicRepo.Update(ctx, epic); err != nil {
+		return nil, err
+	}
+
+	_ = s.activitySvc.Log(ctx, workspaceID, "epic", epicID, &actorID, "updated", strPtr("spec_clarifications"), nil, nil, nil)
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "epic",
+		EntityID:    epicID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+	})
+
+	return &model.ApprovedSpecSummary{
+		Stage:               model.PlanningStageDraftSpec,
+		SpecDocumentID:      *epic.SpecDocumentID,
+		Clarifications:      updated,
+		PendingClarifyCount: pendingCount,
+	}, nil
+}
+
 // ApproveEpicSpec approves the current or specified spec version and clears any pending draft-spec run.
 func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID, actorID string, req model.ApproveEpicSpecRequest) (*model.ApprovedSpecSummary, error) {
 	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
@@ -111,6 +180,21 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 	epic := &epicWithStats.Epic
 	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
 		return nil, fmt.Errorf("epic does not have a product spec document yet")
+	}
+
+	clarifications := model.ParseSpecClarifications(epic.SpecClarifications)
+	pendingClarifyCount := countPendingSpecClarifications(clarifications)
+	if pendingClarifyCount > 0 {
+		return nil, fmt.Errorf("resolve all open questions and assumptions before approving the spec")
+	}
+	if req.VersionID != nil && strings.TrimSpace(*req.VersionID) != "" && len(clarifications) > 0 {
+		return nil, fmt.Errorf("approve the current spec version after clarifications are synced into Docs")
+	}
+
+	if len(clarifications) > 0 {
+		if err := s.syncClarificationsIntoSpecDoc(ctx, *epic.SpecDocumentID, actorID, clarifications); err != nil {
+			return nil, err
+		}
 	}
 
 	var version *model.DocsVersion
@@ -157,9 +241,11 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 	})
 
 	return &model.ApprovedSpecSummary{
-		Stage:          model.PlanningStageDraftSpec,
-		SpecDocumentID: *epic.SpecDocumentID,
-		SpecVersionID:  version.ID,
+		Stage:               model.PlanningStageDraftSpec,
+		SpecDocumentID:      *epic.SpecDocumentID,
+		SpecVersionID:       version.ID,
+		Clarifications:      clarifications,
+		PendingClarifyCount: 0,
 	}, nil
 }
 
@@ -328,11 +414,6 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 				CreatedBy:     actorID,
 			}); err != nil {
 				return nil, err
-			}
-			target, err := s.storyRepo.GetRawByID(ctx, targetStory.ID)
-			if err == nil && target != nil && !target.Blocked {
-				target.Blocked = true
-				_ = s.storyRepo.Update(ctx, target)
 			}
 		}
 	}
@@ -728,6 +809,18 @@ func validatePlanningStories(stories []model.ProposedStory) error {
 		refToIdx[stories[idx].Ref] = idx
 	}
 	for idx, story := range stories {
+		filteredCriteria := make([]string, 0, len(story.AcceptanceCriteria))
+		for _, item := range story.AcceptanceCriteria {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				filteredCriteria = append(filteredCriteria, item)
+			}
+		}
+		stories[idx].AcceptanceCriteria = filteredCriteria
+		if len(filteredCriteria) == 0 {
+			return fmt.Errorf("story %d must include at least one acceptance criterion", idx+1)
+		}
+
 		for _, depRef := range story.DependencyRefs {
 			if _, ok := refToIdx[depRef]; !ok {
 				return fmt.Errorf("story %d references unknown dependency ref %q", idx+1, depRef)
@@ -815,6 +908,9 @@ func buildStoryExecutionBrief(epic *model.PMEpic, specVersion *model.DocsVersion
 	sections = append(sections, "This story was created from an approved epic planning run. Use the context below while implementing it.")
 	if epic != nil {
 		sections = append(sections, fmt.Sprintf("Epic: %s", epic.Name))
+		if clarifications := resolvedSpecClarifications(model.ParseSpecClarifications(epic.SpecClarifications)); len(clarifications) > 0 {
+			sections = append(sections, "Resolved spec clarifications:\n"+renderSpecClarificationsBrief(clarifications))
+		}
 	}
 	if strings.TrimSpace(story.Name) != "" {
 		sections = append(sections, fmt.Sprintf("Planned story: %s", story.Name))
@@ -840,6 +936,290 @@ func buildStoryExecutionBrief(epic *model.PMEpic, specVersion *model.DocsVersion
 		sections = append(sections, "Approved spec snapshot:\n"+truncateString(specVersion.ContentText, 12000))
 	}
 	return strings.Join(sections, "\n\n")
+}
+
+func validateSpecClarifications(updated, current []model.SpecClarificationItem) ([]model.SpecClarificationItem, int, error) {
+	if len(current) == 0 {
+		return []model.SpecClarificationItem{}, 0, nil
+	}
+	if len(updated) != len(current) {
+		return nil, 0, fmt.Errorf("clarification responses must include every open question and assumption")
+	}
+
+	currentByID := make(map[string]model.SpecClarificationItem, len(current))
+	for _, item := range current {
+		currentByID[item.ID] = item
+	}
+
+	normalized := make([]model.SpecClarificationItem, 0, len(updated))
+	pendingCount := 0
+	for _, item := range updated {
+		base, ok := currentByID[strings.TrimSpace(item.ID)]
+		if !ok {
+			return nil, 0, fmt.Errorf("clarification %q is not part of the current spec draft", item.ID)
+		}
+
+		next := model.SpecClarificationItem{
+			ID:          base.ID,
+			Kind:        base.Kind,
+			Prompt:      base.Prompt,
+			Disposition: model.NormalizeSpecClarificationDisposition(base.Kind, item.Disposition),
+			Response:    strings.TrimSpace(item.Response),
+		}
+
+		switch next.Kind {
+		case model.SpecClarificationKindOpenQuestion:
+			if next.Disposition != model.SpecClarificationDispositionAnswered {
+				next.Disposition = model.SpecClarificationDispositionPending
+			}
+			if next.Disposition == model.SpecClarificationDispositionAnswered && next.Response == "" {
+				return nil, 0, fmt.Errorf("answer is required for open question %q", next.Prompt)
+			}
+		case model.SpecClarificationKindAssumption:
+			if next.Disposition == model.SpecClarificationDispositionRejected && next.Response == "" {
+				return nil, 0, fmt.Errorf("explanation is required when rejecting assumption %q", next.Prompt)
+			}
+		default:
+			return nil, 0, fmt.Errorf("clarification %q has an invalid kind", next.ID)
+		}
+
+		if !model.SpecClarificationResolved(next) {
+			pendingCount++
+		}
+		normalized = append(normalized, next)
+	}
+
+	return normalized, pendingCount, nil
+}
+
+func countPendingSpecClarifications(items []model.SpecClarificationItem) int {
+	count := 0
+	for _, item := range items {
+		if !model.SpecClarificationResolved(item) {
+			count++
+		}
+	}
+	return count
+}
+
+func resolvedSpecClarifications(items []model.SpecClarificationItem) []model.SpecClarificationItem {
+	resolved := make([]model.SpecClarificationItem, 0, len(items))
+	for _, item := range items {
+		if model.SpecClarificationResolved(item) {
+			resolved = append(resolved, item)
+		}
+	}
+	return resolved
+}
+
+func renderSpecClarificationsBrief(items []model.SpecClarificationItem) string {
+	lines := make([]string, 0, len(items))
+	for _, item := range items {
+		switch item.Kind {
+		case model.SpecClarificationKindOpenQuestion:
+			lines = append(lines, fmt.Sprintf("- %s -> %s", item.Prompt, item.Response))
+		case model.SpecClarificationKindAssumption:
+			if item.Disposition == model.SpecClarificationDispositionAccepted {
+				lines = append(lines, fmt.Sprintf("- %s -> accepted", item.Prompt))
+			} else {
+				lines = append(lines, fmt.Sprintf("- %s -> rejected: %s", item.Prompt, item.Response))
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (s *AgentService) syncClarificationsIntoSpecDoc(ctx context.Context, documentID, actorID string, clarifications []model.SpecClarificationItem) error {
+	if len(clarifications) == 0 {
+		return nil
+	}
+
+	content, err := s.docsContentRepo.GetByDocumentID(ctx, documentID)
+	if err != nil {
+		return err
+	}
+	if content == nil || strings.TrimSpace(content.ContentText) == "" {
+		return fmt.Errorf("spec document has no content to clarify")
+	}
+
+	updatedMarkdown := upsertSpecClarificationsSection(content.ContentText, clarifications)
+	savedContent, err := s.docsContentRepo.Upsert(ctx, documentID, serviceMarkdownToDocsJSON(updatedMarkdown))
+	if err != nil {
+		return err
+	}
+
+	label := "Clarified Spec"
+	_, err = s.docsVersionRepo.Create(ctx, documentID, actorID, savedContent.Content, savedContent.ContentText, &label, "manual", len(strings.Fields(savedContent.ContentText)))
+	return err
+}
+
+func upsertSpecClarificationsSection(markdown string, clarifications []model.SpecClarificationItem) string {
+	markdown = strings.TrimSpace(markdown)
+	if idx := strings.Index(markdown, "\n## Clarifications"); idx >= 0 {
+		markdown = strings.TrimSpace(markdown[:idx])
+	}
+
+	section := renderSpecClarificationsSection(clarifications)
+	if section == "" {
+		return markdown
+	}
+	if markdown == "" {
+		return section
+	}
+	return markdown + "\n\n" + section
+}
+
+func renderSpecClarificationsSection(clarifications []model.SpecClarificationItem) string {
+	resolved := resolvedSpecClarifications(clarifications)
+	if len(resolved) == 0 {
+		return ""
+	}
+
+	var lines []string
+	lines = append(lines, "## Clarifications")
+
+	var answered []string
+	var assumptions []string
+	for _, item := range resolved {
+		switch item.Kind {
+		case model.SpecClarificationKindOpenQuestion:
+			answered = append(answered, fmt.Sprintf("- %s -> %s", item.Prompt, item.Response))
+		case model.SpecClarificationKindAssumption:
+			if item.Disposition == model.SpecClarificationDispositionAccepted {
+				assumptions = append(assumptions, fmt.Sprintf("- %s -> accepted", item.Prompt))
+			} else {
+				assumptions = append(assumptions, fmt.Sprintf("- %s -> rejected: %s", item.Prompt, item.Response))
+			}
+		}
+	}
+
+	if len(answered) > 0 {
+		lines = append(lines, "### Open Questions Resolved")
+		lines = append(lines, answered...)
+	}
+	if len(assumptions) > 0 {
+		lines = append(lines, "### Assumptions Reviewed")
+		lines = append(lines, assumptions...)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func serviceMarkdownToDocsJSON(markdown string) json.RawMessage {
+	lines := strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n")
+	nodes := make([]map[string]interface{}, 0, len(lines))
+	paragraphLines := make([]string, 0)
+	bulletLines := make([]string, 0)
+
+	flushParagraph := func() {
+		if len(paragraphLines) == 0 {
+			return
+		}
+		text := strings.TrimSpace(strings.Join(paragraphLines, " "))
+		paragraphLines = paragraphLines[:0]
+		if text == "" {
+			return
+		}
+		nodes = append(nodes, map[string]interface{}{
+			"type": "paragraph",
+			"content": []map[string]interface{}{
+				{"type": "text", "text": text},
+			},
+		})
+	}
+
+	flushBullets := func() {
+		if len(bulletLines) == 0 {
+			return
+		}
+		items := make([]map[string]interface{}, 0, len(bulletLines))
+		for _, item := range bulletLines {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			items = append(items, map[string]interface{}{
+				"type": "listItem",
+				"content": []map[string]interface{}{
+					{
+						"type": "paragraph",
+						"content": []map[string]interface{}{
+							{"type": "text", "text": item},
+						},
+					},
+				},
+			})
+		}
+		bulletLines = bulletLines[:0]
+		if len(items) == 0 {
+			return
+		}
+		nodes = append(nodes, map[string]interface{}{
+			"type":    "bulletList",
+			"content": items,
+		})
+	}
+
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			flushParagraph()
+			flushBullets()
+			continue
+		}
+		if level, headingText, ok := parseServiceMarkdownHeading(line); ok {
+			flushParagraph()
+			flushBullets()
+			nodes = append(nodes, map[string]interface{}{
+				"type": "heading",
+				"attrs": map[string]interface{}{
+					"level": level,
+				},
+				"content": []map[string]interface{}{
+					{"type": "text", "text": headingText},
+				},
+			})
+			continue
+		}
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+			flushParagraph()
+			bulletLines = append(bulletLines, strings.TrimSpace(line[2:]))
+			continue
+		}
+		flushBullets()
+		paragraphLines = append(paragraphLines, line)
+	}
+
+	flushParagraph()
+	flushBullets()
+
+	if len(nodes) == 0 {
+		nodes = append(nodes, map[string]interface{}{"type": "paragraph"})
+	}
+
+	payload, _ := json.Marshal(map[string]interface{}{
+		"type":    "doc",
+		"content": nodes,
+	})
+	return payload
+}
+
+func parseServiceMarkdownHeading(line string) (int, string, bool) {
+	if !strings.HasPrefix(line, "#") {
+		return 0, "", false
+	}
+	level := 0
+	for level < len(line) && line[level] == '#' && level < 6 {
+		level++
+	}
+	if level == 0 || level >= len(line) || line[level] != ' ' {
+		return 0, "", false
+	}
+	text := strings.TrimSpace(line[level+1:])
+	if text == "" {
+		return 0, "", false
+	}
+	return level, text, true
 }
 
 func truncateString(value string, limit int) string {

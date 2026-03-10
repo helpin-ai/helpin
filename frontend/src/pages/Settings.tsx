@@ -33,14 +33,17 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Bot, Camera, ChevronRight, Copy, Eye, FileText, FolderKanban, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Camera, ChevronRight, Copy, Eye, FileText, FolderKanban, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Mail, Pencil, Plus, RefreshCw, Search, Server, Settings2, Sliders, Tag, Trash2, Users, X, Zap, type LucideIcon } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
+import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
+import { useAuthStore } from '@/stores/authStore';
+import { useAutonomySettings, useUpdateAutonomySettings } from '@/hooks/queries/useCRM';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -132,6 +135,20 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Pipelines',
     description: 'Configure deal pipelines and stages.',
     icon: FolderKanban,
+    group: 'CRM Settings',
+  },
+  {
+    id: 'crm-email',
+    label: 'Email Accounts',
+    description: 'Connect Gmail to sync conversations and detect buyer signals.',
+    icon: Mail,
+    group: 'CRM Settings',
+  },
+  {
+    id: 'crm-autonomy',
+    label: 'Autonomy',
+    description: 'Configure self-driving deal automation thresholds.',
+    icon: Sliders,
     group: 'CRM Settings',
   },
   /* {
@@ -344,6 +361,10 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return <HelpcenterTab workspaceId={workspaceId} />;
       case 'crm-pipelines':
         return <PipelineSettings />;
+      case 'crm-email':
+        return <CRMEmailSettingsTab workspaceId={workspaceId} />;
+      case 'crm-autonomy':
+        return <CRMAutonomySettingsTab workspaceId={workspaceId} />;
       default:
         return null;
     }
@@ -3353,22 +3374,22 @@ function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
         ) : filteredWorkflows.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">No workflows found.</p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {filteredWorkflows.map((workflow) => (
-              <div key={workflow.workflow.id} className="rounded-none border border-border px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
+              <div key={workflow.workflow.id} className="rounded-none border border-border px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="font-medium">{workflow.workflow.name}</p>
+                      <p className="text-sm font-medium">{workflow.workflow.name}</p>
                       {!workflow.workflow.team_id && (
                         <Badge variant="secondary" className="text-xs">Workspace Default</Badge>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {workflow.workflow.description || 'No description'}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>{workflow.states.length} states</span>
                     <span>•</span>
                     <span>{findTeamName(workflow.workflow.team_id)}</span>
@@ -3377,7 +3398,7 @@ function WorkflowsTab({ workspaceId, teams, editable, initialTeamId }: {
                   </div>
                 </div>
                 {editable && (
-                  <div className="mt-2 flex justify-end gap-1">
+                  <div className="mt-1.5 flex justify-end gap-1">
                     <Button
                       size="sm"
                       variant="ghost"
@@ -3670,7 +3691,7 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
               </div>
               {selectedWorkflow && (
                 <div className="flex items-end">
-                  <div className="flex w-full items-center justify-between rounded-none border border-border px-3 py-2.5">
+                  <div className="flex w-full items-center justify-between rounded-none border border-border px-2.5 py-2">
                     <div>
                       <Label>Auto assign owner</Label>
                       <p className="text-xs text-muted-foreground">Assign current user when stories move into started state without owner.</p>
@@ -3686,12 +3707,12 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
             </div>
 
             {selectedWorkflow && (
-              <div className="space-y-5">
+              <div className="space-y-4">
                 {STATE_TYPE_ORDER.map((type) => (
-                  <section key={type} className="space-y-2">
+                  <section key={type} className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <h4 className="flex items-center gap-1.5 text-sm font-medium">
-                        <StateTypeIcon stateType={type} className="h-4 w-4" />
+                      <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide">
+                        <StateTypeIcon stateType={type} className="h-3.5 w-3.5" />
                         {STATE_TYPE_LABEL[type]}
                       </h4>
                       {editable && (
@@ -3701,18 +3722,18 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
                       )}
                     </div>
                     {statesByType[type].length === 0 ? (
-                      <div className="rounded-none border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+                      <div className="rounded-none border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
                         No states in this group.
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         {statesByType[type].map((state, idx) => (
-                          <div key={state.id} className="rounded-none border border-border px-3 py-2.5">
-                            <div className="flex items-start justify-between gap-3">
+                          <div key={state.id} className="rounded-none border border-border px-2.5 py-1.5">
+                            <div className="flex items-start justify-between gap-2">
                               <div>
-                                <div className="flex items-center gap-2">
-                                  <StateTypeIcon stateType={state.state_type} className="h-4 w-4" />
-                                  <p className="font-medium">{state.name}</p>
+                                <div className="flex items-center gap-1.5">
+                                  <StateTypeIcon stateType={state.state_type} className="h-3.5 w-3.5" />
+                                  <p className="text-sm font-medium">{state.name}</p>
                                   {state.is_default && (
                                     <Badge variant="secondary" className="text-xs">Default</Badge>
                                   )}
@@ -3720,13 +3741,14 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
                                     <Badge variant="outline" className="text-xs">WIP {state.wip_limit}</Badge>
                                   ) : null}
                                 </div>
-                                <p className="text-sm text-muted-foreground">{state.description || 'No description'}</p>
+                                <p className="text-xs text-muted-foreground">{state.description || 'No description'}</p>
                               </div>
                               {editable && (
                                 <div className="flex items-center gap-1">
                                   <Button
                                     size="icon"
                                     variant="ghost"
+                                    className="h-7 w-7"
                                     disabled={idx === 0}
                                     onClick={() => handleMoveWithinType(type, state.id, 'up')}
                                   >
@@ -3735,12 +3757,13 @@ function WorkflowStatesTab({ workspaceId, editable, initialWorkflowId }: {
                                   <Button
                                     size="icon"
                                     variant="ghost"
+                                    className="h-7 w-7"
                                     disabled={idx === statesByType[type].length - 1}
                                     onClick={() => handleMoveWithinType(type, state.id, 'down')}
                                   >
                                     <ArrowDown className="h-3.5 w-3.5" />
                                   </Button>
-                                  <Button size="icon" variant="ghost" onClick={() => openEdit(state)}>
+                                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(state)}>
                                     <Pencil className="h-3.5 w-3.5" />
                                   </Button>
                                 </div>
@@ -4494,6 +4517,158 @@ function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
         </Button>
       </div>
     </form>
+  );
+}
+
+/* ============ CRM Email Settings Tab ============ */
+
+function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
+  const user = useAuthStore((s) => s.user);
+  return <EmailAccountConnect workspaceId={workspaceId} memberId={user?.id ?? ''} />;
+}
+
+/* ============ CRM Autonomy Settings Tab ============ */
+
+function CRMAutonomySettingsTab({ workspaceId }: { workspaceId: string }) {
+  const { data: settings, isLoading } = useAutonomySettings(workspaceId);
+  const updateSettings = useUpdateAutonomySettings(workspaceId);
+  const [saving, setSaving] = useState(false);
+
+  const [enabled, setEnabled] = useState(true);
+  const [autoCreateDeals, setAutoCreateDeals] = useState(true);
+  const [autoProgressDeals, setAutoProgressDeals] = useState(true);
+  const [autoExecuteThreshold, setAutoExecuteThreshold] = useState(0.9);
+  const [reviewThreshold, setReviewThreshold] = useState(0.7);
+
+  useEffect(() => {
+    if (settings) {
+      setEnabled(settings.enabled);
+      setAutoCreateDeals(settings.auto_create_deals);
+      setAutoProgressDeals(settings.auto_progress_deals);
+      setAutoExecuteThreshold(settings.auto_execute_threshold);
+      setReviewThreshold(settings.review_threshold);
+    }
+  }, [settings]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateSettings.mutateAsync({
+        enabled,
+        auto_create_deals: autoCreateDeals,
+        auto_progress_deals: autoProgressDeals,
+        auto_execute_threshold: autoExecuteThreshold,
+        review_threshold: reviewThreshold,
+      });
+      toast.success('Autonomy settings saved');
+    } catch {
+      toast.error('Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (isLoading) return <Skeleton className="h-64 w-full" />;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Self-Driving CRM</CardTitle>
+          <CardDescription>
+            Configure how aggressively the system auto-creates and advances deals based on detected buyer signals.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Enable Automation</Label>
+              <p className="text-xs text-muted-foreground">Master switch for all CRM automation</p>
+            </div>
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
+          </div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Auto-Create Deals</Label>
+              <p className="text-xs text-muted-foreground">Automatically create deals when buying intent is detected</p>
+            </div>
+            <Switch checked={autoCreateDeals} onCheckedChange={setAutoCreateDeals} disabled={!enabled} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Auto-Progress Deals</Label>
+              <p className="text-xs text-muted-foreground">Automatically advance deal stages based on signals</p>
+            </div>
+            <Switch checked={autoProgressDeals} onCheckedChange={setAutoProgressDeals} disabled={!enabled} />
+          </div>
+
+          <Separator />
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Auto-Execute Threshold</Label>
+              <p className="text-xs text-muted-foreground">Signals above this confidence are executed without review</p>
+              <Select
+                value={String(autoExecuteThreshold)}
+                onValueChange={(v) => {
+                  const n = Number(v);
+                  setAutoExecuteThreshold(n);
+                  if (n < reviewThreshold) setReviewThreshold(n);
+                }}
+                disabled={!enabled}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100].map((p) => (
+                    <SelectItem key={p} value={String(p / 100)}>{p}%</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Review Threshold</Label>
+              <p className="text-xs text-muted-foreground">Signals between this and auto-execute create pending suggestions</p>
+              <Select
+                value={String(reviewThreshold)}
+                onValueChange={(v) => {
+                  const n = Number(v);
+                  setReviewThreshold(n);
+                  if (n > autoExecuteThreshold) setAutoExecuteThreshold(n);
+                }}
+                disabled={!enabled}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100].map((p) => (
+                    <SelectItem key={p} value={String(p / 100)}>{p}%</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="rounded-md border p-3 text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">How it works:</p>
+            <ul className="mt-1 list-inside list-disc space-y-0.5">
+              <li>Confidence &ge; {(autoExecuteThreshold * 100).toFixed(0)}%: auto-executed (no review needed)</li>
+              <li>Confidence {(reviewThreshold * 100).toFixed(0)}%&ndash;{(autoExecuteThreshold * 100).toFixed(0)}%: pending review in the Review feed</li>
+              <li>Confidence &lt; {(reviewThreshold * 100).toFixed(0)}%: low-priority suggestion</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving...' : 'Save Settings'}
+        </Button>
+      </div>
+    </div>
   );
 }
 

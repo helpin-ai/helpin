@@ -18,6 +18,7 @@ import {
   crmSequenceService,
   crmWritingProfileService,
   crmSearchService,
+  crmAutonomyService,
 } from '@/lib/services/crmService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
@@ -98,6 +99,14 @@ export function useContactAssociations(wsId: string, contactId: string) {
   return useQuery({
     queryKey: queryKeys.crm.contactAssociations(wsId, contactId),
     queryFn: async () => unwrap(await crmContactService.listAssociations(wsId, contactId)),
+    enabled: !!wsId && !!contactId,
+  })
+}
+
+export function useContactSupportTickets(wsId: string, contactId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.contactSupportTickets(wsId, contactId),
+    queryFn: async () => unwrap(await crmContactService.listSupportTickets(wsId, contactId)),
     enabled: !!wsId && !!contactId,
   })
 }
@@ -335,7 +344,7 @@ export function useDeletePipeline(wsId: string) {
 
 // ── Associations ──
 
-export function useEpicAssociations(wsId: string, epicId: string) {
+export function useLegacyEpicAssociations(wsId: string, epicId: string) {
   return useQuery({
     queryKey: queryKeys.pm.epicAssociations(wsId, epicId),
     queryFn: async () => unwrap(await crmAssociationService.listByEpic(wsId, epicId)),
@@ -343,7 +352,7 @@ export function useEpicAssociations(wsId: string, epicId: string) {
   })
 }
 
-export function useStoryAssociations(wsId: string, storyId: string) {
+export function useLegacyStoryAssociations(wsId: string, storyId: string) {
   return useQuery({
     queryKey: queryKeys.pm.storyAssociations(wsId, storyId),
     queryFn: async () => unwrap(await crmAssociationService.listByStory(wsId, storyId)),
@@ -365,7 +374,7 @@ export function useCreateAssociation(wsId: string) {
   })
 }
 
-export function useCreateAssociationFromPM(wsId: string) {
+export function useLegacyCreateAssociationFromPM(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMAssociationRequest) => unwrap(await crmAssociationService.createFromPM(data)),
@@ -387,7 +396,7 @@ export function useDeleteAssociation(wsId: string) {
   })
 }
 
-export function useDeleteAssociationFromPM(wsId: string) {
+export function useLegacyDeleteAssociationFromPM(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => unwrap(await crmAssociationService.removeFromPM(wsId, id)),
@@ -843,6 +852,57 @@ export function useUpdateSuggestion(wsId: string) {
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.suggestions(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.crm.suggestion(wsId, id) })
+    },
+  })
+}
+
+// ── Phase D: Deal Automation ──
+
+export function usePendingSuggestions(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.suggestions(wsId, 'pending'),
+    queryFn: async () => unwrap(await crmSuggestionService.list(wsId, { status: 'pending' })),
+    enabled: !!wsId,
+  })
+}
+
+export function useAcceptSuggestion(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, edits }: { id: string; edits?: Record<string, unknown> }) =>
+      unwrap(await crmSuggestionService.accept(wsId, id, edits)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crm'] })
+    },
+  })
+}
+
+export function useDismissSuggestion(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await crmSuggestionService.dismiss(wsId, id)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crm'] })
+    },
+  })
+}
+
+export function useAutonomySettings(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.autonomySettings(wsId),
+    queryFn: async () => unwrap(await crmAutonomyService.get(wsId)),
+    enabled: !!wsId,
+  })
+}
+
+export function useUpdateAutonomySettings(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (settings: import('@/lib/services/crmService').CRMAutonomySettings) =>
+      unwrap(await crmAutonomyService.update(wsId, settings)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.autonomySettings(wsId) })
     },
   })
 }

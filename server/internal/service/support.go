@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -18,10 +19,12 @@ type SupportService struct {
 	ticketRepo  *repository.SupportTicketRepository
 	messageRepo *repository.SupportMessageRepository
 	agentRepo   *repository.AgentRepository
+	assocRepo   *repository.CRMAssociationRepository
 	widgetRepo  *repository.WidgetInstallationRepository
 	sessionRepo *repository.WidgetSessionRepository
 	activitySvc *PMActivityService
 	wsPublisher *websocket.Publisher
+	contactRepo *repository.CRMContactRepository
 }
 
 // NewSupportService creates a new SupportService.
@@ -29,19 +32,23 @@ func NewSupportService(
 	ticketRepo *repository.SupportTicketRepository,
 	messageRepo *repository.SupportMessageRepository,
 	agentRepo *repository.AgentRepository,
+	assocRepo *repository.CRMAssociationRepository,
 	widgetRepo *repository.WidgetInstallationRepository,
 	sessionRepo *repository.WidgetSessionRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
+	contactRepo *repository.CRMContactRepository,
 ) *SupportService {
 	return &SupportService{
 		ticketRepo:  ticketRepo,
 		messageRepo: messageRepo,
 		agentRepo:   agentRepo,
+		assocRepo:   assocRepo,
 		widgetRepo:  widgetRepo,
 		sessionRepo: sessionRepo,
 		activitySvc: activitySvc,
 		wsPublisher: wsPublisher,
+		contactRepo: contactRepo,
 	}
 }
 
@@ -93,6 +100,14 @@ func (s *SupportService) CreateTicket(ctx context.Context, req model.CreateTicke
 
 	if err := s.ticketRepo.Create(ctx, ticket); err != nil {
 		return nil, err
+	}
+
+	// Auto-match or create CRM contact by email.
+	if contactID := s.matchOrCreateCRMContact(ctx, ticket.WorkspaceID, ticket.CustomerEmail, ticket.CustomerName); contactID != nil {
+		ticket.CRMContactID = contactID
+		if err := s.ticketRepo.Update(ctx, ticket); err != nil {
+			slog.ErrorContext(ctx, "failed to link CRM contact to ticket", "error", err, "ticket_id", ticket.ID)
+		}
 	}
 
 	_ = s.activitySvc.Log(ctx, ticket.WorkspaceID, "support_ticket", ticket.ID, &actorID, "created", nil, nil, &ticket.Subject, nil)
@@ -191,6 +206,17 @@ func (s *SupportService) LinkStory(ctx context.Context, workspaceID, ticketID, s
 
 	ticket.LinkedStoryID = &storyID
 	if err := s.ticketRepo.Update(ctx, ticket); err != nil {
+		return err
+	}
+
+	assoc := &model.CRMAssociation{
+		WorkspaceID:    workspaceID,
+		FromObjectType: model.CRMObjectSupportTicket,
+		FromObjectID:   ticketID,
+		ToObjectType:   model.CRMObjectStory,
+		ToObjectID:     storyID,
+	}
+	if err := s.assocRepo.Create(ctx, assoc); err != nil {
 		return err
 	}
 
@@ -310,6 +336,12 @@ func (s *SupportService) WidgetCreateMessage(ctx context.Context, sessionToken, 
 			CustomerEmail: session.CustomerEmail,
 			Source:        "widget",
 		}
+
+		// Auto-match or create CRM contact by email.
+		if contactID := s.matchOrCreateCRMContact(ctx, session.WorkspaceID, session.CustomerEmail, session.CustomerName); contactID != nil {
+			ticket.CRMContactID = contactID
+		}
+
 		if err := s.ticketRepo.Create(ctx, ticket); err != nil {
 			return nil, err
 		}
@@ -374,4 +406,54 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// matchOrCreateCRMContact looks up a CRM contact by email; if not found and
+// we have a name, it auto-creates one with lifecycle_stage=subscriber, source=support.
+func (s *SupportService) matchOrCreateCRMContact(ctx context.Context, workspaceID string, email, name *string) *string {
+	if email == nil || *email == "" {
+		return nil
+	}
+
+	search := strings.TrimSpace(*email)
+	contacts, _, err := s.contactRepo.List(ctx, workspaceID, model.CRMContactListFilters{
+		Search: &search,
+	}, model.PMPagination{Page: 1, PerPage: 1})
+	if err == nil && len(contacts) > 0 {
+		if contacts[0].Email != nil && strings.EqualFold(*contacts[0].Email, search) {
+			return &contacts[0].ID
+		}
+	}
+
+	// Auto-create contact if we have name + email.
+	firstName := "Unknown"
+	if name != nil && *name != "" {
+		firstName = *name
+	}
+	source := "support"
+	contact := &model.CRMContact{
+		WorkspaceID:    workspaceID,
+		FirstName:      firstName,
+		Email:          email,
+		LifecycleStage: model.CRMLifecycleSubscriber,
+		LeadStatus:     model.CRMLeadStatusNew,
+		Source:         &source,
+	}
+	displayID, err := s.contactRepo.GetNextDisplayID(ctx, workspaceID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get next display ID for CRM contact", "error", err, "workspace_id", workspaceID)
+		return nil
+	}
+	contact.DisplayID = displayID
+	if err := s.contactRepo.Create(ctx, contact); err != nil {
+		slog.ErrorContext(ctx, "failed to auto-create CRM contact from support", "error", err, "workspace_id", workspaceID)
+		return nil
+	}
+	slog.InfoContext(ctx, "auto-created CRM contact from support ticket", "contact_id", contact.ID, "workspace_id", workspaceID)
+	return &contact.ID
+}
+
+// ListContactTickets returns support tickets linked to a CRM contact.
+func (s *SupportService) ListContactTickets(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportTicket, int64, error) {
+	return s.ticketRepo.ListByContact(ctx, workspaceID, contactID, pagination)
 }

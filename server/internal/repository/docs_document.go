@@ -52,6 +52,21 @@ func (r *DocsDocumentRepository) GetByIDIncludeDeleted(ctx context.Context, id s
 	return &doc, nil
 }
 
+// ListByIDs returns non-deleted documents by ID for a workspace.
+func (r *DocsDocumentRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.DocsDocument, error) {
+	if len(ids) == 0 {
+		return []model.DocsDocument{}, nil
+	}
+
+	var docs []model.DocsDocument
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ? AND deleted_at IS NULL", workspaceID, ids).
+		Find(&docs).Error; err != nil {
+		return nil, fmt.Errorf("list docs documents by ids: %w", err)
+	}
+	return docs, nil
+}
+
 // List returns documents for a workspace with optional filters.
 func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, docType, status, teamID *string, draftViewerID string) ([]model.DocsDocument, error) {
 	query := r.db.WithContext(ctx).Where("workspace_id = ? AND deleted_at IS NULL", workspaceID)

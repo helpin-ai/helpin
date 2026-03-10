@@ -12,8 +12,8 @@ import (
 
 func TestValidatePlanningProposalStoriesRejectsCycle(t *testing.T) {
 	stories := []model.ProposedStory{
-		{Ref: "story_a", Name: "Story A", DependencyRefs: []string{"story_b"}},
-		{Ref: "story_b", Name: "Story B", DependencyRefs: []string{"story_a"}},
+		{Ref: "story_a", Name: "Story A", AcceptanceCriteria: []string{"A works"}, DependencyRefs: []string{"story_b"}},
+		{Ref: "story_b", Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_a"}},
 	}
 
 	err := validatePlanningProposalStories(stories)
@@ -84,8 +84,8 @@ func TestCollectPlanningTreeBoundsDepth(t *testing.T) {
 
 func TestValidatePlanningProposalStoriesNormalizesMissingRefs(t *testing.T) {
 	stories := []model.ProposedStory{
-		{Name: "Story A"},
-		{Name: "Story B", DependencyRefs: []string{"story_1"}},
+		{Name: "Story A", AcceptanceCriteria: []string{"A works"}},
+		{Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_1"}},
 	}
 
 	if err := validatePlanningProposalStories(stories); err != nil {
@@ -141,5 +141,22 @@ func TestRenderProductSpecMarkdownAppendsNormalizedResearchSources(t *testing.T)
 	}
 	if !strings.Contains(rendered, "published 2025-01-01") {
 		t.Fatalf("expected published date note in rendered markdown, got %q", rendered)
+	}
+}
+
+func TestBuildDraftSpecClarificationsIncludesQuestionsAndAssumptions(t *testing.T) {
+	items := buildDraftSpecClarifications(model.ProductSpecDraft{
+		Assumptions:   []string{"Launch for paid plans only"},
+		OpenQuestions: []string{"Who gets access on day one?"},
+	})
+
+	if len(items) != 2 {
+		t.Fatalf("expected 2 clarifications, got %#v", items)
+	}
+	if items[0].Kind != model.SpecClarificationKindOpenQuestion {
+		t.Fatalf("expected first clarification to be an open question, got %#v", items[0])
+	}
+	if items[1].Kind != model.SpecClarificationKindAssumption {
+		t.Fatalf("expected second clarification to be an assumption, got %#v", items[1])
 	}
 }

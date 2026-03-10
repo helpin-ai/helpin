@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -75,6 +76,62 @@ func (r *CRMEmailRepository) UpdateAccount(ctx context.Context, account *model.C
 func (r *CRMEmailRepository) DeleteAccount(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.CRMEmailAccount{}).Error; err != nil {
 		return fmt.Errorf("delete email account: %w", err)
+	}
+	return nil
+}
+
+// GetAccountByOAuthState returns an email account by its OAuth state token.
+func (r *CRMEmailRepository) GetAccountByOAuthState(ctx context.Context, state string) (*model.CRMEmailAccount, error) {
+	var account model.CRMEmailAccount
+	if err := r.db.WithContext(ctx).Where("oauth_state = ?", state).First(&account).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get email account by oauth state: %w", err)
+	}
+	return &account, nil
+}
+
+// UpdateSyncState updates the sync state for an email account.
+func (r *CRMEmailRepository) UpdateSyncState(ctx context.Context, accountID string, syncState model.JSONB) error {
+	if err := r.db.WithContext(ctx).Model(&model.CRMEmailAccount{}).Where("id = ?", accountID).Update("sync_state", syncState).Error; err != nil {
+		return fmt.Errorf("update sync state: %w", err)
+	}
+	return nil
+}
+
+// GetMessageByExternalID returns a message by its external Gmail ID within an account.
+func (r *CRMEmailRepository) GetMessageByExternalID(ctx context.Context, accountID, externalID string) (*model.CRMEmailMessage, error) {
+	var message model.CRMEmailMessage
+	if err := r.db.WithContext(ctx).Where("email_account_id = ? AND message_external_id = ?", accountID, externalID).First(&message).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get message by external id: %w", err)
+	}
+	return &message, nil
+}
+
+// GetThreadByExternalID returns a thread by its external Gmail thread ID within an account.
+func (r *CRMEmailRepository) GetThreadByExternalID(ctx context.Context, accountID, externalID string) (*model.CRMEmailThread, error) {
+	var thread model.CRMEmailThread
+	if err := r.db.WithContext(ctx).Where("email_account_id = ? AND thread_external_id = ?", accountID, externalID).First(&thread).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get thread by external id: %w", err)
+	}
+	return &thread, nil
+}
+
+// IncrementThreadMessageCount increments the message count and updates last_message_at.
+func (r *CRMEmailRepository) IncrementThreadMessageCount(ctx context.Context, threadID string, lastMessageAt time.Time) error {
+	if err := r.db.WithContext(ctx).Model(&model.CRMEmailThread{}).Where("id = ?", threadID).
+		Updates(map[string]interface{}{
+			"message_count":  gorm.Expr("message_count + 1"),
+			"last_message_at": lastMessageAt,
+		}).Error; err != nil {
+		return fmt.Errorf("increment thread message count: %w", err)
 	}
 	return nil
 }

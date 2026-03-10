@@ -26,6 +26,8 @@ type CRMEmailAccount struct {
 	SyncState             JSONB      `json:"sync_state" gorm:"type:jsonb;default:'{}'"`
 	LastSyncedAt          *time.Time `json:"last_synced_at"`
 	IsActive              bool       `json:"is_active" gorm:"not null;default:true"`
+	OAuthState            *string    `json:"-" gorm:"column:oauth_state"`
+	TokenExpiresAt        *time.Time `json:"-" gorm:"column:token_expires_at"`
 	CreatedAt             time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt             time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }

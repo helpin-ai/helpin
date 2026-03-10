@@ -1,18 +1,44 @@
-import { useMemo, useState } from 'react';
-import { format } from 'date-fns';
-import { ArrowUp, ArrowDown, ArrowUpDown, Users, Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useReactTable,
+  getCoreRowModel,
+  getGroupedRowModel,
+  getExpandedRowModel,
+  flexRender,
+  createColumnHelper,
+  type GroupingState,
+  type ExpandedState,
+  type Row,
+} from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { Check, ChevronDown, ChevronRight, EllipsisVertical, ExternalLink, Loader2, Plus, Trash2, UserPlus, Users } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import type { CRMContact } from '@/lib/crmTypes';
+import { format, parseISO } from 'date-fns';
+import { crmContactService } from '@/lib/services/crmService';
+import { UserAvatar } from '@/components/pm/UserAvatar';
+import type { CRMContact, LifecycleStage, LeadStatus } from '@/lib/crmTypes';
+import type { AssignableMember } from '@/lib/types';
 
-interface ContactsTableProps {
-  contacts: CRMContact[];
-  total: number;
-  isLoading: boolean;
-  onRowClick: (id: string) => void;
-  onCreateClick?: () => void;
-}
+type GroupByOption = 'none' | 'lifecycle_stage' | 'lead_status' | 'owner';
+
+const GROUP_BY_OPTIONS: { value: GroupByOption; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'lifecycle_stage', label: 'Lifecycle Stage' },
+  { value: 'lead_status', label: 'Lead Status' },
+  { value: 'owner', label: 'Owner' },
+];
+
+const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
+  none: null,
+  lifecycle_stage: 'lifecycleStageName',
+  lead_status: 'leadStatusName',
+  owner: 'ownerName',
+};
 
 const lifecycleColors: Record<string, string> = {
   subscriber: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
@@ -24,74 +50,243 @@ const lifecycleColors: Record<string, string> = {
   evangelist: 'bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300',
 };
 
-type SortField = 'name' | 'email' | 'lifecycle_stage' | 'lead_status' | 'created_at';
-type SortDir = 'asc' | 'desc';
-
-function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
-  if (sortField !== field) return <ArrowUpDown className="h-3 w-3 opacity-50" />;
-  return sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
-}
-
-const headers: { field: SortField; label: string }[] = [
-  { field: 'name', label: 'Name' },
-  { field: 'email', label: 'Email' },
-  { field: 'lifecycle_stage', label: 'Stage' },
-  { field: 'lead_status', label: 'Status' },
-  { field: 'created_at', label: 'Created' },
+const LIFECYCLE_STAGES: { value: LifecycleStage; label: string }[] = [
+  { value: 'subscriber', label: 'Subscriber' },
+  { value: 'lead', label: 'Lead' },
+  { value: 'marketing_qualified', label: 'Marketing Qualified' },
+  { value: 'sales_qualified', label: 'Sales Qualified' },
+  { value: 'opportunity', label: 'Opportunity' },
+  { value: 'customer', label: 'Customer' },
+  { value: 'evangelist', label: 'Evangelist' },
 ];
 
-export function ContactsTable({ contacts, total, isLoading, onRowClick, onCreateClick }: ContactsTableProps) {
-  const [sortField, setSortField] = useState<SortField>('created_at');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+const LEAD_STATUSES: { value: LeadStatus; label: string }[] = [
+  { value: 'new', label: 'New' },
+  { value: 'open', label: 'Open' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'unqualified', label: 'Unqualified' },
+];
 
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortField(field);
-      setSortDir('asc');
+const columnHelper = createColumnHelper<CRMContact>();
+
+interface ContactsTableProps {
+  contacts: CRMContact[];
+  workspaceId: string;
+  assignableMembers: AssignableMember[];
+  ownerNameMap: Map<string, string>;
+  isLoading: boolean;
+  onRowClick: (id: string) => void;
+  onCreateClick?: () => void;
+  onContactUpdated?: () => void;
+  onContactDeleted?: () => void;
+}
+
+export function ContactsTable({
+  contacts,
+  workspaceId,
+  assignableMembers,
+  ownerNameMap,
+  isLoading,
+  onRowClick,
+  onCreateClick,
+  onContactUpdated,
+  onContactDeleted,
+}: ContactsTableProps) {
+  const [localContacts, setLocalContacts] = useState<CRMContact[]>(contacts);
+  const [groupBy, setGroupBy] = useState<GroupByOption>('none');
+  const [expanded, setExpanded] = useState<ExpandedState>(true);
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setLocalContacts(contacts); }, [contacts]);
+
+  const updateContactField = useCallback(
+    async (contactId: string, patch: Partial<CRMContact>) => {
+      let snapshot: CRMContact[] = [];
+      setLocalContacts((current) => {
+        snapshot = current;
+        return current.map((c) => (c.id === contactId ? { ...c, ...patch } : c));
+      });
+
+      const { display_id: _did, workspace_id: _wid, custom_properties: _cp, created_at: _ca, updated_at: _ua, id: _id, ...apiSafe } = patch as Record<string, unknown>;
+      const { error } = await crmContactService.update(workspaceId, contactId, apiSafe);
+      if (error) setLocalContacts(snapshot);
+      else onContactUpdated?.();
+    },
+    [workspaceId, onContactUpdated],
+  );
+
+  const handleDelete = useCallback(async (contactId: string) => {
+    const { error } = await crmContactService.remove(workspaceId, contactId);
+    if (!error) {
+      setLocalContacts((current) => current.filter((c) => c.id !== contactId));
+      onContactDeleted?.();
     }
-  };
+  }, [workspaceId, onContactDeleted]);
 
-  const sorted = useMemo(() => {
-    return [...contacts].sort((a, b) => {
-      let av: string | number;
-      let bv: string | number;
-      if (sortField === 'name') {
-        av = `${a.first_name} ${a.last_name ?? ''}`.toLowerCase();
-        bv = `${b.first_name} ${b.last_name ?? ''}`.toLowerCase();
-      } else {
-        av = (a[sortField] as string) ?? '';
-        bv = (b[sortField] as string) ?? '';
-      }
-      const cmp = typeof av === 'number' ? av - Number(bv) : String(av).localeCompare(String(bv));
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [contacts, sortField, sortDir]);
+  const tableColumns = useMemo(
+    () => [
+      columnHelper.accessor('display_id', {
+        id: 'displayId',
+        header: 'ID',
+        size: 90,
+        cell: (info) => (
+          <span className="font-mono text-xs text-muted-foreground">{info.getValue()}</span>
+        ),
+      }),
+      columnHelper.accessor(
+        (row) => `${row.first_name} ${row.last_name ?? ''}`.trim(),
+        {
+          id: 'name',
+          header: 'Name',
+          size: 999,
+          enableGrouping: false,
+          cell: (info) => (
+            <button
+              className="max-w-full truncate text-left text-sm hover:text-primary hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRowClick(info.row.original.id);
+              }}
+            >
+              {info.getValue()}
+            </button>
+          ),
+        }
+      ),
+      columnHelper.accessor('email', {
+        id: 'email',
+        header: 'Email',
+        size: 200,
+        enableGrouping: false,
+        cell: (info) => (
+          <span className="truncate text-xs text-muted-foreground">{info.getValue() ?? '-'}</span>
+        ),
+      }),
+      columnHelper.accessor('phone', {
+        id: 'phone',
+        header: 'Phone',
+        size: 140,
+        enableGrouping: false,
+        cell: (info) => (
+          <span className="truncate text-xs text-muted-foreground">{info.getValue() ?? '-'}</span>
+        ),
+      }),
+      columnHelper.accessor(
+        (row) => row.lifecycle_stage.replace(/_/g, ' '),
+        {
+          id: 'lifecycleStageName',
+          header: 'Stage',
+          size: 160,
+          cell: (info) => (
+            <InlineLifecycleCell
+              contact={info.row.original}
+              onUpdate={updateContactField}
+            />
+          ),
+        }
+      ),
+      columnHelper.accessor(
+        (row) => row.lead_status.replace(/_/g, ' '),
+        {
+          id: 'leadStatusName',
+          header: 'Status',
+          size: 140,
+          cell: (info) => (
+            <InlineLeadStatusCell
+              contact={info.row.original}
+              onUpdate={updateContactField}
+            />
+          ),
+        }
+      ),
+      columnHelper.accessor(
+        (row) => {
+          const ownerKey = row.owner_member_id;
+          return ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : 'Unassigned';
+        },
+        {
+          id: 'ownerName',
+          header: 'Owner',
+          size: 180,
+          cell: (info) => (
+            <InlineOwnerCell
+              contact={info.row.original}
+              assignableMembers={assignableMembers}
+              ownerNameMap={ownerNameMap}
+              onUpdate={updateContactField}
+            />
+          ),
+        }
+      ),
+      columnHelper.accessor('created_at', {
+        id: 'createdAt',
+        header: 'Created',
+        size: 120,
+        enableGrouping: false,
+        cell: (info) => {
+          const val = info.getValue();
+          if (!val) return null;
+          return (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {format(parseISO(val), 'MMM d, yyyy')}
+            </span>
+          );
+        },
+      }),
+      columnHelper.display({
+        id: 'actions',
+        header: '',
+        size: 44,
+        enableGrouping: false,
+        cell: (info) => (
+          <InlineActionsCell
+            contact={info.row.original}
+            onOpen={onRowClick}
+            onDelete={handleDelete}
+          />
+        ),
+      }),
+    ],
+    [ownerNameMap, assignableMembers, onRowClick, updateContactField, handleDelete],
+  );
+
+  const grouping: GroupingState = useMemo(() => {
+    const colId = GROUP_COLUMN_MAP[groupBy];
+    return colId ? [colId] : [];
+  }, [groupBy]);
+
+  const table = useReactTable({
+    data: localContacts,
+    columns: tableColumns,
+    state: {
+      grouping,
+      expanded,
+    },
+    onExpandedChange: setExpanded,
+    autoResetExpanded: false,
+    getRowId: (row) => row.id,
+    getExpandedRowModel: getExpandedRowModel(),
+    getGroupedRowModel: getGroupedRowModel(),
+    getCoreRowModel: getCoreRowModel(),
+  });
+
+  const { rows } = table.getRowModel();
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: (index) => {
+      const row = rows[index];
+      return row?.getIsGrouped() ? 40 : 36;
+    },
+    overscan: 20,
+  });
 
   if (isLoading) {
     return (
-      <div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left text-muted-foreground">
-              {headers.map((h) => (
-                <th key={h.field} className="pb-2 pr-4 font-medium">{h.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <tr key={i} className="border-b">
-                <td className="py-2.5 pr-4"><Skeleton className="h-4 w-32" /><Skeleton className="mt-1 h-3 w-20" /></td>
-                <td className="py-2.5 pr-4"><Skeleton className="h-4 w-40" /></td>
-                <td className="py-2.5 pr-4"><Skeleton className="h-5 w-20 rounded-full" /></td>
-                <td className="py-2.5 pr-4"><Skeleton className="h-4 w-24" /></td>
-                <td className="py-2.5"><Skeleton className="h-4 w-24" /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Loading contacts...
       </div>
     );
   }
@@ -117,49 +312,320 @@ export function ContactsTable({ contacts, total, isLoading, onRowClick, onCreate
   }
 
   return (
-    <div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b text-left text-muted-foreground">
-            {headers.map((h) => (
-              <th key={h.field} className={`pb-2 font-medium ${h.field !== 'created_at' ? 'pr-4' : ''}`}>
-                <button
-                  className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
-                  onClick={() => toggleSort(h.field)}
-                >
-                  {h.label}
-                  <SortIcon field={h.field} sortField={sortField} sortDir={sortDir} />
-                </button>
-              </th>
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      {/* Group By control */}
+      <div className="flex items-center gap-2 px-1">
+        <span className="text-xs text-muted-foreground">Group by:</span>
+        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
+          <SelectTrigger className="h-7 w-[160px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {GROUP_BY_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
             ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((contact) => (
-            <tr
-              key={contact.id}
-              className="cursor-pointer border-b transition-colors hover:bg-muted/50"
-              onClick={() => onRowClick(contact.id)}
-            >
-              <td className="py-2.5 pr-4">
-                <div className="font-medium">{contact.first_name} {contact.last_name}</div>
-                <div className="text-xs text-muted-foreground">{contact.display_id}</div>
-              </td>
-              <td className="py-2.5 pr-4 text-muted-foreground">{contact.email ?? '-'}</td>
-              <td className="py-2.5 pr-4">
-                <Badge variant="outline" className={lifecycleColors[contact.lifecycle_stage] ?? ''}>
-                  {contact.lifecycle_stage.replace(/_/g, ' ')}
-                </Badge>
-              </td>
-              <td className="py-2.5 pr-4 capitalize">{contact.lead_status.replace(/_/g, ' ')}</td>
-              <td className="py-2.5 text-muted-foreground">
-                {format(new Date(contact.created_at), 'MMM d, yyyy')}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="mt-2 text-xs text-muted-foreground">{total} total contacts</p>
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">
+          {localContacts.length} {localContacts.length === 1 ? 'contact' : 'contacts'}
+        </span>
+      </div>
+
+      {/* Table */}
+      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border/70">
+        <div className="min-w-fit">
+          {/* Header */}
+          <div className="sticky top-0 z-10 border-b border-border/70 bg-muted/50">
+            {table.getHeaderGroups().map((headerGroup) => (
+              <div key={headerGroup.id} className="flex items-center">
+                {headerGroup.headers.map((header) => {
+                  if (header.column.getIsGrouped()) return null;
+                  const size = header.getSize();
+                  if (size === 0) return null;
+                  return (
+                    <div
+                      key={header.id}
+                      className={`px-2 py-1.5 text-xs font-medium text-muted-foreground ${size !== 999 ? 'text-center' : ''}`}
+                      style={{
+                        width: size === 999 ? undefined : size,
+                        flex: size === 999 ? '1 1 0%' : undefined,
+                        minWidth: size === 999 ? 300 : undefined,
+                      }}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          {/* Virtualized body */}
+          <div
+            ref={parentRef}
+            className="overflow-auto"
+            style={{ height: 'calc(100% - 30px)' }}
+          >
+            <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const row = rows[virtualRow.index] as Row<CRMContact>;
+                const isGrouped = row.getIsGrouped();
+
+                return (
+                  <div
+                    key={row.id}
+                    data-index={virtualRow.index}
+                    ref={virtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {isGrouped ? (
+                      <GroupHeaderRow row={row} />
+                    ) : (
+                      <DataRow row={row} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
+  );
+}
+
+// ── Group Header Row ──────────────────────────────────────────────
+
+function GroupHeaderRow({ row }: { row: Row<CRMContact> }) {
+  const subRows = row.subRows;
+  const count = subRows.length;
+  const groupValue = row.groupingValue as string;
+
+  return (
+    <div
+      className="flex h-10 cursor-pointer items-center gap-2 border-b border-border/50 bg-muted/40 px-3 text-sm font-semibold hover:bg-muted/60"
+      onClick={() => row.toggleExpanded()}
+    >
+      {row.getIsExpanded() ? (
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+      ) : (
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+      )}
+      <span className="capitalize">{groupValue}</span>
+      <span className="ml-2 text-xs font-normal text-muted-foreground">
+        {count} {count === 1 ? 'contact' : 'contacts'}
+      </span>
+    </div>
+  );
+}
+
+// ── Data Row ──────────────────────────────────────────────────────
+
+function DataRow({ row }: { row: Row<CRMContact> }) {
+  return (
+    <div className="flex h-9 items-center border-b border-border/30 transition-colors hover:bg-muted/30">
+      {row.getVisibleCells().map((cell) => {
+        if (cell.column.getIsGrouped()) return null;
+        const size = cell.column.getSize();
+        if (size === 0) return null;
+        return (
+          <div
+            key={cell.id}
+            className={`flex items-center px-2 ${size !== 999 ? 'justify-center' : ''}`}
+            style={{
+              width: size === 999 ? undefined : size,
+              flex: size === 999 ? '1 1 0%' : undefined,
+              minWidth: size === 999 ? 300 : undefined,
+            }}
+          >
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Inline Editing Cells ──────────────────────────────────────────
+
+function InlineLifecycleCell({
+  contact,
+  onUpdate,
+}: {
+  contact: CRMContact;
+  onUpdate: (id: string, patch: Partial<CRMContact>) => void;
+}) {
+  return (
+    <Select
+      value={contact.lifecycle_stage}
+      onValueChange={(value) => onUpdate(contact.id, { lifecycle_stage: value as LifecycleStage })}
+    >
+      <SelectTrigger
+        className="h-6 w-full gap-1 border-none bg-transparent px-1 text-xs shadow-none hover:bg-muted"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${lifecycleColors[contact.lifecycle_stage] ?? ''}`}>
+          {contact.lifecycle_stage.replace(/_/g, ' ')}
+        </Badge>
+      </SelectTrigger>
+      <SelectContent>
+        {LIFECYCLE_STAGES.map((s) => (
+          <SelectItem key={s.value} value={s.value}>
+            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${lifecycleColors[s.value] ?? ''}`}>
+              {s.label}
+            </Badge>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function InlineLeadStatusCell({
+  contact,
+  onUpdate,
+}: {
+  contact: CRMContact;
+  onUpdate: (id: string, patch: Partial<CRMContact>) => void;
+}) {
+  return (
+    <Select
+      value={contact.lead_status}
+      onValueChange={(value) => onUpdate(contact.id, { lead_status: value as LeadStatus })}
+    >
+      <SelectTrigger
+        className="h-6 w-full gap-1 border-none bg-transparent px-1 text-xs shadow-none hover:bg-muted"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="truncate capitalize">{contact.lead_status.replace(/_/g, ' ')}</span>
+      </SelectTrigger>
+      <SelectContent>
+        {LEAD_STATUSES.map((s) => (
+          <SelectItem key={s.value} value={s.value}>
+            {s.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function InlineOwnerCell({
+  contact,
+  assignableMembers,
+  ownerNameMap,
+  onUpdate,
+}: {
+  contact: CRMContact;
+  assignableMembers: AssignableMember[];
+  ownerNameMap: Map<string, string>;
+  onUpdate: (id: string, patch: Partial<CRMContact>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ownerName = contact.owner_member_id ? ownerNameMap.get(contact.owner_member_id) ?? 'Unknown' : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className="flex w-full items-center gap-1.5 truncate text-xs hover:text-primary"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        >
+          {ownerName ? (
+            <>
+              <UserAvatar name={ownerName} className="h-5 w-5 shrink-0" />
+              <span className="truncate">{ownerName}</span>
+            </>
+          ) : (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <UserPlus className="h-3 w-3" /> Assign
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent
+          className="w-[220px] p-0"
+          align="start"
+          side="bottom"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Command>
+            <CommandInput placeholder="Search members..." className="h-8 text-xs" />
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No members found</CommandEmpty>
+              <CommandGroup>
+                {assignableMembers.map((m) => {
+                  const name = ownerNameMap.get(m.id) ?? m.display_name ?? m.email;
+                  const isSelected = contact.owner_member_id === m.id;
+                  return (
+                    <CommandItem
+                      key={m.id}
+                      value={name}
+                      onSelect={() => {
+                        onUpdate(contact.id, { owner_member_id: isSelected ? '' : m.id });
+                        setOpen(false);
+                      }}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <UserAvatar name={name} className="h-5 w-5" />
+                      <span className="truncate">{name}</span>
+                      {isSelected && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      )}
+    </Popover>
+  );
+}
+
+function InlineActionsCell({
+  contact,
+  onOpen,
+  onDelete,
+}: {
+  contact: CRMContact;
+  onOpen: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 [div:hover>&]:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <EllipsisVertical className="h-3.5 w-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[140px]">
+        <DropdownMenuItem onClick={() => onOpen(contact.id)}>
+          <ExternalLink className="mr-2 h-3.5 w-3.5" />
+          Open
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onClick={() => onDelete(contact.id)}
+        >
+          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

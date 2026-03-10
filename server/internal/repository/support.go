@@ -64,6 +64,22 @@ func (r *SupportTicketRepository) GetByID(ctx context.Context, workspaceID, id s
 	return &ticket, nil
 }
 
+// ListByIDs returns tickets by ID for a workspace.
+func (r *SupportTicketRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.SupportTicket, error) {
+	if len(ids) == 0 {
+		return []model.SupportTicket{}, nil
+	}
+
+	var tickets []model.SupportTicket
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Order("updated_at DESC").
+		Find(&tickets).Error; err != nil {
+		return nil, fmt.Errorf("list tickets by ids: %w", err)
+	}
+	return tickets, nil
+}
+
 // Create creates a new ticket with auto-allocated display_id.
 func (r *SupportTicketRepository) Create(ctx context.Context, ticket *model.SupportTicket) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -101,6 +117,33 @@ func (r *SupportTicketRepository) ListByLinkedStoryIDs(ctx context.Context, work
 		return nil, fmt.Errorf("list tickets by linked stories: %w", err)
 	}
 	return tickets, nil
+}
+
+// ListByContact returns tickets linked to a CRM contact.
+func (r *SupportTicketRepository) ListByContact(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportTicket, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.SupportTicket{}).
+		Where("workspace_id = ? AND crm_contact_id = ?", workspaceID, contactID)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count contact tickets: %w", err)
+	}
+
+	page := pagination.Page
+	perPage := pagination.PerPage
+	if page <= 0 {
+		page = 1
+	}
+	if perPage <= 0 {
+		perPage = 50
+	}
+	offset := (page - 1) * perPage
+
+	var tickets []model.SupportTicket
+	if err := query.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&tickets).Error; err != nil {
+		return nil, 0, fmt.Errorf("list contact tickets: %w", err)
+	}
+	return tickets, total, nil
 }
 
 // SupportMessageRepository handles DB operations for support messages.

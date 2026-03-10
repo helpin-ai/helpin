@@ -42,7 +42,7 @@ export function GenerateStoriesStep({
     return (
       <StepCard status={effectiveStatus}>
         <div className="flex items-center gap-2">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">4</span>
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">5</span>
           <span className="text-sm text-muted-foreground">Generate stories</span>
         </div>
       </StepCard>

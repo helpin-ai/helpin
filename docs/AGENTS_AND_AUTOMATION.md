@@ -217,6 +217,16 @@ The current implementation uses shared runners, not one container or pod per run
 
 Stories separate planning state from Git delivery state.
 
+Dependency semantics follow a Shortcut-style model:
+
+- `blocks` links are the source of truth for story-to-story sequencing
+- story cards treat `blocked` as active-state only
+- `blocked_by` remains visible in story detail even after a blocking story is completed
+- external non-story blockers remain a separate free-text note
+- story names stay flat; Teampulse does not add phase prefixes to titles
+- story-to-story authoring happens through a dedicated relationships composer, not title prefixes
+- cross-object links stay visible under a shared `Associations` surface, but only story relationships affect workflow state
+
 ### Team defaults
 
 Each team can define:
@@ -381,6 +391,7 @@ Core rules:
 ### Planning stages
 
 - `draft_spec`
+- `awaiting_spec_clarification`
 - `awaiting_spec_approval`
 - `plan_stories`
 - `awaiting_plan_approval`
@@ -394,13 +405,31 @@ Practical flow:
 1. Epic planning ensures a `product_spec` doc exists.
 2. The product planner drafts spec content from epic metadata, linked docs, linked support tickets, operator notes, bounded live repo context, and optional external web research.
 3. The worker writes the result into Docs and snapshots a `DocsVersion` labeled `AI Draft`.
-4. The epic moves to `awaiting_spec_approval`.
+4. The worker extracts `assumptions` and `open_questions` from the draft into persisted epic clarifications.
+5. The epic moves to `awaiting_spec_clarification` when clarification items exist, otherwise directly to `awaiting_spec_approval`.
 
 Artifacts:
 
 - `product_spec_draft`
 - `external_research_sources` when external citations were used
 - normal run logs and conversation artifacts
+
+### Clarify spec stage
+
+Before approval, a human resolves the planner's uncertainty explicitly.
+
+Practical flow:
+
+1. The product planner returns both `assumptions` and `open_questions`.
+2. Teampulse stores them as epic clarification items.
+3. A human answers open questions and accepts or rejects assumptions in the epic planning UI.
+4. Once all clarification items are resolved, the epic moves to `awaiting_spec_approval`.
+
+Important semantics:
+
+- this is the product-owner decision boundary, not a prompt side effect
+- rejected assumptions require an explanatory note
+- approved planning should not proceed while clarification items remain unresolved
 
 ### Spec approval boundary
 
@@ -411,6 +440,7 @@ Important semantics:
 - `approved_spec_version_id` pins the exact version used for later story planning
 - new drafts can be generated later without invalidating the previously approved version until a human approves again
 - when external research is used, the saved spec includes a normalized `Research Sources` section appended by the runtime
+- when clarifications exist, the runtime appends a normalized `Clarifications` section into the spec before creating the approved version
 
 ### Story planning stage
 
@@ -419,8 +449,10 @@ Practical flow:
 1. A `plan_stories` run loads the approved spec version.
 2. The worker clones the epic planning repository and builds an ephemeral bounded code-context summary.
 3. The product planner proposes stories with stable refs, dependencies, acceptance criteria, risks, and open questions.
-4. The epic moves to `awaiting_plan_approval`.
-5. A human confirms the proposal before stories are created.
+4. Resolved spec clarifications are injected into the planning prompt alongside the approved spec snapshot.
+5. Stories are expected to prefer vertical, user-visible slices; enabler stories are exceptions, not the default.
+6. The epic moves to `awaiting_plan_approval`.
+7. A human confirms the proposal before stories are created.
 
 Artifacts:
 
@@ -451,6 +483,8 @@ The story-level `additional_context` includes:
 - acceptance criteria
 - dependency refs
 - source refs
+
+Story dependencies are handed off as explicit links and refs, not as phase labels.
 
 This preserves the planning model even if future execution moves from the current shared API executor to CLI-native runtimes such as `codex_cli` or `claude_cli`.
 
@@ -615,6 +649,11 @@ Current UI support:
   - branch preview
   - PR status
   - manual run action
+- story, epic, and support detail `Associations` panel:
+  - Shortcut-style story relationships
+  - linked support tickets
+  - linked CRM records
+  - linked docs
 - epic detail planning surface:
   - product planner assignment
   - spec draft

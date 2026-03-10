@@ -10,19 +10,21 @@ interface Props {
   status: StepStatus;
   epic: Epic;
   specDocTitle: string;
+  canApprove: boolean;
+  pendingClarifyCount: number;
   onApproveSpec: () => void;
   onOpenSpecDoc: () => void;
   approvingSpec: boolean;
 }
 
-export function ApproveSpecStep({ status, epic, specDocTitle, onApproveSpec, onOpenSpecDoc, approvingSpec }: Props) {
+export function ApproveSpecStep({ status, epic, specDocTitle, canApprove, pendingClarifyCount, onApproveSpec, onOpenSpecDoc, approvingSpec }: Props) {
   const [expanded, setExpanded] = useState(status === 'current');
 
   if (status === 'upcoming') {
     return (
       <StepCard status={status}>
         <div className="flex items-center gap-2">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">3</span>
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">4</span>
           <span className="text-sm text-muted-foreground">Approve spec</span>
         </div>
       </StepCard>
@@ -62,11 +64,17 @@ export function ApproveSpecStep({ status, epic, specDocTitle, onApproveSpec, onO
           <ExternalLink className="h-3.5 w-3.5" />
           Open {specDocTitle} in Docs
         </Button>
-        <Button size="sm" onClick={onApproveSpec} disabled={!epic.spec_document_id || approvingSpec}>
+        <Button size="sm" onClick={onApproveSpec} disabled={!epic.spec_document_id || approvingSpec || !canApprove}>
           {approvingSpec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
           Approve current version
         </Button>
       </div>
+
+      {!canApprove && pendingClarifyCount > 0 && (
+        <div className="mt-3 rounded-md border border-dashed border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+          Resolve {pendingClarifyCount} remaining {pendingClarifyCount === 1 ? 'clarification' : 'clarifications'} before approving the spec.
+        </div>
+      )}
     </StepCard>
   );
 }

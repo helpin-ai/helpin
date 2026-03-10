@@ -104,3 +104,29 @@ func (h *CRMSuggestionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "suggestion deleted"})
 }
+
+// Accept handles POST /api/crm/suggestions/{id}/accept.
+func (h *CRMSuggestionHandler) Accept(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var edits map[string]interface{}
+	// Body is optional
+	_ = decodeJSON(r, &edits)
+
+	suggestion, err := h.suggestionService.AcceptSuggestion(r.Context(), id, edits)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, suggestion)
+}
+
+// Dismiss handles POST /api/crm/suggestions/{id}/dismiss.
+func (h *CRMSuggestionHandler) Dismiss(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	suggestion, err := h.suggestionService.DismissSuggestion(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, suggestion)
+}

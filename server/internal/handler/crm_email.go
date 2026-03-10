@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -89,6 +90,81 @@ func (h *CRMEmailHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "OAuth callback processed"})
+}
+
+// InitiateOAuth handles GET /api/crm/email/oauth/initiate.
+func (h *CRMEmailHandler) InitiateOAuth(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	memberID := middleware.GetUserID(r.Context())
+	if memberID == "" {
+		writeError(w, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+	provider := r.URL.Query().Get("provider")
+	if provider == "" {
+		provider = "gmail"
+	}
+
+	redirectURL, err := h.emailService.InitiateOAuth(r.Context(), workspaceID, memberID, provider)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"redirect_url": redirectURL,
+	})
+}
+
+// OAuthCallbackRedirect handles GET /api/crm/email/oauth/callback.
+func (h *CRMEmailHandler) OAuthCallbackRedirect(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	code := r.URL.Query().Get("code")
+
+	if state == "" || code == "" {
+		writeError(w, http.StatusBadRequest, "state and code are required")
+		return
+	}
+
+	if err := h.emailService.CompleteOAuth(r.Context(), state, code); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "Gmail connected successfully",
+	})
+}
+
+// SendEmail handles POST /api/crm/email/send.
+func (h *CRMEmailHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AccountID string   `json:"account_id"`
+		To        []string `json:"to"`
+		CC        []string `json:"cc"`
+		Subject   string   `json:"subject"`
+		BodyHTML  string   `json:"body_html"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.AccountID == "" || len(req.To) == 0 || req.Subject == "" {
+		writeError(w, http.StatusBadRequest, "account_id, to, and subject are required")
+		return
+	}
+
+	message, err := h.emailService.SendEmail(r.Context(), req.AccountID, req.To, req.CC, req.Subject, req.BodyHTML)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, message)
 }
 
 // ListThreads handles GET /api/crm/email/threads.

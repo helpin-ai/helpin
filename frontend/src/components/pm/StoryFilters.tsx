@@ -19,7 +19,7 @@ import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 
 // ── Types ──────────────────────────────────────────────────────────
 
-type FilterKey = 'priority' | 'severity' | 'story_type' | 'owner_member_id' | 'requester_member_id' | 'label_id' | 'epic_id' | 'sprint_id' | 'blocked';
+type FilterKey = 'priority' | 'severity' | 'story_type' | 'owner_member_id' | 'requester_member_id' | 'label_id' | 'epic_id' | 'sprint_id' | 'blocked' | 'blocking';
 
 type FilterState = Partial<Record<FilterKey, string[]>>;
 
@@ -230,6 +230,10 @@ export function StoryFilterProvider({ assignableMembers, labels, epics, sprints,
       { value: 'true', label: 'Blocked' },
       { value: 'false', label: 'Not blocked' },
     ];
+    const blockingOptions: FilterOption[] = [
+      { value: 'true', label: 'Blocking others' },
+      { value: 'false', label: 'Not blocking others' },
+    ];
 
     return [
       { key: 'priority' as FilterKey, label: 'Priority', options: priorityOptions },
@@ -241,6 +245,7 @@ export function StoryFilterProvider({ assignableMembers, labels, epics, sprints,
       { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions },
       { key: 'sprint_id' as FilterKey, label: 'Sprint', options: sprintOptions },
       { key: 'blocked' as FilterKey, label: 'Blocked', options: blockedOptions },
+      { key: 'blocking' as FilterKey, label: 'Blocking', options: blockingOptions },
     ];
   }, [assignableMembers, labels, epics, sprints]);
 

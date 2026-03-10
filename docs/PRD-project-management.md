@@ -669,7 +669,8 @@ Stories can be linked to express relationships and dependencies.
 #### Auto-computed Story Fields
 
 - `story.blocked = true` when any story has a `blocks` link targeting this story (and blocking story is not Done)
-- `story.blocker = true` when this story has any active `blocks` link
+- `story.blocker` is reserved for external non-story blocker notes
+- stories that block other stories are surfaced through derived `blocking` relationship views, not a separate boolean
 - When blocking story reaches Done → blocked indicator automatically clears
 
 #### Dependency Visualization
