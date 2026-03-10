@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -135,9 +135,9 @@ export function DealsTable({
       const { stage: _stage, pipeline: _pipeline, display_id: _did, ...apiSafe } = patch as Record<string, unknown>;
       const { error } = await crmDealService.update(workspaceId, dealId, apiSafe);
       if (error) setLocalDeals(snapshot);
-      else onDealUpdated?.({ ...localDeals.find((d) => d.id === dealId)!, ...optimisticPatch } as CRMDeal);
+      else onDealUpdated?.({ ...snapshot.find((d) => d.id === dealId)!, ...optimisticPatch } as CRMDeal);
     },
-    [workspaceId, stageMap, onDealUpdated, localDeals],
+    [workspaceId, stageMap, onDealUpdated],
   );
 
   const handleDelete = useCallback(async (dealId: string) => {
@@ -361,13 +361,15 @@ export function DealsTable({
 
   const { rows } = table.getRowModel();
 
+  const estimateSize = useCallback(
+    (index: number) => rows[index]?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT,
+    [rows],
+  );
+
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) => {
-      const row = rows[index];
-      return row?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT;
-    },
+    estimateSize,
     overscan: 20,
   });
 
@@ -497,9 +499,9 @@ export function DealsTable({
                   }}
                 >
                   {isGrouped ? (
-                    <GroupHeaderRow row={row} stageMap={stageMap} groupBy={groupBy} />
+                    <MemoGroupHeaderRow row={row} stageMap={stageMap} groupBy={groupBy} />
                   ) : (
-                    <DataRow row={row} columnSizing={columnSizing} />
+                    <MemoDataRow row={row} />
                   )}
                 </div>
               );
@@ -513,7 +515,7 @@ export function DealsTable({
 
 // ── Group Header Row ──────────────────────────────────────────────
 
-function GroupHeaderRow({
+const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   row,
   stageMap,
   groupBy,
@@ -554,18 +556,18 @@ function GroupHeaderRow({
       </span>
     </div>
   );
-}
+});
 
 // ── Data Row ──────────────────────────────────────────────────────
 
-function DataRow({ row, columnSizing }: { row: Row<CRMDeal>; columnSizing: ColumnSizingState }) {
+const MemoDataRow = memo(function DataRow({ row }: { row: Row<CRMDeal> }) {
   return (
     <div className={TABLE_ROW}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
         const defSize = cell.column.columnDef.size ?? 150;
         const runtimeSize = cell.column.getSize();
-        const isResized = !!columnSizing[cell.column.id];
+        const isResized = runtimeSize !== defSize;
         const colId = cell.column.id;
         const pinnedClass = colId === 'select' ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
@@ -583,7 +585,7 @@ function DataRow({ row, columnSizing }: { row: Row<CRMDeal>; columnSizing: Colum
       })}
     </div>
   );
-}
+});
 
 // ── Inline Editing Cells ──────────────────────────────────────────
 

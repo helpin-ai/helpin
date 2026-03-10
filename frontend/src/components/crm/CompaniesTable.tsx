@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -310,13 +310,15 @@ export function CompaniesTable({
 
   const { rows } = table.getRowModel();
 
+  const estimateSize = useCallback(
+    (index: number) => rows[index]?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT,
+    [rows],
+  );
+
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) => {
-      const row = rows[index];
-      return row?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT;
-    },
+    estimateSize,
     overscan: 20,
   });
 
@@ -446,9 +448,9 @@ export function CompaniesTable({
                   }}
                 >
                   {isGrouped ? (
-                    <GroupHeaderRow row={row} />
+                    <MemoGroupHeaderRow row={row} />
                   ) : (
-                    <DataRow row={row} columnSizing={columnSizing} />
+                    <MemoDataRow row={row} />
                   )}
                 </div>
               );
@@ -462,7 +464,7 @@ export function CompaniesTable({
 
 // ── Group Header Row ──────────────────────────────────────────────
 
-function GroupHeaderRow({ row }: { row: Row<CRMCompany> }) {
+const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMCompany> }) {
   const subRows = row.subRows;
   const count = subRows.length;
   const groupValue = row.groupingValue as string;
@@ -483,18 +485,18 @@ function GroupHeaderRow({ row }: { row: Row<CRMCompany> }) {
       </span>
     </div>
   );
-}
+});
 
 // ── Data Row ──────────────────────────────────────────────────────
 
-function DataRow({ row, columnSizing }: { row: Row<CRMCompany>; columnSizing: ColumnSizingState }) {
+const MemoDataRow = memo(function DataRow({ row }: { row: Row<CRMCompany> }) {
   return (
     <div className={TABLE_ROW}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
         const defSize = cell.column.columnDef.size ?? 150;
         const runtimeSize = cell.column.getSize();
-        const isResized = !!columnSizing[cell.column.id];
+        const isResized = runtimeSize !== defSize;
         const colId = cell.column.id;
         const pinnedClass = colId === 'select' ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
@@ -512,7 +514,7 @@ function DataRow({ row, columnSizing }: { row: Row<CRMCompany>; columnSizing: Co
       })}
     </div>
   );
-}
+});
 
 // ── Inline Editing Cells ──────────────────────────────────────────
 
