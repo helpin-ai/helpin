@@ -369,7 +369,7 @@ export function CreateStoryModal({
         className="max-w-6xl sm:max-w-6xl gap-0 overflow-hidden p-0"
         showCloseButton={false}
       >
-        <div className="flex h-[85vh] flex-col">
+        <div className="flex h-[85vh] max-h-[960px] flex-col">
           {/* Header */}
           <div className="px-6 pt-6 pb-2">
             <h2 className="text-lg font-semibold tracking-tight">
