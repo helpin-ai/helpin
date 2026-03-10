@@ -1,16 +1,25 @@
+import { cn } from '@/lib/utils'
+
 interface ErrorStateProps {
   title?: string
   message?: string
   statusCode?: number
+  fullScreen?: boolean
 }
 
 export function ErrorState({
   title = 'Something went wrong',
   message = "We couldn't load this page. Please try again later.",
   statusCode,
+  fullScreen,
 }: ErrorStateProps) {
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div
+      className={cn(
+        'flex items-center justify-center px-4',
+        fullScreen ? 'min-h-screen' : 'py-20',
+      )}
+    >
       <div className="text-center max-w-md">
         {statusCode && (
           <p

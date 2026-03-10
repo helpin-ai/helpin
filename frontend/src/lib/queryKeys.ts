@@ -178,6 +178,10 @@ export const queryKeys = {
     search: (wsId: string, q: string) => ['crm', wsId, 'search', q] as const,
   },
 
+  userNotificationSettings: {
+    all: () => ['user-notification-settings'] as const,
+  },
+
   notifications: {
     all: (wsId: string) => ['notifications', wsId] as const,
     list: (wsId: string, filter?: string) =>

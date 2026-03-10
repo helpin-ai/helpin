@@ -120,23 +120,56 @@ func resolveChannelPref(pref *model.NotificationPreference, category, channel st
 	return b, true
 }
 
+// GetUserSettings fetches account-level notification settings for a user.
+// Returns defaults if no row exists.
+func (r *NotificationPreferenceRepository) GetUserSettings(ctx context.Context, userID string) (*model.UserNotificationSettings, error) {
+	var settings model.UserNotificationSettings
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).First(&settings).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return &model.UserNotificationSettings{
+				UserID:               userID,
+				EmailEnabled:         true,
+				EmailDigestFrequency: "daily",
+				EmailDigestTime:      "09:00",
+				EmailDigestDay:       1,
+				BadgeMode:            "all",
+				Timezone:             "UTC",
+			}, nil
+		}
+		return nil, fmt.Errorf("get user notification settings: %w", err)
+	}
+	return &settings, nil
+}
+
 // ShouldNotify checks if a user should receive a notification for a given event type and channel.
-// It checks team-level preferences first (if teamID is provided), then falls back to workspace-level.
+// Checks account-level DND first, then workspace mute, then team/workspace category preferences.
 func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, userID, workspaceID, eventType, channel, teamID string) (bool, error) {
+	// 1. Check account-level settings (DND, email enabled)
+	userSettings, err := r.GetUserSettings(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	if userSettings.DoNotDisturb {
+		return false, nil
+	}
+
+	// 2. Get workspace-level preference
 	wsPref, err := r.Get(ctx, userID, workspaceID)
 	if err != nil {
 		return false, err
 	}
 
-	// DND check (workspace-level only)
-	if wsPref.DoNotDisturb {
+	// 3. Mute workspace check
+	if wsPref.MuteWorkspace {
 		return false, nil
 	}
 
 	// Resolve category from event type
 	category := model.EventTypeToCategory[eventType]
 
-	// Check team-level preference first
+	// 4. Check team-level preference first
 	if teamID != "" && category != "" {
 		teamPref, err := r.GetForTeam(ctx, userID, workspaceID, teamID)
 		if err != nil {
@@ -150,7 +183,7 @@ func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, use
 		}
 	}
 
-	// Check workspace-level category preference
+	// 5. Check workspace-level category preference
 	if category != "" {
 		if val, found := resolveChannelPref(wsPref, category, channel); found {
 			return val, nil
@@ -162,12 +195,12 @@ func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, use
 		return val, nil
 	}
 
-	// Default: in_app is always on, email follows EmailEnabled
+	// 6. Default: in_app always on, email follows account-level EmailEnabled
 	if channel == "in_app" {
 		return true, nil
 	}
 	if channel == "email" {
-		return wsPref.EmailEnabled, nil
+		return userSettings.EmailEnabled, nil
 	}
 
 	return true, nil

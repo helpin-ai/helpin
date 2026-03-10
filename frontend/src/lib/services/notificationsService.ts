@@ -4,6 +4,8 @@ import type {
   UnreadCountResponse,
   NotificationPreferences,
   UpdateNotificationPreferencesRequest,
+  UserNotificationSettings,
+  UpdateUserNotificationSettingsRequest,
   EntityFollower,
   NotificationFilter,
 } from '../notificationTypes'
@@ -11,6 +13,14 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`
 
 export const notificationsService = {
+  // Account-level notification settings (no workspace scope)
+  getUserSettings: () =>
+    api.get<UserNotificationSettings>('/user/notification-settings'),
+
+  updateUserSettings: (data: UpdateUserNotificationSettingsRequest) =>
+    api.put<UserNotificationSettings>('/user/notification-settings', data),
+
+  // Workspace-scoped endpoints below
   list: (wsId: string, params?: { status?: string; filter?: NotificationFilter; limit?: number; cursor?: string }) => {
     const searchParams = new URLSearchParams({ workspace_id: wsId })
     if (params?.status) searchParams.set('status', params.status)

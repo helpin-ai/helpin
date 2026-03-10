@@ -1,10 +1,5 @@
 import { cn } from '@/lib/utils'
-
-export interface TocItem {
-  id: string
-  text: string
-  level: number
-}
+import type { TocItem } from '@/lib/toc'
 
 interface TableOfContentsProps {
   items: TocItem[]

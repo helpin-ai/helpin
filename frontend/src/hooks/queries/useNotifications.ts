@@ -2,8 +2,29 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { queryKeys } from '@/lib/queryKeys'
 import { notificationsService } from '@/lib/services/notificationsService'
 import { unwrap } from '@/lib/queryUtils'
-import type { NotificationFilter, UpdateNotificationPreferencesRequest } from '@/lib/notificationTypes'
+import type { NotificationFilter, UpdateNotificationPreferencesRequest, UpdateUserNotificationSettingsRequest } from '@/lib/notificationTypes'
 
+// Account-level notification settings (no workspace scope)
+export function useUserNotificationSettings() {
+  return useQuery({
+    queryKey: queryKeys.userNotificationSettings.all(),
+    queryFn: async () => unwrap(await notificationsService.getUserSettings()),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useUpdateUserNotificationSettings() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: UpdateUserNotificationSettingsRequest) =>
+      notificationsService.updateUserSettings(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.userNotificationSettings.all() })
+    },
+  })
+}
+
+// Workspace-scoped notification hooks
 export function useNotifications(wsId: string, filter: NotificationFilter = 'all') {
   return useInfiniteQuery({
     queryKey: queryKeys.notifications.list(wsId, filter),

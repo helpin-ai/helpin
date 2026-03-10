@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useSpaceNavigation } from '@/hooks/queries'
+import { useDocsContext } from '@/contexts/DocsContext'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { useEffect } from 'react'
@@ -10,7 +11,7 @@ export const Route = createFileRoute('/$spaceSlug/')({
 
 function SpaceIndex() {
   const { spaceSlug } = Route.useParams()
-  const subdomain = Route.useRouteContext({ select: (s) => s.subdomain })
+  const { subdomain } = useDocsContext()
   const { data: navigation } = useSpaceNavigation(subdomain, spaceSlug)
   const navigate = useNavigate()
 

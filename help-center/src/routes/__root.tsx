@@ -2,6 +2,7 @@ import { createRootRouteWithContext } from '@tanstack/react-router'
 import { AppShell } from '@/components/layout/AppShell'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
+import { DocsProvider } from '@/contexts/DocsContext'
 import { useHelpCenterConfig, useSpaces } from '@/hooks/queries'
 import type { HelpCenterContext } from '@/lib/types'
 
@@ -18,36 +19,36 @@ function RootLayout() {
     error: configError,
   } = useHelpCenterConfig(subdomain)
 
-  const {
-    data: spaces,
-    isLoading: spacesLoading,
-  } = useSpaces(subdomain)
+  const { data: spaces, isLoading: spacesLoading } = useSpaces(subdomain)
 
-  // Loading
   if (configLoading || spacesLoading) {
-    return <LoadingState message="Loading help center..." />
+    return <LoadingState message="Loading help center..." fullScreen />
   }
 
-  // Config error — invalid domain / inactive
   if (configError) {
     return (
       <ErrorState
         title="Help Center not found"
         message="This help center does not exist or is not currently available."
         statusCode={404}
+        fullScreen
       />
     )
   }
 
-  // Not published
   if (config && !config.is_published) {
     return (
       <ErrorState
         title="Help Center unavailable"
         message="This help center is not currently published."
+        fullScreen
       />
     )
   }
 
-  return <AppShell config={config} spaces={spaces ?? []} />
+  return (
+    <DocsProvider subdomain={subdomain} config={config!} spaces={spaces ?? []}>
+      <AppShell />
+    </DocsProvider>
+  )
 }
