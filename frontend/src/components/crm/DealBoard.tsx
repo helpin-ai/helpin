@@ -1,36 +1,263 @@
-import { useMemo } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCorners,
+  useSensor,
+  useSensors,
+  useDroppable,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { Maximize2, Minimize2, Plus, SquareKanban } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SquareKanban, Plus } from 'lucide-react';
-import type { CRMDeal, CRMPipeline } from '@/lib/crmTypes';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { StageTypeIcon } from '@/lib/crmConstants';
+import { crmDealService } from '@/lib/services/crmService';
+import { DealCard } from './DealCard';
+import type { CRMDeal, CRMPipeline, CRMPipelineStage } from '@/lib/crmTypes';
+import type { AssignableMember } from '@/lib/types';
 
 interface DealBoardProps {
   deals: CRMDeal[];
   pipeline?: CRMPipeline;
+  workspaceId: string;
+  assignableMembers: AssignableMember[];
+  ownerNameMap: Map<string, string>;
   onDealClick: (id: string) => void;
   onCreateClick?: () => void;
+  onDealUpdated?: (deal: CRMDeal) => void;
+  showEmptyStages: boolean;
 }
 
-export function DealBoard({ deals, pipeline, onDealClick, onCreateClick }: DealBoardProps) {
+interface ColumnProps {
+  stage: CRMPipelineStage;
+  deals: CRMDeal[];
+  collapsed: boolean;
+  onToggleCollapse: (stageId: string) => void;
+  onCreateClick?: () => void;
+  onDealClick: (id: string) => void;
+  workspaceId: string;
+  assignableMembers: AssignableMember[];
+  ownerNameMap: Map<string, string>;
+  onDealUpdated?: (deal: CRMDeal) => void;
+}
+
+function Column({
+  stage,
+  deals,
+  collapsed,
+  onToggleCollapse,
+  onCreateClick,
+  onDealClick,
+  workspaceId,
+  assignableMembers,
+  ownerNameMap,
+  onDealUpdated,
+}: ColumnProps) {
+  const { setNodeRef, isOver } = useDroppable({ id: stage.id });
+  const stageTotal = deals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
+
+  if (collapsed) {
+    return (
+      <QuickTooltip label={`Expand ${stage.name}`}>
+        <section
+          className="flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-4 transition-colors hover:bg-muted/50"
+          onClick={() => onToggleCollapse(stage.id)}
+        >
+          <Maximize2 className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <StageTypeIcon stageType={stage.stage_type} className="mb-2 h-4 w-4 shrink-0" />
+          <span className="text-xs font-medium text-muted-foreground">{deals.length}</span>
+          <div className="mt-3 flex flex-1 items-start">
+            <span
+              className="text-xs font-semibold whitespace-nowrap"
+              style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+            >
+              {stage.name}
+            </span>
+          </div>
+        </section>
+      </QuickTooltip>
+    );
+  }
+
+  return (
+    <section className="flex h-full w-[320px] shrink-0 flex-col">
+      <header className="flex items-center justify-between px-3 pt-4 pb-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+            <StageTypeIcon stageType={stage.stage_type} className="h-4 w-4 shrink-0" />
+            {stage.name}
+          </p>
+          <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+            <span>{deals.length} deals</span>
+            {stageTotal > 0 && (
+              <span>${new Intl.NumberFormat().format(stageTotal)}</span>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-0.5">
+          <QuickTooltip label="Collapse column">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onToggleCollapse(stage.id)}
+            >
+              <Minimize2 className="h-3.5 w-3.5" />
+            </Button>
+          </QuickTooltip>
+          {onCreateClick && (
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCreateClick}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </header>
+
+      <SortableContext items={deals.map((d) => d.id)} strategy={verticalListSortingStrategy}>
+        <div
+          ref={setNodeRef}
+          className={`min-h-0 flex-1 space-y-2 overflow-y-auto p-2 transition-colors ${isOver ? 'bg-primary/5' : ''}`}
+        >
+          {deals.map((deal) => (
+            <DealCard
+              key={deal.id}
+              deal={deal}
+              onOpen={(d) => onDealClick(d.id)}
+              workspaceId={workspaceId}
+              assignableMembers={assignableMembers}
+              ownerNameMap={ownerNameMap}
+              onOwnerChanged={onDealUpdated}
+            />
+          ))}
+
+          {onCreateClick && (
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-xs text-muted-foreground"
+              onClick={onCreateClick}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add deal
+            </Button>
+          )}
+        </div>
+      </SortableContext>
+    </section>
+  );
+}
+
+export function DealBoard({
+  deals,
+  pipeline,
+  workspaceId,
+  assignableMembers,
+  ownerNameMap,
+  onDealClick,
+  onCreateClick,
+  onDealUpdated,
+  showEmptyStages,
+}: DealBoardProps) {
   const stages = useMemo(() => {
     if (!pipeline?.stages) return [];
     return [...pipeline.stages].sort((a, b) => a.position - b.position);
   }, [pipeline?.stages]);
+
+  const [localDeals, setLocalDeals] = useState<CRMDeal[]>(deals);
+  // Keep local deals in sync with prop changes
+  useMemo(() => { setLocalDeals(deals); }, [deals]);
 
   const dealsByStage = useMemo(() => {
     const map = new Map<string, CRMDeal[]>();
     for (const stage of stages) {
       map.set(stage.id, []);
     }
-    for (const deal of deals) {
+    for (const deal of localDeals) {
       const existing = map.get(deal.stage_id);
       if (existing) {
         existing.push(deal);
       }
     }
     return map;
-  }, [deals, stages]);
+  }, [localDeals, stages]);
+
+  const COLLAPSED_KEY = `crm_deal_collapsed_${workspaceId}`;
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(COLLAPSED_KEY);
+      return saved ? new Set(JSON.parse(saved) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+
+  const toggleCollapse = useCallback((stageId: string) => {
+    setCollapsedColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(stageId)) next.delete(stageId);
+      else next.add(stageId);
+      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, [COLLAPSED_KEY]);
+
+  // ── Drag and Drop ─────────────────────────────────────────────
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const [activeDeal, setActiveDeal] = useState<CRMDeal | null>(null);
+
+  const findStageIdByItemId = useCallback(
+    (id: string) => {
+      // Check if id is a stage id directly
+      if (stages.some((s) => s.id === id)) return id;
+      // Otherwise find the deal's stage
+      const deal = localDeals.find((d) => d.id === id);
+      return deal?.stage_id ?? null;
+    },
+    [stages, localDeals],
+  );
+
+  const onDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const deal = localDeals.find((d) => d.id === String(event.active.id));
+      setActiveDeal(deal ?? null);
+    },
+    [localDeals],
+  );
+
+  const onDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      setActiveDeal(null);
+      const { active, over } = event;
+      if (!over) return;
+
+      const activeId = String(active.id);
+      const overId = String(over.id);
+      if (activeId === overId) return;
+
+      const fromStageId = findStageIdByItemId(activeId);
+      const toStageId = findStageIdByItemId(overId);
+      if (!fromStageId || !toStageId) return;
+      if (fromStageId === toStageId) return;
+
+      // Optimistic update
+      const snapshot = localDeals;
+      const targetStage = stages.find((s) => s.id === toStageId);
+      setLocalDeals((current) =>
+        current.map((d) =>
+          d.id === activeId ? { ...d, stage_id: toStageId, stage: targetStage } : d,
+        ),
+      );
+
+      const { error } = await crmDealService.update(workspaceId, activeId, { stage_id: toStageId });
+      if (error) {
+        setLocalDeals(snapshot);
+      } else {
+        onDealUpdated?.({ ...localDeals.find((d) => d.id === activeId)!, stage_id: toStageId, stage: targetStage } as CRMDeal);
+      }
+    },
+    [findStageIdByItemId, stages, localDeals, workspaceId, onDealUpdated],
+  );
 
   if (!pipeline || stages.length === 0) {
     return (
@@ -47,73 +274,43 @@ export function DealBoard({ deals, pipeline, onDealClick, onCreateClick }: DealB
   }
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
-      {stages.map((stage) => {
-        const stageDeals = dealsByStage.get(stage.id) ?? [];
-        const stageTotal = stageDeals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+    >
+      <div className="flex h-full min-w-full gap-3 overflow-x-auto pb-2">
+        {stages
+          .filter((stage) => showEmptyStages || (dealsByStage.get(stage.id)?.length ?? 0) > 0)
+          .map((stage) => (
+            <Column
+              key={stage.id}
+              stage={stage}
+              deals={dealsByStage.get(stage.id) ?? []}
+              collapsed={collapsedColumns.has(stage.id)}
+              onToggleCollapse={toggleCollapse}
+              onCreateClick={onCreateClick}
+              onDealClick={onDealClick}
+              workspaceId={workspaceId}
+              assignableMembers={assignableMembers}
+              ownerNameMap={ownerNameMap}
+              onDealUpdated={onDealUpdated}
+            />
+          ))}
+      </div>
 
-        return (
-          <div key={stage.id} className="flex w-72 shrink-0 flex-col">
-            <div className="mb-2 flex items-center justify-between px-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{stage.name}</span>
-                <Badge variant="secondary" className="text-xs">{stageDeals.length}</Badge>
-              </div>
-              {stageTotal > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  ${stageTotal.toLocaleString()}
-                </span>
-              )}
-            </div>
-
-            <div className="flex min-h-[200px] flex-col gap-2 rounded-lg bg-muted/30 p-2">
-              {stageDeals.map((deal) => (
-                <Card
-                  key={deal.id}
-                  className="cursor-pointer transition-shadow hover:shadow-md"
-                  onClick={() => onDealClick(deal.id)}
-                >
-                  <CardContent className="p-3">
-                    <p className="text-sm font-medium leading-tight">{deal.name}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{deal.display_id}</p>
-                    {deal.amount != null && (
-                      <p className="mt-1.5 text-sm font-medium text-green-600 dark:text-green-400">
-                        {deal.currency} {deal.amount.toLocaleString()}
-                      </p>
-                    )}
-                    {deal.close_date && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Close: {new Date(deal.close_date).toLocaleDateString()}
-                      </p>
-                    )}
-                    {deal.probability != null && (
-                      <div className="mt-1.5 flex items-center gap-1.5">
-                        <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className="h-full rounded-full bg-primary/60"
-                            style={{ width: `${deal.probability}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-muted-foreground">{deal.probability}%</span>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-              {stageDeals.length === 0 && (
-                <div className="flex flex-col items-center justify-center p-4 text-center">
-                  <p className="text-xs text-muted-foreground">No deals in this stage</p>
-                  {onCreateClick && (
-                    <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={onCreateClick}>
-                      <Plus className="mr-1 h-3 w-3" /> Add deal
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+      <DragOverlay>
+        {activeDeal ? (
+          <DealCard
+            deal={activeDeal}
+            onOpen={() => {}}
+            workspaceId={workspaceId}
+            ownerNameMap={ownerNameMap}
+            isOverlay
+          />
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }

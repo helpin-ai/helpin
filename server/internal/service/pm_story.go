@@ -438,9 +438,7 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 	}
 	if req.Blocker != nil {
 		current.Blocker = req.Blocker
-		if strings.TrimSpace(*req.Blocker) != "" {
-			current.Blocked = true
-		}
+		current.Blocked = strings.TrimSpace(*req.Blocker) != ""
 	}
 	if req.Archived != nil {
 		current.Archived = *req.Archived

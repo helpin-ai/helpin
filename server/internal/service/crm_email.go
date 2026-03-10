@@ -2,23 +2,39 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/sync"
 )
 
 // CRMEmailService contains CRM email business logic.
 type CRMEmailService struct {
-	emailRepo   *repository.CRMEmailRepository
-	contactRepo *repository.CRMContactRepository
+	emailRepo     *repository.CRMEmailRepository
+	contactRepo   *repository.CRMContactRepository
+	oauthClient   *oauth.GmailOAuthClient
+	encryptionKey []byte
+	gmailSync     *sync.GmailSyncClient
 }
 
 // NewCRMEmailService creates a new CRMEmailService.
-func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository) *CRMEmailService {
-	return &CRMEmailService{emailRepo: emailRepo, contactRepo: contactRepo}
+func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository, oauthClient *oauth.GmailOAuthClient, encryptionKey []byte, gmailSync *sync.GmailSyncClient) *CRMEmailService {
+	return &CRMEmailService{
+		emailRepo:     emailRepo,
+		contactRepo:   contactRepo,
+		oauthClient:   oauthClient,
+		encryptionKey: encryptionKey,
+		gmailSync:     gmailSync,
+	}
 }
 
 // ── Email Accounts ──
@@ -90,6 +106,162 @@ func (s *CRMEmailService) OAuthCallback(ctx context.Context, accountID string, c
 	}
 	// Stub: actual OAuth token exchange would happen here.
 	return fmt.Errorf("email sync not configured: OAuth token exchange not implemented")
+}
+
+// InitiateOAuth starts the Gmail OAuth flow and returns the redirect URL.
+func (s *CRMEmailService) InitiateOAuth(ctx context.Context, workspaceID, memberID, provider string) (string, error) {
+	if s.oauthClient == nil {
+		return "", fmt.Errorf("Gmail OAuth not configured")
+	}
+	if provider == "" {
+		provider = model.CRMEmailProviderGmail
+	}
+	if provider != model.CRMEmailProviderGmail {
+		return "", fmt.Errorf("only gmail provider is currently supported for OAuth")
+	}
+
+	// Generate a random state token.
+	stateBytes := make([]byte, 32)
+	if _, err := rand.Read(stateBytes); err != nil {
+		return "", fmt.Errorf("generate state token: %w", err)
+	}
+	state := hex.EncodeToString(stateBytes)
+
+	// Create a pending account.
+	account := &model.CRMEmailAccount{
+		WorkspaceID:  workspaceID,
+		MemberID:     memberID,
+		Provider:     provider,
+		EmailAddress: "pending@oauth.local", // Will be updated after OAuth
+		IsActive:     false,
+		OAuthState:   &state,
+		SyncState:    model.JSONB{"status": "pending_oauth"},
+	}
+
+	if err := s.emailRepo.CreateAccount(ctx, account); err != nil {
+		return "", fmt.Errorf("create pending account: %w", err)
+	}
+
+	slog.InfoContext(ctx, "initiated Gmail OAuth flow", "workspace_id", workspaceID, "member_id", memberID)
+
+	return s.oauthClient.GenerateAuthURL(state), nil
+}
+
+// CompleteOAuth handles the OAuth callback, exchanging code for tokens.
+func (s *CRMEmailService) CompleteOAuth(ctx context.Context, state, code string) error {
+	if s.oauthClient == nil {
+		return fmt.Errorf("Gmail OAuth not configured")
+	}
+	if len(s.encryptionKey) == 0 {
+		return fmt.Errorf("encryption key not configured")
+	}
+
+	// Find the account by state.
+	account, err := s.emailRepo.GetAccountByOAuthState(ctx, state)
+	if err != nil {
+		return fmt.Errorf("lookup oauth state: %w", err)
+	}
+	if account == nil {
+		return fmt.Errorf("invalid or expired OAuth state")
+	}
+
+	// Exchange code for tokens.
+	tokenPair, err := s.oauthClient.ExchangeCode(ctx, code)
+	if err != nil {
+		return fmt.Errorf("exchange code: %w", err)
+	}
+
+	// Encrypt tokens.
+	encAccessToken, err := crypto.EncryptString(tokenPair.AccessToken, s.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("encrypt access token: %w", err)
+	}
+	encRefreshToken, err := crypto.EncryptString(tokenPair.RefreshToken, s.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("encrypt refresh token: %w", err)
+	}
+
+	// Update account.
+	account.AccessTokenEncrypted = &encAccessToken
+	account.RefreshTokenEncrypted = &encRefreshToken
+	account.TokenExpiresAt = &tokenPair.ExpiresAt
+	account.OAuthState = nil // Clear state
+	account.IsActive = true
+	account.SyncState = model.JSONB{"status": "connected"}
+
+	// TODO: Fetch the actual email address from the Gmail API userinfo.
+	// For now, the email will be updated on first sync.
+
+	if err := s.emailRepo.UpdateAccount(ctx, account); err != nil {
+		return fmt.Errorf("update account: %w", err)
+	}
+
+	slog.InfoContext(ctx, "completed Gmail OAuth flow", "account_id", account.ID, "workspace_id", account.WorkspaceID)
+
+	return nil
+}
+
+// SendEmail sends an email via Gmail API and stores the outbound message.
+func (s *CRMEmailService) SendEmail(ctx context.Context, accountID string, to, cc []string, subject, bodyHTML string) (*model.CRMEmailMessage, error) {
+	if s.gmailSync == nil {
+		return nil, fmt.Errorf("Gmail sync not configured")
+	}
+
+	account, err := s.emailRepo.GetAccountByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account == nil {
+		return nil, fmt.Errorf("email account not found")
+	}
+	if !account.IsActive {
+		return nil, fmt.Errorf("email account is not active")
+	}
+
+	accessToken, err := s.gmailSync.GetValidToken(ctx, account)
+	if err != nil {
+		return nil, fmt.Errorf("get valid token: %w", err)
+	}
+
+	messageID, err := s.gmailSync.SendMessage(ctx, accessToken, account.EmailAddress, to, cc, subject, bodyHTML)
+	if err != nil {
+		return nil, fmt.Errorf("send email: %w", err)
+	}
+
+	// Build to/cc as JSONB.
+	toJSON, _ := json.Marshal(to)
+	ccJSON, _ := json.Marshal(cc)
+
+	now := time.Now()
+	message := &model.CRMEmailMessage{
+		WorkspaceID:       account.WorkspaceID,
+		EmailAccountID:    account.ID,
+		MessageExternalID: messageID,
+		FromAddress:       account.EmailAddress,
+		ToAddresses:       mustUnmarshalJSONB(toJSON),
+		CCAddresses:       mustUnmarshalJSONB(ccJSON),
+		Subject:           subject,
+		BodyHTML:          &bodyHTML,
+		Direction:         model.CRMEmailDirectionOutbound,
+		SentAt:            now,
+	}
+
+	// Auto-match contact by first "to" address.
+	if len(to) > 0 {
+		matchedContact := s.matchContactByEmail(ctx, account.WorkspaceID, to[0])
+		if matchedContact != nil {
+			message.ContactID = &matchedContact.ID
+		}
+	}
+
+	if err := s.emailRepo.CreateMessage(ctx, message); err != nil {
+		slog.ErrorContext(ctx, "failed to store sent email", "error", err, "account_id", accountID)
+		// Don't fail the send — the email was already sent.
+	}
+
+	slog.InfoContext(ctx, "email sent", "account_id", accountID, "message_id", messageID, "to", to)
+
+	return message, nil
 }
 
 // ── Email Threads ──
@@ -176,4 +348,18 @@ func (s *CRMEmailService) matchContactByEmail(ctx context.Context, workspaceID, 
 		return &contacts[0]
 	}
 	return nil
+}
+
+// mustUnmarshalJSONB converts JSON bytes to a JSONB map.
+func mustUnmarshalJSONB(data []byte) model.JSONB {
+	var result model.JSONB
+	if err := json.Unmarshal(data, &result); err != nil {
+		// The data might be a JSON array — wrap it.
+		var arr []interface{}
+		if err2 := json.Unmarshal(data, &arr); err2 == nil {
+			return model.JSONB{"items": arr}
+		}
+		return model.JSONB{}
+	}
+	return result
 }

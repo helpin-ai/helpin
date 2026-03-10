@@ -40,14 +40,16 @@ type planningRunInput struct {
 }
 
 type planningRunSummary struct {
-	Stage               string                       `json:"stage"`
-	SpecDocumentID      string                       `json:"spec_document_id,omitempty"`
-	SpecVersionID       string                       `json:"spec_version_id,omitempty"`
-	PlanningMethodology string                       `json:"planning_methodology,omitempty"`
-	Summary             string                       `json:"summary,omitempty"`
-	Risks               []string                     `json:"risks,omitempty"`
-	OpenQuestions       []string                     `json:"open_questions,omitempty"`
-	Proposal            *model.OrchestrationProposal `json:"proposal,omitempty"`
+	Stage               string                        `json:"stage"`
+	SpecDocumentID      string                        `json:"spec_document_id,omitempty"`
+	SpecVersionID       string                        `json:"spec_version_id,omitempty"`
+	PlanningMethodology string                        `json:"planning_methodology,omitempty"`
+	Summary             string                        `json:"summary,omitempty"`
+	Risks               []string                      `json:"risks,omitempty"`
+	Assumptions         []string                      `json:"assumptions,omitempty"`
+	OpenQuestions       []string                      `json:"open_questions,omitempty"`
+	Clarifications      []model.SpecClarificationItem `json:"clarifications,omitempty"`
+	Proposal            *model.OrchestrationProposal  `json:"proposal,omitempty"`
 }
 
 // AgentRunActivities contains the Temporal activities that execute an agent run.
@@ -832,7 +834,7 @@ func (a *AgentRunActivities) buildDraftSpecInstructions(ctx context.Context, sta
 		sections = append(sections, fmt.Sprintf("External research is enabled for this run through the %s provider. Use the web_search tool when market context, standards, competitors, or external evidence would improve the spec. Return any sources separately in the JSON sources field instead of embedding a Research Sources section in spec_markdown.", input.PlanningWebSearchProvider))
 	}
 
-	sections = append(sections, "Use this normalized section structure in the spec markdown:\n# Problem\n## User Impact\n## Source Context\n## Goals\n## Non-goals\n## Requirements\n## Scenarios\n## Constraints / Risks\n## Success Metrics\n## Proposed Story Areas\n## Open Questions")
+	sections = append(sections, "Use this normalized section structure in the spec markdown:\n# Problem\n## User Impact\n## Source Context\n## Goals\n## Non-goals\n## Requirements\n## Scenarios\n## Constraints / Risks\n## Success Metrics\n## Proposed Story Areas\n## Assumptions\n## Open Questions")
 
 	return strings.Join(sections, "\n\n"), nil
 }
@@ -855,6 +857,7 @@ func (a *AgentRunActivities) buildStoryPlanInstructions(ctx context.Context, sta
 
 	var sections []string
 	sections = append(sections, "Create a dependency-aware story plan from the approved spec. Do not rewrite the spec; turn it into implementation-ready stories with stable refs, explicit dependencies, and clear acceptance criteria.")
+	sections = append(sections, "Prefer vertical, user-visible slices that can be tested independently. Only introduce enabler stories when a vertical slice would be unsafe or misleading.")
 	sections = append(sections, fmt.Sprintf("Approved spec version ID: %s", version.ID))
 	if input.SpecDocumentID != "" {
 		sections = append(sections, fmt.Sprintf("Canonical product spec document ID: %s", input.SpecDocumentID))
@@ -862,6 +865,17 @@ func (a *AgentRunActivities) buildStoryPlanInstructions(ctx context.Context, sta
 	sections = append(sections, fmt.Sprintf("Planning repository: %s", state.repository.FullName))
 	if strings.TrimSpace(version.ContentText) != "" {
 		sections = append(sections, "Approved spec snapshot:\n"+truncatePlanningText(version.ContentText, 16000))
+	}
+	if clarifications := model.ParseSpecClarifications(state.epic.SpecClarifications); len(clarifications) > 0 {
+		resolved := make([]model.SpecClarificationItem, 0, len(clarifications))
+		for _, item := range clarifications {
+			if model.SpecClarificationResolved(item) {
+				resolved = append(resolved, item)
+			}
+		}
+		if len(resolved) > 0 {
+			sections = append(sections, "Resolved open questions and assumptions:\n"+renderSpecClarificationsContext(resolved))
+		}
 	}
 	if input.AdditionalContext != "" {
 		sections = append(sections, "Operator notes:\n"+input.AdditionalContext)
@@ -1003,8 +1017,16 @@ func (a *AgentRunActivities) finalizeDraftSpecRun(ctx context.Context, state *re
 		return err
 	}
 
+	clarifications := buildDraftSpecClarifications(draft)
 	state.epic.SpecDocumentID = &doc.ID
-	state.epic.PlanningState = model.EpicPlanningStateAwaitingSpecApproval
+	state.epic.SpecClarifications = model.MarshalSpecClarifications(clarifications)
+	state.epic.SpecClarifiedAt = nil
+	state.epic.SpecClarifiedBy = nil
+	if len(clarifications) > 0 {
+		state.epic.PlanningState = model.EpicPlanningStateAwaitingClarification
+	} else {
+		state.epic.PlanningState = model.EpicPlanningStateAwaitingSpecApproval
+	}
 	state.epic.LastPlanningRunID = &state.run.ID
 	if err := a.epicRepo.Update(ctx, state.epic); err != nil {
 		return err
@@ -1017,7 +1039,9 @@ func (a *AgentRunActivities) finalizeDraftSpecRun(ctx context.Context, state *re
 		PlanningMethodology: input.PlanningMethodology,
 		Summary:             strings.TrimSpace(draft.Summary),
 		Risks:               append([]string(nil), draft.Risks...),
+		Assumptions:         append([]string(nil), draft.Assumptions...),
 		OpenQuestions:       append([]string(nil), draft.OpenQuestions...),
+		Clarifications:      clarifications,
 	})
 	state.run.OutputSummary = summary
 
@@ -1615,6 +1639,17 @@ func validatePlanningProposalStories(stories []model.ProposedStory) error {
 		if stories[idx].Name == "" {
 			return fmt.Errorf("proposed story %d is missing a name", idx+1)
 		}
+		filteredCriteria := make([]string, 0, len(stories[idx].AcceptanceCriteria))
+		for _, item := range stories[idx].AcceptanceCriteria {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				filteredCriteria = append(filteredCriteria, item)
+			}
+		}
+		stories[idx].AcceptanceCriteria = filteredCriteria
+		if len(filteredCriteria) == 0 {
+			return fmt.Errorf("proposed story %d is missing acceptance criteria", idx+1)
+		}
 		stories[idx].Ref = strings.TrimSpace(stories[idx].Ref)
 		if stories[idx].Ref == "" {
 			stories[idx].Ref = fmt.Sprintf("story_%d", idx+1)
@@ -1663,6 +1698,52 @@ func validatePlanningProposalStories(stories []model.ProposedStory) error {
 		}
 	}
 	return nil
+}
+
+func buildDraftSpecClarifications(draft model.ProductSpecDraft) []model.SpecClarificationItem {
+	items := make([]model.SpecClarificationItem, 0, len(draft.OpenQuestions)+len(draft.Assumptions))
+	for idx, question := range draft.OpenQuestions {
+		question = strings.TrimSpace(question)
+		if question == "" {
+			continue
+		}
+		items = append(items, model.SpecClarificationItem{
+			ID:          fmt.Sprintf("open_question_%d", idx+1),
+			Kind:        model.SpecClarificationKindOpenQuestion,
+			Prompt:      question,
+			Disposition: model.SpecClarificationDispositionPending,
+		})
+	}
+	for idx, assumption := range draft.Assumptions {
+		assumption = strings.TrimSpace(assumption)
+		if assumption == "" {
+			continue
+		}
+		items = append(items, model.SpecClarificationItem{
+			ID:          fmt.Sprintf("assumption_%d", idx+1),
+			Kind:        model.SpecClarificationKindAssumption,
+			Prompt:      assumption,
+			Disposition: model.SpecClarificationDispositionPending,
+		})
+	}
+	return items
+}
+
+func renderSpecClarificationsContext(items []model.SpecClarificationItem) string {
+	lines := make([]string, 0, len(items))
+	for _, item := range items {
+		switch item.Kind {
+		case model.SpecClarificationKindOpenQuestion:
+			lines = append(lines, fmt.Sprintf("- %s -> %s", item.Prompt, item.Response))
+		case model.SpecClarificationKindAssumption:
+			if item.Disposition == model.SpecClarificationDispositionAccepted {
+				lines = append(lines, fmt.Sprintf("- %s -> accepted", item.Prompt))
+			} else if item.Disposition == model.SpecClarificationDispositionRejected {
+				lines = append(lines, fmt.Sprintf("- %s -> rejected: %s", item.Prompt, item.Response))
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func markdownToDocsJSON(markdown string) json.RawMessage {

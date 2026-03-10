@@ -10,11 +10,12 @@ Teampulse treats epic planning as a staged, docs-first pipeline:
 
 1. An epic gets a canonical `product_spec` document in Docs.
 2. A `draft_spec` product-planner run uses the epic planning repository plus optional external web research, writes a fresh cited draft into that document, and snapshots an `AI Draft` version.
-3. A human edits the document in Docs and explicitly approves a version.
-4. A `plan_stories` product-planner run reads the approved version and proposes a dependency-aware story plan.
-5. A human confirms the plan.
-6. Teampulse creates stories and story dependency links.
-7. Optional story-level execution starts from the created stories, never from the epic directly.
+3. The planner's assumptions and open questions become explicit clarification items on the epic.
+4. A human resolves those clarifications, edits the document in Docs if needed, and then explicitly approves a version.
+5. A `plan_stories` product-planner run reads the approved version plus resolved clarifications and proposes a dependency-aware story plan.
+6. A human confirms the plan.
+7. Teampulse creates stories and story dependency links.
+8. Optional story-level execution starts from the created stories, never from the epic directly.
 
 The product model is intentionally opinionated:
 
@@ -31,6 +32,7 @@ This follows the staged interaction pattern from GitHub Spec Kit, the structured
 - Preserve explicit human approval boundaries between draft spec and story creation.
 - Keep planning auditable through `agent_run` artifacts and immutable doc versions.
 - Support dependency-aware story creation instead of flat story lists.
+- Keep story titles flat and vertical; use dependency links instead of phase prefixes.
 - Collapse `planner` and `orchestrator` into one product-facing `product_planner` concept.
 - Make invalid agent usage impossible through strict target mapping.
 - Keep planning methodology at workspace scope, not hidden inside individual planner prompts.
@@ -74,6 +76,7 @@ New epic fields:
 Planning states:
 
 - `not_started`
+- `awaiting_spec_clarification`
 - `awaiting_spec_approval`
 - `ready_for_story_planning`
 - `awaiting_plan_approval`
@@ -114,6 +117,7 @@ Current planning flow writes `blocks` links.
 - `summary`
 - `spec_markdown`
 - `risks[]`
+- `assumptions[]`
 - `open_questions[]`
 - `sources[]`
 
@@ -201,14 +205,28 @@ Behavior:
 - Applies the workspace planning methodology during prompt assembly.
 - Persists the returned markdown into Docs content.
 - Creates a `DocsVersion` snapshot labeled `AI Draft`.
-- Updates the epic to `awaiting_spec_approval`.
+- Extracts `assumptions` and `open_questions` into persisted epic clarification items.
+- Updates the epic to `awaiting_spec_clarification` when clarifications exist, otherwise `awaiting_spec_approval`.
 
 Artifacts:
 
 - `product_spec_draft`
 - normal run logs (`conversation_log`, tool logs, etc.)
 
-### Stage 2: Approve Spec
+### Stage 2: Clarify Spec
+
+Entry point:
+
+- `POST /api/pm/epics/{id}/clarify-spec`
+
+Behavior:
+
+- Persists human answers to open questions and human decisions on assumptions.
+- Requires rejected assumptions to include an explanatory note.
+- Keeps the epic in `awaiting_spec_clarification` until every clarification item is resolved.
+- Moves the epic to `awaiting_spec_approval` once all clarification items are resolved.
+
+### Stage 3: Approve Spec
 
 Entry point:
 
@@ -216,6 +234,8 @@ Entry point:
 
 Behavior:
 
+- Blocks approval while clarification items remain unresolved.
+- Syncs a normalized `Clarifications` section into the current Docs content when clarification items exist.
 - Approves either an explicit doc version or the current Docs content.
 - Writes `approved_spec_version_id`.
 - Moves the epic to `ready_for_story_planning`.
@@ -225,7 +245,7 @@ Important semantic:
 
 - approval pins a specific doc version, not “whatever the document says later”
 
-### Stage 3: Plan Stories
+### Stage 4: Plan Stories
 
 Entry point:
 
@@ -235,7 +255,7 @@ Behavior:
 
 - Requires an approved spec version.
 - Requires a configured epic planning repository.
-- Supplies the approved spec snapshot plus linked docs, linked tickets, operator notes, and ephemeral live code context from the planning repository to the product planner.
+- Supplies the approved spec snapshot, resolved clarifications, linked docs, linked tickets, operator notes, and ephemeral live code context from the planning repository to the product planner.
 - Applies the workspace planning methodology during prompt assembly.
 - Produces a reviewable proposal with stories, dependencies, risks, and open questions.
 - Moves the epic to `awaiting_plan_approval`.
@@ -252,7 +272,7 @@ Artifacts:
 - `story_plan_proposal`
 - `orchestration_proposal` for backward compatibility
 
-### Stage 4: Confirm Plan
+### Stage 5: Confirm Plan
 
 Entry point:
 
@@ -264,7 +284,7 @@ Behavior:
 - Rejects self-dependencies and circular `blocks` graphs.
 - Creates PM stories.
 - Writes `pm_story_links` from dependency refs.
-- Marks blocked stories as blocked.
+- Writes `blocks` story links and lets runtime read models derive active blocked state from unresolved inbound dependencies.
 - Stores created story IDs back on the run summary.
 - Moves the epic to `stories_created`.
 
@@ -344,3 +364,9 @@ Other relevant surfaces:
 - DevRev: support-to-product workflow benchmark
 
 These sources inform hidden prompt-pack design and workflow shape only. They are not exposed as product-level agent personas.
+Validation rules before story creation:
+
+- every story must include acceptance criteria
+- story refs must be unique
+- dependency refs must be valid and acyclic
+- plans should prefer vertical, user-visible slices; enabler stories are exceptions

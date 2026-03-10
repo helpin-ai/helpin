@@ -5,6 +5,7 @@ import { useTitle } from '@/hooks/useTitle';
 import {
   Archive,
   ArrowLeft,
+  ArrowRightLeft,
   CalendarDays,
   Check,
   CheckSquare,
@@ -39,7 +40,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu,
@@ -86,6 +86,8 @@ import type {
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
 import { CommentThread } from '@/components/pm/CommentThread';
+import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
+import { StoryRelationshipsSection } from '@/components/pm/StoryRelationshipsSection';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/stories/$storyId');
 
@@ -105,7 +107,6 @@ interface FormState {
   team_id: string;
   owner_member_id: string;
   requester_member_id: string;
-  blocked: boolean;
   blocker: string;
 }
 
@@ -132,7 +133,6 @@ const buildFormState = (story: StoryDetail): FormState => ({
   team_id: story.story.team_id ?? '',
   owner_member_id: story.story.owner_member_id ?? '',
   requester_member_id: story.story.requester_member_id ?? '',
-  blocked: story.story.blocked,
   blocker: story.story.blocker ?? '',
 });
 
@@ -277,6 +277,8 @@ export function StoryDetailPage() {
 
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
+  const relationshipButtonRef = useRef<HTMLButtonElement>(null);
 
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId ?? '');
@@ -611,6 +613,19 @@ export function StoryDetailPage() {
               Checklist
             </button>
             <button
+              ref={relationshipButtonRef}
+              type="button"
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                relationshipComposerOpen
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-border/60 text-muted-foreground hover:bg-accent'
+              }`}
+              onClick={() => setRelationshipComposerOpen(true)}
+            >
+              <ArrowRightLeft className="h-3 w-3" />
+              Relationships
+            </button>
+            <button
               type="button"
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
                 showExternalLinks
@@ -633,6 +648,26 @@ export function StoryDetailPage() {
               Attach Files
             </button>
           </div>
+
+          <StoryRelationshipsSection
+            workspaceId={workspaceId!}
+            storyId={storyDetail.story.id}
+            storyName={storyDetail.story.name}
+            storyDisplayId={storyDetail.story.display_id}
+            workflowId={storyDetail.story.workflow_id}
+            workflowStateId={storyDetail.story.workflow_state_id}
+            epicId={storyDetail.story.epic_id}
+            sprintId={storyDetail.story.sprint_id}
+            teamId={storyDetail.story.team_id}
+            storyType={storyDetail.story.story_type}
+            priority={storyDetail.story.priority}
+            severity={storyDetail.story.severity}
+            externalBlocker={form.blocker}
+            onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
+            composerOpen={relationshipComposerOpen}
+            onComposerOpenChange={setRelationshipComposerOpen}
+            externalTriggerRef={relationshipButtonRef}
+          />
 
           {/* Checklist */}
           {showChecklist && (
@@ -919,22 +954,15 @@ export function StoryDetailPage() {
               />
             </MetadataRow>
 
-            {/* Blocked */}
-            <MetadataRow icon={ShieldAlert} label="Blocked">
-              <div className="flex items-center gap-2">
-                <Switch
-                  size="sm"
-                  checked={form.blocked}
-                  onCheckedChange={(checked) =>
-                    updateField('blocked', checked, { blocked: checked })
-                  }
-                />
-                <span className="text-xs text-muted-foreground">
-                  {form.blocked ? 'Yes' : 'No'}
-                </span>
-              </div>
-            </MetadataRow>
           </div>
+
+          <AssociationsPanel
+            objectType="story"
+            objectId={storyDetail.story.id}
+            workspaceId={workspaceId!}
+            includeStoryRelationships={false}
+            className="mt-6"
+          />
         </aside>
       </div>
 

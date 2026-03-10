@@ -11,7 +11,6 @@ import type { GitRepository, WorkflowState, WorkflowWithStates } from '@/lib/pmT
 import type { SettingsSection } from '@/pages/Settings';
 import { UserAvatar, getAvatarColor } from '@/components/pm/UserAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,10 +21,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn, getInitials } from '@/lib/utils';
-import { ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, Pencil, Plus, RefreshCw, Search, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
+import { ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, Plus, RefreshCw, Search, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { LINEAR_CARD_CLASS } from './settingsConstants';
 
 const slugifyTeamHandle = (value: string) =>
   value

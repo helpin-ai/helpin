@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCompanies } from '@/hooks/queries';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { CompaniesTable } from '@/components/crm/CompaniesTable';
 import { CreateCompanyDialog } from '@/components/crm/CreateCompanyDialog';
 import { useTitle } from '@/hooks/useTitle';
@@ -18,37 +20,48 @@ export function CompaniesPage() {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data, isLoading } = useCompanies(wsId, { search: search || undefined });
+  const { data, isLoading, refetch } = useCompanies(wsId, { search: search || undefined });
+
+  const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
+  const ownerNameMap = useMemo(
+    () => buildAssignableMemberNameMap(assignableMembers),
+    [assignableMembers],
+  );
 
   return (
-    <div className="flex h-full flex-col px-4 md:px-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-medium">Companies</h1>
-        <Button size="sm" onClick={() => setShowCreate(true)}>
-          <Plus className="mr-1 h-4 w-4" />
-          Company
-        </Button>
-      </div>
-
-      <div className="mb-4 max-w-sm">
+    <div className="flex h-full flex-col">
+      {/* Header bar */}
+      <header className="flex flex-wrap items-center gap-2 border-b border-border/70 px-3 py-2">
         <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search companies..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
+            className="h-7 w-48 pl-7 text-xs"
           />
         </div>
-      </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <Button size="sm" className="h-7 text-xs" onClick={() => setShowCreate(true)}>
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            Company
+          </Button>
+        </div>
+      </header>
+
+      {/* Content */}
+      <div className="min-h-0 flex-1 overflow-auto p-3">
         <CompaniesTable
           companies={data?.data ?? []}
-          total={data?.total ?? 0}
+          workspaceId={wsId}
+          assignableMembers={assignableMembers}
+          ownerNameMap={ownerNameMap}
           isLoading={isLoading}
           onRowClick={(id) => navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug: wsSlug, companyId: id } })}
           onCreateClick={() => setShowCreate(true)}
+          onCompanyUpdated={() => refetch()}
+          onCompanyDeleted={() => refetch()}
         />
       </div>
 

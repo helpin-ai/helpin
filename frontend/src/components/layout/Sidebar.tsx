@@ -8,6 +8,7 @@ import {
   Briefcase,
   Building2,
   ChevronDown,
+  ClipboardCheck,
   Clock,
   ChevronRight,
   DollarSign,
@@ -22,6 +23,7 @@ import {
   Layers,
   Lightbulb,
   LogOut,
+  Mail,
   MessageSquare,
   LayoutList,
   Moon,
@@ -30,6 +32,7 @@ import {
   RefreshCw,
   Settings,
   Settings2,
+  Sliders,
   SquareKanban,
   Sun,
   Tag,
@@ -93,11 +96,11 @@ type RailItem = {
 };
 
 function deriveActiveRail(pathname: string): RailId {
+  if (pathname.includes('/settings')) return 'settings';
   if (pathname.includes('/support')) return 'support';
   if (pathname.includes('/crm')) return 'crm';
   if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
   if (pathname.includes('/docs')) return 'docs';
-  if (pathname.includes('/settings')) return 'settings';
   return 'projects';
 }
 
@@ -401,6 +404,7 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarSign },
           { link: `/w/${wsSlug}/crm/lists`, label: 'Lists', icon: LayoutList },
           { link: `/w/${wsSlug}/crm/sequences`, label: 'Sequences', icon: Play },
+          { link: `/w/${wsSlug}/crm/review`, label: 'Review', icon: ClipboardCheck },
           { link: `/w/${wsSlug}/crm/insights`, label: 'Insights', icon: Lightbulb },
         ],
       },
@@ -480,6 +484,8 @@ export function Sidebar() {
         label: 'CRM Settings',
         items: [
           { link: `/w/${wsSlug}/settings/crm-pipelines`, label: 'Pipelines', icon: FolderKanban },
+          { link: `/w/${wsSlug}/settings/crm-email`, label: 'Email Accounts', icon: Mail },
+          { link: `/w/${wsSlug}/settings/crm-autonomy`, label: 'Autonomy', icon: Sliders },
         ],
       },
       {

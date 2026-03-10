@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"log"
 	"os"
 	"os/signal"
@@ -16,8 +17,13 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
+	"github.com/helpin-ai/helpin/server/internal/llm"
+	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/service"
+	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	ws "github.com/helpin-ai/helpin/server/internal/websocket"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
@@ -73,6 +79,21 @@ func main() {
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
+	crmEmailRepo := repository.NewCRMEmailRepository(db)
+	crmContactRepo := repository.NewCRMContactRepository(db)
+	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
+
+	// Gmail OAuth + encryption for email sync.
+	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
+	var encryptionKey []byte
+	if cfg.CRMEncryptionKey != "" {
+		var err error
+		encryptionKey, err = hex.DecodeString(cfg.CRMEncryptionKey)
+		if err != nil {
+			log.Printf("invalid CRM_ENCRYPTION_KEY (must be hex-encoded): %v", err)
+		}
+	}
+	gmailSyncClient := syncpkg.NewGmailSyncClient(gmailOAuth, crmEmailRepo, encryptionKey)
 
 	runtimes := workerpkg.NewDefaultRuntimeRegistry(cfg.AnthropicAPIKey, cfg.BraveSearchAPIKey, runRepo, artifactRepo)
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -104,10 +125,38 @@ func main() {
 		githubAppClient,
 	)
 
+	// Email sync activities (may be nil if Gmail not configured).
+	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo)
+
+	// Signal detection activities.
+	crmSignalRepo := repository.NewCRMSignalRepository(db)
+	var llmProvider llm.Provider
+	switch cfg.CRMLLMProvider {
+	case "openai":
+		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
+	default:
+		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
+	}
+	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo)
+	wsHub := ws.NewHub()
+	wsPublisher := ws.NewPublisher(wsHub)
+	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher)
+
+	// Deal management activities.
+	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
+	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
+	crmDealRepo := repository.NewCRMDealRepository(db)
+	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
+	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
+	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
+	dealMgmtActivities := temporalapp.NewDealManagementActivities(dealAutomationService)
+
+	_ = crmCompanyRepo // available for future enrichment activities
+
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, dealMgmtActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -131,7 +180,7 @@ func main() {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, dealMgmtActivities *temporalapp.DealManagementActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 	}
@@ -143,6 +192,37 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	w.RegisterActivityWithOptions(activities.ExecuteRunActivity, activity.RegisterOptions{
 		Name: "AgentRunActivities.ExecuteRunActivity",
 	})
+
+	// Register email sync workflow and activities.
+	w.RegisterWorkflow(temporalapp.EmailSyncWorkflow)
+	if emailActivities != nil {
+		w.RegisterActivityWithOptions(emailActivities.BackfillEmailsActivity, activity.RegisterOptions{
+			Name: "EmailSyncActivities.BackfillEmailsActivity",
+		})
+		w.RegisterActivityWithOptions(emailActivities.IncrementalSyncActivity, activity.RegisterOptions{
+			Name: "EmailSyncActivities.IncrementalSyncActivity",
+		})
+	}
+
+	// Register signal detection workflow and activities.
+	w.RegisterWorkflow(temporalapp.SignalDetectionWorkflow)
+	if signalActivities != nil {
+		w.RegisterActivityWithOptions(signalActivities.ExtractSignalsActivity, activity.RegisterOptions{
+			Name: "SignalDetectionActivities.ExtractSignalsActivity",
+		})
+		w.RegisterActivityWithOptions(signalActivities.NotifySignalsActivity, activity.RegisterOptions{
+			Name: "SignalDetectionActivities.NotifySignalsActivity",
+		})
+	}
+
+	// Register deal management cron workflow and activities.
+	w.RegisterWorkflow(temporalapp.DealManagementCronWorkflow)
+	if dealMgmtActivities != nil {
+		w.RegisterActivityWithOptions(dealMgmtActivities.EvaluateProgressionActivity, activity.RegisterOptions{
+			Name: "DealManagementActivities.EvaluateProgressionActivity",
+		})
+	}
+
 	return w
 }
 

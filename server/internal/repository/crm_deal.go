@@ -111,6 +111,15 @@ func (r *CRMDealRepository) GetStage(ctx context.Context, id string) (*model.CRM
 	return &stage, nil
 }
 
+// CountDealsByPipeline returns the number of deals in a pipeline.
+func (r *CRMDealRepository) CountDealsByPipeline(ctx context.Context, pipelineID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.CRMDeal{}).Where("pipeline_id = ?", pipelineID).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count deals by pipeline: %w", err)
+	}
+	return count, nil
+}
+
 // ── Deal operations ──
 
 // GetNextDisplayID generates the next sequential display ID for deals in a workspace.

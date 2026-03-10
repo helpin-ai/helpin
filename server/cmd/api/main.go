@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"log/slog"
@@ -22,11 +23,14 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/handler"
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/router"
 	"github.com/helpin-ai/helpin/server/internal/service"
 	"github.com/helpin-ai/helpin/server/internal/storage"
+	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
 )
@@ -206,6 +210,8 @@ func main() {
 		&model.CRMSequence{},
 		&model.CRMSequenceEnrollment{},
 		&model.CRMWritingProfile{},
+		// CRM Autonomy
+		&model.CRMAutonomySettings{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
@@ -262,6 +268,7 @@ func main() {
 	scoringRepo := repository.NewRewardScoringRepository(db)
 	bonusRepo := repository.NewRewardBonusRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
+	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
 	draftRepo := repository.NewRewardDraftRepository(db)
 	pmWorkflowRepo := repository.NewPMWorkflowRepository(db)
 	pmLabelRepo := repository.NewPMLabelRepository(db)
@@ -342,7 +349,7 @@ func main() {
 	pmViewService := service.NewPMViewService(pmViewRepo)
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
-	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, agentRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher)
+	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, agentRepo, crmAssociationRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher, crmContactRepo)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -418,18 +425,53 @@ func main() {
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
+	associationsService := service.NewAssociationsService(crmAssociationRepo, pmStoryLinkRepo, pmStoryRepo, supportTicketRepo, docsLinkRepo, docsDocumentRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	crmPropertyService := service.NewCRMPropertyService(crmPropertyRepo)
 	crmListService := service.NewCRMListService(crmListRepo)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo)
-	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo)
+
+	// Gmail OAuth + encryption setup.
+	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
+	var encryptionKey []byte
+	if cfg.CRMEncryptionKey != "" {
+		var err error
+		encryptionKey, err = hex.DecodeString(cfg.CRMEncryptionKey)
+		if err != nil {
+			log.Printf("invalid CRM_ENCRYPTION_KEY (must be hex-encoded): %v", err)
+		}
+	}
+	gmailSyncClient := syncpkg.NewGmailSyncClient(gmailOAuth, crmEmailRepo, encryptionKey)
+	if gmailOAuth != nil {
+		log.Println("Gmail OAuth configured")
+	} else {
+		log.Println("Gmail OAuth not configured — email sync disabled")
+	}
+
+	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, gmailOAuth, encryptionKey, gmailSyncClient)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo)
-	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo)
+	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
 	crmSequenceService := service.NewCRMSequenceService(crmSequenceRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
+
+	// Initialize LLM provider for signal detection and deal automation.
+	var llmProvider llm.Provider
+	switch cfg.CRMLLMProvider {
+	case "openai":
+		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
+	default:
+		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
+	}
+	if llmProvider != nil {
+		log.Println("LLM provider configured for signal detection")
+	}
+
+	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo)
+	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
+	_ = signalDetectionService // Used by Temporal workers
 
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, crmDealService)
@@ -492,6 +534,7 @@ func main() {
 		CRMCompany:        handler.NewCRMCompanyHandler(crmCompanyService),
 		CRMDeal:           handler.NewCRMDealHandler(crmDealService),
 		CRMAssociation:    handler.NewCRMAssociationHandler(crmAssociationService),
+		Associations:      handler.NewAssociationsHandler(associationsService),
 		CRMActivity:       handler.NewCRMActivityHandler(crmActivityService),
 		CRMProperty:       handler.NewCRMPropertyHandler(crmPropertyService),
 		CRMList:           handler.NewCRMListHandler(crmListService),
@@ -504,6 +547,7 @@ func main() {
 		CRMSequence:       handler.NewCRMSequenceHandler(crmSequenceService),
 		CRMWritingProfile: handler.NewCRMWritingProfileHandler(crmWritingProfileService),
 		CRMSearch:         handler.NewCRMSearchHandler(crmSearchService),
+		CRMDealAutomation: handler.NewCRMDealAutomationHandler(dealAutomationService),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,

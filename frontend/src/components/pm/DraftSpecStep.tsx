@@ -14,6 +14,7 @@ interface ProductSpecDraft {
   summary: string;
   spec_markdown: string;
   risks?: string[];
+  assumptions?: string[];
   open_questions?: string[];
   sources?: {
     title: string;
@@ -167,6 +168,22 @@ export function DraftSpecStep({
                   <div className="mb-1 text-xs font-medium">Risks</div>
                   <div className="space-y-1 text-xs text-muted-foreground">
                     {specDraft.risks.map((risk) => <div key={risk}>- {risk}</div>)}
+                  </div>
+                </div>
+              )}
+              {specDraft.assumptions && specDraft.assumptions.length > 0 && (
+                <div>
+                  <div className="mb-1 text-xs font-medium">Assumptions</div>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    {specDraft.assumptions.map((assumption) => <div key={assumption}>- {assumption}</div>)}
+                  </div>
+                </div>
+              )}
+              {specDraft.open_questions && specDraft.open_questions.length > 0 && (
+                <div>
+                  <div className="mb-1 text-xs font-medium">Open Questions</div>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    {specDraft.open_questions.map((question) => <div key={question}>- {question}</div>)}
                   </div>
                 </div>
               )}

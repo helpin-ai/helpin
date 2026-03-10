@@ -35,7 +35,7 @@ import { EpicOrchestrationPanel } from '@/components/pm/EpicOrchestrationPanel';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
-import { LinkedDeals } from '@/components/pm/LinkedDeals';
+import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -575,10 +575,9 @@ export function EpicDetailPage() {
             </div>
           )}
 
-          {/* Linked Deals */}
-          {workspaceId && (
-            <LinkedDeals objectType="epic" objectId={epicId} workspaceId={workspaceId} />
-          )}
+          {workspaceId ? (
+            <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} />
+          ) : null}
         </aside>
       </div>
 

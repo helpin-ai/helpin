@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -123,7 +124,10 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 		query = query.Where("severity = ?", *filters.Severity)
 	}
 	if filters.Blocked != nil && *filters.Blocked != "" {
-		query = query.Where("blocked = ?", *filters.Blocked == "true")
+		query = r.applyDerivedBlockedFilter(query, *filters.Blocked == "true")
+	}
+	if filters.Blocking != nil && *filters.Blocking != "" {
+		query = r.applyBlockingFilter(query, *filters.Blocking == "true")
 	}
 	if filters.Archived != nil {
 		query = query.Where("archived = ?", *filters.Archived)
@@ -190,6 +194,21 @@ func (r *PMStoryRepository) GetRawByID(ctx context.Context, id string) (*model.P
 		return nil, fmt.Errorf("get story raw: %w", err)
 	}
 	return &story, nil
+}
+
+// ListByIDs returns raw stories by ID for a workspace.
+func (r *PMStoryRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMStory, error) {
+	if len(ids) == 0 {
+		return []model.PMStory{}, nil
+	}
+
+	var stories []model.PMStory
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&stories).Error; err != nil {
+		return nil, fmt.Errorf("list stories by ids: %w", err)
+	}
+	return stories, nil
 }
 
 // Create inserts a story and auto-populates display_id per workspace.
@@ -507,6 +526,7 @@ func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID strin
 
 // collectAndEnrich collects related IDs from stories, batch-loads names/labels, and returns enriched BoardStory slices.
 func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []model.PMStory) []model.BoardStory {
+	stories = r.applyDependencySummaries(ctx, stories)
 	epicIDs := map[string]struct{}{}
 	ownerMemberIDs := map[string]struct{}{}
 	ownerIDs := map[string]struct{}{}
@@ -599,7 +619,10 @@ func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryF
 		q = q.Where("severity IN ?", vals)
 	}
 	if filters.Blocked != nil && *filters.Blocked != "" {
-		q = q.Where("blocked = ?", *filters.Blocked == "true")
+		q = r.applyDerivedBlockedFilter(q, *filters.Blocked == "true")
+	}
+	if filters.Blocking != nil && *filters.Blocking != "" {
+		q = r.applyBlockingFilter(q, *filters.Blocking == "true")
 	}
 	if filters.UpdatedAfter != nil && *filters.UpdatedAfter != "" {
 		t, err := time.Parse(time.RFC3339, *filters.UpdatedAfter)
@@ -801,6 +824,8 @@ func (r *PMStoryRepository) UpdateSprintID(ctx context.Context, storyID string, 
 }
 
 func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PMStory) (*model.StoryDetail, error) {
+	story = r.applyDependencySummaries(ctx, []model.PMStory{story})[0]
+
 	var owners []model.User
 	if err := r.db.WithContext(ctx).
 		Table("users u").
@@ -894,6 +919,196 @@ func (r *PMStoryRepository) buildStoryDetail(ctx context.Context, story model.PM
 		ObjectiveID:     objectiveID,
 		State:           &state,
 	}, nil
+}
+
+type dependencySummary struct {
+	blockedByStories []model.StoryDependencyStory
+	blockingStories  []model.StoryDependencyStory
+	blockedByCount   int
+	blockingCount    int
+	hasInboundBlocks bool
+	isBlockedByStory bool
+	isBlockingOther  bool
+}
+
+func (r *PMStoryRepository) applyDependencySummaries(ctx context.Context, stories []model.PMStory) []model.PMStory {
+	if len(stories) == 0 {
+		return stories
+	}
+	summaries := r.loadDependencySummaries(ctx, stories[0].WorkspaceID, stories)
+	result := make([]model.PMStory, 0, len(stories))
+	for _, story := range stories {
+		summary := summaries[story.ID]
+		story.BlockedByStories = summary.blockedByStories
+		story.BlockingStories = summary.blockingStories
+		story.BlockedByCount = summary.blockedByCount
+		story.BlockingCount = summary.blockingCount
+		story.IsBlockedByStory = summary.isBlockedByStory
+		story.IsBlockingOther = summary.isBlockingOther
+		story.Blocked = isStoryBlocked(story, summary)
+		result = append(result, story)
+	}
+	return result
+}
+
+func (r *PMStoryRepository) loadDependencySummaries(ctx context.Context, workspaceID string, stories []model.PMStory) map[string]dependencySummary {
+	result := make(map[string]dependencySummary, len(stories))
+	if workspaceID == "" || len(stories) == 0 {
+		return result
+	}
+
+	storyIDs := make([]string, 0, len(stories))
+	for _, story := range stories {
+		storyIDs = append(storyIDs, story.ID)
+		result[story.ID] = dependencySummary{}
+	}
+
+	var links []model.PMStoryLink
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND link_type = ? AND (source_story_id IN ? OR target_story_id IN ?)",
+			workspaceID, model.PMStoryLinkTypeBlocks, storyIDs, storyIDs).
+		Order("created_at ASC").
+		Find(&links).Error; err != nil {
+		return result
+	}
+	if len(links) == 0 {
+		return result
+	}
+
+	relatedIDs := make(map[string]struct{}, len(links)*2)
+	for _, link := range links {
+		relatedIDs[link.SourceStoryID] = struct{}{}
+		relatedIDs[link.TargetStoryID] = struct{}{}
+	}
+	ids := make([]string, 0, len(relatedIDs))
+	for id := range relatedIDs {
+		ids = append(ids, id)
+	}
+
+	var relatedStories []model.PMStory
+	if err := r.db.WithContext(ctx).
+		Select("id, display_id, name, workflow_state_id, completed").
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&relatedStories).Error; err != nil {
+		return result
+	}
+
+	relatedMap := make(map[string]model.StoryDependencyStory, len(relatedStories))
+	for _, story := range relatedStories {
+		relatedMap[story.ID] = model.StoryDependencyStory{
+			ID:              story.ID,
+			DisplayID:       story.DisplayID,
+			Name:            story.Name,
+			WorkflowStateID: story.WorkflowStateID,
+			Completed:       story.Completed,
+		}
+	}
+
+	for _, link := range links {
+		if _, ok := result[link.TargetStoryID]; ok {
+			summary := result[link.TargetStoryID]
+			source, exists := relatedMap[link.SourceStoryID]
+			if exists {
+				summary.blockedByStories = append(summary.blockedByStories, source)
+				summary.hasInboundBlocks = true
+				if !source.Completed {
+					summary.blockedByCount++
+					summary.isBlockedByStory = true
+				}
+			}
+			result[link.TargetStoryID] = summary
+		}
+		if _, ok := result[link.SourceStoryID]; ok {
+			summary := result[link.SourceStoryID]
+			target, exists := relatedMap[link.TargetStoryID]
+			if exists {
+				summary.blockingStories = append(summary.blockingStories, target)
+				summary.blockingCount++
+				summary.isBlockingOther = true
+			}
+			result[link.SourceStoryID] = summary
+		}
+	}
+
+	for storyID, summary := range result {
+		sort.SliceStable(summary.blockedByStories, func(i, j int) bool {
+			if summary.blockedByStories[i].Completed != summary.blockedByStories[j].Completed {
+				return !summary.blockedByStories[i].Completed
+			}
+			return summary.blockedByStories[i].DisplayID < summary.blockedByStories[j].DisplayID
+		})
+		sort.SliceStable(summary.blockingStories, func(i, j int) bool {
+			if summary.blockingStories[i].Completed != summary.blockingStories[j].Completed {
+				return !summary.blockingStories[i].Completed
+			}
+			return summary.blockingStories[i].DisplayID < summary.blockingStories[j].DisplayID
+		})
+		result[storyID] = summary
+	}
+
+	return result
+}
+
+func isStoryBlocked(story model.PMStory, summary dependencySummary) bool {
+	if strings.TrimSpace(stringPtrValue(story.Blocker)) != "" {
+		return true
+	}
+	if summary.blockedByCount > 0 {
+		return true
+	}
+	return story.Blocked && !summary.hasInboundBlocks
+}
+
+func stringPtrValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func (r *PMStoryRepository) applyDerivedBlockedFilter(q *gorm.DB, blocked bool) *gorm.DB {
+	expr := `
+(
+	COALESCE(NULLIF(TRIM(pm_stories.blocker), ''), '') <> ''
+	OR EXISTS (
+		SELECT 1
+		FROM pm_story_links sl
+		JOIN pm_stories blockers ON blockers.id = sl.source_story_id
+		WHERE sl.workspace_id = pm_stories.workspace_id
+		  AND sl.target_story_id = pm_stories.id
+		  AND sl.link_type = ?
+		  AND blockers.completed = FALSE
+	)
+	OR (
+		pm_stories.blocked = TRUE
+		AND NOT EXISTS (
+			SELECT 1
+			FROM pm_story_links legacy_sl
+			WHERE legacy_sl.workspace_id = pm_stories.workspace_id
+			  AND legacy_sl.target_story_id = pm_stories.id
+			  AND legacy_sl.link_type = ?
+		)
+	)
+)`
+	if blocked {
+		return q.Where(expr, model.PMStoryLinkTypeBlocks, model.PMStoryLinkTypeBlocks)
+	}
+	return q.Where("NOT "+expr, model.PMStoryLinkTypeBlocks, model.PMStoryLinkTypeBlocks)
+}
+
+func (r *PMStoryRepository) applyBlockingFilter(q *gorm.DB, blocking bool) *gorm.DB {
+	expr := `
+EXISTS (
+	SELECT 1
+	FROM pm_story_links sl
+	WHERE sl.workspace_id = pm_stories.workspace_id
+	  AND sl.source_story_id = pm_stories.id
+	  AND sl.link_type = ?
+)`
+	if blocking {
+		return q.Where(expr, model.PMStoryLinkTypeBlocks)
+	}
+	return q.Where("NOT "+expr, model.PMStoryLinkTypeBlocks)
 }
 
 func (r *PMStoryRepository) loadAssignableMember(ctx context.Context, workspaceID string, memberID *string) (*model.AssignableMember, error) {

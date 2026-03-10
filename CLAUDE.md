@@ -1,6 +1,6 @@
 # Helpin
 
-Internal performance-based quarterly bonus system with integrated project management.
+Internal performance-based quarterly bonus system with integrated project management, CRM with self-driving deal automation, and support ticketing.
 
 ## Architecture
 
@@ -49,25 +49,30 @@ server/                          # Go API server
     auth/                        # JWT token management
     authorization/               # RBAC engine, permissions, middleware
     config/                      # Environment configuration
+    crypto/                      # AES-256-GCM encryption helpers
     email/                       # Postmark email client
     githubapp/                   # GitHub OAuth + App integration
     handler/                     # HTTP request handlers
+    llm/                         # Model-agnostic LLM provider (Claude + OpenAI)
     middleware/                  # Auth, logging middleware
     model/                       # GORM struct definitions
+    oauth/                       # OAuth2 clients (Gmail)
     repository/                  # Data access layer (GORM queries)
     router/router.go             # Chi route registration
     service/                     # Business logic layer
     storage/s3.go                # S3/MinIO client
+    sync/                        # External API sync clients (Gmail)
     temporalapp/                 # Temporal workflow setup
     websocket/                   # WebSocket hub + handler
     worker/                      # Background job workers
-  migrations/                    # Sequential SQL migrations (001–022+)
+  migrations/                    # Sequential SQL migrations (001–032+)
 
 frontend/                        # React SPA
   src/
     components/
       ui/                        # shadcn/ui primitives (30+ components)
       layout/                    # Sidebar, Header, WorkspaceSwitcher
+      crm/                       # CRM components (SuggestionCard, DealCard, etc.)
       pm/                        # Project Management components
       workspace/                 # Workspace-specific components
     hooks/
@@ -76,6 +81,7 @@ frontend/                        # React SPA
       api.ts                     # Fetch-based HTTP client with auto-refresh
       types.ts                   # Settings/workspace TypeScript interfaces
       pmTypes.ts                 # PM module TypeScript interfaces
+      crmTypes.ts                # CRM module TypeScript interfaces
       queryKeys.ts               # Query key factory
       queryClient.ts             # TanStack Query client config
       queryUtils.ts              # unwrap() helper
@@ -193,6 +199,48 @@ All dependencies are wired in `cmd/api/main.go`:
 - Supports AWS S3 and MinIO (path-style)
 - Methods: `PutObject`, `DeleteObject`, `PublicURL`, `GeneratePresignedPutURL/GetURL`
 - Public URLs via `HasPublicURL()` check
+
+### CRM Self-Driving Architecture
+
+The CRM module includes a "self-driving" automation layer that reads email threads, calendar events, and support conversations, detects sales signals via LLM, and autonomously creates/advances deals.
+
+**Key packages:**
+- `internal/crypto/` — AES-256-GCM token encryption (`CRM_ENCRYPTION_KEY` env)
+- `internal/oauth/` — Gmail OAuth2 flow (scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`, `calendar.readonly`)
+- `internal/sync/` — Gmail REST API client (message sync, send, token auto-refresh)
+- `internal/llm/` — Model-agnostic LLM interface (`Provider` interface with Claude + OpenAI adapters)
+- `internal/service/crm_signal_detection.go` — LLM-powered signal extraction from emails/calendar/support
+- `internal/service/crm_deal_automation.go` — Auto-create/progress deals based on signal confidence
+
+**Temporal Workflows:**
+| Workflow | Schedule | Purpose |
+|----------|----------|---------|
+| `EmailSyncWorkflow` | Long-running per account (5min poll) | Gmail backfill + incremental sync |
+| `SignalDetectionWorkflow` | Event-driven (child of sync/support) | Extract buyer signals via LLM |
+| `DealManagementCronWorkflow` | Hourly cron | Evaluate deal progression |
+
+**Autonomy Thresholds** (`CRMAutonomySettings` model):
+- `auto_execute_threshold` (default 0.9) — signals above this auto-create/advance deals
+- `review_threshold` (default 0.7) — signals between review and auto-execute create pending suggestions
+- Below review threshold: low-priority suggestions
+
+**Signal Types** (7): `buying_intent`, `budget_signal`, `authority_signal`, `need_signal`, `timeline_signal`, `competitor_mention`, `churn_risk`
+
+**Signal Sources**: `email`, `meeting`, `call`, `support`
+
+**Support → CRM Bridge**: Support tickets auto-match to CRM contacts by email. If no contact exists, one is auto-created with `lifecycle_stage=subscriber`, `source=support`.
+
+**Environment Variables** (CRM intelligence):
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CRM_ENCRYPTION_KEY` | Yes (if Gmail) | 32-byte hex-encoded AES key |
+| `GMAIL_CLIENT_ID` | Yes (if Gmail) | Google OAuth client ID |
+| `GMAIL_CLIENT_SECRET` | Yes (if Gmail) | Google OAuth client secret |
+| `GMAIL_OAUTH_REDIRECT_URL` | Yes (if Gmail) | OAuth redirect URL |
+| `CRM_LLM_PROVIDER` | No | `claude` (default) or `openai` |
+| `CRM_LLM_API_KEY` | Only if openai | OpenAI API key |
+| `CRM_LLM_BASE_URL` | Only if openai | OpenAI-compatible base URL |
+| `CRM_LLM_MODEL` | Only if openai | Model name for OpenAI provider |
 
 ### Logging
 
@@ -350,6 +398,7 @@ Key stores: `authStore`, `workspaceStore`, `organizationStore`, `quarterStore`, 
 ### TypeScript Types
 - Settings/workspace types: `src/lib/types.ts`
 - PM module types: `src/lib/pmTypes.ts`
+- CRM module types: `src/lib/crmTypes.ts`
 - Permission type: union of 23 permission strings
 - All backend JSON responses have matching TS interfaces
 

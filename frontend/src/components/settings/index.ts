@@ -12,3 +12,5 @@ export { WorkflowStatesTab } from './WorkflowStatesTab';
 export { AutomationsTab } from './AutomationsTab';
 export { ImportTab } from './ImportTab';
 export { HelpcenterTab } from './HelpcenterTab';
+export { CRMEmailSettingsTab } from './CRMEmailSettingsTab';
+export { CRMAutonomySettingsTab } from './CRMAutonomySettingsTab';

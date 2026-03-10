@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MessageSquare, Plus, Send, ArrowLeft, Bot, Loader2, ShieldCheck } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { MessageSquare, Plus, Send, ArrowLeft, Bot, Loader2, ShieldCheck, User } from 'lucide-react';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { supportService } from '@/lib/services/supportService';
@@ -34,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
+import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 
 // ── Badge colors ────────────────────────────────────────────────────
 
@@ -186,7 +188,6 @@ export function SupportPage() {
 
   // ── Actions state ──
   const [actionStatus, setActionStatus] = useState<TicketStatus | ''>('');
-  const [linkStoryId, setLinkStoryId] = useState('');
   const [assignAgentId, setAssignAgentId] = useState('');
 
   // ── Mobile view state ──
@@ -315,13 +316,6 @@ export function SupportPage() {
       setSelectedTicket(res.data);
       loadTickets();
     }
-  };
-
-  const handleLinkStory = async () => {
-    if (!workspaceId || !selectedTicket || !linkStoryId.trim()) return;
-    await supportService.linkStory(workspaceId, selectedTicket.id, { story_id: linkStoryId.trim() });
-    setLinkStoryId('');
-    setSelectedTicket({ ...selectedTicket, linked_story_id: linkStoryId.trim() });
   };
 
   const handleAssignAgent = async () => {
@@ -455,8 +449,15 @@ export function SupportPage() {
                   {selectedTicket.assigned_agent_id && (
                     <span>Agent: {assignedAgent?.name ?? selectedTicket.assigned_agent_id.slice(0, 8)}</span>
                   )}
-                  {selectedTicket.linked_story_id && (
-                    <span>Story: {selectedTicket.linked_story_id.slice(0, 8)}...</span>
+                  {selectedTicket.crm_contact_id && workspace?.slug && (
+                    <Link
+                      to="/w/$slug/crm/contacts/$contactId"
+                      params={{ slug: workspace.slug, contactId: selectedTicket.crm_contact_id }}
+                      className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700 transition-colors hover:bg-blue-100"
+                    >
+                      <User className="h-3 w-3" />
+                      CRM Contact
+                    </Link>
                   )}
                 </div>
 
@@ -499,18 +500,6 @@ export function SupportPage() {
                       onClick={handleAssignAgent}
                     >
                       Assign
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <Input
-                      className="h-7 w-28 text-xs"
-                      placeholder="Story ID"
-                      value={linkStoryId}
-                      onChange={(e) => setLinkStoryId(e.target.value)}
-                    />
-                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleLinkStory}>
-                      Link
                     </Button>
                   </div>
 
@@ -630,6 +619,12 @@ export function SupportPage() {
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
+
+                {workspaceId ? (
+                  <div className="mt-4">
+                    <AssociationsPanel objectType="support_ticket" objectId={selectedTicket.id} workspaceId={workspaceId} />
+                  </div>
+                ) : null}
               </div>
             </>
           )}

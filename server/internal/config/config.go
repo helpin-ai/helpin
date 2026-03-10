@@ -39,6 +39,18 @@ type Config struct {
 	PostmarkServerToken string
 	PostmarkFromEmail   string
 	AppBaseURL          string
+
+	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
+	CRMEncryptionKey      string
+	GmailClientID         string
+	GmailClientSecret     string
+	GmailOAuthRedirectURL string
+
+	// CRM LLM provider selection (optional — defaults to "claude")
+	CRMLLMProvider string // "claude" (default) or "openai"
+	CRMLLMAPIKey   string
+	CRMLLMBaseURL  string
+	CRMLLMModel    string
 }
 
 // Load reads configuration from environment variables.
@@ -106,6 +118,14 @@ func Load() (*Config, error) {
 		PostmarkServerToken:   os.Getenv("POSTMARK_SERVER_TOKEN"),
 		PostmarkFromEmail:     os.Getenv("POSTMARK_FROM_EMAIL"),
 		AppBaseURL:            appBaseURL,
+		CRMEncryptionKey:      os.Getenv("CRM_ENCRYPTION_KEY"),
+		GmailClientID:         os.Getenv("GMAIL_CLIENT_ID"),
+		GmailClientSecret:     os.Getenv("GMAIL_CLIENT_SECRET"),
+		GmailOAuthRedirectURL: os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
+		CRMLLMProvider: os.Getenv("CRM_LLM_PROVIDER"),
+		CRMLLMAPIKey:   os.Getenv("CRM_LLM_API_KEY"),
+		CRMLLMBaseURL:  os.Getenv("CRM_LLM_BASE_URL"),
+		CRMLLMModel:    os.Getenv("CRM_LLM_MODEL"),
 	}, nil
 }
 

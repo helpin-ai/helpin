@@ -181,6 +181,27 @@ func (h *SupportHandler) AssignAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
 }
 
+// ListContactTickets handles GET /api/crm/contacts/{id}/support-tickets.
+func (h *SupportHandler) ListContactTickets(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	contactID := chi.URLParam(r, "id")
+	pagination := queryPagination(r)
+
+	tickets, total, err := h.supportService.ListContactTickets(r.Context(), workspaceID, contactID, pagination)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if tickets == nil {
+		tickets = []model.SupportTicket{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data":  tickets,
+		"total": total,
+		"page":  pagination.Page,
+	})
+}
+
 // RunAgent handles POST /api/support/tickets/{id}/run-agent.
 func (h *SupportHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

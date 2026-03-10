@@ -15,58 +15,60 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
-	Health          *handler.HealthHandler
-	Auth            *handler.AuthHandler
-	Organization    *handler.OrganizationHandler
-	Workspace       *handler.WorkspaceHandler
-	RewardQuarter   *handler.RewardQuarterHandler
-	RewardSprint    *handler.RewardSprintHandler
-	RewardGoal      *handler.RewardGoalHandler
-	RewardBonus     *handler.RewardBonusHandler
-	RewardFinance   *handler.RewardFinanceHandler
-	Settings        *handler.SettingsHandler
-	RewardAudit     *handler.RewardAuditHandler
-	RewardDraft     *handler.RewardDraftHandler
-	Invite          *handler.InviteHandler
-	PMWorkflow      *handler.PMWorkflowHandler
-	PMImport        *handler.PMImportHandler
-	PMLabel         *handler.PMLabelHandler
-	PMEpic          *handler.PMEpicHandler
-	PMSprint        *handler.PMSprintHandler
-	PMStory         *handler.PMStoryHandler
-	PMComment       *handler.PMCommentHandler
-	PMAttachment    *handler.PMAttachmentHandler
-	PMObjective     *handler.PMObjectiveHandler
-	PMChecklistItem *handler.PMChecklistItemHandler
-	PMExternalLink  *handler.PMExternalLinkHandler
-	PMView          *handler.PMViewHandler
-	PMAutomation    *handler.PMAutomationHandler
-	PMStoryTemplate *handler.PMStoryTemplateHandler
-	Search          *handler.SearchHandler
-	Agent           *handler.AgentHandler
-	Support         *handler.SupportHandler
-	Widget          *handler.WidgetHandler
-	Git             *handler.GitHandler
-	Orchestration   *handler.OrchestrationHandler
-	Docs            *handler.DocsHandler
-	Notification    *handler.NotificationHandler
-	UserNotifSettings *handler.UserNotificationSettingsHandler
-	CRMContact      *handler.CRMContactHandler
-	CRMCompany      *handler.CRMCompanyHandler
-	CRMDeal         *handler.CRMDealHandler
-	CRMAssociation  *handler.CRMAssociationHandler
-	CRMActivity     *handler.CRMActivityHandler
-	CRMProperty     *handler.CRMPropertyHandler
-	CRMList         *handler.CRMListHandler
-	CRMImport       *handler.CRMImportHandler
-	CRMEmail        *handler.CRMEmailHandler
-	CRMCalendar     *handler.CRMCalendarHandler
-	CRMEnrichment   *handler.CRMEnrichmentHandler
-	CRMSignal       *handler.CRMSignalHandler
-	CRMSuggestion   *handler.CRMSuggestionHandler
-	CRMSequence     *handler.CRMSequenceHandler
+	Health             *handler.HealthHandler
+	Auth               *handler.AuthHandler
+	Organization       *handler.OrganizationHandler
+	Workspace          *handler.WorkspaceHandler
+	RewardQuarter      *handler.RewardQuarterHandler
+	RewardSprint       *handler.RewardSprintHandler
+	RewardGoal         *handler.RewardGoalHandler
+	RewardBonus        *handler.RewardBonusHandler
+	RewardFinance      *handler.RewardFinanceHandler
+	Settings           *handler.SettingsHandler
+	RewardAudit        *handler.RewardAuditHandler
+	RewardDraft        *handler.RewardDraftHandler
+	Invite             *handler.InviteHandler
+	PMWorkflow         *handler.PMWorkflowHandler
+	PMImport           *handler.PMImportHandler
+	PMLabel            *handler.PMLabelHandler
+	PMEpic             *handler.PMEpicHandler
+	PMSprint           *handler.PMSprintHandler
+	PMStory            *handler.PMStoryHandler
+	PMComment          *handler.PMCommentHandler
+	PMAttachment       *handler.PMAttachmentHandler
+	PMObjective        *handler.PMObjectiveHandler
+	PMChecklistItem    *handler.PMChecklistItemHandler
+	PMExternalLink     *handler.PMExternalLinkHandler
+	PMView             *handler.PMViewHandler
+	PMAutomation       *handler.PMAutomationHandler
+	PMStoryTemplate    *handler.PMStoryTemplateHandler
+	Search             *handler.SearchHandler
+	Agent              *handler.AgentHandler
+	Support            *handler.SupportHandler
+	Widget             *handler.WidgetHandler
+	Git                *handler.GitHandler
+	Orchestration      *handler.OrchestrationHandler
+	Docs               *handler.DocsHandler
+	Notification       *handler.NotificationHandler
+	UserNotifSettings  *handler.UserNotificationSettingsHandler
+	CRMContact         *handler.CRMContactHandler
+	CRMCompany         *handler.CRMCompanyHandler
+	CRMDeal            *handler.CRMDealHandler
+	CRMAssociation     *handler.CRMAssociationHandler
+	Associations       *handler.AssociationsHandler
+	CRMActivity        *handler.CRMActivityHandler
+	CRMProperty        *handler.CRMPropertyHandler
+	CRMList            *handler.CRMListHandler
+	CRMImport          *handler.CRMImportHandler
+	CRMEmail           *handler.CRMEmailHandler
+	CRMCalendar        *handler.CRMCalendarHandler
+	CRMEnrichment      *handler.CRMEnrichmentHandler
+	CRMSignal          *handler.CRMSignalHandler
+	CRMSuggestion      *handler.CRMSuggestionHandler
+	CRMSequence        *handler.CRMSequenceHandler
 	CRMWritingProfile *handler.CRMWritingProfileHandler
-	CRMSearch       *handler.CRMSearchHandler
+	CRMSearch          *handler.CRMSearchHandler
+	CRMDealAutomation  *handler.CRMDealAutomationHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -312,6 +314,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets", h.Support.ListTickets)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets", h.Support.CreateTicket)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets/{id}", h.Support.GetTicket)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets/{id}/associations", h.Associations.ListTicketAssociations)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tickets/{id}/status", h.Support.UpdateTicketStatus)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets/{id}/messages", h.Support.ListMessages)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/messages", h.Support.CreateMessage)
@@ -365,10 +368,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/epics/{id}", h.PMEpic.Delete)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/stories", h.PMEpic.ListStories)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.CRMAssociation.ListEpicAssociations)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/agent-runs", h.Agent.ListEpicRuns)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/draft-spec", h.Agent.DraftEpicSpec)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/clarify-spec", h.Agent.ClarifyEpicSpec)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/approve-spec", h.Agent.ApproveEpicSpec)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/plan-stories", h.Agent.PlanEpicStories)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/kickoff-execution", h.Agent.KickoffEpicExecution)
@@ -400,7 +404,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/followers", h.PMStory.RemoveFollower)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/labels", h.PMStory.AddLabel)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/labels/{labelId}", h.PMStory.RemoveLabel)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/associations", h.CRMAssociation.ListStoryAssociations)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/associations", h.Associations.ListStoryAssociations)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/relationships", h.Associations.CreateStoryRelationship)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/story-relationships/{id}", h.Associations.DeleteStoryRelationship)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/activity", h.PMStory.ListActivity)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/git-links", h.Git.GetStoryGitLinks)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/delivery-target", h.Git.GetStoryDeliveryTarget)
@@ -589,6 +595,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/contacts/{id}", h.CRMContact.Delete)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/activities", h.CRMActivity.ListByContact)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/associations", h.CRMAssociation.ListContactAssociations)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/support-tickets", h.Support.ListContactTickets)
 
 				// Companies — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies", h.CRMCompany.List)
@@ -654,6 +661,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/imports/{id}", h.CRMImport.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/imports/{id}/process", h.CRMImport.Process)
 
+				// Email OAuth — crm.edit
+				r.With(requirePerm(authorization.PermCRMEdit)).Get("/email/oauth/initiate", h.CRMEmail.InitiateOAuth)
+				r.With(requirePerm(authorization.PermCRMEdit)).Get("/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
+
 				// Email — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts", h.CRMEmail.ListAccounts)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts", h.CRMEmail.CreateAccount)
@@ -663,6 +674,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/threads", h.CRMEmail.ListThreads)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/messages", h.CRMEmail.ListMessages)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/messages", h.CRMEmail.CreateMessage)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/send", h.CRMEmail.SendEmail)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/emails", h.CRMEmail.ListByContact)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/emails", h.CRMEmail.ListByDeal)
 
@@ -697,6 +709,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/suggestions", h.CRMSuggestion.Create)
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/suggestions/{id}", h.CRMSuggestion.Update)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/suggestions/{id}", h.CRMSuggestion.Delete)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/suggestions/{id}/accept", h.CRMSuggestion.Accept)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/suggestions/{id}/dismiss", h.CRMSuggestion.Dismiss)
+
+				// Autonomy Settings — crm.admin
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/autonomy-settings", h.CRMDealAutomation.GetAutonomySettings)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Put("/autonomy-settings", h.CRMDealAutomation.UpdateAutonomySettings)
 
 				// Sequences — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/sequences", h.CRMSequence.List)

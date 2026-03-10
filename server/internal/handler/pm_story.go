@@ -46,6 +46,9 @@ func (h *PMStoryHandler) List(w http.ResponseWriter, r *http.Request) {
 		RequesterMemberID: queryStringPtr(r, "requester_member_id"),
 		LabelID:           queryStringPtr(r, "label_id"),
 		Priority:          queryStringPtr(r, "priority"),
+		Severity:          queryStringPtr(r, "severity"),
+		Blocked:           queryStringPtr(r, "blocked"),
+		Blocking:          queryStringPtr(r, "blocking"),
 		Archived:          archived,
 	}
 	pagination := queryPagination(r)
@@ -134,6 +137,7 @@ func boardFilters(r *http.Request) model.PMStoryFilters {
 		RequesterID:       queryStringPtr(r, "requester_id"),
 		RequesterMemberID: queryStringPtr(r, "requester_member_id"),
 		Blocked:           queryStringPtr(r, "blocked"),
+		Blocking:          queryStringPtr(r, "blocking"),
 		UpdatedAfter:      queryStringPtr(r, "updated_after"),
 	}
 }

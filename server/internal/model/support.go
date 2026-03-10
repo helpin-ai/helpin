@@ -18,6 +18,7 @@ type SupportTicket struct {
 	AssignedAgentID *string   `json:"assigned_agent_id" gorm:"type:uuid"`
 	LinkedStoryID   *string   `json:"linked_story_id" gorm:"type:uuid"`
 	Source          string    `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api
+	CRMContactID    *string   `json:"crm_contact_id" gorm:"type:uuid;index"`
 	CreatedAt       time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt       time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }

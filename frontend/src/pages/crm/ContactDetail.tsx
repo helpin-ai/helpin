@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
+import { Link } from '@tanstack/react-router';
 import {
   ArrowLeft,
   Check,
   ChevronRight,
   Loader2,
   Mail,
+  MessageSquare,
   Phone,
   Briefcase,
   Tag,
@@ -14,6 +16,7 @@ import {
   Globe,
   User,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -26,6 +29,7 @@ import {
   useDeleteContact,
   useContactActivities,
   useContactAssociations,
+  useContactSupportTickets,
 } from '@/hooks/queries';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
@@ -114,6 +118,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const { data: contact, isLoading } = useContact(wsId, contactId);
   const { data: activitiesData, refetch: refetchActivities } = useContactActivities(wsId, contactId);
   const { data: associations, refetch: refetchAssociations } = useContactAssociations(wsId, contactId);
+  const { data: supportTicketsData } = useContactSupportTickets(wsId, contactId);
   const updateContact = useUpdateContact(wsId);
   const deleteContact = useDeleteContact(wsId);
 
@@ -268,6 +273,46 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Emails</h3>
             <div className="mt-3">
               <EmailTimeline workspaceId={wsId} contactId={contactId} />
+            </div>
+          </div>
+
+          <Separator className="my-6" />
+
+          {/* Support Tickets */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Support Tickets</h3>
+            <div className="mt-3">
+              {(!supportTicketsData?.data || supportTicketsData.data.length === 0) ? (
+                <p className="text-sm text-muted-foreground">No support tickets linked to this contact.</p>
+              ) : (
+                <div className="space-y-2">
+                  {supportTicketsData.data.map((ticket) => (
+                    <Link
+                      key={ticket.id}
+                      to="/w/$slug/pm/support"
+                      params={{ slug: wsSlug }}
+                      className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2 text-sm transition-colors hover:bg-muted/50"
+                    >
+                      <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">#{ticket.display_id}</span>
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                            {ticket.status}
+                          </Badge>
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                            {ticket.priority}
+                          </Badge>
+                        </div>
+                        <p className="mt-0.5 truncate font-medium">{ticket.subject}</p>
+                      </div>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {new Date(ticket.created_at).toLocaleDateString()}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

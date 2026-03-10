@@ -112,6 +112,19 @@ export function StoryCard({
   const severityCfg = story.severity !== 'none' && story.severity in SEVERITY_CONFIG
     ? SEVERITY_CONFIG[story.severity]
     : null;
+  const blockedLabel = useMemo(() => {
+    if (!story.blocked) return null;
+    if (story.blocked_by_count && story.blocked_by_count > 0) {
+      if (story.blocked_by_count === 1 && story.blocked_by_stories?.[0]) {
+        return `Blocked by TP-${story.blocked_by_stories[0].display_id}`;
+      }
+      return `Blocked by ${story.blocked_by_count} stories`;
+    }
+    if (story.blocker?.trim()) {
+      return 'External blocker';
+    }
+    return 'Blocked';
+  }, [story.blocked, story.blocked_by_count, story.blocked_by_stories, story.blocker]);
 
   const priorityCfg = PRIORITY_CONFIG[story.priority];
   const storyTypeCfg = STORY_TYPE_CONFIG[story.story_type];
@@ -365,11 +378,16 @@ export function StoryCard({
               </span>
         ) : null)}
 
-        {vis.blocked && story.blocked && (
+        {vis.blocked && story.blocked && blockedLabel && (
+          <Tooltip>
+            <TooltipTrigger asChild>
               <span className={cn(pillBase, 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400')}>
                 <AlertTriangle className="h-3 w-3" />
-                Blocked
+                {blockedLabel}
               </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">{blockedLabel}</TooltipContent>
+          </Tooltip>
         )}
 
         {/* Labels */}

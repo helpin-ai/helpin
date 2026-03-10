@@ -27,12 +27,23 @@ func (s *CRMDealService) SeedWorkspaceDefaults(ctx context.Context, workspaceID,
 
 // ── Pipeline operations ──
 
-// ListPipelines returns all pipelines in a workspace.
+// ListPipelines returns all pipelines in a workspace with deal counts.
 func (s *CRMDealService) ListPipelines(ctx context.Context, workspaceID string) ([]model.CRMPipeline, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.dealRepo.ListPipelines(ctx, workspaceID)
+	pipelines, err := s.dealRepo.ListPipelines(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range pipelines {
+		count, err := s.dealRepo.CountDealsByPipeline(ctx, pipelines[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		pipelines[i].DealCount = count
+	}
+	return pipelines, nil
 }
 
 // GetPipeline returns a pipeline by ID.
@@ -127,7 +138,7 @@ func (s *CRMDealService) UpdatePipeline(ctx context.Context, id string, req mode
 	return s.dealRepo.GetPipeline(ctx, id)
 }
 
-// DeletePipeline removes a pipeline.
+// DeletePipeline removes a pipeline if it has no active deals.
 func (s *CRMDealService) DeletePipeline(ctx context.Context, id string) error {
 	pipeline, err := s.dealRepo.GetPipeline(ctx, id)
 	if err != nil {
@@ -135,6 +146,13 @@ func (s *CRMDealService) DeletePipeline(ctx context.Context, id string) error {
 	}
 	if pipeline == nil {
 		return fmt.Errorf("pipeline not found")
+	}
+	count, err := s.dealRepo.CountDealsByPipeline(ctx, id)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("cannot delete pipeline with active deals")
 	}
 	return s.dealRepo.DeletePipeline(ctx, id)
 }

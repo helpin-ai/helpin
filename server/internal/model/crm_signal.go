@@ -19,6 +19,7 @@ const (
 	CRMSignalSourceMeeting = "meeting"
 	CRMSignalSourceNote    = "note"
 	CRMSignalSourceManual  = "manual"
+	CRMSignalSourceSupport = "support"
 )
 
 // CRMBuyerSignal represents a detected buyer signal in CRM interactions.

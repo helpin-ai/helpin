@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
@@ -14,9 +14,11 @@ import type {
   KickoffExecutionResult,
   OrchestrationProposal,
   ProposedStory,
+  SpecClarification,
 } from '@/lib/pmTypes';
 
 import { ApproveSpecStep } from './ApproveSpecStep';
+import { ClarifySpecStep } from './ClarifySpecStep';
 import { DraftSpecStep } from './DraftSpecStep';
 import { ExecuteStep } from './ExecuteStep';
 import { GenerateStoriesStep } from './GenerateStoriesStep';
@@ -38,6 +40,7 @@ interface ProductSpecDraft {
   summary: string;
   spec_markdown: string;
   risks?: string[];
+  assumptions?: string[];
   open_questions?: string[];
   sources?: {
     title: string;
@@ -64,7 +67,9 @@ interface PlanningRunSummary {
   spec_version_id?: string;
   summary?: string;
   risks?: string[];
+  assumptions?: string[];
   open_questions?: string[];
+  clarifications?: SpecClarification[];
   proposal?: OrchestrationProposal;
   created_story_ids?: string[];
   created_stories?: CreatedPlanningStory[];
@@ -131,16 +136,20 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   const [artifacts, setArtifacts] = useState<AgentRunArtifact[]>([]);
   const [editedStories, setEditedStories] = useState<ProposedStory[]>([]);
   const [selectedStoryIds, setSelectedStoryIds] = useState<string[]>([]);
+  const [clarifications, setClarifications] = useState<SpecClarification[]>(epic.spec_clarifications ?? []);
   const [additionalContext, setAdditionalContext] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [triggeringDraft, setTriggeringDraft] = useState(false);
+  const [savingClarifications, setSavingClarifications] = useState(false);
   const [approvingSpec, setApprovingSpec] = useState(false);
   const [triggeringPlan, setTriggeringPlan] = useState(false);
   const [confirmingPlan, setConfirmingPlan] = useState(false);
   const [kickingOff, setKickingOff] = useState(false);
   const [actingOnRun, setActingOnRun] = useState<string | null>(null);
   const [lastExecutionResult, setLastExecutionResult] = useState<KickoffExecutionResult | null>(null);
+  const lastDraftRefreshKey = useRef<string>('');
+  const lastPlanRefreshKey = useRef<string>('');
 
   useDocsLinkedDocs(workspaceId, 'epic', epic.id);
   const specDocQuery = useDocsDocument(workspaceId, epic.spec_document_id ?? '');
@@ -150,6 +159,10 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     setAssignedAgentId(epic.orchestrator_agent_id ?? '');
     setSelectedAgentId(epic.orchestrator_agent_id ?? '');
   }, [epic.orchestrator_agent_id]);
+
+  useEffect(() => {
+    setClarifications(epic.spec_clarifications ?? []);
+  }, [epic.spec_clarifications]);
 
   // Fetchers
   const fetchAgents = useCallback(async () => {
@@ -227,8 +240,42 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     });
   }, [createdStories]);
 
+  useEffect(() => {
+    if (!latestDraftRun || !onStoriesCreated) return;
+    const key = `${latestDraftRun.id}:${latestDraftRun.status}:${latestDraftRun.updated_at}`;
+    if (lastDraftRefreshKey.current === key) return;
+    if (['awaiting_approval', 'completed', 'failed', 'cancelled'].includes(latestDraftRun.status)) {
+      lastDraftRefreshKey.current = key;
+      onStoriesCreated();
+    }
+  }, [latestDraftRun, onStoriesCreated]);
+
+  useEffect(() => {
+    if (!latestPlanRun || !onStoriesCreated) return;
+    const key = `${latestPlanRun.id}:${latestPlanRun.status}:${latestPlanRun.updated_at}`;
+    if (lastPlanRefreshKey.current === key) return;
+    if (['awaiting_approval', 'completed', 'failed', 'cancelled'].includes(latestPlanRun.status)) {
+      lastPlanRefreshKey.current = key;
+      onStoriesCreated();
+    }
+  }, [latestPlanRun, onStoriesCreated]);
+
   // Compute current step
   const currentStep = useMemo(() => computeCurrentStep(epic, agents, runs), [epic, agents, runs]);
+  const pendingClarifyCount = useMemo(
+    () =>
+      clarifications.filter((item) => {
+        if (item.kind === 'open_question') return item.disposition !== 'answered' || !item.response?.trim();
+        if (item.kind === 'assumption') {
+          if (item.disposition === 'accepted') return false;
+          if (item.disposition === 'rejected') return !item.response?.trim();
+          return true;
+        }
+        return false;
+      }).length,
+    [clarifications],
+  );
+  const canApproveSpec = pendingClarifyCount === 0;
 
   // --- Handlers ---
 
@@ -272,7 +319,34 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     } finally { setTriggeringDraft(false); }
   }, [additionalContext, ensureAssignedAgent, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
 
+  const updateClarification = useCallback((id: string, patch: Partial<SpecClarification>) => {
+    setClarifications((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    );
+  }, []);
+
+  const handleSaveClarifications = useCallback(async () => {
+    if (clarifications.length === 0) {
+      toast.success('No clarifications needed');
+      return;
+    }
+    setSavingClarifications(true);
+    try {
+      const res = await agentService.clarifyEpicSpec(workspaceId, epic.id, clarifications);
+      if (res.error) { toast.error(res.error); return; }
+      if (Array.isArray(res.data?.clarifications)) {
+        setClarifications(res.data.clarifications);
+      }
+      toast.success(res.data?.pending_clarify_count ? 'Clarification responses saved' : 'Clarifications resolved');
+      onStoriesCreated?.();
+    } finally { setSavingClarifications(false); }
+  }, [clarifications, epic.id, onStoriesCreated, workspaceId]);
+
   const handleApproveSpec = useCallback(async () => {
+    if (!canApproveSpec) {
+      toast.error('Resolve all open questions and assumptions before approval');
+      return;
+    }
     setApprovingSpec(true);
     try {
       const res = await agentService.approveEpicSpec(workspaceId, epic.id);
@@ -281,7 +355,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
       await fetchRuns();
       onStoriesCreated?.();
     } finally { setApprovingSpec(false); }
-  }, [epic.id, fetchRuns, onStoriesCreated, workspaceId]);
+  }, [canApproveSpec, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
 
   const handlePlanStories = useCallback(async () => {
     const agentId = await ensureAssignedAgent();
@@ -396,10 +470,22 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
           triggeringDraft={triggeringDraft}
         />
 
+        <ClarifySpecStep
+          status={getStepStatus('clarify', currentStep)}
+          clarifications={clarifications}
+          saving={savingClarifications}
+          specDocTitle={specDocTitle}
+          onUpdateClarification={updateClarification}
+          onSaveClarifications={() => void handleSaveClarifications()}
+          onOpenSpecDoc={openSpecDoc}
+        />
+
         <ApproveSpecStep
           status={getStepStatus('approve', currentStep)}
           epic={epic}
           specDocTitle={specDocTitle}
+          canApprove={canApproveSpec}
+          pendingClarifyCount={pendingClarifyCount}
           onApproveSpec={() => void handleApproveSpec()}
           onOpenSpecDoc={openSpecDoc}
           approvingSpec={approvingSpec}

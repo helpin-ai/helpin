@@ -1,4 +1,5 @@
 import { api } from '../api';
+import type { SupportTicket } from '../pmTypes';
 import type {
   CRMContact,
   CRMCompany,
@@ -88,6 +89,8 @@ export const crmContactService = {
     api.get<CRMPaginatedResponse<CRMActivity[]>>(`/crm/contacts/${contactId}/activities${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listAssociations: (workspaceId: string, contactId: string) =>
     api.get<CRMAssociationEnriched[]>(`/crm/contacts/${contactId}/associations${qs(workspaceId)}`),
+  listSupportTickets: (workspaceId: string, contactId: string, params?: { page?: number; per_page?: number }) =>
+    api.get<{ data: SupportTicket[]; total: number; page: number }>(`/crm/contacts/${contactId}/support-tickets${qs(workspaceId)}${filterQuery(params ?? {})}`),
 };
 
 export const crmCompanyService = {
@@ -225,6 +228,10 @@ export const crmEmailService = {
     api.post<CRMEmailAccount>(`/crm/email/accounts${qs(payload.workspace_id)}`, payload),
   deleteAccount: (workspaceId: string, id: string) =>
     api.del(`/crm/email/accounts/${id}${qs(workspaceId)}`),
+  initiateOAuth: (workspaceId: string, provider: 'gmail' | 'microsoft' = 'gmail') =>
+    api.get<{ redirect_url: string }>(`/crm/email/oauth/initiate${qs(workspaceId)}&provider=${provider}`),
+  sendEmail: (workspaceId: string, payload: { account_id: string; to: string[]; cc?: string[]; subject: string; body_html: string }) =>
+    api.post<CRMEmailMessage>(`/crm/email/send${qs(workspaceId)}`, payload),
   listThreads: (workspaceId: string, filters?: { email_account_id?: string; deal_id?: string; search?: string; page?: number }) =>
     api.get<CRMPaginatedResponse<CRMEmailThread[]>>(`/crm/email/threads${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   listMessages: (workspaceId: string, filters?: { thread_id?: string; email_account_id?: string; contact_id?: string; deal_id?: string; direction?: string; page?: number }) =>
@@ -296,6 +303,10 @@ export const crmSuggestionService = {
     api.put<CRMSuggestion>(`/crm/suggestions/${id}${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) =>
     api.del(`/crm/suggestions/${id}${qs(workspaceId)}`),
+  accept: (workspaceId: string, id: string, edits?: Record<string, unknown>) =>
+    api.post<CRMSuggestion>(`/crm/suggestions/${id}/accept${qs(workspaceId)}`, edits || {}),
+  dismiss: (workspaceId: string, id: string) =>
+    api.post<CRMSuggestion>(`/crm/suggestions/${id}/dismiss${qs(workspaceId)}`, {}),
 };
 
 // ── Phase 5: Sequences & Writing ──
@@ -332,6 +343,23 @@ export const crmWritingProfileService = {
     api.put<CRMWritingProfile>(`/crm/writing-profiles/${id}${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) =>
     api.del(`/crm/writing-profiles/${id}${qs(workspaceId)}`),
+};
+
+// ── Phase D: Deal Automation ──
+
+export interface CRMAutonomySettings {
+  enabled: boolean;
+  auto_create_deals: boolean;
+  auto_progress_deals: boolean;
+  auto_execute_threshold: number;
+  review_threshold: number;
+}
+
+export const crmAutonomyService = {
+  get: (workspaceId: string) =>
+    api.get<CRMAutonomySettings>(`/crm/autonomy-settings${qs(workspaceId)}`),
+  update: (workspaceId: string, settings: CRMAutonomySettings) =>
+    api.put<CRMAutonomySettings>(`/crm/autonomy-settings${qs(workspaceId)}`, settings),
 };
 
 // ── Phase 6: Search ──
