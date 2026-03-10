@@ -77,13 +77,6 @@ func main() {
 		log.Fatalf("failed to migrate pm import schema: %v", err)
 	}
 
-	if err := repository.MigrateWorkspaceMemberSchema(db); err != nil {
-		log.Fatalf("failed to migrate workspace member schema: %v", err)
-	}
-	if err := repository.DropLegacyWorkspaceIdentitySchema(db); err != nil {
-		log.Fatalf("failed to drop legacy workspace identity schema: %v", err)
-	}
-
 	// Auto-migrate all models.
 	// The SQL migration files in server/migrations/ are kept as reference documentation.
 	if err := db.AutoMigrate(
@@ -207,6 +200,14 @@ func main() {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
 	log.Println("database migration complete")
+
+	// Post-AutoMigrate schema migrations that reference tables created above.
+	if err := repository.MigrateWorkspaceMemberSchema(db); err != nil {
+		log.Fatalf("failed to migrate workspace member schema: %v", err)
+	}
+	if err := repository.DropLegacyWorkspaceIdentitySchema(db); err != nil {
+		log.Fatalf("failed to drop legacy workspace identity schema: %v", err)
+	}
 
 	// Migrate legacy objective states to lifecycle states + health (idempotent).
 	db.Exec("UPDATE pm_objectives SET state = 'not_started' WHERE state = 'to_do'")

@@ -2,6 +2,7 @@ import { Bell, BellOff, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useNotificationPreferences, useUpdateNotificationPreferences, useUserNotificationSettings, useUpdateUserNotificationSettings } from '@/hooks/queries';
+import { NOTIFICATION_CATEGORIES, type NotificationPreferences } from '@/lib/notificationTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
@@ -169,6 +170,81 @@ export function WorkspaceMuteNotificationsCard({ workspaceId, workspaceName, car
             onCheckedChange={handleMuteToggle}
           />
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const isChannelEnabled = (
+  prefs: NotificationPreferences | undefined,
+  categoryKey: string,
+  channel: 'in_app' | 'email',
+) => prefs?.channel_preferences?.[categoryKey]?.[channel] ?? true;
+
+export function WorkspaceNotificationCategoriesCard({ workspaceId, cardClassName }: CardClassNameProps & { workspaceId: string }) {
+  const { data: prefs, isLoading } = useNotificationPreferences(workspaceId);
+  const updatePrefs = useUpdateNotificationPreferences(workspaceId);
+
+  const handleToggle = (categoryKey: string, channel: 'in_app' | 'email', value: boolean) => {
+    const nextPreferences = { ...(prefs?.channel_preferences ?? {}) };
+    nextPreferences[categoryKey] = {
+      ...(nextPreferences[categoryKey] ?? {}),
+      [channel]: value,
+    };
+
+    updatePrefs.mutate({ channel_preferences: nextPreferences }, {
+      onError: () => toast.error('Failed to update notification preference'),
+    });
+  };
+
+  if (!workspaceId) {
+    return null;
+  }
+
+  if (isLoading) {
+    return <Skeleton className="h-80 w-full" />;
+  }
+
+  return (
+    <Card className={cardClassName}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Bell className="h-4 w-4" />
+          Notification Types
+        </CardTitle>
+        <CardDescription>Choose which activity from this workspace appears in-app and which activity can also send email.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-4 text-xs font-medium text-muted-foreground">
+          <span>Activity</span>
+          <span className="text-center">In-app</span>
+          <span className="text-center">Email</span>
+        </div>
+        {NOTIFICATION_CATEGORIES.map((category, index) => (
+          <div key={category.key}>
+            {index > 0 && <Separator className="mb-4" />}
+            <div className="grid grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{category.label}</p>
+                <p className="text-xs text-muted-foreground">{category.description}</p>
+              </div>
+              <div className="flex justify-center">
+                <Switch
+                  checked={isChannelEnabled(prefs, category.key, 'in_app')}
+                  disabled={updatePrefs.isPending}
+                  onCheckedChange={(value) => handleToggle(category.key, 'in_app', value)}
+                />
+              </div>
+              <div className="flex justify-center">
+                <Switch
+                  checked={isChannelEnabled(prefs, category.key, 'email')}
+                  disabled={updatePrefs.isPending}
+                  onCheckedChange={(value) => handleToggle(category.key, 'email', value)}
+                />
+              </div>
+            </div>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );

@@ -20,6 +20,7 @@ export function useUpdateUserNotificationSettings() {
       unwrap(await notificationsService.updateUserSettings(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.userNotificationSettings.all() })
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
     },
   })
 }
@@ -139,7 +140,7 @@ export function useUpdateNotificationPreferences(wsId: string) {
     mutationFn: async (data: UpdateNotificationPreferencesRequest) =>
       unwrap(await notificationsService.updatePreferences(wsId, data)),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.preferences(wsId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(wsId) })
     },
   })
 }
