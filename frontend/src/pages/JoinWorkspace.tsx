@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
 export default function JoinWorkspace() {
@@ -22,6 +24,9 @@ export default function JoinWorkspace() {
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fullName, setFullName] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const fetchInfo = async () => {
@@ -90,8 +95,29 @@ export default function JoinWorkspace() {
     );
   }
 
-  // Not logged in
+  // Not logged in — inline registration form
   if (!user) {
+    const handleSignupAndJoin = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (password.length < 8) {
+        toast.error('Password must be at least 8 characters');
+        return;
+      }
+      setSubmitting(true);
+      const { data, error: err } = await inviteService.acceptWithSignup(token, password, fullName);
+      if (err || !data) {
+        toast.error(err || 'Failed to create account');
+        setSubmitting(false);
+        return;
+      }
+      localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
+      useAuthStore.setState({ user: data.user, serverUnreachable: false });
+      toast.success(`Welcome to ${info?.workspace_name}!`);
+      await queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      navigate({ to: '/w/$slug/pm/stories', params: { slug: data.workspace_slug } });
+    };
+
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <Card className="w-full max-w-md">
@@ -101,18 +127,51 @@ export default function JoinWorkspace() {
               {info.invited_by_name} invited you to join as <Badge variant="secondary" className="ml-1">{info.role}</Badge>
             </CardDescription>
           </CardHeader>
-          <CardContent className="text-center text-sm text-muted-foreground">
-            <p>Sign in or create an account to accept this invitation.</p>
-            <p className="mt-1">Use <span className="font-medium">{info.email}</span> to join.</p>
-          </CardContent>
-          <CardFooter className="flex flex-col gap-2">
-            <Button className="w-full" onClick={() => navigate({ to: `/login?redirect=/join/${token}` as string })}>
-              Sign in
-            </Button>
-            <Button variant="outline" className="w-full" onClick={() => navigate({ to: `/register?redirect=/join/${token}` as string })}>
-              Create account
-            </Button>
-          </CardFooter>
+          <form onSubmit={handleSignupAndJoin}>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" value={info.email} disabled className="bg-muted" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fullName">Full Name</Label>
+                <Input
+                  id="fullName"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Enter your full name"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  minLength={8}
+                  required
+                />
+              </div>
+            </CardContent>
+            <CardFooter className="flex flex-col gap-3">
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? 'Creating account...' : `Create account & join ${info.workspace_name}`}
+              </Button>
+              <p className="text-sm text-muted-foreground">
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  className="text-primary hover:underline cursor-pointer"
+                  onClick={() => navigate({ to: `/login?redirect=/join/${token}` as string })}
+                >
+                  Sign in
+                </button>
+              </p>
+            </CardFooter>
+          </form>
         </Card>
       </div>
     );

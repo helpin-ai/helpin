@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { Invitation, InviteInfo } from '../types';
+import type { Invitation, InviteInfo, User } from '../types';
 
 export const inviteService = {
   send: (data: { workspace_id: string; email: string; role: string }) =>
@@ -14,4 +14,9 @@ export const inviteService = {
     api.post<{ message: string }>(`/invitations/${id}/resend?workspace_id=${encodeURIComponent(workspaceId)}`),
   revoke: (id: string, workspaceId: string) =>
     api.del<{ message: string }>(`/invitations/${id}?workspace_id=${encodeURIComponent(workspaceId)}`),
+  acceptWithSignup: (token: string, password: string, fullName: string) =>
+    api.post<{ access_token: string; refresh_token: string; user: User; workspace_slug: string }>(
+      '/invitations/accept-with-signup',
+      { token, password, full_name: fullName }
+    ),
 };

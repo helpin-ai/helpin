@@ -5,22 +5,22 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 export const PRESET_COLORS = [
-  '#3b82f6', // blue
-  '#16a34a', // green
-  '#ec4899', // pink
-  '#64748b', // slate
-  '#ef4444', // red
-  '#f97316', // orange
-  '#eab308', // yellow
-  '#14b8a6', // teal
+  '#5e6ad2', // indigo
+  '#4e8fea', // blue
+  '#3daed4', // cyan
+  '#2da88e', // teal
+  '#45a557', // green
+  '#7da642', // olive
+  '#c7a53d', // amber
+  '#e58c3a', // orange
+  '#e2564a', // red
+  '#e54e78', // rose
+  '#d44ca0', // pink
+  '#b44ec9', // purple
   '#8b5cf6', // violet
-  '#6366f1', // indigo
-  '#06b6d4', // cyan
-  '#d946ef', // fuchsia
-  '#84cc16', // lime
-  '#f43f5e', // rose
-  '#0ea5e9', // sky
-  '#a855f7', // purple
+  '#4a9ed6', // sky
+  '#a08060', // brown
+  '#788596', // slate
 ];
 
 // ── Color conversion utilities ──────────────────────────────────────
