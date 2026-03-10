@@ -830,6 +830,24 @@ func (s *NotificationService) workspaceName(ctx context.Context, workspaceID str
 	return workspace.Name
 }
 
+// CleanupArchivedNotifications deletes archived notifications older than the
+// specified retention period. Returns the number of notifications deleted.
+func (s *NotificationService) CleanupArchivedNotifications(ctx context.Context, retentionDays int) (int64, error) {
+	if retentionDays <= 0 {
+		retentionDays = 90
+	}
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	count, err := s.notifRepo.DeleteArchivedOlderThan(ctx, cutoff)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to cleanup archived notifications", "error", err, "retention_days", retentionDays)
+		return 0, err
+	}
+	if count > 0 {
+		s.logger.InfoContext(ctx, "cleaned up archived notifications", "deleted_count", count, "retention_days", retentionDays, "cutoff", cutoff)
+	}
+	return count, nil
+}
+
 // List returns paginated notifications for a user.
 func (s *NotificationService) List(ctx context.Context, recipientID, workspaceID, status, filter string, limit int, cursor *time.Time) (*model.NotificationListResponse, error) {
 	notifs, err := s.notifRepo.List(ctx, recipientID, workspaceID, status, filter, limit, cursor)
@@ -967,6 +985,9 @@ func (s *NotificationService) UpdatePreferences(ctx context.Context, userID, wor
 			userSettings.EmailDigestDay = *req.EmailDigestDay
 		}
 		if req.Timezone != nil {
+			if err := ValidateTimezone(*req.Timezone); err != nil {
+				return err
+			}
 			userSettings.Timezone = *req.Timezone
 		}
 		if req.BadgeMode != nil {

@@ -2,12 +2,26 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
+
+// ValidateTimezone checks whether the given string is a valid IANA timezone
+// identifier. An empty string is accepted and treated as "UTC" downstream.
+func ValidateTimezone(tz string) error {
+	if tz == "" || tz == "UTC" || tz == "Local" {
+		return nil
+	}
+	_, err := time.LoadLocation(tz)
+	if err != nil {
+		return fmt.Errorf("invalid timezone %q: %w", tz, err)
+	}
+	return nil
+}
 
 // UserNotificationSettingsService manages account-level notification settings.
 type UserNotificationSettingsService struct {
@@ -65,6 +79,9 @@ func (s *UserNotificationSettingsService) Update(ctx context.Context, userID str
 		settings.BadgeMode = *req.BadgeMode
 	}
 	if req.Timezone != nil {
+		if err := ValidateTimezone(*req.Timezone); err != nil {
+			return nil, err
+		}
 		settings.Timezone = *req.Timezone
 	}
 

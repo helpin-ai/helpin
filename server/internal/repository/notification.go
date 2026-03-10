@@ -268,6 +268,18 @@ func (r *NotificationRepository) CreateDelivery(ctx context.Context, delivery *m
 	return r.db.WithContext(ctx).Create(delivery).Error
 }
 
+// DeleteArchivedOlderThan removes archived notifications older than the given cutoff.
+// Returns the number of rows deleted.
+func (r *NotificationRepository) DeleteArchivedOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	tx := r.db.WithContext(ctx).
+		Where("status = 'archived' AND updated_at < ?", cutoff).
+		Delete(&model.Notification{})
+	if tx.Error != nil {
+		return 0, fmt.Errorf("delete archived notifications: %w", tx.Error)
+	}
+	return tx.RowsAffected, nil
+}
+
 // WakeExpiredSnoozes finds and wakes snoozed notifications whose snooze has expired.
 func (r *NotificationRepository) WakeExpiredSnoozes(ctx context.Context) ([]model.Notification, error) {
 	var notifs []model.Notification

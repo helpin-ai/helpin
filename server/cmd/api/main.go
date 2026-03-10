@@ -610,6 +610,32 @@ func main() {
 		}
 	}()
 
+	// Start background ticker for archived notification cleanup (daily).
+	cleanupDone := make(chan struct{})
+	go func() {
+		// Run once on startup, then every 24 hours.
+		if count, err := notificationService.CleanupArchivedNotifications(context.Background(), 90); err != nil {
+			log.Printf("notification cleanup failed: %v", err)
+		} else if count > 0 {
+			log.Printf("notification cleanup: deleted %d archived notifications", count)
+		}
+
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if count, err := notificationService.CleanupArchivedNotifications(context.Background(), 90); err != nil {
+					log.Printf("notification cleanup failed: %v", err)
+				} else if count > 0 {
+					log.Printf("notification cleanup: deleted %d archived notifications", count)
+				}
+			case <-cleanupDone:
+				return
+			}
+		}
+	}()
+
 	// Wrap router so /api/ws bypasses Chi middleware (Recoverer strips
 	// http.Hijacker which WebSocket upgrade requires).
 	var topHandler http.Handler = r
@@ -650,6 +676,7 @@ func main() {
 	log.Println("server shutting down...")
 	close(automationDone)
 	close(digestDone)
+	close(cleanupDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
