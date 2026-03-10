@@ -161,7 +161,7 @@ func newCRUDNotificationService(db *gorm.DB) *NotificationService {
 		repository.NewFollowerRepository(db),
 		repository.NewUserRepository(db),
 		repository.NewWorkspaceRepository(db),
-		nil, nil,
+		nil, nil, "",
 	)
 }
 

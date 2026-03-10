@@ -80,7 +80,7 @@ func TestCleanupArchivedNotifications_DeletesOldArchived(t *testing.T) {
 
 	svc := NewNotificationService(
 		repository.NewNotificationRepository(db),
-		nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, "",
 	)
 
 	count, err := svc.CleanupArchivedNotifications(ctx, 90)
@@ -111,7 +111,7 @@ func TestCleanupArchivedNotifications_DefaultRetention(t *testing.T) {
 
 	svc := NewNotificationService(
 		repository.NewNotificationRepository(db),
-		nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, "",
 	)
 
 	// 0 should default to 90
@@ -136,7 +136,7 @@ func TestCleanupArchivedNotifications_NothingToDelete(t *testing.T) {
 
 	svc := NewNotificationService(
 		repository.NewNotificationRepository(db),
-		nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, "",
 	)
 
 	count, err := svc.CleanupArchivedNotifications(ctx, 90)
@@ -161,7 +161,7 @@ func TestCleanupArchivedNotifications_CustomRetentionDays(t *testing.T) {
 
 	svc := NewNotificationService(
 		repository.NewNotificationRepository(db),
-		nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, "",
 	)
 
 	// 30-day retention: should delete the 40-day-old one
@@ -188,7 +188,7 @@ func TestCleanupArchivedNotifications_EmptyTable(t *testing.T) {
 
 	svc := NewNotificationService(
 		repository.NewNotificationRepository(db),
-		nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, "",
 	)
 
 	count, err := svc.CleanupArchivedNotifications(ctx, 90)

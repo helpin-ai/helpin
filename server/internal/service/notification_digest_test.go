@@ -87,6 +87,7 @@ func TestProcessPendingDigests_SendsDueDigestAndSkipsResolvedNotifications(t *te
 		nil,
 		nil,
 		emailer,
+		"",
 	)
 
 	if err := service.ProcessPendingDigests(ctx, now); err != nil {
@@ -140,6 +141,7 @@ func TestProcessPendingDigests_RespectsCurrentWorkspaceEmailPreferences(t *testi
 		nil,
 		nil,
 		emailer,
+		"",
 	)
 
 	if err := service.ProcessPendingDigests(ctx, now); err != nil {
@@ -178,6 +180,7 @@ func TestProcessPendingDigests_SkipsWhenAccountEmailDisabled(t *testing.T) {
 		nil,
 		nil,
 		emailer,
+		"",
 	)
 
 	if err := service.ProcessPendingDigests(ctx, now); err != nil {
@@ -216,6 +219,7 @@ func TestProcessPendingDigests_SkipsWhenDNDUntilIsActive(t *testing.T) {
 		nil,
 		nil,
 		emailer,
+		"",
 	)
 
 	if err := service.ProcessPendingDigests(ctx, now); err != nil {
@@ -250,6 +254,7 @@ func TestProcessPendingDigests_FailsWhenUserRepositoryMissing(t *testing.T) {
 		nil,
 		nil,
 		&stubEmailSender{},
+		"",
 	)
 
 	if err := service.ProcessPendingDigests(ctx, now); err != nil {
@@ -284,6 +289,7 @@ func TestProcessPendingDigests_MarksIncludedRowsFailedOnSendError(t *testing.T) 
 		nil,
 		nil,
 		emailer,
+		"",
 	)
 
 	if err := service.ProcessPendingDigests(ctx, now); err != nil {

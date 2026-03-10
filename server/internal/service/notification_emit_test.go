@@ -33,6 +33,7 @@ func TestEmit_CreatesNotificationAndImmediateEmailDelivery(t *testing.T) {
 		repository.NewWorkspaceRepository(db),
 		nil,
 		emailer,
+		"",
 	)
 
 	if err := service.Emit(ctx, model.NotificationEventInput{
@@ -117,6 +118,7 @@ func TestEmit_UpdatesExistingNotificationAndAddsEvent(t *testing.T) {
 		repository.NewWorkspaceRepository(db),
 		nil,
 		nil,
+		"",
 	)
 
 	if err := service.Emit(ctx, model.NotificationEventInput{
@@ -189,6 +191,7 @@ func TestEmit_SkipsNotificationWhenWorkspaceCategoryDisablesInApp(t *testing.T) 
 		repository.NewWorkspaceRepository(db),
 		nil,
 		emailer,
+		"",
 	)
 
 	if err := service.Emit(ctx, model.NotificationEventInput{
@@ -302,6 +305,7 @@ func TestBuildDeliveryPlans_ImmediateEmailBranches(t *testing.T) {
 				repository.NewWorkspaceRepository(db),
 				nil,
 				emailClient,
+				"",
 			)
 
 			plans, err := service.buildDeliveryPlans(ctx, "user-1", event, "normal", now)

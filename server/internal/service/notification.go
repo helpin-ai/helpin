@@ -32,6 +32,7 @@ type NotificationService struct {
 	workspaceRepo    *repository.WorkspaceRepository
 	wsPublisher      *ws.Publisher
 	emailClient      emailSender
+	appBaseURL       string
 	logger           *slog.Logger
 }
 
@@ -49,6 +50,7 @@ func NewNotificationService(
 	workspaceRepo *repository.WorkspaceRepository,
 	wsPublisher *ws.Publisher,
 	emailClient emailSender,
+	appBaseURL string,
 ) *NotificationService {
 	return &NotificationService{
 		notifRepo:        notifRepo,
@@ -59,6 +61,7 @@ func NewNotificationService(
 		workspaceRepo:    workspaceRepo,
 		wsPublisher:      wsPublisher,
 		emailClient:      emailClient,
+		appBaseURL:       strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
 		logger:           slog.Default().With("service", "notification"),
 	}
 }
@@ -455,9 +458,13 @@ func normalizeEmailDigestFrequency(freq string) string {
 
 func (s *NotificationService) renderImmediateEmail(ctx context.Context, event model.NotificationEventInput) (string, string, string) {
 	workspaceName := "Helpin"
+	workspaceSlug := ""
 	if s.workspaceRepo != nil {
-		if workspace, err := s.workspaceRepo.GetByID(ctx, event.WorkspaceID); err == nil && workspace != nil && strings.TrimSpace(workspace.Name) != "" {
-			workspaceName = workspace.Name
+		if workspace, err := s.workspaceRepo.GetByID(ctx, event.WorkspaceID); err == nil && workspace != nil {
+			if strings.TrimSpace(workspace.Name) != "" {
+				workspaceName = workspace.Name
+			}
+			workspaceSlug = workspace.Slug
 		}
 	}
 
@@ -470,19 +477,144 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
 		}
 	}
 
+	entityURL := buildEntityURL(s.appBaseURL, workspaceSlug, event.EntityType, event.EntityID)
+
 	subject := fmt.Sprintf("[%s] %s", workspaceName, event.Title)
 	textBody := event.Title
 	if strings.TrimSpace(event.Body) != "" {
 		textBody += "\n\n" + event.Body
 	}
-	textBody += fmt.Sprintf("\n\nActor: %s\nWorkspace: %s", actorName, workspaceName)
+	textBody += fmt.Sprintf("\n\nBy: %s\nWorkspace: %s", actorName, workspaceName)
+	if entityURL != "" {
+		textBody += "\n\nView in Helpin: " + entityURL
+	}
 
-	htmlBody := fmt.Sprintf(
-		"<html><body style=\"font-family:Arial,sans-serif;background:#f5f5f5;padding:24px;\"><div style=\"max-width:640px;margin:0 auto;background:#fff;border:1px solid #e5e5e5;padding:24px;\"><p style=\"margin:0 0 12px;color:#666;font-size:13px;\">%s</p><h1 style=\"margin:0 0 12px;font-size:20px;color:#111;\">%s</h1><p style=\"margin:0 0 16px;color:#444;font-size:14px;\">%s</p><p style=\"margin:0;color:#666;font-size:12px;\">Actor: %s</p></div></body></html>",
+	// Build CTA section only if we have a URL.
+	ctaHTML := ""
+	if entityURL != "" {
+		ctaHTML = fmt.Sprintf(`
+                      <!-- CTA Button -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 24px;">
+                          <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                              <td style="border-radius: 8px; background-color: #18181b;">
+                                <a href="%s" target="_blank" style="display: inline-block; padding: 14px 40px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 0.2px;">View in Helpin</a>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>`, html.EscapeString(entityURL))
+	}
+
+	// Body paragraph (only if non-empty).
+	bodyHTML := ""
+	if trimmedBody := strings.TrimSpace(event.Body); trimmedBody != "" {
+		bodyHTML = fmt.Sprintf(`
+                      <tr>
+                        <td align="center" style="padding-bottom: 24px;">
+                          <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #52525b;">%s</p>
+                        </td>
+                      </tr>`, html.EscapeString(trimmedBody))
+	}
+
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Notification</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f0f3; -webkit-font-smoothing: antialiased;">
+  <!-- Preheader text (hidden) -->
+  <div style="display: none; max-height: 0; overflow: hidden;">
+    %s in %s: %s
+  </div>
+
+  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
+    <tr>
+      <td align="center" style="padding: 48px 16px;">
+        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
+
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding-bottom: 32px;">
+              <span style="font-size: 22px; font-weight: 700; color: #18181b; letter-spacing: -0.5px;">Helpin</span>
+            </td>
+          </tr>
+
+          <!-- Main Card -->
+          <tr>
+            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
+              <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+
+                <!-- Top accent bar -->
+                <tr>
+                  <td style="height: 4px; background: linear-gradient(90deg, #18181b 0%%, #3b3b3f 100%%); border-radius: 12px 12px 0 0; font-size: 0; line-height: 0;">&nbsp;</td>
+                </tr>
+
+                <!-- Content -->
+                <tr>
+                  <td style="padding: 40px 36px 36px;">
+                    <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+
+                      <!-- Workspace name badge -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 20px;">
+                          <span style="display: inline-block; font-size: 13px; font-weight: 600; color: #52525b; background-color: #f4f4f5; padding: 4px 12px; border-radius: 6px;">%s</span>
+                        </td>
+                      </tr>
+
+                      <!-- Heading -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 12px;">
+                          <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #18181b; line-height: 1.3;">%s</h1>
+                        </td>
+                      </tr>
+
+                      <!-- Body -->
+                      %s
+
+                      <!-- Actor -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 28px;">
+                          <p style="margin: 0; font-size: 13px; color: #a1a1aa;">By %s</p>
+                        </td>
+                      </tr>
+
+                      %s
+
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding: 28px 16px 0;">
+              <p style="margin: 0; font-size: 12px; color: #a1a1aa; line-height: 1.5;">
+                You received this email because you have notifications enabled on Helpin.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`,
+		html.EscapeString(actorName),
 		html.EscapeString(workspaceName),
 		html.EscapeString(event.Title),
-		html.EscapeString(strings.TrimSpace(event.Body)),
+		html.EscapeString(workspaceName),
+		html.EscapeString(event.Title),
+		bodyHTML,
 		html.EscapeString(actorName),
+		ctaHTML,
 	)
 
 	return subject, htmlBody, textBody
@@ -768,41 +900,172 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
 	}
 
 	workspaceNames := make(map[string]string, len(items))
+	workspaceSlugs := make(map[string]string, len(items))
 	workspaceOrder := make([]string, 0)
 	grouped := make(map[string][]digestNotificationItem)
 	for _, item := range items {
 		if _, ok := grouped[item.WorkspaceID]; !ok {
 			workspaceOrder = append(workspaceOrder, item.WorkspaceID)
 			workspaceNames[item.WorkspaceID] = s.workspaceName(ctx, item.WorkspaceID)
+			workspaceSlugs[item.WorkspaceID] = s.workspaceSlug(ctx, item.WorkspaceID)
 		}
 		grouped[item.WorkspaceID] = append(grouped[item.WorkspaceID], item)
 	}
 
 	subject := fmt.Sprintf("[Helpin] %d unread notifications", len(items))
 
-	var textBody strings.Builder
-	textBody.WriteString(fmt.Sprintf("You have %d unread notifications.\n\n", len(items)))
-
-	var htmlSections strings.Builder
-	htmlSections.WriteString("<html><body style=\"font-family:Arial,sans-serif;background:#f5f5f5;padding:24px;\"><div style=\"max-width:680px;margin:0 auto;background:#fff;border:1px solid #e5e5e5;padding:24px;\"><h1 style=\"margin:0 0 16px;font-size:20px;color:#111;\">Notification digest</h1>")
-
-	for _, workspaceID := range workspaceOrder {
-		workspaceName := workspaceNames[workspaceID]
-		textBody.WriteString(workspaceName + "\n")
-		htmlSections.WriteString(fmt.Sprintf("<h2 style=\"margin:24px 0 8px;font-size:16px;color:#111;\">%s</h2><ul style=\"padding-left:20px;margin:0;\">", html.EscapeString(workspaceName)))
-
-		for _, item := range grouped[workspaceID] {
-			line := digestItemLine(item)
-			textBody.WriteString("- " + line + "\n")
-			htmlSections.WriteString(fmt.Sprintf("<li style=\"margin:0 0 8px;color:#444;font-size:14px;\">%s</li>", html.EscapeString(line)))
+	// Determine CTA URL: link to the first workspace root.
+	ctaURL := ""
+	if len(workspaceOrder) > 0 {
+		if slug := workspaceSlugs[workspaceOrder[0]]; slug != "" && s.appBaseURL != "" {
+			ctaURL = s.appBaseURL + "/w/" + slug
 		}
-
-		textBody.WriteString("\n")
-		htmlSections.WriteString("</ul>")
 	}
 
-	htmlSections.WriteString("</div></body></html>")
-	return subject, htmlSections.String(), strings.TrimSpace(textBody.String())
+	// Plain text body.
+	var textBody strings.Builder
+	fmt.Fprintf(&textBody, "You have %d unread notifications.\n\n", len(items))
+	for _, workspaceID := range workspaceOrder {
+		textBody.WriteString(workspaceNames[workspaceID] + "\n")
+		for _, item := range grouped[workspaceID] {
+			textBody.WriteString("- " + digestItemLine(item) + "\n")
+		}
+		textBody.WriteString("\n")
+	}
+	if ctaURL != "" {
+		textBody.WriteString("View all notifications: " + ctaURL + "\n")
+	}
+
+	// Build per-workspace HTML sections.
+	var wsSections strings.Builder
+	for _, workspaceID := range workspaceOrder {
+		wsName := html.EscapeString(workspaceNames[workspaceID])
+		fmt.Fprintf(&wsSections, `
+                      <tr>
+                        <td style="padding-bottom: 4px;">
+                          <h2 style="margin: 0; font-size: 16px; font-weight: 700; color: #18181b;">%s</h2>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding-bottom: 20px;">
+                          <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">`, wsName)
+		for _, item := range grouped[workspaceID] {
+			line := html.EscapeString(digestItemLine(item))
+			fmt.Fprintf(&wsSections, `
+                            <tr>
+                              <td style="padding: 8px 0; border-bottom: 1px solid #f4f4f5;">
+                                <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #52525b;">%s</p>
+                              </td>
+                            </tr>`, line)
+		}
+		wsSections.WriteString(`
+                          </table>
+                        </td>
+                      </tr>`)
+	}
+
+	// Build CTA button HTML.
+	ctaHTML := ""
+	if ctaURL != "" {
+		ctaHTML = fmt.Sprintf(`
+                      <tr>
+                        <td align="center" style="padding-top: 8px; padding-bottom: 24px;">
+                          <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                              <td style="border-radius: 8px; background-color: #18181b;">
+                                <a href="%s" target="_blank" style="display: inline-block; padding: 14px 40px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 0.2px;">View All Notifications</a>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>`, html.EscapeString(ctaURL))
+	}
+
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Notification Digest</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f0f3; -webkit-font-smoothing: antialiased;">
+  <!-- Preheader text (hidden) -->
+  <div style="display: none; max-height: 0; overflow: hidden;">
+    You have %d unread notifications
+  </div>
+
+  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
+    <tr>
+      <td align="center" style="padding: 48px 16px;">
+        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
+
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding-bottom: 32px;">
+              <span style="font-size: 22px; font-weight: 700; color: #18181b; letter-spacing: -0.5px;">Helpin</span>
+            </td>
+          </tr>
+
+          <!-- Main Card -->
+          <tr>
+            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
+              <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+
+                <!-- Top accent bar -->
+                <tr>
+                  <td style="height: 4px; background: linear-gradient(90deg, #18181b 0%%, #3b3b3f 100%%); border-radius: 12px 12px 0 0; font-size: 0; line-height: 0;">&nbsp;</td>
+                </tr>
+
+                <!-- Content -->
+                <tr>
+                  <td style="padding: 40px 36px 36px;">
+                    <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+
+                      <!-- Heading -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 8px;">
+                          <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #18181b; line-height: 1.3;">Notification digest</h1>
+                        </td>
+                      </tr>
+
+                      <!-- Subtext -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 28px;">
+                          <p style="margin: 0; font-size: 15px; color: #52525b;">You have %d unread notifications</p>
+                        </td>
+                      </tr>
+
+                      <!-- Workspace sections -->
+                      %s
+
+                      <!-- CTA -->
+                      %s
+
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding: 28px 16px 0;">
+              <p style="margin: 0; font-size: 12px; color: #a1a1aa; line-height: 1.5;">
+                You received this email because you have notifications enabled on Helpin.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`, len(items), len(items), wsSections.String(), ctaHTML)
+
+	return subject, htmlBody, strings.TrimSpace(textBody.String())
 }
 
 func digestItemLine(item digestNotificationItem) string {
@@ -817,6 +1080,37 @@ func pluralSuffix(count int) string {
 		return ""
 	}
 	return "s"
+}
+
+// buildEntityURL constructs a frontend URL for the given entity.
+func buildEntityURL(baseURL, slug, entityType, entityID string) string {
+	if baseURL == "" || slug == "" {
+		return ""
+	}
+	base := baseURL + "/w/" + slug
+	switch entityType {
+	case "story":
+		return base + "/pm/stories/" + entityID
+	case "epic":
+		return base + "/pm/epics/" + entityID
+	case "objective":
+		return base + "/pm/objectives/" + entityID
+	case "sprint":
+		return base + "/pm/sprints/" + entityID
+	default:
+		return base
+	}
+}
+
+func (s *NotificationService) workspaceSlug(ctx context.Context, workspaceID string) string {
+	if s.workspaceRepo == nil || strings.TrimSpace(workspaceID) == "" {
+		return ""
+	}
+	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil || workspace == nil {
+		return ""
+	}
+	return workspace.Slug
 }
 
 func (s *NotificationService) workspaceName(ctx context.Context, workspaceID string) string {
