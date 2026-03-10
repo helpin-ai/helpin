@@ -4,7 +4,7 @@
 export const TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto';
 
 /** Sticky header bar */
-export const TABLE_HEADER = 'sticky top-0 z-10 border-b border-border/60 bg-muted/50';
+export const TABLE_HEADER = 'sticky top-0 z-10 border-b border-border/60 bg-background';
 
 /** Individual header cell – compact, subtle text */
 export const TABLE_HEADER_CELL =
@@ -43,17 +43,17 @@ export const ACTIONS_COL_SIZE = 44;
 
 /** Pinned cell (left) – sticky with background so content doesn't bleed through */
 export const TABLE_PINNED_LEFT =
-  'sticky z-[2] bg-background group-hover:bg-muted/50';
+  'sticky z-[2] bg-background group-hover:bg-muted';
 
 /** Pinned cell (right) – sticky right with background */
 export const TABLE_PINNED_RIGHT =
-  'sticky right-0 z-[2] bg-background group-hover:bg-muted/50';
+  'sticky right-0 z-[2] bg-background group-hover:bg-muted';
 
 /** Pinned header cell (left) – higher z-index than both header and pinned cells */
-export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-muted/50';
+export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-background';
 
 /** Pinned header cell (right) – higher z-index, sticky right */
-export const TABLE_PINNED_HEADER_RIGHT = 'sticky right-0 z-[11] bg-muted/50';
+export const TABLE_PINNED_HEADER_RIGHT = 'sticky right-0 z-[11] bg-background';
 
 /** Checkbox hover-reveal – hidden by default, visible on row hover or when checked */
 export const TABLE_CHECKBOX_HOVER =

@@ -60,7 +60,9 @@ import {
   TABLE_ROW,
   TABLE_CELL,
   TABLE_GROUP_ROW,
+  TABLE_PINNED_LEFT,
   TABLE_PINNED_RIGHT,
+  TABLE_PINNED_HEADER_LEFT,
   TABLE_PINNED_HEADER_RIGHT,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
@@ -157,6 +159,7 @@ export function StoryListView({
   const [groupBy, setGroupBy] = useState<GroupByOption>('workflow_state');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const pinnedGroupRef = useRef<number | null>(null);
   const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -355,7 +358,7 @@ export function StoryListView({
       columnHelper.accessor('name', {
         id: 'name',
         header: 'Name',
-        size: 999,
+        size: 280,
         enableGrouping: false,
         cell: (info) => (
           <button
@@ -711,10 +714,43 @@ export function StoryListView({
       </div>
 
       {/* Table */}
-      <div className={TABLE_CONTAINER}>
+      <div
+        ref={parentRef}
+        className={TABLE_CONTAINER}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const scrollTop = el.scrollTop;
+
+          // Infinite loading
+          if (!isExternal && hasMore && !loadingMore) {
+            if (scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+              loadMore();
+            }
+          }
+
+          // Track pinned group header
+          const vItems = virtualizer.getVirtualItems();
+          let newPinnedIdx: number | null = null;
+          if (scrollTop > 10) {
+            for (const vItem of vItems) {
+              if (vItem.start > scrollTop) break;
+              if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
+            }
+            if (newPinnedIdx === null && vItems.length > 0) {
+              for (let i = vItems[0].index - 1; i >= 0; i--) {
+                if (rows[i]?.getIsGrouped()) { newPinnedIdx = i; break; }
+              }
+            }
+          }
+          if (newPinnedIdx !== pinnedGroupRef.current) {
+            pinnedGroupRef.current = newPinnedIdx;
+            setPinnedGroupIdx(newPinnedIdx);
+          }
+        }}
+      >
         <div className="min-w-fit">
         {/* Header */}
-        <div className={TABLE_HEADER}>
+        <div ref={headerRef} className={TABLE_HEADER}>
           {table.getHeaderGroups().map((headerGroup) => (
             <div key={headerGroup.id} className="flex items-center">
               {headerGroup.headers.map((header) => {
@@ -726,8 +762,13 @@ export function StoryListView({
                 const canSort = header.column.getCanSort();
                 const sorted = header.column.getIsSorted();
                 const colId = header.column.id;
-                const pinnedClass = colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
-                const pinnedSt = colId === 'actions' ? pinnedStyle('right', 0) : {};
+                const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+                  ? TABLE_PINNED_HEADER_LEFT
+                  : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
+                const pinnedSt = colId === 'displayId' ? pinnedStyle('left', 0)
+                  : colId === 'typeIcon' ? pinnedStyle('left', 90)
+                  : colId === 'name' ? pinnedStyle('left', 130)
+                  : colId === 'actions' ? pinnedStyle('right', 0) : {};
                 return (
                   <div
                     key={header.id}
@@ -767,46 +808,13 @@ export function StoryListView({
         </div>
 
         {/* Virtualized body */}
-        <div
-          ref={parentRef}
-          className="overflow-auto"
-          style={{ height: 'calc(100% - 30px)' }}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            const scrollTop = el.scrollTop;
-
-            // Infinite loading
-            if (!isExternal && hasMore && !loadingMore) {
-              if (scrollTop + el.clientHeight >= el.scrollHeight - 200) {
-                loadMore();
-              }
-            }
-
-            // Track pinned group header
-            const vItems = virtualizer.getVirtualItems();
-            let newPinnedIdx: number | null = null;
-            if (scrollTop > 10) {
-              for (const vItem of vItems) {
-                if (vItem.start > scrollTop) break;
-                if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
-              }
-              if (newPinnedIdx === null && vItems.length > 0) {
-                for (let i = vItems[0].index - 1; i >= 0; i--) {
-                  if (rows[i]?.getIsGrouped()) { newPinnedIdx = i; break; }
-                }
-              }
-            }
-            if (newPinnedIdx !== pinnedGroupRef.current) {
-              pinnedGroupRef.current = newPinnedIdx;
-              setPinnedGroupIdx(newPinnedIdx);
-            }
-          }}
-        >
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
-            {/* Pinned sticky group header */}
+            {/* Pinned sticky group header — offset below the table header */}
             {pinnedGroupRow && (
-              <div className="sticky top-0 z-[5] bg-background" style={{ height: 0, overflow: 'visible' }}>
-                <GroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} />
+              <div className="sticky z-[5]" style={{ top: headerRef.current?.offsetHeight ?? 0, height: 0, overflow: 'visible' }}>
+                <div className="bg-background border-b border-border/50">
+                  <GroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} />
+                </div>
               </div>
             )}
             {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -841,7 +849,6 @@ export function StoryListView({
               Loading more stories...
             </div>
           )}
-        </div>
         </div>
       </div>
     </div>
@@ -912,8 +919,13 @@ function DataRow({ row, onOpenStory, columnSizing }: { row: Row<Story>; onOpenSt
         const isResized = !!columnSizing[cell.column.id];
         if (defSize === 0 && runtimeSize === 0) return null;
         const colId = cell.column.id;
-        const pinnedClass = colId === 'actions' ? TABLE_PINNED_RIGHT : '';
-        const pinnedSt = colId === 'actions' ? pinnedStyle('right', 0) : {};
+        const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+          ? TABLE_PINNED_LEFT
+          : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
+        const pinnedSt = colId === 'displayId' ? pinnedStyle('left', 0)
+          : colId === 'typeIcon' ? pinnedStyle('left', 90)
+          : colId === 'name' ? pinnedStyle('left', 130)
+          : colId === 'actions' ? pinnedStyle('right', 0) : {};
         return (
           <div
             key={cell.id}
