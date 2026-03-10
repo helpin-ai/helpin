@@ -97,13 +97,13 @@ slog.InfoContext(r.Context(), "http request",
 | 6 | `service/audit.go` | audit trail creation | 0 | [x] |
 | 7 | `service/pm_sprint.go` | sprint lifecycle | 0 | [x] |
 | 8 | `service/pm_epic.go` | epic CRUD | 11 | [x] |
-| 9 | `service/pm_objective.go` | objective CRUD | 2 | [ ] |
-| 10 | `service/pm_automation.go` | auto-workflow (replace `log.Printf`) | 2 | [ ] |
-| 11 | `service/pm_story.go` | story CRUD (extend existing) | 20+ | [ ] |
+| 9 | `service/pm_objective.go` | objective CRUD | 2 | [x] |
+| 10 | `service/pm_automation.go` | auto-workflow (replace `log.Printf`) | 2 | [x] |
+| 11 | `service/pm_story.go` | story CRUD (extend existing) | 20+ | [x] |
 | 12 | `service/pm_workflow.go` | workflow state changes | 0 | [x] |
 | 13 | `service/pm_label.go` | label management | 0 | [x] |
 | 14 | `service/pm_view.go` | saved views | 0 | [x] |
-| 15 | `service/pm_comment.go` | comments (extend existing) | 4 | [ ] |
+| 15 | `service/pm_comment.go` | comments (extend existing) | 4 | [x] |
 
 ### 2B. Core Service Tests
 
@@ -115,7 +115,7 @@ slog.InfoContext(r.Context(), "http request",
 | Settings service (get/update, defaults) | `service/settings_test.go` | [x] |
 | Sprint service (create, start, complete, dates) | `service/pm_sprint_test.go` | [x] |
 | Epic service (CRUD, archive) | `service/pm_epic_test.go` | [x] |
-| Story service (CRUD, state transitions) | `service/pm_story_extended_test.go` | [ ] |
+| Story service (CRUD, state transitions) | `service/pm_story_extended_test.go` | [x] |
 | Invite service (create, accept, duplicate) | `service/invite_test.go` | [x] |
 
 ---

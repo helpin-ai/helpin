@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ type PMObjectiveService struct {
 	activitySvc         *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
+	logger              *slog.Logger
 }
 
 // NewPMObjectiveService creates a new PMObjectiveService.
@@ -41,6 +43,7 @@ func NewPMObjectiveService(
 		activitySvc:         activitySvc,
 		wsPublisher:         wsPublisher,
 		notificationService: notificationService,
+		logger:              slog.Default().With("service", "pm_objective"),
 	}
 }
 
@@ -198,11 +201,13 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 		}
 	}
 
-	_ = s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
+	if err := s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "created", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for objective create", "error", err, "objective_id", obj.ID, "workspace_id", obj.WorkspaceID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: obj.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   "objective.created",
@@ -215,9 +220,12 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 				"title": obj.Name,
 				"type":  obj.ObjectiveType,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit notification for objective create", "error", err, "objective_id", obj.ID, "workspace_id", obj.WorkspaceID)
+		}
 	}
 
+	s.logger.InfoContext(ctx, "objective created", "objective_id", obj.ID, "workspace_id", obj.WorkspaceID, "actor_id", actorID)
 	return s.GetByID(ctx, obj.ID)
 }
 
@@ -316,11 +324,13 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 		}
 	}
 
-	_ = s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
+	if err := s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "updated", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for objective update", "error", err, "objective_id", obj.ID, "workspace_id", obj.WorkspaceID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: obj.ID, WorkspaceID: obj.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: obj.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   "objective.updated",
@@ -333,9 +343,12 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 				"title": obj.Name,
 				"type":  obj.ObjectiveType,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit notification for objective update", "error", err, "objective_id", obj.ID, "workspace_id", obj.WorkspaceID)
+		}
 	}
 
+	s.logger.InfoContext(ctx, "objective updated", "objective_id", obj.ID, "workspace_id", obj.WorkspaceID, "actor_id", actorID)
 	return s.GetByID(ctx, obj.ID)
 }
 
@@ -354,11 +367,13 @@ func (s *PMObjectiveService) Delete(ctx context.Context, id string, actorID stri
 	if err := s.objectiveRepo.Delete(ctx, id); err != nil {
 		return err
 	}
-	_ = s.activitySvc.Log(ctx, obj.Objective.WorkspaceID, "objective", id, optionalActor(actorID), "archived", nil, nil, nil, nil)
+	if err := s.activitySvc.Log(ctx, obj.Objective.WorkspaceID, "objective", id, optionalActor(actorID), "archived", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for objective delete", "error", err, "objective_id", id, "workspace_id", obj.Objective.WorkspaceID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "objective", EntityID: id, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: obj.Objective.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   "objective.deleted",
@@ -370,9 +385,12 @@ func (s *PMObjectiveService) Delete(ctx context.Context, id string, actorID stri
 			EntitySnapshot: model.JSONB{
 				"title": obj.Objective.Name,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit notification for objective delete", "error", err, "objective_id", id, "workspace_id", obj.Objective.WorkspaceID)
+		}
 	}
 
+	s.logger.InfoContext(ctx, "objective deleted", "objective_id", id, "workspace_id", obj.Objective.WorkspaceID, "actor_id", actorID)
 	return nil
 }
 
@@ -436,7 +454,7 @@ func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, ownerRef
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "objective", EntityID: objectiveID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil && owner.UserID != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID:        obj.Objective.WorkspaceID,
 			ActorID:            actorID,
 			EventType:          "objective.assigned",
@@ -450,7 +468,9 @@ func (s *PMObjectiveService) AddOwner(ctx context.Context, objectiveID, ownerRef
 				"title": obj.Objective.Name,
 				"type":  obj.Objective.ObjectiveType,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit notification for objective assign", "error", err, "objective_id", objectiveID, "workspace_id", obj.Objective.WorkspaceID)
+		}
 	}
 
 	return nil
@@ -567,8 +587,11 @@ func (s *PMObjectiveService) CreateKeyResult(ctx context.Context, objectiveID st
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, obj.Objective.WorkspaceID, "objective", objectiveID, optionalActor(actorID), "key_result_created", nil, nil, &kr.Name, nil)
+	if err := s.activitySvc.Log(ctx, obj.Objective.WorkspaceID, "objective", objectiveID, optionalActor(actorID), "key_result_created", nil, nil, &kr.Name, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for key result create", "error", err, "key_result_id", kr.ID, "objective_id", objectiveID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "key_result", EntityID: kr.ID, WorkspaceID: obj.Objective.WorkspaceID, ActorID: actorID, ParentType: "objective", ParentID: objectiveID})
+	s.logger.InfoContext(ctx, "key result created", "key_result_id", kr.ID, "objective_id", objectiveID, "workspace_id", obj.Objective.WorkspaceID, "actor_id", actorID)
 	return kr, nil
 }
 

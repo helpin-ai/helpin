@@ -22,6 +22,7 @@ type PMCommentService struct {
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
 	workspaceRepo       *repository.WorkspaceRepository
+	logger              *slog.Logger
 }
 
 // NewPMCommentService creates a new PMCommentService.
@@ -33,6 +34,7 @@ func NewPMCommentService(commentRepo *repository.PMCommentRepository, storyRepo 
 		wsPublisher:         wsPublisher,
 		notificationService: notificationService,
 		workspaceRepo:       workspaceRepo,
+		logger:              slog.Default().With("service", "pm_comment"),
 	}
 }
 
@@ -66,7 +68,9 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 
 	// Auto-follow story when someone comments.
 	if req.EntityType == "story" {
-		_ = s.storyRepo.AddFollower(ctx, req.EntityID, authorID)
+		if err := s.storyRepo.AddFollower(ctx, req.EntityID, authorID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to auto-follow story on comment", "error", err, "entity_id", req.EntityID, "author_id", authorID)
+		}
 	}
 
 	mentions := extractMentions(comment.Body)
@@ -84,7 +88,9 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		"mentions", mentions,
 	)
 
-	_ = s.activityService.Log(ctx, workspaceID, req.EntityType, req.EntityID, optionalActor(authorID), "comment_added", nil, nil, nil, metadata)
+	if err := s.activityService.Log(ctx, workspaceID, req.EntityType, req.EntityID, optionalActor(authorID), "comment_added", nil, nil, nil, metadata); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for comment create", "error", err, "comment_id", comment.ID, "entity_id", req.EntityID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "comment", EntityID: comment.ID, WorkspaceID: workspaceID, ActorID: authorID, ParentType: req.EntityType, ParentID: req.EntityID})
 
 	// Emit notification for comment.
@@ -202,8 +208,11 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 		return nil, err
 	}
 
-	_ = s.activityService.Log(ctx, workspaceID, comment.EntityType, comment.EntityID, optionalActor(actorID), "comment_updated", stringPtr("body"), &oldValue, &comment.Body, nil)
+	if err := s.activityService.Log(ctx, workspaceID, comment.EntityType, comment.EntityID, optionalActor(actorID), "comment_updated", stringPtr("body"), &oldValue, &comment.Body, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for comment update", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "comment", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: comment.EntityType, ParentID: comment.EntityID})
+	s.logger.InfoContext(ctx, "comment updated", "comment_id", id, "entity_type", comment.EntityType, "entity_id", comment.EntityID, "workspace_id", workspaceID, "actor_id", actorID)
 	return comment, nil
 }
 
@@ -223,8 +232,11 @@ func (s *PMCommentService) Delete(ctx context.Context, id string, actorID string
 		return err
 	}
 
-	_ = s.activityService.Log(ctx, workspaceID, comment.EntityType, comment.EntityID, optionalActor(actorID), "comment_deleted", nil, nil, nil, nil)
+	if err := s.activityService.Log(ctx, workspaceID, comment.EntityType, comment.EntityID, optionalActor(actorID), "comment_deleted", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for comment delete", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "comment", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: comment.EntityType, ParentID: comment.EntityID})
+	s.logger.InfoContext(ctx, "comment deleted", "comment_id", id, "entity_type", comment.EntityType, "entity_id", comment.EntityID, "workspace_id", workspaceID, "actor_id", actorID)
 	return nil
 }
 

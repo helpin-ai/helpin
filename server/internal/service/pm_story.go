@@ -23,6 +23,7 @@ type PMStoryService struct {
 	automationService   *PMAutomationService
 	notificationService *NotificationService
 	followerService     *FollowerService
+	logger              *slog.Logger
 }
 
 // NewPMStoryService creates a new PMStoryService.
@@ -37,6 +38,7 @@ func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *r
 		automationService:   automationService,
 		notificationService: notificationService,
 		followerService:     followerService,
+		logger:              slog.Default().With("service", "pm_story"),
 	}
 }
 
@@ -272,12 +274,16 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	if st, _ := s.workflowRepo.GetStateByID(ctx, story.WorkflowStateID); st != nil {
 		createdAction = "created this story in " + st.Name
 	}
-	_ = s.activityService.Log(ctx, story.WorkspaceID, "story", story.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil)
+	if err := s.activityService.Log(ctx, story.WorkspaceID, "story", story.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story create", "error", err, "story_id", story.ID, "workspace_id", story.WorkspaceID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "story", EntityID: story.ID, WorkspaceID: story.WorkspaceID, ActorID: actorID})
 
 	// Auto-follow the creator and emit notification.
 	if s.followerService != nil && actorID != "" {
-		_ = s.followerService.Follow(ctx, actorID, "story", story.ID, story.WorkspaceID, "creator")
+		if err := s.followerService.Follow(ctx, actorID, "story", story.ID, story.WorkspaceID, "creator"); err != nil {
+			s.logger.ErrorContext(ctx, "failed to auto-follow story for creator", "error", err, "story_id", story.ID, "actor_id", actorID)
+		}
 	}
 	if s.notificationService != nil {
 		// Check for @mentions in description.
@@ -336,6 +342,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		}
 	}
 
+	s.logger.InfoContext(ctx, "story created", "story_id", story.ID, "workspace_id", story.WorkspaceID, "actor_id", actorID)
 	return s.storyRepo.GetByID(ctx, story.ID)
 }
 
@@ -533,29 +540,43 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 			newName = st.Name
 		}
 		action := "moved this story to " + newName
-		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story state change", "error", err, "story_id", current.ID, "workspace_id", current.WorkspaceID)
+		}
 	}
 	if req.Priority != nil && *req.Priority != oldPriority {
 		action := "changed priority from " + oldPriority + " to " + *req.Priority
-		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story priority change", "error", err, "story_id", current.ID)
+		}
 	}
 	if req.Severity != nil && *req.Severity != oldSeverity {
 		action := "changed severity from " + oldSeverity + " to " + *req.Severity
-		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story severity change", "error", err, "story_id", current.ID)
+		}
 	}
 	if req.StoryType != nil && *req.StoryType != oldStoryType {
 		action := "changed type from " + oldStoryType + " to " + *req.StoryType
-		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story type change", "error", err, "story_id", current.ID)
+		}
 	}
 	if req.Blocked != nil && *req.Blocked != oldBlocked {
 		if *req.Blocked {
-			_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "marked this story as blocked", nil, nil, nil, nil)
+			if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "marked this story as blocked", nil, nil, nil, nil); err != nil {
+				s.logger.ErrorContext(ctx, "failed to log activity for story blocked", "error", err, "story_id", current.ID)
+			}
 		} else {
-			_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "unblocked this story", nil, nil, nil, nil)
+			if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "unblocked this story", nil, nil, nil, nil); err != nil {
+				s.logger.ErrorContext(ctx, "failed to log activity for story unblocked", "error", err, "story_id", current.ID)
+			}
 		}
 	}
 	if req.Archived != nil && *req.Archived {
-		_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil)
+		if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for story archived", "error", err, "story_id", current.ID)
+		}
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 
@@ -579,7 +600,7 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 			category = "status_change"
 			priority = "high"
 		}
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: current.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   eventType,
@@ -594,7 +615,9 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 				"display_id": current.DisplayID,
 				"type":       current.StoryType,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit notification for story update", "error", err, "story_id", current.ID, "event_type", eventType)
+		}
 	}
 
 	// Emit mention notification when description is updated with @mentions.
@@ -644,6 +667,7 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		}
 	}
 
+	s.logger.InfoContext(ctx, "story updated", "story_id", current.ID, "workspace_id", current.WorkspaceID, "actor_id", actorID)
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
@@ -662,8 +686,11 @@ func (s *PMStoryService) Delete(ctx context.Context, id, actorID string) error {
 	if err := s.storyRepo.Delete(ctx, id); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil)
+	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "archived this story", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story delete", "error", err, "story_id", current.ID, "workspace_id", current.WorkspaceID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "story", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID})
+	s.logger.InfoContext(ctx, "story deleted", "story_id", id, "workspace_id", current.WorkspaceID, "actor_id", actorID)
 	return nil
 }
 
@@ -708,11 +735,13 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 		newStateName = st.Name
 	}
 	action := "moved this story to " + newStateName
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil)
+	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story move", "error", err, "story_id", current.ID, "workspace_id", current.WorkspaceID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "moved", Entity: "story", EntityID: current.ID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: current.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   "story.status_changed",
@@ -727,9 +756,12 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 				"display_id": current.DisplayID,
 				"type":       current.StoryType,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit notification for story move", "error", err, "story_id", current.ID)
+		}
 	}
 
+	s.logger.InfoContext(ctx, "story moved", "story_id", current.ID, "workspace_id", current.WorkspaceID, "new_state", newStateName, "actor_id", actorID)
 	return s.storyRepo.GetByID(ctx, current.ID)
 }
 
@@ -751,7 +783,9 @@ func (s *PMStoryService) Reorder(ctx context.Context, id string, req model.Reord
 	if err := s.storyRepo.Reorder(ctx, id, req.Position); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "reordered", stringPtr("position"), nil, nil, map[string]interface{}{"position": req.Position})
+	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "reordered", stringPtr("position"), nil, nil, map[string]interface{}{"position": req.Position}); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story reorder", "error", err, "story_id", current.ID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: id, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
@@ -777,15 +811,19 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 	if err := s.storyRepo.AddFollower(ctx, storyID, userID); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &userID, nil)
+	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &userID, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story owner add", "error", err, "story_id", storyID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 
 	// Auto-follow and notify the assigned user.
 	if s.followerService != nil {
-		_ = s.followerService.Follow(ctx, userID, "story", storyID, current.WorkspaceID, "assigned")
+		if err := s.followerService.Follow(ctx, userID, "story", storyID, current.WorkspaceID, "assigned"); err != nil {
+			s.logger.ErrorContext(ctx, "failed to auto-follow story for assigned owner", "error", err, "story_id", storyID, "user_id", userID)
+		}
 	}
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID:        current.WorkspaceID,
 			ActorID:            actorID,
 			EventType:          "story.assigned",
@@ -801,7 +839,9 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 				"display_id": current.DisplayID,
 				"type":       current.StoryType,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit notification for story assignment", "error", err, "story_id", storyID, "user_id", userID)
+		}
 	}
 
 	return nil
@@ -822,7 +862,9 @@ func (s *PMStoryService) RemoveOwner(ctx context.Context, storyID, userID, actor
 	if err := s.storyRepo.RemoveOwner(ctx, storyID, userID); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "owner_removed", stringPtr("owner"), &userID, nil, nil)
+	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "owner_removed", stringPtr("owner"), &userID, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story owner remove", "error", err, "story_id", storyID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
@@ -845,7 +887,9 @@ func (s *PMStoryService) AddFollower(ctx context.Context, storyID, userID, actor
 	if err := s.storyRepo.AddFollower(ctx, storyID, userID); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "follower_added", stringPtr("follower"), nil, &userID, nil)
+	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "follower_added", stringPtr("follower"), nil, &userID, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story follower add", "error", err, "story_id", storyID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
@@ -865,7 +909,9 @@ func (s *PMStoryService) RemoveFollower(ctx context.Context, storyID, userID, ac
 	if err := s.storyRepo.RemoveFollower(ctx, storyID, userID); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "follower_removed", stringPtr("follower"), &userID, nil, nil)
+	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "follower_removed", stringPtr("follower"), &userID, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story follower remove", "error", err, "story_id", storyID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
@@ -888,7 +934,9 @@ func (s *PMStoryService) AddLabel(ctx context.Context, storyID, labelID, actorID
 	if err := s.storyRepo.AddLabel(ctx, storyID, labelID); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, nil)
+	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story label add", "error", err, "story_id", storyID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }
@@ -908,7 +956,9 @@ func (s *PMStoryService) RemoveLabel(ctx context.Context, storyID, labelID, acto
 	if err := s.storyRepo.RemoveLabel(ctx, storyID, labelID); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil)
+	if err := s.activityService.Log(ctx, current.WorkspaceID, "story", current.ID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for story label remove", "error", err, "story_id", storyID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: storyID, WorkspaceID: current.WorkspaceID, ActorID: actorID})
 	return nil
 }

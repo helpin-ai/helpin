@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -20,6 +20,7 @@ type PMAutomationService struct {
 	workflowRepo    *repository.PMWorkflowRepository
 	activityService *PMActivityService
 	wsPublisher     *websocket.Publisher
+	logger          *slog.Logger
 }
 
 // NewPMAutomationService creates a new PMAutomationService.
@@ -40,6 +41,7 @@ func NewPMAutomationService(
 		workflowRepo:    workflowRepo,
 		activityService: activityService,
 		wsPublisher:     wsPublisher,
+		logger:          slog.Default().With("service", "pm_automation"),
 	}
 }
 
@@ -73,6 +75,7 @@ func (s *PMAutomationService) Upsert(ctx context.Context, req model.UpsertAutoma
 	if err := s.automationRepo.Upsert(ctx, automation); err != nil {
 		return nil, err
 	}
+	s.logger.InfoContext(ctx, "automation upserted", "automation_type", req.AutomationType, "workspace_id", req.WorkspaceID, "enabled", req.Enabled)
 	return automation, nil
 }
 
@@ -81,7 +84,11 @@ func (s *PMAutomationService) Delete(ctx context.Context, req model.DeleteAutoma
 	if req.WorkspaceID == "" || req.AutomationType == "" {
 		return fmt.Errorf("workspace_id and automation_type are required")
 	}
-	return s.automationRepo.Delete(ctx, req.WorkspaceID, req.AutomationType, req.TeamID)
+	if err := s.automationRepo.Delete(ctx, req.WorkspaceID, req.AutomationType, req.TeamID); err != nil {
+		return err
+	}
+	s.logger.InfoContext(ctx, "automation deleted", "automation_type", req.AutomationType, "workspace_id", req.WorkspaceID)
+	return nil
 }
 
 // OnStoryStateChange is called after a story's workflow state changes.
@@ -141,7 +148,9 @@ func (s *PMAutomationService) handleEpicAutoStart(ctx context.Context, auto mode
 		return
 	}
 
-	_ = s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, nil, "auto-started by automation", nil, nil, nil, nil)
+	if err := s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, nil, "auto-started by automation", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for epic auto-start", "error", err, "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID})
 }
 
@@ -183,21 +192,25 @@ func (s *PMAutomationService) handleEpicAutoComplete(ctx context.Context, auto m
 		return
 	}
 
-	_ = s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, nil, "auto-completed by automation", nil, nil, nil, nil)
+	if err := s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, nil, "auto-completed by automation", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for epic auto-complete", "error", err, "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID})
 }
 
 // RunSprintAutomations runs background sprint automations.
 // Called periodically (e.g., hourly). Looks at sprints that ended recently.
 func (s *PMAutomationService) RunSprintAutomations(ctx context.Context) {
+	s.logger.InfoContext(ctx, "running sprint automations")
 	s.runSprintAutoCreate(ctx)
 	s.runSprintMoveUnfinished(ctx)
+	s.logger.InfoContext(ctx, "sprint automations completed")
 }
 
 func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 	configs, err := s.automationRepo.ListEnabledByType(ctx, model.PMAutomationTypeSprintAutoCreate)
 	if err != nil {
-		log.Printf("sprint auto-create: list configs: %v", err)
+		s.logger.ErrorContext(ctx, "failed to list sprint auto-create configs", "error", err)
 		return
 	}
 
@@ -222,7 +235,7 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 		}
 		sprints, err := s.sprintRepo.List(ctx, cfg.WorkspaceID, filters)
 		if err != nil {
-			log.Printf("sprint auto-create: list sprints: %v", err)
+			s.logger.ErrorContext(ctx, "failed to list sprints for auto-create", "error", err, "workspace_id", cfg.WorkspaceID, "team_id", teamID)
 			continue
 		}
 
@@ -264,7 +277,7 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 
 			overlap, err := s.sprintRepo.HasDateOverlap(ctx, cfg.WorkspaceID, &teamID, nextStart, endDate, nil)
 			if err != nil {
-				log.Printf("sprint auto-create: overlap check: %v", err)
+				s.logger.ErrorContext(ctx, "failed to check sprint date overlap", "error", err, "workspace_id", cfg.WorkspaceID, "team_id", teamID)
 				break
 			}
 			if overlap {
@@ -284,7 +297,7 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 				TeamID:      &teamID,
 			}
 			if err := s.sprintRepo.Create(ctx, sprint); err != nil {
-				log.Printf("sprint auto-create: create sprint: %v", err)
+				s.logger.ErrorContext(ctx, "failed to auto-create sprint", "error", err, "workspace_id", cfg.WorkspaceID, "team_id", teamID)
 				break
 			}
 			s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "sprint", EntityID: sprint.ID, WorkspaceID: cfg.WorkspaceID})
@@ -296,7 +309,7 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 	configs, err := s.automationRepo.ListEnabledByType(ctx, model.PMAutomationTypeSprintMoveUnfinished)
 	if err != nil {
-		log.Printf("sprint move-unfinished: list configs: %v", err)
+		s.logger.ErrorContext(ctx, "failed to list sprint move-unfinished configs", "error", err)
 		return
 	}
 
@@ -313,7 +326,7 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 		filters := model.PMSprintListFilters{TeamID: &teamID}
 		sprints, err := s.sprintRepo.List(ctx, cfg.WorkspaceID, filters)
 		if err != nil {
-			log.Printf("sprint move-unfinished: list sprints: %v", err)
+			s.logger.ErrorContext(ctx, "failed to list sprints for move-unfinished", "error", err, "workspace_id", cfg.WorkspaceID, "team_id", teamID)
 			continue
 		}
 
@@ -361,7 +374,7 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 		// Move non-done stories from ended sprint to next sprint
 		stories, err := s.sprintRepo.ListStories(ctx, endedSprint.ID)
 		if err != nil {
-			log.Printf("sprint move-unfinished: list stories: %v", err)
+			s.logger.ErrorContext(ctx, "failed to list stories for move-unfinished", "error", err, "sprint_id", endedSprint.ID, "workspace_id", cfg.WorkspaceID)
 			continue
 		}
 
@@ -374,7 +387,7 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 				continue
 			}
 			if err := s.storyRepo.UpdateSprintID(ctx, story.ID, &nextSprint.ID); err != nil {
-				log.Printf("sprint move-unfinished: update story %s: %v", story.ID, err)
+				s.logger.ErrorContext(ctx, "failed to move unfinished story to next sprint", "error", err, "story_id", story.ID, "next_sprint_id", nextSprint.ID)
 				continue
 			}
 			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: story.ID, WorkspaceID: cfg.WorkspaceID})
