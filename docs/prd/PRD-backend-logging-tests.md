@@ -89,20 +89,20 @@ slog.InfoContext(r.Context(), "http request",
 
 | # | Service File | Key Operations | `_ =` to Fix | Status |
 |---|-------------|----------------|---------------|--------|
-| 1 | `service/auth.go` | login, signup, refresh | 0 | [ ] |
-| 2 | `service/workspace.go` | workspace CRUD | 0 | [ ] |
-| 3 | `service/bonus.go` | reward calculations | 0 | [ ] |
-| 4 | `service/settings.go` | workspace settings | 0 | [ ] |
-| 5 | `service/invite.go` | invitation send/accept (replace `log.Printf`) | 0 | [ ] |
-| 6 | `service/audit.go` | audit trail creation | 0 | [ ] |
-| 7 | `service/pm_sprint.go` | sprint lifecycle | 0 | [ ] |
-| 8 | `service/pm_epic.go` | epic CRUD | 11 | [ ] |
+| 1 | `service/auth.go` | login, signup, refresh | 0 | [x] |
+| 2 | `service/workspace.go` | workspace CRUD | 0 | [x] |
+| 3 | `service/bonus.go` | reward calculations | 0 | [x] |
+| 4 | `service/settings.go` | workspace settings | 0 | [x] |
+| 5 | `service/invite.go` | invitation send/accept (replace `log.Printf`) | 0 | [x] |
+| 6 | `service/audit.go` | audit trail creation | 0 | [x] |
+| 7 | `service/pm_sprint.go` | sprint lifecycle | 0 | [x] |
+| 8 | `service/pm_epic.go` | epic CRUD | 11 | [x] |
 | 9 | `service/pm_objective.go` | objective CRUD | 2 | [ ] |
 | 10 | `service/pm_automation.go` | auto-workflow (replace `log.Printf`) | 2 | [ ] |
 | 11 | `service/pm_story.go` | story CRUD (extend existing) | 20+ | [ ] |
-| 12 | `service/pm_workflow.go` | workflow state changes | 0 | [ ] |
-| 13 | `service/pm_label.go` | label management | 0 | [ ] |
-| 14 | `service/pm_view.go` | saved views | 0 | [ ] |
+| 12 | `service/pm_workflow.go` | workflow state changes | 0 | [x] |
+| 13 | `service/pm_label.go` | label management | 0 | [x] |
+| 14 | `service/pm_view.go` | saved views | 0 | [x] |
 | 15 | `service/pm_comment.go` | comments (extend existing) | 4 | [ ] |
 
 ### 2B. Core Service Tests

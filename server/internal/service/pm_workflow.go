@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -15,6 +16,7 @@ type PMWorkflowService struct {
 	workflowRepo *repository.PMWorkflowRepository
 	storyRepo    *repository.PMStoryRepository
 	labelRepo    *repository.PMLabelRepository
+	logger       *slog.Logger
 }
 
 // NewPMWorkflowService creates a new PMWorkflowService.
@@ -23,6 +25,7 @@ func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, storyRe
 		workflowRepo: workflowRepo,
 		storyRepo:    storyRepo,
 		labelRepo:    labelRepo,
+		logger:       slog.Default().With("service", "pm_workflow"),
 	}
 }
 
@@ -75,6 +78,7 @@ func (s *PMWorkflowService) Create(ctx context.Context, req model.CreateWorkflow
 		AutoAssignOwner: req.AutoAssignOwner,
 	}
 	if err := s.workflowRepo.Create(ctx, workflow); err != nil {
+		s.logger.ErrorContext(ctx, "failed to create workflow", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
 
@@ -96,6 +100,7 @@ func (s *PMWorkflowService) Create(ctx context.Context, req model.CreateWorkflow
 		return nil, err
 	}
 
+	s.logger.InfoContext(ctx, "workflow created", "workflow_id", workflow.ID, "workspace_id", req.WorkspaceID, "name", workflow.Name)
 	return s.workflowRepo.GetByID(ctx, workflow.ID)
 }
 
@@ -137,8 +142,10 @@ func (s *PMWorkflowService) Update(ctx context.Context, id string, req model.Upd
 	}
 
 	if err := s.workflowRepo.Update(ctx, &wf.Workflow); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update workflow", "error", err, "workflow_id", id)
 		return nil, err
 	}
+	s.logger.InfoContext(ctx, "workflow updated", "workflow_id", id)
 	return s.workflowRepo.GetByID(ctx, id)
 }
 
@@ -151,7 +158,12 @@ func (s *PMWorkflowService) Delete(ctx context.Context, id string) error {
 	if wf == nil {
 		return fmt.Errorf("workflow not found")
 	}
-	return s.workflowRepo.Delete(ctx, id)
+	if err := s.workflowRepo.Delete(ctx, id); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete workflow", "error", err, "workflow_id", id)
+		return err
+	}
+	s.logger.InfoContext(ctx, "workflow deleted", "workflow_id", id)
+	return nil
 }
 
 // CreateState adds a state to a workflow.
@@ -188,8 +200,10 @@ func (s *PMWorkflowService) CreateState(ctx context.Context, workflowID string, 
 		IsDefault:   req.IsDefault,
 	}
 	if err := s.workflowRepo.CreateState(ctx, state); err != nil {
+		s.logger.ErrorContext(ctx, "failed to create workflow state", "error", err, "workflow_id", workflowID)
 		return nil, err
 	}
+	s.logger.InfoContext(ctx, "workflow state created", "state_id", state.ID, "workflow_id", workflowID, "name", state.Name)
 
 	if state.IsDefault {
 		wf.Workflow.DefaultStateID = &state.ID
@@ -268,8 +282,10 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 	}
 
 	if err := s.workflowRepo.UpdateState(ctx, target); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update workflow state", "error", err, "state_id", stateID, "workflow_id", workflowID)
 		return nil, err
 	}
+	s.logger.InfoContext(ctx, "workflow state updated", "state_id", stateID, "workflow_id", workflowID)
 	if target.IsDefault {
 		if err := s.workflowRepo.Update(ctx, &wf.Workflow); err != nil {
 			return nil, err

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 type SettingsService struct {
 	settingsRepo      *repository.SettingsRepository
 	braveSearchAPIKey string
+	logger            *slog.Logger
 }
 
 var teamHandlePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -23,12 +25,19 @@ func NewSettingsService(settingsRepo *repository.SettingsRepository, braveSearch
 	return &SettingsService{
 		settingsRepo:      settingsRepo,
 		braveSearchAPIKey: strings.TrimSpace(braveSearchAPIKey),
+		logger:            slog.Default().With("service", "settings"),
 	}
 }
 
 // GetAll returns the full workspace configuration.
 func (s *SettingsService) GetAll(ctx context.Context, workspaceID string) (*model.FullWorkspaceConfig, error) {
-	return s.settingsRepo.GetAll(ctx, workspaceID)
+	config, err := s.settingsRepo.GetAll(ctx, workspaceID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to get workspace config", "error", err, "workspace_id", workspaceID)
+		return nil, err
+	}
+	s.logger.DebugContext(ctx, "fetched workspace config", "workspace_id", workspaceID)
+	return config, nil
 }
 
 // Initialize creates default workspace settings.
@@ -50,14 +59,17 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 
 	team, err := s.settingsRepo.CreateTeam(ctx, req)
 	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to create team", "error", err, "workspace_id", req.WorkspaceID, "team_name", req.Name)
 		return nil, err
 	}
 	if actorUserID != "" {
 		_, err = s.settingsRepo.AddTeamUserMembership(ctx, team.ID, actorUserID, "owner")
 		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to add team owner membership", "error", err, "team_id", team.ID, "user_id", actorUserID)
 			return nil, err
 		}
 	}
+	s.logger.InfoContext(ctx, "team created", "team_id", team.ID, "workspace_id", req.WorkspaceID, "team_name", req.Name)
 	return team, nil
 }
 
@@ -89,7 +101,12 @@ func (s *SettingsService) UpdateTeam(ctx context.Context, id string, req model.U
 
 // DeleteTeam removes a team.
 func (s *SettingsService) DeleteTeam(ctx context.Context, id string) error {
-	return s.settingsRepo.DeleteTeam(ctx, id)
+	if err := s.settingsRepo.DeleteTeam(ctx, id); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete team", "error", err, "team_id", id)
+		return err
+	}
+	s.logger.InfoContext(ctx, "team deleted", "team_id", id)
+	return nil
 }
 
 // AddTeamMember adds a workspace member to a team.
@@ -173,7 +190,13 @@ func (s *SettingsService) UpdateSystem(ctx context.Context, workspaceID string, 
 	if err := s.validatePlanningWebSearchSettings(ctx, workspaceID, req); err != nil {
 		return nil, err
 	}
-	return s.settingsRepo.UpdateSystem(ctx, workspaceID, req)
+	result, err := s.settingsRepo.UpdateSystem(ctx, workspaceID, req)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to update system settings", "error", err, "workspace_id", workspaceID)
+		return nil, err
+	}
+	s.logger.InfoContext(ctx, "system settings updated", "workspace_id", workspaceID)
+	return result, nil
 }
 
 func (s *SettingsService) validatePlanningWebSearchSettings(ctx context.Context, workspaceID string, req model.UpdateSystemSettingsRequest) error {

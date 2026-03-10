@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ type PMEpicService struct {
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
+	logger              *slog.Logger
 }
 
 // NewPMEpicService creates a new PMEpicService.
@@ -34,6 +36,7 @@ func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *reposito
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
 		notificationService: notificationService,
+		logger:              slog.Default().With("service", "pm_epic"),
 	}
 }
 
@@ -150,6 +153,7 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	}
 
 	if err := s.epicRepo.Create(ctx, epic); err != nil {
+		s.logger.ErrorContext(ctx, "failed to create epic", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
 	if len(req.LabelIDs) > 0 {
@@ -164,11 +168,14 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if err := s.syncProgress(ctx, epic.ID); err != nil {
 		return nil, err
 	}
-	_ = s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
+	s.logger.InfoContext(ctx, "epic created", "epic_id", epic.ID, "workspace_id", epic.WorkspaceID, "name", epic.Name)
+	if err := s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "created", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log epic created activity", "error", err, "epic_id", epic.ID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: epic.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   "epic.created",
@@ -180,7 +187,9 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 			EntitySnapshot: model.JSONB{
 				"title": epic.Name,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit epic created notification", "error", err, "epic_id", epic.ID)
+		}
 	}
 
 	return s.epicRepo.GetWithStats(ctx, epic.ID)
@@ -256,6 +265,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	}
 
 	if err := s.epicRepo.Update(ctx, &epic); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update epic", "error", err, "epic_id", id)
 		return nil, err
 	}
 	if req.LabelIDs != nil {
@@ -270,11 +280,14 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if err := s.syncProgress(ctx, epic.ID); err != nil {
 		return nil, err
 	}
-	_ = s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
+	s.logger.InfoContext(ctx, "epic updated", "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
+	if err := s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "updated", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log epic updated activity", "error", err, "epic_id", epic.ID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: epic.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   "epic.updated",
@@ -286,7 +299,9 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 			EntitySnapshot: model.JSONB{
 				"title": epic.Name,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit epic updated notification", "error", err, "epic_id", epic.ID)
+		}
 	}
 
 	return s.epicRepo.GetWithStats(ctx, epic.ID)
@@ -325,13 +340,17 @@ func (s *PMEpicService) Delete(ctx context.Context, id string, actorID string) e
 		return err
 	}
 	if err := s.epicRepo.Delete(ctx, id); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete epic", "error", err, "epic_id", id)
 		return err
 	}
-	_ = s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", id, optionalActor(actorID), "archived", nil, nil, nil, nil)
+	s.logger.InfoContext(ctx, "epic deleted", "epic_id", id, "workspace_id", epic.Epic.WorkspaceID)
+	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", id, optionalActor(actorID), "archived", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log epic deleted activity", "error", err, "epic_id", id)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "epic", EntityID: id, WorkspaceID: epic.Epic.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: epic.Epic.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   "epic.deleted",
@@ -343,7 +362,9 @@ func (s *PMEpicService) Delete(ctx context.Context, id string, actorID string) e
 			EntitySnapshot: model.JSONB{
 				"title": epic.Epic.Name,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit epic deleted notification", "error", err, "epic_id", id)
+		}
 	}
 
 	return nil
@@ -365,9 +386,12 @@ func (s *PMEpicService) UpdateHealth(ctx context.Context, id string, req model.U
 		return err
 	}
 	if err := s.epicRepo.UpdateHealth(ctx, id, req.Health, req.Comment); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update epic health", "error", err, "epic_id", id)
 		return err
 	}
-	_ = s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", id, optionalActor(actorID), "health_updated", stringPtr("health"), nil, &req.Health, nil)
+	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", id, optionalActor(actorID), "health_updated", stringPtr("health"), nil, &req.Health, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log epic health_updated activity", "error", err, "epic_id", id)
+	}
 	return nil
 }
 
@@ -389,7 +413,9 @@ func (s *PMEpicService) AddLabel(ctx context.Context, epicID, labelID, actorID s
 	if err := s.epicRepo.AddLabel(ctx, epicID, labelID); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, nil)
+	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log epic label_added activity", "error", err, "epic_id", epicID)
+	}
 	return nil
 }
 
@@ -408,7 +434,9 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 	if err := s.epicRepo.RemoveLabel(ctx, epicID, labelID); err != nil {
 		return err
 	}
-	_ = s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil)
+	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log epic label_removed activity", "error", err, "epic_id", epicID)
+	}
 	return nil
 }
 

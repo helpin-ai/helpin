@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -12,11 +13,12 @@ import (
 // PMLabelService contains label business logic.
 type PMLabelService struct {
 	labelRepo *repository.PMLabelRepository
+	logger    *slog.Logger
 }
 
 // NewPMLabelService creates a new PMLabelService.
 func NewPMLabelService(labelRepo *repository.PMLabelRepository) *PMLabelService {
-	return &PMLabelService{labelRepo: labelRepo}
+	return &PMLabelService{labelRepo: labelRepo, logger: slog.Default().With("service", "pm_label")}
 }
 
 // ListByWorkspace lists labels by workspace.
@@ -65,8 +67,10 @@ func (s *PMLabelService) Create(ctx context.Context, req model.CreateLabelReques
 		Color:       req.Color,
 	}
 	if err := s.labelRepo.Create(ctx, label); err != nil {
+		s.logger.ErrorContext(ctx, "failed to create label", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
+	s.logger.InfoContext(ctx, "label created", "label_id", label.ID, "workspace_id", req.WorkspaceID, "name", label.Name)
 	return label, nil
 }
 
@@ -110,14 +114,21 @@ func (s *PMLabelService) Update(ctx context.Context, id string, req model.Update
 	}
 
 	if err := s.labelRepo.Update(ctx, label); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update label", "error", err, "label_id", id)
 		return nil, err
 	}
+	s.logger.InfoContext(ctx, "label updated", "label_id", id)
 	return label, nil
 }
 
 // Delete deletes a label.
 func (s *PMLabelService) Delete(ctx context.Context, id string) error {
-	return s.labelRepo.Delete(ctx, id)
+	if err := s.labelRepo.Delete(ctx, id); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete label", "error", err, "label_id", id)
+		return err
+	}
+	s.logger.InfoContext(ctx, "label deleted", "label_id", id)
+	return nil
 }
 
 // SeedDefaults creates default labels if missing.

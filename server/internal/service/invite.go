@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -24,6 +24,7 @@ type InviteService struct {
 	emailClient    *email.Client
 	appBaseURL     string
 	jwtManager     *auth.JWTManager
+	logger         *slog.Logger
 }
 
 // NewInviteService creates a new InviteService.
@@ -44,6 +45,7 @@ func NewInviteService(
 		emailClient:    emailClient,
 		appBaseURL:     appBaseURL,
 		jwtManager:     jwtManager,
+		logger:         slog.Default().With("service", "invite"),
 	}
 }
 
@@ -113,7 +115,13 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 
 	// Send email
 	joinURL := fmt.Sprintf("%s/join/%s", s.appBaseURL, token)
-	log.Printf("Invitation join URL: %s", joinURL)
+
+	s.logger.InfoContext(ctx, "invitation created",
+		"workspace_id", req.WorkspaceID,
+		"email", req.Email,
+		"role", req.Role,
+		"invitation_id", created.ID,
+	)
 
 	if s.emailClient != nil {
 		workspace, _ := s.workspaceRepo.GetByID(ctx, req.WorkspaceID)
@@ -127,7 +135,11 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 			inviterName = inviter.FullName
 		}
 		if err := s.emailClient.SendInviteEmail(req.Email, inviterName, wsName, joinURL); err != nil {
-			log.Printf("Warning: failed to send invitation email: %v", err)
+			s.logger.ErrorContext(ctx, "failed to send invitation email",
+				"error", err,
+				"workspace_id", req.WorkspaceID,
+				"email", req.Email,
+			)
 		}
 	}
 
@@ -204,14 +216,29 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 		}
 	}
 
+	s.logger.InfoContext(ctx, "invitation accepted",
+		"workspace_id", inv.WorkspaceID,
+		"email", inv.Email,
+		"invitation_id", inv.ID,
+		"user_id", userID,
+	)
+
 	// Auto-assign teams from preassignments
 	preassignments, err := s.settingsRepo.GetInvitationTeamPreassignmentsByInvitation(ctx, inv.ID)
 	if err != nil {
-		log.Printf("Warning: failed to get invitation team preassignments: %v", err)
+		s.logger.ErrorContext(ctx, "failed to get invitation team preassignments",
+			"error", err,
+			"invitation_id", inv.ID,
+		)
 	} else {
 		for _, pa := range preassignments {
 			if _, err := s.settingsRepo.AddTeamUserMembership(ctx, pa.TeamID, userID, "member"); err != nil {
-				log.Printf("Warning: failed to auto-assign team %s for invitation %s: %v", pa.TeamID, inv.ID, err)
+				s.logger.ErrorContext(ctx, "failed to auto-assign team",
+					"error", err,
+					"team_id", pa.TeamID,
+					"invitation_id", inv.ID,
+					"user_id", userID,
+				)
 			}
 		}
 	}
@@ -284,13 +311,28 @@ func (s *InviteService) AcceptInvitationWithSignup(ctx context.Context, req mode
 		}
 	}
 
+	s.logger.InfoContext(ctx, "invitation accepted with signup",
+		"workspace_id", inv.WorkspaceID,
+		"email", inv.Email,
+		"invitation_id", inv.ID,
+		"user_id", user.ID,
+	)
+
 	preassignments, err := s.settingsRepo.GetInvitationTeamPreassignmentsByInvitation(ctx, inv.ID)
 	if err != nil {
-		log.Printf("Warning: failed to get invitation team preassignments: %v", err)
+		s.logger.ErrorContext(ctx, "failed to get invitation team preassignments",
+			"error", err,
+			"invitation_id", inv.ID,
+		)
 	} else {
 		for _, pa := range preassignments {
 			if _, err := s.settingsRepo.AddTeamUserMembership(ctx, pa.TeamID, user.ID, "member"); err != nil {
-				log.Printf("Warning: failed to auto-assign team %s for invitation %s: %v", pa.TeamID, inv.ID, err)
+				s.logger.ErrorContext(ctx, "failed to auto-assign team",
+					"error", err,
+					"team_id", pa.TeamID,
+					"invitation_id", inv.ID,
+					"user_id", user.ID,
+				)
 			}
 		}
 	}
@@ -396,7 +438,12 @@ func (s *InviteService) ResendInvitation(ctx context.Context, invitationID, user
 
 	// Send email
 	joinURL := fmt.Sprintf("%s/join/%s", s.appBaseURL, token)
-	log.Printf("Resent invitation join URL: %s", joinURL)
+
+	s.logger.InfoContext(ctx, "invitation resent",
+		"invitation_id", invitationID,
+		"workspace_id", inv.WorkspaceID,
+		"email", inv.Email,
+	)
 
 	if s.emailClient != nil {
 		workspace, _ := s.workspaceRepo.GetByID(ctx, inv.WorkspaceID)
@@ -410,7 +457,12 @@ func (s *InviteService) ResendInvitation(ctx context.Context, invitationID, user
 			inviterName = inviter.FullName
 		}
 		if err := s.emailClient.SendInviteEmail(inv.Email, inviterName, wsName, joinURL); err != nil {
-			log.Printf("Warning: failed to resend invitation email: %v", err)
+			s.logger.ErrorContext(ctx, "failed to resend invitation email",
+				"error", err,
+				"invitation_id", invitationID,
+				"workspace_id", inv.WorkspaceID,
+				"email", inv.Email,
+			)
 		}
 	}
 
@@ -448,5 +500,12 @@ func (s *InviteService) RevokeInvitation(ctx context.Context, invitationID, user
 			return fmt.Errorf("revoke pending workspace member: %w", err)
 		}
 	}
+
+	s.logger.InfoContext(ctx, "invitation revoked",
+		"invitation_id", invitationID,
+		"workspace_id", inv.WorkspaceID,
+		"email", inv.Email,
+	)
+
 	return nil
 }

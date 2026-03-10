@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -18,11 +19,12 @@ type PMSprintService struct {
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
+	logger              *slog.Logger
 }
 
 // NewPMSprintService creates a new PMSprintService.
 func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMSprintService {
-	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService}
+	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService, logger: slog.Default().With("service", "pm_sprint")}
 }
 
 // List returns sprints with filters.
@@ -88,6 +90,7 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 	}
 
 	if err := s.sprintRepo.Create(ctx, sprint); err != nil {
+		s.logger.ErrorContext(ctx, "failed to create sprint", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
 	if len(req.LabelIDs) > 0 {
@@ -99,11 +102,14 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 		}
 	}
 
-	_ = s.activityService.Log(ctx, sprint.WorkspaceID, "sprint", sprint.ID, optionalActor(actorID), "created", nil, nil, nil, nil)
+	s.logger.InfoContext(ctx, "sprint created", "sprint_id", sprint.ID, "workspace_id", sprint.WorkspaceID, "name", sprint.Name)
+	if err := s.activityService.Log(ctx, sprint.WorkspaceID, "sprint", sprint.ID, optionalActor(actorID), "created", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log sprint created activity", "error", err, "sprint_id", sprint.ID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "sprint", EntityID: sprint.ID, WorkspaceID: sprint.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: sprint.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   "sprint.created",
@@ -116,7 +122,9 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 			EntitySnapshot: model.JSONB{
 				"title": sprint.Name,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit sprint created notification", "error", err, "sprint_id", sprint.ID)
+		}
 	}
 
 	return s.sprintRepo.GetWithStats(ctx, sprint.ID)
@@ -172,6 +180,7 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 	}
 
 	if err := s.sprintRepo.Update(ctx, &sprint); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update sprint", "error", err, "sprint_id", id)
 		return nil, err
 	}
 	if req.LabelIDs != nil {
@@ -183,11 +192,14 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 		}
 	}
 
-	_ = s.activityService.Log(ctx, sprint.WorkspaceID, "sprint", sprint.ID, optionalActor(actorID), "updated", nil, nil, nil, nil)
+	s.logger.InfoContext(ctx, "sprint updated", "sprint_id", sprint.ID, "workspace_id", sprint.WorkspaceID)
+	if err := s.activityService.Log(ctx, sprint.WorkspaceID, "sprint", sprint.ID, optionalActor(actorID), "updated", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log sprint updated activity", "error", err, "sprint_id", sprint.ID)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "sprint", EntityID: sprint.ID, WorkspaceID: sprint.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
-		_ = s.notificationService.Emit(ctx, model.NotificationEventInput{
+		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
 			WorkspaceID: sprint.WorkspaceID,
 			ActorID:     actorID,
 			EventType:   "sprint.updated",
@@ -200,7 +212,9 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 			EntitySnapshot: model.JSONB{
 				"title": sprint.Name,
 			},
-		})
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit sprint updated notification", "error", err, "sprint_id", sprint.ID)
+		}
 	}
 
 	return s.sprintRepo.GetWithStats(ctx, sprint.ID)
@@ -216,9 +230,13 @@ func (s *PMSprintService) Delete(ctx context.Context, id string, actorID string)
 		return fmt.Errorf("sprint not found")
 	}
 	if err := s.sprintRepo.Delete(ctx, id); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete sprint", "error", err, "sprint_id", id)
 		return err
 	}
-	_ = s.activityService.Log(ctx, current.Sprint.WorkspaceID, "sprint", id, optionalActor(actorID), "deleted", nil, nil, nil, nil)
+	s.logger.InfoContext(ctx, "sprint deleted", "sprint_id", id, "workspace_id", current.Sprint.WorkspaceID)
+	if err := s.activityService.Log(ctx, current.Sprint.WorkspaceID, "sprint", id, optionalActor(actorID), "deleted", nil, nil, nil, nil); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log sprint deleted activity", "error", err, "sprint_id", id)
+	}
 	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "sprint", EntityID: id, WorkspaceID: current.Sprint.WorkspaceID, ActorID: actorID})
 	return nil
 }

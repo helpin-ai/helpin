@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -12,11 +13,12 @@ import (
 // PMViewService contains view business logic.
 type PMViewService struct {
 	viewRepo *repository.PMViewRepository
+	logger   *slog.Logger
 }
 
 // NewPMViewService creates a new PMViewService.
 func NewPMViewService(viewRepo *repository.PMViewRepository) *PMViewService {
-	return &PMViewService{viewRepo: viewRepo}
+	return &PMViewService{viewRepo: viewRepo, logger: slog.Default().With("service", "pm_view")}
 }
 
 // List lists views visible to the given user.
@@ -44,8 +46,10 @@ func (s *PMViewService) Create(ctx context.Context, workspaceID, userID string, 
 		view.Filters = model.ViewFilters{}
 	}
 	if err := s.viewRepo.Create(ctx, view); err != nil {
+		s.logger.ErrorContext(ctx, "failed to create view", "error", err, "workspace_id", workspaceID)
 		return nil, err
 	}
+	s.logger.InfoContext(ctx, "view created", "view_id", view.ID, "workspace_id", workspaceID, "name", view.Name)
 	return view, nil
 }
 
@@ -83,8 +87,10 @@ func (s *PMViewService) Update(ctx context.Context, id, userID string, req model
 	}
 
 	if err := s.viewRepo.Update(ctx, view); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update view", "error", err, "view_id", id)
 		return nil, err
 	}
+	s.logger.InfoContext(ctx, "view updated", "view_id", id)
 	return view, nil
 }
 
@@ -100,5 +106,10 @@ func (s *PMViewService) Delete(ctx context.Context, id, userID string) error {
 	if view.CreatedBy != userID {
 		return fmt.Errorf("forbidden: you can only delete your own views")
 	}
-	return s.viewRepo.Delete(ctx, id)
+	if err := s.viewRepo.Delete(ctx, id); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete view", "error", err, "view_id", id)
+		return err
+	}
+	s.logger.InfoContext(ctx, "view deleted", "view_id", id)
+	return nil
 }

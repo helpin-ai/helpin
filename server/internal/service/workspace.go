@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/google/uuid"
@@ -19,6 +20,7 @@ type WorkspaceService struct {
 	attachmentRepo      *repository.PMAttachmentRepository
 	s3Client            *storage.S3Client
 	defaultsInitializer WorkspaceDefaultsInitializer
+	logger              *slog.Logger
 }
 
 // WorkspaceDefaultsInitializer seeds default workspace-scoped data after creation.
@@ -37,6 +39,7 @@ func NewWorkspaceService(workspaceRepo *repository.WorkspaceRepository, attachme
 		attachmentRepo:      attachmentRepo,
 		s3Client:            s3Client,
 		defaultsInitializer: initializer,
+		logger:              slog.Default().With("service", "workspace"),
 	}
 }
 
@@ -53,19 +56,24 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 
 	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, ownerID, orgID, req.Description, req.Timezone)
 	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to create workspace", "error", err, "slug", req.Slug)
 		return nil, fmt.Errorf("create workspace: %w", err)
 	}
 
 	_, err = s.workspaceRepo.AddMember(ctx, ws.ID, ownerID, "owner")
 	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to add owner as member", "error", err, "workspace_id", ws.ID, "user_id", ownerID)
 		return nil, fmt.Errorf("add owner as member: %w", err)
 	}
 
 	if s.defaultsInitializer != nil {
 		if err := s.defaultsInitializer.SeedWorkspaceDefaults(ctx, ws.ID, ownerID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to seed workspace defaults", "error", err, "workspace_id", ws.ID)
 			return nil, fmt.Errorf("seed workspace defaults: %w", err)
 		}
 	}
+
+	s.logger.InfoContext(ctx, "workspace created", "workspace_id", ws.ID, "name", ws.Name, "slug", ws.Slug)
 
 	return &model.WorkspaceWithRole{
 		Workspace: *ws,
@@ -104,7 +112,13 @@ func (s *WorkspaceService) GetByID(ctx context.Context, id string) (*model.Works
 
 // Update modifies a workspace.
 func (s *WorkspaceService) Update(ctx context.Context, id string, req model.UpdateWorkspaceRequest) (*model.Workspace, error) {
-	return s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.LogoURL, req.Timezone)
+	ws, err := s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.LogoURL, req.Timezone)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to update workspace", "error", err, "workspace_id", id)
+		return nil, err
+	}
+	s.logger.InfoContext(ctx, "workspace updated", "workspace_id", id)
+	return ws, nil
 }
 
 // UploadLogo uploads a workspace logo to S3 and saves the public URL.
@@ -164,7 +178,12 @@ func (s *WorkspaceService) Delete(ctx context.Context, id string) error {
 			}
 		}
 	}
-	return s.workspaceRepo.Delete(ctx, id)
+	if err := s.workspaceRepo.Delete(ctx, id); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete workspace", "error", err, "workspace_id", id)
+		return err
+	}
+	s.logger.InfoContext(ctx, "workspace deleted", "workspace_id", id)
+	return nil
 }
 
 // GetMyRole returns the user's role in a workspace.
