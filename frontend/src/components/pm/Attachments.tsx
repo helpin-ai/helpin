@@ -180,7 +180,6 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
 
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
   const imageAttachments = attachments.filter(({ attachment }) => isImageType(attachment.content_type));
-  const fileAttachments = attachments.filter(({ attachment }) => !isImageType(attachment.content_type));
 
   return (
     <div className="space-y-3">
@@ -224,118 +223,69 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
-      {/* Image thumbnails grid */}
-      {imageAttachments.length > 0 && (
+      {/* Unified attachment grid — images + files as consistent cards */}
+      {attachments.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
-          {imageAttachments.map((entry) => (
-            <div key={entry.attachment.id} className="group relative">
-              <button
-                type="button"
-                className="block w-full overflow-hidden rounded-md border border-border/60 cursor-pointer"
-                onClick={() => setPreviewEntry(entry)}
-              >
-                <img
-                  src={resolveUrl(entry)}
-                  alt={entry.attachment.file_name}
-                  className="aspect-[4/3] w-full object-cover transition-transform group-hover:scale-105"
-                  loading="lazy"
-                />
-              </button>
-              <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <QuickTooltip label="Download">
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    className="h-5 w-5 bg-background/80 backdrop-blur-sm"
-                    onClick={() => window.open(resolveUrl(entry), '_blank')}
-                  >
-                    <Download className="h-2.5 w-2.5" />
-                  </Button>
-                </QuickTooltip>
-                <QuickTooltip label="Delete">
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    className="h-5 w-5 bg-background/80 backdrop-blur-sm"
-                    onClick={() => handleDelete(entry.attachment.id)}
-                  >
-                    <Trash2 className="h-2.5 w-2.5 text-destructive" />
-                  </Button>
-                </QuickTooltip>
-              </div>
-              <p className="mt-1 truncate text-[11px] text-muted-foreground" title={entry.attachment.file_name}>
-                {entry.attachment.file_name}
-              </p>
-              {memberNameMap && (
-                <p className="truncate text-[10px] text-muted-foreground/70">
-                  {memberNameMap.get(entry.attachment.uploaded_by_id) ?? 'Unknown'}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Non-image file list */}
-      {fileAttachments.length > 0 && (
-        <div className="rounded-md border border-border/60">
-          {fileAttachments.map((entry, idx) => {
+          {attachments.map((entry) => {
+            const isImage = isImageType(entry.attachment.content_type);
             const ext = getFileExtension(entry.attachment.file_name);
-            const name = getFileName(entry.attachment.file_name);
             return (
-              <div key={entry.attachment.id}>
-                {idx > 0 && <div className="border-t border-border/40" />}
-                <div className="group flex h-11 items-center gap-3 px-3 hover:bg-accent/50 transition-colors">
-                  <img
-                    src={getFileTypeIcon(ext)}
-                    alt={ext}
-                    className="h-5 w-5 shrink-0"
-                  />
-                  <a
-                    href={resolveUrl(entry)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90 hover:underline"
-                    title={entry.attachment.file_name}
-                  >
-                    {name}
-                    {ext && <span className="text-muted-foreground">.{ext}</span>}
-                  </a>
-                  {memberNameMap && (
-                    <span className="shrink-0 truncate max-w-[80px] text-[11px] text-muted-foreground/70">
-                      {memberNameMap.get(entry.attachment.uploaded_by_id) ?? 'Unknown'}
-                    </span>
+              <div key={entry.attachment.id} className="group relative">
+                <button
+                  type="button"
+                  className="block w-full overflow-hidden rounded-lg border border-border/60 cursor-pointer transition-colors hover:border-border"
+                  onClick={() => isImage ? setPreviewEntry(entry) : window.open(resolveUrl(entry), '_blank')}
+                >
+                  {isImage ? (
+                    <img
+                      src={resolveUrl(entry)}
+                      alt={entry.attachment.file_name}
+                      className="h-28 w-full object-cover transition-transform group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-28 flex-col items-center justify-center gap-2 bg-muted/30">
+                      <img
+                        src={getFileTypeIcon(ext)}
+                        alt={ext}
+                        className="h-10 w-10"
+                      />
+                      <span className="text-[10px] font-medium uppercase text-muted-foreground tracking-wide">
+                        {ext || 'FILE'}
+                      </span>
+                    </div>
                   )}
-                  <span className="shrink-0 text-[11px] text-muted-foreground">
-                    {formatFileSize(entry.attachment.file_size)}
-                  </span>
+                </button>
+                <div className="absolute top-1.5 right-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   <QuickTooltip label="Download">
                     <Button
-                      variant="ghost"
+                      variant="secondary"
                       size="icon"
-                      className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        window.open(resolveUrl(entry), '_blank');
-                      }}
+                      className="h-6 w-6 bg-background/80 backdrop-blur-sm"
+                      onClick={(e) => { e.stopPropagation(); window.open(resolveUrl(entry), '_blank'); }}
                     >
-                      <Download className="h-3 w-3 text-muted-foreground" />
+                      <Download className="h-3 w-3" />
                     </Button>
                   </QuickTooltip>
                   <QuickTooltip label="Delete">
                     <Button
-                      variant="ghost"
+                      variant="secondary"
                       size="icon"
-                      className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handleDelete(entry.attachment.id);
-                      }}
+                      className="h-6 w-6 bg-background/80 backdrop-blur-sm"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(entry.attachment.id); }}
                     >
-                      <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                      <Trash2 className="h-3 w-3 text-destructive" />
                     </Button>
                   </QuickTooltip>
                 </div>
+                <p className="mt-1.5 truncate text-[11px] text-muted-foreground" title={entry.attachment.file_name}>
+                  {entry.attachment.file_name}
+                </p>
+                {memberNameMap && (
+                  <p className="truncate text-[10px] text-muted-foreground/70">
+                    {memberNameMap.get(entry.attachment.uploaded_by_id) ?? 'Unknown'}
+                  </p>
+                )}
               </div>
             );
           })}
@@ -395,7 +345,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
             <img
               src={resolveUrl(previewEntry)}
               alt={previewEntry.attachment.file_name}
-              className="max-h-[60vh] max-w-[70vw] rounded-lg object-contain"
+              className="max-h-[50vh] max-w-[60vw] rounded-lg object-contain"
               onClick={(e) => e.stopPropagation()}
             />
             <div className="mt-3 flex items-center gap-2 text-white/80" onClick={(e) => e.stopPropagation()}>

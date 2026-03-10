@@ -3,12 +3,13 @@ import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
 import { Maximize2, Download, Copy, Link2, Trash2, X } from 'lucide-react';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { toast } from 'sonner';
+import { useImageActions } from '@/hooks/useImageActions';
 
 const MIN_WIDTH = 100;
 
 export function ResizableImageComponent({ node, updateAttributes, selected, deleteNode }: NodeViewProps) {
   const { src, alt, width, height, aspectRatio: storedAspectRatio } = node.attrs;
+  const { copyImage, downloadImage, openInNewTab } = useImageActions();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -144,6 +145,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
           ref={imageRef}
           src={src}
           alt={alt ?? ''}
+          crossOrigin="anonymous"
           onLoad={handleImageLoad}
           draggable={false}
           className="block max-w-full rounded-md"
@@ -183,27 +185,16 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
           <QuickTooltip label="Download">
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                const a = document.createElement('a');
-                a.href = src;
-                a.download = alt || 'image';
-                a.target = '_blank';
-                a.click();
-              }}
+              onClick={(e) => { e.stopPropagation(); downloadImage(src, alt); }}
               className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
             >
               <Download className="h-4 w-4" />
             </button>
           </QuickTooltip>
-          <QuickTooltip label="Copy image URL">
+          <QuickTooltip label="Copy image">
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigator.clipboard.writeText(src);
-                toast.success('Image URL copied');
-              }}
+              onClick={(e) => { e.stopPropagation(); copyImage(src); }}
               className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
             >
               <Copy className="h-4 w-4" />
@@ -212,10 +203,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
           <QuickTooltip label="Open in new tab">
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                window.open(src, '_blank');
-              }}
+              onClick={(e) => { e.stopPropagation(); openInNewTab(src); }}
               className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
             >
               <Link2 className="h-4 w-4" />

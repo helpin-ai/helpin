@@ -4,11 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { CommentEditor } from '@/components/pm/CommentEditor';
 import { MentionText } from '@/components/pm/MentionText';
+import { CommentBody } from '@/components/pm/CommentBody';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import type { CommentWithAuthor } from '@/lib/pmTypes';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
+import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
 
 function formatRelativeTime(dateStr: string): string {
   try {
@@ -27,6 +29,7 @@ interface CommentThreadProps {
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
   onCommentsChange: (comments: CommentWithAuthor[]) => void;
+  uploadConfig?: EditorUploadConfig;
 }
 
 export function CommentThread({
@@ -38,6 +41,7 @@ export function CommentThread({
   teams = [],
   members = [],
   onCommentsChange,
+  uploadConfig,
 }: CommentThreadProps) {
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -211,9 +215,7 @@ export function CommentThread({
               {isEditing ? (
                 renderEditForm('pl-8')
               ) : (
-                <p className="mt-1.5 pl-8 text-sm">
-                  <MentionText text={entry.comment.body} members={members} />
-                </p>
+                <CommentBody body={entry.comment.body} members={members} className="mt-1.5 pl-8" />
               )}
 
               {/* Thread toggle */}
@@ -269,9 +271,7 @@ export function CommentThread({
                         {isReplyEditing ? (
                           renderEditForm('pl-7')
                         ) : (
-                          <p className="mt-1 pl-7 text-sm">
-                            <MentionText text={reply.comment.body} members={members} />
-                          </p>
+                          <CommentBody body={reply.comment.body} members={members} className="mt-1 pl-7" />
                         )}
                       </div>
                     );
@@ -284,6 +284,7 @@ export function CommentThread({
                       placeholder="Write a reply..."
                       teams={teams}
                       members={members}
+                      uploadConfig={uploadConfig}
                     />
                   </div>
                 </div>
@@ -302,6 +303,7 @@ export function CommentThread({
           placeholder="Leave a comment... (type @ to mention)"
           teams={teams}
           members={members}
+          uploadConfig={uploadConfig}
         />
       </div>
     </div>

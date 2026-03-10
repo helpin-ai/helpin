@@ -712,6 +712,7 @@ export function StoryDetailPage() {
               teams={teams}
               members={assignableMembers}
               onCommentsChange={setComments}
+              uploadConfig={{ workspaceId: workspaceId!, entityType: 'story', entityId: storyDetail.story.id }}
             />
 
             {/* Activity section */}

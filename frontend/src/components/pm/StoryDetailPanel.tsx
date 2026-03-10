@@ -770,6 +770,7 @@ function StoryDetailPanelBody({
               teams={teams}
               members={assignableMembers}
               onCommentsChange={setComments}
+              uploadConfig={{ workspaceId, entityType: 'story', entityId: storyDetail.story.id }}
             />
 
             {/* Activity section */}
