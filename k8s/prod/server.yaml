@@ -52,6 +52,13 @@ spec:
             capabilities:
               drop:
                 - ALL
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /api/health
