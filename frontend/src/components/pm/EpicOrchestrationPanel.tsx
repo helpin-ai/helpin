@@ -146,7 +146,6 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   const [triggeringPlan, setTriggeringPlan] = useState(false);
   const [confirmingPlan, setConfirmingPlan] = useState(false);
   const [kickingOff, setKickingOff] = useState(false);
-  const [_actingOnRun, setActingOnRun] = useState<string | null>(null);
   const [lastExecutionResult, setLastExecutionResult] = useState<KickoffExecutionResult | null>(null);
   const lastDraftRefreshKey = useRef<string>('');
   const lastPlanRefreshKey = useRef<string>('');
@@ -413,16 +412,6 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
       onStoriesCreated?.();
     } finally { setKickingOff(false); }
   }, [epic.id, fetchRuns, latestPlanRun, onStoriesCreated, selectedRun, selectedRunStage, selectedStoryIds, workspaceId]);
-
-  const _handleCancelRun = useCallback(async (runId: string) => {
-    setActingOnRun(runId);
-    try {
-      const res = await agentService.cancelRun(workspaceId, runId);
-      if (res.error) { toast.error(res.error); return; }
-      toast.success('Run cancelled');
-      await fetchRuns();
-    } finally { setActingOnRun(null); }
-  }, [fetchRuns, workspaceId]);
 
   const openSpecDoc = useCallback(() => {
     if (!epic.spec_document_id) { toast.error('No spec document yet'); return; }
