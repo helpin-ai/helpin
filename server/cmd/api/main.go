@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -42,7 +41,8 @@ func main() {
 	// Load configuration.
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
 	}
 
 	// Initialize structured logger.
@@ -57,19 +57,22 @@ func main() {
 		PreferSimpleProtocol: true,
 	}), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		log.Fatalf("failed to get underlying sql.DB: %v", err)
+		slog.Error("failed to get underlying sql.DB", "error", err)
+		os.Exit(1)
 	}
 	defer sqlDB.Close()
 
 	if err := sqlDB.Ping(); err != nil {
-		log.Fatalf("failed to ping database: %v", err)
+		slog.Error("failed to ping database", "error", err)
+		os.Exit(1)
 	}
-	log.Println("connected to database")
+	slog.Info("connected to database")
 
 	// Ensure pgcrypto extension is available for gen_random_uuid().
 	slog.Info("startup: enabling pgcrypto extension")
@@ -77,17 +80,27 @@ func main() {
 
 	slog.Info("startup: running MigrateLegacyRewardSchema")
 	if err := repository.MigrateLegacyRewardSchema(db); err != nil {
-		log.Fatalf("failed to migrate legacy reward schema: %v", err)
+		slog.Error("failed to migrate legacy reward schema", "error", err)
+		os.Exit(1)
 	}
 
 	slog.Info("startup: running MigrateAgentRunTargets")
 	if err := repository.MigrateAgentRunTargets(db); err != nil {
-		log.Fatalf("failed to migrate agent run targets: %v", err)
+		slog.Error("failed to migrate agent run targets", "error", err)
+		os.Exit(1)
 	}
 
 	slog.Info("startup: running MigratePMImportSchema")
 	if err := repository.MigratePMImportSchema(db); err != nil {
-		log.Fatalf("failed to migrate pm import schema: %v", err)
+		slog.Error("failed to migrate pm import schema", "error", err)
+		os.Exit(1)
+	}
+
+	// Fix: idx_ws_member_ws_user was incorrectly created as a single-column unique
+	// index on user_id only. Drop it so AutoMigrate recreates it as composite (workspace_id, user_id).
+	if err := db.Exec("DROP INDEX IF EXISTS idx_ws_member_ws_user").Error; err != nil {
+		slog.Error("failed to drop incorrect ws member index", "error", err)
+		os.Exit(1)
 	}
 
 	// Auto-migrate all models.
@@ -213,41 +226,45 @@ func main() {
 		// CRM Autonomy
 		&model.CRMAutonomySettings{},
 	); err != nil {
-		log.Fatalf("failed to auto-migrate: %v", err)
+		slog.Error("failed to auto-migrate", "error", err)
+		os.Exit(1)
 	}
 	slog.Info("startup: AutoMigrate complete")
 
 	// Post-AutoMigrate schema migrations that reference tables created above.
 	slog.Info("startup: running MigrateWorkspaceMemberSchema")
 	if err := repository.MigrateWorkspaceMemberSchema(db); err != nil {
-		log.Fatalf("failed to migrate workspace member schema: %v", err)
+		slog.Error("failed to migrate workspace member schema", "error", err)
+		os.Exit(1)
 	}
 	slog.Info("startup: running DropLegacyWorkspaceIdentitySchema")
 	if err := repository.DropLegacyWorkspaceIdentitySchema(db); err != nil {
-		log.Fatalf("failed to drop legacy workspace identity schema: %v", err)
+		slog.Error("failed to drop legacy workspace identity schema", "error", err)
+		os.Exit(1)
 	}
 
 	// Migrate existing workspaces to organizations (one-time, idempotent).
 	slog.Info("startup: running MigrateWorkspacesToOrganizations")
 	if err := repository.MigrateWorkspacesToOrganizations(db); err != nil {
-		log.Fatalf("failed to migrate workspaces to organizations: %v", err)
+		slog.Error("failed to migrate workspaces to organizations", "error", err)
+		os.Exit(1)
 	}
 	slog.Info("startup: all migrations complete")
 
 	// Initialize email client (nil if not configured).
 	emailClient := email.NewClient(cfg.PostmarkServerToken, cfg.PostmarkFromEmail)
 	if emailClient != nil {
-		log.Println("Postmark email configured")
+		slog.Info("Postmark email configured")
 	} else {
-		log.Println("Postmark email not configured — invitation emails will be logged only")
+		slog.Info("Postmark email not configured — invitation emails will be logged only")
 	}
 
 	// Initialize S3 storage client (nil if not configured).
 	s3Client := storage.NewS3Client(cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey, cfg.AWSBucket, cfg.AWSRegion, cfg.AWSEndpointURL)
 	if s3Client != nil {
-		log.Println("S3 storage configured")
+		slog.Info("S3 storage configured")
 	} else {
-		log.Println("S3 storage not configured — attachments disabled")
+		slog.Info("S3 storage not configured — attachments disabled")
 	}
 
 	// Initialize JWT manager.
@@ -354,16 +371,17 @@ func main() {
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
-		log.Fatalf("failed to initialize github app client: %v", err)
+		slog.Error("failed to initialize github app client", "error", err)
+		os.Exit(1)
 	}
 
 	var temporalClient tclient.Client
 	temporalClient, err = tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
-		log.Printf("Temporal unavailable at %s (namespace=%s): %v", cfg.TemporalAddress, cfg.TemporalNamespace, err)
+		slog.Warn("Temporal unavailable", "address", cfg.TemporalAddress, "namespace", cfg.TemporalNamespace, "error", err)
 	} else {
 		defer temporalClient.Close()
-		log.Printf("Temporal configured at %s (namespace=%s)", cfg.TemporalAddress, cfg.TemporalNamespace)
+		slog.Info("Temporal configured", "address", cfg.TemporalAddress, "namespace", cfg.TemporalNamespace)
 	}
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
 
@@ -407,9 +425,9 @@ func main() {
 
 	// Log orchestration availability.
 	if cfg.AnthropicAPIKey != "" {
-		log.Println("Anthropic API configured — orchestration enabled")
+		slog.Info("Anthropic API configured — orchestration enabled")
 	} else {
-		log.Println("Anthropic API not configured — orchestration disabled")
+		slog.Info("Anthropic API not configured — orchestration disabled")
 	}
 
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo)
@@ -438,14 +456,14 @@ func main() {
 		var err error
 		encryptionKey, err = hex.DecodeString(cfg.CRMEncryptionKey)
 		if err != nil {
-			log.Printf("invalid CRM_ENCRYPTION_KEY (must be hex-encoded): %v", err)
+			slog.Warn("invalid CRM_ENCRYPTION_KEY (must be hex-encoded)", "error", err)
 		}
 	}
 	gmailSyncClient := syncpkg.NewGmailSyncClient(gmailOAuth, crmEmailRepo, encryptionKey)
 	if gmailOAuth != nil {
-		log.Println("Gmail OAuth configured")
+		slog.Info("Gmail OAuth configured")
 	} else {
-		log.Println("Gmail OAuth not configured — email sync disabled")
+		slog.Info("Gmail OAuth not configured — email sync disabled")
 	}
 
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, gmailOAuth, encryptionKey, gmailSyncClient)
@@ -466,7 +484,7 @@ func main() {
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
 	if llmProvider != nil {
-		log.Println("LLM provider configured for signal detection")
+		slog.Info("LLM provider configured for signal detection")
 	}
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo)
@@ -592,7 +610,7 @@ func main() {
 	go func() {
 		runDigestSweep := func() {
 			if err := notificationService.ProcessPendingDigests(context.Background(), time.Now()); err != nil {
-				log.Printf("notification digest sweep failed: %v", err)
+				slog.Error("notification digest sweep failed", "error", err)
 			}
 		}
 
@@ -615,9 +633,9 @@ func main() {
 	go func() {
 		// Run once on startup, then every 24 hours.
 		if count, err := notificationService.CleanupArchivedNotifications(context.Background(), 90); err != nil {
-			log.Printf("notification cleanup failed: %v", err)
+			slog.Error("notification cleanup failed", "error", err)
 		} else if count > 0 {
-			log.Printf("notification cleanup: deleted %d archived notifications", count)
+			slog.Info("notification cleanup complete", "deleted_count", count)
 		}
 
 		ticker := time.NewTicker(24 * time.Hour)
@@ -626,9 +644,9 @@ func main() {
 			select {
 			case <-ticker.C:
 				if count, err := notificationService.CleanupArchivedNotifications(context.Background(), 90); err != nil {
-					log.Printf("notification cleanup failed: %v", err)
+					slog.Error("notification cleanup failed", "error", err)
 				} else if count > 0 {
-					log.Printf("notification cleanup: deleted %d archived notifications", count)
+					slog.Info("notification cleanup complete", "deleted_count", count)
 				}
 			case <-cleanupDone:
 				return
@@ -666,14 +684,15 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("server starting on port %s", cfg.Port)
+		slog.Info("server starting", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			slog.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-done
-	log.Println("server shutting down...")
+	slog.Info("server shutting down")
 	close(automationDone)
 	close(digestDone)
 	close(cleanupDone)
@@ -682,8 +701,9 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("server forced to shutdown: %v", err)
+		slog.Error("server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("server stopped")
+	slog.Info("server stopped")
 }

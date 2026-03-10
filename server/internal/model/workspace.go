@@ -28,8 +28,8 @@ func (Workspace) TableName() string { return "workspaces" }
 // WorkspaceMember represents a row in the workspace_members table.
 type WorkspaceMember struct {
 	ID          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	UserID      *string    `json:"user_id" gorm:"type:uuid;uniqueIndex:idx_ws_member_ws_user"`
+	WorkspaceID string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_ws_member_ws_user,priority:1"`
+	UserID      *string    `json:"user_id" gorm:"type:uuid;uniqueIndex:idx_ws_member_ws_user,priority:2"`
 	Email       string     `json:"email" gorm:"not null"`
 	DisplayName string     `json:"display_name" gorm:"not null"`
 	Role        string     `json:"role" gorm:"not null;default:'member'"`
