@@ -126,14 +126,14 @@ function HomePage() {
 }
 
 function CardIcon({ name }: { name: string }) {
-  return <PhIcon name={name} size={22} weight="duotone" />
+  return <PhIcon name={name} size={36} weight="duotone" />
 }
 
 function FeaturedCard({ card }: { card: HomepageFeaturedCard }) {
   const inner = (
     <>
       {card.icon && (
-        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <div className="mb-3 text-primary">
           <CardIcon name={card.icon} />
         </div>
       )}

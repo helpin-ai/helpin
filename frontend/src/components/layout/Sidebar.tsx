@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
+import { Folder as PhFolder } from '@phosphor-icons/react';
+import { PHOSPHOR_MAP } from '@/components/ui/icon-picker';
 import {
   BarChart3,
   Bell,
@@ -164,11 +166,7 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
                       });
                     }}
                   >
-                    {col.icon ? (
-                      <span className="inline-block text-sm leading-none">{col.icon}</span>
-                    ) : (
-                      <FolderOpen className="h-3.5 w-3.5" />
-                    )}
+                    <SidebarCollectionIcon name={col.icon} />
                     <span className="truncate">{col.name}</span>
                   </a>
                 </SidebarMenuSubButton>
@@ -300,6 +298,14 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
       )}
     </>
   );
+}
+
+function SidebarCollectionIcon({ name }: { name?: string | null }) {
+  if (name) {
+    const Icon = PHOSPHOR_MAP[name];
+    if (Icon) return <Icon size={14} weight="regular" />;
+  }
+  return <PhFolder size={14} weight="regular" />;
 }
 
 export function Sidebar() {

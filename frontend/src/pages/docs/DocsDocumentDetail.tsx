@@ -27,6 +27,8 @@ import {
   UserCheck,
   X,
 } from 'lucide-react'
+import { Folder as PhFolder } from '@phosphor-icons/react'
+import { PHOSPHOR_MAP } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
@@ -41,6 +43,7 @@ import {
   useSaveDocsContent,
   useUpdateDocsDocument,
   usePublishDocsDocument,
+  useUnpublishDocsDocument,
   useArchiveDocsDocument,
   useUnarchiveDocsDocument,
   useDeleteDocsDocument,
@@ -54,7 +57,6 @@ import {
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import {
   Select,
@@ -67,10 +69,31 @@ import { Switch } from '@/components/ui/switch'
 import { DocsEditor } from '@/components/docs/DocsEditor'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
-import { ExternalPublishPanel } from '@/components/docs/ExternalPublishPanel'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import type { DocsVersion } from '@/lib/docsTypes'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
+
+function docStatusColor(status: string): string {
+  switch (status) {
+    case 'published':
+      return 'text-emerald-600 dark:text-emerald-400'
+    case 'archived':
+      return 'text-muted-foreground/60'
+    default:
+      return 'text-amber-600 dark:text-amber-400'
+  }
+}
+
+function DocCollectionIcon({ name }: { name?: string | null }) {
+  if (name) {
+    const Icon = PHOSPHOR_MAP[name];
+    if (Icon) return <Icon size={12} weight="regular" className="shrink-0" />;
+  }
+  return <PhFolder size={12} weight="regular" className="shrink-0" />;
+}
 
 export function DocsDocumentDetail() {
   const navigate = useNavigate()
@@ -90,6 +113,7 @@ export function DocsDocumentDetail() {
   const saveContent = useSaveDocsContent(wsId)
   const updateDoc = useUpdateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
+  const unpublishDoc = useUnpublishDocsDocument(wsId)
   const archiveDoc = useArchiveDocsDocument(wsId)
   const unarchiveDoc = useUnarchiveDocsDocument(wsId)
   const deleteDoc = useDeleteDocsDocument(wsId)
@@ -109,7 +133,8 @@ export function DocsDocumentDetail() {
   const [metaOpen, setMetaOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
-  const [publishOpen, setPublishOpen] = useState(false)
+  const [slugDialogOpen, setSlugDialogOpen] = useState(false)
+  const [pendingSlug, setPendingSlug] = useState('')
   const { copied: linkCopied, copy: copyLink } = useCopyToClipboard()
 
   // Version preview state — when set, the editor shows version content read-only
@@ -184,9 +209,31 @@ export function DocsDocumentDetail() {
     [saveContent, docId],
   )
 
+  const slugifyTitle = (title: string) =>
+    title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+  const isExternalHelpCenter =
+    doc?.doc_type === 'help_center_article' && space?.type !== 'internal'
+
   const handlePublish = async () => {
+    // For external help center articles, show slug confirmation first
+    if (isExternalHelpCenter && doc?.status === 'draft') {
+      setPendingSlug(slugifyTitle(doc.title ?? 'untitled'))
+      setSlugDialogOpen(true)
+      return
+    }
     try {
-      await publishDoc.mutateAsync(docId)
+      await publishDoc.mutateAsync({ id: docId })
+      toast.success('Document published')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to publish')
+    }
+  }
+
+  const handleConfirmPublish = async () => {
+    try {
+      await publishDoc.mutateAsync({ id: docId, slug: pendingSlug })
+      setSlugDialogOpen(false)
       toast.success('Document published')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to publish')
@@ -296,18 +343,16 @@ export function DocsDocumentDetail() {
             return (
               <>
                 <ChevronRight className="h-3 w-3 shrink-0" />
-                <span className="truncate">{col.icon ? `${col.icon} ` : ''}{col.name}</span>
+                <DocCollectionIcon name={col.icon} />
+                <span className="truncate">{col.name}</span>
               </>
             )
           })()}
         </nav>
 
-        <Badge
-          variant={doc.status === 'published' ? 'default' : 'secondary'}
-          className="shrink-0 text-[10px]"
-        >
+        <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>
           {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-        </Badge>
+        </span>
 
         {canPublishDocs && doc.status === 'draft' && (
           <Button
@@ -501,6 +546,18 @@ export function DocsDocumentDetail() {
               </>
             )}
 
+            {/* ── Help Center Slug ── */}
+            {doc.hc_slug && (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Slug</span>
+                </div>
+                <p className="text-xs text-foreground font-mono">/{doc.hc_slug}</p>
+                <Separator className="my-4" />
+              </>
+            )}
+
             {/* ── Properties ── */}
             <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
               {/* Type */}
@@ -649,16 +706,6 @@ export function DocsDocumentDetail() {
                 <ExternalLink className="h-3.5 w-3.5" />
                 Linked Items
               </button>
-              {space?.type !== 'internal' && (
-                <button
-                  type="button"
-                  onClick={() => setPublishOpen(true)}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-                >
-                  <Globe className="h-3.5 w-3.5" />
-                  External Publish
-                </button>
-              )}
             </div>
 
             {/* ── Document Actions ── */}
@@ -684,6 +731,22 @@ export function DocsDocumentDetail() {
                     {doc.is_locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
                     {doc.is_locked ? 'Unlock document' : 'Lock document'}
                   </button>
+                  {doc.status === 'published' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        unpublishDoc.mutate(docId, {
+                          onSuccess: () => toast.success('Reverted to draft'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
+                        })
+                      }}
+                      disabled={unpublishDoc.isPending}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Revert to draft
+                    </button>
+                  )}
                   {doc.status !== 'archived' && (
                     <button
                       type="button"
@@ -729,14 +792,39 @@ export function DocsDocumentDetail() {
         onOpenChange={setLinksOpen}
         canEdit={canEditDocs}
       />
-      {doc && (
-        <ExternalPublishPanel
-          wsId={wsId}
-          doc={doc}
-          open={publishOpen}
-          onOpenChange={setPublishOpen}
-        />
-      )}
+      {/* Slug confirmation dialog for external help center articles */}
+      <Dialog open={slugDialogOpen} onOpenChange={setSlugDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm article URL slug</DialogTitle>
+            <DialogDescription>
+              This slug will be used in the public help center URL.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="slug">Slug</Label>
+            <div className="flex items-center">
+              <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 border-input bg-muted px-3 text-sm text-muted-foreground">/</span>
+              <Input
+                id="slug"
+                value={pendingSlug}
+                onChange={(e) => setPendingSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                placeholder="article-slug"
+                className="rounded-l-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSlugDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmPublish} disabled={!pendingSlug || publishDoc.isPending}>
+              <Send className="h-3.5 w-3.5 mr-1.5" />
+              Publish
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

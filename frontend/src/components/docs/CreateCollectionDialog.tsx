@@ -19,35 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { IconPicker } from '@/components/ui/icon-picker'
 import { useCreateDocsCollection, useDocsSpaces, useUpdateDocsCollection } from '@/hooks/queries'
 import type { DocsCollection } from '@/lib/docsTypes'
 import { toast } from 'sonner'
-
-// ── Curated emoji grid for collections ──
-
-const ICON_GROUPS: { label: string; icons: string[] }[] = [
-  {
-    label: 'Documents',
-    icons: ['📄', '📝', '📋', '📑', '📃', '📜', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚', '🗂️', '🗃️'],
-  },
-  {
-    label: 'Categories',
-    icons: ['📁', '📂', '🏷️', '🔖', '📌', '📎', '🔗', '📐', '📏', '✂️', '🧩', '🎯', '⭐', '💡', '🔑', '🏆'],
-  },
-  {
-    label: 'Technical',
-    icons: ['⚙️', '🔧', '🛠️', '💻', '🖥️', '📡', '🔬', '🧪', '🧮', '📊', '📈', '📉', '🗺️', '🌐', '☁️', '🔒'],
-  },
-  {
-    label: 'People & Work',
-    icons: ['👥', '👤', '🤝', '💼', '🏢', '📣', '📞', '✉️', '💬', '🎓', '🎧', '🎨', '✅', '❓', '💰', '🚀'],
-  },
-]
 
 interface CreateCollectionDialogProps {
   wsId: string
@@ -68,7 +43,6 @@ export function CreateCollectionDialog({
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('')
-  const [iconPickerOpen, setIconPickerOpen] = useState(false)
   const [selectedSpaceId, setSelectedSpaceId] = useState(defaultSpaceId ?? '')
 
   const { data: spaces } = useDocsSpaces(wsId)
@@ -86,7 +60,7 @@ export function CreateCollectionDialog({
 
     setName('')
     setDescription('')
-    setIcon('')
+    setIcon('folder')
     setSelectedSpaceId(defaultSpaceId ?? (spaces?.[0]?.id ?? ''))
   }, [open, collection, defaultSpaceId, spaces])
 
@@ -103,7 +77,7 @@ export function CreateCollectionDialog({
   const reset = () => {
     setName('')
     setDescription('')
-    setIcon('')
+    setIcon('folder')
     setSelectedSpaceId(defaultSpaceId ?? (spaces?.[0]?.id ?? ''))
   }
 
@@ -155,44 +129,7 @@ export function CreateCollectionDialog({
             <div className="flex items-end gap-2">
               <div className="grid gap-2">
                 <Label>Icon</Label>
-                <Popover open={iconPickerOpen} onOpenChange={setIconPickerOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-lg transition-colors hover:bg-accent"
-                    >
-                      {icon || '📁'}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-72 p-2" align="start">
-                    <div className="space-y-2">
-                      {ICON_GROUPS.map((group) => (
-                        <div key={group.label}>
-                          <p className="mb-1 px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            {group.label}
-                          </p>
-                          <div className="grid grid-cols-8 gap-0.5">
-                            {group.icons.map((emoji) => (
-                              <button
-                                key={emoji}
-                                type="button"
-                                onClick={() => {
-                                  setIcon(emoji)
-                                  setIconPickerOpen(false)
-                                }}
-                                className={`flex h-8 w-8 items-center justify-center rounded text-base transition-colors hover:bg-accent ${
-                                  icon === emoji ? 'bg-accent ring-1 ring-primary/40' : ''
-                                }`}
-                              >
-                                {emoji}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
+                <IconPicker value={icon} onChange={setIcon} />
               </div>
               <div className="grid flex-1 gap-2">
                 <Label htmlFor="collection-name">Name</Label>

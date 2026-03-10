@@ -143,6 +143,7 @@ interface DocFilters {
   status?: string
   owner_id?: string
   team_id?: string
+  include_archived?: string
 }
 
 export function useDocsDocuments(wsId: string, filters?: DocFilters) {
@@ -155,7 +156,10 @@ export function useDocsDocuments(wsId: string, filters?: DocFilters) {
           filterRecord[k] = v
         })
       }
-      return unwrap(await docsService.listDocuments(wsId, filterRecord))
+      console.log('[DEBUG] useDocsDocuments filterRecord:', filterRecord)
+      const result = await docsService.listDocuments(wsId, filterRecord)
+      console.log('[DEBUG] useDocsDocuments response:', result)
+      return unwrap(result)
     },
     enabled: !!wsId,
   })
@@ -322,7 +326,25 @@ export function useMoveDocsDocument(wsId: string) {
 export function usePublishDocsDocument(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (id: string) => unwrap(await docsService.publishDocument(wsId, id)),
+    mutationFn: async ({ id, slug }: { id: string; slug?: string }) =>
+      unwrap(await docsService.publishDocument(wsId, id, slug)),
+    onSuccess: (updatedDoc, { id }) => {
+      qc.setQueryData(queryKeys.docs.document(wsId, id), updatedDoc)
+      qc.invalidateQueries({
+        predicate: (query) => {
+          const k = query.queryKey
+          return k[0] === 'docs' && k[1] === wsId && k[2] === 'documents'
+            && (k.length === 3 || (k.length === 4 && typeof k[3] !== 'string'))
+        },
+      })
+    },
+  })
+}
+
+export function useUnpublishDocsDocument(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await docsService.unpublishDocument(wsId, id)),
     onSuccess: (updatedDoc, id) => {
       qc.setQueryData(queryKeys.docs.document(wsId, id), updatedDoc)
       qc.invalidateQueries({

@@ -80,8 +80,10 @@ export const docsService = {
     api.post<DocsDocument>(`/docs/documents/${docId}/unarchive${qs(wsId)}`),
   moveDocument: (wsId: string, docId: string, payload: MoveDocsDocumentRequest) =>
     api.post<DocsDocument>(`/docs/documents/${docId}/move${qs(wsId)}`, payload),
-  publishDocument: (wsId: string, docId: string) =>
-    api.post<DocsDocument>(`/docs/documents/${docId}/publish${qs(wsId)}`),
+  publishDocument: (wsId: string, docId: string, slug?: string) =>
+    api.post<DocsDocument>(`/docs/documents/${docId}/publish${qs(wsId)}`, slug ? { slug } : {}),
+  unpublishDocument: (wsId: string, docId: string) =>
+    api.post<DocsDocument>(`/docs/documents/${docId}/unpublish${qs(wsId)}`),
 
   // ── Content ─────────────────────────────────────────────────────────────
   getContent: (wsId: string, docId: string) =>

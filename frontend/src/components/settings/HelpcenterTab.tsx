@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
@@ -20,7 +21,6 @@ import type {
   HomepageFeaturedCard,
   DocsSpace,
   DocsCollection,
-  DocsDocument,
 } from '@/lib/docsTypes';
 
 interface ConfigState {
@@ -70,8 +70,8 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
   const [spaces, setSpaces] = useState<DocsSpace[]>([]);
-  const [collectionsCache, setCollectionsCache] = useState<Record<string, DocsCollection[]>>({});
-  const [articlesCache, setArticlesCache] = useState<Record<string, DocsDocument[]>>({});
+  const [homepageSpaceSlug, setHomepageSpaceSlug] = useState('');
+  const [spaceCollections, setSpaceCollections] = useState<DocsCollection[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -103,8 +103,27 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
       }
       // Load external_capable spaces for featured card pickers
       const spacesRes = await docsService.listSpaces(workspaceId);
-      if (spacesRes.data) {
-        setSpaces(spacesRes.data.filter(s => s.type === 'external_capable'));
+      const extSpaces = spacesRes.data?.filter(s => s.type === 'external_capable') ?? [];
+      setSpaces(extSpaces);
+
+      // If existing cards reference a space, auto-select it and sync icons from collections
+      const existingSlug = res.data?.homepage_config?.featured_cards?.[0]?.space_slug;
+      if (existingSlug) {
+        const space = extSpaces.find(s => s.slug === existingSlug);
+        if (space) {
+          setHomepageSpaceSlug(existingSlug);
+          const colRes = await docsService.listCollections(workspaceId, space.id);
+          if (colRes.data) {
+            setSpaceCollections(colRes.data);
+            // Sync card icons from current collection data
+            const existingCards = res.data?.homepage_config?.featured_cards ?? [];
+            const synced = existingCards.map(card => {
+              const col = colRes.data!.find(c => c.id === card.link_value);
+              return col ? { ...card, icon: col.icon ?? '' } : card;
+            });
+            setConfig(prev => ({ ...prev, homepage_featured_cards: synced }));
+          }
+        }
       }
 
       setLoading(false);
@@ -140,6 +159,15 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
       seo_description: config.seo_description || undefined,
       support_email: config.support_email || undefined,
     });
+    // Sync icon changes back to collections
+    for (const card of config.homepage_featured_cards) {
+      if (card.link_type !== 'collection' || !card.link_value) continue;
+      const col = spaceCollections.find(c => c.id === card.link_value);
+      if (col && (col.icon ?? '') !== card.icon) {
+        await docsService.updateCollection(workspaceId, col.id, { icon: card.icon });
+      }
+    }
+
     setSaving(false);
     if (res.error) {
       toast.error(res.error);
@@ -184,91 +212,58 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
     setConfig({ ...config, footer_links: config.footer_links.filter((_, i) => i !== index) });
   };
 
-  // ── Featured card helpers ──
-  const addFeaturedCard = () => {
-    setConfig({
-      ...config,
-      homepage_featured_cards: [
-        ...config.homepage_featured_cards,
-        { title: '', description: '', icon: '', link_type: 'space', link_value: '', space_slug: '' },
-      ],
-    });
-  };
-
-  const updateFeaturedCard = (index: number, patch: Partial<HomepageFeaturedCard>) => {
-    const cards = [...config.homepage_featured_cards];
-    cards[index] = { ...cards[index], ...patch };
-    setConfig({ ...config, homepage_featured_cards: cards });
-  };
-
-  const removeFeaturedCard = (index: number) => {
-    setConfig({
-      ...config,
-      homepage_featured_cards: config.homepage_featured_cards.filter((_, i) => i !== index),
-    });
-  };
-
-  const ensureSubEntities = async (spaceSlug: string, linkType: string) => {
-    const space = spaces.find(s => s.slug === spaceSlug);
-    if (!space) return;
-    const { docsService } = await import('@/lib/services/docsService');
-    if (linkType === 'collection' && !collectionsCache[space.id]) {
-      const res = await docsService.listCollections(workspaceId, space.id);
-      if (res.data) setCollectionsCache(prev => ({ ...prev, [space.id]: res.data! }));
-    }
-    if (linkType === 'article' && !articlesCache[space.id]) {
-      const res = await docsService.listDocuments(workspaceId, { space_id: space.id, doc_type: 'help_center_article', status: 'published' });
-      if (res.data) setArticlesCache(prev => ({ ...prev, [space.id]: res.data! }));
-    }
-  };
-
-  const handleCardSpaceChange = (index: number, card: HomepageFeaturedCard, slug: string) => {
+  // ── Featured card helpers (space-driven) ──
+  const handleHomepageSpaceChange = async (slug: string) => {
+    setHomepageSpaceSlug(slug);
     const space = spaces.find(s => s.slug === slug);
     if (!space) return;
-    if (card.link_type === 'space') {
-      updateFeaturedCard(index, {
-        link_value: space.slug,
-        title: space.name,
-        description: '',
-        icon: space.icon ?? '',
-      });
-    } else {
-      updateFeaturedCard(index, { space_slug: space.slug });
-      ensureSubEntities(space.slug, card.link_type);
-    }
-  };
-
-  const handleCardCollectionChange = (index: number, spaceSlug: string, collectionId: string) => {
-    const space = spaces.find(s => s.slug === spaceSlug);
-    if (!space) return;
-    const col = collectionsCache[space.id]?.find(c => c.id === collectionId);
-    if (!col) return;
-    updateFeaturedCard(index, {
+    const { docsService } = await import('@/lib/services/docsService');
+    const res = await docsService.listCollections(workspaceId, space.id);
+    const cols = res.data ?? [];
+    setSpaceCollections(cols);
+    // Create a card for every collection
+    const cards: HomepageFeaturedCard[] = cols.map(col => ({
       title: col.name,
       description: col.description ?? '',
       icon: col.icon ?? '',
-    });
+      link_type: 'collection',
+      link_value: col.id,
+      space_slug: slug,
+    }));
+    setConfig(prev => ({ ...prev, homepage_featured_cards: cards }));
   };
 
-  const handleCardArticleChange = (index: number, spaceSlug: string, docId: string) => {
-    const space = spaces.find(s => s.slug === spaceSlug);
-    if (!space) return;
-    const doc = articlesCache[space.id]?.find(d => d.id === docId);
-    if (!doc) return;
-    updateFeaturedCard(index, {
-      link_value: doc.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-      title: doc.title,
-      description: doc.excerpt ?? '',
-      icon: doc.icon ?? '',
-    });
-  };
-
-  const handleCardLinkTypeChange = (index: number, card: HomepageFeaturedCard, newType: string) => {
-    updateFeaturedCard(index, { link_type: newType as HomepageFeaturedCard['link_type'] });
-    const spaceSlug = newType === 'space' ? card.link_value : card.space_slug;
-    if (spaceSlug && (newType === 'collection' || newType === 'article')) {
-      ensureSubEntities(spaceSlug, newType);
+  const toggleCollection = (colId: string) => {
+    const exists = config.homepage_featured_cards.find(c => c.link_value === colId);
+    if (exists) {
+      setConfig(prev => ({
+        ...prev,
+        homepage_featured_cards: prev.homepage_featured_cards.filter(c => c.link_value !== colId),
+      }));
+    } else {
+      const col = spaceCollections.find(c => c.id === colId);
+      if (!col) return;
+      setConfig(prev => ({
+        ...prev,
+        homepage_featured_cards: [...prev.homepage_featured_cards, {
+          title: col.name,
+          description: col.description ?? '',
+          icon: col.icon ?? '',
+          link_type: 'collection',
+          link_value: col.id,
+          space_slug: homepageSpaceSlug,
+        }],
+      }));
     }
+  };
+
+  const updateCardByCollectionId = (colId: string, patch: Partial<HomepageFeaturedCard>) => {
+    setConfig(prev => ({
+      ...prev,
+      homepage_featured_cards: prev.homepage_featured_cards.map(c =>
+        c.link_value === colId ? { ...c, ...patch } : c
+      ),
+    }));
   };
 
   // ── Asset upload helpers ──
@@ -577,117 +572,58 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
             <div>
               <Label>Featured Cards</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Cards displayed on the homepage grid. Leave empty to auto-generate from spaces.
+                Select a space to populate homepage cards from its collections. Uncheck any you don't want to show.
               </p>
             </div>
-            {config.homepage_featured_cards.map((card, i) => {
-              const spaceSlug = card.link_type === 'space' ? card.link_value : card.space_slug;
-              const selectedSpace = spaces.find(s => s.slug === spaceSlug);
+            <Select value={homepageSpaceSlug} onValueChange={handleHomepageSpaceChange}>
+              <SelectTrigger className="w-full sm:w-64">
+                <SelectValue placeholder="Select a space..." />
+              </SelectTrigger>
+              <SelectContent>
+                {spaces.map(s => (
+                  <SelectItem key={s.id} value={s.slug}>
+                    {s.icon ? `${s.icon} ${s.name}` : s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-              return (
-                <div key={i} className="rounded-lg border p-4 space-y-3">
-                  {/* Row 1: Link configuration */}
-                  <div className="flex items-center gap-2">
-                    <Select
-                      value={card.link_type}
-                      onValueChange={(v) => handleCardLinkTypeChange(i, card, v)}
-                    >
-                      <SelectTrigger className="w-[130px] shrink-0">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="space">Space</SelectItem>
-                        <SelectItem value="collection">Collection</SelectItem>
-                        <SelectItem value="article">Article</SelectItem>
-                        <SelectItem value="url">External URL</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    {card.link_type !== 'url' ? (
-                      <>
-                        <Select
-                          value={spaceSlug}
-                          onValueChange={(v) => handleCardSpaceChange(i, card, v)}
-                        >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Pick a space..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {spaces.map(s => (
-                              <SelectItem key={s.id} value={s.slug}>
-                                {s.icon ? `${s.icon} ${s.name}` : s.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-
-                        {card.link_type === 'collection' && selectedSpace && (
-                          <Select onValueChange={(v) => handleCardCollectionChange(i, card.space_slug, v)}>
-                            <SelectTrigger className="flex-1">
-                              <SelectValue placeholder="Pick a collection..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(collectionsCache[selectedSpace.id] ?? []).map(c => (
-                                <SelectItem key={c.id} value={c.id}>
-                                  {c.icon ? `${c.icon} ${c.name}` : c.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-
-                        {card.link_type === 'article' && selectedSpace && (
-                          <Select onValueChange={(v) => handleCardArticleChange(i, card.space_slug, v)}>
-                            <SelectTrigger className="flex-1">
-                              <SelectValue placeholder="Pick an article..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(articlesCache[selectedSpace.id] ?? []).map(d => (
-                                <SelectItem key={d.id} value={d.id}>
-                                  {d.icon ? `${d.icon} ${d.title}` : d.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </>
-                    ) : (
-                      <Input
-                        className="flex-1"
-                        value={card.link_value}
-                        onChange={(e) => updateFeaturedCard(i, { link_value: e.target.value })}
-                        placeholder="https://..."
+            {spaceCollections.length > 0 && (
+              <div className="space-y-2">
+                {spaceCollections.map(col => {
+                  const card = config.homepage_featured_cards.find(c => c.link_value === col.id);
+                  const checked = !!card;
+                  return (
+                    <div key={col.id} className="flex items-center gap-2 rounded-lg border p-3">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={() => toggleCollection(col.id)}
                       />
-                    )}
-
-                    <Button type="button" variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={() => removeFeaturedCard(i)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-
-                  {/* Row 2: Card display details */}
-                  <div className="grid gap-2 grid-cols-[160px_1fr_1fr]">
-                    <IconPicker
-                      value={card.icon}
-                      onChange={(v) => updateFeaturedCard(i, { icon: v })}
-                    />
-                    <Input
-                      value={card.title}
-                      onChange={(e) => updateFeaturedCard(i, { title: e.target.value })}
-                      placeholder="Card title"
-                    />
-                    <Input
-                      value={card.description}
-                      onChange={(e) => updateFeaturedCard(i, { description: e.target.value })}
-                      placeholder="Short description"
-                    />
-                  </div>
-                </div>
-              );
-            })}
-            <Button type="button" variant="outline" size="sm" onClick={addFeaturedCard}>
-              <Plus className="mr-1 h-4 w-4" /> Add Card
-            </Button>
+                      {checked ? (
+                        <div className="flex-1 grid gap-2 grid-cols-[40px_minmax(0,160px)_1fr]">
+                          <IconPicker
+                            value={card.icon}
+                            onChange={(v) => updateCardByCollectionId(col.id, { icon: v })}
+                          />
+                          <Input
+                            value={card.title}
+                            onChange={(e) => updateCardByCollectionId(col.id, { title: e.target.value })}
+                            placeholder="Card title"
+                          />
+                          <Input
+                            value={card.description}
+                            onChange={(e) => updateCardByCollectionId(col.id, { description: e.target.value })}
+                            placeholder="Short description"
+                          />
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">{col.name}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

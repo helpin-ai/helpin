@@ -4,10 +4,13 @@ import { timeAgo } from '@/lib/utils'
 import {
   Archive,
   ArchiveRestore,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Check,
   ChevronDown,
   Copy,
+  EllipsisVertical,
   FileText,
   FolderOpen,
   Globe,
@@ -22,6 +25,8 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { Folder as PhFolder } from '@phosphor-icons/react'
+import { PHOSPHOR_MAP } from '@/components/ui/icon-picker'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useGlobalCreateStore } from '@/stores/globalCreateStore'
@@ -42,7 +47,6 @@ import {
   usePermissions,
 } from '@/hooks/queries'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,15 +64,23 @@ import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog
 import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
 
-function statusVariant(status: string): 'default' | 'secondary' | 'outline' {
+function statusColor(status: string): string {
   switch (status) {
     case 'published':
-      return 'default'
+      return 'text-emerald-600 dark:text-emerald-400'
     case 'archived':
-      return 'outline'
+      return 'text-muted-foreground/60'
     default:
-      return 'secondary'
+      return 'text-amber-600 dark:text-amber-400'
   }
+}
+
+function CollectionTabIcon({ name }: { name?: string | null }) {
+  if (name) {
+    const Icon = PHOSPHOR_MAP[name]
+    if (Icon) return <Icon size={14} weight="regular" className="shrink-0" />
+  }
+  return <PhFolder size={14} weight="regular" className="shrink-0" />
 }
 
 export function DocsSpaceDetail() {
@@ -84,17 +96,22 @@ export function DocsSpaceDetail() {
   const { data: access } = useWorkspaceAccess(wsId)
   const { canEditDocs } = usePermissions(access)
 
+  const [filterType, setFilterType] = useState<DocType | null>(null)
+  const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
+  const [sortField, setSortField] = useState<'updated_at' | 'title' | 'status' | 'doc_type'>('updated_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
   const { data: space, isLoading: spaceLoading } = useDocsSpace(wsId, spaceId)
   const { data: collections } = useDocsCollections(wsId, spaceId)
-  const { data: documents } = useDocsDocuments(wsId, { space_id: spaceId })
+  const docFilters = { space_id: spaceId, include_archived: 'true', ...(filterStatus ? { status: filterStatus } : {}) }
+  console.log('[DEBUG] DocsSpaceDetail filters:', docFilters, 'filterStatus:', filterStatus)
+  const { data: documents } = useDocsDocuments(wsId, docFilters)
   const { data: members = [] } = useAssignableMembers(wsId)
   const archiveDoc = useArchiveDocsDocument(wsId)
   const unarchiveDoc = useUnarchiveDocsDocument(wsId)
   const deleteDoc = useDeleteDocsDocument(wsId)
   const duplicateDoc = useDuplicateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
-  const [filterType, setFilterType] = useState<DocType | null>(null)
-  const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
   const [editSpaceOpen, setEditSpaceOpen] = useState(false)
   const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null)
 
@@ -104,6 +121,8 @@ export function DocsSpaceDetail() {
   const collectionNames = new Map<string, string>(
     (collections ?? []).map((c) => [c.id, c.name])
   )
+
+  console.log('[DEBUG] Documents received:', documents?.length, 'statuses:', documents?.map(d => d.status))
 
   // Group documents by collection
   const collectionMap = new Map<string, DocsDocument[]>()
@@ -327,13 +346,13 @@ export function DocsSpaceDetail() {
         <button
           type="button"
           onClick={() => setActiveCollection(null)}
-          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+          className={`rounded-full px-3.5 py-1 text-[13px] font-medium transition-colors ${
             !activeCollection
               ? 'bg-foreground text-background'
-              : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
           }`}
         >
-          All ({documents?.length ?? 0})
+          All Collections ({documents?.length ?? 0})
         </button>
 
         {(collections ?? []).map((col) => (
@@ -341,18 +360,14 @@ export function DocsSpaceDetail() {
             <button
               type="button"
               onClick={() => setActiveCollection(col.id)}
-              className={`rounded-full px-3 py-1 pr-7 text-xs font-medium transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 pr-7 text-[13px] font-medium transition-colors ${
                 activeCollection === col.id
                   ? 'bg-foreground text-background'
-                  : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+                  : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
               }`}
             >
-              {col.icon ? (
-                <span className="mr-1 inline-block">{col.icon}</span>
-              ) : (
-                <FolderOpen className="mr-1 inline h-3 w-3" />
-              )}
-              {col.name} ({collectionMap.get(col.id)?.length ?? 0})
+              <CollectionTabIcon name={col.icon} />
+              <span>{col.name} ({collectionMap.get(col.id)?.length ?? 0})</span>
             </button>
 
             {canEditDocs && (
@@ -360,7 +375,7 @@ export function DocsSpaceDetail() {
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className={`absolute right-1 top-1/2 -translate-y-1/2 rounded-full p-0.5 opacity-0 transition-opacity group-hover/tab:opacity-100 ${
+                    className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 opacity-0 transition-opacity outline-none focus:outline-none group-hover/tab:opacity-100 ${
                       activeCollection === col.id
                         ? 'text-background/70 hover:text-background'
                         : 'text-muted-foreground/60 hover:text-foreground'
@@ -418,95 +433,79 @@ export function DocsSpaceDetail() {
       </div>
 
       {/* Filters row */}
-      {(() => {
-        const hasActiveFilters = filterType !== null || filterStatus !== null
-        return (
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                    filterType
-                      ? 'border-primary/30 bg-primary/5 text-foreground'
-                      : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                >
-                  <ListFilter className="h-3 w-3" />
-                  {filterType ? DOC_TYPE_LABELS[filterType] : 'Type'}
-                  <ChevronDown className="h-3 w-3 opacity-50" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-44">
-                <DropdownMenuItem
-                  onClick={() => setFilterType(null)}
-                  className={!filterType ? 'font-medium' : ''}
-                >
-                  All Types
-                  {!filterType && <Check className="ml-auto h-3.5 w-3.5" />}
-                </DropdownMenuItem>
-                {(Object.entries(DOC_TYPE_LABELS) as [DocType, string][]).map(([key, label]) => (
-                  <DropdownMenuItem
-                    key={key}
-                    onClick={() => setFilterType(key)}
-                    className={filterType === key ? 'font-medium' : ''}
-                  >
-                    {label}
-                    {filterType === key && <Check className="ml-auto h-3.5 w-3.5" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                    filterStatus
-                      ? 'border-primary/30 bg-primary/5 text-foreground'
-                      : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                >
-                  <ListFilter className="h-3 w-3" />
-                  {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
-                  <ChevronDown className="h-3 w-3 opacity-50" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-36">
-                <DropdownMenuItem
-                  onClick={() => setFilterStatus(null)}
-                  className={!filterStatus ? 'font-medium' : ''}
-                >
-                  All Statuses
-                  {!filterStatus && <Check className="ml-auto h-3.5 w-3.5" />}
-                </DropdownMenuItem>
-                {(Object.entries(DOC_STATUS_LABELS) as [DocStatus, string][]).map(([key, label]) => (
-                  <DropdownMenuItem
-                    key={key}
-                    onClick={() => setFilterStatus(key)}
-                    className={filterStatus === key ? 'font-medium' : ''}
-                  >
-                    {label}
-                    {filterStatus === key && <Check className="ml-auto h-3.5 w-3.5" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={() => { setFilterType(null); setFilterStatus(null) }}
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      <div className="flex items-center justify-end gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                filterType
+                  ? 'border-primary/30 bg-primary/5 text-foreground'
+                  : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+              }`}
+            >
+              <ListFilter className="h-3 w-3" />
+              {filterType ? DOC_TYPE_LABELS[filterType] : 'Type'}
+              <ChevronDown className="h-3 w-3 opacity-50" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem
+              onClick={() => setFilterType(null)}
+              className={!filterType ? 'font-medium' : ''}
+            >
+              All Types
+              {!filterType && <Check className="ml-auto h-3.5 w-3.5" />}
+            </DropdownMenuItem>
+            {(Object.entries(DOC_TYPE_LABELS) as [DocType, string][]).map(([key, label]) => (
+              <DropdownMenuItem
+                key={key}
+                onClick={() => setFilterType(key)}
+                className={filterType === key ? 'font-medium' : ''}
               >
-                <X className="h-3 w-3" />
-                Clear
-              </button>
-            )}
-          </div>
-        )
-      })()}
+                {label}
+                {filterType === key && <Check className="ml-auto h-3.5 w-3.5" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                filterStatus
+                  ? 'border-primary/30 bg-primary/5 text-foreground'
+                  : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+              }`}
+            >
+              <ListFilter className="h-3 w-3" />
+              {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
+              <ChevronDown className="h-3 w-3 opacity-50" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem
+              onClick={() => setFilterStatus(null)}
+              className={!filterStatus ? 'font-medium' : ''}
+            >
+              All
+              {!filterStatus && <Check className="ml-auto h-3.5 w-3.5" />}
+            </DropdownMenuItem>
+            {(Object.entries(DOC_STATUS_LABELS) as [DocStatus, string][]).map(([key, label]) => (
+              <DropdownMenuItem
+                key={key}
+                onClick={() => setFilterStatus(key)}
+                className={filterStatus === key ? 'font-medium' : ''}
+              >
+                {label}
+                {filterStatus === key && <Check className="ml-auto h-3.5 w-3.5" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {/* Document list */}
       {(() => {
@@ -516,11 +515,31 @@ export function DocsSpaceDetail() {
             ? collectionMap.get(activeCollection) ?? []
             : documents ?? []
 
-        // Apply type and status filters
-        const displayDocs = baseDocs.filter((doc) => {
+        // Apply type filter
+        const filtered = baseDocs.filter((doc) => {
           if (filterType && doc.doc_type !== filterType) return false
-          if (filterStatus && doc.status !== filterStatus) return false
           return true
+        })
+
+        // Sort
+        const displayDocs = [...filtered].sort((a, b) => {
+          let cmp = 0
+          switch (sortField) {
+            case 'title':
+              cmp = (a.title ?? '').localeCompare(b.title ?? '')
+              break
+            case 'status':
+              cmp = (a.status ?? '').localeCompare(b.status ?? '')
+              break
+            case 'doc_type':
+              cmp = (a.doc_type ?? '').localeCompare(b.doc_type ?? '')
+              break
+            case 'updated_at':
+            default:
+              cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+              break
+          }
+          return sortDir === 'asc' ? cmp : -cmp
         })
 
         if (displayDocs.length === 0) {
@@ -566,12 +585,24 @@ export function DocsSpaceDetail() {
         return (
           <div className="rounded-lg border border-border/60 bg-card divide-y divide-border/40">
             <div className="flex items-center gap-3 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <span className="min-w-0 flex-1">Title</span>
+              <button type="button" onClick={() => { if (sortField === 'title') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('title'); setSortDir('asc') } }} className="min-w-0 flex-1 flex items-center gap-1 hover:text-foreground transition-colors text-left">
+                Title
+                {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+              </button>
               <span className="w-36 shrink-0">Owner</span>
               <span className="w-28 shrink-0">Collection</span>
-              <span className="w-24 shrink-0">Type</span>
-              <span className="w-20 shrink-0">Status</span>
-              <span className="w-20 shrink-0 text-right">Updated</span>
+              <button type="button" onClick={() => { if (sortField === 'doc_type') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('doc_type'); setSortDir('asc') } }} className="w-24 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors">
+                Type
+                {sortField === 'doc_type' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+              </button>
+              <button type="button" onClick={() => { if (sortField === 'status') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('status'); setSortDir('asc') } }} className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors">
+                Status
+                {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+              </button>
+              <button type="button" onClick={() => { if (sortField === 'updated_at') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('updated_at'); setSortDir('desc') } }} className="w-20 shrink-0 flex items-center gap-1 justify-end hover:text-foreground transition-colors">
+                Updated
+                {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+              </button>
               {canEditDocs && <span className="w-8 shrink-0" />}
             </div>
             {displayDocs.map((doc: DocsDocument) => {
@@ -613,13 +644,8 @@ export function DocsSpaceDetail() {
                 <span className="w-24 shrink-0 text-xs text-muted-foreground">
                   {DOC_TYPE_LABELS[doc.doc_type] ?? doc.doc_type}
                 </span>
-                <span className="w-20 shrink-0">
-                  <Badge
-                    variant={statusVariant(doc.status)}
-                    className="text-[10px] px-1.5 py-0"
-                  >
-                    {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-                  </Badge>
+                <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
+                  {DOC_STATUS_LABELS[doc.status] ?? doc.status}
                 </span>
                 <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">
                   {timeAgo(doc.updated_at)}
@@ -648,7 +674,7 @@ export function DocsSpaceDetail() {
                         {doc.status === 'draft' && (
                           <DropdownMenuItem
                             onClick={() => {
-                              publishDoc.mutate(doc.id, {
+                              publishDoc.mutate({ id: doc.id }, {
                                 onSuccess: () => toast.success('Document published'),
                                 onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish'),
                               })

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -193,16 +194,36 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	docType := ptrIfSet(q.Get("doc_type"))
 	status := ptrIfSet(q.Get("status"))
 	teamID := ptrIfSet(q.Get("team_id"))
+	includeArchived := q.Get("include_archived") == "true"
 
 	role := ""
 	if actor != nil {
 		role = actor.Role
 	}
-	docs, err := h.documentSvc.List(r.Context(), wsID, spaceID, collectionID, docType, status, teamID, userID, role)
+
+	statusVal := ""
+	if status != nil {
+		statusVal = *status
+	}
+	slog.Info("[DEBUG] ListDocuments called",
+		"workspace_id", wsID,
+		"status_filter", statusVal,
+		"include_archived", includeArchived,
+		"space_id", q.Get("space_id"),
+		"raw_query", r.URL.RawQuery,
+	)
+
+	docs, err := h.documentSvc.List(r.Context(), wsID, spaceID, collectionID, docType, status, teamID, userID, role, includeArchived)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	slog.Info("[DEBUG] ListDocuments result",
+		"status_filter", statusVal,
+		"count", len(docs),
+	)
+
 	writeJSON(w, http.StatusOK, docs)
 }
 
@@ -228,7 +249,8 @@ func (h *DocsHandler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocsHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
-	doc, err := h.documentSvc.Get(r.Context(), chi.URLParam(r, "docId"))
+	docID := chi.URLParam(r, "docId")
+	doc, err := h.documentSvc.Get(r.Context(), docID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -236,6 +258,10 @@ func (h *DocsHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 	if doc == nil {
 		writeError(w, http.StatusNotFound, "document not found")
 		return
+	}
+	// Enrich with help center slug if available.
+	if art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID); art != nil && art.Slug != "" {
+		doc.HCSlug = art.Slug
 	}
 	writeJSON(w, http.StatusOK, doc)
 }
@@ -264,6 +290,23 @@ func (h *DocsHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 
 func (h *DocsHandler) RestoreDocument(w http.ResponseWriter, r *http.Request) {
 	doc, err := h.documentSvc.Restore(r.Context(), chi.URLParam(r, "docId"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, doc)
+}
+
+func (h *DocsHandler) UnpublishDocument(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "docId")
+
+	// If externally published, unpublish first.
+	art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID)
+	if art != nil && art.PublicPublishedAt != nil {
+		_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
+	}
+
+	doc, err := h.documentSvc.Unpublish(r.Context(), docID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -460,6 +503,12 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	docID := chi.URLParam(r, "docId")
 
+	// Accept optional slug for external publish.
+	var body struct {
+		Slug string `json:"slug"`
+	}
+	_ = decodeJSON(r, &body)
+
 	doc, err := h.documentSvc.Publish(r.Context(), docID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -469,6 +518,20 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 	// Snapshot on publish.
 	_, _ = h.versionSvc.SnapshotOnPublish(r.Context(), docID, userID)
 
+	// Auto-publish externally for help center articles in external-capable spaces.
+	if doc.DocType == model.DocTypeHelpCenterArticle {
+		if err := h.helpcenterSvc.PublishExternally(r.Context(), docID, body.Slug); err != nil {
+			slog.Warn("[DEBUG] PublishExternally failed", "doc_id", docID, "doc_type", doc.DocType, "error", err)
+		}
+	} else {
+		slog.Info("[DEBUG] Skipping external publish", "doc_id", docID, "doc_type", doc.DocType)
+	}
+
+	// Re-fetch to include updated helpcenter article data.
+	doc, _ = h.documentSvc.Get(r.Context(), docID)
+	if art, _ := h.helpcenterSvc.GetArticle(r.Context(), docID); art != nil && art.Slug != "" {
+		doc.HCSlug = art.Slug
+	}
 	writeJSON(w, http.StatusOK, doc)
 }
 

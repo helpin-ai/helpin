@@ -27,14 +27,12 @@ function pascalToLabel(s: string): string {
 const ALL_ICONS: IconEntry[] = (() => {
   const entries: IconEntry[] = []
   for (const [name, exported] of Object.entries(PhosphorIcons)) {
-    // Skip non-component exports (types, utilities, etc.)
-    if (
-      typeof exported !== 'object' ||
-      exported === null ||
-      !('render' in exported || '$$typeof' in exported)
-    ) continue
-    // Skip weight-specific variants and SSR exports
-    if (/^(Ssr|Icon)/.test(name)) continue
+    // Icon components are PascalCase starting with uppercase letter
+    if (!/^[A-Z][a-z]/.test(name)) continue
+    if (typeof exported !== 'object' && typeof exported !== 'function') continue
+    if (exported === null) continue
+    // Skip non-component exports
+    if (/^(IconContext|IconBase|IconWeight)$/.test(name)) continue
     const kebab = pascalToKebab(name)
     entries.push({
       value: kebab,
@@ -44,6 +42,15 @@ const ALL_ICONS: IconEntry[] = (() => {
   }
   entries.sort((a, b) => a.label.localeCompare(b.label))
   return entries
+})()
+
+/** Kebab-case → Phosphor component map for rendering icons by stored name */
+export const PHOSPHOR_MAP: Record<string, PhosphorIcon> = (() => {
+  const map: Record<string, PhosphorIcon> = {}
+  for (const entry of ALL_ICONS) {
+    map[entry.value] = entry.Component
+  }
+  return map
 })()
 
 interface IconPickerProps {
@@ -86,13 +93,10 @@ export function IconPicker({ value, onChange, placeholder = 'Icon' }: IconPicker
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="justify-start gap-2 font-normal"
+          className="justify-center w-10 h-9 px-0 font-normal"
         >
           {selected ? (
-            <>
-              <selected.Component size={16} weight="regular" />
-              <span className="truncate text-xs">{selected.label}</span>
-            </>
+            <selected.Component size={16} weight="regular" />
           ) : (
             <span className="text-muted-foreground">{placeholder}</span>
           )}

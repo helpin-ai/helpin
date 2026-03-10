@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -90,14 +91,14 @@ func (s *DocsDocumentService) Get(ctx context.Context, id string) (*model.DocsDo
 }
 
 // List returns documents with optional filters.
-func (s *DocsDocumentService) List(ctx context.Context, workspaceID string, spaceID, collectionID, docType, status, teamID *string, userID, role string) ([]model.DocsDocument, error) {
+func (s *DocsDocumentService) List(ctx context.Context, workspaceID string, spaceID, collectionID, docType, status, teamID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
 	// Admins/owners can see all drafts; others only see their own.
 	isAdminOrOwner := role == "admin" || role == "owner"
 	var draftViewerID string
 	if !isAdminOrOwner {
 		draftViewerID = userID
 	}
-	return s.docRepo.List(ctx, workspaceID, spaceID, collectionID, docType, status, teamID, draftViewerID)
+	return s.docRepo.List(ctx, workspaceID, spaceID, collectionID, docType, status, teamID, draftViewerID, includeArchived)
 }
 
 // Update updates a document's metadata.
@@ -163,6 +164,24 @@ func (s *DocsDocumentService) Publish(ctx context.Context, id string) (*model.Do
 	return s.docRepo.GetByID(ctx, id)
 }
 
+// Unpublish transitions a published document back to draft status.
+func (s *DocsDocumentService) Unpublish(ctx context.Context, id string) (*model.DocsDocument, error) {
+	doc, err := s.docRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document not found")
+	}
+	if doc.Status != model.DocStatusPublished {
+		return nil, fmt.Errorf("document is not published")
+	}
+	if err := s.docRepo.UpdateStatus(ctx, id, model.DocStatusDraft); err != nil {
+		return nil, err
+	}
+	return s.docRepo.GetByID(ctx, id)
+}
+
 // Archive transitions a document to archived status.
 func (s *DocsDocumentService) Archive(ctx context.Context, id string) (*model.DocsDocument, error) {
 	doc, err := s.docRepo.GetByID(ctx, id)
@@ -172,13 +191,27 @@ func (s *DocsDocumentService) Archive(ctx context.Context, id string) (*model.Do
 	if doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
+	slog.Info("[DEBUG] Archive called",
+		"doc_id", id,
+		"current_status", doc.Status,
+		"workspace_id", doc.WorkspaceID,
+	)
 	if doc.Status == model.DocStatusArchived {
 		return doc, nil
 	}
 	if err := s.docRepo.UpdateStatus(ctx, id, model.DocStatusArchived); err != nil {
+		slog.Error("[DEBUG] Archive UpdateStatus failed", "doc_id", id, "error", err)
 		return nil, err
 	}
-	return s.docRepo.GetByID(ctx, id)
+	updated, err := s.docRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("[DEBUG] Archive completed",
+		"doc_id", id,
+		"new_status", updated.Status,
+	)
+	return updated, nil
 }
 
 // Unarchive transitions a document from archived back to draft status.

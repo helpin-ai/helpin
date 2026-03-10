@@ -73,6 +73,7 @@ export interface DocsDocument {
   created_at: string;
   updated_at: string;
   deleted_at?: string;
+  hc_slug?: string;
 }
 
 export interface DocsContent {

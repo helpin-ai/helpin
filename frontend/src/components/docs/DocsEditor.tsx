@@ -373,6 +373,7 @@ function ImportExportMenu({
 interface DocsEditorProps {
   title?: string
   onTitleChange?: (title: string) => void
+  slug?: string
   initialContent?: JSONContent | null
   onSave: (content: JSONContent) => Promise<void>
   autoSaveMs?: number
@@ -383,6 +384,7 @@ interface DocsEditorProps {
 export function DocsEditor({
   title,
   onTitleChange,
+  slug,
   initialContent,
   onSave,
   autoSaveMs = 2000,
@@ -836,7 +838,12 @@ img { max-width: 100%; }
           <div className="mx-auto max-w-3xl">
             {/* Title */}
             {title !== undefined && (
-              <div className="px-6 pt-10 pb-1">
+              <div className="group/title px-6 pt-10 pb-1">
+                {slug && (
+                  <p className="text-xs text-muted-foreground/60 font-mono mb-1 opacity-0 group-hover/title:opacity-100 transition-opacity">
+                    /{slug}
+                  </p>
+                )}
                 {onTitleChange && !readOnly ? (
                   <input
                     value={title}

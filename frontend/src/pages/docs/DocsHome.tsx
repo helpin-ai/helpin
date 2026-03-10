@@ -6,12 +6,13 @@ import {
   Check,
   ChevronRight,
   FileText,
-  FolderOpen,
   Globe,
   Loader2,
   Lock,
   Plus,
 } from 'lucide-react'
+import { Folder as PhFolder } from '@phosphor-icons/react'
+import { PHOSPHOR_MAP } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
@@ -106,6 +107,14 @@ function DocRow({
 
 // ── Collection section ──────────────────────────────────────────────────────
 
+function CollectionIcon({ name }: { name?: string }) {
+  if (name) {
+    const Icon = PHOSPHOR_MAP[name]
+    if (Icon) return <Icon size={14} weight="regular" className="shrink-0" />
+  }
+  return <PhFolder size={14} weight="regular" className="shrink-0" />
+}
+
 function CollectionSection({
   name,
   icon,
@@ -131,8 +140,8 @@ function CollectionSection({
           <ChevronRight
             className={`h-3 w-3 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
           />
-          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{icon ? `${icon} ` : ''}{name}</span>
+          <CollectionIcon name={icon} />
+          <span className="truncate">{name}</span>
           <span className="ml-auto rounded-full bg-muted px-1.5 text-[10px] tabular-nums">{documents.length}</span>
         </button>
       </Collapsible.Trigger>

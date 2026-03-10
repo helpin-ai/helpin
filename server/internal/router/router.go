@@ -547,6 +547,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/unarchive", h.Docs.UnarchiveDocument)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/move", h.Docs.MoveDocument)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/publish", h.Docs.PublishDocument)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/unpublish", h.Docs.UnpublishDocument)
 
 				// Content — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)

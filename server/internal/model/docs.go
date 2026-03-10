@@ -241,6 +241,9 @@ type DocsDocument struct {
 	CreatedAt        time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt        time.Time       `json:"updated_at" gorm:"autoUpdateTime;index:idx_docs_doc_ws_team_updated,priority:3"`
 	DeletedAt        *time.Time      `json:"deleted_at" gorm:"index"`
+
+	// Transient fields (not stored in docs_documents, populated by handlers)
+	HCSlug           string          `json:"hc_slug,omitempty" gorm:"-"`
 }
 
 func (DocsDocument) TableName() string { return "docs_documents" }
