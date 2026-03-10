@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import {
   BarChart3,
+  Bell,
   Bot,
   Briefcase,
   Building2,
@@ -446,6 +447,7 @@ export function Sidebar() {
         items: [
           { link: `/w/${wsSlug}/settings/profile`, label: 'Profile', icon: User },
           { link: `/w/${wsSlug}/settings/account`, label: 'Account', icon: Building2 },
+          { link: `/w/${wsSlug}/settings/notifications`, label: 'Notifications', icon: Bell },
         ],
       },
       {

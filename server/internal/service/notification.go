@@ -118,7 +118,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 		log := s.logger.With("recipient_id", recipientID, "entity_id", event.EntityID)
 
 		// Check user preferences
-		shouldNotify, err := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "in_app")
+		shouldNotify, err := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "in_app", event.TeamID)
 		if err != nil {
 			log.ErrorContext(ctx, "failed to check preferences", "error", err)
 			continue

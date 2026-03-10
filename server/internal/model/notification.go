@@ -112,10 +112,12 @@ type NotificationDelivery struct {
 func (NotificationDelivery) TableName() string { return "notification_deliveries" }
 
 // NotificationPreference stores per-user, per-workspace notification settings.
+// When TeamID is nil, this is the workspace-level default; when set, it's a team-level override.
 type NotificationPreference struct {
 	ID                   string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	UserID               string     `json:"user_id" gorm:"type:uuid;not null;uniqueIndex:uq_notification_pref_user_workspace"`
 	WorkspaceID          string     `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:uq_notification_pref_user_workspace"`
+	TeamID               *string    `json:"team_id" gorm:"type:uuid;index"`
 	DoNotDisturb         bool       `json:"do_not_disturb" gorm:"default:false"`
 	DNDUntil             *time.Time `json:"dnd_until"`
 	EmailEnabled         bool       `json:"email_enabled" gorm:"default:true"`
@@ -130,6 +132,48 @@ type NotificationPreference struct {
 }
 
 func (NotificationPreference) TableName() string { return "notification_preferences" }
+
+// Notification category constants for grouping event types.
+const (
+	NotifCategoryAssignments   = "assignments"
+	NotifCategoryStatusChanges = "status_changes"
+	NotifCategoryComments      = "comments"
+	NotifCategoryMentions      = "mentions"
+	NotifCategorySubscriptions = "subscriptions"
+	NotifCategorySprints       = "sprints"
+)
+
+// EventTypeToCategory maps individual event types to their notification category.
+var EventTypeToCategory = map[string]string{
+	"story.assigned":      NotifCategoryAssignments,
+	"objective.assigned":  NotifCategoryAssignments,
+
+	"story.status_changed": NotifCategoryStatusChanges,
+	"story.blocked":         NotifCategoryStatusChanges,
+	"story.updated":         NotifCategoryStatusChanges,
+
+	"comment.created":    NotifCategoryComments,
+	"story.comment":      NotifCategoryComments,
+	"objective.comment":  NotifCategoryComments,
+	"epic.comment":       NotifCategoryComments,
+	"sprint.comment":     NotifCategoryComments,
+
+	"story.mention":      NotifCategoryMentions,
+	"comment.mention":    NotifCategoryMentions,
+	"checklist.mention":  NotifCategoryMentions,
+	"objective.mention":  NotifCategoryMentions,
+	"epic.mention":       NotifCategoryMentions,
+
+	"epic.created":       NotifCategorySubscriptions,
+	"epic.updated":       NotifCategorySubscriptions,
+	"epic.deleted":       NotifCategorySubscriptions,
+	"objective.created":  NotifCategorySubscriptions,
+	"objective.updated":  NotifCategorySubscriptions,
+	"objective.deleted":  NotifCategorySubscriptions,
+
+	"sprint.created":     NotifCategorySprints,
+	"sprint.updated":     NotifCategorySprints,
+}
 
 // EntityFollower tracks who follows which entity for notification purposes.
 type EntityFollower struct {
@@ -155,6 +199,7 @@ type NotificationEventInput struct {
 	Body               string
 	Category           string // e.g. "assignment", "comment", "status_change"
 	Priority           string // "urgent", "high", "normal", "low"
+	TeamID             string // optional, set when entity belongs to a team
 	Metadata           JSONB
 	ActorSnapshot      JSONB
 	EntitySnapshot     JSONB
@@ -170,6 +215,7 @@ type UpdateNotificationRequest struct {
 
 // UpdateNotificationPreferenceRequest is the payload for updating preferences.
 type UpdateNotificationPreferenceRequest struct {
+	TeamID               *string            `json:"team_id"`
 	DoNotDisturb         *bool              `json:"do_not_disturb"`
 	DNDUntil             *time.Time         `json:"dnd_until"`
 	EmailEnabled         *bool              `json:"email_enabled"`

@@ -90,9 +90,11 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	// Emit notification for comment.
 	if s.notificationService != nil {
 		entityTitle := req.EntityID
+		var entityTeamID string
 		if req.EntityType == "story" {
 			if story, _ := s.storyRepo.GetRawByID(ctx, req.EntityID); story != nil {
 				entityTitle = story.Name
+				entityTeamID = derefString(story.TeamID)
 			}
 		}
 
@@ -152,6 +154,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 			Body:               truncate(comment.Body, 200),
 			Category:           category,
 			Priority:           notifPriority,
+			TeamID:             entityTeamID,
 			ExplicitRecipients: mentionedUserIDs,
 			EntitySnapshot: model.JSONB{
 				"title": entityTitle,

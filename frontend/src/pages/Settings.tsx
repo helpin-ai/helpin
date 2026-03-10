@@ -4,7 +4,7 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { invalidateWorkspaceTeamsCache } from '@/hooks/useWorkspaceTeams';
-import { useWorkspaceAccess, usePermissions, useNotificationPreferences, useUpdateNotificationPreferences } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { settingsService } from '@/lib/services/settingsService';
 import { gitService } from '@/lib/services/gitService';
 import { agentService } from '@/lib/services/agentService';
@@ -33,7 +33,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn, getInitials } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Bell, Bot, Camera, ChevronRight, Copy, Eye, FileText, FolderKanban, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, Users, X, Zap, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Camera, ChevronRight, Copy, Eye, FileText, FolderKanban, GitBranch, GitPullRequest, Globe, Import, Info, LayoutGrid, ListTree, Loader2, Pencil, Plus, RefreshCw, Search, Server, Settings2, Tag, Trash2, Users, X, Zap, type LucideIcon } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import { useNavigate } from '@tanstack/react-router';
@@ -62,13 +62,6 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Teams',
     description: '',
     icon: Users,
-    group: 'Workspace',
-  },
-  {
-    id: 'notifications',
-    label: 'Notifications',
-    description: 'Manage your notification preferences, email digests, and Do Not Disturb.',
-    icon: Bell,
     group: 'Workspace',
   },
   {
@@ -351,8 +344,6 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return <HelpcenterTab workspaceId={workspaceId} />;
       case 'crm-pipelines':
         return <PipelineSettings />;
-      case 'notifications':
-        return <NotificationsTab workspaceId={workspaceId} />;
       default:
         return null;
     }
@@ -4506,125 +4497,3 @@ function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-/* ============ Notifications Tab ============ */
-
-function NotificationsTab({ workspaceId }: { workspaceId: string }) {
-  const { data: prefs, isLoading } = useNotificationPreferences(workspaceId);
-  const updatePrefs = useUpdateNotificationPreferences(workspaceId);
-
-  const handleToggle = (field: 'do_not_disturb' | 'email_enabled', value: boolean) => {
-    updatePrefs.mutate({ [field]: value }, {
-      onError: () => toast.error('Failed to update notification preference'),
-    });
-  };
-
-  const handleSelect = (field: 'email_digest_frequency' | 'badge_mode', value: string) => {
-    updatePrefs.mutate({ [field]: value }, {
-      onError: () => toast.error('Failed to update notification preference'),
-    });
-  };
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-48 w-full" />
-        <Skeleton className="h-48 w-full" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Do Not Disturb */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Do Not Disturb</CardTitle>
-          <CardDescription>Pause all in-app and push notifications.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Enable Do Not Disturb</p>
-              <p className="text-xs text-muted-foreground">When enabled, you won't receive any notifications.</p>
-            </div>
-            <Switch
-              checked={prefs?.do_not_disturb ?? false}
-              onCheckedChange={(v) => handleToggle('do_not_disturb', v)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Email Notifications */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Email Notifications</CardTitle>
-          <CardDescription>Control email notification delivery and digest frequency.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Enable email notifications</p>
-              <p className="text-xs text-muted-foreground">Receive notification emails for workspace activity.</p>
-            </div>
-            <Switch
-              checked={prefs?.email_enabled ?? true}
-              onCheckedChange={(v) => handleToggle('email_enabled', v)}
-            />
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Email digest frequency</p>
-              <p className="text-xs text-muted-foreground">How often to receive a summary of unread notifications.</p>
-            </div>
-            <Select
-              value={prefs?.email_digest_frequency ?? 'daily'}
-              onValueChange={(v) => handleSelect('email_digest_frequency', v)}
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="daily">Daily</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="never">Never</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Badge Mode */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Badge Mode</CardTitle>
-          <CardDescription>Control which notifications show an unread badge.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Show badge for</p>
-              <p className="text-xs text-muted-foreground">Choose which notifications increment the unread counter.</p>
-            </div>
-            <Select
-              value={prefs?.badge_mode ?? 'all'}
-              onValueChange={(v) => handleSelect('badge_mode', v)}
-            >
-              <SelectTrigger className="w-[160px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All notifications</SelectItem>
-                <SelectItem value="mentions_only">Mentions only</SelectItem>
-                <SelectItem value="none">None</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}

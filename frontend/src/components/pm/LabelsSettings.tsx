@@ -34,7 +34,7 @@ export function StatCell({ done, total, entity }: { done: number; total: number;
   return (
     <div className="space-y-1 min-w-[140px]">
       <span className="text-xs font-medium text-foreground">{p}% Completed</span>
-      <Progress value={p} className="h-1.5" />
+      <Progress value={p} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
       <span className="text-[11px] text-muted-foreground">
         {done} of {total} {entity} Completed
       </span>

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -22,6 +23,7 @@ type InviteService struct {
 	settingsRepo   *repository.SettingsRepository
 	emailClient    *email.Client
 	appBaseURL     string
+	jwtManager     *auth.JWTManager
 }
 
 // NewInviteService creates a new InviteService.
@@ -32,6 +34,7 @@ func NewInviteService(
 	settingsRepo *repository.SettingsRepository,
 	emailClient *email.Client,
 	appBaseURL string,
+	jwtManager *auth.JWTManager,
 ) *InviteService {
 	return &InviteService{
 		invitationRepo: invitationRepo,
@@ -40,6 +43,7 @@ func NewInviteService(
 		settingsRepo:   settingsRepo,
 		emailClient:    emailClient,
 		appBaseURL:     appBaseURL,
+		jwtManager:     jwtManager,
 	}
 }
 
@@ -219,6 +223,94 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 	}
 
 	return nil
+}
+
+// AcceptInvitationWithSignup creates a new user account and accepts the invitation in one step.
+func (s *InviteService) AcceptInvitationWithSignup(ctx context.Context, req model.AcceptInvitationWithSignupRequest) (*model.AcceptInvitationWithSignupResponse, error) {
+	if req.Token == "" {
+		return nil, fmt.Errorf("token is required")
+	}
+	if len(req.Password) < 8 {
+		return nil, fmt.Errorf("password must be at least 8 characters")
+	}
+	if strings.TrimSpace(req.FullName) == "" {
+		return nil, fmt.Errorf("full name is required")
+	}
+
+	inv, err := s.invitationRepo.GetByToken(ctx, req.Token)
+	if err != nil {
+		return nil, err
+	}
+	if inv == nil {
+		return nil, fmt.Errorf("invitation not found")
+	}
+	if inv.Status != "pending" {
+		return nil, fmt.Errorf("invitation is no longer pending")
+	}
+	if time.Now().After(inv.ExpiresAt) {
+		return nil, fmt.Errorf("invitation has expired")
+	}
+
+	details, err := s.invitationRepo.GetByTokenWithDetails(ctx, req.Token)
+	if err != nil {
+		return nil, fmt.Errorf("get invitation details: %w", err)
+	}
+
+	existingUser, err := s.userRepo.GetByEmail(ctx, inv.Email)
+	if err != nil {
+		return nil, fmt.Errorf("check existing user: %w", err)
+	}
+	if existingUser != nil {
+		return nil, fmt.Errorf("an account already exists with this email, please sign in instead")
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+
+	user, err := s.userRepo.Create(ctx, inv.Email, hash, strings.TrimSpace(req.FullName))
+	if err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+
+	member, err := s.workspaceRepo.ActivatePendingMember(ctx, inv.WorkspaceID, inv.WorkspaceMemberID, user.ID, user.Email, user.FullName, inv.Role)
+	if err != nil {
+		return nil, fmt.Errorf("activate member: %w", err)
+	}
+	if inv.WorkspaceMemberID == nil || *inv.WorkspaceMemberID != member.ID {
+		if err := s.invitationRepo.UpdateWorkspaceMemberID(ctx, inv.ID, member.ID); err != nil {
+			return nil, fmt.Errorf("link invitation member: %w", err)
+		}
+	}
+
+	preassignments, err := s.settingsRepo.GetInvitationTeamPreassignmentsByInvitation(ctx, inv.ID)
+	if err != nil {
+		log.Printf("Warning: failed to get invitation team preassignments: %v", err)
+	} else {
+		for _, pa := range preassignments {
+			if _, err := s.settingsRepo.AddTeamUserMembership(ctx, pa.TeamID, user.ID, "member"); err != nil {
+				log.Printf("Warning: failed to auto-assign team %s for invitation %s: %v", pa.TeamID, inv.ID, err)
+			}
+		}
+	}
+
+	now := time.Now()
+	if err := s.invitationRepo.UpdateStatus(ctx, inv.ID, "accepted", &now); err != nil {
+		return nil, fmt.Errorf("update invitation status: %w", err)
+	}
+
+	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email)
+	if err != nil {
+		return nil, fmt.Errorf("generate tokens: %w", err)
+	}
+
+	return &model.AcceptInvitationWithSignupResponse{
+		AccessToken:   accessToken,
+		RefreshToken:  refreshToken,
+		User:          toUserProfile(user),
+		WorkspaceSlug: details.WorkspaceSlug,
+	}, nil
 }
 
 // ListInvitations returns all invitations for a workspace.

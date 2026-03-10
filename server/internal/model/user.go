@@ -53,6 +53,12 @@ type UpdateProfileRequest struct {
 	DefaultWorkspaceID *string `json:"default_workspace_id"`
 }
 
+// ChangePasswordRequest is the payload for PUT /api/auth/change-password.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
 // RefreshTokenRequest is the payload for POST /api/auth/refresh.
 type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token"`

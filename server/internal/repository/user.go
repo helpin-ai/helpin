@@ -82,3 +82,8 @@ func (r *UserRepository) Update(ctx context.Context, id string, fullName *string
 	}
 	return user, nil
 }
+
+// UpdatePassword updates a user's password hash.
+func (r *UserRepository) UpdatePassword(ctx context.Context, id, passwordHash string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("password_hash", passwordHash).Error
+}

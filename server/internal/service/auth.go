@@ -136,6 +136,35 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*m
 	}, nil
 }
 
+// ChangePassword verifies the current password and sets a new one.
+func (s *AuthService) ChangePassword(ctx context.Context, userID string, req model.ChangePasswordRequest) error {
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		return fmt.Errorf("current_password and new_password are required")
+	}
+	if len(req.NewPassword) < 8 {
+		return fmt.Errorf("new password must be at least 8 characters")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+
+	if err := auth.CheckPassword(req.CurrentPassword, user.PasswordHash); err != nil {
+		return fmt.Errorf("current password is incorrect")
+	}
+
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	return s.userRepo.UpdatePassword(ctx, userID, hash)
+}
+
 func toUserProfile(u *model.User) model.UserProfile {
 	return model.UserProfile{
 		ID:                 u.ID,

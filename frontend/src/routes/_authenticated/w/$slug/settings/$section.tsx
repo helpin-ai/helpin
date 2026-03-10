@@ -2,6 +2,7 @@ import { createFileRoute, Navigate } from '@tanstack/react-router'
 import Settings, { isSettingsSection } from '@/pages/Settings'
 import Profile from '@/pages/Profile'
 import AccountSettings from '@/pages/AccountSettings'
+import NotificationSettings from '@/pages/NotificationSettings'
 
 type SettingsSearch = {
   workflow?: string
@@ -32,6 +33,14 @@ function SettingsSectionRoute() {
     return (
       <div className="h-full overflow-auto p-4 md:p-6">
         <AccountSettings />
+      </div>
+    )
+  }
+
+  if (section === 'notifications') {
+    return (
+      <div className="h-full overflow-auto p-4 md:p-6">
+        <NotificationSettings />
       </div>
     )
   }

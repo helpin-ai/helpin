@@ -105,6 +105,26 @@ func (h *InviteHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "invitation revoked"})
 }
 
+// AcceptWithSignup handles POST /api/invitations/accept-with-signup — public, register + accept.
+func (h *InviteHandler) AcceptWithSignup(w http.ResponseWriter, r *http.Request) {
+	var req model.AcceptInvitationWithSignupRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Token == "" || req.Password == "" || req.FullName == "" {
+		writeError(w, http.StatusBadRequest, "token, password, and full_name are required")
+		return
+	}
+
+	result, err := h.service.AcceptInvitationWithSignup(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
 // GetInfo handles GET /api/invitations/info?token=x — public, get invite details.
 func (h *InviteHandler) GetInfo(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")

@@ -324,6 +324,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 			Title:              "created " + story.Name,
 			Category:           category,
 			Priority:           priority,
+			TeamID:             derefString(story.TeamID),
 			ExplicitRecipients: mentionedUserIDs,
 			EntitySnapshot: model.JSONB{
 				"title":      story.Name,
@@ -589,6 +590,7 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 			Title:       title,
 			Category:    category,
 			Priority:    priority,
+			TeamID:      derefString(current.TeamID),
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
 				"display_id": current.DisplayID,
@@ -630,6 +632,7 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 					Title:              "mentioned you in " + current.Name,
 					Category:           "mention",
 					Priority:           "high",
+					TeamID:             derefString(current.TeamID),
 					ExplicitRecipients: mentionedUserIDs,
 					EntitySnapshot: model.JSONB{
 						"title":      current.Name,
@@ -720,6 +723,7 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 			Title:       "moved " + current.Name + " to " + newStateName,
 			Category:    "status_change",
 			Priority:    "normal",
+			TeamID:      derefString(current.TeamID),
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,
 				"display_id": current.DisplayID,
@@ -792,6 +796,7 @@ func (s *PMStoryService) AddOwner(ctx context.Context, storyID, userID, actorID 
 			Title:              "assigned you to " + current.Name,
 			Category:           "assignment",
 			Priority:           "normal",
+			TeamID:             derefString(current.TeamID),
 			ExplicitRecipients: []string{userID},
 			EntitySnapshot: model.JSONB{
 				"title":      current.Name,

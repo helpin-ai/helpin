@@ -36,7 +36,6 @@ export function Header() {
 
     const slug = segments[1];
     const subRoute = segments.slice(2);
-    const workspaceLabel = currentWorkspace?.name ?? "Workspace";
 
     const crumbs: Crumb[] = [];
     if (subRoute.length === 0) {
