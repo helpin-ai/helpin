@@ -111,6 +111,36 @@ type NotificationDelivery struct {
 
 func (NotificationDelivery) TableName() string { return "notification_deliveries" }
 
+// UserNotificationSettings stores account-level notification delivery settings (one row per user).
+type UserNotificationSettings struct {
+	ID                   string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	UserID               string     `json:"user_id" gorm:"type:uuid;not null;uniqueIndex"`
+	EmailEnabled         bool       `json:"email_enabled" gorm:"default:true"`
+	EmailDigestFrequency string     `json:"email_digest_frequency" gorm:"type:varchar(20);default:'daily'"`
+	EmailDigestTime      string     `json:"email_digest_time" gorm:"type:varchar(10);default:'09:00'"`
+	EmailDigestDay       int        `json:"email_digest_day" gorm:"default:1"`
+	DoNotDisturb         bool       `json:"do_not_disturb" gorm:"default:false"`
+	DNDUntil             *time.Time `json:"dnd_until"`
+	BadgeMode            string     `json:"badge_mode" gorm:"type:varchar(20);default:'all'"`
+	Timezone             string     `json:"timezone" gorm:"type:varchar(50);default:'UTC'"`
+	CreatedAt            time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt            time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (UserNotificationSettings) TableName() string { return "user_notification_settings" }
+
+// UpdateUserNotificationSettingsRequest is the payload for updating account-level settings.
+type UpdateUserNotificationSettingsRequest struct {
+	EmailEnabled         *bool      `json:"email_enabled"`
+	EmailDigestFrequency *string    `json:"email_digest_frequency"`
+	EmailDigestTime      *string    `json:"email_digest_time"`
+	EmailDigestDay       *int       `json:"email_digest_day"`
+	DoNotDisturb         *bool      `json:"do_not_disturb"`
+	DNDUntil             *time.Time `json:"dnd_until"`
+	BadgeMode            *string    `json:"badge_mode"`
+	Timezone             *string    `json:"timezone"`
+}
+
 // NotificationPreference stores per-user, per-workspace notification settings.
 // When TeamID is nil, this is the workspace-level default; when set, it's a team-level override.
 type NotificationPreference struct {
@@ -118,6 +148,7 @@ type NotificationPreference struct {
 	UserID               string     `json:"user_id" gorm:"type:uuid;not null;uniqueIndex:uq_notification_pref_user_workspace"`
 	WorkspaceID          string     `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:uq_notification_pref_user_workspace"`
 	TeamID               *string    `json:"team_id" gorm:"type:uuid;index"`
+	MuteWorkspace        bool       `json:"mute_workspace" gorm:"default:false"`
 	DoNotDisturb         bool       `json:"do_not_disturb" gorm:"default:false"`
 	DNDUntil             *time.Time `json:"dnd_until"`
 	EmailEnabled         bool       `json:"email_enabled" gorm:"default:true"`
@@ -213,18 +244,20 @@ type UpdateNotificationRequest struct {
 	SnoozedUntil *time.Time `json:"snoozed_until"`
 }
 
-// UpdateNotificationPreferenceRequest is the payload for updating preferences.
+// UpdateNotificationPreferenceRequest is the payload for updating workspace-level preferences.
 type UpdateNotificationPreferenceRequest struct {
-	TeamID               *string            `json:"team_id"`
-	DoNotDisturb         *bool              `json:"do_not_disturb"`
-	DNDUntil             *time.Time         `json:"dnd_until"`
-	EmailEnabled         *bool              `json:"email_enabled"`
-	EmailDigestFrequency *string            `json:"email_digest_frequency"`
-	EmailDigestTime      *string            `json:"email_digest_time"`
-	EmailDigestDay       *int               `json:"email_digest_day"`
-	Timezone             *string            `json:"timezone"`
-	ChannelPreferences   map[string]interface{} `json:"channel_preferences"`
-	BadgeMode            *string            `json:"badge_mode"`
+	TeamID             *string                `json:"team_id"`
+	MuteWorkspace      *bool                  `json:"mute_workspace"`
+	ChannelPreferences map[string]interface{} `json:"channel_preferences"`
+	// Backward compatibility: account-level fields forwarded to user_notification_settings
+	DoNotDisturb         *bool      `json:"do_not_disturb"`
+	DNDUntil             *time.Time `json:"dnd_until"`
+	EmailEnabled         *bool      `json:"email_enabled"`
+	EmailDigestFrequency *string    `json:"email_digest_frequency"`
+	EmailDigestTime      *string    `json:"email_digest_time"`
+	EmailDigestDay       *int       `json:"email_digest_day"`
+	Timezone             *string    `json:"timezone"`
+	BadgeMode            *string    `json:"badge_mode"`
 }
 
 // NotificationListResponse is the paginated response for listing notifications.

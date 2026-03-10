@@ -5,9 +5,8 @@ import { NOTIFICATION_CATEGORIES } from '@/lib/notificationTypes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { AtSign, Bell, Eye, MessageSquare, UserPlus, Zap, ArrowRightLeft } from 'lucide-react';
+import { AtSign, Bell, BellOff, Eye, MessageSquare, UserPlus, Zap, ArrowRightLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import type { LucideIcon } from 'lucide-react';
 
@@ -28,14 +27,8 @@ export default function NotificationSettings() {
   const { data: prefs, isLoading } = useNotificationPreferences(workspaceId);
   const updatePrefs = useUpdateNotificationPreferences(workspaceId);
 
-  const handleToggle = (field: 'do_not_disturb' | 'email_enabled', value: boolean) => {
-    updatePrefs.mutate({ [field]: value }, {
-      onError: () => toast.error('Failed to update notification preference'),
-    });
-  };
-
-  const handleSelect = (field: 'email_digest_frequency' | 'badge_mode', value: string) => {
-    updatePrefs.mutate({ [field]: value }, {
+  const handleMuteToggle = (value: boolean) => {
+    updatePrefs.mutate({ mute_workspace: value }, {
       onError: () => toast.error('Failed to update notification preference'),
     });
   };
@@ -43,7 +36,6 @@ export default function NotificationSettings() {
   const isCategoryEnabled = (categoryKey: string): boolean => {
     const catPref = prefs?.channel_preferences?.[categoryKey];
     if (!catPref) return true; // default enabled
-    // Category is enabled if either in_app or email is true (single toggle controls both)
     return catPref.in_app !== false;
   };
 
@@ -62,7 +54,6 @@ export default function NotificationSettings() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-48 w-full" />
-        <Skeleton className="h-48 w-full" />
         <Skeleton className="h-64 w-full" />
       </div>
     );
@@ -70,67 +61,32 @@ export default function NotificationSettings() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Notifications</h2>
+      <div>
+        <h2 className="text-xl font-semibold">Workspace Notifications</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Control which notifications you receive for this workspace. Email delivery and Do Not Disturb are managed in Account settings.
+        </p>
+      </div>
 
-      {/* Do Not Disturb */}
+      {/* Mute Workspace */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Do Not Disturb
+            <BellOff className="h-4 w-4" />
+            Mute Workspace
           </CardTitle>
-          <CardDescription>Pause all notifications when you need focus time.</CardDescription>
+          <CardDescription>Silence all notifications from this workspace.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Enable Do Not Disturb</p>
-              <p className="text-xs text-muted-foreground">When enabled, you won't receive any notifications.</p>
+              <p className="text-sm font-medium">Mute all notifications</p>
+              <p className="text-xs text-muted-foreground">You won't receive any notifications from {workspace?.name ?? 'this workspace'}.</p>
             </div>
             <Switch
-              checked={prefs?.do_not_disturb ?? false}
-              onCheckedChange={(v) => handleToggle('do_not_disturb', v)}
+              checked={prefs?.mute_workspace ?? false}
+              onCheckedChange={handleMuteToggle}
             />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Email */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Email</CardTitle>
-          <CardDescription>Control email notification delivery and digest frequency.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Enable email notifications</p>
-              <p className="text-xs text-muted-foreground">Receive notification emails for workspace activity.</p>
-            </div>
-            <Switch
-              checked={prefs?.email_enabled ?? true}
-              onCheckedChange={(v) => handleToggle('email_enabled', v)}
-            />
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Email digest frequency</p>
-              <p className="text-xs text-muted-foreground">How often to receive a summary of unread notifications.</p>
-            </div>
-            <Select
-              value={prefs?.email_digest_frequency ?? 'daily'}
-              onValueChange={(v) => handleSelect('email_digest_frequency', v)}
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="daily">Daily</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="never">Never</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </CardContent>
       </Card>
@@ -138,8 +94,11 @@ export default function NotificationSettings() {
       {/* General Notifications — per-category toggles */}
       <Card>
         <CardHeader>
-          <CardTitle>General notifications</CardTitle>
-          <CardDescription>Choose which notifications you receive. Disabling a category turns off both in-app and email for that type.</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            Notification categories
+          </CardTitle>
+          <CardDescription>Choose which types of notifications you receive in this workspace.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-0">
           {NOTIFICATION_CATEGORIES.map((cat, idx) => {
@@ -160,40 +119,12 @@ export default function NotificationSettings() {
                   <Switch
                     checked={isCategoryEnabled(cat.key)}
                     onCheckedChange={(v) => handleCategoryToggle(cat.key, v)}
+                    disabled={prefs?.mute_workspace}
                   />
                 </div>
               </div>
             );
           })}
-        </CardContent>
-      </Card>
-
-      {/* Badge Mode */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Badge Mode</CardTitle>
-          <CardDescription>Control which notifications show an unread badge.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Show badge for</p>
-              <p className="text-xs text-muted-foreground">Choose which notifications increment the unread counter.</p>
-            </div>
-            <Select
-              value={prefs?.badge_mode ?? 'all'}
-              onValueChange={(v) => handleSelect('badge_mode', v)}
-            >
-              <SelectTrigger className="w-[160px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All notifications</SelectItem>
-                <SelectItem value="mentions_only">Mentions only</SelectItem>
-                <SelectItem value="none">None</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         </CardContent>
       </Card>
     </div>

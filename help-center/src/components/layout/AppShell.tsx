@@ -1,17 +1,31 @@
+import { useState, useEffect, useCallback } from 'react'
 import { Outlet } from '@tanstack/react-router'
 import { TopBar } from './TopBar'
-import type { HelpCenterConfig, Space } from '@/lib/types'
+import { SearchDialog } from '@/components/search/SearchDialog'
 
-interface AppShellProps {
-  config: HelpCenterConfig | undefined
-  spaces: Space[]
-}
+export function AppShell() {
+  const [searchOpen, setSearchOpen] = useState(false)
 
-export function AppShell({ config, spaces }: AppShellProps) {
+  const openSearch = useCallback(() => setSearchOpen(true), [])
+  const closeSearch = useCallback(() => setSearchOpen(false), [])
+
+  // Global ⌘K / Ctrl+K shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--hc-bg)' }}>
-      <TopBar config={config} spaces={spaces} />
+      <TopBar onSearchClick={openSearch} />
       <Outlet />
+      <SearchDialog open={searchOpen} onClose={closeSearch} />
     </div>
   )
 }

@@ -58,10 +58,39 @@ export interface UnreadCountResponse {
   count: number
 }
 
+// Account-level notification delivery settings (one row per user, no workspace scope).
+export interface UserNotificationSettings {
+  id?: string
+  user_id: string
+  email_enabled: boolean
+  email_digest_frequency: string
+  email_digest_time: string
+  email_digest_day: number
+  do_not_disturb: boolean
+  dnd_until?: string
+  badge_mode: 'all' | 'mentions_only' | 'none'
+  timezone: string
+}
+
+export interface UpdateUserNotificationSettingsRequest {
+  email_enabled?: boolean
+  email_digest_frequency?: string
+  email_digest_time?: string
+  email_digest_day?: number
+  do_not_disturb?: boolean
+  dnd_until?: string
+  badge_mode?: string
+  timezone?: string
+}
+
+// Workspace-level notification preferences (per-category toggles + mute).
 export interface NotificationPreferences {
   id?: string
   user_id: string
   workspace_id: string
+  mute_workspace: boolean
+  channel_preferences: Record<string, { in_app?: boolean; email?: boolean }>
+  // Backward compat: account-level fields overlaid by backend
   do_not_disturb: boolean
   dnd_until?: string
   email_enabled: boolean
@@ -69,20 +98,12 @@ export interface NotificationPreferences {
   email_digest_time: string
   email_digest_day: number
   timezone: string
-  channel_preferences: Record<string, { in_app?: boolean; email?: boolean }>
   badge_mode: 'all' | 'mentions_only' | 'none'
 }
 
 export interface UpdateNotificationPreferencesRequest {
-  do_not_disturb?: boolean
-  dnd_until?: string
-  email_enabled?: boolean
-  email_digest_frequency?: string
-  email_digest_time?: string
-  email_digest_day?: number
-  timezone?: string
+  mute_workspace?: boolean
   channel_preferences?: Record<string, { in_app?: boolean; email?: boolean }>
-  badge_mode?: string
 }
 
 export interface EntityFollower {

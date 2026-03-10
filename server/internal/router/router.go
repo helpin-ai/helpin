@@ -50,6 +50,7 @@ type Handlers struct {
 	Orchestration   *handler.OrchestrationHandler
 	Docs            *handler.DocsHandler
 	Notification    *handler.NotificationHandler
+	UserNotifSettings *handler.UserNotificationSettingsHandler
 	CRMContact      *handler.CRMContactHandler
 	CRMCompany      *handler.CRMCompanyHandler
 	CRMDeal         *handler.CRMDealHandler
@@ -149,6 +150,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/auth/me", h.Auth.Me)
 			r.Put("/auth/me", h.Auth.UpdateProfile)
 			r.Put("/auth/change-password", h.Auth.ChangePassword)
+
+			// User notification settings (account-level, no workspace scope)
+			r.Get("/user/notification-settings", h.UserNotifSettings.Get)
+			r.Put("/user/notification-settings", h.UserNotifSettings.Update)
 
 			// Organizations
 			r.Get("/organizations", h.Organization.List)

@@ -174,6 +174,7 @@ func main() {
 		&model.NotificationEvent{},
 		&model.NotificationDelivery{},
 		&model.NotificationPreference{},
+		&model.UserNotificationSettings{},
 		&model.EntityFollower{},
 		// CRM module
 		&model.CRMContact{},
@@ -293,6 +294,7 @@ func main() {
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
+	userNotifSettingsRepo := repository.NewUserNotificationSettingsRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
 	crmDealRepo := repository.NewCRMDealRepository(db)
@@ -316,7 +318,8 @@ func main() {
 	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
-	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, followerRepo, wsPublisher)
+	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, wsPublisher)
+	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
 	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
@@ -473,6 +476,7 @@ func main() {
 		Git:               handler.NewGitHandler(gitService),
 		Orchestration:     handler.NewOrchestrationHandler(orchestrationService),
 		Notification:      handler.NewNotificationHandler(notificationService, followerService),
+		UserNotifSettings: handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		CRMContact:        handler.NewCRMContactHandler(crmContactService),
 		CRMCompany:        handler.NewCRMCompanyHandler(crmCompanyService),
 		CRMDeal:           handler.NewCRMDealHandler(crmDealService),

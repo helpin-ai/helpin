@@ -20,26 +20,29 @@ var priorityOrder = map[string]int{
 
 // NotificationService orchestrates notification creation and delivery.
 type NotificationService struct {
-	notifRepo *repository.NotificationRepository
-	prefRepo  *repository.NotificationPreferenceRepository
-	followerRepo *repository.FollowerRepository
-	wsPublisher  *ws.Publisher
-	logger       *slog.Logger
+	notifRepo        *repository.NotificationRepository
+	prefRepo         *repository.NotificationPreferenceRepository
+	userSettingsRepo *repository.UserNotificationSettingsRepository
+	followerRepo     *repository.FollowerRepository
+	wsPublisher      *ws.Publisher
+	logger           *slog.Logger
 }
 
 // NewNotificationService creates a new notification service.
 func NewNotificationService(
 	notifRepo *repository.NotificationRepository,
 	prefRepo *repository.NotificationPreferenceRepository,
+	userSettingsRepo *repository.UserNotificationSettingsRepository,
 	followerRepo *repository.FollowerRepository,
 	wsPublisher *ws.Publisher,
 ) *NotificationService {
 	return &NotificationService{
-		notifRepo:    notifRepo,
-		prefRepo:     prefRepo,
-		followerRepo: followerRepo,
-		wsPublisher:  wsPublisher,
-		logger:       slog.Default().With("service", "notification"),
+		notifRepo:        notifRepo,
+		prefRepo:         prefRepo,
+		userSettingsRepo: userSettingsRepo,
+		followerRepo:     followerRepo,
+		wsPublisher:      wsPublisher,
+		logger:           slog.Default().With("service", "notification"),
 	}
 }
 
@@ -356,12 +359,73 @@ func (s *NotificationService) Delete(ctx context.Context, id, recipientID string
 }
 
 // GetPreferences returns a user's notification preferences.
+// Overlays account-level settings from user_notification_settings for backward compatibility.
 func (s *NotificationService) GetPreferences(ctx context.Context, userID, workspaceID string) (*model.NotificationPreference, error) {
-	return s.prefRepo.Get(ctx, userID, workspaceID)
+	wsPref, err := s.prefRepo.Get(ctx, userID, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Overlay account-level fields so old frontends still see them
+	userSettings, err := s.userSettingsRepo.Get(ctx, userID)
+	if err == nil && userSettings != nil {
+		wsPref.DoNotDisturb = userSettings.DoNotDisturb
+		wsPref.DNDUntil = userSettings.DNDUntil
+		wsPref.EmailEnabled = userSettings.EmailEnabled
+		wsPref.EmailDigestFrequency = userSettings.EmailDigestFrequency
+		wsPref.EmailDigestTime = userSettings.EmailDigestTime
+		wsPref.EmailDigestDay = userSettings.EmailDigestDay
+		wsPref.BadgeMode = userSettings.BadgeMode
+		wsPref.Timezone = userSettings.Timezone
+	}
+
+	return wsPref, nil
 }
 
 // UpdatePreferences updates a user's notification preferences.
+// Account-level fields are forwarded to user_notification_settings for backward compatibility.
 func (s *NotificationService) UpdatePreferences(ctx context.Context, userID, workspaceID string, req model.UpdateNotificationPreferenceRequest) error {
+	// Forward account-level fields to the new table
+	hasAccountFields := req.DoNotDisturb != nil || req.DNDUntil != nil || req.EmailEnabled != nil ||
+		req.EmailDigestFrequency != nil || req.EmailDigestTime != nil || req.EmailDigestDay != nil ||
+		req.Timezone != nil || req.BadgeMode != nil
+
+	if hasAccountFields {
+		userSettings, err := s.userSettingsRepo.Get(ctx, userID)
+		if err != nil {
+			return err
+		}
+		userSettings.UserID = userID
+		if req.DoNotDisturb != nil {
+			userSettings.DoNotDisturb = *req.DoNotDisturb
+		}
+		if req.DNDUntil != nil {
+			userSettings.DNDUntil = req.DNDUntil
+		}
+		if req.EmailEnabled != nil {
+			userSettings.EmailEnabled = *req.EmailEnabled
+		}
+		if req.EmailDigestFrequency != nil {
+			userSettings.EmailDigestFrequency = *req.EmailDigestFrequency
+		}
+		if req.EmailDigestTime != nil {
+			userSettings.EmailDigestTime = *req.EmailDigestTime
+		}
+		if req.EmailDigestDay != nil {
+			userSettings.EmailDigestDay = *req.EmailDigestDay
+		}
+		if req.Timezone != nil {
+			userSettings.Timezone = *req.Timezone
+		}
+		if req.BadgeMode != nil {
+			userSettings.BadgeMode = *req.BadgeMode
+		}
+		if err := s.userSettingsRepo.Upsert(ctx, userSettings); err != nil {
+			return err
+		}
+	}
+
+	// Update workspace-level fields
 	pref, err := s.prefRepo.Get(ctx, userID, workspaceID)
 	if err != nil {
 		return err
@@ -370,32 +434,11 @@ func (s *NotificationService) UpdatePreferences(ctx context.Context, userID, wor
 	pref.UserID = userID
 	pref.WorkspaceID = workspaceID
 
-	if req.DoNotDisturb != nil {
-		pref.DoNotDisturb = *req.DoNotDisturb
-	}
-	if req.DNDUntil != nil {
-		pref.DNDUntil = req.DNDUntil
-	}
-	if req.EmailEnabled != nil {
-		pref.EmailEnabled = *req.EmailEnabled
-	}
-	if req.EmailDigestFrequency != nil {
-		pref.EmailDigestFrequency = *req.EmailDigestFrequency
-	}
-	if req.EmailDigestTime != nil {
-		pref.EmailDigestTime = *req.EmailDigestTime
-	}
-	if req.EmailDigestDay != nil {
-		pref.EmailDigestDay = *req.EmailDigestDay
-	}
-	if req.Timezone != nil {
-		pref.Timezone = *req.Timezone
+	if req.MuteWorkspace != nil {
+		pref.MuteWorkspace = *req.MuteWorkspace
 	}
 	if req.ChannelPreferences != nil {
 		pref.ChannelPreferences = model.JSONB(req.ChannelPreferences)
-	}
-	if req.BadgeMode != nil {
-		pref.BadgeMode = *req.BadgeMode
 	}
 
 	return s.prefRepo.Upsert(ctx, pref)

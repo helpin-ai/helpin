@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useSpaces } from '@/hooks/queries'
+import { useDocsContext } from '@/contexts/DocsContext'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { useEffect } from 'react'
@@ -9,12 +9,11 @@ export const Route = createFileRoute('/')({
 })
 
 function HomePage() {
-  const subdomain = Route.useRouteContext({ select: (s) => s.subdomain })
-  const { data: spaces, isLoading } = useSpaces(subdomain)
+  const { spaces } = useDocsContext()
   const navigate = useNavigate()
 
   useEffect(() => {
-    if (spaces && spaces.length > 0) {
+    if (spaces.length > 0) {
       navigate({
         to: '/$spaceSlug',
         params: { spaceSlug: spaces[0]!.slug },
@@ -23,9 +22,7 @@ function HomePage() {
     }
   }, [spaces, navigate])
 
-  if (isLoading) return <LoadingState message="Loading..." />
-
-  if (spaces && spaces.length === 0) {
+  if (spaces.length === 0) {
     return (
       <ErrorState
         title="No documentation available"
