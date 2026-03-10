@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import { Maximize2, X } from 'lucide-react';
+import { Maximize2, Download, Copy, Link2, Trash2, X } from 'lucide-react';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { toast } from 'sonner';
 
 const MIN_WIDTH = 100;
 
-export function ResizableImageComponent({ node, updateAttributes, selected }: NodeViewProps) {
+export function ResizableImageComponent({ node, updateAttributes, selected, deleteNode }: NodeViewProps) {
   const { src, alt, width, height, aspectRatio: storedAspectRatio } = node.attrs;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -145,36 +146,95 @@ export function ResizableImageComponent({ node, updateAttributes, selected }: No
           alt={alt ?? ''}
           onLoad={handleImageLoad}
           draggable={false}
-          className={`block max-w-full rounded-md transition-[filter] duration-100 ${
-            selected ? 'ring-2 ring-primary brightness-95' : ''
-          }`}
+          className="block max-w-full rounded-md"
           style={{
             width: currentWidth,
             ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
           }}
         />
 
-        {/* Selection border */}
+        {/* Selection border — blue, visible on select or hover */}
         <div
-          className={`pointer-events-none absolute inset-0 rounded-md border-2 border-primary transition-opacity duration-100 ${
-            isResizing ? 'opacity-100' : 'opacity-0 group-hover/img:opacity-100'
+          className={`pointer-events-none absolute inset-0 rounded-md transition-opacity duration-100 ${
+            selected || isResizing ? 'opacity-100' : 'opacity-0 group-hover/img:opacity-100'
           }`}
+          style={{ boxShadow: '0 0 0 2.5px #3b82f6', borderRadius: '0.375rem' }}
         />
 
-        {/* View fullscreen button — top-right corner */}
-        <QuickTooltip label="View full size">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
-            className={`absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white backdrop-blur-sm transition-opacity duration-100 hover:bg-black/80 ${
-              isResizing
-                ? 'pointer-events-none opacity-0'
+        {/* Floating toolbar — inside image, top-right corner */}
+        <div
+          className={`absolute top-2 right-2 flex items-center rounded-lg border border-border bg-popover/95 shadow-md backdrop-blur-sm transition-opacity duration-100 ${
+            isResizing
+              ? 'pointer-events-none opacity-0'
+              : selected
+                ? 'pointer-events-auto opacity-100'
                 : 'pointer-events-none opacity-0 group-hover/img:pointer-events-auto group-hover/img:opacity-100'
-            }`}
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </button>
-        </QuickTooltip>
+          }`}
+        >
+          <QuickTooltip label="View full size">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
+              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
+          </QuickTooltip>
+          <QuickTooltip label="Download">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const a = document.createElement('a');
+                a.href = src;
+                a.download = alt || 'image';
+                a.target = '_blank';
+                a.click();
+              }}
+              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          </QuickTooltip>
+          <QuickTooltip label="Copy image URL">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(src);
+                toast.success('Image URL copied');
+              }}
+              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Copy className="h-4 w-4" />
+            </button>
+          </QuickTooltip>
+          <QuickTooltip label="Open in new tab">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(src, '_blank');
+              }}
+              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Link2 className="h-4 w-4" />
+            </button>
+          </QuickTooltip>
+          <div className="mx-0.5 h-4 w-px bg-border" />
+          <QuickTooltip label="Delete">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteNode();
+              }}
+              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </QuickTooltip>
+        </div>
 
         {/* Resize handle — bottom-right corner */}
         <div

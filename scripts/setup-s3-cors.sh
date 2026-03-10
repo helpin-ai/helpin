@@ -57,8 +57,10 @@ fi
 # ── Build allowed origins ──────────────────────────────────────
 ORIGINS=(
   "https://helpin.ai"
+  "https://app.helpin.ai"
   "https://stage.helpin.ai"
   "http://localhost:5173"
+  "http://46.224.78.53:5173"
 )
 if [[ -n "$SERVER_IP" ]]; then
   ORIGINS+=("http://${SERVER_IP}:5173")
