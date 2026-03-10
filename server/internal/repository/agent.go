@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"gorm.io/gorm"
@@ -231,6 +232,17 @@ func (r *AgentRunRepository) AddTokens(ctx context.Context, workspaceID, runID s
 		return fmt.Errorf("add agent run tokens: %w", err)
 	}
 	return nil
+}
+
+// Notify sends a pg_notify event so the API server's PGListener can broadcast
+// the run status change over WebSocket. This bridges the Temporal worker process
+// (which has no WS clients) to the API server's WebSocket hub.
+func (r *AgentRunRepository) Notify(ctx context.Context, run *model.AgentRun) {
+	payload := fmt.Sprintf(`{"entity":"agent_run","entity_id":"%s","workspace_id":"%s","action":"updated","parent_type":"%s","parent_id":"%s"}`,
+		run.ID, run.WorkspaceID, run.TargetType, run.TargetID)
+	if err := r.db.WithContext(ctx).Exec("SELECT pg_notify('ws_events', ?)", payload).Error; err != nil {
+		slog.ErrorContext(ctx, "pg_notify failed", "error", err, "run_id", run.ID)
+	}
 }
 
 // AgentRunArtifactRepository handles DB operations for run artifacts.

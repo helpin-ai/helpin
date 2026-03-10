@@ -116,6 +116,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
 
+		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
+		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
+
 		// ---- Public Help Center routes (no JWT) ----
 		r.Route("/hc/{subdomain}", func(r chi.Router) {
 			r.Get("/config", h.Docs.PublicGetConfig)
@@ -662,9 +665,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/imports/{id}", h.CRMImport.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/imports/{id}/process", h.CRMImport.Process)
 
-				// Email OAuth — crm.edit
+				// Email OAuth — crm.edit (callback is public, registered above)
 				r.With(requirePerm(authorization.PermCRMEdit)).Get("/email/oauth/initiate", h.CRMEmail.InitiateOAuth)
-				r.With(requirePerm(authorization.PermCRMEdit)).Get("/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
 
 				// Email — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts", h.CRMEmail.ListAccounts)

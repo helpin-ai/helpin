@@ -69,13 +69,19 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
   }, [fetchRuns]);
 
   useEffect(() => {
-    const hasActive = runs.some(
-      (run) => run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_approval',
-    );
-    if (!hasActive) return;
-    const interval = setInterval(fetchRuns, 5000);
-    return () => clearInterval(interval);
-  }, [runs, fetchRuns]);
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.parent_type === 'story' && detail?.parent_id === storyId) {
+        fetchRuns();
+      }
+    };
+    window.addEventListener('agent_run-updated', handler);
+    window.addEventListener('agent_run-created', handler);
+    return () => {
+      window.removeEventListener('agent_run-updated', handler);
+      window.removeEventListener('agent_run-created', handler);
+    };
+  }, [storyId, fetchRuns]);
 
   const handleRunAgent = async () => {
     setTriggering(true);
