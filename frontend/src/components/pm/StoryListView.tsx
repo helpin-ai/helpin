@@ -60,9 +60,12 @@ import {
   TABLE_ROW,
   TABLE_CELL,
   TABLE_GROUP_ROW,
+  TABLE_PINNED_RIGHT,
+  TABLE_PINNED_HEADER_RIGHT,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
   dynamicCellStyle,
+  pinnedStyle,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
@@ -306,8 +309,17 @@ export function StoryListView({
 
       const res = await pmStoryService.get(workspaceId, storyId);
       if (!res.data?.story) return;
+      const storyDetail = res.data!;
+      const merged: Story = {
+        ...storyDetail.story,
+        labels: storyDetail.labels,
+        epic_name: storyDetail.epic_name ?? storyDetail.story.epic_name,
+        owner_name: storyDetail.owner_member
+          ? (storyDetail.owner_member.display_name ?? storyDetail.owner_member.email)
+          : storyDetail.story.owner_name,
+      };
       setStories((current) =>
-        current.map((story) => (story.id === storyId ? res.data!.story : story)),
+        current.map((story) => (story.id === storyId ? merged : story)),
       );
     };
 
@@ -713,11 +725,14 @@ export function StoryListView({
                 const isResized = !!columnSizing[header.column.id];
                 const canSort = header.column.getCanSort();
                 const sorted = header.column.getIsSorted();
+                const colId = header.column.id;
+                const pinnedClass = colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
+                const pinnedSt = colId === 'actions' ? pinnedStyle('right', 0) : {};
                 return (
                   <div
                     key={header.id}
-                    className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''}`}
-                    style={dynamicCellStyle(defSize, runtimeSize, isResized, 400)}
+                    className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+                    style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
                     onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                   >
                     <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
@@ -896,11 +911,14 @@ function DataRow({ row, onOpenStory, columnSizing }: { row: Row<Story>; onOpenSt
         const runtimeSize = cell.column.getSize();
         const isResized = !!columnSizing[cell.column.id];
         if (defSize === 0 && runtimeSize === 0) return null;
+        const colId = cell.column.id;
+        const pinnedClass = colId === 'actions' ? TABLE_PINNED_RIGHT : '';
+        const pinnedSt = colId === 'actions' ? pinnedStyle('right', 0) : {};
         return (
           <div
             key={cell.id}
-            className={`${TABLE_CELL} overflow-hidden`}
-            style={dynamicCellStyle(defSize, runtimeSize, isResized, 400)}
+            className={`${TABLE_CELL} overflow-hidden ${pinnedClass}`}
+            style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </div>

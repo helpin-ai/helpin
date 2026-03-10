@@ -35,10 +35,16 @@ import {
   TABLE_CELL,
   TABLE_GROUP_ROW,
   TABLE_RESIZE_HANDLE,
+  TABLE_PINNED_LEFT,
+  TABLE_PINNED_RIGHT,
+  TABLE_PINNED_HEADER_LEFT,
+  TABLE_PINNED_HEADER_RIGHT,
+  TABLE_CHECKBOX_HOVER,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
   CHECKBOX_COL_SIZE,
   dynamicCellStyle,
+  pinnedStyle,
 } from '@/lib/tableStyles';
 import type { CRMContact, LifecycleStage, LeadStatus } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
@@ -162,6 +168,7 @@ export function ContactsTable({
         ),
         cell: ({ row }) => (
           <Checkbox
+            className={TABLE_CHECKBOX_HOVER}
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
             onClick={(e) => e.stopPropagation()}
@@ -407,11 +414,16 @@ export function ContactsTable({
                   const isResized = !!columnSizing[header.column.id];
                   const canSort = header.column.getCanSort();
                   const sorted = header.column.getIsSorted();
+                  const colId = header.column.id;
+                  const pinnedClass = colId === 'select' ? TABLE_PINNED_HEADER_LEFT
+                    : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
+                  const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
+                    : colId === 'actions' ? pinnedStyle('right', 0) : {};
                   return (
                     <div
                       key={header.id}
-                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''}`}
-                      style={dynamicCellStyle(defSize, runtimeSize, isResized, 300)}
+                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+                      style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
                       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                     >
                       <div className="flex items-center gap-1">
@@ -520,11 +532,16 @@ function DataRow({ row, columnSizing }: { row: Row<CRMContact>; columnSizing: Co
         const defSize = cell.column.columnDef.size ?? 150;
         const runtimeSize = cell.column.getSize();
         const isResized = !!columnSizing[cell.column.id];
+        const colId = cell.column.id;
+        const pinnedClass = colId === 'select' ? TABLE_PINNED_LEFT
+          : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
+        const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
+          : colId === 'actions' ? pinnedStyle('right', 0) : {};
         return (
           <div
             key={cell.id}
-            className={TABLE_CELL}
-            style={dynamicCellStyle(defSize, runtimeSize, isResized, 300)}
+            className={`${TABLE_CELL} ${pinnedClass}`}
+            style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </div>
