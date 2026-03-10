@@ -3,6 +3,15 @@ import { organizationsService } from '@/lib/services/organizationsService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 
+export function useOrganizationMembers(orgId?: string) {
+  return useQuery({
+    queryKey: queryKeys.organizations.members(orgId!),
+    queryFn: async () => unwrap(await organizationsService.listMembers(orgId!)),
+    enabled: !!orgId,
+    staleTime: 60_000,
+  })
+}
+
 export function useOrganizations() {
   return useQuery({
     queryKey: queryKeys.organizations.all,

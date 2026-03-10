@@ -241,6 +241,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return (
           <MembersTab
             workspaceId={workspaceId}
+            organizationId={currentWorkspace?.organization_id}
             editable={canManageMembers}
           />
         );

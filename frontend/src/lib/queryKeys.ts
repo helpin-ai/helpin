@@ -5,6 +5,7 @@ export const queryKeys = {
 
   organizations: {
     all: ['organizations'] as const,
+    members: (orgId: string) => ['organizations', orgId, 'members'] as const,
   },
 
   workspaces: {

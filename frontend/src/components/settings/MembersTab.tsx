@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useOrganizationMembers } from '@/hooks/queries';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
 import type { MemberWithUser, Invitation } from '@/lib/types';
@@ -18,8 +19,9 @@ import { Copy, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
-export function MembersTab({ workspaceId, editable }: {
+export function MembersTab({ workspaceId, organizationId, editable }: {
   workspaceId: string;
+  organizationId?: string;
   editable: boolean;
 }) {
   const [members, setMembers] = useState<MemberWithUser[]>([]);
@@ -30,6 +32,32 @@ export function MembersTab({ workspaceId, editable }: {
   const [invRole, setInvRole] = useState('member');
   const [sending, setSending] = useState(false);
   const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { data: orgMembers } = useOrganizationMembers(organizationId);
+
+  // Org members not already in this workspace (and not pending invitation)
+  const availableOrgMembers = useMemo(() => {
+    if (!orgMembers) return [];
+    const wsEmails = new Set(members.map((m) => m.email.toLowerCase()));
+    const pendingEmails = new Set(
+      invitations.filter((inv) => inv.status === 'pending').map((inv) => inv.email.toLowerCase())
+    );
+    return orgMembers.filter(
+      (om) => !wsEmails.has(om.email.toLowerCase()) && !pendingEmails.has(om.email.toLowerCase())
+    );
+  }, [orgMembers, members, invitations]);
+
+  // Filter suggestions based on email input
+  const filteredSuggestions = useMemo(() => {
+    if (!invEmail) return availableOrgMembers;
+    const q = invEmail.toLowerCase();
+    return availableOrgMembers.filter(
+      (m) => m.email.toLowerCase().includes(q) || (m.full_name && m.full_name.toLowerCase().includes(q))
+    );
+  }, [availableOrgMembers, invEmail]);
 
   const loadData = async () => {
     setLoading(true);
@@ -225,7 +253,46 @@ export function MembersTab({ workspaceId, editable }: {
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label>Email</Label>
-                  <Input type="email" placeholder="colleague@example.com" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} required />
+                  <div className="relative">
+                    <Input
+                      ref={inputRef}
+                      type="email"
+                      placeholder="colleague@example.com"
+                      value={invEmail}
+                      onChange={(e) => { setInvEmail(e.target.value); setShowSuggestions(true); }}
+                      onFocus={() => setShowSuggestions(true)}
+                      onBlur={() => { setTimeout(() => setShowSuggestions(false), 150); }}
+                      required
+                      autoComplete="off"
+                    />
+                    {showSuggestions && filteredSuggestions.length > 0 && (
+                      <div ref={suggestionsRef} className="absolute z-50 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md">
+                        {availableOrgMembers.length > 0 && !invEmail && (
+                          <div className="px-3 py-1.5 text-xs text-muted-foreground font-medium border-b">
+                            Organization members
+                          </div>
+                        )}
+                        {filteredSuggestions.map((m) => (
+                          <button
+                            key={m.user_id}
+                            type="button"
+                            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setInvEmail(m.email);
+                              setShowSuggestions(false);
+                            }}
+                          >
+                            <UserAvatar name={m.full_name || m.email} className="h-6 w-6" fallbackClassName="text-[10px]" />
+                            <div className="min-w-0 flex-1">
+                              {m.full_name && <p className="truncate text-sm font-medium">{m.full_name}</p>}
+                              <p className="truncate text-xs text-muted-foreground">{m.email}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Role</Label>
