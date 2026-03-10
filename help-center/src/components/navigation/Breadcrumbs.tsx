@@ -13,28 +13,18 @@ export function Breadcrumbs({
   collectionName,
 }: BreadcrumbsProps) {
   return (
-    <nav
-      aria-label="Breadcrumb"
-      className="flex items-center gap-1.5 text-[13px]"
-    >
+    <nav className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
       <Link
         to="/$spaceSlug"
         params={{ spaceSlug }}
-        className="transition-colors hover:text-[var(--hc-text)]"
-        style={{ color: 'var(--hc-text-secondary)' }}
+        className="hover:text-foreground transition-colors"
       >
         {spaceName}
       </Link>
       {collectionName && (
         <>
-          <ChevronRight
-            size={12}
-            className="shrink-0"
-            style={{ color: 'var(--hc-text-muted)' }}
-          />
-          <span style={{ color: 'var(--hc-text-secondary)' }}>
-            {collectionName}
-          </span>
+          <ChevronRight size={12} className="text-muted-foreground/40" />
+          <span className="text-muted-foreground/70">{collectionName}</span>
         </>
       )}
     </nav>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import {
   Dialog,
@@ -24,7 +24,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
-import { useCreateDocsCollection, useDocsSpaces } from '@/hooks/queries'
+import { useCreateDocsCollection, useDocsSpaces, useUpdateDocsCollection } from '@/hooks/queries'
+import type { DocsCollection } from '@/lib/docsTypes'
 import { toast } from 'sonner'
 
 // ── Curated emoji grid for collections ──
@@ -53,6 +54,7 @@ interface CreateCollectionDialogProps {
   spaceId?: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  collection?: DocsCollection | null
 }
 
 export function CreateCollectionDialog({
@@ -60,7 +62,9 @@ export function CreateCollectionDialog({
   spaceId: defaultSpaceId,
   open,
   onOpenChange,
+  collection,
 }: CreateCollectionDialogProps) {
+  const isEdit = !!collection
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('')
@@ -69,18 +73,32 @@ export function CreateCollectionDialog({
 
   const { data: spaces } = useDocsSpaces(wsId)
 
-  // Auto-select first space when spaces load and no default
-  useMemo(() => {
-    if (!selectedSpaceId && spaces?.length) setSelectedSpaceId(spaces[0].id)
-  }, [spaces, selectedSpaceId])
+  useEffect(() => {
+    if (!open) return
 
-  // Sync if defaultSpaceId changes (e.g. opened from different space)
-  useMemo(() => {
-    if (defaultSpaceId) setSelectedSpaceId(defaultSpaceId)
-  }, [defaultSpaceId])
+    if (collection) {
+      setName(collection.name)
+      setDescription(collection.description ?? '')
+      setIcon(collection.icon ?? '')
+      setSelectedSpaceId(collection.space_id)
+      return
+    }
 
-  const effectiveSpaceId = selectedSpaceId || ''
+    setName('')
+    setDescription('')
+    setIcon('')
+    setSelectedSpaceId(defaultSpaceId ?? (spaces?.[0]?.id ?? ''))
+  }, [open, collection, defaultSpaceId, spaces])
+
+  useEffect(() => {
+    if (!open || collection || selectedSpaceId || !spaces?.length) return
+    setSelectedSpaceId(defaultSpaceId ?? spaces[0].id)
+  }, [collection, defaultSpaceId, open, selectedSpaceId, spaces])
+
+  const effectiveSpaceId = collection?.space_id ?? (selectedSpaceId || '')
+  const currentSpace = spaces?.find((space) => space.id === effectiveSpaceId)
   const createCollection = useCreateDocsCollection(wsId, effectiveSpaceId)
+  const updateCollection = useUpdateDocsCollection(wsId)
 
   const reset = () => {
     setName('')
@@ -94,27 +112,42 @@ export function CreateCollectionDialog({
     if (!name.trim() || !effectiveSpaceId) return
 
     try {
-      await createCollection.mutateAsync({
-        name: name.trim(),
-        description: description.trim() || undefined,
-        icon: icon.trim() || undefined,
-      })
-      toast.success('Collection created')
+      if (isEdit && collection) {
+        await updateCollection.mutateAsync({
+          id: collection.id,
+          spaceId: collection.space_id,
+          name: name.trim(),
+          description: description.trim(),
+          icon: icon.trim(),
+        })
+        toast.success('Collection updated')
+      } else {
+        await createCollection.mutateAsync({
+          name: name.trim(),
+          description: description.trim() || undefined,
+          icon: icon.trim() || undefined,
+        })
+        toast.success('Collection created')
+      }
       reset()
       onOpenChange(false)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create collection')
+      toast.error(err instanceof Error ? err.message : `Failed to ${isEdit ? 'update' : 'create'} collection`)
     }
   }
+
+  const isPending = isEdit ? updateCollection.isPending : createCollection.isPending
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Create Collection</DialogTitle>
+            <DialogTitle>{isEdit ? 'Edit Collection' : 'Create Collection'}</DialogTitle>
             <DialogDescription>
-              Collections group related documents within a space.
+              {isEdit
+                ? 'Update the collection name, icon, and description.'
+                : 'Collections group related documents within a space.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -192,29 +225,39 @@ export function CreateCollectionDialog({
                 rows={2}
               />
             </div>
-            <div className="grid gap-2">
-              <Label>Space</Label>
-              <Select value={selectedSpaceId} onValueChange={setSelectedSpaceId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a space" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(spaces ?? []).map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.icon ? `${s.icon} ` : ''}{s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {isEdit ? (
+              <div className="grid gap-2">
+                <Label>Space</Label>
+                <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                  {currentSpace?.icon ? `${currentSpace.icon} ` : ''}
+                  {currentSpace?.name ?? 'Current space'}
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                <Label>Space</Label>
+                <Select value={selectedSpaceId} onValueChange={setSelectedSpaceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a space" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(spaces ?? []).map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.icon ? `${s.icon} ` : ''}{s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!name.trim() || !effectiveSpaceId || createCollection.isPending}>
-              {createCollection.isPending ? 'Creating...' : 'Create Collection'}
+            <Button type="submit" disabled={!name.trim() || !effectiveSpaceId || isPending}>
+              {isPending ? (isEdit ? 'Saving...' : 'Creating...') : isEdit ? 'Save Changes' : 'Create Collection'}
             </Button>
           </DialogFooter>
         </form>

@@ -22,17 +22,12 @@ export function ErrorState({
     >
       <div className="text-center max-w-md">
         {statusCode && (
-          <p
-            className="text-6xl font-bold mb-2"
-            style={{ color: 'var(--hc-text-muted)' }}
-          >
+          <p className="text-5xl font-bold mb-2 text-muted-foreground/20">
             {statusCode}
           </p>
         )}
-        <h1 className="text-xl font-semibold mb-2">{title}</h1>
-        <p className="text-sm" style={{ color: 'var(--hc-text-secondary)' }}>
-          {message}
-        </p>
+        <h1 className="text-lg font-semibold mb-1.5">{title}</h1>
+        <p className="text-[13px] text-muted-foreground">{message}</p>
       </div>
     </div>
   )

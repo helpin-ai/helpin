@@ -164,8 +164,12 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
                       });
                     }}
                   >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                    <span className="truncate">{col.icon ? `${col.icon} ` : ''}{col.name}</span>
+                    {col.icon ? (
+                      <span className="inline-block text-sm leading-none">{col.icon}</span>
+                    ) : (
+                      <FolderOpen className="h-3.5 w-3.5" />
+                    )}
+                    <span className="truncate">{col.name}</span>
                   </a>
                 </SidebarMenuSubButton>
               </TooltipTrigger>

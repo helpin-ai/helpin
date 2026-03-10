@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useSearchArticles } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { SearchResultsList } from '@/components/SearchResults'
 import { LoadingState } from '@/components/LoadingState'
 
@@ -21,6 +22,8 @@ function SearchPage() {
   const { q = '', space } = Route.useSearch()
   const { subdomain } = useDocsContext()
   const { data: results, isLoading } = useSearchArticles(subdomain, q, space)
+
+  useDocumentTitle(q ? `Search: ${q}` : 'Search')
 
   return (
     <div

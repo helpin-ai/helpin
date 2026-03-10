@@ -16,6 +16,7 @@ import type {
   CreateDocsLinkRequest,
   UpdateDocsHelpcenterConfigRequest,
   DocsArticleFeedbackRequest,
+  DocsDocument,
 } from '@/lib/docsTypes'
 
 // ── Spaces ──────────────────────────────────────────────────────────────────
@@ -175,6 +176,50 @@ export function useCreateDocsDocument(wsId: string) {
       unwrap(await docsService.createDocument(wsId, data)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
+    },
+  })
+}
+
+export function useDuplicateDocsDocument(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (sourceDoc: DocsDocument) => {
+      const duplicatedDoc = unwrap(await docsService.createDocument(wsId, {
+        title: `${sourceDoc.title} (Copy)`,
+        doc_type: sourceDoc.doc_type,
+        space_id: sourceDoc.space_id,
+        collection_id: sourceDoc.collection_id,
+        owner_id: sourceDoc.owner_id,
+        template_key: sourceDoc.template_key,
+        icon: sourceDoc.icon,
+        tags: sourceDoc.tags,
+      }))
+
+      if (sourceDoc.excerpt) {
+        await unwrap(await docsService.updateDocument(wsId, duplicatedDoc.id, {
+          excerpt: sourceDoc.excerpt,
+        }))
+      }
+
+      const sourceContent = await unwrap(await docsService.getContent(wsId, sourceDoc.id))
+      if (sourceContent?.content) {
+        const savedContent = await unwrap(await docsService.saveContent(wsId, duplicatedDoc.id, {
+          content: sourceContent.content,
+        }))
+        qc.setQueryData(queryKeys.docs.content(wsId, duplicatedDoc.id), savedContent)
+      }
+
+      return unwrap(await docsService.getDocument(wsId, duplicatedDoc.id))
+    },
+    onSuccess: (duplicatedDoc) => {
+      qc.setQueryData(queryKeys.docs.document(wsId, duplicatedDoc.id), duplicatedDoc)
+      qc.invalidateQueries({
+        predicate: (query) => {
+          const k = query.queryKey
+          return k[0] === 'docs' && k[1] === wsId && k[2] === 'documents'
+            && (k.length === 3 || (k.length === 4 && typeof k[3] !== 'string'))
+        },
+      })
     },
   })
 }

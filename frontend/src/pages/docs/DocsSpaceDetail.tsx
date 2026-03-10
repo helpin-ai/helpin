@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useLocation } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
 import {
@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Check,
   ChevronDown,
+  Copy,
   FileText,
   FolderOpen,
   Globe,
@@ -28,13 +29,13 @@ import {
   useDocsSpace,
   useDocsCollections,
   useDocsDocuments,
-  useUpdateDocsCollection,
   useDeleteDocsCollection,
   useUpdateDocsSpace,
   useDeleteDocsSpace,
   useArchiveDocsDocument,
   useUnarchiveDocsDocument,
   useDeleteDocsDocument,
+  useDuplicateDocsDocument,
   usePublishDocsDocument,
   useAssignableMembers,
   useWorkspaceAccess,
@@ -50,11 +51,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { DocsDocument, DocType, DocStatus } from '@/lib/docsTypes'
+import type { DocsCollection, DocsDocument, DocType, DocStatus } from '@/lib/docsTypes'
 import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
+import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog'
 import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
 
@@ -89,10 +91,12 @@ export function DocsSpaceDetail() {
   const archiveDoc = useArchiveDocsDocument(wsId)
   const unarchiveDoc = useUnarchiveDocsDocument(wsId)
   const deleteDoc = useDeleteDocsDocument(wsId)
+  const duplicateDoc = useDuplicateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
   const [filterType, setFilterType] = useState<DocType | null>(null)
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
   const [editSpaceOpen, setEditSpaceOpen] = useState(false)
+  const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null)
 
   useTitle(space?.name ?? 'Space')
 
@@ -126,14 +130,10 @@ export function DocsSpaceDetail() {
     setActiveCollection(collectionParam)
   }, [collectionParam])
 
-  // Inline collection rename
-  const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const renameRef = useRef<HTMLInputElement>(null)
-  const updateCollection = useUpdateDocsCollection(wsId)
   const deleteCollection = useDeleteDocsCollection(wsId)
   const updateSpace = useUpdateDocsSpace(wsId)
   const deleteSpace = useDeleteDocsSpace(wsId)
+  const [editingCollection, setEditingCollection] = useState<DocsCollection | null>(null)
 
   // Inline space rename
   const [renamingSpace, setRenamingSpace] = useState(false)
@@ -163,28 +163,6 @@ export function DocsSpaceDetail() {
     name: string
   } | null>(null)
 
-  const startRename = (id: string, currentName: string) => {
-    setRenamingId(id)
-    setRenameValue(currentName)
-    requestAnimationFrame(() => renameRef.current?.select())
-  }
-
-  const commitRename = async () => {
-    const id = renamingId
-    setRenamingId(null)
-    if (!id) return
-    const name = renameValue.trim()
-    if (!name) return
-    const col = (collections ?? []).find((c) => c.id === id)
-    if (col && name !== col.name) {
-      try {
-        await updateCollection.mutateAsync({ id, spaceId, name })
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to rename')
-      }
-    }
-  }
-
   const handleConfirmDelete = async () => {
     if (!confirmDelete) return
     const { type, id, name } = confirmDelete
@@ -200,6 +178,18 @@ export function DocsSpaceDetail() {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Failed to delete ${type}`)
+    }
+  }
+
+  const handleDuplicateDoc = async (doc: DocsDocument) => {
+    setDuplicatingDocId(doc.id)
+    try {
+      await duplicateDoc.mutateAsync(doc)
+      toast.success('Document duplicated')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to duplicate')
+    } finally {
+      setDuplicatingDocId((current) => (current === doc.id ? null : current))
     }
   }
 
@@ -348,34 +338,24 @@ export function DocsSpaceDetail() {
 
         {(collections ?? []).map((col) => (
           <div key={col.id} className="group/tab relative flex items-center">
-            {renamingId === col.id ? (
-              <input
-                ref={renameRef}
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onBlur={commitRename}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitRename()
-                  if (e.key === 'Escape') setRenamingId(null)
-                }}
-                className="h-7 w-32 rounded-full border border-primary/40 bg-background px-3 text-xs font-medium outline-none"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setActiveCollection(col.id)}
-                className={`rounded-full px-3 py-1 pr-7 text-xs font-medium transition-colors ${
-                  activeCollection === col.id
-                    ? 'bg-foreground text-background'
-                    : 'bg-muted/60 text-muted-foreground hover:bg-muted'
-                }`}
-              >
+            <button
+              type="button"
+              onClick={() => setActiveCollection(col.id)}
+              className={`rounded-full px-3 py-1 pr-7 text-xs font-medium transition-colors ${
+                activeCollection === col.id
+                  ? 'bg-foreground text-background'
+                  : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              {col.icon ? (
+                <span className="mr-1 inline-block">{col.icon}</span>
+              ) : (
                 <FolderOpen className="mr-1 inline h-3 w-3" />
-                {col.icon ? `${col.icon} ` : ''}{col.name} ({collectionMap.get(col.id)?.length ?? 0})
-              </button>
-            )}
+              )}
+              {col.name} ({collectionMap.get(col.id)?.length ?? 0})
+            </button>
 
-            {canEditDocs && renamingId !== col.id && (
+            {canEditDocs && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -390,10 +370,10 @@ export function DocsSpaceDetail() {
                     <MoreHorizontal className="h-3.5 w-3.5" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-36">
-                  <DropdownMenuItem onClick={() => startRename(col.id, col.name)}>
+                <DropdownMenuContent align="start" className="w-44">
+                  <DropdownMenuItem onClick={() => setEditingCollection(col)}>
                     <Pencil className="h-3.5 w-3.5" />
-                    Rename
+                    Edit collection
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => setConfirmDelete({ type: 'collection', id: col.id, name: col.name })}
@@ -657,6 +637,14 @@ export function DocsSpaceDetail() {
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuItem
+                          disabled={duplicatingDocId === doc.id}
+                          onClick={() => void handleDuplicateDoc(doc)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          {duplicatingDocId === doc.id ? 'Duplicating...' : 'Duplicate'}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         {doc.status === 'draft' && (
                           <DropdownMenuItem
                             onClick={() => {
@@ -738,6 +726,15 @@ export function DocsSpaceDetail() {
         open={editSpaceOpen}
         onOpenChange={setEditSpaceOpen}
         space={space ?? null}
+      />
+
+      <CreateCollectionDialog
+        wsId={wsId}
+        open={editingCollection !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingCollection(null)
+        }}
+        collection={editingCollection}
       />
     </div>
   )

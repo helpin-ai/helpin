@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Outlet } from '@tanstack/react-router'
 import { TopBar } from './TopBar'
+import { Footer } from './Footer'
 import { SearchDialog } from '@/components/search/SearchDialog'
 
 export function AppShell() {
@@ -9,7 +10,7 @@ export function AppShell() {
   const openSearch = useCallback(() => setSearchOpen(true), [])
   const closeSearch = useCallback(() => setSearchOpen(false), [])
 
-  // Global ⌘K / Ctrl+K shortcut
+  // Global Cmd+K / Ctrl+K shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -22,9 +23,12 @@ export function AppShell() {
   }, [])
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--hc-bg)' }}>
+    <div className="min-h-screen flex flex-col">
       <TopBar onSearchClick={openSearch} />
-      <Outlet />
+      <div className="flex-1">
+        <Outlet />
+      </div>
+      <Footer />
       <SearchDialog open={searchOpen} onClose={closeSearch} />
     </div>
   )

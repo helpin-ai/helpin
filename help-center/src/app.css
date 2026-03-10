@@ -1,65 +1,126 @@
-@import 'tailwindcss';
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 /*
- * Help Center Design Tokens
- * Mintlify-inspired dark-mode-first documentation theme
+ * Help Center Theme — Mintlify-inspired design tokens
+ * Clean, professional documentation site
  */
-:root {
-  --hc-bg: #ffffff;
-  --hc-bg-secondary: #f8f9fa;
-  --hc-bg-tertiary: #f1f3f5;
-  --hc-text: #1a1a2e;
-  --hc-text-secondary: #64748b;
-  --hc-text-muted: #94a3b8;
-  --hc-border: #e2e8f0;
-  --hc-border-light: #f1f5f9;
-  --hc-accent: #6366f1;
-  --hc-accent-hover: #4f46e5;
-  --hc-accent-light: #eef2ff;
-  --hc-sidebar-width: 260px;
-  --hc-toc-width: 220px;
-  --hc-header-height: 56px;
+@theme {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.15 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0 0);
+  --primary: oklch(0.487 0.213 264.376);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.975 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.965 0 0);
+  --muted-foreground: oklch(0.50 0 0);
+  --accent: oklch(0.965 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --border: oklch(0.93 0 0);
+  --input: oklch(0.93 0 0);
+  --ring: oklch(0.487 0.213 264.376);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.5rem;
+
+  /* Sidebar active state */
+  --sidebar-active: oklch(0.96 0.02 264);
+  --sidebar-active-foreground: oklch(0.40 0.16 264);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
+
+  /* Help Center layout tokens */
+  --hc-sidebar-width: 280px;
+  --hc-toc-width: 400px;
+  --hc-header-height: 52px;
   --hc-content-max-width: 720px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --hc-bg: #0f1117;
-    --hc-bg-secondary: #161822;
-    --hc-bg-tertiary: #1e2030;
-    --hc-text: #e2e8f0;
-    --hc-text-secondary: #94a3b8;
-    --hc-text-muted: #64748b;
-    --hc-border: #2a2d3a;
-    --hc-border-light: #1e2030;
-    --hc-accent: #818cf8;
-    --hc-accent-hover: #6366f1;
-    --hc-accent-light: rgba(99, 102, 241, 0.1);
+/* ─── Dark Mode Overrides ──────────────────────────────────────────────── */
+
+.dark {
+  --background: oklch(0.14 0 0);
+  --foreground: oklch(0.95 0 0);
+  --card: oklch(0.16 0 0);
+  --card-foreground: oklch(0.95 0 0);
+  --popover: oklch(0.16 0 0);
+  --popover-foreground: oklch(0.95 0 0);
+  --primary: oklch(0.68 0.17 264);
+  --primary-foreground: oklch(0.13 0 0);
+  --secondary: oklch(0.19 0 0);
+  --secondary-foreground: oklch(0.90 0 0);
+  --muted: oklch(0.21 0 0);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.21 0 0);
+  --accent-foreground: oklch(0.90 0 0);
+  --destructive: oklch(0.55 0.2 27);
+  --destructive-foreground: oklch(0.95 0 0);
+  --border: oklch(0.26 0 0);
+  --input: oklch(0.26 0 0);
+  --ring: oklch(0.68 0.17 264);
+
+  --sidebar-active: oklch(0.22 0.04 264);
+  --sidebar-active-foreground: oklch(0.75 0.14 264);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-html {
-  font-family:
-    'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-body {
-  background: var(--hc-bg);
-  color: var(--hc-text);
-  line-height: 1.6;
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    min-height: 100vh;
+    font-family:
+      'Inter',
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.6;
+    font-size: 15px;
+  }
 }
 
 /* Scrollbar */
@@ -70,19 +131,19 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--hc-border);
+  background: var(--color-border);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--hc-text-muted);
+  background: var(--color-muted-foreground);
 }
 
 /* ─── Article Prose ─────────────────────────────────────────────────────── */
 
 .hc-prose {
   font-size: 0.9375rem;
-  line-height: 1.75;
-  color: var(--hc-text-secondary);
+  line-height: 1.8;
+  @apply text-foreground/75;
 }
 
 .hc-prose > *:first-child {
@@ -90,55 +151,59 @@ body {
 }
 
 .hc-prose h2 {
-  font-size: 1.25rem;
+  font-size: 1.375rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--hc-text);
+  letter-spacing: -0.02em;
+  @apply text-foreground;
   margin-top: 2.5rem;
-  margin-bottom: 1rem;
-  scroll-margin-top: calc(var(--hc-header-height) + 1rem);
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
 }
 
 .hc-prose h3 {
   font-size: 1.125rem;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--hc-text);
+  @apply text-foreground;
   margin-top: 2rem;
-  margin-bottom: 0.75rem;
-  scroll-margin-top: calc(var(--hc-header-height) + 1rem);
+  margin-bottom: 0.5rem;
+  scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
 }
 
 .hc-prose p {
-  margin-bottom: 1rem;
-  line-height: 1.75;
+  margin-bottom: 1.25rem;
+  line-height: 1.8;
 }
 
 .hc-prose a {
-  color: var(--hc-accent);
-  text-decoration: none;
+  @apply text-primary;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--color-primary) / 0.4;
 }
 .hc-prose a:hover {
-  text-decoration: underline;
+  text-decoration-color: var(--color-primary);
 }
 
 .hc-prose strong {
-  color: var(--hc-text);
+  @apply text-foreground;
   font-weight: 600;
 }
 
 .hc-prose code {
-  font-size: 0.875em;
-  background: var(--hc-bg-tertiary);
-  padding: 0.125rem 0.375rem;
+  font-size: 0.85em;
+  @apply bg-muted text-foreground;
+  padding: 0.15rem 0.4rem;
   border-radius: 0.25rem;
+  font-weight: 500;
 }
 
 .hc-prose pre {
-  background: var(--hc-bg-secondary);
-  border: 1px solid var(--hc-border);
+  @apply bg-secondary border border-border;
   border-radius: 0.5rem;
-  padding: 1rem;
+  padding: 1rem 1.25rem;
   overflow-x: auto;
   margin-bottom: 1.5rem;
 }
@@ -146,12 +211,14 @@ body {
   background: none;
   padding: 0;
   font-size: 0.8125rem;
-  line-height: 1.6;
+  line-height: 1.7;
+  font-weight: 400;
+  @apply text-foreground/75;
 }
 
 .hc-prose ul,
 .hc-prose ol {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
   padding-left: 1.5rem;
 }
 .hc-prose ul {
@@ -161,16 +228,19 @@ body {
   list-style-type: decimal;
 }
 .hc-prose li {
-  margin-bottom: 0.375rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.7;
+}
+.hc-prose li::marker {
+  @apply text-muted-foreground;
 }
 
 .hc-prose blockquote {
-  border-left: 3px solid var(--hc-accent);
-  padding: 0.5rem 1rem;
-  margin-bottom: 1rem;
-  background: var(--hc-bg-secondary);
+  border-left: 3px solid var(--color-primary);
+  @apply bg-primary/5 text-muted-foreground;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
   border-radius: 0 0.5rem 0.5rem 0;
-  color: var(--hc-text-secondary);
 }
 
 .hc-prose img {
@@ -187,18 +257,71 @@ body {
 }
 .hc-prose th,
 .hc-prose td {
-  border: 1px solid var(--hc-border);
+  @apply border border-border;
   padding: 0.5rem 0.75rem;
   text-align: left;
 }
 .hc-prose th {
-  background: var(--hc-bg-secondary);
+  @apply bg-secondary text-foreground;
   font-weight: 600;
-  color: var(--hc-text);
 }
 
 .hc-prose hr {
   border: none;
-  border-top: 1px solid var(--hc-border);
+  @apply border-t border-border;
   margin: 2rem 0;
+}
+
+/* ─── Code Copy Button ─────────────────────────────────────────────────── */
+
+.hc-copy-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-family: inherit;
+  border-radius: var(--radius-sm);
+  @apply border border-border bg-background text-muted-foreground;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.hc-prose pre:hover .hc-copy-btn {
+  opacity: 1;
+}
+
+.hc-copy-btn:hover {
+  @apply bg-secondary text-foreground;
+}
+
+/* ─── Callout / Note Blocks ────────────────────────────────────────────── */
+
+.hc-prose .callout,
+.hc-prose [data-callout] {
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.875rem;
+  border-left: 3px solid var(--color-primary);
+  @apply bg-primary/5;
+}
+
+.hc-prose .callout-warning,
+.hc-prose [data-callout="warning"] {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.hc-prose .callout-danger,
+.hc-prose [data-callout="danger"] {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.hc-prose .callout-success,
+.hc-prose [data-callout="success"] {
+  border-left-color: #10b981;
+  background: rgba(16, 185, 129, 0.05);
 }

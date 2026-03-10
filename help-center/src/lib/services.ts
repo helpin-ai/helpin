@@ -26,4 +26,15 @@ export const helpCenterService = {
     api.get<SearchResult[]>(
       `/hc/${subdomain}/search?q=${encodeURIComponent(query)}${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}`,
     ),
+
+  submitFeedback: (
+    subdomain: string,
+    spaceSlug: string,
+    articleSlug: string,
+    payload: { is_helpful: boolean; comment?: string },
+  ) =>
+    api.post(
+      `/hc/${subdomain}/spaces/${spaceSlug}/articles/${articleSlug}/feedback`,
+      payload,
+    ),
 }

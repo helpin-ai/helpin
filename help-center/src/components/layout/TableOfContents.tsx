@@ -1,3 +1,4 @@
+import { TableOfContents as TocIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TocItem } from '@/lib/toc'
 
@@ -17,24 +18,26 @@ export function TableOfContents({ items, activeId }: TableOfContentsProps) {
         height: 'calc(100vh - var(--hc-header-height))',
       }}
     >
-      <div className="py-6 px-4">
-        <h4
-          className="mb-3 text-xs font-semibold uppercase tracking-wider"
-          style={{ color: 'var(--hc-text-muted)' }}
-        >
+      <div className="pt-10 pb-6 pr-4 pl-1">
+        <h4 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-muted-foreground">
+          <TocIcon size={14} />
           On this page
         </h4>
-        <ul className="space-y-1">
+        <ul className="space-y-0.5">
           {items.map((item) => (
             <li key={item.id}>
               <a
                 href={`#${item.id}`}
+                onClick={(e) => {
+                  e.preventDefault()
+                  document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' })
+                }}
                 className={cn(
-                  'block text-sm py-1 transition-colors border-l-2',
-                  item.level === 3 ? 'pl-6' : 'pl-3',
+                  'block text-[13px] py-1 transition-colors border-l-2',
+                  item.level === 3 ? 'pl-5' : 'pl-3',
                   activeId === item.id
-                    ? 'border-[var(--hc-accent)] text-[var(--hc-accent)] font-medium'
-                    : 'border-transparent text-[var(--hc-text-secondary)] hover:text-[var(--hc-text)] hover:border-[var(--hc-border)]',
+                    ? 'border-primary text-primary font-medium'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
                 )}
               >
                 {item.text}
