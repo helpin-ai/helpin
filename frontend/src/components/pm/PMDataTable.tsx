@@ -58,7 +58,7 @@ export function PMDataTable<T>({
   });
 
   return (
-    <div className={`${TABLE_CONTAINER} overflow-hidden`}>
+    <div className={TABLE_CONTAINER}>
       {/* Header */}
       <div className={TABLE_HEADER}>
         {table.getHeaderGroups().map((headerGroup) => (

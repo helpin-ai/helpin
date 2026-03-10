@@ -372,7 +372,7 @@ export function CompaniesTable({
       </div>
 
       {/* Table */}
-      <div className={TABLE_CONTAINER}>
+      <div ref={parentRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
           {/* Header */}
           <div className={TABLE_HEADER}>
@@ -427,38 +427,32 @@ export function CompaniesTable({
           </div>
 
           {/* Virtualized body */}
-          <div
-            ref={parentRef}
-            className="overflow-auto scrollbar-hide"
-            style={{ height: 'calc(100% - 30px)' }}
-          >
-            <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const row = rows[virtualRow.index] as Row<CRMCompany>;
-                const isGrouped = row.getIsGrouped();
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const row = rows[virtualRow.index] as Row<CRMCompany>;
+              const isGrouped = row.getIsGrouped();
 
-                return (
-                  <div
-                    key={row.id}
-                    data-index={virtualRow.index}
-                    ref={virtualizer.measureElement}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    {isGrouped ? (
-                      <GroupHeaderRow row={row} />
-                    ) : (
-                      <DataRow row={row} columnSizing={columnSizing} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+              return (
+                <div
+                  key={row.id}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {isGrouped ? (
+                    <GroupHeaderRow row={row} />
+                  ) : (
+                    <DataRow row={row} columnSizing={columnSizing} />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
