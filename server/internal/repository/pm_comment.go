@@ -20,7 +20,7 @@ func NewPMCommentRepository(db *gorm.DB) *PMCommentRepository {
 	return &PMCommentRepository{db: db}
 }
 
-// List returns top-level comments for an entity with author info and nested replies.
+// List returns top-level comments for an entity with author info, nested replies, reactions, and attachments.
 func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID string) ([]model.CommentWithAuthor, error) {
 	var comments []model.PMComment
 	if err := r.db.WithContext(ctx).
@@ -28,6 +28,16 @@ func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID str
 		Order("created_at ASC").
 		Find(&comments).Error; err != nil {
 		return nil, fmt.Errorf("list comments: %w", err)
+	}
+
+	if len(comments) == 0 {
+		return nil, nil
+	}
+
+	// Collect all comment IDs for batch loading.
+	commentIDs := make([]string, 0, len(comments))
+	for _, c := range comments {
+		commentIDs = append(commentIDs, c.ID)
 	}
 
 	// Build author cache to avoid N+1 queries.
@@ -50,12 +60,20 @@ func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID str
 		authorMap[a.ID] = a
 	}
 
+	// Batch load reactions for all comments.
+	reactionsMap := r.loadReactions(ctx, commentIDs)
+
+	// Batch load attachments for all comments.
+	attachmentsMap := r.loadCommentAttachments(ctx, commentIDs)
+
 	// Separate top-level and replies, then nest replies under parents.
 	allWithAuthor := make([]model.CommentWithAuthor, 0, len(comments))
 	for _, c := range comments {
 		allWithAuthor = append(allWithAuthor, model.CommentWithAuthor{
-			Comment: c,
-			Author:  authorMap[c.AuthorID],
+			Comment:     c,
+			Author:      authorMap[c.AuthorID],
+			Reactions:   reactionsMap[c.ID],
+			Attachments: attachmentsMap[c.ID],
 		})
 	}
 
@@ -77,6 +95,106 @@ func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID str
 		result = append(result, tl)
 	}
 	return result, nil
+}
+
+// loadReactions batch-loads reactions for the given comment IDs and returns them grouped by comment ID.
+func (r *PMCommentRepository) loadReactions(ctx context.Context, commentIDs []string) map[string][]model.ReactionSummary {
+	result := make(map[string][]model.ReactionSummary)
+	if len(commentIDs) == 0 {
+		return result
+	}
+
+	var reactions []model.PMCommentReaction
+	if err := r.db.WithContext(ctx).
+		Where("comment_id IN ?", commentIDs).
+		Order("created_at ASC").
+		Find(&reactions).Error; err != nil {
+		return result
+	}
+
+	// Group by comment_id + emoji.
+	type key struct {
+		commentID string
+		emoji     string
+	}
+	grouped := make(map[key][]string)
+	order := make(map[string][]string) // comment_id → ordered emojis (first-seen order)
+	seen := make(map[key]bool)
+
+	for _, rx := range reactions {
+		k := key{rx.CommentID, rx.Emoji}
+		grouped[k] = append(grouped[k], rx.UserID)
+		if !seen[k] {
+			seen[k] = true
+			order[rx.CommentID] = append(order[rx.CommentID], rx.Emoji)
+		}
+	}
+
+	for commentID, emojis := range order {
+		summaries := make([]model.ReactionSummary, 0, len(emojis))
+		for _, emoji := range emojis {
+			k := key{commentID, emoji}
+			summaries = append(summaries, model.ReactionSummary{
+				Emoji:   emoji,
+				Count:   len(grouped[k]),
+				UserIDs: grouped[k],
+			})
+		}
+		result[commentID] = summaries
+	}
+	return result
+}
+
+// loadCommentAttachments batch-loads uploaded attachments for the given comment IDs.
+func (r *PMCommentRepository) loadCommentAttachments(ctx context.Context, commentIDs []string) map[string][]model.AttachmentResponse {
+	result := make(map[string][]model.AttachmentResponse)
+	if len(commentIDs) == 0 {
+		return result
+	}
+
+	var attachments []model.PMAttachment
+	if err := r.db.WithContext(ctx).
+		Where("entity_type = ? AND entity_id IN ? AND is_uploaded = ?", "comment", commentIDs, true).
+		Order("created_at ASC").
+		Find(&attachments).Error; err != nil {
+		return result
+	}
+
+	for _, a := range attachments {
+		result[a.EntityID] = append(result[a.EntityID], model.AttachmentResponse{
+			Attachment: a,
+		})
+	}
+	return result
+}
+
+// AddReaction adds a reaction to a comment.
+func (r *PMCommentRepository) AddReaction(ctx context.Context, reaction *model.PMCommentReaction) error {
+	if err := r.db.WithContext(ctx).Create(reaction).Error; err != nil {
+		return fmt.Errorf("add reaction: %w", err)
+	}
+	return nil
+}
+
+// RemoveReaction removes a reaction from a comment.
+func (r *PMCommentRepository) RemoveReaction(ctx context.Context, commentID, userID, emoji string) error {
+	if err := r.db.WithContext(ctx).
+		Where("comment_id = ? AND user_id = ? AND emoji = ?", commentID, userID, emoji).
+		Delete(&model.PMCommentReaction{}).Error; err != nil {
+		return fmt.Errorf("remove reaction: %w", err)
+	}
+	return nil
+}
+
+// HasReaction checks if a user has reacted with a specific emoji on a comment.
+func (r *PMCommentRepository) HasReaction(ctx context.Context, commentID, userID, emoji string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.PMCommentReaction{}).
+		Where("comment_id = ? AND user_id = ? AND emoji = ?", commentID, userID, emoji).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check reaction: %w", err)
+	}
+	return count > 0, nil
 }
 
 // GetByID returns a comment.

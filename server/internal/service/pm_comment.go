@@ -18,6 +18,7 @@ var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9._-]+)`)
 type PMCommentService struct {
 	commentRepo         *repository.PMCommentRepository
 	storyRepo           *repository.PMStoryRepository
+	attachmentRepo      *repository.PMAttachmentRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
@@ -26,10 +27,11 @@ type PMCommentService struct {
 }
 
 // NewPMCommentService creates a new PMCommentService.
-func NewPMCommentService(commentRepo *repository.PMCommentRepository, storyRepo *repository.PMStoryRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) *PMCommentService {
+func NewPMCommentService(commentRepo *repository.PMCommentRepository, storyRepo *repository.PMStoryRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) *PMCommentService {
 	return &PMCommentService{
 		commentRepo:         commentRepo,
 		storyRepo:           storyRepo,
+		attachmentRepo:      attachmentRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
 		notificationService: notificationService,
@@ -64,6 +66,13 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	}
 	if err := s.commentRepo.Create(ctx, comment); err != nil {
 		return nil, err
+	}
+
+	// Reassign any pre-uploaded attachments to this comment.
+	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
+		if err := s.attachmentRepo.ReassignToComment(ctx, req.AttachmentIDs, comment.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to comment", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
+		}
 	}
 
 	// Auto-follow story when someone comments.
@@ -238,6 +247,70 @@ func (s *PMCommentService) Delete(ctx context.Context, id string, actorID string
 	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "comment", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: comment.EntityType, ParentID: comment.EntityID})
 	s.logger.InfoContext(ctx, "comment deleted", "comment_id", id, "entity_type", comment.EntityType, "entity_id", comment.EntityID, "workspace_id", workspaceID, "actor_id", actorID)
 	return nil
+}
+
+// ToggleReaction adds or removes a reaction on a comment.
+func (s *PMCommentService) ToggleReaction(ctx context.Context, commentID, userID, emoji, workspaceID string) ([]model.ReactionSummary, error) {
+	if emoji == "" {
+		return nil, fmt.Errorf("emoji is required")
+	}
+
+	comment, err := s.commentRepo.GetByID(ctx, commentID)
+	if err != nil {
+		return nil, err
+	}
+	if comment == nil {
+		return nil, fmt.Errorf("comment not found")
+	}
+
+	exists, err := s.commentRepo.HasReaction(ctx, commentID, userID, emoji)
+	if err != nil {
+		return nil, err
+	}
+
+	if exists {
+		if err := s.commentRepo.RemoveReaction(ctx, commentID, userID, emoji); err != nil {
+			return nil, err
+		}
+		s.logger.InfoContext(ctx, "reaction removed", "comment_id", commentID, "user_id", userID, "emoji", emoji)
+	} else {
+		reaction := &model.PMCommentReaction{
+			CommentID: commentID,
+			UserID:    userID,
+			Emoji:     emoji,
+		}
+		if err := s.commentRepo.AddReaction(ctx, reaction); err != nil {
+			return nil, err
+		}
+		s.logger.InfoContext(ctx, "reaction added", "comment_id", commentID, "user_id", userID, "emoji", emoji)
+	}
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "comment",
+		EntityID:    commentID,
+		WorkspaceID: workspaceID,
+		ActorID:     userID,
+		ParentType:  comment.EntityType,
+		ParentID:    comment.EntityID,
+	})
+
+	// Return updated reactions for this comment.
+	comments, err := s.commentRepo.List(ctx, comment.EntityType, comment.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range comments {
+		if c.Comment.ID == commentID {
+			return c.Reactions, nil
+		}
+		for _, r := range c.Replies {
+			if r.Comment.ID == commentID {
+				return r.Reactions, nil
+			}
+		}
+	}
+	return []model.ReactionSummary{}, nil
 }
 
 func extractMentions(body string) []string {

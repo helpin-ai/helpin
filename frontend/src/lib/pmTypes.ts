@@ -323,6 +323,12 @@ export interface Comment {
   updated_at: string;
 }
 
+export interface ReactionSummary {
+  emoji: string;
+  count: number;
+  user_ids: string[];
+}
+
 export interface CommentWithAuthor {
   comment: Comment;
   author: {
@@ -335,6 +341,8 @@ export interface CommentWithAuthor {
   };
   reply_count: number;
   replies?: CommentWithAuthor[];
+  reactions?: ReactionSummary[];
+  attachments?: AttachmentResponse[];
 }
 
 export interface PMActivity {
@@ -690,6 +698,7 @@ export interface CreateCommentRequest {
   entity_id: string;
   body: string;
   parent_id?: string;
+  attachment_ids?: string[];
 }
 
 export interface UpdateCommentRequest {

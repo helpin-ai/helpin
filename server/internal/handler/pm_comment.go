@@ -85,3 +85,21 @@ func (h *PMCommentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "comment deleted"})
 }
+
+// ToggleReaction handles POST /api/pm/comments/{id}/reactions.
+func (h *PMCommentHandler) ToggleReaction(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+	var req model.ToggleReactionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	reactions, err := h.commentService.ToggleReaction(r.Context(), id, userID, req.Emoji, workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, reactions)
+}

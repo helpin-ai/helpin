@@ -91,6 +91,23 @@ func (r *PMAttachmentRepository) ListByWorkspace(ctx context.Context, workspaceI
 	return attachments, nil
 }
 
+// ReassignToComment updates attachments to point to a comment entity.
+func (r *PMAttachmentRepository) ReassignToComment(ctx context.Context, attachmentIDs []string, commentID string) error {
+	if len(attachmentIDs) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMAttachment{}).
+		Where("id IN ?", attachmentIDs).
+		Updates(map[string]interface{}{
+			"entity_type": "comment",
+			"entity_id":   commentID,
+		}).Error; err != nil {
+		return fmt.Errorf("reassign attachments: %w", err)
+	}
+	return nil
+}
+
 // Delete removes an attachment record.
 func (r *PMAttachmentRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Delete(&model.PMAttachment{}, "id = ?", id).Error; err != nil {

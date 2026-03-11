@@ -5,7 +5,7 @@ import { MentionHighlight } from '@/components/pm/mention-highlight'
 import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
-import { Loader2, Send, ImageIcon } from 'lucide-react'
+import { Loader2, Send, ImageIcon, Paperclip, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
 import { UserAvatar } from '@/components/pm/UserAvatar'
@@ -25,10 +25,18 @@ interface CommentEditorProps {
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[]
   members?: AssignableMember[]
   uploadConfig?: EditorUploadConfig
+  onFileSelect?: () => void
+  uploadedFiles?: { id: string; name: string }[]
+  onRemoveUploadedFile?: (id: string) => void
 }
 
 function buildMemberHandle(member: AssignableMember): string {
   return member.display_name.toLowerCase().replace(/\s+/g, '.')
+}
+
+function getFileExtension(filename: string): string {
+  const parts = filename.split('.');
+  return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
 }
 
 function detectMentions(
@@ -106,6 +114,9 @@ export function CommentEditor({
   teams = [],
   members = [],
   uploadConfig,
+  onFileSelect,
+  uploadedFiles = [],
+  onRemoveUploadedFile,
 }: CommentEditorProps) {
   const [mentionState, setMentionState] = useState<{
     from: number
@@ -199,10 +210,10 @@ export function CommentEditor({
   const handleSubmit = useCallback(() => {
     if (!editorRef.current || loading) return
     const text = getContent(editorRef.current)
-    if (!text.trim()) return
+    if (!text.trim() && uploadedFiles.length === 0) return
     onSubmit(text.trim())
     editorRef.current.commands.clearContent()
-  }, [onSubmit, loading, getContent])
+  }, [onSubmit, loading, getContent, uploadedFiles.length])
 
   const handleSubmitRef = useRef(handleSubmit)
   handleSubmitRef.current = handleSubmit
@@ -347,7 +358,7 @@ export function CommentEditor({
   if (!editor) return null
 
   const content = getContent(editor)
-  const canSubmit = !loading && content.trim().length > 0
+  const canSubmit = !loading && (content.trim().length > 0 || uploadedFiles.length > 0)
 
   return (
     <div className="rounded-lg border border-border/60 bg-background transition-colors focus-within:border-border">
@@ -401,6 +412,30 @@ export function CommentEditor({
           </div>
         </div>
       ) : null}
+      {/* Uploaded files preview */}
+      {uploadedFiles.length > 0 && onRemoveUploadedFile && (
+        <div className="flex flex-wrap gap-1.5 border-t border-border/60 px-3 py-2">
+          {uploadedFiles.map((f) => {
+            const ext = getFileExtension(f.name)
+            return (
+              <div
+                key={f.id}
+                className="flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/20 pl-2 pr-1 py-1 text-xs"
+              >
+                <span className="uppercase text-[10px] font-medium text-muted-foreground/70 w-6">{ext || 'FILE'}</span>
+                <span className="truncate max-w-[120px] text-muted-foreground">{f.name}</span>
+                <button
+                  type="button"
+                  onClick={() => onRemoveUploadedFile(f.id)}
+                  className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
       <div className="flex items-center justify-between px-2 py-1">
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-muted-foreground">
@@ -423,6 +458,16 @@ export function CommentEditor({
               }}
             >
               <ImageIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onFileSelect && (
+            <button
+              type="button"
+              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+              title="Attach file"
+              onClick={onFileSelect}
+            >
+              <Paperclip className="h-3.5 w-3.5" />
             </button>
           )}
         </div>

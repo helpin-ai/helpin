@@ -421,6 +421,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/comments", h.PMComment.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/comments/{id}", h.PMComment.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/comments/{id}", h.PMComment.Delete)
+				r.With(requirePerm(authorization.PermPMRead)).Post("/comments/{id}/reactions", h.PMComment.ToggleReaction)
 
 				// Attachments — pm.edit
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/attachments", h.PMAttachment.Create)

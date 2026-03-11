@@ -143,6 +143,7 @@ func main() {
 		&model.PMStoryFollower{},
 		&model.PMStoryLabel{},
 		&model.PMComment{},
+		&model.PMCommentReaction{},
 		&model.PMActivityLog{},
 		&model.PMAttachment{},
 		&model.PMObjective{},
@@ -363,7 +364,7 @@ func main() {
 	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher, notificationService)
-	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
+	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, pmStoryRepo, wsPublisher, notificationService, workspaceRepo)

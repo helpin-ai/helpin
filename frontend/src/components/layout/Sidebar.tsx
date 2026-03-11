@@ -122,6 +122,24 @@ function saveExpandedTeams(wsId: string, teams: Set<string>) {
   } catch {}
 }
 
+// ── Settings group collapse persistence ──
+const COLLAPSIBLE_SETTINGS_GROUPS = new Set(['Project Settings', 'Docs', 'CRM Settings', 'Data']);
+
+function getCollapsedSettingsGroups(): Set<string> {
+  try {
+    const raw = localStorage.getItem('settings_sidebar_collapsed');
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  // Default: all collapsible groups start collapsed
+  return new Set(COLLAPSIBLE_SETTINGS_GROUPS);
+}
+
+function saveCollapsedSettingsGroups(groups: Set<string>) {
+  try {
+    localStorage.setItem('settings_sidebar_collapsed', JSON.stringify([...groups]));
+  } catch {}
+}
+
 // ── Team sub-items config ──
 
 const teamSubItems: { key: string; label: string; icon: LucideIcon; path: string }[] = [
@@ -345,6 +363,38 @@ export function Sidebar() {
       return next;
     });
   };
+
+  // ── Collapsed settings groups state ──
+  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(getCollapsedSettingsGroups);
+
+  const toggleSettingsGroup = (groupLabel: string) => {
+    setCollapsedSettingsGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupLabel)) next.delete(groupLabel);
+      else next.add(groupLabel);
+      saveCollapsedSettingsGroups(next);
+      return next;
+    });
+  };
+
+  // Auto-expand settings group containing the active section
+  useEffect(() => {
+    if (activeRail !== 'settings') return;
+    const currentNavGroups = panelNavGroups['settings'];
+    for (const group of currentNavGroups) {
+      if (!COLLAPSIBLE_SETTINGS_GROUPS.has(group.label)) continue;
+      const hasActiveItem = group.items.some((item) => isActive(item.link));
+      if (hasActiveItem && collapsedSettingsGroups.has(group.label)) {
+        setCollapsedSettingsGroups((prev) => {
+          const next = new Set(prev);
+          next.delete(group.label);
+          saveCollapsedSettingsGroups(next);
+          return next;
+        });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, activeRail]);
 
   // ── Detect active team from URL search params ──
   const activeTeamParam = useMemo(() => {
@@ -692,13 +742,11 @@ export function Sidebar() {
               </div>
             )}
 
-            {currentNavGroups.map((group, idx) => (
-              <SidebarGroup key={group.label || idx} className="p-0 pb-3">
-                {group.label && (
-                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                    {group.label}
-                  </SidebarGroupLabel>
-                )}
+            {currentNavGroups.map((group, idx) => {
+              const isCollapsible = activeRail === 'settings' && COLLAPSIBLE_SETTINGS_GROUPS.has(group.label);
+              const isOpen = !collapsedSettingsGroups.has(group.label);
+
+              const menuItems = (
                 <SidebarMenu>
                   {group.items.map((item) => (
                     <SidebarMenuItem key={item.link}>
@@ -722,8 +770,42 @@ export function Sidebar() {
                     </SidebarMenuItem>
                   ))}
                 </SidebarMenu>
-              </SidebarGroup>
-            ))}
+              );
+
+              if (isCollapsible) {
+                return (
+                  <Collapsible.Root
+                    key={group.label}
+                    open={isOpen}
+                    onOpenChange={() => toggleSettingsGroup(group.label)}
+                    asChild
+                  >
+                    <SidebarGroup className="p-0 pb-3">
+                      <Collapsible.Trigger asChild>
+                        <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 cursor-pointer select-none hover:text-muted-foreground">
+                          <span className="flex-1">{group.label}</span>
+                          <ChevronRight className={`h-3 w-3 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
+                        </SidebarGroupLabel>
+                      </Collapsible.Trigger>
+                      <Collapsible.Content>
+                        {menuItems}
+                      </Collapsible.Content>
+                    </SidebarGroup>
+                  </Collapsible.Root>
+                );
+              }
+
+              return (
+                <SidebarGroup key={group.label || idx} className="p-0 pb-3">
+                  {group.label && (
+                    <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+                      {group.label}
+                    </SidebarGroupLabel>
+                  )}
+                  {menuItems}
+                </SidebarGroup>
+              );
+            })}
 
             {/* ── Team-scoped navigation (projects rail only) ── */}
             {activeRail === 'projects' && (
