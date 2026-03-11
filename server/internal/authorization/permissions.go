@@ -49,6 +49,13 @@ const (
 	PermCRMAdmin Permission = "crm.admin"
 )
 
+// Support permissions.
+const (
+	PermSupportRead  Permission = "support.read"
+	PermSupportEdit  Permission = "support.edit"
+	PermSupportAdmin Permission = "support.admin"
+)
+
 // Notification permissions.
 const (
 	PermNotificationsRead   Permission = "notifications.read"
@@ -75,6 +82,7 @@ func AllPermissions() []Permission {
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
 		PermDocsRead, PermDocsEdit, PermDocsPublish, PermDocsAdmin,
 		PermCRMRead, PermCRMEdit, PermCRMAdmin,
+		PermSupportRead, PermSupportEdit, PermSupportAdmin,
 		PermNotificationsRead, PermNotificationsManage,
 		PermRewardsRead, PermRewardsManage,
 		PermSearchRead, PermWSConnect,

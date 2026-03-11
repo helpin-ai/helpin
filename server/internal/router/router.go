@@ -317,26 +317,26 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
 
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets", h.Support.ListTickets)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets", h.Support.CreateTicket)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets/{id}", h.Support.GetTicket)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets/{id}/associations", h.Associations.ListTicketAssociations)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/tickets/{id}/status", h.Support.UpdateTicketStatus)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets/{id}/messages", h.Support.ListMessages)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/messages", h.Support.CreateMessage)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/link-story", h.Support.LinkStory)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/assign-agent", h.Support.AssignAgent)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/run-agent", h.Support.RunAgent)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets", h.Support.ListTickets)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets", h.Support.CreateTicket)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets/{id}", h.Support.GetTicket)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets/{id}/associations", h.Associations.ListTicketAssociations)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/tickets/{id}/status", h.Support.UpdateTicketStatus)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets/{id}/messages", h.Support.ListMessages)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/messages", h.Support.CreateMessage)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/link-story", h.Support.LinkStory)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/assign-agent", h.Support.AssignAgent)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/run-agent", h.Support.RunAgent)
 
 				// Canned responses
-				r.With(requirePerm(authorization.PermPMRead)).Get("/inbox/canned-responses", h.Support.ListCannedResponses)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/inbox/canned-responses/search", h.Support.SearchCannedResponses)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/inbox/canned-responses", h.Support.CreateCannedResponse)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/inbox/canned-responses/{id}", h.Support.UpdateCannedResponse)
-				r.With(requirePerm(authorization.PermPMEdit)).Delete("/inbox/canned-responses/{id}", h.Support.DeleteCannedResponse)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses", h.Support.ListCannedResponses)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses/search", h.Support.SearchCannedResponses)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/canned-responses", h.Support.CreateCannedResponse)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/canned-responses/{id}", h.Support.UpdateCannedResponse)
+				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/canned-responses/{id}", h.Support.DeleteCannedResponse)
 
 				// Typing indicators
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/typing", h.Support.TypingIndicator)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/typing", h.Support.TypingIndicator)
 			})
 
 			// PM module
