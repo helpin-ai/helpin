@@ -10,6 +10,10 @@ import (
 
 func extractProductSpecDraft(messages []Message) (*model.ProductSpecDraft, error) {
 	responseText := latestAssistantText(messages)
+	return extractProductSpecDraftFromResponseText(responseText)
+}
+
+func extractProductSpecDraftFromResponseText(responseText string) (*model.ProductSpecDraft, error) {
 	if strings.TrimSpace(responseText) == "" {
 		return nil, fmt.Errorf("product planner returned no spec draft")
 	}
@@ -29,6 +33,10 @@ func extractProductSpecDraft(messages []Message) (*model.ProductSpecDraft, error
 
 func extractPlanningProposal(messages []Message, epicID, specVersionID string, tokensUsed int) (*model.OrchestrationProposal, error) {
 	responseText := latestAssistantText(messages)
+	return extractPlanningProposalFromResponseText(responseText, epicID, specVersionID, tokensUsed)
+}
+
+func extractPlanningProposalFromResponseText(responseText, epicID, specVersionID string, tokensUsed int) (*model.OrchestrationProposal, error) {
 	if strings.TrimSpace(responseText) == "" {
 		return nil, fmt.Errorf("product planner returned no planning proposal text")
 	}
@@ -56,7 +64,8 @@ func extractPlanningProposal(messages []Message, epicID, specVersionID string, t
 }
 
 func extractOrchestrationProposal(messages []Message, epicID string, tokensUsed int) (*model.OrchestrationProposal, error) {
-	return extractPlanningProposal(messages, epicID, "", tokensUsed)
+	responseText := latestAssistantText(messages)
+	return extractPlanningProposalFromResponseText(responseText, epicID, "", tokensUsed)
 }
 
 func latestAssistantText(messages []Message) string {

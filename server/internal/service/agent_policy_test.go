@@ -105,8 +105,8 @@ func TestAgentDefaultsDerivedFromClass(t *testing.T) {
 	if got := defaultRoleForAgentClass(model.AgentClassReviewer); got != "Reviewer" {
 		t.Fatalf("expected reviewer role label, got %q", got)
 	}
-	if got := defaultRuntimeKindForAgentClass(model.AgentClassSupport); got != "native_claude" {
-		t.Fatalf("expected support runtime default native_claude, got %q", got)
+	if got := defaultRuntimeKindForAgentClass(model.AgentClassSupport); got != "opencode" {
+		t.Fatalf("expected support runtime default opencode, got %q", got)
 	}
 }
 
@@ -132,6 +132,9 @@ func TestNormalizeAgentRecordClearsIncompatibleFields(t *testing.T) {
 	}
 	if agent.Model != nil || agent.SystemPrompt != nil || agent.PlanningNotes != nil || agent.MonthlyTokenBudget != nil {
 		t.Fatalf("expected human normalization to clear llm fields: %+v", agent)
+	}
+	if agent.Provider != nil {
+		t.Fatalf("expected human normalization to clear provider, got %+v", agent.Provider)
 	}
 	if string(agent.Skills) != "[]" || string(agent.Tools) != "[]" {
 		t.Fatalf("expected human normalization to clear skills/tools, got skills=%s tools=%s", string(agent.Skills), string(agent.Tools))

@@ -95,7 +95,17 @@ func main() {
 	}
 	gmailSyncClient := syncpkg.NewGmailSyncClient(gmailOAuth, crmEmailRepo, encryptionKey)
 
-	runtimes := workerpkg.NewDefaultRuntimeRegistry(cfg.AnthropicAPIKey, cfg.BraveSearchAPIKey, runRepo, artifactRepo)
+	runtimes := workerpkg.NewDefaultRuntimeRegistry(
+		cfg.OpenCodePath,
+		cfg.AnthropicAPIKey,
+		cfg.OpenAIAPIKey,
+		cfg.OpenAIBaseURL,
+		cfg.OpenRouterAPIKey,
+		cfg.OpenRouterBaseURL,
+		cfg.BraveSearchAPIKey,
+		runRepo,
+		artifactRepo,
+	)
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
 		log.Fatalf("failed to initialize github app client: %v", err)

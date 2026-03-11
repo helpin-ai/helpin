@@ -437,7 +437,7 @@ func main() {
 		pmStoryService,
 		pmActivityService,
 		wsPublisher,
-	)
+	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
 
 	// Log orchestration availability.
 	if cfg.AnthropicAPIKey != "" {

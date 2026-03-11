@@ -27,6 +27,11 @@ type Config struct {
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
 	AnthropicAPIKey   string
+	OpenAIAPIKey      string
+	OpenAIBaseURL     string
+	OpenRouterAPIKey  string
+	OpenRouterBaseURL string
+	OpenCodePath      string
 	BraveSearchAPIKey string
 
 	// GitHub App (optional — required for shared-runner repo mutation).
@@ -111,6 +116,11 @@ func Load() (*Config, error) {
 		AWSRegion:             os.Getenv("AWS_REGION"),
 		AWSEndpointURL:        os.Getenv("AWS_S3_ENDPOINT_URL"),
 		AnthropicAPIKey:       os.Getenv("ANTHROPIC_API_KEY"),
+		OpenAIAPIKey:          strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		OpenAIBaseURL:         strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
+		OpenRouterAPIKey:      strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
+		OpenRouterBaseURL:     strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
+		OpenCodePath:          strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
 		BraveSearchAPIKey:     strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
 		GitHubAppID:           os.Getenv("GITHUB_APP_ID"),
 		GitHubAppSlug:         os.Getenv("GITHUB_APP_SLUG"),
@@ -122,11 +132,20 @@ func Load() (*Config, error) {
 		GmailClientID:         os.Getenv("GMAIL_CLIENT_ID"),
 		GmailClientSecret:     os.Getenv("GMAIL_CLIENT_SECRET"),
 		GmailOAuthRedirectURL: os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
-		CRMLLMProvider: os.Getenv("CRM_LLM_PROVIDER"),
-		CRMLLMAPIKey:   os.Getenv("CRM_LLM_API_KEY"),
-		CRMLLMBaseURL:  os.Getenv("CRM_LLM_BASE_URL"),
-		CRMLLMModel:    os.Getenv("CRM_LLM_MODEL"),
+		CRMLLMProvider:        os.Getenv("CRM_LLM_PROVIDER"),
+		CRMLLMAPIKey:          os.Getenv("CRM_LLM_API_KEY"),
+		CRMLLMBaseURL:         os.Getenv("CRM_LLM_BASE_URL"),
+		CRMLLMModel:           os.Getenv("CRM_LLM_MODEL"),
 	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func parseCORSOrigins(value string) []string {
