@@ -336,7 +336,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
       case 'import':
         return <ImportTab workspaceId={workspaceId} editable={canImport} />;
       case 'helpcenter':
-        return <HelpcenterTab workspaceId={workspaceId} />;
+        return <HelpcenterTab workspaceId={workspaceId} workspaceName={currentWorkspace?.name ?? ''} />;
       case 'crm-pipelines':
         return <PipelineSettings />;
       case 'crm-email':

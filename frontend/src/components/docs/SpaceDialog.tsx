@@ -10,14 +10,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { useCreateDocsSpace, useUpdateDocsSpace } from '@/hooks/queries'
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams'
 import type { DocsSpace, SpaceType } from '@/lib/docsTypes'
@@ -39,7 +31,6 @@ export function SpaceDialog({ wsId, open, onOpenChange, space }: SpaceDialogProp
   const [name, setName] = useState('')
   const [teamAccessMode, setTeamAccessMode] = useState<TeamAccessMode>('all_teams')
   const [type, setType] = useState<SpaceType>('internal')
-  const [restrictToOwners, setRestrictToOwners] = useState(false)
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([])
 
   const { teams } = useWorkspaceTeams(wsId)
@@ -51,7 +42,6 @@ export function SpaceDialog({ wsId, open, onOpenChange, space }: SpaceDialogProp
     if (open && space) {
       setName(space.name)
       setType(space.type)
-      setRestrictToOwners(space.restrict_to_owners)
       const tids = space.team_ids ?? []
       setSelectedTeamIds(tids)
       setTeamAccessMode(space.visibility === 'team_only' && tids.length > 0 ? 'specific_teams' : 'all_teams')
@@ -59,7 +49,6 @@ export function SpaceDialog({ wsId, open, onOpenChange, space }: SpaceDialogProp
       setName('')
       setTeamAccessMode('all_teams')
       setType('internal')
-      setRestrictToOwners(false)
       setSelectedTeamIds([])
     }
   }, [open, space])
@@ -89,7 +78,6 @@ export function SpaceDialog({ wsId, open, onOpenChange, space }: SpaceDialogProp
           name: name.trim(),
           type,
           visibility: derivedVisibility,
-          restrict_to_owners: restrictToOwners,
           team_ids: derivedTeamIds,
           set_team_ids: true,
         })
@@ -99,7 +87,6 @@ export function SpaceDialog({ wsId, open, onOpenChange, space }: SpaceDialogProp
           name: name.trim(),
           visibility: derivedVisibility,
           type,
-          restrict_to_owners: restrictToOwners,
           team_ids: derivedTeamIds,
         })
         toast.success('Space created')
@@ -126,43 +113,76 @@ export function SpaceDialog({ wsId, open, onOpenChange, space }: SpaceDialogProp
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
-            <div className="flex items-end gap-2">
-              <div className="grid flex-1 gap-2">
-                <Label htmlFor="space-name">Name</Label>
-                <Input
-                  id="space-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Engineering"
-                  autoFocus
-                />
-              </div>
-              <div className="grid w-[130px] shrink-0 gap-2">
-                <Label>Type</Label>
-                <Select value={type} onValueChange={(v) => setType(v as SpaceType)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="internal">Internal</SelectItem>
-                    <SelectItem value="external_capable">External</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="grid gap-2">
+              <Label htmlFor="space-name">Name</Label>
+              <Input
+                id="space-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Engineering"
+                autoFocus
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Type</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setType('internal')}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    type === 'internal'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                      : 'border-border/60 hover:border-border hover:bg-muted/30'
+                  }`}
+                >
+                  <span className="text-sm font-medium">Internal</span>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Only visible within your workspace</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setType('external_capable')}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    type === 'external_capable'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                      : 'border-border/60 hover:border-border hover:bg-muted/30'
+                  }`}
+                >
+                  <span className="text-sm font-medium">External</span>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Publishable to your help center</p>
+                </button>
               </div>
             </div>
 
-            {/* Team access — merged visibility + team picker */}
+            {/* Team access */}
             <div className="grid gap-2">
               <Label>Team access</Label>
-              <Select value={teamAccessMode} onValueChange={(v) => setTeamAccessMode(v as TeamAccessMode)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all_teams">All teams</SelectItem>
-                  <SelectItem value="specific_teams">Specific teams</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTeamAccessMode('all_teams')}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    teamAccessMode === 'all_teams'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                      : 'border-border/60 hover:border-border hover:bg-muted/30'
+                  }`}
+                >
+                  <span className="text-sm font-medium">All teams</span>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Everyone in the workspace</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeamAccessMode('specific_teams')}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    teamAccessMode === 'specific_teams'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                      : 'border-border/60 hover:border-border hover:bg-muted/30'
+                  }`}
+                >
+                  <span className="text-sm font-medium">Specific teams</span>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Only selected teams can access</p>
+                </button>
+              </div>
               {teamAccessMode === 'specific_teams' && (
                 <>
                   <p className="text-xs text-muted-foreground">
@@ -195,16 +215,6 @@ export function SpaceDialog({ wsId, open, onOpenChange, space }: SpaceDialogProp
               )}
             </div>
 
-            <div className="flex items-center justify-between">
-              <Label htmlFor="restrict-owners" className="text-sm">
-                Restrict editing to owners
-              </Label>
-              <Switch
-                id="restrict-owners"
-                checked={restrictToOwners}
-                onCheckedChange={setRestrictToOwners}
-              />
-            </div>
           </div>
 
           <DialogFooter>

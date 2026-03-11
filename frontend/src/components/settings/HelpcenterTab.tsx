@@ -1,4 +1,21 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useRef, useState, useCallback, type ChangeEvent, type FormEvent } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,6 +37,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import type {
   HelpcenterHeaderLink,
+  HelpcenterHeaderLinkStyle,
   HelpcenterFooterLink,
   HelpcenterThemeMode,
   HomepageFeaturedCard,
@@ -27,15 +45,24 @@ import type {
   DocsCollection,
 } from '@/lib/docsTypes';
 
+type HeaderLinkWithId = HelpcenterHeaderLink & { _id: string };
+
+let _linkIdCounter = 0;
+function nextLinkId() { return `link-${++_linkIdCounter}-${Date.now()}`; }
+function withIds(links: HelpcenterHeaderLink[]): HeaderLinkWithId[] {
+  return links.map(l => ({ ...l, _id: nextLinkId() }));
+}
+
 interface ConfigState {
   subdomain: string;
   custom_domain: string;
   brand_name: string;
   brand_logo_url: string;
+  brand_logo_dark_url: string;
   brand_color: string;
   favicon_url: string;
   theme_mode: HelpcenterThemeMode;
-  header_links: HelpcenterHeaderLink[];
+  header_links: HeaderLinkWithId[];
   footer_copyright_text: string;
   footer_links: HelpcenterFooterLink[];
   homepage_hero_title: string;
@@ -53,6 +80,7 @@ const DEFAULT_CONFIG: ConfigState = {
   custom_domain: '',
   brand_name: '',
   brand_logo_url: '',
+  brand_logo_dark_url: '',
   brand_color: '#3b82f6',
   favicon_url: '',
   theme_mode: 'system',
@@ -69,7 +97,87 @@ const DEFAULT_CONFIG: ConfigState = {
   support_email: '',
 };
 
-export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
+// Derive a URL-safe slug from a brand name.
+function slugifyBrand(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// Generate smart defaults from a brand name (only fills empty fields).
+function deriveDefaults(brandName: string, current: ConfigState): Partial<ConfigState> {
+  const name = brandName.trim();
+  if (!name) return {};
+  const year = new Date().getFullYear();
+  const defaults: Partial<ConfigState> = {};
+  if (!current.subdomain) defaults.subdomain = slugifyBrand(name);
+  if (!current.seo_title) defaults.seo_title = `${name} Help Center`;
+  if (!current.seo_description) defaults.seo_description = `Find answers, guides, and documentation for ${name}.`;
+  if (!current.homepage_hero_title) defaults.homepage_hero_title = 'How can we help?';
+  if (!current.homepage_hero_subtitle) defaults.homepage_hero_subtitle = 'Search our knowledge base or browse topics below';
+  if (!current.search_placeholder) defaults.search_placeholder = 'Search for articles...';
+  if (!current.footer_copyright_text) defaults.footer_copyright_text = `\u00A9 ${year} ${name}. All rights reserved.`;
+  return defaults;
+}
+
+// ── Sortable header link row ──
+function SortableHeaderLinkRow({
+  id,
+  link,
+  onUpdate,
+  onRemove,
+}: {
+  id: string;
+  link: HelpcenterHeaderLink;
+  onUpdate: (patch: Partial<HelpcenterHeaderLink>) => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 group">
+      <button type="button" {...attributes} {...listeners} className="shrink-0 cursor-grab active:cursor-grabbing touch-none text-muted-foreground/50 hover:text-muted-foreground">
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <Input
+        value={link.label}
+        onChange={(e) => onUpdate({ label: e.target.value })}
+        placeholder="Label"
+        className="w-28 h-8 text-sm"
+      />
+      <Input
+        value={link.url}
+        onChange={(e) => onUpdate({ url: e.target.value })}
+        placeholder="https://..."
+        className="flex-1 h-8 text-sm"
+      />
+      <Select
+        value={link.style || 'text'}
+        onValueChange={(v) => onUpdate({ style: v as HelpcenterHeaderLinkStyle })}
+      >
+        <SelectTrigger className="w-[90px] h-8 text-xs shrink-0">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="text">Text</SelectItem>
+          <SelectItem value="button">Button</SelectItem>
+        </SelectContent>
+      </Select>
+      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={onRemove}>
+        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+      </Button>
+    </div>
+  );
+}
+
+export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
@@ -84,15 +192,16 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
       const res = await docsService.getHelpcenterConfig(workspaceId);
       if (res.data) {
         const d = res.data;
-        setConfig({
+        const loaded: ConfigState = {
           subdomain: d.subdomain ?? '',
           custom_domain: d.custom_domain ?? '',
           brand_name: d.brand_name ?? '',
           brand_logo_url: d.brand_logo_url ?? '',
+          brand_logo_dark_url: d.brand_logo_dark_url ?? '',
           brand_color: d.brand_color ?? '#3b82f6',
           favicon_url: d.favicon_url ?? '',
           theme_mode: d.theme_mode ?? 'system',
-          header_links: d.header_links ?? [],
+          header_links: withIds(d.header_links ?? []),
           footer_copyright_text: d.footer_config?.copyright_text ?? '',
           footer_links: d.footer_config?.links ?? [],
           homepage_hero_title: d.homepage_config?.hero_title ?? '',
@@ -103,7 +212,16 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
           seo_title: d.seo_title ?? '',
           seo_description: d.seo_description ?? '',
           support_email: d.support_email ?? '',
-        });
+        };
+        // Auto-fill brand name from workspace name if not yet set, then derive defaults
+        const effectiveBrand = loaded.brand_name || workspaceName;
+        if (!loaded.brand_name && workspaceName) loaded.brand_name = workspaceName;
+        const defaults = deriveDefaults(effectiveBrand, loaded);
+        setConfig({ ...loaded, ...defaults });
+      } else {
+        // No config exists yet — pre-fill everything from workspace name
+        const fresh = { ...DEFAULT_CONFIG, brand_name: workspaceName };
+        setConfig({ ...fresh, ...deriveDefaults(workspaceName, fresh) });
       }
       // Load external_capable spaces for featured card pickers
       const spacesRes = await docsService.listSpaces(workspaceId);
@@ -119,11 +237,11 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
           const colRes = await docsService.listCollections(workspaceId, space.id);
           if (colRes.data) {
             setSpaceCollections(colRes.data);
-            // Sync card icons from current collection data
+            // Sync card titles and icons from current collection data
             const existingCards = res.data?.homepage_config?.featured_cards ?? [];
             const synced = existingCards.map(card => {
               const col = colRes.data!.find(c => c.id === card.link_value);
-              return col ? { ...card, icon: col.icon ?? '' } : card;
+              return col ? { ...card, title: col.name, icon: col.icon ?? '' } : card;
             });
             setConfig(prev => ({ ...prev, homepage_featured_cards: synced }));
           }
@@ -144,6 +262,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
       custom_domain: config.custom_domain || undefined,
       brand_name: config.brand_name || undefined,
       brand_logo_url: config.brand_logo_url || undefined,
+      brand_logo_dark_url: config.brand_logo_dark_url || undefined,
       brand_color: config.brand_color || undefined,
       favicon_url: config.favicon_url || undefined,
       theme_mode: config.theme_mode,
@@ -184,7 +303,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
   const addHeaderLink = () => {
     setConfig({
       ...config,
-      header_links: [...config.header_links, { label: '', url: '', external: false }],
+      header_links: [...config.header_links, { _id: nextLinkId(), label: '', url: '', external: true, style: 'text' as const, position: config.header_links.length }],
     });
   };
 
@@ -195,8 +314,27 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
   };
 
   const removeHeaderLink = (index: number) => {
-    setConfig({ ...config, header_links: config.header_links.filter((_, i) => i !== index) });
+    const filtered = config.header_links.filter((_, i) => i !== index);
+    setConfig({ ...config, header_links: filtered.map((l, i) => ({ ...l, position: i })) });
   };
+
+  // ── Header link drag-and-drop ──
+  const headerLinkIds = config.header_links.map(l => l._id);
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const handleHeaderDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setConfig(prev => {
+      const ids = prev.header_links.map(l => l._id);
+      const oldIndex = ids.indexOf(active.id as string);
+      const newIndex = ids.indexOf(over.id as string);
+      const reordered = arrayMove(prev.header_links, oldIndex, newIndex);
+      return { ...prev, header_links: reordered.map((l, i) => ({ ...l, position: i })) };
+    });
+  }, []);
 
   // ── Footer link helpers ──
   const addFooterLink = () => {
@@ -272,15 +410,17 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
 
   // ── Asset upload helpers ──
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const logoDarkInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingLogoDark, setUploadingLogoDark] = useState(false);
   const [uploadingFavicon, setUploadingFavicon] = useState(false);
 
   const handleAssetUpload = async (
     e: ChangeEvent<HTMLInputElement>,
-    assetType: 'logo' | 'favicon',
+    assetType: 'logo' | 'logo_dark' | 'favicon',
     setUploading: (v: boolean) => void,
-    field: 'brand_logo_url' | 'favicon_url',
+    field: 'brand_logo_url' | 'brand_logo_dark_url' | 'favicon_url',
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -302,7 +442,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
       return;
     }
     setConfig((prev) => ({ ...prev, [field]: res.data!.url }));
-    toast.success(`${assetType === 'logo' ? 'Logo' : 'Favicon'} uploaded`);
+    toast.success(`${assetType === 'favicon' ? 'Favicon' : 'Logo'} uploaded`);
   };
 
   if (loading) {
@@ -329,23 +469,26 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
       </div>
 
       {/* ── Publish Status Bar ── */}
-      <div className="flex items-center gap-4 rounded-lg border bg-card p-4">
-        <Switch
-          checked={config.is_published}
-          onCheckedChange={(v) => setConfig({ ...config, is_published: v })}
-        />
+      <div className="flex items-center justify-between rounded-lg border bg-card p-4">
         <div>
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium">Help Center</p>
-            <Badge variant={config.is_published ? 'default' : 'secondary'} className="text-[11px] px-1.5 py-0">
-              {config.is_published ? 'Live' : 'Offline'}
-            </Badge>
-          </div>
+          <p className="text-sm font-medium">Help Center</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             {config.is_published
               ? 'Your help center is publicly accessible.'
               : 'Toggle to make your help center visible to the public.'}
           </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Badge
+            variant={config.is_published ? 'default' : 'secondary'}
+            className={`text-[11px] px-1.5 py-0 ${config.is_published ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15' : ''}`}
+          >
+            {config.is_published ? 'Live' : 'Offline'}
+          </Badge>
+          <Switch
+            checked={config.is_published}
+            onCheckedChange={(v) => setConfig({ ...config, is_published: v })}
+          />
         </div>
       </div>
 
@@ -359,11 +502,11 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
           <CardDescription>Customize your help center&apos;s visual identity.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Upload zones side by side */}
-          <div className="grid gap-6 sm:grid-cols-2">
-            {/* Logo upload zone */}
+          {/* Upload zones */}
+          <div className="grid gap-6 sm:grid-cols-3">
+            {/* Logo (light) upload zone */}
             <div className="space-y-2">
-              <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Logo</Label>
+              <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Logo (Light)</Label>
               {config.brand_logo_url ? (
                 <div className="group relative flex h-28 items-center justify-center rounded-lg border-2 border-dashed bg-muted/30 transition-colors hover:bg-muted/50">
                   <img src={config.brand_logo_url} alt="Logo" className="max-h-16 max-w-[160px] object-contain" />
@@ -388,6 +531,34 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
                 </button>
               )}
               <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => handleAssetUpload(e, 'logo', setUploadingLogo, 'brand_logo_url')} />
+            </div>
+            {/* Logo (dark) upload zone */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Logo (Dark)</Label>
+              {config.brand_logo_dark_url ? (
+                <div className="group relative flex h-28 items-center justify-center rounded-lg border-2 border-dashed bg-zinc-900 transition-colors hover:bg-zinc-800">
+                  <img src={config.brand_logo_dark_url} alt="Logo (dark)" className="max-h-16 max-w-[160px] object-contain" />
+                  <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-zinc-900/80 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button type="button" variant="outline" size="sm" disabled={uploadingLogoDark} onClick={() => logoDarkInputRef.current?.click()}>
+                      {uploadingLogoDark ? 'Uploading...' : 'Replace'}
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setConfig({ ...config, brand_logo_dark_url: '' })}>
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={uploadingLogoDark}
+                  onClick={() => logoDarkInputRef.current?.click()}
+                  className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-zinc-900 text-zinc-400 transition-colors hover:border-primary/30 hover:bg-zinc-800 hover:text-zinc-200"
+                >
+                  <ImageIcon className="h-6 w-6" />
+                  <span className="text-xs">{uploadingLogoDark ? 'Uploading...' : '200 × 50 px · SVG or PNG'}</span>
+                </button>
+              )}
+              <input ref={logoDarkInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => handleAssetUpload(e, 'logo_dark', setUploadingLogoDark, 'brand_logo_dark_url')} />
             </div>
             {/* Favicon upload zone */}
             <div className="space-y-2">
@@ -648,17 +819,12 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
                         onCheckedChange={() => toggleCollection(col.id)}
                       />
                       {checked ? (
-                        <div className="flex-1 grid gap-2 grid-cols-[40px_minmax(0,160px)_1fr]">
+                        <div className="flex-1 grid gap-2 grid-cols-[40px_140px_1fr] items-center">
                           <IconPicker
                             value={card.icon}
                             onChange={(v) => updateCardByCollectionId(col.id, { icon: v })}
                           />
-                          <Input
-                            value={card.title}
-                            onChange={(e) => updateCardByCollectionId(col.id, { title: e.target.value })}
-                            placeholder="Card title"
-                            className="h-8 text-sm"
-                          />
+                          <span className="text-sm font-medium truncate">{col.name}</span>
                           <Input
                             value={card.description}
                             onChange={(e) => updateCardByCollectionId(col.id, { description: e.target.value })}
@@ -692,44 +858,21 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
             {config.header_links.length === 0 && (
               <p className="text-xs text-muted-foreground py-3 text-center">No header links yet. Add one below.</p>
             )}
-            {config.header_links.map((link, i) => (
-              <div key={i} className="flex items-center gap-2 group">
-                <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-                <Input
-                  value={link.label}
-                  onChange={(e) => updateHeaderLink(i, { label: e.target.value })}
-                  placeholder="Label"
-                  className="w-28 h-8 text-sm"
-                />
-                <Input
-                  value={link.url}
-                  onChange={(e) => updateHeaderLink(i, { url: e.target.value })}
-                  placeholder="https://..."
-                  className="flex-1 h-8 text-sm"
-                />
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className={`h-8 w-8 shrink-0 ${link.external ? 'text-primary' : 'text-muted-foreground/50'}`}
-                        onClick={() => updateHeaderLink(i, { external: !link.external })}
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      {link.external ? 'Opens in new tab' : 'Opens in same tab'}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => removeHeaderLink(i)}>
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
-              </div>
-            ))}
+            {config.header_links.length > 0 && (
+              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleHeaderDragEnd}>
+                <SortableContext items={headerLinkIds} strategy={verticalListSortingStrategy}>
+                  {config.header_links.map((link, i) => (
+                    <SortableHeaderLinkRow
+                      key={headerLinkIds[i]}
+                      id={headerLinkIds[i]}
+                      link={link}
+                      onUpdate={(patch) => updateHeaderLink(i, patch)}
+                      onRemove={() => removeHeaderLink(i)}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            )}
             <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addHeaderLink}>
               <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
             </Button>

@@ -10,12 +10,14 @@ import (
 
 // DocsLinkService handles business logic for document links.
 type DocsLinkService struct {
-	linkRepo *repository.DocsLinkRepository
+	linkRepo  *repository.DocsLinkRepository
+	storyRepo *repository.PMStoryRepository
+	docRepo   *repository.DocsDocumentRepository
 }
 
 // NewDocsLinkService creates a new DocsLinkService.
-func NewDocsLinkService(linkRepo *repository.DocsLinkRepository) *DocsLinkService {
-	return &DocsLinkService{linkRepo: linkRepo}
+func NewDocsLinkService(linkRepo *repository.DocsLinkRepository, storyRepo *repository.PMStoryRepository, docRepo *repository.DocsDocumentRepository) *DocsLinkService {
+	return &DocsLinkService{linkRepo: linkRepo, storyRepo: storyRepo, docRepo: docRepo}
 }
 
 // Create creates a new link between a document and a PM/Support object.
@@ -38,14 +40,92 @@ func (s *DocsLinkService) Create(ctx context.Context, workspaceID, documentID st
 	return s.linkRepo.Create(ctx, link)
 }
 
-// ListByDocument returns all links for a document.
+// ListByDocument returns all links for a document, enriched with object names.
 func (s *DocsLinkService) ListByDocument(ctx context.Context, documentID string) ([]model.DocsLink, error) {
-	return s.linkRepo.ListByDocument(ctx, documentID)
+	links, err := s.linkRepo.ListByDocument(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	s.enrichLinks(ctx, links)
+	return links, nil
 }
 
-// ListByObject returns all document links for a PM/Support object (reverse lookup).
+// ListByObject returns all document links for a PM/Support object (reverse lookup), enriched with document titles.
 func (s *DocsLinkService) ListByObject(ctx context.Context, workspaceID, objectType, objectID string) ([]model.DocsLink, error) {
-	return s.linkRepo.ListByObject(ctx, workspaceID, objectType, objectID)
+	links, err := s.linkRepo.ListByObject(ctx, workspaceID, objectType, objectID)
+	if err != nil {
+		return nil, err
+	}
+	s.enrichDocumentTitles(ctx, links)
+	return links, nil
+}
+
+// enrichLinks populates transient LinkedObjectName and LinkedObjectDisplayID fields.
+func (s *DocsLinkService) enrichLinks(ctx context.Context, links []model.DocsLink) {
+	if len(links) == 0 || s.storyRepo == nil {
+		return
+	}
+
+	// Collect story IDs.
+	var storyIDs []string
+	for _, l := range links {
+		if l.LinkedObjectType == "story" {
+			storyIDs = append(storyIDs, l.LinkedObjectID)
+		}
+	}
+	if len(storyIDs) == 0 {
+		return
+	}
+
+	// Batch-fetch stories. Use the workspace from the first link.
+	wsID := links[0].WorkspaceID
+	stories, err := s.storyRepo.ListByIDs(ctx, wsID, storyIDs)
+	if err != nil {
+		return // best-effort enrichment
+	}
+
+	storyMap := make(map[string]*model.PMStory, len(stories))
+	for i := range stories {
+		storyMap[stories[i].ID] = &stories[i]
+	}
+
+	for i := range links {
+		if links[i].LinkedObjectType == "story" {
+			if st, ok := storyMap[links[i].LinkedObjectID]; ok {
+				links[i].LinkedObjectName = st.Name
+				links[i].LinkedObjectDisplayID = st.DisplayID
+			}
+		}
+	}
+}
+
+// enrichDocumentTitles populates the transient DocumentTitle field from the docs table.
+func (s *DocsLinkService) enrichDocumentTitles(ctx context.Context, links []model.DocsLink) {
+	if len(links) == 0 || s.docRepo == nil {
+		return
+	}
+
+	var docIDs []string
+	for _, l := range links {
+		docIDs = append(docIDs, l.DocumentID)
+	}
+
+	wsID := links[0].WorkspaceID
+	docs, err := s.docRepo.ListByIDs(ctx, wsID, docIDs)
+	if err != nil {
+		return // best-effort
+	}
+
+	docMap := make(map[string]string, len(docs))
+	for _, d := range docs {
+		docMap[d.ID] = d.Title
+	}
+
+	for i := range links {
+		if title, ok := docMap[links[i].DocumentID]; ok {
+			links[i].DocumentTitle = title
+		}
+	}
 }
 
 // Delete removes a link.

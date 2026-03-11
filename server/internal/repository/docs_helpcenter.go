@@ -77,6 +77,9 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	if v, ok := updates["brand_logo_url"].(*string); ok {
 		cfg.BrandLogoURL = v
 	}
+	if v, ok := updates["brand_logo_dark_url"].(*string); ok {
+		cfg.BrandLogoDarkURL = v
+	}
 	if v, ok := updates["is_published"].(bool); ok {
 		cfg.IsPublished = v
 	}

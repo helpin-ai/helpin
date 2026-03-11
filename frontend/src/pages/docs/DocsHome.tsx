@@ -3,23 +3,14 @@ import { useNavigate } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
 import {
   BookOpen,
-  Briefcase,
   Check,
   ChevronRight,
-  ClipboardList,
-  Code,
-  Cog,
   FileText,
   Folder,
   Globe,
-  Headphones,
-  LifeBuoy,
   Loader2,
-  Lock,
-  Megaphone,
   Plus,
   Users,
-  type LucideIcon,
 } from 'lucide-react'
 import { ICON_MAP } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
@@ -35,45 +26,43 @@ import {
   usePermissions,
 } from '@/hooks/queries'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog'
 import type { DocsSpace, DocsDocument, SpaceType } from '@/lib/docsTypes'
-import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
+import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 
 // ── Space templates for quick setup ─────────────────────────────────────────
 
 interface SpaceTemplate {
   name: string
   slug: string
-  icon: LucideIcon
+  icon: string
   description: string
   type: SpaceType
-  restrictToOwners: boolean
 }
 
 const SPACE_TEMPLATES: SpaceTemplate[] = [
-  { name: 'Company Wiki', slug: 'company-wiki', icon: BookOpen, description: 'General knowledge base for the whole team', type: 'internal', restrictToOwners: false },
-  { name: 'Engineering', slug: 'engineering', icon: Cog, description: 'Technical docs, architecture, and runbooks', type: 'internal', restrictToOwners: false },
-  { name: 'Support Knowledge', slug: 'support-knowledge', icon: Headphones, description: 'Internal support guides and troubleshooting', type: 'internal', restrictToOwners: false },
-  { name: 'Marketing', slug: 'marketing', icon: Megaphone, description: 'Brand guidelines, campaigns, and content', type: 'internal', restrictToOwners: false },
-  { name: 'Sales', slug: 'sales', icon: Briefcase, description: 'Sales playbooks, proposals, and enablement', type: 'internal', restrictToOwners: false },
-  { name: 'HR & People', slug: 'hr-people', icon: Users, description: 'Policies, onboarding, and people ops', type: 'internal', restrictToOwners: true },
-  { name: 'Operations', slug: 'operations', icon: ClipboardList, description: 'Processes, SOPs, and operational docs', type: 'internal', restrictToOwners: false },
-  { name: 'Help Center', slug: 'help-center', icon: LifeBuoy, description: 'Public-facing help articles for customers', type: 'external_capable', restrictToOwners: false },
-  { name: 'Developer / API Docs', slug: 'developer-api-docs', icon: Code, description: 'API references and developer guides', type: 'external_capable', restrictToOwners: false },
+  { name: 'Company Wiki', slug: 'company-wiki', icon: '📖', description: 'General knowledge base for the whole team', type: 'internal' },
+  { name: 'Engineering', slug: 'engineering', icon: '⚙️', description: 'Technical docs, architecture, and runbooks', type: 'internal' },
+  { name: 'Support Knowledge', slug: 'support-knowledge', icon: '🎧', description: 'Internal support guides and troubleshooting', type: 'internal' },
+  { name: 'Marketing', slug: 'marketing', icon: '📣', description: 'Brand guidelines, campaigns, and content', type: 'internal' },
+  { name: 'Sales', slug: 'sales', icon: '💼', description: 'Sales playbooks, proposals, and enablement', type: 'internal' },
+  { name: 'HR & People', slug: 'hr-people', icon: '👥', description: 'Policies, onboarding, and people ops', type: 'internal' },
+  { name: 'Operations', slug: 'operations', icon: '📋', description: 'Processes, SOPs, and operational docs', type: 'internal' },
+  { name: 'Help Center', slug: 'help-center', icon: '💡', description: 'Public-facing help articles for customers', type: 'external_capable' },
+  { name: 'Developer / API Docs', slug: 'developer-api-docs', icon: '🔧', description: 'API references and developer guides', type: 'external_capable' },
 ]
 
-// ── Status badge variant ────────────────────────────────────────────────────
+// ── Status color ─────────────────────────────────────────────────────────────
 
-function statusVariant(status: string): 'default' | 'secondary' | 'outline' {
+function statusColor(status: string): string {
   switch (status) {
     case 'published':
-      return 'default'
+      return 'text-emerald-600 dark:text-emerald-400'
     case 'archived':
-      return 'outline'
+      return 'text-muted-foreground/60'
     default:
-      return 'secondary'
+      return 'text-amber-600 dark:text-amber-400'
   }
 }
 
@@ -101,12 +90,9 @@ function DocRow({
     >
       <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate font-medium">{doc.title}</span>
-      <span className="shrink-0 text-[11px] text-muted-foreground">
-        {DOC_TYPE_LABELS[doc.doc_type] ?? doc.doc_type}
-      </span>
-      <Badge variant={statusVariant(doc.status)} className="shrink-0 text-[10px] px-1.5 py-0">
+      <span className={`shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
         {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-      </Badge>
+      </span>
       <span className="shrink-0 text-[11px] text-muted-foreground">
         {timeAgo(doc.updated_at)}
       </span>
@@ -200,7 +186,6 @@ function SpaceSection({
       }
     }
   }
-
   const docCount = documents?.length ?? 0
 
   return (
@@ -225,11 +210,6 @@ function SpaceSection({
                 {space.type === 'external_capable' && (
                   <QuickTooltip label="External">
                     <Globe className="h-3 w-3 shrink-0 text-blue-500" />
-                  </QuickTooltip>
-                )}
-                {space.restrict_to_owners && (
-                  <QuickTooltip label="Restricted">
-                    <Lock className="h-3 w-3 shrink-0 text-amber-500" />
                   </QuickTooltip>
                 )}
               </div>
@@ -272,8 +252,8 @@ function SpaceSection({
             />
           ))}
 
-          {/* Uncollected documents */}
-          {uncollected.length > 0 && (collections ?? []).length > 0 && (
+          {/* Uncategorized documents (no collection) */}
+          {uncollected.length > 0 && (
             <CollectionSection
               name="Uncategorized"
               documents={uncollected}
@@ -281,12 +261,6 @@ function SpaceSection({
               navigate={navigate}
             />
           )}
-
-          {/* If no collections, show docs directly */}
-          {(collections ?? []).length === 0 &&
-            uncollected.map((doc) => (
-              <DocRow key={doc.id} doc={doc} wsSlug={wsSlug} navigate={navigate} />
-            ))}
 
           {expanded && docCount === 0 && (
             <p className="px-3 py-2 text-xs text-muted-foreground">No documents in this space yet.</p>
@@ -342,7 +316,6 @@ export function DocsHome() {
           slug: t.slug,
           visibility: 'workspace_wide',
           type: t.type,
-          restrict_to_owners: t.restrictToOwners,
         })
         created++
       } catch {
@@ -427,8 +400,8 @@ export function DocsHome() {
                           : 'border-border/60 bg-card hover:border-border hover:bg-muted/30'
                       }`}
                     >
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/80 shrink-0">
-                        <t.icon className="h-4.5 w-4.5 text-muted-foreground" />
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/80 shrink-0 text-lg">
+                        {t.icon}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">

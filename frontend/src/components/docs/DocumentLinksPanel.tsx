@@ -1,11 +1,14 @@
-import { format, parseISO } from 'date-fns'
-import { ExternalLink, Link2, Plus, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { FileText, Link2, Plus, Search, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   useDocsLinks,
   useCreateDocsLink,
   useDeleteDocsLink,
+  useSearch,
 } from '@/hooks/queries'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -13,33 +16,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { useState } from 'react'
-import type { LinkedObjectType, LinkContext } from '@/lib/docsTypes'
-
-const OBJECT_TYPE_LABELS: Record<LinkedObjectType, string> = {
-  epic: 'Epic',
-  story: 'Story',
-  project: 'Project',
-  objective: 'Objective',
-  sprint: 'Sprint',
-  support_ticket: 'Support Ticket',
-}
-
-const LINK_CONTEXT_LABELS: Record<LinkContext, string> = {
-  attached: 'Attached',
-  mentioned: 'Mentioned',
-  created_from: 'Created from',
-  linked_in_content: 'Linked in content',
-}
+import type { DocsLink } from '@/lib/docsTypes'
+import type { SearchResult } from '@/lib/services/searchService'
 
 interface DocumentLinksPanelProps {
   wsId: string
@@ -56,40 +35,78 @@ export function DocumentLinksPanel({
   onOpenChange,
   canEdit,
 }: DocumentLinksPanelProps) {
+  const navigate = useNavigate()
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace)
+  const wsSlug = workspace?.slug ?? ''
+
   const { data: links, isLoading } = useDocsLinks(wsId, docId)
   const createLink = useCreateDocsLink(wsId)
   const deleteLink = useDeleteDocsLink(wsId)
 
-  const [showAdd, setShowAdd] = useState(false)
-  const [objectType, setObjectType] = useState<LinkedObjectType>('story')
-  const [objectId, setObjectId] = useState('')
-  const [linkContext, setLinkContext] = useState<LinkContext>('attached')
+  const [showSearch, setShowSearch] = useState(false)
+  const [query, setQuery] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const handleAdd = async () => {
-    if (!objectId.trim()) return
-    try {
-      await createLink.mutateAsync({
-        docId,
-        linked_object_type: objectType,
-        linked_object_id: objectId.trim(),
-        link_context: linkContext,
+  const { data: searchResults } = useSearch(wsId, query)
+
+  // Focus input when search opens
+  useEffect(() => {
+    if (showSearch) {
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
+  }, [showSearch])
+
+  // Already linked story IDs to filter from search results
+  const linkedStoryIds = new Set(
+    (links ?? []).filter((l) => l.linked_object_type === 'story').map((l) => l.linked_object_id),
+  )
+
+  const filteredStories = (searchResults?.stories ?? []).filter(
+    (s) => !linkedStoryIds.has(s.id),
+  )
+
+  const handleLinkStory = useCallback(
+    async (story: SearchResult) => {
+      try {
+        await createLink.mutateAsync({
+          docId,
+          linked_object_type: 'story',
+          linked_object_id: story.id,
+          link_context: 'attached',
+        })
+        toast.success(`Linked story #${story.display_id}`)
+        setQuery('')
+        setShowSearch(false)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to link story')
+      }
+    },
+    [createLink, docId],
+  )
+
+  const handleUnlink = useCallback(
+    async (link: DocsLink) => {
+      try {
+        await deleteLink.mutateAsync({ linkId: link.id, docId })
+        toast.success('Story unlinked')
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to unlink')
+      }
+    },
+    [deleteLink, docId],
+  )
+
+  const navigateToStory = useCallback(
+    (displayId?: number) => {
+      if (!displayId) return
+      navigate({
+        to: '/w/$slug/pm/stories',
+        params: { slug: wsSlug },
+        search: { story: String(displayId) },
       })
-      toast.success('Link added')
-      setObjectId('')
-      setShowAdd(false)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add link')
-    }
-  }
-
-  const handleDelete = async (linkId: string) => {
-    try {
-      await deleteLink.mutateAsync({ linkId, docId })
-      toast.success('Link removed')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove link')
-    }
-  }
+    },
+    [navigate, wsSlug],
+  )
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -97,112 +114,117 @@ export function DocumentLinksPanel({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Link2 className="h-4 w-4" />
-            Linked Items
+            Linked Stories
           </SheetTitle>
         </SheetHeader>
 
         <div className="mt-4 space-y-3">
-          {canEdit && !showAdd && (
+          {/* Add button / Search input */}
+          {canEdit && !showSearch && (
             <Button
               variant="outline"
               size="sm"
               className="w-full gap-1.5"
-              onClick={() => setShowAdd(true)}
+              onClick={() => setShowSearch(true)}
             >
               <Plus className="h-3.5 w-3.5" />
-              Add Link
+              Link a Story
             </Button>
           )}
 
-          {showAdd && (
-            <div className="space-y-3 rounded-md border border-border/60 p-3">
-              <div className="grid gap-2">
-                <Label className="text-xs">Object Type</Label>
-                <Select value={objectType} onValueChange={(v) => setObjectType(v as LinkedObjectType)}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(Object.entries(OBJECT_TYPE_LABELS) as [LinkedObjectType, string][]).map(
-                      ([val, label]) => (
-                        <SelectItem key={val} value={val}>
-                          {label}
-                        </SelectItem>
-                      ),
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label className="text-xs">Object ID</Label>
+          {showSearch && (
+            <div className="space-y-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  className="h-8 text-xs"
-                  placeholder="Paste ID here"
-                  value={objectId}
-                  onChange={(e) => setObjectId(e.target.value)}
+                  ref={inputRef}
+                  className="h-8 pl-8 pr-8 text-xs"
+                  placeholder="Search stories by name..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
                 />
+                <button
+                  type="button"
+                  onClick={() => { setShowSearch(false); setQuery('') }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <div className="grid gap-2">
-                <Label className="text-xs">Context</Label>
-                <Select value={linkContext} onValueChange={(v) => setLinkContext(v as LinkContext)}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(Object.entries(LINK_CONTEXT_LABELS) as [LinkContext, string][]).map(
-                      ([val, label]) => (
-                        <SelectItem key={val} value={val}>
-                          {label}
-                        </SelectItem>
-                      ),
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleAdd} disabled={createLink.isPending}>
-                  Add
-                </Button>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowAdd(false)}>
-                  Cancel
-                </Button>
-              </div>
+
+              {/* Search results */}
+              {query.length >= 2 && (
+                <div className="max-h-48 overflow-y-auto rounded-md border border-border/60">
+                  {filteredStories.length === 0 ? (
+                    <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                      No matching stories found
+                    </p>
+                  ) : (
+                    filteredStories.map((story) => (
+                      <button
+                        key={story.id}
+                        type="button"
+                        onClick={() => handleLinkStory(story)}
+                        disabled={createLink.isPending}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/40 disabled:opacity-50"
+                      >
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="shrink-0 font-medium text-muted-foreground">
+                          #{story.display_id}
+                        </span>
+                        <span className="min-w-0 truncate">{story.name}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           )}
 
+          {/* Linked stories list */}
           {isLoading ? (
             <div className="space-y-2 py-4">
               {[1, 2].map((i) => (
-                <div key={i} className="h-12 animate-pulse rounded-md bg-muted/60" />
+                <div key={i} className="h-10 animate-pulse rounded-md bg-muted/60" />
               ))}
             </div>
           ) : !links || links.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              No linked items. Link documents to epics, stories, and more.
+              No linked stories yet.
             </p>
           ) : (
             <div className="space-y-1">
               {links.map((link) => (
                 <div
                   key={link.id}
-                  className="group flex items-center gap-2.5 rounded-md border border-border/40 px-3 py-2 transition-colors hover:bg-muted/30"
+                  className="group flex items-center gap-2 rounded-md border border-border/40 px-3 py-2 transition-colors hover:bg-muted/30"
                 >
-                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium">
-                      {OBJECT_TYPE_LABELS[link.linked_object_type] ?? link.linked_object_type}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {LINK_CONTEXT_LABELS[link.link_context] ?? link.link_context} ·{' '}
-                      {format(parseISO(link.created_at), 'MMM d')}
-                    </p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigateToStory(link.linked_object_display_id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    disabled={!link.linked_object_display_id}
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    {link.linked_object_display_id ? (
+                      <>
+                        <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                          #{link.linked_object_display_id}
+                        </span>
+                        <span className="min-w-0 truncate text-xs">
+                          {link.linked_object_name || 'Untitled'}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Story (deleted)</span>
+                    )}
+                  </button>
                   {canEdit && (
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                      onClick={() => handleDelete(link.id)}
+                      onClick={() => handleUnlink(link)}
                       disabled={deleteLink.isPending}
                     >
                       <Trash2 className="h-3 w-3" />

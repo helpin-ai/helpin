@@ -26,6 +26,7 @@ import {
   LogOut,
   Mail,
   MessageSquare,
+  Inbox,
   LayoutList,
   Moon,
   Play,
@@ -45,7 +46,7 @@ import {
 import { useTheme } from 'next-themes';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections, useDocsDocuments } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
@@ -158,6 +159,9 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
   openCreate: (modal: 'docs_collection', options?: { spaceId?: string }) => void;
 }) {
   const { data: collections } = useDocsCollections(wsId, spaceId);
+  const { data: documents } = useDocsDocuments(wsId, { space_id: spaceId });
+  const uncollectedCount = (documents ?? []).filter((d) => !d.collection_id).length;
+  const uncollectedLink = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=__uncollected__`;
 
   return (
     <SidebarMenuSub>
@@ -195,6 +199,37 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
           </SidebarMenuSubItem>
         );
       })}
+      {uncollectedCount > 0 && (
+        <SidebarMenuSubItem>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <SidebarMenuSubButton
+                asChild
+                size="sm"
+                isActive={isActive(uncollectedLink)}
+              >
+                <a
+                  href={uncollectedLink}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigate({
+                      to: '/w/$slug/docs/spaces/$spaceId' as string,
+                      params: { slug: wsSlug, spaceId },
+                      search: { collection: '__uncollected__' } as Record<string, string>,
+                    });
+                  }}
+                >
+                  <Inbox className="h-3.5 w-3.5" />
+                  <span className="truncate">Uncategorized</span>
+                </a>
+              </SidebarMenuSubButton>
+            </TooltipTrigger>
+            <TooltipContent side="right" align="center">
+              Uncategorized ({uncollectedCount})
+            </TooltipContent>
+          </Tooltip>
+        </SidebarMenuSubItem>
+      )}
       <SidebarMenuSubItem>
         <SidebarMenuSubButton
           size="sm"

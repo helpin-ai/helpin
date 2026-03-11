@@ -18,8 +18,8 @@ func NewDocsSearchService(searchRepo *repository.DocsSearchRepository) *DocsSear
 
 // Search performs a workspace-scoped full-text search.
 // spaceIDs provides permission-aware filtering — only spaces the user can access.
-func (s *DocsSearchService) Search(ctx context.Context, workspaceID, query string, spaceIDs []string, docType, status *string, limit int) ([]repository.DocsSearchResult, error) {
-	return s.searchRepo.Search(ctx, workspaceID, query, spaceIDs, docType, status, limit)
+func (s *DocsSearchService) Search(ctx context.Context, workspaceID, query string, spaceIDs []string, status *string, limit int) ([]repository.DocsSearchResult, error) {
+	return s.searchRepo.Search(ctx, workspaceID, query, spaceIDs, status, limit)
 }
 
 // PublicSearch searches published help center articles, optionally filtered by space.

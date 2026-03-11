@@ -295,14 +295,12 @@ func (s *AssociationsService) populateDocsAssociations(ctx context.Context, work
 			continue
 		}
 		status := doc.Status
-		docType := doc.DocType
 		response.Docs = append(response.Docs, model.AssociationObjectSummary{
 			AssociationID: link.ID,
 			ObjectType:    "document",
 			ObjectID:      doc.ID,
 			Title:         doc.Title,
 			Status:        &status,
-			DisplayID:     &docType,
 		})
 	}
 	sortAssociationObjects(response.Docs)

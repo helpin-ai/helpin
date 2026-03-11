@@ -2,7 +2,6 @@
 
 // ─── Doc type and status constants ──────────────────────────────────────────
 
-export type DocType = 'wiki' | 'sop' | 'feature_doc' | 'product_spec' | 'support_article' | 'help_center_article';
 export type DocStatus = 'draft' | 'published' | 'archived';
 export type SpaceType = 'internal' | 'external_capable';
 export type SpaceVisibility = 'workspace_wide' | 'team_only';
@@ -22,7 +21,6 @@ export interface DocsSpace {
   icon?: string;
   visibility: SpaceVisibility;
   type: SpaceType;
-  restrict_to_owners: boolean;
   default_review_days?: number;
   is_system: boolean;
   position: number;
@@ -52,7 +50,6 @@ export interface DocsDocument {
   space_id: string;
   collection_id?: string;
   title: string;
-  doc_type: DocType;
   status: DocStatus;
   visibility: SpaceVisibility;
   owner_id?: string;
@@ -107,14 +104,22 @@ export interface DocsLink {
   link_context: LinkContext;
   created_by: string;
   created_at: string;
+  // Enriched by backend
+  linked_object_name?: string;
+  linked_object_display_id?: number;
+  document_title?: string;
 }
 
 export type HelpcenterThemeMode = 'light' | 'dark' | 'system';
+
+export type HelpcenterHeaderLinkStyle = 'text' | 'button';
 
 export interface HelpcenterHeaderLink {
   label: string;
   url: string;
   external: boolean;
+  style: HelpcenterHeaderLinkStyle;
+  position: number;
 }
 
 export interface HelpcenterFooterLink {
@@ -156,6 +161,7 @@ export interface DocsHelpcenterConfig {
   custom_domain?: string;
   brand_name: string;
   brand_logo_url?: string;
+  brand_logo_dark_url?: string;
   brand_color: string;
   favicon_url?: string;
   theme_mode: HelpcenterThemeMode;
@@ -209,7 +215,6 @@ export interface CreateDocsSpaceRequest {
   icon?: string;
   visibility: SpaceVisibility;
   type: SpaceType;
-  restrict_to_owners: boolean;
   default_review_days?: number;
 }
 
@@ -219,7 +224,6 @@ export interface UpdateDocsSpaceRequest {
   icon?: string;
   type?: SpaceType;
   visibility?: SpaceVisibility;
-  restrict_to_owners?: boolean;
   default_review_days?: number;
   team_ids?: string[];
   set_team_ids?: boolean;
@@ -242,7 +246,6 @@ export interface CreateDocsDocumentRequest {
   space_id: string;
   collection_id?: string;
   title: string;
-  doc_type: DocType;
   owner_id?: string;
   template_key?: string;
   icon?: string;
@@ -288,6 +291,7 @@ export interface UpdateDocsHelpcenterConfigRequest {
   custom_domain?: string;
   brand_name?: string;
   brand_logo_url?: string;
+  brand_logo_dark_url?: string;
   brand_color?: string;
   favicon_url?: string;
   theme_mode?: HelpcenterThemeMode;
@@ -318,15 +322,6 @@ export interface PublicDocResponse {
 }
 
 // ─── Display helpers ────────────────────────────────────────────────────────
-
-export const DOC_TYPE_LABELS: Record<DocType, string> = {
-  wiki: 'Wiki',
-  sop: 'SOP',
-  feature_doc: 'Feature Doc',
-  product_spec: 'Product Spec',
-  support_article: 'Support Article',
-  help_center_article: 'Help Center Article',
-};
 
 export const DOC_STATUS_LABELS: Record<DocStatus, string> = {
   draft: 'Draft',

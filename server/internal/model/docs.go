@@ -8,62 +8,7 @@ import (
 	"time"
 )
 
-// ─── Doc type and status constants ──────────────────────────────────────────
-
-// Canonical doc types.
-const (
-	DocTypeWiki              = "wiki"
-	DocTypeSOP               = "sop"
-	DocTypeFeatureDoc        = "feature_doc"
-	DocTypeProductSpec       = "product_spec"
-	DocTypeSupportArticle    = "support_article"
-	DocTypeHelpCenterArticle = "help_center_article"
-)
-
-// AllDocTypes returns every valid doc_type value.
-func AllDocTypes() []string {
-	return []string{DocTypeWiki, DocTypeSOP, DocTypeFeatureDoc, DocTypeProductSpec, DocTypeSupportArticle, DocTypeHelpCenterArticle}
-}
-
-// IsValidDocType checks whether a doc_type string is canonical.
-func IsValidDocType(t string) bool {
-	for _, v := range AllDocTypes() {
-		if v == t {
-			return true
-		}
-	}
-	return false
-}
-
-// IsExternalCapableDocType returns true if the doc type can be published externally.
-func IsExternalCapableDocType(t string) bool {
-	return t == DocTypeHelpCenterArticle
-}
-
-// OwnerRequired returns true if the doc type requires an owner.
-func OwnerRequired(docType string) bool {
-	switch docType {
-	case DocTypeSOP, DocTypeFeatureDoc, DocTypeProductSpec, DocTypeSupportArticle, DocTypeHelpCenterArticle:
-		return true
-	default:
-		return false
-	}
-}
-
-// AllowedTemplateKeys returns the canonical template_key values.
-func AllowedTemplateKeys() []string {
-	return AllDocTypes()
-}
-
-// IsValidTemplateKey checks whether a template_key is canonical.
-func IsValidTemplateKey(k string) bool {
-	for _, v := range AllowedTemplateKeys() {
-		if v == k {
-			return true
-		}
-	}
-	return false
-}
+// ─── Doc status constants ───────────────────────────────────────────────────
 
 // Document status values.
 const (
@@ -169,7 +114,6 @@ type DocsSpace struct {
 	Icon              *string    `json:"icon"`
 	Visibility        string     `json:"visibility" gorm:"not null;default:'workspace_wide'"`
 	Type              string     `json:"type" gorm:"not null;default:'internal'"`
-	RestrictToOwners  bool       `json:"restrict_to_owners" gorm:"not null;default:false"`
 	DefaultReviewDays *int       `json:"default_review_days"`
 	IsSystem          bool       `json:"is_system" gorm:"not null;default:false"`
 	Position          int        `json:"position" gorm:"not null;default:0;index:idx_docs_space_ws_pos,priority:2"`
@@ -216,12 +160,11 @@ func (DocsCollection) TableName() string { return "docs_collections" }
 // DocsDocument is the core document metadata.
 type DocsDocument struct {
 	ID               string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_doc_ws_space_status,priority:1;index:idx_docs_doc_ws_type_status,priority:1;index:idx_docs_doc_ws_team_updated,priority:1"`
+	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_doc_ws_space_status,priority:1;index:idx_docs_doc_ws_team_updated,priority:1"`
 	SpaceID          string          `json:"space_id" gorm:"type:uuid;not null;index:idx_docs_doc_ws_space_status,priority:2"`
 	CollectionID     *string         `json:"collection_id" gorm:"type:uuid"`
 	Title            string          `json:"title" gorm:"not null"`
-	DocType          string          `json:"doc_type" gorm:"not null;index:idx_docs_doc_ws_type_status,priority:2"`
-	Status           string          `json:"status" gorm:"not null;default:'draft';index:idx_docs_doc_ws_space_status,priority:3;index:idx_docs_doc_ws_type_status,priority:3"`
+	Status           string          `json:"status" gorm:"not null;default:'draft';index:idx_docs_doc_ws_space_status,priority:3"`
 	Visibility       string          `json:"visibility" gorm:"not null;default:'workspace_wide'"`
 	OwnerID          *string         `json:"owner_id" gorm:"type:uuid;index:idx_docs_doc_owner_review,priority:1"`
 	TeamID           *string         `json:"team_id" gorm:"type:uuid;index:idx_docs_doc_ws_team_updated,priority:2"`
@@ -286,6 +229,11 @@ type DocsLink struct {
 	LinkContext      string    `json:"link_context" gorm:"not null;default:'attached'"`
 	CreatedBy        string    `json:"created_by" gorm:"type:uuid;not null"`
 	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
+
+	// Transient fields — enriched by the service layer, not stored in DB.
+	LinkedObjectName      string `json:"linked_object_name,omitempty" gorm:"-"`
+	LinkedObjectDisplayID int    `json:"linked_object_display_id,omitempty" gorm:"-"`
+	DocumentTitle         string `json:"document_title,omitempty" gorm:"-"`
 }
 
 func (DocsLink) TableName() string { return "docs_links" }
@@ -295,6 +243,8 @@ type HelpcenterHeaderLink struct {
 	Label    string `json:"label"`
 	URL      string `json:"url"`
 	External bool   `json:"external"`
+	Style    string `json:"style"`    // "text" (default) or "button"
+	Position int    `json:"position"` // display order (0-based)
 }
 
 // HelpcenterFooterLink is a single footer link.
@@ -340,6 +290,7 @@ type DocsHelpcenterConfig struct {
 	CustomDomain     *string          `json:"custom_domain"`
 	BrandName        string           `json:"brand_name" gorm:"not null"`
 	BrandLogoURL     *string          `json:"brand_logo_url"`
+	BrandLogoDarkURL *string          `json:"brand_logo_dark_url"`
 	BrandColor       string           `json:"brand_color" gorm:"not null;default:'#000000'"`
 	FaviconURL       *string          `json:"favicon_url"`
 	ThemeMode        string           `json:"theme_mode" gorm:"not null;default:'system'"`
@@ -438,7 +389,6 @@ type CreateDocsSpaceRequest struct {
 	Icon              *string  `json:"icon"`
 	Visibility        string   `json:"visibility"`
 	Type              string   `json:"type"`
-	RestrictToOwners  bool     `json:"restrict_to_owners"`
 	DefaultReviewDays *int     `json:"default_review_days"`
 }
 
@@ -449,7 +399,6 @@ type UpdateDocsSpaceRequest struct {
 	Icon              *string  `json:"icon"`
 	Type              *string  `json:"type"`
 	Visibility        *string  `json:"visibility"`
-	RestrictToOwners  *bool    `json:"restrict_to_owners"`
 	DefaultReviewDays *int     `json:"default_review_days"`
 	TeamIDs           []string `json:"team_ids"`
 	SetTeamIDs        bool     `json:"set_team_ids"`
@@ -475,7 +424,6 @@ type CreateDocsDocumentRequest struct {
 	SpaceID      string   `json:"space_id"`
 	CollectionID *string  `json:"collection_id"`
 	Title        string   `json:"title"`
-	DocType      string   `json:"doc_type"`
 	OwnerID      *string  `json:"owner_id"`
 	TemplateKey  *string  `json:"template_key"`
 	Icon         *string  `json:"icon"`
@@ -534,6 +482,7 @@ type UpdateDocsHelpcenterConfigRequest struct {
 	CustomDomain      *string          `json:"custom_domain"`
 	BrandName         *string          `json:"brand_name"`
 	BrandLogoURL      *string          `json:"brand_logo_url"`
+	BrandLogoDarkURL  *string          `json:"brand_logo_dark_url"`
 	BrandColor        *string          `json:"brand_color"`
 	FaviconURL        *string          `json:"favicon_url"`
 	ThemeMode         *string          `json:"theme_mode"`

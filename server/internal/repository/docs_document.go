@@ -68,16 +68,13 @@ func (r *DocsDocumentRepository) ListByIDs(ctx context.Context, workspaceID stri
 }
 
 // List returns documents for a workspace with optional filters.
-func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, docType, status, teamID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
+func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
 	query := r.db.WithContext(ctx).Where("workspace_id = ? AND deleted_at IS NULL", workspaceID)
 	if spaceID != nil && *spaceID != "" {
 		query = query.Where("space_id = ?", *spaceID)
 	}
 	if collectionID != nil && *collectionID != "" {
 		query = query.Where("collection_id = ?", *collectionID)
-	}
-	if docType != nil && *docType != "" {
-		query = query.Where("doc_type = ?", *docType)
 	}
 	if status != nil && *status != "" {
 		query = query.Where("status = ?", *status)

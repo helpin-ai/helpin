@@ -122,11 +122,10 @@ export const docsService = {
     api.post(`/docs/documents/${docId}/unpublish-external${qs(wsId)}`),
 
   // ── Search ──────────────────────────────────────────────────────────────
-  search: (wsId: string, query: string, filters?: { doc_type?: string; status?: string; limit?: number }) => {
+  search: (wsId: string, query: string, filters?: { status?: string; limit?: number }) => {
     const search = new URLSearchParams();
     search.set('workspace_id', wsId);
     search.set('q', query);
-    if (filters?.doc_type) search.set('doc_type', filters.doc_type);
     if (filters?.status) search.set('status', filters.status);
     if (filters?.limit) search.set('limit', String(filters.limit));
     return api.get<DocsSearchResult[]>(`/docs/search?${search.toString()}`);

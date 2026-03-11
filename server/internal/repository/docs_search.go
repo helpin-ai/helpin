@@ -27,7 +27,7 @@ type DocsSearchResult struct {
 }
 
 // Search performs a Postgres full-text search across document titles and content.
-func (r *DocsSearchRepository) Search(ctx context.Context, workspaceID, query string, spaceIDs []string, docType, status *string, limit int) ([]DocsSearchResult, error) {
+func (r *DocsSearchRepository) Search(ctx context.Context, workspaceID, query string, spaceIDs []string, status *string, limit int) ([]DocsSearchResult, error) {
 	if query == "" {
 		return nil, nil
 	}
@@ -58,10 +58,6 @@ func (r *DocsSearchRepository) Search(ctx context.Context, workspaceID, query st
 	if len(spaceIDs) > 0 {
 		sql += " AND d.space_id IN (?)"
 		args = append(args, spaceIDs)
-	}
-	if docType != nil && *docType != "" {
-		sql += " AND d.doc_type = ?"
-		args = append(args, *docType)
 	}
 	if status != nil && *status != "" {
 		sql += " AND d.status = ?"

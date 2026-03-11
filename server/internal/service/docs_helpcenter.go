@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"time"
@@ -79,6 +80,9 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	if req.BrandLogoURL != nil {
 		updates["brand_logo_url"] = req.BrandLogoURL
 	}
+	if req.BrandLogoDarkURL != nil {
+		updates["brand_logo_dark_url"] = req.BrandLogoDarkURL
+	}
 	if req.BrandColor != nil {
 		updates["brand_color"] = *req.BrandColor
 	}
@@ -129,9 +133,6 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 	}
 
 	// Validate eligibility.
-	if doc.DocType != model.DocTypeHelpCenterArticle {
-		return fmt.Errorf("only help_center_article can be published externally")
-	}
 	if doc.Status != model.DocStatusPublished {
 		return fmt.Errorf("document must be internally published first")
 	}
@@ -238,8 +239,51 @@ func (s *DocsHelpcenterService) IncrementViewCount(ctx context.Context, document
 // ─── Public Help Center API ──────────────────────────────────────────────────
 
 // GetConfigBySubdomain returns the help center config by subdomain.
+// It enriches featured card titles with current collection names so
+// renaming a collection is immediately reflected on the public homepage.
 func (s *DocsHelpcenterService) GetConfigBySubdomain(ctx context.Context, subdomain string) (*model.DocsHelpcenterConfig, error) {
-	return s.hcRepo.GetConfigBySubdomain(ctx, subdomain)
+	cfg, err := s.hcRepo.GetConfigBySubdomain(ctx, subdomain)
+	if err != nil || cfg == nil {
+		return cfg, err
+	}
+	s.enrichFeaturedCardTitles(ctx, cfg)
+	return cfg, nil
+}
+
+// enrichFeaturedCardTitles resolves current collection names into
+// homepage_config.featured_cards so the public site stays up-to-date.
+func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cfg *model.DocsHelpcenterConfig) {
+	if len(cfg.HomepageConfig) == 0 {
+		return
+	}
+	var hpCfg model.HelpcenterHomepageConfig
+	if err := json.Unmarshal(cfg.HomepageConfig, &hpCfg); err != nil {
+		return
+	}
+	if len(hpCfg.FeaturedCards) == 0 {
+		return
+	}
+
+	changed := false
+	for i, card := range hpCfg.FeaturedCards {
+		if card.LinkType != "collection" || card.LinkValue == "" {
+			continue
+		}
+		col, err := s.collectionRepo.GetByID(ctx, card.LinkValue)
+		if err != nil || col == nil {
+			continue
+		}
+		if col.Name != card.Title {
+			hpCfg.FeaturedCards[i].Title = col.Name
+			changed = true
+		}
+	}
+
+	if changed {
+		if enriched, err := json.Marshal(hpCfg); err == nil {
+			cfg.HomepageConfig = enriched
+		}
+	}
 }
 
 // ListPublicSpaces returns external-capable spaces for the public help center.

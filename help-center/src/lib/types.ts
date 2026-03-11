@@ -2,6 +2,26 @@
 
 export type HelpcenterThemeMode = 'light' | 'dark' | 'system'
 
+export type HeaderLinkStyle = 'text' | 'button'
+
+export interface HeaderLink {
+  label: string
+  url: string
+  external: boolean
+  style: HeaderLinkStyle
+  position: number
+}
+
+export interface FooterLink {
+  label: string
+  url: string
+}
+
+export interface FooterConfig {
+  copyright_text?: string
+  links?: FooterLink[]
+}
+
 export interface HelpCenterConfig {
   id: string
   workspace_id: string
@@ -9,6 +29,7 @@ export interface HelpCenterConfig {
   custom_domain: string | null
   brand_name: string
   brand_logo_url: string | null
+  brand_logo_dark_url: string | null
   brand_color: string
   favicon_url: string | null
   theme_mode: HelpcenterThemeMode
@@ -17,6 +38,8 @@ export interface HelpCenterConfig {
   seo_title: string | null
   seo_description: string | null
   support_email: string | null
+  header_links?: HeaderLink[]
+  footer_config?: FooterConfig
   homepage_config?: HomepageConfig
 }
 
