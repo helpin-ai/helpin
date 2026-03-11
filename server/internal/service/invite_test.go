@@ -25,6 +25,7 @@ func newInviteService(t *testing.T) (*InviteService, *repository.InvitationRepos
 	svc := NewInviteService(
 		invitationRepo,
 		workspaceRepo,
+		nil, // organizationRepo — not needed for tests
 		userRepo,
 		settingsRepo,
 		nil, // emailClient — not needed for tests
@@ -52,7 +53,7 @@ func TestCreateInvitation(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -113,7 +114,7 @@ func TestCreateInvitation_InvalidRole(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -146,7 +147,7 @@ func TestCreateInvitation_DuplicateEmail(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -186,7 +187,7 @@ func TestCreateInvitation_AlreadyMember(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	existingUserID := "user-002"
@@ -222,7 +223,7 @@ func TestCreateInvitation_EmailNormalization(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -255,7 +256,7 @@ func TestListInvitations(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -315,7 +316,7 @@ func TestListInvitations_NonAdminForbidden(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	memberID := "member-001"
@@ -346,7 +347,7 @@ func TestListInvitations_AdminAllowed(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	adminID := "admin-001"
@@ -378,7 +379,7 @@ func TestAcceptInvitation(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	inviteeID := "user-002"
@@ -437,7 +438,7 @@ func TestAcceptInvitation_EmailMismatch(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wrongUserID := "user-003"
@@ -479,7 +480,7 @@ func TestAcceptInvitation_AlreadyAccepted(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	inviteeID := "user-002"
@@ -527,7 +528,7 @@ func TestAcceptInvitation_InvalidToken(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ctx := context.Background()
 
@@ -548,7 +549,7 @@ func TestRevokeInvitation(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -607,7 +608,7 @@ func TestRevokeInvitation_NonAdminForbidden(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	memberID := "member-001"
@@ -649,7 +650,7 @@ func TestRevokeInvitation_AlreadyRevoked(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -693,7 +694,7 @@ func TestRevokeInvitation_ThenCannotAccept(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	inviteeID := "user-002"
@@ -741,7 +742,7 @@ func TestResendInvitation(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -791,7 +792,7 @@ func TestResendInvitation_NonAdminForbidden(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	memberID := "member-001"
@@ -831,7 +832,7 @@ func TestGetInviteInfo(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -891,7 +892,7 @@ func TestGetInviteInfo_InvalidToken(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ctx := context.Background()
 
@@ -912,7 +913,7 @@ func TestAcceptInvitationWithSignup(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -979,7 +980,7 @@ func TestAcceptInvitationWithSignup_ShortPassword(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ctx := context.Background()
 
@@ -1004,7 +1005,7 @@ func TestAcceptInvitationWithSignup_EmptyName(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ctx := context.Background()
 
@@ -1029,7 +1030,7 @@ func TestAcceptInvitationWithSignup_EmptyToken(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ctx := context.Background()
 
@@ -1054,7 +1055,7 @@ func TestAcceptInvitationWithSignup_ExistingUser(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"
@@ -1103,7 +1104,7 @@ func TestCreateInvitation_MultipleRoles(t *testing.T) {
 			settingsRepo := repository.NewSettingsRepository(db)
 			jwtManager := auth.NewJWTManager("test-secret")
 
-			svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+			svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 			ownerID := "owner-001"
 			wsID := "ws-001"
@@ -1136,7 +1137,7 @@ func TestCreateInvitation_OwnerRoleForbidden(t *testing.T) {
 	settingsRepo := repository.NewSettingsRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
 
 	ownerID := "owner-001"
 	wsID := "ws-001"

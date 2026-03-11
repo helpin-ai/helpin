@@ -17,20 +17,22 @@ import (
 
 // InviteService handles invitation business logic.
 type InviteService struct {
-	invitationRepo *repository.InvitationRepository
-	workspaceRepo  *repository.WorkspaceRepository
-	userRepo       *repository.UserRepository
-	settingsRepo   *repository.SettingsRepository
-	emailClient    *email.Client
-	appBaseURL     string
-	jwtManager     *auth.JWTManager
-	logger         *slog.Logger
+	invitationRepo   *repository.InvitationRepository
+	workspaceRepo    *repository.WorkspaceRepository
+	organizationRepo *repository.OrganizationRepository
+	userRepo         *repository.UserRepository
+	settingsRepo     *repository.SettingsRepository
+	emailClient      *email.Client
+	appBaseURL       string
+	jwtManager       *auth.JWTManager
+	logger           *slog.Logger
 }
 
 // NewInviteService creates a new InviteService.
 func NewInviteService(
 	invitationRepo *repository.InvitationRepository,
 	workspaceRepo *repository.WorkspaceRepository,
+	organizationRepo *repository.OrganizationRepository,
 	userRepo *repository.UserRepository,
 	settingsRepo *repository.SettingsRepository,
 	emailClient *email.Client,
@@ -38,14 +40,15 @@ func NewInviteService(
 	jwtManager *auth.JWTManager,
 ) *InviteService {
 	return &InviteService{
-		invitationRepo: invitationRepo,
-		workspaceRepo:  workspaceRepo,
-		userRepo:       userRepo,
-		settingsRepo:   settingsRepo,
-		emailClient:    emailClient,
-		appBaseURL:     appBaseURL,
-		jwtManager:     jwtManager,
-		logger:         slog.Default().With("service", "invite"),
+		invitationRepo:   invitationRepo,
+		workspaceRepo:    workspaceRepo,
+		organizationRepo: organizationRepo,
+		userRepo:         userRepo,
+		settingsRepo:     settingsRepo,
+		emailClient:      emailClient,
+		appBaseURL:       appBaseURL,
+		jwtManager:       jwtManager,
+		logger:           slog.Default().With("service", "invite"),
 	}
 }
 
@@ -216,6 +219,9 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 		}
 	}
 
+	// Ensure user is also a member of the workspace's organization
+	s.ensureOrgMembership(ctx, inv.WorkspaceID, userID)
+
 	s.logger.InfoContext(ctx, "invitation accepted",
 		"workspace_id", inv.WorkspaceID,
 		"email", inv.Email,
@@ -310,6 +316,9 @@ func (s *InviteService) AcceptInvitationWithSignup(ctx context.Context, req mode
 			return nil, fmt.Errorf("link invitation member: %w", err)
 		}
 	}
+
+	// Ensure user is also a member of the workspace's organization
+	s.ensureOrgMembership(ctx, inv.WorkspaceID, user.ID)
 
 	s.logger.InfoContext(ctx, "invitation accepted with signup",
 		"workspace_id", inv.WorkspaceID,
@@ -508,4 +517,19 @@ func (s *InviteService) RevokeInvitation(ctx context.Context, invitationID, user
 	)
 
 	return nil
+}
+
+// ensureOrgMembership adds the user to the workspace's organization if they aren't already a member.
+func (s *InviteService) ensureOrgMembership(ctx context.Context, workspaceID, userID string) {
+	ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil || ws == nil || ws.OrganizationID == nil {
+		return
+	}
+	if _, err := s.organizationRepo.AddMember(ctx, *ws.OrganizationID, userID, "member"); err != nil {
+		s.logger.ErrorContext(ctx, "failed to add user to organization",
+			"error", err,
+			"organization_id", *ws.OrganizationID,
+			"user_id", userID,
+		)
+	}
 }

@@ -192,36 +192,6 @@ function CommentAttachments({ attachments }: { attachments: AttachmentResponse[]
   );
 }
 
-// ── Uploaded file chip (shown in editor area while composing) ──
-function UploadedFileChips({ files, onRemove }: {
-  files: { id: string; name: string }[];
-  onRemove: (id: string) => void;
-}) {
-  if (files.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {files.map((f) => {
-        const ext = getFileExtension(f.name);
-        return (
-          <div
-            key={f.id}
-            className="flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/20 pl-2 pr-1 py-1 text-xs"
-          >
-            <img src={getFileTypeIcon(ext)} alt={ext} className="h-4 w-4 shrink-0" />
-            <span className="truncate max-w-[120px] text-muted-foreground">{f.name}</span>
-            <button
-              type="button"
-              onClick={() => onRemove(f.id)}
-              className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 interface CommentThreadProps {
   workspaceId: string;
