@@ -249,6 +249,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             teamRepoDefaults={settings.team_repo_defaults}
             editable={canManageTeams}
             onRefresh={load}
+            initialTeamId={initialTeamId}
           />
         );
       case 'people':

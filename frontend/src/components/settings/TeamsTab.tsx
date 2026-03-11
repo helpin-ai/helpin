@@ -62,7 +62,7 @@ function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium">Enable estimates</p>
-          <p className="text-xs text-muted-foreground">Show effort estimates on issues</p>
+          <p className="text-xs text-muted-foreground">Show effort estimates on stories</p>
         </div>
         <Switch checked={enabled} onCheckedChange={setEnabled} />
       </div>
@@ -112,7 +112,7 @@ function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Allow zero estimates</p>
-              <p className="text-xs text-muted-foreground">Allow issues to be estimated as zero effort</p>
+              <p className="text-xs text-muted-foreground">Allow stories to be estimated as zero effort</p>
             </div>
             <Switch checked={allowZero} onCheckedChange={setAllowZero} />
           </div>
@@ -121,7 +121,7 @@ function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Count unestimated as 1 point</p>
-              <p className="text-xs text-muted-foreground">Unestimated issues count as 1 point in calculations</p>
+              <p className="text-xs text-muted-foreground">Unestimated stories count as 1 point in calculations</p>
             </div>
             <Switch checked={countUnestimated} onCheckedChange={setCountUnestimated} />
           </div>
@@ -365,7 +365,7 @@ function TeamRepoDefaultForm({
 
 /* ── Teams Tab ── */
 
-export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, teamFieldVisibility, teamRepoDefaults, editable, onRefresh }: {
+export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, teamFieldVisibility, teamRepoDefaults, editable, onRefresh, initialTeamId }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
   userMemberships: TeamUserMembership[];
@@ -375,6 +375,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   teamRepoDefaults: TeamRepoDefault[];
   editable: boolean;
   onRefresh: (silent?: boolean) => void | Promise<void>;
+  initialTeamId?: string;
 }) {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
@@ -385,7 +386,11 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(initialTeamId ?? null);
+
+  useEffect(() => {
+    setSelectedTeamId(initialTeamId ?? null);
+  }, [initialTeamId]);
 
   const [estimateDialogOpen, setEstimateDialogOpen] = useState(false);
   const [estimateSaving, setEstimateSaving] = useState(false);
@@ -654,30 +659,12 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         ],
       },
       {
-        label: 'Issues, projects, and docs',
+        label: 'Stories & issues',
         rows: [
-          {
-            key: 'delivery-defaults',
-            icon: GitPullRequest,
-            title: 'Delivery defaults',
-            description: 'Choose the team repository, base branch, and branch template',
-            meta: deliveryMeta,
-            action: () => setRepoDialogOpen(true),
-            disabled: !editable,
-          },
-          {
-            key: 'estimates',
-            icon: LayoutGrid,
-            title: 'Estimates',
-            description: 'Configure estimate scale and options',
-            meta: estimateMeta,
-            action: () => setEstimateDialogOpen(true),
-            disabled: !editable,
-          },
           {
             key: 'field-visibility',
             icon: Eye,
-            title: 'Story display',
+            title: 'Story fields',
             description: 'Configure which fields and panels appear on stories',
             meta: fieldVisMeta,
             action: () => setFieldVisDialogOpen(true),
@@ -686,11 +673,42 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           {
             key: 'labels',
             icon: Tag,
-            title: 'Issue labels',
-            description: "Labels available to this team's issues",
+            title: 'Story labels',
+            description: "Labels available to this team's stories",
             meta: '',
             action: () => openSettingsSection('labels'),
             disabled: false,
+          },
+          {
+            key: 'estimates',
+            icon: LayoutGrid,
+            title: 'Story estimates',
+            description: 'Configure estimate scale and options',
+            meta: estimateMeta,
+            action: () => setEstimateDialogOpen(true),
+            disabled: !editable,
+          },
+        ],
+      },
+      {
+        label: 'Development',
+        rows: [
+          {
+            key: 'delivery-defaults',
+            icon: GitPullRequest,
+            title: 'Delivery defaults',
+            description: repositories.length > 0 || teamRepoDefault
+              ? 'Choose the team repository, base branch, and branch template'
+              : 'Connect GitHub in Delivery settings to configure repository defaults',
+            meta: repositories.length > 0 || teamRepoDefault ? deliveryMeta : 'Not connected',
+            action: () => {
+              if (repositories.length > 0 || teamRepoDefault) {
+                setRepoDialogOpen(true);
+              } else {
+                openSettingsSection('delivery');
+              }
+            },
+            disabled: !editable,
           },
         ],
       },
@@ -724,7 +742,16 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         <div className="space-y-8">
           <button
             type="button"
-            onClick={() => setSelectedTeamId(null)}
+            onClick={() => {
+              setSelectedTeamId(null);
+              if (currentWorkspace?.slug) {
+                navigate({
+                  to: '/w/$slug/settings/$section',
+                  params: { slug: currentWorkspace.slug, section: 'teams' },
+                  search: {},
+                });
+              }
+            }}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ChevronRight className="h-4 w-4 rotate-180" />
@@ -995,7 +1022,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         <Dialog open={estimateDialogOpen} onOpenChange={setEstimateDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Estimate Settings</DialogTitle>
+              <DialogTitle>Story Estimates</DialogTitle>
             </DialogHeader>
             <EstimateSettingsForm
               teamId={selectedTeam.id}
@@ -1021,7 +1048,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         <Dialog open={fieldVisDialogOpen} onOpenChange={setFieldVisDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Story Display</DialogTitle>
+              <DialogTitle>Story Fields</DialogTitle>
             </DialogHeader>
             <FieldVisibilityForm
               teamId={selectedTeam.id}
@@ -1034,7 +1061,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 if (error) {
                   toast.error(error);
                 } else {
-                  toast.success('Story display updated');
+                  toast.success('Story fields updated');
                   setFieldVisDialogOpen(false);
                   await onRefresh();
                 }
@@ -1141,7 +1168,16 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                     <TableRow
                       key={team.id}
                       className="cursor-pointer"
-                      onClick={() => setSelectedTeamId(team.id)}
+                      onClick={() => {
+                        setSelectedTeamId(team.id);
+                        if (currentWorkspace?.slug) {
+                          navigate({
+                            to: '/w/$slug/settings/$section',
+                            params: { slug: currentWorkspace.slug, section: 'teams' },
+                            search: { team: team.id },
+                          });
+                        }
+                      }}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">

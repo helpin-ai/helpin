@@ -135,96 +135,6 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
 
   return (
     <div className="space-y-6">
-      {/* ── Epic Automations ── */}
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <CardTitle className="text-base">Epic Automations</CardTitle>
-          <CardDescription>Automatically transition epics based on story progress.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-800">
-            <Info className="h-4 w-4 shrink-0" />
-            Changes to Epic Automations affect the entire workspace.
-          </div>
-
-          {/* Auto Start Epic */}
-          <div className="flex items-center justify-between gap-4 rounded-md border p-4">
-            <div className="flex-1">
-              <p className="text-sm font-medium">Auto Start Epic</p>
-              <p className="text-xs text-muted-foreground">
-                When any story moves to a started state, auto-transition its parent epic.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              {startedStates.length > 1 ? (
-                <Select
-                  value={autoStart?.config_state_id ?? ''}
-                  onValueChange={(val) => upsert('epic_auto_start', autoStart?.enabled ?? true, { configStateId: val })}
-                >
-                  <SelectTrigger className="w-[180px] h-8 text-xs">
-                    <SelectValue placeholder="Target state..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {startedStates.map((st) => (
-                      <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : startedStates.length === 1 ? (
-                <Badge variant="secondary" className="text-xs">{startedStates[0].name}</Badge>
-              ) : null}
-              <Switch
-                checked={autoStart?.enabled ?? false}
-                disabled={!editable}
-                onCheckedChange={(checked) => {
-                  const stateId = autoStart?.config_state_id ?? startedStates[0]?.id;
-                  if (!stateId) { toast.error('No started epic state available. Please check your epic workflow states.'); return; }
-                  upsert('epic_auto_start', checked, { configStateId: stateId });
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Auto Complete Epic */}
-          <div className="flex items-center justify-between gap-4 rounded-md border p-4">
-            <div className="flex-1">
-              <p className="text-sm font-medium">Auto Complete Epic</p>
-              <p className="text-xs text-muted-foreground">
-                When all stories in an epic reach a done state, auto-transition the epic.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              {doneStates.length > 1 ? (
-                <Select
-                  value={autoComplete?.config_state_id ?? ''}
-                  onValueChange={(val) => upsert('epic_auto_complete', autoComplete?.enabled ?? true, { configStateId: val })}
-                >
-                  <SelectTrigger className="w-[180px] h-8 text-xs">
-                    <SelectValue placeholder="Target state..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {doneStates.map((st) => (
-                      <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : doneStates.length === 1 ? (
-                <Badge variant="secondary" className="text-xs">{doneStates[0].name}</Badge>
-              ) : null}
-              <Switch
-                checked={autoComplete?.enabled ?? false}
-                disabled={!editable}
-                onCheckedChange={(checked) => {
-                  const stateId = autoComplete?.config_state_id ?? doneStates[0]?.id;
-                  if (!stateId) { toast.error('No done epic state available. Please check your epic workflow states.'); return; }
-                  upsert('epic_auto_complete', checked, { configStateId: stateId });
-                }}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* ── Sprint Automations ── */}
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
@@ -232,7 +142,7 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
           <CardDescription>Automate sprint creation and story rollover per team.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-800">
+          <div className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
             <Info className="h-4 w-4 shrink-0" />
             Changes to Sprint Automations are specific to each Team.
           </div>
@@ -362,6 +272,96 @@ export function AutomationsTab({ workspaceId, teams, editable = true }: {
                 </div>
               );
             })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Epic Automations ── */}
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">Epic Automations</CardTitle>
+          <CardDescription>Automatically transition epics based on story progress.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
+            <Info className="h-4 w-4 shrink-0" />
+            Changes to Epic Automations affect the entire workspace.
+          </div>
+
+          {/* Auto Start Epic */}
+          <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+            <div className="flex-1">
+              <p className="text-sm font-medium">Auto Start Epic</p>
+              <p className="text-xs text-muted-foreground">
+                When any story moves to a started state, auto-transition its parent epic.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {startedStates.length > 1 ? (
+                <Select
+                  value={autoStart?.config_state_id ?? ''}
+                  onValueChange={(val) => upsert('epic_auto_start', autoStart?.enabled ?? true, { configStateId: val })}
+                >
+                  <SelectTrigger className="w-[180px] h-8 text-xs">
+                    <SelectValue placeholder="Target state..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {startedStates.map((st) => (
+                      <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : startedStates.length === 1 ? (
+                <Badge variant="secondary" className="text-xs">{startedStates[0].name}</Badge>
+              ) : null}
+              <Switch
+                checked={autoStart?.enabled ?? false}
+                disabled={!editable}
+                onCheckedChange={(checked) => {
+                  const stateId = autoStart?.config_state_id ?? startedStates[0]?.id;
+                  if (!stateId) { toast.error('No started epic state available. Please check your epic workflow states.'); return; }
+                  upsert('epic_auto_start', checked, { configStateId: stateId });
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Auto Complete Epic */}
+          <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+            <div className="flex-1">
+              <p className="text-sm font-medium">Auto Complete Epic</p>
+              <p className="text-xs text-muted-foreground">
+                When all stories in an epic reach a done state, auto-transition the epic.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {doneStates.length > 1 ? (
+                <Select
+                  value={autoComplete?.config_state_id ?? ''}
+                  onValueChange={(val) => upsert('epic_auto_complete', autoComplete?.enabled ?? true, { configStateId: val })}
+                >
+                  <SelectTrigger className="w-[180px] h-8 text-xs">
+                    <SelectValue placeholder="Target state..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {doneStates.map((st) => (
+                      <SelectItem key={st.id} value={st.id}>{st.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : doneStates.length === 1 ? (
+                <Badge variant="secondary" className="text-xs">{doneStates[0].name}</Badge>
+              ) : null}
+              <Switch
+                checked={autoComplete?.enabled ?? false}
+                disabled={!editable}
+                onCheckedChange={(checked) => {
+                  const stateId = autoComplete?.config_state_id ?? doneStates[0]?.id;
+                  if (!stateId) { toast.error('No done epic state available. Please check your epic workflow states.'); return; }
+                  upsert('epic_auto_complete', checked, { configStateId: stateId });
+                }}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
