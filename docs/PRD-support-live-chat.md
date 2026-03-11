@@ -1,6 +1,6 @@
 # PRD: Support Live Chat, Inbox, and AI Messenger
 
-**Status:** Draft v11 (inbox ASCII layouts, 3-page chat settings design with full schema, plus all v9 content)  
+**Status:** Draft v12 (widget config caching strategy, inbox ASCII layouts, 3-page chat settings, plus all v9 content)  
 **Date:** 2026-03-11  
 **Module:** Support  
 **Product context:** Helpin is a full operating suite spanning PM, CRM, Docs, Notifications, Agents, and Support. This PRD defines support as a first-class suite surface, not a standalone chat product.
@@ -1565,6 +1565,167 @@ The `GET /api/widget/support/config?key={widget_key}` endpoint returns the subse
 ```
 
 Fields like `handoff_behavior`, `handoff_team_id`, `auto_create_crm_contact`, `default_lifecycle_stage`, and `auto_promote_to_lead` are server-side only — they affect backend behavior but are never exposed to the widget.
+
+### 6.6 Widget Config Caching Strategy
+
+The widget config endpoint (`GET /v1/widget/config?key={widget_key}`) is called every time a customer's website loads the Helpin widget. This section defines how config is cached, invalidated, and how admin changes propagate to live widgets.
+
+#### Design: Boot-Time Fetch + HTTP Cache + WebSocket Push
+
+No Redis or dedicated caching layer needed. The strategy uses three layers:
+
+```
+Admin changes settings
+        │
+        ▼
+┌──────────────────┐    ┌─────────────────────┐
+│  PostgreSQL      │───►│ Go API server        │
+│  (1 row per      │    │ GET /v1/widget/config │
+│   workspace)     │    │                       │
+└──────────────────┘    │ Cache-Control:        │
+                        │   public, max-age=60, │
+                        │   stale-while-        │
+                        │   revalidate=300      │
+                        └──────────┬────────────┘
+                                   │
+              ┌────────────────────┼────────────────────┐
+              ▼                    ▼                    ▼
+     ┌─────────────┐    ┌──────────────┐     ┌──────────────┐
+     │ CDN edge    │    │ Browser HTTP │     │ WebSocket    │
+     │ (if added   │    │ cache        │     │ push event:  │
+     │  later)     │    │ (60s TTL)    │     │ config_updated│
+     │ 60s TTL     │    └──────────────┘     └──────────────┘
+     └─────────────┘
+```
+
+#### Layer 1: HTTP Cache Headers (passive)
+
+The Go handler sets response headers on `GET /v1/widget/config`:
+
+```go
+func (h *WidgetHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
+    // ... fetch config from DB ...
+    w.Header().Set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+    w.Header().Set("ETag", fmt.Sprintf(`"%s"`, config.UpdatedAt.Format(time.RFC3339Nano)))
+    writeJSON(w, http.StatusOK, configResponse)
+}
+```
+
+- **`max-age=60`**: Browsers and CDN cache the response for 60 seconds. Most page loads across a customer's site never hit the Go server.
+- **`stale-while-revalidate=300`**: For up to 5 minutes after the 60s TTL, browsers serve the stale response immediately while fetching a fresh one in the background. Visitors never see a loading delay.
+- **`ETag`**: Based on `updated_at` timestamp. If the config hasn't changed, the server returns `304 Not Modified` — no response body transferred.
+
+This alone handles 95%+ of config requests. The `support_inbox_installations` table has **one row per workspace** — it's a primary key lookup that PostgreSQL handles in <1ms. No Redis needed.
+
+#### Layer 2: sessionStorage (client-side)
+
+The widget caches the config response in `sessionStorage` on first load:
+
+```typescript
+const CACHE_KEY = `helpin:config:${widgetKey}`;
+
+async function getWidgetConfig(host: string, widgetKey: string): Promise<WidgetConfig> {
+  // Check sessionStorage first
+  const cached = sessionStorage.getItem(CACHE_KEY);
+  if (cached) {
+    const { config, fetchedAt } = JSON.parse(cached);
+    // Use cached if < 60s old (matches server max-age)
+    if (Date.now() - fetchedAt < 60_000) return config;
+  }
+
+  // Fetch from server (browser HTTP cache may serve this)
+  const res = await fetch(`https://${host}/v1/widget/config?key=${widgetKey}`);
+  const config = await res.json();
+
+  // Cache in sessionStorage
+  sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+    config,
+    fetchedAt: Date.now(),
+  }));
+
+  return config;
+}
+```
+
+- `sessionStorage` is scoped to the browser tab — cleared when the tab closes
+- Identity data (`session_token`, `visitor_id`) uses `localStorage` for cross-session persistence
+- Config uses `sessionStorage` because it should pick up changes on new visits
+
+#### Layer 3: WebSocket Push (active invalidation)
+
+When an admin changes widget settings in the dashboard, the Go server:
+
+1. Saves to PostgreSQL
+2. Publishes a WebSocket event to all connected widget clients for that workspace
+
+**Backend** (in `SupportInboxService.UpdateSettings`):
+
+```go
+func (s *SupportInboxService) UpdateSettings(ctx context.Context, workspaceID string, req UpdateSettingsRequest) error {
+    // ... validate and save to DB ...
+
+    // Push config update to all connected widget clients
+    s.wsPublisher.Broadcast(websocket.Event{
+        Action:      "config_updated",
+        Entity:      "support_widget_config",
+        WorkspaceID: workspaceID,
+    })
+    return nil
+}
+```
+
+**Widget** (in `WebSocketWidgetAdapter`):
+
+```typescript
+// On receiving config_updated event:
+ws.onMessage((event) => {
+  if (event.entity === 'support_widget_config' && event.action === 'config_updated') {
+    // Clear sessionStorage cache
+    sessionStorage.removeItem(CACHE_KEY);
+    // Re-fetch and apply new config
+    const newConfig = await getWidgetConfig(host, widgetKey);
+    applyConfig(newConfig); // Re-render widget with new colors, position, etc.
+  }
+});
+```
+
+This means: when an admin changes the brand color in the Appearance settings page, every open widget on every customer's website updates **within seconds** — no page reload needed.
+
+#### When Each Layer Activates
+
+| Scenario | What happens | Latency |
+|---|---|---|
+| **First page load** (cold) | Fetches from Go API, caches in sessionStorage + browser HTTP cache | ~100-200ms (network) |
+| **Subsequent page load** (same session, <60s) | Served from sessionStorage | 0ms (no network) |
+| **Subsequent page load** (same session, 60s-5min) | Browser serves stale from HTTP cache, revalidates in background | 0ms (stale-while-revalidate) |
+| **New session** (tab closed and reopened) | sessionStorage cleared, fetches from server (browser HTTP cache may still serve) | 0-200ms |
+| **Admin changes settings** (widget has WS open) | WebSocket push → widget re-fetches → applies immediately | <2s |
+| **Admin changes settings** (widget has no WS) | Next page load picks up changes via HTTP cache expiry | Up to 60s |
+
+#### Why Not Redis?
+
+| Concern | Why HTTP caching is sufficient |
+|---|---|
+| **Query cost** | One PK lookup on `support_inbox_installations` — <1ms in PostgreSQL |
+| **Traffic volume** | `Cache-Control` headers mean browsers and CDN cache responses. Most requests never reach the server. |
+| **Scale** | If thousands of sites load simultaneously, add Cloudflare or similar CDN in front of `sdk.helpin.ai`. The CDN respects `Cache-Control` headers — still no Redis. |
+| **Operational cost** | Redis adds another service to deploy, monitor, back up, and maintain. HTTP caching is free and built into every browser and CDN. |
+| **Invalidation** | Redis requires explicit cache invalidation logic. HTTP `max-age` + WebSocket push gives both passive expiry and active push — simpler and more reliable. |
+
+Redis becomes justified later if Helpin needs sub-second config reads under sustained >10k req/s to the config endpoint. At that point, a CDN would be the first step, and Redis the second.
+
+#### Industry Comparison
+
+| Provider | Config loading | Cache strategy | Change propagation | Delay |
+|---|---|---|---|---|
+| **Intercom** | Boot-time fetch | localStorage + cookies | Requires `Intercom('update')` or page reload | Until next page load |
+| **Crisp** | Init + WebSocket | Cookies + localStorage | WebSocket RTM push | Instant |
+| **Drift** | Config baked into JS bundle | CDN with 5-min cache-busting buckets | Bundle re-fetch on next page load | Up to 5 minutes |
+| **Help Scout** | Boot-time fetch | Device ID + localStorage | Client-side override API or page reload | Until next page load |
+| **Zendesk** | Boot-time fetch | Cookies + localStorage + sessionStorage | Client-side JS API for dynamic changes | Until next page load |
+| **Helpin** (recommended) | Boot-time fetch + HTTP cache | sessionStorage + browser HTTP cache | **WebSocket push** + HTTP cache expiry | **Instant** (WS open) / **<60s** (WS closed) |
+
+Helpin's approach matches Crisp's instant propagation (the best in the industry) while being simpler to implement — Crisp built a dedicated RTM protocol, whereas Helpin reuses the existing WebSocket hub that's already running for chat messages.
 
 ---
 
