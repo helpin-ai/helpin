@@ -27,7 +27,9 @@ export function BuyerSignals({ workspaceId, contactId, dealId }: BuyerSignalsPro
   const query = contactId ? contactQuery : dealQuery;
   const signals = (query.data?.data ?? []) as CRMBuyerSignal[];
 
-  if (signals.length === 0) return null;
+  if (signals.length === 0) {
+    return <p className="text-sm text-muted-foreground">No buyer signals detected yet.</p>;
+  }
 
   return (
     <div className="space-y-2">

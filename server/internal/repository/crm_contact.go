@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -78,6 +79,71 @@ func (r *CRMContactRepository) Create(ctx context.Context, contact *model.CRMCon
 		return fmt.Errorf("create contact: %w", err)
 	}
 	return nil
+}
+
+// GetByEmail returns the first contact in a workspace whose email matches exactly
+// (case-insensitive).
+func (r *CRMContactRepository) GetByEmail(ctx context.Context, workspaceID, email string) (*model.CRMContact, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return nil, nil
+	}
+
+	var contact model.CRMContact
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND email IS NOT NULL AND LOWER(email) = ?", workspaceID, email).
+		Order("created_at ASC, id ASC").
+		First(&contact).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get contact by email: %w", err)
+	}
+	return &contact, nil
+}
+
+// ListByEmails returns contacts in a workspace keyed by normalized email.
+func (r *CRMContactRepository) ListByEmails(ctx context.Context, workspaceID string, emails []string) (map[string]model.CRMContact, error) {
+	normalized := make([]string, 0, len(emails))
+	seen := make(map[string]struct{}, len(emails))
+	for _, email := range emails {
+		email = strings.TrimSpace(strings.ToLower(email))
+		if email == "" {
+			continue
+		}
+		if _, exists := seen[email]; exists {
+			continue
+		}
+		seen[email] = struct{}{}
+		normalized = append(normalized, email)
+	}
+	if len(normalized) == 0 {
+		return map[string]model.CRMContact{}, nil
+	}
+
+	var contacts []model.CRMContact
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND email IS NOT NULL AND LOWER(email) IN ?", workspaceID, normalized).
+		Order("created_at ASC, id ASC").
+		Find(&contacts).Error; err != nil {
+		return nil, fmt.Errorf("list contacts by email: %w", err)
+	}
+
+	result := make(map[string]model.CRMContact, len(contacts))
+	for _, contact := range contacts {
+		if contact.Email == nil {
+			continue
+		}
+		key := strings.TrimSpace(strings.ToLower(*contact.Email))
+		if key == "" {
+			continue
+		}
+		if _, exists := result[key]; exists {
+			continue
+		}
+		result[key] = contact
+	}
+	return result, nil
 }
 
 // Update updates a contact.
