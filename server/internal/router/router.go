@@ -119,6 +119,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
 
+		// ---- Help Center domain verification (Caddy on_demand_tls) ----
+		r.Get("/hc/verify-domain", h.Docs.VerifyDomain)
+
 		// ---- Public Help Center routes (no JWT) ----
 		r.Route("/hc/{subdomain}", func(r chi.Router) {
 			r.Get("/config", h.Docs.PublicGetConfig)

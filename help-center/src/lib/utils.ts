@@ -30,7 +30,12 @@ export function resolveSubdomain(): string {
     return import.meta.env.VITE_HC_SUBDOMAIN || 'demo'
   }
 
-  // *.helpin.ai pattern
+  // Base help-center domains — not a workspace subdomain
+  if (hostname === 'helpcenter.helpin.ai' || hostname === 'helpcenter-stage.helpin.ai') {
+    return ''
+  }
+
+  // *.helpin.ai pattern — extract subdomain
   const helpin = hostname.match(/^(.+)\.helpin\.ai$/)
   if (helpin?.[1]) {
     return helpin[1]

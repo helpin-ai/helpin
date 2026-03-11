@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: ingress-helpin
-  namespace: default
+  namespace: helpin
   annotations:
     ingress.kubernetes.io/force-ssl-redirect: "true"
 spec:
@@ -10,6 +10,7 @@ spec:
   tls:
   - hosts:
     - api.prod.helpin.ai
+    - helpcenter.helpin.ai
     secretName: cert-prod-helpin-wildcard
   rules:
   - host: api.prod.helpin.ai
@@ -22,3 +23,13 @@ spec:
             name: helpin-server-svc
             port:
               number: 8080
+  - host: helpcenter.helpin.ai
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: helpin-helpcenter-svc
+            port:
+              number: 80

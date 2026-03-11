@@ -250,6 +250,36 @@ func (s *DocsHelpcenterService) GetConfigBySubdomain(ctx context.Context, subdom
 	return cfg, nil
 }
 
+// ResolveConfig resolves a help center config by subdomain first, then by custom domain.
+func (s *DocsHelpcenterService) ResolveConfig(ctx context.Context, identifier string) (*model.DocsHelpcenterConfig, error) {
+	// Try subdomain first.
+	cfg, err := s.hcRepo.GetConfigBySubdomain(ctx, identifier)
+	if err != nil {
+		return nil, err
+	}
+	if cfg != nil {
+		s.enrichFeaturedCardTitles(ctx, cfg)
+		return cfg, nil
+	}
+
+	// Fall back to custom domain lookup.
+	cfg, err = s.hcRepo.GetConfigByCustomDomain(ctx, identifier)
+	if err != nil {
+		return nil, err
+	}
+	if cfg != nil {
+		s.enrichFeaturedCardTitles(ctx, cfg)
+		return cfg, nil
+	}
+
+	return nil, nil
+}
+
+// GetConfigByCustomDomain returns a help center config by its custom domain.
+func (s *DocsHelpcenterService) GetConfigByCustomDomain(ctx context.Context, domain string) (*model.DocsHelpcenterConfig, error) {
+	return s.hcRepo.GetConfigByCustomDomain(ctx, domain)
+}
+
 // enrichFeaturedCardTitles resolves current collection names into
 // homepage_config.featured_cards so the public site stays up-to-date.
 func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cfg *model.DocsHelpcenterConfig) {
