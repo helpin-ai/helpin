@@ -269,6 +269,17 @@ func (r *PMWorkflowRepository) StateBelongsToWorkflow(ctx context.Context, state
 	return count > 0, nil
 }
 
+// ClearDefaultStates sets is_default=false on all states in a workflow.
+func (r *PMWorkflowRepository) ClearDefaultStates(ctx context.Context, workflowID string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMWorkflowState{}).
+		Where("workflow_id = ? AND is_default = ?", workflowID, true).
+		Update("is_default", false).Error; err != nil {
+		return fmt.Errorf("clear default states: %w", err)
+	}
+	return nil
+}
+
 func (r *PMWorkflowRepository) listStates(ctx context.Context, workflowID string) ([]model.PMWorkflowState, error) {
 	var states []model.PMWorkflowState
 	if err := r.db.WithContext(ctx).

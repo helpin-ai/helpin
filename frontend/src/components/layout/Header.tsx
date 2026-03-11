@@ -88,7 +88,6 @@ export function Header() {
       people: "People",
       jobroles: "Job Roles",
       workflows: "Workflows",
-      workflowstates: "Workflow States",
       ai: "AI",
       tiers: "Bonus Tiers",
       import: "Import / Export",

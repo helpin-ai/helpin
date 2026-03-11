@@ -199,6 +199,11 @@ func (s *PMWorkflowService) CreateState(ctx context.Context, workflowID string, 
 		WIPLimit:    req.WIPLimit,
 		IsDefault:   req.IsDefault,
 	}
+	if state.IsDefault {
+		if err := s.workflowRepo.ClearDefaultStates(ctx, workflowID); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.workflowRepo.CreateState(ctx, state); err != nil {
 		s.logger.ErrorContext(ctx, "failed to create workflow state", "error", err, "workflow_id", workflowID)
 		return nil, err
@@ -277,6 +282,9 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 	if req.IsDefault != nil {
 		target.IsDefault = *req.IsDefault
 		if *req.IsDefault {
+			if err := s.workflowRepo.ClearDefaultStates(ctx, workflowID); err != nil {
+				return nil, err
+			}
 			wf.Workflow.DefaultStateID = &target.ID
 		}
 	}
