@@ -1,19 +1,17 @@
 import { useState, useMemo, useCallback } from 'react'
-import * as PhosphorIcons from '@phosphor-icons/react'
-import type { Icon as PhosphorIcon } from '@phosphor-icons/react'
+import { icons, type LucideIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-// Build a searchable list from all Phosphor exports.
-// Each export that is a component with displayName is an icon.
+// Build a searchable list from all Lucide exports.
 interface IconEntry {
-  /** kebab-case key stored in the DB, e.g. "rocket-launch" */
+  /** kebab-case key stored in the DB, e.g. "rocket" */
   value: string
-  /** Human-readable label, e.g. "Rocket Launch" */
+  /** Human-readable label, e.g. "Rocket" */
   label: string
   /** The React component */
-  Component: PhosphorIcon
+  Component: LucideIcon
 }
 
 function pascalToKebab(s: string): string {
@@ -26,27 +24,23 @@ function pascalToLabel(s: string): string {
 
 const ALL_ICONS: IconEntry[] = (() => {
   const entries: IconEntry[] = []
-  for (const [name, exported] of Object.entries(PhosphorIcons)) {
-    // Icon components are PascalCase starting with uppercase letter
-    if (!/^[A-Z][a-z]/.test(name)) continue
-    if (typeof exported !== 'object' && typeof exported !== 'function') continue
-    if (exported === null) continue
-    // Skip non-component exports
-    if (/^(IconContext|IconBase|IconWeight)$/.test(name)) continue
+  for (const [name, component] of Object.entries(icons)) {
+    if (typeof component !== 'object' && typeof component !== 'function') continue
+    if (component === null) continue
     const kebab = pascalToKebab(name)
     entries.push({
       value: kebab,
       label: pascalToLabel(name),
-      Component: exported as unknown as PhosphorIcon,
+      Component: component as LucideIcon,
     })
   }
   entries.sort((a, b) => a.label.localeCompare(b.label))
   return entries
 })()
 
-/** Kebab-case → Phosphor component map for rendering icons by stored name */
-export const PHOSPHOR_MAP: Record<string, PhosphorIcon> = (() => {
-  const map: Record<string, PhosphorIcon> = {}
+/** Kebab-case -> Lucide component map for rendering icons by stored name */
+export const ICON_MAP: Record<string, LucideIcon> = (() => {
+  const map: Record<string, LucideIcon> = {}
   for (const entry of ALL_ICONS) {
     map[entry.value] = entry.Component
   }
@@ -96,7 +90,7 @@ export function IconPicker({ value, onChange, placeholder = 'Icon' }: IconPicker
           className="justify-center w-10 h-9 px-0 font-normal"
         >
           {selected ? (
-            <selected.Component size={16} weight="regular" />
+            <selected.Component className="h-4 w-4" />
           ) : (
             <span className="text-muted-foreground">{placeholder}</span>
           )}
@@ -125,7 +119,7 @@ export function IconPicker({ value, onChange, placeholder = 'Icon' }: IconPicker
                   : 'hover:bg-muted text-foreground'
               }`}
             >
-              <entry.Component size={18} weight="regular" />
+              <entry.Component className="h-[18px] w-[18px]" />
             </button>
           ))}
           {filtered.length === 0 && (

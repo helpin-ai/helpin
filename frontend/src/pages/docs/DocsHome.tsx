@@ -3,16 +3,25 @@ import { useNavigate } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
 import {
   BookOpen,
+  Briefcase,
   Check,
   ChevronRight,
+  ClipboardList,
+  Code,
+  Cog,
   FileText,
+  Folder,
   Globe,
+  Headphones,
+  LifeBuoy,
   Loader2,
   Lock,
+  Megaphone,
   Plus,
+  Users,
+  type LucideIcon,
 } from 'lucide-react'
-import { Folder as PhFolder } from '@phosphor-icons/react'
-import { PHOSPHOR_MAP } from '@/components/ui/icon-picker'
+import { ICON_MAP } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
@@ -37,22 +46,22 @@ import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
 interface SpaceTemplate {
   name: string
   slug: string
-  icon: string
+  icon: LucideIcon
   description: string
   type: SpaceType
   restrictToOwners: boolean
 }
 
 const SPACE_TEMPLATES: SpaceTemplate[] = [
-  { name: 'Company Wiki', slug: 'company-wiki', icon: '📖', description: 'General knowledge base for the whole team', type: 'internal', restrictToOwners: false },
-  { name: 'Engineering', slug: 'engineering', icon: '⚙️', description: 'Technical docs, architecture, and runbooks', type: 'internal', restrictToOwners: false },
-  { name: 'Support Knowledge', slug: 'support-knowledge', icon: '🎧', description: 'Internal support guides and troubleshooting', type: 'internal', restrictToOwners: false },
-  { name: 'Marketing', slug: 'marketing', icon: '📣', description: 'Brand guidelines, campaigns, and content', type: 'internal', restrictToOwners: false },
-  { name: 'Sales', slug: 'sales', icon: '💼', description: 'Sales playbooks, proposals, and enablement', type: 'internal', restrictToOwners: false },
-  { name: 'HR & People', slug: 'hr-people', icon: '👥', description: 'Policies, onboarding, and people ops', type: 'internal', restrictToOwners: true },
-  { name: 'Operations', slug: 'operations', icon: '📋', description: 'Processes, SOPs, and operational docs', type: 'internal', restrictToOwners: false },
-  { name: 'Help Center', slug: 'help-center', icon: '💡', description: 'Public-facing help articles for customers', type: 'external_capable', restrictToOwners: false },
-  { name: 'Developer / API Docs', slug: 'developer-api-docs', icon: '🔧', description: 'API references and developer guides', type: 'external_capable', restrictToOwners: false },
+  { name: 'Company Wiki', slug: 'company-wiki', icon: BookOpen, description: 'General knowledge base for the whole team', type: 'internal', restrictToOwners: false },
+  { name: 'Engineering', slug: 'engineering', icon: Cog, description: 'Technical docs, architecture, and runbooks', type: 'internal', restrictToOwners: false },
+  { name: 'Support Knowledge', slug: 'support-knowledge', icon: Headphones, description: 'Internal support guides and troubleshooting', type: 'internal', restrictToOwners: false },
+  { name: 'Marketing', slug: 'marketing', icon: Megaphone, description: 'Brand guidelines, campaigns, and content', type: 'internal', restrictToOwners: false },
+  { name: 'Sales', slug: 'sales', icon: Briefcase, description: 'Sales playbooks, proposals, and enablement', type: 'internal', restrictToOwners: false },
+  { name: 'HR & People', slug: 'hr-people', icon: Users, description: 'Policies, onboarding, and people ops', type: 'internal', restrictToOwners: true },
+  { name: 'Operations', slug: 'operations', icon: ClipboardList, description: 'Processes, SOPs, and operational docs', type: 'internal', restrictToOwners: false },
+  { name: 'Help Center', slug: 'help-center', icon: LifeBuoy, description: 'Public-facing help articles for customers', type: 'external_capable', restrictToOwners: false },
+  { name: 'Developer / API Docs', slug: 'developer-api-docs', icon: Code, description: 'API references and developer guides', type: 'external_capable', restrictToOwners: false },
 ]
 
 // ── Status badge variant ────────────────────────────────────────────────────
@@ -109,10 +118,10 @@ function DocRow({
 
 function CollectionIcon({ name }: { name?: string }) {
   if (name) {
-    const Icon = PHOSPHOR_MAP[name]
-    if (Icon) return <Icon size={14} weight="regular" className="shrink-0" />
+    const Icon = ICON_MAP[name]
+    if (Icon) return <Icon className="h-3.5 w-3.5 shrink-0" />
   }
-  return <PhFolder size={14} weight="regular" className="shrink-0" />
+  return <Folder className="h-3.5 w-3.5 shrink-0" />
 }
 
 function CollectionSection({
@@ -205,7 +214,11 @@ function SpaceSection({
             <ChevronRight
               className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`}
             />
-            <span className="text-base">{space.icon ?? '📁'}</span>
+            {space.icon ? (
+              <span className="text-base">{space.icon}</span>
+            ) : (
+              <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+            )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="truncate text-sm font-semibold">{space.name}</span>
@@ -414,7 +427,9 @@ export function DocsHome() {
                           : 'border-border/60 bg-card hover:border-border hover:bg-muted/30'
                       }`}
                     >
-                      <span className="text-2xl shrink-0 mt-0.5">{t.icon}</span>
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/80 shrink-0">
+                        <t.icon className="h-4.5 w-4.5 text-muted-foreground" />
+                      </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold truncate">{t.name}</span>

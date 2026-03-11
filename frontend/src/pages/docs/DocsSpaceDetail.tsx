@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Copy,
   FileText,
+  Folder,
   FolderOpen,
   Globe,
   ListFilter,
@@ -23,8 +24,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Folder as PhFolder } from '@phosphor-icons/react'
-import { PHOSPHOR_MAP } from '@/components/ui/icon-picker'
+import { ICON_MAP } from '@/components/ui/icon-picker'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useGlobalCreateStore } from '@/stores/globalCreateStore'
@@ -75,10 +75,10 @@ function statusColor(status: string): string {
 
 function CollectionTabIcon({ name }: { name?: string | null }) {
   if (name) {
-    const Icon = PHOSPHOR_MAP[name]
-    if (Icon) return <Icon size={14} weight="regular" className="shrink-0" />
+    const Icon = ICON_MAP[name]
+    if (Icon) return <Icon className="h-3.5 w-3.5 shrink-0" />
   }
-  return <PhFolder size={14} weight="regular" className="shrink-0" />
+  return <FolderOpen className="h-3.5 w-3.5 shrink-0" />
 }
 
 export function DocsSpaceDetail() {
@@ -243,7 +243,11 @@ export function DocsSpaceDetail() {
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl">{space.icon ?? '📁'}</span>
+              {space.icon ? (
+                <span className="text-xl">{space.icon}</span>
+              ) : (
+                <Folder className="h-5 w-5 shrink-0 text-muted-foreground" />
+              )}
               {renamingSpace ? (
                 <input
                   key="space-rename-input"

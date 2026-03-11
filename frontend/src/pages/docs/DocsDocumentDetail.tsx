@@ -27,8 +27,7 @@ import {
   UserCheck,
   X,
 } from 'lucide-react'
-import { Folder as PhFolder } from '@phosphor-icons/react'
-import { PHOSPHOR_MAP } from '@/components/ui/icon-picker'
+import { ICON_MAP } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
@@ -89,10 +88,10 @@ function docStatusColor(status: string): string {
 
 function DocCollectionIcon({ name }: { name?: string | null }) {
   if (name) {
-    const Icon = PHOSPHOR_MAP[name];
-    if (Icon) return <Icon size={12} weight="regular" className="shrink-0" />;
+    const Icon = ICON_MAP[name];
+    if (Icon) return <Icon className="h-3 w-3 shrink-0" />;
   }
-  return <PhFolder size={12} weight="regular" className="shrink-0" />;
+  return <FolderOpen className="h-3 w-3 shrink-0" />;
 }
 
 export function DocsDocumentDetail() {
