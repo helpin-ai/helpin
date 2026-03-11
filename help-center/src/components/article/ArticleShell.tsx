@@ -19,7 +19,7 @@ export function ArticleShell({
   title,
   excerpt,
   spaceSlug,
-  spaceName,
+  spaceName: _spaceName,
   collectionName,
   articleSlug,
   pager,
