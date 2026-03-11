@@ -1,4 +1,4 @@
-import { h, FunctionComponent } from 'preact';
+import { FunctionComponent } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 import type { Message } from '../types';
 import { MessageBubble } from './MessageBubble';
@@ -12,7 +12,11 @@ export const MessageList: FunctionComponent<MessageListProps> = ({ messages }) =
 
   useEffect(() => {
     if (listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight;
+      const el = listRef.current;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+      if (isNearBottom || messages.length <= 1) {
+        el.scrollTop = el.scrollHeight;
+      }
     }
   }, [messages]);
 
@@ -41,7 +45,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({ messages }) =
   };
 
   return (
-    <div className="helpin-message-list" ref={listRef}>
+    <div className="helpin-message-list" ref={listRef} role="list" aria-label="Messages">
       {messages.map((message, idx) => {
         const dateSeparator = getDateSeparator(message.createdAt, idx);
         return (

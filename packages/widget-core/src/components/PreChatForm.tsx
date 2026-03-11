@@ -1,4 +1,4 @@
-import { h, FunctionComponent } from 'preact';
+import { FunctionComponent } from 'preact';
 import { useState } from 'preact/hooks';
 
 interface PreChatFormProps {
@@ -42,7 +42,9 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
       
       {step === 'email' && (
         <form onSubmit={handleEmailSubmit}>
+          <label className="helpin-sr-only" htmlFor="helpin-email-input">Email address</label>
           <input
+            id="helpin-email-input"
             type="email"
             className="helpin-input"
             placeholder="Enter your email"
@@ -56,10 +58,12 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
           </button>
         </form>
       )}
-      
+
       {step === 'name' && (
         <form onSubmit={handleNameSubmit}>
+          <label className="helpin-sr-only" htmlFor="helpin-name-input">Your name</label>
           <input
+            id="helpin-name-input"
             type="text"
             className="helpin-input"
             placeholder="Enter your name"

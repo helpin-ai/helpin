@@ -1,4 +1,4 @@
-import { h, FunctionComponent } from 'preact';
+import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 
 interface ComposeBarProps {
@@ -48,11 +48,13 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
         placeholder={placeholder}
         disabled={disabled}
         rows={1}
+        aria-label={placeholder}
       />
       <button
         type="submit"
         className="helpin-compose-send"
         disabled={disabled || !message.trim()}
+        aria-label="Send message"
       >
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
           <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />

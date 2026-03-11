@@ -115,6 +115,8 @@ function initializeNamespacedClient(
   client: HelpinClient,
 ) {
   let isReady = false;
+  let resolveReady: () => void;
+  const readyPromise = new Promise<void>((resolve) => { resolveReady = resolve; });
   const queue: any[][] = [];
   const onLoadCallbacks: (() => void)[] = [];
 
@@ -254,12 +256,13 @@ function initializeNamespacedClient(
   };
 
   // Set client as ready and process any queued items
-  setTimeout(() => {
+  Promise.resolve().then(() => {
     isReady = true;
+    resolveReady();
     processQueue();
     executeOnLoadCallbacks();
     console.log(`Helpin client for namespace ${namespace} is ready`);
-  }, 0);
+  });
 
   // Process any existing queue items
   while (existingQueue.length > 0) {

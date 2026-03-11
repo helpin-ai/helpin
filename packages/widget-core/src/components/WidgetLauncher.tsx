@@ -1,4 +1,4 @@
-import { h, FunctionComponent } from 'preact';
+import { FunctionComponent } from 'preact';
 
 interface WidgetLauncherProps {
   onClick: () => void;
@@ -26,7 +26,11 @@ export const WidgetLauncher: FunctionComponent<WidgetLauncherProps> = ({
             <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
           </svg>
           {unreadCount > 0 && (
-            <span className="helpin-unread-badge" style={{ backgroundColor: '#ef4444' }}>
+            <span
+              className="helpin-unread-badge"
+              style={{ backgroundColor: '#ef4444' }}
+              aria-label={`${unreadCount} unread messages`}
+            >
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}

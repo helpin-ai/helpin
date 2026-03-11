@@ -11,7 +11,8 @@ describe('WidgetManager', () => {
     
     vi.stubGlobal('fetch', vi.fn(() =>
       Promise.resolve({
-        json: () => Promise.resolve({ 
+        ok: true,
+        json: () => Promise.resolve({
           workspaceId: 'ws_test',
           branding: { primaryColor: '#6366f1' },
           features: {}
@@ -35,6 +36,7 @@ describe('WidgetManager', () => {
     it('should initialize session when user is provided', async () => {
       const fetchMock = vi.fn(() =>
         Promise.resolve({
+          ok: true,
           json: () => Promise.resolve({ session_token: 'test-token', conversation_id: 'conv-1' }),
         })
       );

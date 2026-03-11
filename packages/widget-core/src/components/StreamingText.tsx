@@ -1,16 +1,18 @@
-import { h, FunctionComponent } from 'preact';
+import { FunctionComponent } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 
 interface StreamingTextProps {
   text: string;
   isStreaming: boolean;
   onComplete?: () => void;
+  charDelayMs?: number;
 }
 
 export const StreamingText: FunctionComponent<StreamingTextProps> = ({
   text,
   isStreaming,
   onComplete,
+  charDelayMs = 30,
 }) => {
   const [displayedText, setDisplayedText] = useState('');
 
@@ -18,7 +20,7 @@ export const StreamingText: FunctionComponent<StreamingTextProps> = ({
     if (isStreaming && displayedText.length < text.length) {
       const timeout = setTimeout(() => {
         setDisplayedText(text.slice(0, displayedText.length + 1));
-      }, 30);
+      }, charDelayMs);
       return () => clearTimeout(timeout);
     } else if (!isStreaming && text !== displayedText) {
       setDisplayedText(text);

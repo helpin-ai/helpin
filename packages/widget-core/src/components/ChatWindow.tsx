@@ -1,5 +1,4 @@
-import { h, FunctionComponent, Fragment } from 'preact';
-import { useState } from 'preact/hooks';
+import { FunctionComponent, Fragment } from 'preact';
 import type { Message, WidgetConfig } from '../types';
 import { WidgetHeader } from './WidgetHeader';
 import { PreChatForm } from './PreChatForm';
@@ -41,8 +40,10 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   return (
     <div
       className="helpin-chat-window"
-      style={{ [position.includes('left') ? 'left' : 'right']: '20px' }
-      }
+      style={{
+        [position.includes('left') ? 'left' : 'right']: '20px',
+        bottom: '20px',
+      }}
     >
       <WidgetHeader
         workspaceName={config.workspaceId || 'Support'}

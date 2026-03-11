@@ -32,6 +32,10 @@ export interface WidgetSettings {
 
 type WidgetCallback = (...args: any[]) => void;
 
+const MAX_WS_RETRIES = 10;
+const WS_BASE_DELAY_MS = 1000;
+const WS_MAX_DELAY_MS = 30000;
+
 export class WidgetManager {
   private config: WidgetSettings | null = null;
   private widgetConfig: WidgetConfig | null = null;
@@ -39,7 +43,13 @@ export class WidgetManager {
   private unreadCount = 0;
   private sessionToken: string | null = null;
   private wsConnection: WebSocket | null = null;
+  private wsRetryCount = 0;
+  private wsRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private isShutdown = false;
   private host = 'sdk.helpin.ai';
+
+  // Store bound event handlers for cleanup
+  private boundHandlers: { element: Element; event: string; handler: EventListener }[] = [];
 
   private callbacks: Record<string, WidgetCallback[]> = {
     onShow: [],
@@ -51,23 +61,46 @@ export class WidgetManager {
   };
 
   boot(settings: WidgetSettings): void {
+    // Clean up previous boot if any
+    if (this.config) {
+      this.cleanup();
+    }
+
+    this.isShutdown = false;
     this.config = settings;
     this.host = settings.host || this.host;
 
     if (settings.user) {
-      this.initializeSession(settings.user);
+      this.initializeSession(settings.user).catch((error) => {
+        console.error('Failed to initialize session during boot:', error);
+      });
     } else {
-      this.fetchWidgetConfig();
+      this.fetchWidgetConfig().catch((error) => {
+        console.error('Failed to fetch widget config during boot:', error);
+      });
     }
   }
 
   shutdown(): void {
+    this.isShutdown = true;
+    this.cleanup();
+  }
+
+  private cleanup(): void {
     this.config = null;
     this.widgetConfig = null;
     this.sessionToken = null;
     this.isOpen = false;
     this.unreadCount = 0;
+    this.wsRetryCount = 0;
+
+    if (this.wsRetryTimer) {
+      clearTimeout(this.wsRetryTimer);
+      this.wsRetryTimer = null;
+    }
+
     this.disconnectWebSocket();
+    this.removeEventListeners();
     this.removeWidget();
   }
 
@@ -154,9 +187,13 @@ export class WidgetManager {
         }),
       });
 
+      if (!response.ok) {
+        throw new Error(`Session init failed: ${response.status}`);
+      }
+
       const data = await response.json();
       this.sessionToken = data.session_token;
-      
+
       if (user.email) {
         this.triggerCallback('onUserEmailSupplied', user.email);
       }
@@ -174,8 +211,13 @@ export class WidgetManager {
 
     try {
       const response = await fetch(
-        `https://${this.host}/v1/widget/config?key=${this.config.key}`
+        `https://${this.host}/v1/widget/config?key=${encodeURIComponent(this.config.key)}`
       );
+
+      if (!response.ok) {
+        throw new Error(`Config fetch failed: ${response.status}`);
+      }
+
       this.widgetConfig = await response.json();
       this.ensureWidget();
     } catch (error) {
@@ -315,26 +357,60 @@ export class WidgetManager {
         cursor: pointer;
       }
       .helpin-btn-primary:hover { opacity: 0.9; }
+      .helpin-sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border-width: 0;
+      }
     `;
   }
 
   private attachEventListeners(): void {
     const launcher = document.querySelector('.helpin-launcher');
     const closeBtn = document.querySelector('.helpin-header-close');
-    const chatWindow = document.querySelector('.helpin-chat-window') as HTMLElement;
     const emailForm = document.querySelector('.helpin-pre-chat-email-form') as HTMLFormElement;
 
-    launcher?.addEventListener('click', () => this.toggle());
-    closeBtn?.addEventListener('click', () => this.hide());
+    if (launcher) {
+      const handler = () => this.toggle();
+      launcher.addEventListener('click', handler);
+      this.boundHandlers.push({ element: launcher, event: 'click', handler });
+    }
 
-    emailForm?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const emailInput = emailForm.querySelector('input[type="email"]') as HTMLInputElement;
-      const email = emailInput.value;
+    if (closeBtn) {
+      const handler = () => this.hide();
+      closeBtn.addEventListener('click', handler);
+      this.boundHandlers.push({ element: closeBtn, event: 'click', handler });
+    }
 
-      this.triggerCallback('onUserEmailSupplied', email);
-      await this.initializeSession({ email });
-    });
+    if (emailForm) {
+      const handler = async (e: Event) => {
+        e.preventDefault();
+        const emailInput = emailForm.querySelector('input[type="email"]') as HTMLInputElement;
+        const email = emailInput.value;
+
+        this.triggerCallback('onUserEmailSupplied', email);
+        try {
+          await this.initializeSession({ email });
+        } catch (error) {
+          console.error('Failed to initialize session from form:', error);
+        }
+      };
+      emailForm.addEventListener('submit', handler);
+      this.boundHandlers.push({ element: emailForm, event: 'submit', handler });
+    }
+  }
+
+  private removeEventListeners(): void {
+    for (const { element, event, handler } of this.boundHandlers) {
+      element.removeEventListener(event, handler);
+    }
+    this.boundHandlers = [];
   }
 
   private updateWidgetVisibility(open: boolean): void {
@@ -352,7 +428,7 @@ export class WidgetManager {
   }
 
   private connectWebSocket(): void {
-    if (!this.sessionToken) return;
+    if (!this.sessionToken || this.isShutdown) return;
 
     try {
       this.wsConnection = new WebSocket(
@@ -360,16 +436,44 @@ export class WidgetManager {
       );
 
       this.wsConnection.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.entity === 'support_conversation_message') {
-          this.unreadCount++;
-          this.triggerCallback('onUnreadCountChange', this.unreadCount);
-          this.triggerCallback('onMessageReceived', data);
+        try {
+          const data = JSON.parse(event.data);
+          if (data.entity === 'support_conversation_message') {
+            this.unreadCount++;
+            this.triggerCallback('onUnreadCountChange', this.unreadCount);
+            this.triggerCallback('onMessageReceived', data);
+          }
+        } catch {
+          console.error('Failed to parse WebSocket message');
         }
       };
 
+      this.wsConnection.onopen = () => {
+        this.wsRetryCount = 0;
+      };
+
       this.wsConnection.onclose = () => {
-        setTimeout(() => this.connectWebSocket(), 5000);
+        if (this.isShutdown) return;
+
+        if (this.wsRetryCount >= MAX_WS_RETRIES) {
+          console.error(`WebSocket: gave up after ${MAX_WS_RETRIES} retries`);
+          return;
+        }
+
+        const delay = Math.min(
+          WS_BASE_DELAY_MS * Math.pow(2, this.wsRetryCount) + Math.random() * 1000,
+          WS_MAX_DELAY_MS
+        );
+        this.wsRetryCount++;
+
+        this.wsRetryTimer = setTimeout(() => {
+          this.wsRetryTimer = null;
+          this.connectWebSocket();
+        }, delay);
+      };
+
+      this.wsConnection.onerror = (event) => {
+        console.error('WebSocket error:', event);
       };
     } catch (error) {
       console.error('WebSocket connection failed:', error);
@@ -378,6 +482,7 @@ export class WidgetManager {
 
   private disconnectWebSocket(): void {
     if (this.wsConnection) {
+      this.wsConnection.onclose = null; // Prevent reconnection on intentional close
       this.wsConnection.close();
       this.wsConnection = null;
     }

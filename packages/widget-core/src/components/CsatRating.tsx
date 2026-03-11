@@ -1,4 +1,4 @@
-import { h, FunctionComponent } from 'preact';
+import { FunctionComponent } from 'preact';
 import { useState } from 'preact/hooks';
 
 interface CsatRatingProps {
@@ -6,11 +6,11 @@ interface CsatRatingProps {
 }
 
 const EMOJI_RATINGS = [
-  { value: 1, emoji: '😞' },
-  { value: 2, emoji: '😕' },
-  { value: 3, emoji: '😐' },
-  { value: 4, emoji: '🙂' },
-  { value: 5, emoji: '😄' },
+  { value: 1, emoji: '😞', label: 'Very unsatisfied' },
+  { value: 2, emoji: '😕', label: 'Unsatisfied' },
+  { value: 3, emoji: '😐', label: 'Neutral' },
+  { value: 4, emoji: '🙂', label: 'Satisfied' },
+  { value: 5, emoji: '😄', label: 'Very satisfied' },
 ];
 
 export const CsatRating: FunctionComponent<CsatRatingProps> = ({ onSubmit }) => {
@@ -36,12 +36,15 @@ export const CsatRating: FunctionComponent<CsatRatingProps> = ({ onSubmit }) => 
   return (
     <div className="helpin-csat-rating">
       <div className="helpin-csat-question">How would you rate your experience?</div>
-      <div className="helpin-csat-emojis">
-        {EMOJI_RATINGS.map(({ value, emoji }) => (
+      <div className="helpin-csat-emojis" role="radiogroup" aria-label="Rate your experience">
+        {EMOJI_RATINGS.map(({ value, emoji, label }) => (
           <button
             key={value}
             className={`helpin-csat-emoji ${rating === value ? 'helpin-csat-emoji--selected' : ''}`}
             onClick={() => setRating(value)}
+            role="radio"
+            aria-checked={rating === value}
+            aria-label={label}
           >
             {emoji}
           </button>
@@ -53,6 +56,8 @@ export const CsatRating: FunctionComponent<CsatRatingProps> = ({ onSubmit }) => 
             placeholder="Any additional feedback?"
             value={feedback}
             onInput={(e) => setFeedback((e.target as HTMLTextAreaElement).value)}
+            aria-label="Additional feedback"
+            maxLength={1000}
           />
           <button onClick={handleSubmit} className="helpin-btn-primary">
             Submit

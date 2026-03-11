@@ -43,6 +43,15 @@ export class XhrTransport implements Transport {
         reject(new Error('Network error'));
       };
 
+      xhr.ontimeout = () => {
+        reject(new Error('Request timed out'));
+      };
+
+      xhr.onabort = () => {
+        reject(new Error('Request aborted'));
+      };
+
+      xhr.timeout = 30000;
       xhr.send(JSON.stringify(payloads));
     });
   }
