@@ -29,7 +29,7 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 		return waitingApproval, nil
 	})
 
-	ao := workflow.ActivityOptions{
+	prepareAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 2 * time.Hour,
 		HeartbeatTimeout:    60 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -39,16 +39,21 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 			MaximumAttempts:    3,
 		},
 	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
+	executeAO := prepareAO
+	executeAO.RetryPolicy = &temporal.RetryPolicy{
+		MaximumAttempts: 1,
+	}
 
 	currentStage = "preparing"
-	if err := workflow.ExecuteActivity(ctx, "AgentRunActivities.PrepareRunActivity", input.RunID).Get(ctx, nil); err != nil {
+	prepareCtx := workflow.WithActivityOptions(ctx, prepareAO)
+	if err := workflow.ExecuteActivity(prepareCtx, "AgentRunActivities.PrepareRunActivity", input.RunID).Get(ctx, nil); err != nil {
 		return err
 	}
 
 	currentStage = "executing"
 	var result ExecuteRunResult
-	if err := workflow.ExecuteActivity(ctx, "AgentRunActivities.ExecuteRunActivity", input.RunID).Get(ctx, &result); err != nil {
+	executeCtx := workflow.WithActivityOptions(ctx, executeAO)
+	if err := workflow.ExecuteActivity(executeCtx, "AgentRunActivities.ExecuteRunActivity", input.RunID).Get(ctx, &result); err != nil {
 		return err
 	}
 

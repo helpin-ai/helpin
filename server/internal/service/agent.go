@@ -26,6 +26,8 @@ type supportDraftReply struct {
 	ApprovalRequired  bool    `json:"approval_required"`
 }
 
+const stuckPostRunThreshold = 2 * time.Minute
+
 // AgentService contains agent business logic.
 type AgentService struct {
 	agentRepo        *repository.AgentRepository
@@ -416,7 +418,11 @@ func (s *AgentService) ListAgentRuns(ctx context.Context, workspaceID, agentID s
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
-	return s.runRepo.ListByAgent(ctx, workspaceID, agentID, pagination)
+	runs, total, err := s.runRepo.ListByAgent(ctx, workspaceID, agentID, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	return s.reconcileStuckRuns(ctx, runs), total, nil
 }
 
 // GetAgentRun returns a single run.
@@ -427,6 +433,9 @@ func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID strin
 	}
 	if run == nil {
 		return nil, fmt.Errorf("agent run not found")
+	}
+	if updated := s.reconcileStuckRun(ctx, run); updated != nil {
+		run = updated
 	}
 	return run, nil
 }
@@ -447,7 +456,11 @@ func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetTy
 	if strings.TrimSpace(targetType) == "" || strings.TrimSpace(targetID) == "" {
 		return nil, fmt.Errorf("target_type and target_id are required")
 	}
-	return s.runRepo.ListByTarget(ctx, workspaceID, targetType, targetID)
+	runs, err := s.runRepo.ListByTarget(ctx, workspaceID, targetType, targetID)
+	if err != nil {
+		return nil, err
+	}
+	return s.reconcileStuckRuns(ctx, runs), nil
 }
 
 // RunAgent creates a new story-targeted agent run and starts its Temporal workflow.
@@ -709,6 +722,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	if activeRun != nil {
+		if updated := s.reconcileStuckRun(ctx, activeRun); updated != nil {
+			activeRun = updated
+		}
+	}
+	if activeRun != nil && (activeRun.Status == "queued" || activeRun.Status == "running" || activeRun.Status == "awaiting_approval") {
 		return nil, fmt.Errorf("an agent run is already active for this %s", params.targetType)
 	}
 
@@ -874,6 +892,7 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 	if err != nil {
 		return health
 	}
+	activeRuns = s.reconcileStuckRuns(ctx, activeRuns)
 
 	queueIndex := make(map[string]int, len(health.Queues))
 	for idx, queue := range health.Queues {
@@ -882,6 +901,9 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 
 	now := time.Now()
 	for _, run := range activeRuns {
+		if run.Status != "queued" && run.Status != "running" && run.Status != "awaiting_approval" {
+			continue
+		}
 		taskQueue := stringOrDefault(run.TaskQueue, temporalapp.QueueAutomation)
 		idx, ok := queueIndex[taskQueue]
 		if !ok {
@@ -937,6 +959,61 @@ func stringOrDefault(value *string, fallback string) string {
 		return fallback
 	}
 	return *value
+}
+
+func (s *AgentService) reconcileStuckRuns(ctx context.Context, runs []model.AgentRun) []model.AgentRun {
+	if len(runs) == 0 {
+		return runs
+	}
+	for idx := range runs {
+		run := runs[idx]
+		if updated := s.reconcileStuckRun(ctx, &run); updated != nil {
+			runs[idx] = *updated
+		}
+	}
+	return runs
+}
+
+func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRun) *model.AgentRun {
+	if !shouldFailStuckPostRun(run, time.Now()) {
+		return run
+	}
+
+	now := time.Now()
+	errMsg := "run was marked failed after OpenCode finished but finalization did not reach a terminal state"
+	run.Status = "failed"
+	run.CompletedAt = &now
+	run.ErrorMessage = &errMsg
+	run.ExecutionStage = strPtr("failed")
+	run.LastHeartbeatAt = &now
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return run
+	}
+	_ = s.markAgentIdle(ctx, run.WorkspaceID, run.AgentID)
+	s.runRepo.Notify(ctx, run)
+	return run
+}
+
+func shouldFailStuckPostRun(run *model.AgentRun, now time.Time) bool {
+	if run == nil || run.Status != "running" || run.RuntimeKind != "opencode" {
+		return false
+	}
+	if !isStuckPostRunStage(run.ExecutionStage) {
+		return false
+	}
+	if run.LastHeartbeatAt == nil {
+		return true
+	}
+	return now.Sub(*run.LastHeartbeatAt) > stuckPostRunThreshold
+}
+
+func isStuckPostRunStage(stage *string) bool {
+	switch derefString(stage) {
+	case "opencode_finished", "persisting_changes", "pushing_changes", "finalizing":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateRuntimeKind(runtimeKind string) error {

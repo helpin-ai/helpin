@@ -684,6 +684,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/emails", h.CRMEmail.ListByContact)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/emails", h.CRMEmail.ListByDeal)
 
+				// Email Sync Settings — crm.admin
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/email/sync-settings", h.CRMEmail.GetEmailSyncSettings)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Put("/email/sync-settings", h.CRMEmail.UpdateEmailSyncSettings)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/email/sync-settings/default-prefixes", h.CRMEmail.GetDefaultBlockedPrefixes)
+
 				// Calendar — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/calendar/events", h.CRMCalendar.List)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/calendar/events", h.CRMCalendar.Create)

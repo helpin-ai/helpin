@@ -220,7 +220,7 @@ type DocsDocument struct {
 	SpaceID          string          `json:"space_id" gorm:"type:uuid;not null;index:idx_docs_doc_ws_space_status,priority:2"`
 	CollectionID     *string         `json:"collection_id" gorm:"type:uuid"`
 	Title            string          `json:"title" gorm:"not null"`
-	DocType          string          `json:"doc_type" gorm:"not null;index:idx_docs_doc_ws_type_status,priority:2"`
+	DocType          string          `json:"doc_type" gorm:"not null;default:'wiki';index:idx_docs_doc_ws_type_status,priority:2"`
 	Status           string          `json:"status" gorm:"not null;default:'draft';index:idx_docs_doc_ws_space_status,priority:3;index:idx_docs_doc_ws_type_status,priority:3"`
 	Visibility       string          `json:"visibility" gorm:"not null;default:'workspace_wide'"`
 	OwnerID          *string         `json:"owner_id" gorm:"type:uuid;index:idx_docs_doc_owner_review,priority:1"`

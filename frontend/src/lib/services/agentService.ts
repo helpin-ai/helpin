@@ -7,6 +7,7 @@ import type {
   UpdateAgentRequest,
   ProposedStory,
   RuntimeProfile,
+  AgentModelProviderOption,
   ApproveAgentRunRequest,
   HandoffAgentRunRequest,
   PaginatedResponse,
@@ -31,6 +32,8 @@ export const agentService = {
     api.del(`/pm/agents/${id}${qs(workspaceId)}`),
   listRuntimeProfiles: (workspaceId: string) =>
     api.get<RuntimeProfile[]>(`/pm/runtime-profiles${qs(workspaceId)}`),
+  listModelProviders: (workspaceId: string) =>
+    api.get<AgentModelProviderOption[]>(`/pm/agent-model-providers${qs(workspaceId)}`),
   getRunnerHealth: (workspaceId: string) =>
     api.get<RunnerHealth>(`/pm/runner-health${qs(workspaceId)}`),
   assignToStory: (workspaceId: string, storyId: string, agentId: string) =>

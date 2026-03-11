@@ -136,7 +136,8 @@ func main() {
 	)
 
 	// Email sync activities (may be nil if Gmail not configured).
-	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo)
+	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
+	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo)
 
 	// Signal detection activities.
 	crmSignalRepo := repository.NewCRMSignalRepository(db)

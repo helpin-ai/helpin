@@ -897,10 +897,11 @@ export type AgentKind = 'human' | 'llm';
 export type AgentClass = 'product_planner' | 'engineer' | 'reviewer' | 'support' | 'human';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
-export type AgentRuntimeKind = 'native_claude' | 'claude_code' | 'openclaw' | 'zeroclaw';
+export type AgentRuntimeKind = 'opencode' | 'native_claude' | 'claude_code' | 'openclaw' | 'zeroclaw';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
 export type AgentTargetType = 'story' | 'support_ticket' | 'epic' | 'document';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
+export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 
 export interface Agent {
   id: string;
@@ -915,6 +916,7 @@ export interface Agent {
   capability_profile: string;
   skills: string[];
   trigger_mode: AgentTriggerMode;
+  provider?: AgentModelProvider;
   model?: string;
   system_prompt?: string;
   planning_notes?: string;
@@ -1040,6 +1042,7 @@ export interface CreateAgentRequest {
   capability_profile?: string;
   skills?: string[];
   trigger_mode?: AgentTriggerMode;
+  provider?: AgentModelProvider;
   model?: string;
   system_prompt?: string;
   planning_notes?: string;
@@ -1057,6 +1060,7 @@ export interface UpdateAgentRequest {
   capability_profile?: string;
   skills?: string[];
   trigger_mode?: AgentTriggerMode;
+  provider?: AgentModelProvider;
   model?: string;
   system_prompt?: string;
   planning_notes?: string;
@@ -1090,6 +1094,12 @@ export interface RuntimeProfile {
   allowed_target_types: AgentTargetType[];
   approval_required: boolean;
   requires_repo: boolean;
+}
+
+export interface AgentModelProviderOption {
+  value: AgentModelProvider;
+  label: string;
+  model_placeholder: string;
 }
 
 export interface RunnerHealth {

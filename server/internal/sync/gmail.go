@@ -31,7 +31,9 @@ type GmailMessage struct {
 	From      string
 	FromName  string
 	To        []string
+	ToNames   map[string]string // email → display name
 	CC        []string
+	CCNames   map[string]string // email → display name
 	Date      time.Time
 	BodyText  string
 	BodyHTML  string
@@ -299,9 +301,9 @@ func parseGmailMessage(raw *gmailRawMessage) *GmailMessage {
 				msg.From = h.Value
 			}
 		case "to":
-			msg.To = parseAddressList(h.Value)
+			msg.To, msg.ToNames = parseAddressListWithNames(h.Value)
 		case "cc":
-			msg.CC = parseAddressList(h.Value)
+			msg.CC, msg.CCNames = parseAddressListWithNames(h.Value)
 		case "date":
 			if t, err := mail.ParseDate(h.Value); err == nil {
 				msg.Date = t
@@ -354,6 +356,12 @@ func extractBody(mimeType string, body gmailMessageBody, parts []gmailPart) (tex
 }
 
 func parseAddressList(value string) []string {
+	addrs, _ := parseAddressListWithNames(value)
+	return addrs
+}
+
+func parseAddressListWithNames(value string) ([]string, map[string]string) {
+	names := make(map[string]string)
 	addrs, err := mail.ParseAddressList(value)
 	if err != nil {
 		// Fallback: split by comma.
@@ -365,11 +373,14 @@ func parseAddressList(value string) []string {
 				result = append(result, p)
 			}
 		}
-		return result
+		return result, names
 	}
 	result := make([]string, 0, len(addrs))
 	for _, a := range addrs {
 		result = append(result, a.Address)
+		if a.Name != "" {
+			names[strings.ToLower(a.Address)] = a.Name
+		}
 	}
-	return result
+	return result, names
 }

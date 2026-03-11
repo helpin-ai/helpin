@@ -15,8 +15,8 @@ type EmailSyncWorkflowInput struct {
 // EmailSyncWorkflow is a long-running Temporal workflow that syncs emails for an account.
 func EmailSyncWorkflow(ctx workflow.Context, input EmailSyncWorkflowInput) error {
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Minute,
-		HeartbeatTimeout:    30 * time.Second,
+		StartToCloseTimeout: 30 * time.Minute,
+		HeartbeatTimeout:    2 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    10 * time.Second,
 			BackoffCoefficient: 2,

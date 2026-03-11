@@ -236,6 +236,8 @@ func main() {
 		&model.CRMWritingProfile{},
 		// CRM Autonomy
 		&model.CRMAutonomySettings{},
+		// CRM Email Sync Settings
+		&model.CRMEmailSyncSettings{},
 	); err != nil {
 		slog.Error("failed to auto-migrate", "error", err)
 		os.Exit(1)
@@ -482,7 +484,8 @@ func main() {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
 	}
 
-	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient)
+	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
+	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo)
