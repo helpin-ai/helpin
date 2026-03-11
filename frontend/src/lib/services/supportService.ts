@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, PaginatedResponse, AgentRun, TicketStatus } from '../pmTypes';
+import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, PaginatedResponse, AgentRun, ConversationStatus } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
@@ -18,7 +18,7 @@ export const supportService = {
     api.get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
     api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
-  updateConversationStatus: (workspaceId: string, conversationId: string, status: TicketStatus) =>
+  updateConversationStatus: (workspaceId: string, conversationId: string, status: ConversationStatus) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/status${qs(workspaceId)}`, { status }),
   linkConversationStory: (workspaceId: string, conversationId: string, payload: LinkStoryRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/link-story${qs(workspaceId)}`, payload),
