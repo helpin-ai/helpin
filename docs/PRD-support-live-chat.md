@@ -1,6 +1,6 @@
 # PRD: Support Live Chat, Inbox, and AI Messenger
 
-**Status:** Draft v9 (single-endpoint SDK via ingress-nginx routing, events pipeline context, @helpin/ui exclusion, plus all v8 content)  
+**Status:** Draft v10 (inbox ASCII layouts, chat settings page design with full schema, plus all v9 content)  
 **Date:** 2026-03-11  
 **Module:** Support  
 **Product context:** Helpin is a full operating suite spanning PM, CRM, Docs, Notifications, Agents, and Support. This PRD defines support as a first-class suite surface, not a standalone chat product.
@@ -956,6 +956,118 @@ A **slide-out drawer** (right side) opens on demand for context and details. Thi
 
 On mobile, the drawer becomes a full-screen overlay.
 
+#### Inbox Layout — Default Two-Pane
+
+```
++---------------------------------------------------------------------+
+| Support Inbox                                        [+ New]  [?]   |
++----------------------------+----------------------------------------+
+| [Search conversations...  ]|  #142 · Password reset not working     |
+|                            |  Jane Doe <jane@acme.co>    [Details >]|
+| Filters: [All v] [Open v] |  Status: Open  Priority: High          |
+|          [Assigned to me]  |  Assigned: @alex                       |
++----------------------------+----------------------------------------+
+| #142 Jane Doe        2m   |                                        |
+|   Password reset not wor.. |  [Jane Doe · customer · 2m ago]       |
+|   Open · High              |  I keep clicking "Reset Password"     |
+|----------------------------+  but nothing happens. I've tried       |
+| #139 Bob Smith       15m  |  three different browsers.             |
+|   Can't export CSV         |                                        |
+|   Open · Medium            |  [AI · ai_answer · 1m ago]            |
+|----------------------------+  I found a few articles that might     |
+| #137 Acme Corp       1h   |  help:                                |
+|   Billing question         |  - "Password Reset Guide" (docs)     |
+|   Waiting · Medium         |  - "Account Recovery FAQ" (helpcenter)|
+|----------------------------+                                        |
+| #134 Sarah Lee       3h   |  Is the issue happening on the main   |
+|   API rate limiting        |  login page or the settings page?     |
+|   In Progress · Low        |                                        |
+|----------------------------+  [System · 30s ago]                    |
+| #131 Dave K.         1d   |  AI confidence: 0.72 — suggested      |
+|   Feature request          |  human review                         |
+|   Resolved · Low           |                                        |
+|----------------------------+                                        |
+|                            |                                        |
+|                            |                                        |
+|                            +----------------------------------------+
+|                            | [x Internal note]                     |
+|                            | [Type a reply...                     ]|
+|                            |                      [AI Draft] [Send]|
++----------------------------+----------------------------------------+
+```
+
+#### Inbox Layout — With Context Drawer Open
+
+```
++----------------------------+-------------------------+--------------+
+| [Search conversations...  ]| #142 · Password reset   | DETAILS   [x]|
+|                            | Jane Doe   [Details >]  |              |
+| Filters: [All v] [Open v] | Open · High · @alex     | CONTACT      |
++----------------------------+-------------------------+ Jane Doe     |
+| #142 Jane Doe        2m   |                         | jane@acme.co |
+|   Password reset not wor.. | [Jane · 2m ago]        | Lifecycle:   |
+|   Open · High              | I keep clicking "Reset  |   Subscriber |
+|----------------------------+ Password" but nothing   | Source:      |
+| #139 Bob Smith       15m  | happens.                |   Widget     |
+|   Can't export CSV         |                         | [View in CRM]|
+|   Open · Medium            | [AI · 1m ago]           |--------------|
+|----------------------------+ I found a few articles  | COMPANY      |
+| #137 Acme Corp       1h   | that might help:        | Acme Corp    |
+|   Billing question         | - Password Reset Guide  | [View deal]  |
+|   Waiting · Medium         |                         |--------------|
+|----------------------------+                         | LINKED STORY |
+| #134 Sarah Lee       3h   |                         | (none)       |
+|   API rate limiting        |                         | [Create story|
+|   In Progress · Low        |                         |  from conv.] |
+|----------------------------+                         |--------------|
+|                            |                         | AI SOURCES   |
+|                            |                         | - Password   |
+|                            |                         |   Reset Guide|
+|                            |                         | - Account    |
+|                            |                         |   Recovery   |
+|                            +-------------------------+--------------|
+|                            | [Type a reply...       ]| METADATA     |
+|                            |          [AI Draft][Send]| Source: widget|
++----------------------------+-------------------------+ Created: 2m  |
+                                                       +--------------+
+```
+
+#### Inbox Layout — Mobile (Thread View)
+
+```
++-----------------------------+
+| [<] #142 Password reset     |
+|     Jane Doe · Open · High  |
++-----------------------------+
+|                             |
+| [Jane Doe · 2m ago]        |
+| I keep clicking "Reset     |
+| Password" but nothing      |
+| happens. I've tried three  |
+| different browsers.        |
+|                             |
+| [AI · 1m ago]              |
+| I found a few articles     |
+| that might help:           |
+| - "Password Reset Guide"  |
+| - "Account Recovery FAQ"  |
+|                             |
+| Is the issue happening on  |
+| the main login page or the |
+| settings page?             |
+|                             |
+| [System · 30s ago]         |
+| AI confidence: 0.72 —      |
+| suggested human review     |
+|                             |
+|                             |
++-----------------------------+
+| [x Internal note]          |
+| [Type a reply...           ]|
+|              [AI Draft][Send]|
++-----------------------------+
+```
+
 ### 5.2 Conversation List
 
 Each row should show:
@@ -1065,6 +1177,270 @@ Public widget access should remain based on:
 - short-lived session records
 
 The widget session should later bind to the conversation record once the first message creates or joins the canonical thread.
+
+### 6.5 Chat Settings Page
+
+The Chat Settings page lives at `/w/:slug/settings/chat` and is registered as a new section in `SETTINGS_SECTIONS` under a **Support Settings** group. It follows the existing settings pattern: Cards with Switch toggles, Select dropdowns, and Input fields, saved via `PATCH /api/support/inbox/installations`.
+
+The settings are stored in the `SupportInboxInstallation.Settings` JSONB column and passed to the widget via `GET /api/widget/support/config`.
+
+#### Settings Route Registration
+
+Add to `SETTINGS_SECTIONS` in `frontend/src/pages/Settings.tsx`:
+
+```typescript
+{
+  group: 'Support Settings',
+  items: [
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
+  ],
+}
+```
+
+Component: `frontend/src/components/settings/ChatSettingsTab.tsx`
+
+#### Settings Page Layout
+
+```
+/w/acme/settings/chat
++---------------------------------------------------------------------+
+| Chat Settings                                                       |
+| Configure the support chat widget behavior for your workspace.      |
++---------------------------------------------------------------------+
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | WIDGET INSTALLATION                                            |  |
+| | Your widget key for embedding on your website.                 |  |
+| |---------------------------------------------------------------|  |
+| |                                                                |  |
+| | Widget Key                                                     |  |
+| | [wk_a3f8b2c1d4e5...                          ] [Copy] [Regen] |  |
+| |                                                                |  |
+| | Embed Code                                                     |  |
+| | +-----------------------------------------------------------+ |  |
+| | | <script async                                             | |  |
+| | |   src="https://cdn.helpin.ai/pixel.js"                    | |  |
+| | |   data-widget-key="wk_a3f8b2c1d4e5">                     | |  |
+| | | </script>                                 [Copy snippet]  | |  |
+| | +-----------------------------------------------------------+ |  |
+| |                                                                |  |
+| | Widget Status                                                  |  |
+| |   Active                                           [o]        |  |
+| |   Enable or disable the chat widget on your site               |  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | IDENTITY CAPTURE                                               |  |
+| | Control what information is collected before a chat starts.    |  |
+| |---------------------------------------------------------------|  |
+| |                                                                |  |
+| | Require Email                                      [o]        |  |
+| |   Visitors must enter their email before starting              |  |
+| |   a conversation.                                              |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Require Name                                       [o]        |  |
+| |   Ask for the visitor's name after email capture.              |  |
+| |   Only shown if "Require Email" is enabled.                    |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Welcome Message                                                |  |
+| | [Hi! How can we help you today?                              ] |  |
+| |   The greeting shown when the widget opens.                    |  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | CRM INTEGRATION                                                |  |
+| | How captured visitor identities connect to your CRM.           |  |
+| |---------------------------------------------------------------|  |
+| |                                                                |  |
+| | Auto-Create CRM Contact                            [o]        |  |
+| |   Automatically create a CRM contact when a visitor            |  |
+| |   provides their email. If a contact already exists,           |  |
+| |   the conversation links to the existing record.               |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Default Lifecycle Stage              [Subscriber       v]     |  |
+| |   The lifecycle stage assigned to auto-created contacts.       |  |
+| |   Options: Subscriber, Lead, Opportunity                       |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Auto-Promote to Lead                               [ ]        |  |
+| |   Automatically upgrade contacts from subscriber to            |  |
+| |   lead after their first conversation is resolved.             |  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | AI BEHAVIOR                                                    |  |
+| | Configure how the AI assistant handles conversations.          |  |
+| |---------------------------------------------------------------|  |
+| |                                                                |  |
+| | AI Auto-Reply                                      [o]        |  |
+| |   Enable AI to automatically respond to new conversations     |  |
+| |   using your Docs and Help Center content.                     |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | AI Confidence Threshold              [0.7                  ]  |  |
+| |   Conversations with AI confidence below this score            |  |
+| |   are flagged for human review. Range: 0.0 - 1.0              |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Show "Talk to a Person"                            [o]        |  |
+| |   Display a button in the widget that lets visitors            |  |
+| |   request a human agent at any time.                           |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Handoff Behavior                     [Assign to team   v]     |  |
+| |   What happens when AI hands off to a human:                   |  |
+| |   - Unassigned: conversation goes to inbox unassigned          |  |
+| |   - Assign to team: route to a specific team                   |  |
+| |   - Round robin: distribute among online agents                |  |
+| |                                                                |  |
+| | Handoff Team                         [Support Team     v]     |  |
+| |   The team that receives AI handoff conversations.             |  |
+| |   Only shown when handoff behavior is "Assign to team".        |  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | WIDGET APPEARANCE                                              |  |
+| | Customize how the chat widget looks on your site.              |  |
+| |---------------------------------------------------------------|  |
+| |                                                                |  |
+| | Brand Color                          [#6366F1            ] [] |  |
+| |   The primary color for the widget launcher and headers.       |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Launcher Position                    [Bottom Right     v]     |  |
+| |   Where the chat launcher button appears on the page.          |  |
+| |   Options: Bottom Right, Bottom Left                           |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Launcher Icon                        [Chat Bubble     v]      |  |
+| |   The icon shown on the launcher button.                       |  |
+| |   Options: Chat Bubble, Question Mark, Help, Custom            |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Show Helpin Branding                               [o]        |  |
+| |   Display "Powered by Helpin" in the widget footer.            |  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | BUSINESS HOURS                                                 |  |
+| | Set when your team is available for live support.              |  |
+| |---------------------------------------------------------------|  |
+| |                                                                |  |
+| | Enable Business Hours                              [ ]        |  |
+| |   When disabled, the widget is always shown as available.      |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Timezone                             [America/New_York v]     |  |
+| |                                                                |  |
+| | Schedule                                                       |  |
+| |   Mon  [09:00] - [17:00]  [o]                                 |  |
+| |   Tue  [09:00] - [17:00]  [o]                                 |  |
+| |   Wed  [09:00] - [17:00]  [o]                                 |  |
+| |   Thu  [09:00] - [17:00]  [o]                                 |  |
+| |   Fri  [09:00] - [17:00]  [o]                                 |  |
+| |   Sat  [     ] - [     ]  [ ]                                 |  |
+| |   Sun  [     ] - [     ]  [ ]                                 |  |
+| |                                                                |  |
+| | Outside Hours Message                                          |  |
+| | [We're currently offline. Leave a message and we'll           ]|  |
+| | [get back to you!                                             ]|  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+|                                         [Save]                      |
++---------------------------------------------------------------------+
+```
+
+#### Full Settings Schema
+
+All settings stored in `SupportInboxInstallation.Settings` JSONB:
+
+**Widget Installation**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `active` | bool | `true` | Master switch — widget hidden when disabled |
+
+**Identity Capture**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `require_email_before_chat` | bool | `true` | Require email before first message |
+| `require_name_after_email` | bool | `true` | Ask for name after email (only if email required) |
+| `welcome_message` | string | `"Hi! How can we help you today?"` | Greeting shown when widget opens |
+
+**CRM Integration**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `auto_create_crm_contact` | bool | `true` | Create CRM contact on email capture |
+| `default_lifecycle_stage` | string | `"subscriber"` | Lifecycle stage for auto-created contacts. Values: `subscriber`, `lead`, `opportunity` |
+| `auto_promote_to_lead` | bool | `false` | Promote subscriber to lead on first resolved conversation |
+
+**AI Behavior**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `ai_enabled` | bool | `true` | AI auto-replies to new conversations |
+| `ai_confidence_threshold` | float | `0.7` | Below this score, flag for human review |
+| `show_talk_to_human` | bool | `true` | Show "Talk to a person" button in widget |
+| `handoff_behavior` | string | `"unassigned"` | On AI handoff: `unassigned`, `assign_to_team`, `round_robin` |
+| `handoff_team_id` | string? | `null` | Team ID for `assign_to_team` handoff (nullable) |
+
+**Widget Appearance**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `brand_color` | string | `"#6366F1"` | Primary widget color (hex) |
+| `launcher_position` | string | `"bottom_right"` | Launcher position: `bottom_right`, `bottom_left` |
+| `launcher_icon` | string | `"chat_bubble"` | Icon style: `chat_bubble`, `question_mark`, `help` |
+| `show_branding` | bool | `true` | Show "Powered by Helpin" footer |
+
+**Business Hours**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `business_hours_enabled` | bool | `false` | Enable business hours restrictions |
+| `business_hours_timezone` | string | `"UTC"` | IANA timezone for schedule |
+| `business_hours_schedule` | object | `{}` | Day-of-week schedule: `{ "mon": { "start": "09:00", "end": "17:00", "enabled": true }, ... }` |
+| `outside_hours_message` | string | `"We're currently offline. Leave a message and we'll get back to you!"` | Message shown outside business hours |
+
+#### Widget Config API Response
+
+The `GET /api/widget/support/config?key={widget_key}` endpoint returns the subset of settings the widget needs (no server-side secrets or internal config):
+
+```json
+{
+  "workspace_name": "Acme Corp",
+  "workspace_logo_url": "https://...",
+  "require_email": true,
+  "require_name": true,
+  "welcome_message": "Hi! How can we help you today?",
+  "ai_enabled": true,
+  "show_talk_to_human": true,
+  "brand_color": "#6366F1",
+  "launcher_position": "bottom_right",
+  "launcher_icon": "chat_bubble",
+  "show_branding": true,
+  "business_hours_enabled": false,
+  "is_online": true
+}
+```
+
+Fields like `handoff_behavior`, `handoff_team_id`, `auto_create_crm_contact`, `default_lifecycle_stage`, and `auto_promote_to_lead` are server-side only — they affect backend behavior but are never exposed to the widget.
 
 ---
 
@@ -1443,7 +1819,10 @@ Deliverables:
 - `CreateStory` endpoint (creates new PM story from conversation, not just linking)
 - WebSocket event publishing with `support_conversation` and `support_conversation_message` entity names
 - Widget WebSocket auth path (session token alongside JWT)
-- Workspace widget settings API (identity capture rules, AI enablement, branding)
+- Chat settings backend: expand `SupportInboxInstallation.Settings` JSONB schema with full settings fields (identity capture, CRM integration, AI behavior, widget appearance, business hours — see section 6.5)
+- Chat settings API: `GET /api/support/inbox/installations` (read), `PATCH /api/support/inbox/installations` (update), `POST /api/support/inbox/installations/regenerate-key` (regenerate widget key)
+- Widget config endpoint: `GET /api/widget/support/config?key={widget_key}` returns public-facing subset of settings (see section 6.5 Widget Config API Response)
+- Settings validation in `SupportInboxService`: validate `ai_confidence_threshold` range (0.0–1.0), validate `handoff_team_id` exists when `handoff_behavior` is `assign_to_team`, validate hex color format for `brand_color`
 
 Exit criteria:
 
@@ -1452,12 +1831,14 @@ Exit criteria:
 - story creation from conversation works
 - realtime events publish correctly for all support state changes
 - widget session creates conversation on first message
+- chat settings can be read and updated via API
+- widget config endpoint returns correct settings subset for a given widget key
 
 ### 12.4 Phase 3: Inbox and Widget MVP
 
 Deliverables:
 
-- dashboard inbox page with two-pane layout (list + thread)
+- dashboard inbox page with two-pane layout (list + thread) — see section 5.1 ASCII layouts
 - slide-out context drawer (CRM contact, associations, story link, metadata)
 - widget MVP with pre-chat capture, message thread, and "Talk to a person" action
 - assignment/status flows with auto-set `resolved_at`/`closed_at`
@@ -1465,6 +1846,10 @@ Deliverables:
 - human handoff path from widget
 - realtime sync in `useRealtimeSync.ts` for support entities
 - frontend terminology migration (ticket → conversation throughout)
+- Chat Settings tab (`frontend/src/components/settings/ChatSettingsTab.tsx`): 6 cards (Widget Installation, Identity Capture, CRM Integration, AI Behavior, Widget Appearance, Business Hours) — see section 6.5 ASCII layout
+- Register `chat` section in `SETTINGS_SECTIONS` under "Support Settings" group
+- Widget key display with copy-to-clipboard and embed code snippet
+- Settings save flow via `PATCH /api/support/inbox/installations`
 
 Exit criteria:
 
@@ -1474,6 +1859,8 @@ Exit criteria:
 - the context drawer shows CRM contact info and allows story creation
 - the conversation can be escalated to a PM story
 - multiple agents viewing the same conversation see updates live
+- workspace admins can configure chat settings from `/w/:slug/settings/chat`
+- widget respects workspace settings (identity capture rules, branding, AI toggle, business hours)
 
 ### 12.5 Phase 4: Docs-Aware AI Support
 
@@ -1682,18 +2069,31 @@ Widget-core implementation (MVP priority):
 
 ### 14.6 Workspace Settings Gaps
 
-Widget settings model missing:
-- `require_email_before_chat` (default: true)
-- `require_name_after_email` (default: true)
-- `auto_create_crm_contact` (default: true)
-- `default_lifecycle_stage` (subscriber vs lead)
-- `ai_enabled` (default: true)
-- `show_talk_to_human` (default: true)
+The current `SupportInboxInstallation.Settings` JSONB is a bare struct with no defined fields. The full settings schema (section 6.5) requires 20+ fields across 6 categories:
+
+**Missing settings fields** (full schema and defaults in section 6.5):
+- Identity Capture: `require_email_before_chat`, `require_name_after_email`, `welcome_message`
+- CRM Integration: `auto_create_crm_contact`, `default_lifecycle_stage`, `auto_promote_to_lead`
+- AI Behavior: `ai_enabled`, `ai_confidence_threshold`, `show_talk_to_human`, `handoff_behavior`, `handoff_team_id`
+- Widget Appearance: `brand_color`, `launcher_position`, `launcher_icon`, `show_branding`
+- Business Hours: `business_hours_enabled`, `business_hours_timezone`, `business_hours_schedule`, `outside_hours_message`
+
+**Missing frontend:**
+- No Chat Settings tab exists. Need `frontend/src/components/settings/ChatSettingsTab.tsx` (see section 6.5 for full ASCII layout)
+- No `chat` section registered in `SETTINGS_SECTIONS` in `frontend/src/pages/Settings.tsx`
 
 **Action Items:**
-- [ ] Update `SupportInboxInstallation.Settings` JSONB schema in `server/internal/model/support_inbox.go`
-- [ ] Add settings validation in `server/internal/service/support_inbox.go`
-- [ ] Add settings UI in `frontend/src/pages/settings/Support.tsx` (or create new settings page)
+- [ ] Define `SupportInboxSettings` Go struct with all fields and JSON tags in `server/internal/model/support_inbox.go`
+- [ ] Add settings validation in `server/internal/service/support_inbox.go`: threshold range (0.0–1.0), handoff team exists when `assign_to_team`, hex color format, business hours schedule structure
+- [ ] Add `GET /api/support/inbox/installations` endpoint (returns full settings for dashboard)
+- [ ] Add `PATCH /api/support/inbox/installations` endpoint (partial update)
+- [ ] Add `POST /api/support/inbox/installations/regenerate-key` endpoint (regenerate widget key)
+- [ ] Update `GET /api/widget/support/config` to return public-facing subset (see section 6.5 Widget Config API Response)
+- [ ] Add `is_online` computation: check `business_hours_enabled` + `business_hours_schedule` against current time in configured timezone
+- [ ] Create `frontend/src/components/settings/ChatSettingsTab.tsx` with 6 Cards: Widget Installation, Identity Capture, CRM Integration, AI Behavior, Widget Appearance, Business Hours
+- [ ] Register `{ id: 'chat', label: 'Chat', icon: MessageSquare }` in `SETTINGS_SECTIONS` under a new "Support Settings" group
+- [ ] Add TanStack Query hooks: `useChatSettings(workspaceId)`, `useUpdateChatSettings(workspaceId)`, `useRegenerateWidgetKey(workspaceId)` in `frontend/src/hooks/queries/`
+- [ ] Widget key display with copy-to-clipboard button and auto-generated embed snippet
 - [ ] Pass settings to widget via `GET /api/widget/support/config` endpoint
 - [ ] Add API endpoints for updating widget settings (`PATCH /api/support/inbox/installations`)
 
