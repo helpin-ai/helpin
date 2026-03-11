@@ -166,6 +166,12 @@ export function StoryListView({
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [allLabels, setAllLabels] = useState<Label[]>([]);
 
+  // Per-group pagination state (for workflow_state grouping)
+  const [groupHasMore, setGroupHasMore] = useState<Map<string, { hasMore: boolean; total: number; loaded: number }>>(new Map());
+  const [groupLoadingId, setGroupLoadingId] = useState<string | null>(null);
+  const groupLoadingRef = useRef(false);
+  const isPerGroupMode = groupBy === 'workflow_state' && !isExternal;
+
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
   }, [workspaceId]);
@@ -222,8 +228,8 @@ export function StoryListView({
     return map;
   }, [sprints]);
 
-  // Fetch stories (skipped when externalStories is provided)
-  const fetchStories = useCallback(async (page = 1, append = false) => {
+  // ── Flat pagination (non-state grouping) ──
+  const fetchStoriesFlat = useCallback(async (page = 1, append = false) => {
     if (isExternal) return;
     if (page === 1) setLoading(true);
     else setLoadingMore(true);
@@ -247,15 +253,103 @@ export function StoryListView({
     setLoadingMore(false);
   }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal]);
 
-  useEffect(() => {
-    if (!isExternal) fetchStories(1, false);
-  }, [fetchStories, isExternal]);
+  // ── Per-state pagination (workflow_state grouping) ──
+  const fetchStoriesByState = useCallback(async () => {
+    if (isExternal) return;
+    setLoading(true);
+    const boardFilters: Record<string, string | undefined> = {};
+    if (filters) {
+      for (const [k, v] of Object.entries(filters)) {
+        if (v !== undefined && v !== null && v !== '') boardFilters[k] = String(v);
+      }
+    }
+    if (teamId) boardFilters.team_id = teamId;
+
+    const res = await pmStoryService.listBoard(workspaceId, workflow.workflow.id, boardFilters, LIST_PAGE_SIZE);
+    if (res.data) {
+      const allStories: Story[] = [];
+      const perGroup = new Map<string, { hasMore: boolean; total: number; loaded: number }>();
+      for (const col of res.data) {
+        allStories.push(...col.stories);
+        perGroup.set(col.state.id, {
+          hasMore: col.has_more,
+          total: col.story_count,
+          loaded: col.stories.length,
+        });
+      }
+      setStories(allStories);
+      setGroupHasMore(perGroup);
+      setHasMore(false); // disable global load more
+    }
+    setLoading(false);
+  }, [workspaceId, workflow.workflow.id, filters, teamId, isExternal]);
+
+  // Load more stories for a specific state group
+  const loadMoreForGroup = useCallback(async (stateId: string) => {
+    const info = groupHasMore.get(stateId);
+    if (!info?.hasMore || groupLoadingRef.current) return;
+    groupLoadingRef.current = true;
+    setGroupLoadingId(stateId);
+
+    const boardFilters: Record<string, string | undefined> = {};
+    if (filters) {
+      for (const [k, v] of Object.entries(filters)) {
+        if (v !== undefined && v !== null && v !== '') boardFilters[k] = String(v);
+      }
+    }
+    if (teamId) boardFilters.team_id = teamId;
+
+    const res = await pmStoryService.listBoardColumn(workspaceId, stateId, info.loaded, LIST_PAGE_SIZE, boardFilters);
+    if (res.data) {
+      const newStories = res.data.stories;
+      const newTotal = res.data.total;
+      const newLoaded = info.loaded + newStories.length;
+
+      // Insert new stories after the last existing story of this state
+      setStories((prev) => {
+        let lastStateIdx = -1;
+        for (let i = 0; i < prev.length; i++) {
+          if (prev[i].workflow_state_id === stateId) lastStateIdx = i;
+        }
+        const result = [...prev];
+        if (lastStateIdx >= 0) {
+          result.splice(lastStateIdx + 1, 0, ...newStories);
+        } else {
+          result.push(...newStories);
+        }
+        return result;
+      });
+
+      setGroupHasMore((prev) => {
+        const next = new Map(prev);
+        next.set(stateId, {
+          hasMore: newLoaded < newTotal,
+          total: newTotal,
+          loaded: newLoaded,
+        });
+        return next;
+      });
+    }
+    setGroupLoadingId(null);
+    groupLoadingRef.current = false;
+  }, [workspaceId, filters, teamId, groupHasMore]);
 
   const loadMore = useCallback(() => {
     if (!loadingMore && hasMore) {
-      fetchStories(currentPage + 1, true);
+      fetchStoriesFlat(currentPage + 1, true);
     }
-  }, [fetchStories, currentPage, loadingMore, hasMore]);
+  }, [fetchStoriesFlat, currentPage, loadingMore, hasMore]);
+
+  // Fetch on mount and when dependencies change
+  useEffect(() => {
+    if (isExternal) return;
+    if (isPerGroupMode) {
+      fetchStoriesByState();
+    } else {
+      fetchStoriesFlat(1, false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExternal, isPerGroupMode, fetchStoriesByState, fetchStoriesFlat]);
 
   // Sync external stories when they change
   useEffect(() => {
@@ -672,6 +766,16 @@ export function StoryListView({
     overscan: 20,
   });
 
+  // Compute total story count (including unloaded) for per-group mode
+  const displayStoryCount = isPerGroupMode && groupHasMore.size > 0
+    ? Array.from(groupHasMore.values()).reduce((sum, info) => sum + info.total, 0)
+    : stories.length;
+
+  const getGroupTotalCount = (groupRow: Row<Story>) => {
+    if (!isPerGroupMode || !groupRow.subRows[0]) return undefined;
+    return groupHasMore.get(groupRow.subRows[0].original.workflow_state_id)?.total;
+  };
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -708,7 +812,7 @@ export function StoryListView({
           </SelectContent>
         </Select>
         <span className="text-xs text-muted-foreground">
-          {stories.length} {stories.length === 1 ? 'story' : 'stories'}{hasMore ? '+' : ''}
+          {displayStoryCount} {displayStoryCount === 1 ? 'story' : 'stories'}{!isPerGroupMode && hasMore ? '+' : ''}
         </span>
         <div className="ml-auto">
           <ListDisplayMenu disabledKeys={teamDisabledKeys} />
@@ -723,8 +827,8 @@ export function StoryListView({
           const el = e.currentTarget;
           const scrollTop = el.scrollTop;
 
-          // Infinite loading
-          if (!isExternal && hasMore && !loadingMore) {
+          // Infinite loading (only for flat/global pagination, not per-group mode)
+          if (!isExternal && !isPerGroupMode && hasMore && !loadingMore) {
             if (scrollTop + el.clientHeight >= el.scrollHeight - 200) {
               loadMore();
             }
@@ -815,13 +919,28 @@ export function StoryListView({
             {pinnedGroupRow && (
               <div className="sticky z-[5]" style={{ top: headerRef.current?.offsetHeight ?? 0, height: 0, overflow: 'visible' }}>
                 <div className="bg-background border-b border-border/50">
-                  <MemoGroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} />
+                  <MemoGroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} totalStoryCount={getGroupTotalCount(pinnedGroupRow)} />
                 </div>
               </div>
             )}
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<Story>;
               const isGrouped = row.getIsGrouped();
+
+              // Determine if this is the last data row before the next group (for per-group "Load more")
+              let showGroupLoadMore = false;
+              let groupStateId = '';
+              if (isPerGroupMode && !isGrouped) {
+                const nextRow = rows[virtualRow.index + 1] as Row<Story> | undefined;
+                const isLastInGroup = !nextRow || nextRow.getIsGrouped();
+                if (isLastInGroup) {
+                  groupStateId = row.original.workflow_state_id;
+                  const info = groupHasMore.get(groupStateId);
+                  if (info?.hasMore) {
+                    showGroupLoadMore = true;
+                  }
+                }
+              }
 
               return (
                 <div
@@ -837,15 +956,24 @@ export function StoryListView({
                   }}
                 >
                   {isGrouped ? (
-                    <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} />
+                    <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} totalStoryCount={getGroupTotalCount(row)} />
                   ) : (
-                    <MemoDataRow row={row} onOpenStory={onOpenStory} />
+                    <>
+                      <MemoDataRow row={row} onOpenStory={onOpenStory} />
+                      {showGroupLoadMore && (
+                        <GroupLoadSentinel
+                          stateId={groupStateId}
+                          isLoading={groupLoadingId === groupStateId}
+                          onLoadMore={loadMoreForGroup}
+                        />
+                      )}
+                    </>
                   )}
                 </div>
               );
             })}
           </div>
-          {loadingMore && (
+          {loadingMore && !isPerGroupMode && (
             <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading more stories...
@@ -861,13 +989,15 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   row,
   groupBy,
   stateMap,
+  totalStoryCount,
 }: {
   row: Row<Story>;
   groupBy: GroupByOption;
   stateMap: Map<string, { name: string; stateType: string }>;
+  totalStoryCount?: number;
 }) {
   const subRows = row.subRows;
-  const storyCount = subRows.length;
+  const storyCount = totalStoryCount ?? subRows.length;
   const totalPoints = subRows.reduce((sum, r) => sum + (r.original.estimate ?? 0), 0);
   const completedPoints = subRows.reduce((sum, r) => {
     const stateInfo = stateMap.get(r.original.workflow_state_id);
@@ -941,6 +1071,37 @@ const MemoDataRow = memo(function DataRow({ row, onOpenStory }: { row: Row<Story
     </div>
   );
 });
+
+// Auto-loading sentinel: triggers loadMore when the virtualizer renders it (i.e. near viewport)
+function GroupLoadSentinel({
+  stateId,
+  isLoading,
+  onLoadMore,
+}: {
+  stateId: string;
+  isLoading: boolean;
+  onLoadMore: (id: string) => void;
+}) {
+  const triggered = useRef(false);
+
+  useEffect(() => {
+    triggered.current = false;
+  }, [stateId]);
+
+  useEffect(() => {
+    if (!isLoading && !triggered.current) {
+      triggered.current = true;
+      onLoadMore(stateId);
+    }
+  }, [stateId, isLoading, onLoadMore]);
+
+  return isLoading ? (
+    <div className="flex w-full items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground">
+      <Loader2 className="h-3 w-3 animate-spin" />
+      Loading...
+    </div>
+  ) : null;
+}
 
 // ── Inline editable cells ──────────────────────────────────────────
 
