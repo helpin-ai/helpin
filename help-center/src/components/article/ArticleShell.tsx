@@ -19,7 +19,7 @@ export function ArticleShell({
   title,
   excerpt,
   spaceSlug,
-  spaceName,
+  spaceName: _spaceName,
   collectionName,
   articleSlug,
   pager,
@@ -27,14 +27,13 @@ export function ArticleShell({
 }: ArticleShellProps) {
   return (
     <article
-      className="mx-auto py-8 px-8 lg:px-10"
+      className="mx-auto pt-16 pb-8 px-5 lg:px-6"
       style={{ maxWidth: 'var(--hc-content-max-width)' }}
     >
-      {spaceName && (
-        <div className="mb-5">
+      {collectionName && (
+        <div className="mb-2.5">
           <Breadcrumbs
             spaceSlug={spaceSlug}
-            spaceName={spaceName}
             collectionName={collectionName}
           />
         </div>

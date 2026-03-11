@@ -9,7 +9,7 @@ import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, FileText, FolderKanban, GitBranch, Globe, Import, ListTree, Mail, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
+import { Bot, FileText, FolderKanban, GitBranch, Globe, Import, Mail, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
 import {
   GeneralTab,
   MembersTab,
@@ -20,8 +20,7 @@ import {
   SystemTab,
   AITab,
   ProjectDeliveryTab,
-  WorkflowsTab,
-  WorkflowStatesTab,
+  WorkflowManager,
   AutomationsTab,
   ImportTab,
   HelpcenterTab,
@@ -29,7 +28,7 @@ import {
   CRMAutonomySettingsTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'workflowstates' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -58,13 +57,6 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Workflows',
     description: '',
     icon: GitBranch,
-    group: 'Project Settings',
-  },
-  {
-    id: 'workflowstates',
-    label: 'Workflow States',
-    description: '',
-    icon: ListTree,
     group: 'Project Settings',
   },
   {
@@ -262,6 +254,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
       case 'people':
         return (
           <PeopleTab
+            workspaceId={workspaceId}
             people={settings.people}
             editable={canManageMembers}
             onRefresh={load}
@@ -312,19 +305,12 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         );
       case 'workflows':
         return (
-          <WorkflowsTab
+          <WorkflowManager
             workspaceId={workspaceId}
             teams={settings.teams}
             editable={canAdminWorkflows}
-            initialTeamId={initialTeamId}
-          />
-        );
-      case 'workflowstates':
-        return (
-          <WorkflowStatesTab
-            workspaceId={workspaceId}
-            editable={canAdminWorkflows}
             initialWorkflowId={initialWorkflowId}
+            initialTeamId={initialTeamId}
           />
         );
       case 'labels':
@@ -336,7 +322,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
       case 'import':
         return <ImportTab workspaceId={workspaceId} editable={canImport} />;
       case 'helpcenter':
-        return <HelpcenterTab workspaceId={workspaceId} />;
+        return <HelpcenterTab workspaceId={workspaceId} workspaceName={currentWorkspace?.name ?? ''} />;
       case 'crm-pipelines':
         return <PipelineSettings />;
       case 'crm-email':

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: helpin-server
-  namespace: default
+  namespace: helpin
   labels:
     app: helpin-server
 spec:
@@ -30,7 +30,7 @@ spec:
           emptyDir: {}
       containers:
         - name: helpin-server
-          image: ghcr.io/helpin-ai/helpin/server:v0.34.0
+          image: ghcr.io/helpin-ai/helpin/server:v0.38.0
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -74,7 +74,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: helpin-server-svc
-  namespace: default
+  namespace: helpin
   labels:
     app: helpin-server
 spec:

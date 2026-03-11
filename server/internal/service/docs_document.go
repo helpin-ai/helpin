@@ -27,17 +27,6 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 	if req.Title == "" {
 		return nil, fmt.Errorf("title is required")
 	}
-	if !model.IsValidDocType(req.DocType) {
-		return nil, fmt.Errorf("invalid doc_type: %s", req.DocType)
-	}
-	if req.TemplateKey != nil && !model.IsValidTemplateKey(*req.TemplateKey) {
-		return nil, fmt.Errorf("invalid template_key: %s", *req.TemplateKey)
-	}
-
-	// Validate owner requirement.
-	if model.OwnerRequired(req.DocType) && req.OwnerID == nil {
-		return nil, fmt.Errorf("owner_id is required for doc_type %s", req.DocType)
-	}
 
 	// Validate space exists and belongs to workspace.
 	space, err := s.spaceRepo.GetByID(ctx, req.SpaceID)
@@ -49,12 +38,6 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 	}
 	if space.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("space does not belong to this workspace")
-	}
-
-	// Only help_center_article allowed in external_capable spaces (other types also allowed).
-	// Internal spaces cannot hold help_center_article docs.
-	if model.IsExternalCapableDocType(req.DocType) && space.Type != model.SpaceTypeExternalCapable {
-		return nil, fmt.Errorf("doc_type %s requires an external-capable space", req.DocType)
 	}
 
 	// Sanitize optional UUID fields: treat empty strings as nil.
@@ -72,7 +55,6 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 		SpaceID:      req.SpaceID,
 		CollectionID: collectionID,
 		Title:        req.Title,
-		DocType:      req.DocType,
 		Status:       model.DocStatusDraft,
 		Visibility:   model.SpaceVisibilityWorkspaceWide,
 		OwnerID:      req.OwnerID,
@@ -91,14 +73,14 @@ func (s *DocsDocumentService) Get(ctx context.Context, id string) (*model.DocsDo
 }
 
 // List returns documents with optional filters.
-func (s *DocsDocumentService) List(ctx context.Context, workspaceID string, spaceID, collectionID, docType, status, teamID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
+func (s *DocsDocumentService) List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
 	// Admins/owners can see all drafts; others only see their own.
 	isAdminOrOwner := role == "admin" || role == "owner"
 	var draftViewerID string
 	if !isAdminOrOwner {
 		draftViewerID = userID
 	}
-	return s.docRepo.List(ctx, workspaceID, spaceID, collectionID, docType, status, teamID, draftViewerID, includeArchived)
+	return s.docRepo.List(ctx, workspaceID, spaceID, collectionID, status, teamID, draftViewerID, includeArchived)
 }
 
 // Update updates a document's metadata.
@@ -110,9 +92,8 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 	if doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
-
-	if req.TemplateKey != nil && !model.IsValidTemplateKey(*req.TemplateKey) {
-		return nil, fmt.Errorf("invalid template_key: %s", *req.TemplateKey)
+	if err := checkLocked(doc); err != nil {
+		return nil, err
 	}
 
 	updates := map[string]interface{}{}
@@ -155,6 +136,9 @@ func (s *DocsDocumentService) Publish(ctx context.Context, id string) (*model.Do
 	if doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
+	if err := checkLocked(doc); err != nil {
+		return nil, err
+	}
 	if doc.Status == model.DocStatusPublished {
 		return doc, nil
 	}
@@ -173,6 +157,9 @@ func (s *DocsDocumentService) Unpublish(ctx context.Context, id string) (*model.
 	if doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
+	if err := checkLocked(doc); err != nil {
+		return nil, err
+	}
 	if doc.Status != model.DocStatusPublished {
 		return nil, fmt.Errorf("document is not published")
 	}
@@ -190,6 +177,9 @@ func (s *DocsDocumentService) Archive(ctx context.Context, id string) (*model.Do
 	}
 	if doc == nil {
 		return nil, fmt.Errorf("document not found")
+	}
+	if err := checkLocked(doc); err != nil {
+		return nil, err
 	}
 	slog.Info("[DEBUG] Archive called",
 		"doc_id", id,
@@ -243,6 +233,10 @@ func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.Mov
 		return nil, fmt.Errorf("document not found")
 	}
 
+	if err := checkLocked(doc); err != nil {
+		return nil, err
+	}
+
 	targetSpace, err := s.spaceRepo.GetByID(ctx, req.SpaceID)
 	if err != nil {
 		return nil, err
@@ -252,12 +246,6 @@ func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.Mov
 	}
 	if targetSpace.WorkspaceID != doc.WorkspaceID {
 		return nil, fmt.Errorf("target space does not belong to this workspace")
-	}
-
-	// help_center_article can only live in external_capable spaces.
-	if model.IsExternalCapableDocType(doc.DocType) && targetSpace.Type != model.SpaceTypeExternalCapable {
-		// Move is allowed, but we flag that external publication will be disabled.
-		// The caller (handler/helpcenter service) should unpublish externally.
 	}
 
 	if err := s.docRepo.Move(ctx, id, req.SpaceID, req.CollectionID); err != nil {
@@ -274,6 +262,9 @@ func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 	}
 	if doc == nil {
 		return fmt.Errorf("document not found")
+	}
+	if err := checkLocked(doc); err != nil {
+		return err
 	}
 	return s.docRepo.Delete(ctx, id)
 }
@@ -343,6 +334,14 @@ func (s *DocsDocumentService) ToggleLock(ctx context.Context, id string, lock bo
 	}
 
 	return s.docRepo.Update(ctx, id, updates)
+}
+
+// checkLocked returns an error if the document is locked, preventing mutation.
+func checkLocked(doc *model.DocsDocument) error {
+	if doc.IsLocked {
+		return fmt.Errorf("document is locked and cannot be modified")
+	}
+	return nil
 }
 
 func generateShareToken() (string, error) {

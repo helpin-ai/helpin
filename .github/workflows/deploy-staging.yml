@@ -118,6 +118,30 @@ jobs:
             --push \
             build-stg-server/server/
 
+  build-helpcenter:
+    name: Build Help Center Image
+    runs-on: ubuntu-latest
+    needs: version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: build-stg-helpcenter
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push helpcenter image
+        run: |
+          docker buildx build \
+            -f build-stg-helpcenter/help-center/Dockerfile \
+            --build-arg VITE_API_URL=https://api.stage.helpin.ai/api \
+            -t ${{ env.IMAGE_PREFIX }}/helpcenter:${{ needs.version.outputs.rc_tag }} \
+            -t ${{ env.IMAGE_PREFIX }}/helpcenter:sha-${{ github.sha }} \
+            -t ${{ env.IMAGE_PREFIX }}/helpcenter:stage-latest \
+            --push \
+            build-stg-helpcenter/help-center/
+
   deploy-netlify:
     name: Build & Deploy Frontend to Netlify
     runs-on: ubuntu-latest
@@ -155,7 +179,7 @@ jobs:
   release:
     name: Create RC Release & Update Manifests
     runs-on: ubuntu-latest
-    needs: [version, build-server]
+    needs: [version, build-server, build-helpcenter]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -210,6 +234,7 @@ jobs:
           echo "" >> release_notes.md
           echo "### Images" >> release_notes.md
           echo "- \`${{ env.IMAGE_PREFIX }}/server:$RC_TAG\`" >> release_notes.md
+          echo "- \`${{ env.IMAGE_PREFIX }}/helpcenter:$RC_TAG\`" >> release_notes.md
 
       - name: Create GitHub pre-release
         working-directory: stg-release
@@ -227,6 +252,7 @@ jobs:
         run: |
           RC_TAG="${{ needs.version.outputs.rc_tag }}"
           SERVER_IMAGE="${{ env.IMAGE_PREFIX }}/server:${RC_TAG}"
+          HELPCENTER_IMAGE="${{ env.IMAGE_PREFIX }}/helpcenter:${RC_TAG}"
 
           # Checkout develop branch for manifest updates
           MANIFEST_CLONE="${GITHUB_WORKSPACE}/../k8s-helpin-stg"
@@ -242,6 +268,10 @@ jobs:
           # Update server image references
           find "$MANIFEST_DIR" -name "*.yaml" -exec \
             sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" {} +
+
+          # Update helpcenter image references
+          find "$MANIFEST_DIR" -name "*.yaml" -exec \
+            sed -i -E "s|ghcr\.io/helpin-ai/helpin/helpcenter:[^ \"]+|${HELPCENTER_IMAGE}|g" {} +
 
           # Commit and push to develop
           git add k8s/

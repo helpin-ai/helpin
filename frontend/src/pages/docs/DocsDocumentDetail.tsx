@@ -14,6 +14,7 @@ import {
   Eye,
   ExternalLink,
   FileText,
+  FolderInput,
   FolderOpen,
   Globe,
   Link2,
@@ -68,10 +69,11 @@ import { Switch } from '@/components/ui/switch'
 import { DocsEditor } from '@/components/docs/DocsEditor'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
+import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
+import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import type { DocsVersion } from '@/lib/docsTypes'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 
@@ -131,6 +133,7 @@ export function DocsDocumentDetail() {
 
   const [metaOpen, setMetaOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
   const [slugDialogOpen, setSlugDialogOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
@@ -211,8 +214,7 @@ export function DocsDocumentDetail() {
   const slugifyTitle = (title: string) =>
     title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-  const isExternalHelpCenter =
-    doc?.doc_type === 'help_center_article' && space?.type !== 'internal'
+  const isExternalHelpCenter = space?.type === 'external_capable'
 
   const handlePublish = async () => {
     // For external help center articles, show slug confirmation first
@@ -358,7 +360,7 @@ export function DocsDocumentDetail() {
             size="sm"
             className="h-7 gap-1.5 text-xs"
             onClick={handlePublish}
-            disabled={publishDoc.isPending}
+            disabled={publishDoc.isPending || doc.is_locked}
           >
             <Send className="h-3 w-3" />
             Publish
@@ -400,38 +402,40 @@ export function DocsDocumentDetail() {
       )}
 
       {/* Lock banner */}
-      {doc.is_locked && (
-        <div className="flex items-center gap-2 border-b border-blue-500/30 bg-blue-500/10 px-4 py-2">
-          <Lock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-          <span className="text-sm text-blue-700 dark:text-blue-300">
-            This document is locked{doc.locked_by ? ` by ${(() => {
-              const locker = members.find((m) => m.user_id === doc.locked_by)
-              return locker ? formatAssignableMemberName(locker) : 'someone'
-            })()}` : ''}.
-            {' Unlock to edit.'}
-          </span>
-          {canUnlock && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto h-7 gap-1.5 text-xs"
-              onClick={() => {
-                toggleLock.mutate(
-                  { docId, isLocked: false },
-                  {
-                    onSuccess: () => toast.success('Document unlocked'),
-                    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unlock'),
-                  },
-                )
-              }}
-              disabled={toggleLock.isPending}
-            >
-              <Unlock className="h-3 w-3" />
-              Unlock
-            </Button>
-          )}
-        </div>
-      )}
+      {doc.is_locked && (() => {
+        const locker = doc.locked_by ? members.find((m) => m.user_id === doc.locked_by) : null
+        const lockerName = locker ? formatAssignableMemberName(locker) : 'someone'
+        return (
+          <div className="flex items-center gap-2 border-b border-blue-500/30 bg-blue-500/10 px-4 py-2">
+            <Lock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm text-blue-700 dark:text-blue-300">
+              {canUnlock
+                ? `This document is locked${doc.locked_by ? ` by ${lockerName}` : ''}. Unlock to edit.`
+                : `This document is locked by ${lockerName}. Contact them or an admin to unlock it.`}
+            </span>
+            {canUnlock && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto h-7 gap-1.5 text-xs"
+                onClick={() => {
+                  toggleLock.mutate(
+                    { docId, isLocked: false },
+                    {
+                      onSuccess: () => toast.success('Document unlocked'),
+                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unlock'),
+                    },
+                  )
+                }}
+                disabled={toggleLock.isPending}
+              >
+                <Unlock className="h-3 w-3" />
+                Unlock
+              </Button>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Version preview banner */}
       {previewVersion && (
@@ -523,7 +527,7 @@ export function DocsDocumentDetail() {
                           },
                         )
                       }}
-                      disabled={toggleShare.isPending}
+                      disabled={toggleShare.isPending || doc.is_locked}
                     />
                   </div>
                   {doc.is_publicly_shared && doc.share_token && (
@@ -548,18 +552,11 @@ export function DocsDocumentDetail() {
 
             {/* ── Properties ── */}
             <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
-              {/* Type */}
-              <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Type</span>
-              <div className="min-w-0 self-center">
-                <span className="text-xs">{DOC_TYPE_LABELS[doc.doc_type] ?? doc.doc_type}</span>
-              </div>
-
               {/* Owner */}
               <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Owner</span>
               <div className="min-w-0 self-center">
-                {canEditDocs ? (
+                {canEditDocs && !doc.is_locked ? (
                   <MemberPickerPopover
                     value={doc.owner_id ?? '__none__'}
                     members={members}
@@ -607,7 +604,7 @@ export function DocsDocumentDetail() {
               <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
               <span className="text-xs text-muted-foreground self-center">Collection</span>
               <div className="min-w-0 self-center">
-                {canEditDocs ? (
+                {canEditDocs && !doc.is_locked ? (
                   <Select
                     value={doc.collection_id ?? '__none__'}
                     onValueChange={async (v) => {
@@ -701,24 +698,27 @@ export function DocsDocumentDetail() {
               <>
                 <Separator className="my-4" />
                 <div className="space-y-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newLocked = !doc.is_locked
-                      toggleLock.mutate(
-                        { docId, isLocked: newLocked },
-                        {
-                          onSuccess: () => toast.success(newLocked ? 'Document locked' : 'Document unlocked'),
-                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to toggle lock'),
-                        },
-                      )
-                    }}
-                    disabled={toggleLock.isPending || (doc.is_locked && !canUnlock)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
-                  >
-                    {doc.is_locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                    {doc.is_locked ? 'Unlock document' : 'Lock document'}
-                  </button>
+                  {/* Lock/unlock: only show if user can toggle (can lock when unlocked, can unlock when locked) */}
+                  {(!doc.is_locked || canUnlock) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newLocked = !doc.is_locked
+                        toggleLock.mutate(
+                          { docId, isLocked: newLocked },
+                          {
+                            onSuccess: () => toast.success(newLocked ? 'Document locked' : 'Document unlocked'),
+                            onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to toggle lock'),
+                          },
+                        )
+                      }}
+                      disabled={toggleLock.isPending}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      {doc.is_locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                      {doc.is_locked ? 'Unlock document' : 'Lock document'}
+                    </button>
+                  )}
                   {doc.status === 'published' && (
                     <button
                       type="button"
@@ -728,18 +728,28 @@ export function DocsDocumentDetail() {
                           onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
                         })
                       }}
-                      disabled={unpublishDoc.isPending}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                      disabled={unpublishDoc.isPending || doc.is_locked}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
                       <RotateCcw className="h-3.5 w-3.5" />
                       Revert to draft
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setMoveDialogOpen(true)}
+                    disabled={doc.is_locked}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    <FolderInput className="h-3.5 w-3.5" />
+                    Move to...
+                  </button>
                   {doc.status !== 'archived' && (
                     <button
                       type="button"
                       onClick={handleArchive}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                      disabled={doc.is_locked}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
                       <Archive className="h-3.5 w-3.5" />
                       Archive
@@ -748,7 +758,8 @@ export function DocsDocumentDetail() {
                   <button
                     type="button"
                     onClick={handleDelete}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10"
+                    disabled={doc.is_locked}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50 disabled:pointer-events-none"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Delete
@@ -780,6 +791,17 @@ export function DocsDocumentDetail() {
         onOpenChange={setLinksOpen}
         canEdit={canEditDocs}
       />
+      {doc && (
+        <MoveDocumentDialog
+          wsId={wsId}
+          open={moveDialogOpen}
+          onOpenChange={setMoveDialogOpen}
+          docId={docId}
+          docTitle={doc.title}
+          currentSpaceId={doc.space_id}
+          currentCollectionId={doc.collection_id}
+        />
+      )}
       {/* Slug confirmation dialog for external help center articles */}
       <Dialog open={slugDialogOpen} onOpenChange={setSlugDialogOpen}>
         <DialogContent className="sm:max-w-md">

@@ -122,11 +122,10 @@ export const docsService = {
     api.post(`/docs/documents/${docId}/unpublish-external${qs(wsId)}`),
 
   // ── Search ──────────────────────────────────────────────────────────────
-  search: (wsId: string, query: string, filters?: { doc_type?: string; status?: string; limit?: number }) => {
+  search: (wsId: string, query: string, filters?: { status?: string; limit?: number }) => {
     const search = new URLSearchParams();
     search.set('workspace_id', wsId);
     search.set('q', query);
-    if (filters?.doc_type) search.set('doc_type', filters.doc_type);
     if (filters?.status) search.set('status', filters.status);
     if (filters?.limit) search.set('limit', String(filters.limit));
     return api.get<DocsSearchResult[]>(`/docs/search?${search.toString()}`);
@@ -137,7 +136,7 @@ export const docsService = {
     api.get<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`),
   updateHelpcenterConfig: (wsId: string, payload: UpdateDocsHelpcenterConfigRequest) =>
     api.put<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`, payload),
-  uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'favicon', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
+  uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'logo_dark' | 'favicon', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
     const token = localStorage.getItem('access_token');
     const formData = new FormData();
     formData.append('file', file);

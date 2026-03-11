@@ -18,8 +18,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useCreateDocsDocument, useDocsSpaces, useDocsCollections } from '@/hooks/queries'
-import type { DocType } from '@/lib/docsTypes'
-import { DOC_TYPE_LABELS } from '@/lib/docsTypes'
 import { toast } from 'sonner'
 
 interface CreateDocumentDialogProps {
@@ -31,8 +29,6 @@ interface CreateDocumentDialogProps {
   onCreated?: (docId: string) => void
 }
 
-const docTypes: DocType[] = ['wiki', 'sop', 'feature_doc', 'support_article', 'help_center_article']
-
 export function CreateDocumentDialog({
   wsId,
   open,
@@ -42,7 +38,6 @@ export function CreateDocumentDialog({
   onCreated,
 }: CreateDocumentDialogProps) {
   const [title, setTitle] = useState('')
-  const [docType, setDocType] = useState<DocType>('wiki')
   const [spaceId, setSpaceId] = useState(defaultSpaceId ?? '')
   const [collectionId, setCollectionId] = useState(defaultCollectionId ?? '')
   const createDocument = useCreateDocsDocument(wsId)
@@ -56,7 +51,6 @@ export function CreateDocumentDialog({
 
   const reset = () => {
     setTitle('')
-    setDocType('wiki')
     setSpaceId(defaultSpaceId ?? (spaces?.[0]?.id ?? ''))
     setCollectionId(defaultCollectionId ?? '')
   }
@@ -68,7 +62,6 @@ export function CreateDocumentDialog({
     try {
       const doc = await createDocument.mutateAsync({
         title: title.trim(),
-        doc_type: docType,
         space_id: spaceId,
         collection_id: collectionId || undefined,
       })
@@ -102,22 +95,6 @@ export function CreateDocumentDialog({
                 placeholder="e.g. Getting Started Guide"
                 autoFocus
               />
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Document type</Label>
-              <Select value={docType} onValueChange={(v) => setDocType(v as DocType)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {docTypes.map((dt) => (
-                    <SelectItem key={dt} value={dt}>
-                      {DOC_TYPE_LABELS[dt]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="grid gap-2">

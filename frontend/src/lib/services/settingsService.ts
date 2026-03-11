@@ -43,9 +43,11 @@ const normalizeWorkspaceSettings = (raw: RawWorkspaceSettings): WorkspaceSetting
   team_repo_defaults: raw.team_repo_defaults ?? [],
 });
 
+const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
+
 export const settingsService = {
   getAll: async (workspaceId: string) => {
-    const primary = await api.get<RawWorkspaceSettings>(`/settings?workspace_id=${encodeURIComponent(workspaceId)}`);
+    const primary = await api.get<RawWorkspaceSettings>(`/settings${qs(workspaceId)}`);
     if (primary.data) {
       return { data: normalizeWorkspaceSettings(primary.data), error: null };
     }
@@ -58,46 +60,47 @@ export const settingsService = {
 
     return { data: null, error: primary.error ?? fallback.error };
   },
-  initialize: (workspaceId: string) => api.post('/settings/initialize', { workspace_id: workspaceId }),
+  initialize: (workspaceId: string) => api.post(`/settings/initialize${qs(workspaceId)}`, { workspace_id: workspaceId }),
   createTeam: (data: { workspace_id: string; name: string; handle?: string; description?: string; manager_id?: string }) =>
-    api.post<WorkspaceTeam>('/settings/teams', data),
-  updateTeam: (id: string, data: Partial<WorkspaceTeam>) =>
-    api.put<WorkspaceTeam>(`/settings/teams/${id}`, data),
-  deleteTeam: (id: string) => api.del(`/settings/teams/${id}`),
-  addTeamMember: (teamId: string, data: { user_id: string; role?: 'owner' | 'member' }) =>
-    api.post(`/settings/teams/${teamId}/members`, data),
-  updateTeamMember: (teamId: string, userId: string, data: { role?: 'owner' | 'member' }) =>
-    api.put(`/settings/teams/${teamId}/members/${userId}`, data),
-  removeTeamMember: (teamId: string, userId: string) =>
-    api.del(`/settings/teams/${teamId}/members/${userId}`),
-  createPerson: (data: Omit<WorkspacePerson, 'id'>) =>
-    api.post<WorkspacePerson>('/settings/people', data),
-  updatePerson: (id: string, data: Partial<WorkspacePerson>) =>
-    api.put<WorkspacePerson>(`/settings/people/${id}`, data),
-  deletePerson: (id: string) => api.del(`/settings/people/${id}`),
+    api.post<WorkspaceTeam>(`/settings/teams${qs(data.workspace_id)}`, data),
+  updateTeam: (workspaceId: string, id: string, data: Partial<WorkspaceTeam>) =>
+    api.put<WorkspaceTeam>(`/settings/teams/${id}${qs(workspaceId)}`, data),
+  deleteTeam: (workspaceId: string, id: string) => api.del(`/settings/teams/${id}${qs(workspaceId)}`),
+  addTeamMember: (workspaceId: string, teamId: string, data: { user_id: string; role?: 'owner' | 'member' }) =>
+    api.post(`/settings/teams/${teamId}/members${qs(workspaceId)}`, data),
+  updateTeamMember: (workspaceId: string, teamId: string, userId: string, data: { role?: 'owner' | 'member' }) =>
+    api.put(`/settings/teams/${teamId}/members/${userId}${qs(workspaceId)}`, data),
+  removeTeamMember: (workspaceId: string, teamId: string, userId: string) =>
+    api.del(`/settings/teams/${teamId}/members/${userId}${qs(workspaceId)}`),
+  createPerson: (workspaceId: string, data: Omit<WorkspacePerson, 'id'>) =>
+    api.post<WorkspacePerson>(`/settings/people${qs(workspaceId)}`, data),
+  updatePerson: (workspaceId: string, id: string, data: Partial<WorkspacePerson>) =>
+    api.put<WorkspacePerson>(`/settings/people/${id}${qs(workspaceId)}`, data),
+  deletePerson: (workspaceId: string, id: string) => api.del(`/settings/people/${id}${qs(workspaceId)}`),
   updateBonusTiers: (workspaceId: string, tiers: Omit<BonusTierConfig, 'id' | 'workspace_id'>[]) =>
-    api.put('/settings/bonus-tiers', { workspace_id: workspaceId, tiers }),
+    api.put(`/settings/bonus-tiers${qs(workspaceId)}`, { workspace_id: workspaceId, tiers }),
   updateJobRoleCriteria: (workspaceId: string, jobRole: string, criteria: Omit<JobRoleCriteria, 'id' | 'workspace_id'>[]) =>
-    api.put('/settings/job-roles', { workspace_id: workspaceId, job_role: jobRole, criteria }),
+    api.put(`/settings/job-roles${qs(workspaceId)}`, { workspace_id: workspaceId, job_role: jobRole, criteria }),
   deleteJobRole: (workspaceId: string, jobRole: string) =>
-    api.del(`/settings/job-roles?workspace_id=${encodeURIComponent(workspaceId)}&job_role=${encodeURIComponent(jobRole)}`),
+    api.del(`/settings/job-roles${qs(workspaceId)}&job_role=${encodeURIComponent(jobRole)}`),
   updateSystem: (workspaceId: string, data: { team_weight?: number; sprint_duration_weeks?: number; notifications_enabled?: boolean; auto_calculate_bonuses?: boolean; planning_methodology?: 'structured_v1' | 'basic_v1'; planning_web_search_enabled?: boolean; planning_web_search_provider?: 'brave' }) =>
-    api.put(`/settings/system?workspace_id=${encodeURIComponent(workspaceId)}`, data),
-  addTeamInvitation: (teamId: string, invitationId: string) =>
-    api.post<InvitationTeamPreassignment>(`/settings/teams/${teamId}/invitations`, { invitation_id: invitationId }),
-  removeTeamInvitation: (teamId: string, invitationId: string) =>
-    api.del(`/settings/teams/${teamId}/invitations/${invitationId}`),
-  getTeamEstimateSettings: (teamId: string) =>
-    api.get<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates`),
-  updateTeamEstimateSettings: (teamId: string, data: { enabled?: boolean; scale?: EstimateScale; extended?: boolean; allow_zero?: boolean; count_unestimated_as_one?: boolean }) =>
-    api.put<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates`, data),
-  getTeamFieldVisibility: (teamId: string) =>
-    api.get<TeamFieldVisibility>(`/settings/teams/${teamId}/field-visibility`),
-  updateTeamFieldVisibility: (teamId: string, data: Partial<Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>>) =>
-    api.put<TeamFieldVisibility>(`/settings/teams/${teamId}/field-visibility`, data),
-  getTeamRepoDefault: (teamId: string) =>
-    api.get<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default`),
+    api.put(`/settings/system${qs(workspaceId)}`, data),
+  addTeamInvitation: (workspaceId: string, teamId: string, invitationId: string) =>
+    api.post<InvitationTeamPreassignment>(`/settings/teams/${teamId}/invitations${qs(workspaceId)}`, { invitation_id: invitationId }),
+  removeTeamInvitation: (workspaceId: string, teamId: string, invitationId: string) =>
+    api.del(`/settings/teams/${teamId}/invitations/${invitationId}${qs(workspaceId)}`),
+  getTeamEstimateSettings: (workspaceId: string, teamId: string) =>
+    api.get<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates${qs(workspaceId)}`),
+  updateTeamEstimateSettings: (workspaceId: string, teamId: string, data: { enabled?: boolean; scale?: EstimateScale; extended?: boolean; allow_zero?: boolean; count_unestimated_as_one?: boolean }) =>
+    api.put<TeamEstimateSettings>(`/settings/teams/${teamId}/estimates${qs(workspaceId)}`, data),
+  getTeamFieldVisibility: (workspaceId: string, teamId: string) =>
+    api.get<TeamFieldVisibility>(`/settings/teams/${teamId}/field-visibility${qs(workspaceId)}`),
+  updateTeamFieldVisibility: (workspaceId: string, teamId: string, data: Partial<Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>>) =>
+    api.put<TeamFieldVisibility>(`/settings/teams/${teamId}/field-visibility${qs(workspaceId)}`, data),
+  getTeamRepoDefault: (workspaceId: string, teamId: string) =>
+    api.get<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default${qs(workspaceId)}`),
   updateTeamRepoDefault: (
+    workspaceId: string,
     teamId: string,
     data: {
       repository_id: string;
@@ -107,5 +110,5 @@ export const settingsService = {
       review_state_id?: string;
       done_state_id?: string;
     },
-  ) => api.put<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default`, data),
+  ) => api.put<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default${qs(workspaceId)}`, data),
 };

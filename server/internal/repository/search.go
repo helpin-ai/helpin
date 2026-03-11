@@ -28,6 +28,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 			Sprints:    []model.SearchResult{},
 			Objectives: []model.SearchResult{},
 			Members:    []model.SearchResult{},
+			Documents:  []model.SearchResult{},
 		}, nil
 	}
 
@@ -39,6 +40,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 		sprints    []model.SearchResult
 		objectives []model.SearchResult
 		members    []model.SearchResult
+		documents  []model.SearchResult
 		wg         sync.WaitGroup
 		mu         sync.Mutex
 		firstErr   error
@@ -52,7 +54,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 		mu.Unlock()
 	}
 
-	wg.Add(5)
+	wg.Add(6)
 
 	go func() {
 		defer wg.Done()
@@ -128,6 +130,21 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 		}
 	}()
 
+	go func() {
+		defer wg.Done()
+		if err := r.db.WithContext(ctx).
+			Raw(`SELECT id, title AS name, 'document' AS type
+				FROM docs_documents
+				WHERE workspace_id = ? AND deleted_at IS NULL
+				  AND status != 'archived'
+				  AND title ILIKE ?
+				ORDER BY updated_at DESC
+				LIMIT ?`, workspaceID, pattern, searchLimit).
+			Scan(&documents).Error; err != nil {
+			setErr(fmt.Errorf("search documents: %w", err))
+		}
+	}()
+
 	wg.Wait()
 
 	if firstErr != nil {
@@ -149,6 +166,9 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 	if members == nil {
 		members = []model.SearchResult{}
 	}
+	if documents == nil {
+		documents = []model.SearchResult{}
+	}
 
 	return &model.SearchResponse{
 		Stories:    stories,
@@ -156,5 +176,6 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 		Sprints:    sprints,
 		Objectives: objectives,
 		Members:    members,
+		Documents:  documents,
 	}, nil
 }

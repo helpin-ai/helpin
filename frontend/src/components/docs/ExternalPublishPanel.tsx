@@ -20,6 +20,7 @@ import type { DocsDocument } from '@/lib/docsTypes'
 interface ExternalPublishPanelProps {
   wsId: string
   doc: DocsDocument
+  isExternalCapable: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -27,6 +28,7 @@ interface ExternalPublishPanelProps {
 export function ExternalPublishPanel({
   wsId,
   doc,
+  isExternalCapable,
   open,
   onOpenChange,
 }: ExternalPublishPanelProps) {
@@ -35,9 +37,7 @@ export function ExternalPublishPanel({
 
   const [slug, setSlug] = useState('')
 
-  const isExternallyPublished = doc.doc_type === 'help_center_article' && doc.status === 'published'
-  // Note: We don't have public_published_at on the frontend DocsDocument type currently,
-  // but we can check doc_type and status as proxies. The backend enforces eligibility.
+  const isExternallyPublished = isExternalCapable && doc.status === 'published'
 
   const handlePublish = async () => {
     try {
@@ -76,14 +76,14 @@ export function ExternalPublishPanel({
         </SheetHeader>
 
         <div className="mt-4 space-y-4">
-          {doc.doc_type !== 'help_center_article' ? (
+          {!isExternalCapable ? (
             <div className="rounded-md border border-border/60 bg-muted/30 p-4 text-center">
               <GlobeLock className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
               <p className="text-sm text-muted-foreground">
-                Only help center articles can be published externally.
+                Only documents in external-capable spaces can be published.
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Change the document type to "Help Center Article" first.
+                Move this document to a help center space first.
               </p>
             </div>
           ) : doc.status !== 'published' ? (

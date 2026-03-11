@@ -88,9 +88,12 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
     return (
       <QuickTooltip label={`Expand ${column.state.name}`}>
       <section
-        className="flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-4 transition-colors hover:bg-muted/50"
+        className="relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 transition-colors hover:bg-muted/50"
         onClick={() => onToggleCollapse(column.state.id)}
       >
+        {column.state.color && (
+          <div className="absolute top-0 left-2 right-2 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
+        )}
         <Maximize2 className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
         <span className="text-xs font-medium text-muted-foreground">{column.story_count}</span>
@@ -109,12 +112,24 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
 
   return (
     <section className="flex h-full w-[360px] shrink-0 flex-col">
-      <header className="flex items-center justify-between px-3 pt-4 pb-3">
+      <header className="flex items-center justify-between px-3 pt-4 pb-3 relative">
+        {column.state.color && (
+          <div className="absolute top-0 left-3 right-3 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
+        )}
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
-            <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
-            {column.state.name}
-          </p>
+          {column.state.description ? (
+            <QuickTooltip label={column.state.description}>
+              <p className="flex items-center gap-1.5 truncate text-sm font-semibold cursor-default">
+                <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
+                {column.state.name}
+              </p>
+            </QuickTooltip>
+          ) : (
+            <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+              <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
+              {column.state.name}
+            </p>
+          )}
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5" title={`${column.story_count} items`}>
               <StickyNote className="h-3 w-3" />

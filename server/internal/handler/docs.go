@@ -191,7 +191,6 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	spaceID := ptrIfSet(q.Get("space_id"))
 	collectionID := ptrIfSet(q.Get("collection_id"))
-	docType := ptrIfSet(q.Get("doc_type"))
 	status := ptrIfSet(q.Get("status"))
 	teamID := ptrIfSet(q.Get("team_id"))
 	includeArchived := q.Get("include_archived") == "true"
@@ -213,7 +212,7 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 		"raw_query", r.URL.RawQuery,
 	)
 
-	docs, err := h.documentSvc.List(r.Context(), wsID, spaceID, collectionID, docType, status, teamID, userID, role, includeArchived)
+	docs, err := h.documentSvc.List(r.Context(), wsID, spaceID, collectionID, status, teamID, userID, role, includeArchived)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -354,12 +353,10 @@ func (h *DocsHandler) MoveDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If help center article moved to non-external space, unpublish externally.
-	if doc.DocType == model.DocTypeHelpCenterArticle {
-		space, _ := h.spaceSvc.GetUnfiltered(r.Context(), doc.SpaceID)
-		if space != nil && space.Type != model.SpaceTypeExternalCapable {
-			_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
-		}
+	// If moved to a non-external space, unpublish externally.
+	space, _ := h.spaceSvc.GetUnfiltered(r.Context(), doc.SpaceID)
+	if space != nil && space.Type != model.SpaceTypeExternalCapable {
+		_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
 	}
 
 	writeJSON(w, http.StatusOK, doc)
@@ -383,6 +380,18 @@ func (h *DocsHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	docID := chi.URLParam(r, "docId")
+
+	// Reject content saves on locked documents.
+	doc, err := h.documentSvc.Get(r.Context(), docID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if doc != nil && doc.IsLocked {
+		writeError(w, http.StatusForbidden, "document is locked and cannot be modified")
+		return
+	}
+
 	var req model.SaveDocsContentRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -405,6 +414,18 @@ func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
 func (h *DocsHandler) SaveMarkdownContent(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	docID := chi.URLParam(r, "docId")
+
+	// Reject content saves on locked documents.
+	doc, err := h.documentSvc.Get(r.Context(), docID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if doc != nil && doc.IsLocked {
+		writeError(w, http.StatusForbidden, "document is locked and cannot be modified")
+		return
+	}
+
 	var req model.SaveDocsMarkdownRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -518,13 +539,12 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 	// Snapshot on publish.
 	_, _ = h.versionSvc.SnapshotOnPublish(r.Context(), docID, userID)
 
-	// Auto-publish externally for help center articles in external-capable spaces.
-	if doc.DocType == model.DocTypeHelpCenterArticle {
+	// Auto-publish externally if document is in an external-capable space.
+	pubSpace, _ := h.spaceSvc.GetUnfiltered(r.Context(), doc.SpaceID)
+	if pubSpace != nil && pubSpace.Type == model.SpaceTypeExternalCapable {
 		if err := h.helpcenterSvc.PublishExternally(r.Context(), docID, body.Slug); err != nil {
-			slog.Warn("[DEBUG] PublishExternally failed", "doc_id", docID, "doc_type", doc.DocType, "error", err)
+			slog.Warn("PublishExternally failed", "doc_id", docID, "error", err)
 		}
-	} else {
-		slog.Info("[DEBUG] Skipping external publish", "doc_id", docID, "doc_type", doc.DocType)
 	}
 
 	// Re-fetch to include updated helpcenter article data.
@@ -614,7 +634,6 @@ func (h *DocsHandler) Search(w http.ResponseWriter, r *http.Request) {
 	actor := authorization.GetActor(r.Context())
 	q := r.URL.Query()
 	query := q.Get("q")
-	docType := ptrIfSet(q.Get("doc_type"))
 	status := ptrIfSet(q.Get("status"))
 	limit := 50
 	if l := q.Get("limit"); l != "" {
@@ -630,7 +649,7 @@ func (h *DocsHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.searchSvc.Search(r.Context(), wsID, query, spaceIDs, docType, status, limit)
+	results, err := h.searchSvc.Search(r.Context(), wsID, query, spaceIDs, status, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -729,7 +748,7 @@ func (h *DocsHandler) SubmitArticleFeedback(w http.ResponseWriter, r *http.Reque
 // Returns nil config with a 404 written if not found or not published.
 func (h *DocsHandler) resolveSubdomain(w http.ResponseWriter, r *http.Request) *model.DocsHelpcenterConfig {
 	subdomain := chi.URLParam(r, "subdomain")
-	cfg, err := h.helpcenterSvc.GetConfigBySubdomain(r.Context(), subdomain)
+	cfg, err := h.helpcenterSvc.ResolveConfig(r.Context(), subdomain)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return nil
@@ -739,6 +758,27 @@ func (h *DocsHandler) resolveSubdomain(w http.ResponseWriter, r *http.Request) *
 		return nil
 	}
 	return cfg
+}
+
+// VerifyDomain checks if a domain is registered for on_demand_tls (Caddy).
+func (h *DocsHandler) VerifyDomain(w http.ResponseWriter, r *http.Request) {
+	domain := r.URL.Query().Get("domain")
+	if domain == "" {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	// Allow our own domains always.
+	if domain == "helpcenter.helpin.ai" || domain == "helpcenter-stage.helpin.ai" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	// Check if domain is registered as a custom_domain in our DB.
+	cfg, err := h.helpcenterSvc.GetConfigByCustomDomain(r.Context(), domain)
+	if err != nil || cfg == nil {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {

@@ -106,6 +106,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	slog.Info("startup: running MigrateDropDocType")
+	if err := repository.MigrateDropDocType(db); err != nil {
+		slog.Error("failed to migrate drop doc_type", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("startup: running MigrateDropRestrictToOwners")
+	if err := repository.MigrateDropRestrictToOwners(db); err != nil {
+		slog.Error("failed to migrate drop restrict_to_owners", "error", err)
+		os.Exit(1)
+	}
+
 	// Fix: idx_ws_member_ws_user was incorrectly created as a single-column unique
 	// index on user_id only. Drop it so AutoMigrate recreates it as composite (workspace_id, user_id).
 	if err := db.Exec("DROP INDEX IF EXISTS idx_ws_member_ws_user").Error; err != nil {
@@ -453,7 +465,7 @@ func main() {
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo)
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
-	docsLinkService := service.NewDocsLinkService(docsLinkRepo)
+	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, s3Client)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 

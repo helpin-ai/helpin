@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-helpcenter
+  namespace: helpin
+  labels:
+    app: helpin-helpcenter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-helpcenter
+  template:
+    metadata:
+      labels:
+        app: helpin-helpcenter
+    spec:
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      nodeSelector:
+        node-role.kubernetes.io/worker: workload
+        node.hetzner.com/type: cloud
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: helpcenter
+          image: ghcr.io/helpin-ai/helpin/helpcenter:stage-latest
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: helpin-helpcenter-svc
+  namespace: helpin
+spec:
+  selector:
+    app: helpin-helpcenter
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP

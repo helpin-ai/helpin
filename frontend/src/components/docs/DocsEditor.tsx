@@ -858,6 +858,7 @@ img { max-width: 100%; }
               </div>
             )}
             <EditorContent editor={editor} />
+            <div className="h-64" />
           </div>
         )}
       </div>

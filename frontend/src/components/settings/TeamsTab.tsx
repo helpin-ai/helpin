@@ -530,7 +530,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
       description: description || undefined,
     };
     if (editTeam) {
-      const { error } = await settingsService.updateTeam(editTeam.id, payload);
+      const { error } = await settingsService.updateTeam(workspaceId, editTeam.id, payload);
       if (error) toast.error(error);
       else {
         toast.success('Team updated');
@@ -551,7 +551,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await settingsService.deleteTeam(id);
+    const { error } = await settingsService.deleteTeam(workspaceId, id);
     if (error) toast.error(error);
     else {
       toast.success('Team deleted');
@@ -561,7 +561,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   };
 
   const handleRoleChange = async (teamId: string, userId: string, role: 'owner' | 'member') => {
-    const { error } = await settingsService.updateTeamMember(teamId, userId, { role });
+    const { error } = await settingsService.updateTeamMember(workspaceId, teamId, userId, { role });
     if (error) toast.error(error);
     else {
       toast.success('Team member updated');
@@ -570,7 +570,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   };
 
   const handleRemoveMember = async (teamId: string, userId: string) => {
-    const { error } = await settingsService.removeTeamMember(teamId, userId);
+    const { error } = await settingsService.removeTeamMember(workspaceId, teamId, userId);
     if (error) toast.error(error);
     else {
       toast.success('Team member removed');
@@ -579,7 +579,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   };
 
   const handleAddInvitation = async (teamId: string, invitationId: string) => {
-    const { error } = await settingsService.addTeamInvitation(teamId, invitationId);
+    const { error } = await settingsService.addTeamInvitation(workspaceId, teamId, invitationId);
     if (error) toast.error(error);
     else {
       toast.success('Invited member pre-assigned to team');
@@ -588,7 +588,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   };
 
   const handleRemoveInvitation = async (teamId: string, invitationId: string) => {
-    const { error } = await settingsService.removeTeamInvitation(teamId, invitationId);
+    const { error } = await settingsService.removeTeamInvitation(workspaceId, teamId, invitationId);
     if (error) toast.error(error);
     else {
       toast.success('Invitation pre-assignment removed');
@@ -875,7 +875,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                             onClick={async () => {
                               if (!selectedTeam) return;
                               setSavingMember(true);
-                              const { error } = await settingsService.addTeamMember(selectedTeam.id, { user_id: member.user_id, role: 'member' });
+                              const { error } = await settingsService.addTeamMember(workspaceId, selectedTeam.id, { user_id: member.user_id, role: 'member' });
                               setSavingMember(false);
                               if (error) { toast.error(error); return; }
                               toast.success(`${member.full_name || member.email} added`);
@@ -1003,7 +1003,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               saving={estimateSaving}
               onSave={async (data) => {
                 setEstimateSaving(true);
-                const { error } = await settingsService.updateTeamEstimateSettings(selectedTeam.id, data);
+                const { error } = await settingsService.updateTeamEstimateSettings(workspaceId, selectedTeam.id, data);
                 setEstimateSaving(false);
                 if (error) {
                   toast.error(error);
@@ -1029,7 +1029,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               saving={fieldVisSaving}
               onSave={async (data) => {
                 setFieldVisSaving(true);
-                const { error } = await settingsService.updateTeamFieldVisibility(selectedTeam.id, data);
+                const { error } = await settingsService.updateTeamFieldVisibility(workspaceId, selectedTeam.id, data);
                 setFieldVisSaving(false);
                 if (error) {
                   toast.error(error);
@@ -1056,7 +1056,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               saving={repoSaving}
               onSave={async (data) => {
                 setRepoSaving(true);
-                const { error } = await settingsService.updateTeamRepoDefault(selectedTeam.id, data);
+                const { error } = await settingsService.updateTeamRepoDefault(workspaceId, selectedTeam.id, data);
                 setRepoSaving(false);
                 if (error) {
                   toast.error(error);

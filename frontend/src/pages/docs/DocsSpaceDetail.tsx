@@ -12,10 +12,10 @@ import {
   Copy,
   FileText,
   Folder,
+  FolderInput,
   FolderOpen,
   Globe,
   ListFilter,
-  Lock,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -53,14 +53,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { DocsCollection, DocsDocument, DocType, DocStatus } from '@/lib/docsTypes'
-import { DOC_TYPE_LABELS, DOC_STATUS_LABELS } from '@/lib/docsTypes'
+import type { DocsCollection, DocsDocument, DocStatus } from '@/lib/docsTypes'
+import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog'
 import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
+import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 
 function statusColor(status: string): string {
   switch (status) {
@@ -94,15 +95,13 @@ export function DocsSpaceDetail() {
   const { data: access } = useWorkspaceAccess(wsId)
   const { canEditDocs } = usePermissions(access)
 
-  const [filterType, setFilterType] = useState<DocType | null>(null)
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
-  const [sortField, setSortField] = useState<'updated_at' | 'title' | 'status' | 'doc_type'>('updated_at')
+  const [sortField, setSortField] = useState<'updated_at' | 'title' | 'status'>('updated_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   const { data: space, isLoading: spaceLoading } = useDocsSpace(wsId, spaceId)
   const { data: collections } = useDocsCollections(wsId, spaceId)
   const docFilters = { space_id: spaceId, include_archived: 'true', ...(filterStatus ? { status: filterStatus } : {}) }
-  console.log('[DEBUG] DocsSpaceDetail filters:', docFilters, 'filterStatus:', filterStatus)
   const { data: documents } = useDocsDocuments(wsId, docFilters)
   const { data: members = [] } = useAssignableMembers(wsId)
   const archiveDoc = useArchiveDocsDocument(wsId)
@@ -112,6 +111,7 @@ export function DocsSpaceDetail() {
   const publishDoc = usePublishDocsDocument(wsId)
   const [editSpaceOpen, setEditSpaceOpen] = useState(false)
   const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null)
+  const [movingDoc, setMovingDoc] = useState<DocsDocument | null>(null)
 
   useTitle(space?.name ?? 'Space')
 
@@ -119,8 +119,6 @@ export function DocsSpaceDetail() {
   const collectionNames = new Map<string, string>(
     (collections ?? []).map((c) => [c.id, c.name])
   )
-
-  console.log('[DEBUG] Documents received:', documents?.length, 'statuses:', documents?.map(d => d.status))
 
   // Group documents by collection
   const collectionMap = new Map<string, DocsDocument[]>()
@@ -137,7 +135,6 @@ export function DocsSpaceDetail() {
       }
     }
   }
-
   // Read collection from URL search param
   const collectionParam = (location.search as Record<string, string | undefined>).collection ?? null
   const [activeCollection, setActiveCollection] = useState<string | null>(collectionParam)
@@ -278,14 +275,6 @@ export function DocsSpaceDetail() {
                   <TooltipContent>External</TooltipContent>
                 </Tooltip>
               )}
-              {space.restrict_to_owners && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Lock className="h-4 w-4 text-amber-500" />
-                  </TooltipTrigger>
-                  <TooltipContent>Restricted</TooltipContent>
-                </Tooltip>
-              )}
             </div>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {space.visibility === 'team_only' ? 'Team only' : 'All teams'} ·{' '}
@@ -344,7 +333,7 @@ export function DocsSpaceDetail() {
       </header>
 
       {/* Collection tabs */}
-      <div className="flex flex-wrap items-center gap-1.5">
+      {((collections ?? []).length > 0 || uncollected.length > 0) && <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           onClick={() => setActiveCollection(null)}
@@ -379,8 +368,8 @@ export function DocsSpaceDetail() {
                     type="button"
                     className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 opacity-0 transition-opacity outline-none focus:outline-none group-hover/tab:opacity-100 ${
                       activeCollection === col.id
-                        ? 'text-background/70 hover:text-background'
-                        : 'text-muted-foreground/60 hover:text-foreground'
+                        ? 'text-background/80 hover:text-background'
+                        : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -405,14 +394,14 @@ export function DocsSpaceDetail() {
           </div>
         ))}
 
-        {uncollected.length > 0 && (collections ?? []).length > 0 && (
+        {uncollected.length > 0 && (
           <button
             type="button"
             onClick={() => setActiveCollection('__uncollected__')}
             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               activeCollection === '__uncollected__'
                 ? 'bg-foreground text-background'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+                : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
             }`}
           >
             Uncategorized ({uncollected.length})
@@ -432,46 +421,10 @@ export function DocsSpaceDetail() {
             </button>
           </QuickTooltip>
         )}
-      </div>
+      </div>}
 
       {/* Filters row */}
-      <div className="flex items-center justify-end gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                filterType
-                  ? 'border-primary/30 bg-primary/5 text-foreground'
-                  : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
-              }`}
-            >
-              <ListFilter className="h-3 w-3" />
-              {filterType ? DOC_TYPE_LABELS[filterType] : 'Type'}
-              <ChevronDown className="h-3 w-3 opacity-50" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem
-              onClick={() => setFilterType(null)}
-              className={!filterType ? 'font-medium' : ''}
-            >
-              All Types
-              {!filterType && <Check className="ml-auto h-3.5 w-3.5" />}
-            </DropdownMenuItem>
-            {(Object.entries(DOC_TYPE_LABELS) as [DocType, string][]).map(([key, label]) => (
-              <DropdownMenuItem
-                key={key}
-                onClick={() => setFilterType(key)}
-                className={filterType === key ? 'font-medium' : ''}
-              >
-                {label}
-                {filterType === key && <Check className="ml-auto h-3.5 w-3.5" />}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
+      {(collections ?? []).length > 0 && <div className="flex items-center justify-end gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -507,7 +460,7 @@ export function DocsSpaceDetail() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      </div>}
 
       {/* Document list */}
       {(() => {
@@ -517,11 +470,7 @@ export function DocsSpaceDetail() {
             ? collectionMap.get(activeCollection) ?? []
             : documents ?? []
 
-        // Apply type filter
-        const filtered = baseDocs.filter((doc) => {
-          if (filterType && doc.doc_type !== filterType) return false
-          return true
-        })
+        const filtered = baseDocs
 
         // Sort
         const displayDocs = [...filtered].sort((a, b) => {
@@ -532,9 +481,6 @@ export function DocsSpaceDetail() {
               break
             case 'status':
               cmp = (a.status ?? '').localeCompare(b.status ?? '')
-              break
-            case 'doc_type':
-              cmp = (a.doc_type ?? '').localeCompare(b.doc_type ?? '')
               break
             case 'updated_at':
             default:
@@ -547,38 +493,43 @@ export function DocsSpaceDetail() {
         if (displayDocs.length === 0) {
           const hasCollections = (collections ?? []).length > 0
           return (
-            <div className="flex flex-col items-center justify-center py-12 px-4">
+            <div className="flex flex-col items-center justify-center py-12 px-4 max-w-md mx-auto">
               {hasCollections ? (
-                <FileText className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                <>
+                  <FileText className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                  <p className="text-sm text-muted-foreground">No documents found.</p>
+                  {canEditDocs && (
+                    <button
+                      type="button"
+                      onClick={() => openCreate('docs_document', {
+                        spaceId,
+                        collectionId: activeCollection && activeCollection !== '__uncollected__' ? activeCollection : undefined,
+                      })}
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Create a document
+                    </button>
+                  )}
+                </>
               ) : (
-                <FolderOpen className="h-10 w-10 text-muted-foreground/30 mb-3" />
-              )}
-              <p className="text-sm text-muted-foreground">
-                {hasCollections ? 'No documents found.' : 'No collections yet.'}
-              </p>
-              {canEditDocs && (
-                hasCollections ? (
-                  <button
-                    type="button"
-                    onClick={() => openCreate('docs_document', {
-                      spaceId,
-                      collectionId: activeCollection && activeCollection !== '__uncollected__' ? activeCollection : undefined,
-                    })}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Create a document
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => openCreate('docs_collection', { spaceId })}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Create a collection
-                  </button>
-                )
+                <>
+                  <FolderOpen className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                  <p className="text-sm font-medium">No collections yet</p>
+                  <p className="mt-1.5 text-center text-xs text-muted-foreground leading-relaxed">
+                    Collections help you organize documents into groups — like topics, categories, or projects. Create your first collection to start adding documents.
+                  </p>
+                  {canEditDocs && (
+                    <button
+                      type="button"
+                      onClick={() => openCreate('docs_collection', { spaceId })}
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Create a collection
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )
@@ -593,10 +544,6 @@ export function DocsSpaceDetail() {
               </button>
               <span className="w-36 shrink-0">Owner</span>
               <span className="w-28 shrink-0">Collection</span>
-              <button type="button" onClick={() => { if (sortField === 'doc_type') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('doc_type'); setSortDir('asc') } }} className="w-24 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors">
-                Type
-                {sortField === 'doc_type' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-              </button>
               <button type="button" onClick={() => { if (sortField === 'status') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('status'); setSortDir('asc') } }} className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors">
                 Status
                 {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
@@ -643,9 +590,6 @@ export function DocsSpaceDetail() {
                 <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
                   {doc.collection_id ? collectionNames.get(doc.collection_id) ?? '—' : '—'}
                 </span>
-                <span className="w-24 shrink-0 text-xs text-muted-foreground">
-                  {DOC_TYPE_LABELS[doc.doc_type] ?? doc.doc_type}
-                </span>
                 <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
                   {DOC_STATUS_LABELS[doc.status] ?? doc.status}
                 </span>
@@ -658,10 +602,10 @@ export function DocsSpaceDetail() {
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
-                          className="rounded p-1 text-muted-foreground/60 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100"
+                          className="rounded p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <MoreHorizontal className="h-3.5 w-3.5" />
+                          <MoreHorizontal className="h-4 w-4" />
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-40">
@@ -671,6 +615,12 @@ export function DocsSpaceDetail() {
                         >
                           <Copy className="h-3.5 w-3.5" />
                           {duplicatingDocId === doc.id ? 'Duplicating...' : 'Duplicate'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setMovingDoc(doc)}
+                        >
+                          <FolderInput className="h-3.5 w-3.5" />
+                          Move to...
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         {doc.status === 'draft' && (
@@ -764,6 +714,18 @@ export function DocsSpaceDetail() {
         }}
         collection={editingCollection}
       />
+
+      {movingDoc && (
+        <MoveDocumentDialog
+          wsId={wsId}
+          open={!!movingDoc}
+          onOpenChange={(open) => { if (!open) setMovingDoc(null) }}
+          docId={movingDoc.id}
+          docTitle={movingDoc.title}
+          currentSpaceId={movingDoc.space_id ?? spaceId}
+          currentCollectionId={movingDoc.collection_id}
+        />
+      )}
     </div>
   )
 }

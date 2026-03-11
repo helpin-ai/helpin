@@ -155,7 +155,6 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			title TEXT NOT NULL,
-			doc_type TEXT NOT NULL,
 			status TEXT NOT NULL,
 			deleted_at DATETIME
 		)`,
@@ -249,8 +248,8 @@ func seedSupportTicket(t *testing.T, db *gorm.DB, id, workspaceID string, displa
 func seedDocsDocument(t *testing.T, db *gorm.DB, id, workspaceID, title string) {
 	t.Helper()
 	if err := db.Exec(
-		`INSERT INTO docs_documents (id, workspace_id, title, doc_type, status, deleted_at)
-		 VALUES (?, ?, ?, 'product_spec', 'published', NULL)`,
+		`INSERT INTO docs_documents (id, workspace_id, title, status, deleted_at)
+		 VALUES (?, ?, ?, 'published', NULL)`,
 		id, workspaceID, title,
 	).Error; err != nil {
 		t.Fatalf("seed docs document: %v", err)

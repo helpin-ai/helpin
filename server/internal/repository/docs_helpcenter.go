@@ -48,6 +48,18 @@ func (r *DocsHelpcenterRepository) GetConfigBySubdomain(ctx context.Context, sub
 	return &cfg, nil
 }
 
+// GetConfigByCustomDomain returns the help center config by custom domain.
+func (r *DocsHelpcenterRepository) GetConfigByCustomDomain(ctx context.Context, domain string) (*model.DocsHelpcenterConfig, error) {
+	var cfg model.DocsHelpcenterConfig
+	if err := r.db.WithContext(ctx).Where("custom_domain = ?", domain).First(&cfg).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get helpcenter config by custom domain: %w", err)
+	}
+	return &cfg, nil
+}
+
 // UpsertConfig creates or updates the help center config.
 func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID string, updates map[string]interface{}) (*model.DocsHelpcenterConfig, error) {
 	existing, err := r.GetConfig(ctx, workspaceID)
@@ -76,6 +88,9 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	}
 	if v, ok := updates["brand_logo_url"].(*string); ok {
 		cfg.BrandLogoURL = v
+	}
+	if v, ok := updates["brand_logo_dark_url"].(*string); ok {
+		cfg.BrandLogoDarkURL = v
 	}
 	if v, ok := updates["is_published"].(bool); ok {
 		cfg.IsPublished = v

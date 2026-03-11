@@ -702,12 +702,11 @@ func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID s
 		WorkspaceID: workspaceID,
 		SpaceID:     space.ID,
 		Title:       strings.TrimSpace(epic.Name) + " Product Spec",
-		DocType:     model.DocTypeProductSpec,
 		Status:      model.DocStatusDraft,
 		Visibility:  model.SpaceVisibilityWorkspaceWide,
 		OwnerID:     strPtr(actorID),
 		TeamID:      teamID,
-		TemplateKey: strPtr(model.DocTypeProductSpec),
+		TemplateKey: strPtr("product_spec"),
 		Tags:        model.DocsStringArray{"product-spec", "epic"},
 		CreatedBy:   actorID,
 	})

@@ -1155,12 +1155,11 @@ func (a *AgentRunActivities) ensureEpicSpecDocument(ctx context.Context, state *
 		WorkspaceID: state.run.WorkspaceID,
 		SpaceID:     space.ID,
 		Title:       strings.TrimSpace(state.epic.Name) + " Product Spec",
-		DocType:     model.DocTypeProductSpec,
 		Status:      model.DocStatusDraft,
 		Visibility:  model.SpaceVisibilityWorkspaceWide,
 		OwnerID:     strPtr(actorID),
 		TeamID:      teamID,
-		TemplateKey: strPtr(model.DocTypeProductSpec),
+		TemplateKey: strPtr("product_spec"),
 		Tags:        model.DocsStringArray{"product-spec", "epic"},
 		CreatedBy:   actorID,
 	})
@@ -1234,7 +1233,7 @@ func (a *AgentRunActivities) renderLinkedDocsContext(ctx context.Context, worksp
 			body = truncatePlanningText(content.ContentText, 3000)
 		}
 
-		entries = append(entries, fmt.Sprintf("- %s [%s, %s]\n%s", doc.Title, doc.DocType, doc.ID, body))
+		entries = append(entries, fmt.Sprintf("- %s [%s]\n%s", doc.Title, doc.ID, body))
 		if len(entries) >= 5 {
 			break
 		}

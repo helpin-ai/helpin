@@ -58,7 +58,6 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 		Icon:              req.Icon,
 		Visibility:        req.Visibility,
 		Type:              req.Type,
-		RestrictToOwners:  req.RestrictToOwners,
 		DefaultReviewDays: req.DefaultReviewDays,
 		CreatedBy:         userID,
 	}
@@ -222,7 +221,7 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 		return nil, fmt.Errorf("space not found")
 	}
 	if space.IsSystem {
-		// System spaces can update name, icon, visibility, type, restrict_to_owners but not slug.
+		// System spaces can update name, icon, visibility, type but not slug.
 		if req.Slug != nil {
 			return nil, fmt.Errorf("cannot change slug of a system space")
 		}
@@ -243,9 +242,6 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 	}
 	if req.Visibility != nil {
 		updates["visibility"] = *req.Visibility
-	}
-	if req.RestrictToOwners != nil {
-		updates["restrict_to_owners"] = *req.RestrictToOwners
 	}
 	if req.DefaultReviewDays != nil {
 		updates["default_review_days"] = *req.DefaultReviewDays
@@ -302,35 +298,33 @@ func (s *DocsSpaceService) SeedDefaultSpaces(ctx context.Context, workspaceID, u
 	}
 
 	defaults := []struct {
-		Name             string
-		Slug             string
-		Type             string
-		RestrictToOwners bool
-		Position         int
+		Name     string
+		Slug     string
+		Type     string
+		Position int
 	}{
-		{"Company Wiki", "company-wiki", model.SpaceTypeInternal, false, 0},
-		{"Engineering", "engineering", model.SpaceTypeInternal, false, 1},
-		{"Product Specs", "product-specs", model.SpaceTypeInternal, false, 2},
-		{"Support Knowledge", "support-knowledge", model.SpaceTypeInternal, false, 3},
-		{"Marketing", "marketing", model.SpaceTypeInternal, false, 4},
-		{"Sales", "sales", model.SpaceTypeInternal, false, 5},
-		{"HR & People", "hr-people", model.SpaceTypeInternal, true, 6},
-		{"Operations", "operations", model.SpaceTypeInternal, false, 7},
-		{"Help Center", "help-center", model.SpaceTypeExternalCapable, false, 8},
-		{"Developer / API Docs", "developer-api-docs", model.SpaceTypeExternalCapable, false, 9},
+		{"Company Wiki", "company-wiki", model.SpaceTypeInternal, 0},
+		{"Engineering", "engineering", model.SpaceTypeInternal, 1},
+		{"Product Specs", "product-specs", model.SpaceTypeInternal, 2},
+		{"Support Knowledge", "support-knowledge", model.SpaceTypeInternal, 3},
+		{"Marketing", "marketing", model.SpaceTypeInternal, 4},
+		{"Sales", "sales", model.SpaceTypeInternal, 5},
+		{"HR & People", "hr-people", model.SpaceTypeInternal, 6},
+		{"Operations", "operations", model.SpaceTypeInternal, 7},
+		{"Help Center", "help-center", model.SpaceTypeExternalCapable, 8},
+		{"Developer / API Docs", "developer-api-docs", model.SpaceTypeExternalCapable, 9},
 	}
 
 	for _, d := range defaults {
 		space := &model.DocsSpace{
-			WorkspaceID:      workspaceID,
-			Name:             d.Name,
-			Slug:             d.Slug,
-			Visibility:       model.SpaceVisibilityWorkspaceWide,
-			Type:             d.Type,
-			RestrictToOwners: d.RestrictToOwners,
-			IsSystem:         true,
-			Position:         d.Position,
-			CreatedBy:        userID,
+			WorkspaceID: workspaceID,
+			Name:        d.Name,
+			Slug:        d.Slug,
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        d.Type,
+			IsSystem:    true,
+			Position:    d.Position,
+			CreatedBy:   userID,
 		}
 		if _, err := s.spaceRepo.Create(ctx, space); err != nil {
 			return fmt.Errorf("seed space %s: %w", d.Name, err)

@@ -139,7 +139,6 @@ export function useRestoreDocsCollection(wsId: string) {
 interface DocFilters {
   space_id?: string
   collection_id?: string
-  doc_type?: string
   status?: string
   owner_id?: string
   team_id?: string
@@ -190,7 +189,6 @@ export function useDuplicateDocsDocument(wsId: string) {
     mutationFn: async (sourceDoc: DocsDocument) => {
       const duplicatedDoc = unwrap(await docsService.createDocument(wsId, {
         title: `${sourceDoc.title} (Copy)`,
-        doc_type: sourceDoc.doc_type,
         space_id: sourceDoc.space_id,
         collection_id: sourceDoc.collection_id,
         owner_id: sourceDoc.owner_id,
@@ -554,7 +552,7 @@ export function useToggleDocShare(wsId: string) {
 
 // ── Search ──────────────────────────────────────────────────────────────────
 
-export function useDocsSearch(wsId: string, query: string, filters?: { doc_type?: string; status?: string; limit?: number }) {
+export function useDocsSearch(wsId: string, query: string, filters?: { status?: string; limit?: number }) {
   return useQuery({
     queryKey: [...queryKeys.docs.search(wsId, query), filters],
     queryFn: async () => unwrap(await docsService.search(wsId, query, filters)),
