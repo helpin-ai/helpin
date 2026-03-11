@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helpin SDK Test</title>
+
+    <style>
+        .links {
+            margin: 20px 0;
+            display: flex;
+        }
+        .links a {
+            margin-right: 10px;
+        }
+
+    </style>
+
+</head>
+<body>
+<h1>Helpin SDK Test</h1>
+<div class="links">
+    <a href="/examples/index.html">Home</a>
+    <a href="/examples/form-tracking.html">Form Tracking</a>
+    <a href="http://stage.test.local:5173/examples/cross-domain.html">Cross Domain Tracking</a>
+    <a href="http://stage.test.local:5173/examples/autocapture.html">Autocapture</a>
+    <a href="/examples/cookie-less-tracking.html">Cookie Less Tracking</a>
+    <a href="/examples/exclusion-tracking.html">Tracking Exclusion</a>
+</div>
+
+<button id="trackEvent">Track Event</button>
+<button id="identifyUser">Identify User</button>
+<button class="your-class helpin-no-capture">
+    This button will not be captured
+</button>
+
+<!-- Load the SDK -->
+<script src="/dist/lib.js"
+        data-key="test-api-key"
+        data-tracking-host="http://localhost:3000"
+        data-autocapture="true"
+        data-form-tracking="true"
+        data-auto-pageview="true"></script>
+
+<!-- Load the test scripts -->
+<script src="./test.ts"></script>
+</body>
+</html>

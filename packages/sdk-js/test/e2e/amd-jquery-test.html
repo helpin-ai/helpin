@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helpin AMD/jQuery/RequireJS Test Suite</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .code-block {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            overflow-x: auto;
+        }
+        #network-log {
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Helpin AMD/jQuery/RequireJS Test Suite</h1>
+    
+    <!-- Test 1: Basic jQuery + RequireJS Setup -->
+    <div class="test-section">
+        <h2>Test 1: jQuery + RequireJS Environment</h2>
+        <p>This simulates an Adobe Commerce/Magento 2 environment with jQuery and RequireJS.</p>
+        <button onclick="runTest1()">Run Test 1</button>
+        <div id="test1-results"></div>
+    </div>
+
+    <!-- Test 2: Script Tag with Data Attributes -->
+    <div class="test-section">
+        <h2>Test 2: Script Tag Auto-Initialization</h2>
+        <p>Tests the standard script tag implementation with data attributes.</p>
+        <button onclick="runTest2()">Run Test 2</button>
+        <div id="test2-results"></div>
+    </div>
+
+    <!-- Test 3: AMD Module Loading -->
+    <div class="test-section">
+        <h2>Test 3: AMD Module Loading</h2>
+        <p>Tests loading Helpin as an AMD module through RequireJS.</p>
+        <button onclick="runTest3()">Run Test 3</button>
+        <div id="test3-results"></div>
+    </div>
+
+   
+
+    <!-- Test 4: Event Tracking -->
+    <div class="test-section">
+        <h2>Test 4: Event Tracking Functionality</h2>
+        <p>Tests actual event tracking in AMD environment.</p>
+        <button onclick="runTest4()">Run Test 4</button>
+        <div id="test4-results"></div>
+    </div>
+
+    <!-- Test 5: Conflict Resolution -->
+    <div class="test-section">
+        <h2>Test 5: AMD Conflict Resolution</h2>
+        <p>Tests that Helpin doesn't break other AMD modules.</p>
+        <button onclick="runTest5()">Run Test 5</button>
+        <div id="test5-results"></div>
+    </div>
+
+    <!-- Network Log -->
+    <div class="test-section">
+        <h2>Network Activity Log</h2>
+        <button onclick="clearNetworkLog()">Clear Log</button>
+        <div id="network-log"></div>
+    </div>
+
+    <!-- Load jQuery and RequireJS -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"></script>
+
+    <script>
+        // Utility functions
+        function log(testId, message, type = 'info') {
+    const resultsDiv = document.getElementById(`${testId}-results`);
+    const resultDiv = document.createElement('div');
+    resultDiv.className = `test-result ${type}`;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const fullMessage = `[${timestamp}] [${testId}] ${message}`;
+
+    // Add message to the DOM
+    resultDiv.innerHTML = fullMessage;
+    resultsDiv.appendChild(resultDiv);
+
+    // Also log to the console with appropriate severity
+    switch (type) {
+        case 'success':
+            console.log(`${fullMessage}`);
+            break;
+        case 'error':
+            console.error(`${fullMessage}`);
+            break;
+        default:
+            console.log(fullMessage);
+            break;
+    }
+}
+
+
+        function logNetwork(message) {
+            const networkLog = document.getElementById('network-log');
+            const entry = document.createElement('div');
+            entry.className = 'test-result info';
+            entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            networkLog.appendChild(entry);
+            networkLog.scrollTop = networkLog.scrollHeight;
+        }
+
+        function clearNetworkLog() {
+            document.getElementById('network-log').innerHTML = '';
+        }
+
+        function clearResults(testId) {
+            document.getElementById(`${testId}-results`).innerHTML = '';
+        }
+
+        // Monitor all XHR/Fetch requests
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            logNetwork(`Fetch: ${args[0]}`);
+            return originalFetch.apply(this, args);
+        };
+
+        const originalXHR = window.XMLHttpRequest.prototype.open;
+        window.XMLHttpRequest.prototype.open = function(method, url) {
+            logNetwork(`XHR: ${method} ${url}`);
+            return originalXHR.apply(this, arguments);
+        };
+
+        // Configure RequireJS
+        requirejs.config({
+            baseUrl: '.',
+            paths: {
+                'jquery': 'https://code.jquery.com/jquery-3.6.0.min',
+                'helpin': '/dist/lib'
+            }
+        });
+
+        // Test 1: Basic jQuery + RequireJS Environment
+        function runTest1() {
+            clearResults('test1');
+            
+            log('test1', 'Checking jQuery...');
+            if (typeof jQuery !== 'undefined') {
+                log('test1', `✓ jQuery loaded: v${jQuery.fn.jquery}`, 'success');
+            } else {
+                log('test1', '✗ jQuery not found', 'error');
+            }
+
+            log('test1', 'Checking RequireJS...');
+            if (typeof require !== 'undefined' && typeof define !== 'undefined') {
+                log('test1', '✓ RequireJS loaded', 'success');
+                log('test1', `✓ define.amd = ${JSON.stringify(define.amd)}`, 'success');
+
+            } else {
+                log('test1', '✗ RequireJS not found', 'error');
+            }
+
+            // Test jQuery functionality
+            log('test1', 'Testing jQuery functionality...');
+            try {
+                jQuery('<div>').addClass('test-class');
+                log('test1', '✓ jQuery DOM manipulation works', 'success');
+            } catch (e) {
+                log('test1', `✗ jQuery error: ${e.message}`, 'error');
+            }
+
+            // Test RequireJS module loading
+            log('test1', 'Testing RequireJS module loading...');
+            require(['jquery'], function($) {
+                log('test1', '✓ jQuery loaded via RequireJS', 'success');
+            });
+        }
+
+        // Test 2: Script Tag Auto-Initialization
+        function runTest2() {
+            clearResults('test2');
+            log('test2', 'Testing script tag initialization...');
+
+            // Detect AMD (RequireJS) environment
+            const isAMD = typeof define === 'function' && define.amd;
+
+            if (isAMD) {
+                log('test2', '⚠ RequireJS (AMD) environment detected', 'warning');
+                log('test2', '💡 Skipping script tag loading to prevent "Mismatched anonymous define()" error.', 'info');
+                log('test2', '👉 Please run Test 3 to test AMD loading instead.', 'info');
+                return;
+            }
+
+            // Clean previous globals and script tags
+            ['Helpin', 'helpinClient', 'HelpinClient', 'helpinScriptTagClient', 'helpin', 'helpinQ']
+                .forEach(key => delete window[key]);
+            document.querySelectorAll('script[src*="helpin"]').forEach(script => script.remove());
+
+            log('test2', 'Adding Helpin script with data attributes...');
+
+                // Create the script tag
+            const script = document.createElement('script');
+            script.src = '/dist/lib.js'; // Update to correct path if needed
+            script.setAttribute('data-key', 'UMaugVPOWz');
+            script.setAttribute('data-tracking-host', 'https://events.helpin.ai');
+            script.setAttribute('data-autocapture', 'true');
+    script.setAttribute('data-auto-pageview', 'true');
+
+    script.onload = function () {
+        log('test2', '✓ Script loaded successfully via script tag', 'success');
+
+        setTimeout(() => {
+            let found = false;
+
+            if (typeof window.helpinClient === 'function') {
+                log('test2', '✓ helpinClient global available', 'success');
+                found = true;
+
+                try {
+                    const client = window.helpinClient({
+                        key: 'UMaugVPOWz',
+                        trackingHost: 'https://events.helpin.ai'
+                    });
+                    client.track('non_amd_test_event', { source: 'script_tag' });
+                    log('test2', '✓ Event tracked via helpinClient', 'success');
+                } catch (e) {
+                    log('test2', `✗ Error using helpinClient: ${e.message}`, 'error');
+                }
+            }
+
+            if (!found) {
+                log('test2', '✗ No helpin-related globals found after script tag load', 'error');
+            }
+        }, 1000);
+    };
+
+    script.onerror = function () {
+        log('test2', '✗ Failed to load script', 'error');
+    };
+
+    document.head.appendChild(script);
+}
+
+        // Test 3: AMD Module Loading
+        function runTest3() {
+            clearResults('test3');
+            
+            log('test3', 'Loading Helpin as AMD module...', 'info');
+            
+            requirejs(['helpin'], 
+                function(helpin) {
+                    log('test3', '✓ Helpin AMD module loaded', 'success');
+                    log('test3', `Available exports: ${Object.keys(helpin).join(', ')}`, 'info');
+                    
+                    if (typeof helpin.helpinClient === 'function') {
+                        log('test3', '✓ helpinClient function available', 'success');
+                        
+                        try {
+                            const client = helpin.helpinClient({
+                                key: 'UMaugVPOWz',
+                                trackingHost: 'https://events.helpin.ai'
+                            });
+                            log('test3', '✓ Client created via AMD', 'success');
+                            
+                            client.track('amd_test_event', { source: 'amd_module' });
+                            log('test3', '✓ Event tracked via AMD client', 'success');
+                        } catch (e) {
+                            log('test3', `✗ Client creation error: ${e.message}`, 'error');
+                        }
+                    } else {
+                        log('test3', '✗ helpinClient not found in AMD module', 'error');
+                    }
+                },
+                function(err) {
+                    log('test3', `✗ Failed to load AMD module: ${err}`, 'error');
+                }
+            );
+        }
+
+      
+        // Test 4: Event Tracking Functionality
+        function runTest4() {
+            clearResults('test4');
+            
+            log('test4', 'Testing event tracking in AMD environment...', 'info');
+            
+            // Define a custom module that uses Helpin
+            define('myapp', ['jquery', 'helpin'], function($, helpin) {
+                return {
+                    init: function() {
+                        log('test4', '✓ Custom module initialized with jQuery and Helpin', 'success');
+                        
+                        // Simulate e-commerce tracking
+                        const client = helpin.helpinClient({
+                            key: 'UMaugVPOWz',
+                            trackingHost: 'https://events.helpin.ai'
+                        });
+                        
+                        // Track page view
+                        client.track('pageview', {
+                            url: window.location.href,
+                            title: document.title
+                        });
+                        log('test4', '✓ Pageview tracked', 'success');
+                        
+                        // Track purchase (like Adobe Commerce would)
+                        client.track('purchase', {
+                            amount: 99.99,
+                            transaction_id: 'TEST_' + Date.now(),
+                            currency: 'USD'
+                        });
+                        log('test4', '✓ Purchase event tracked', 'success');
+                        
+                        // Test jQuery interaction
+                        $('button').on('click', function() {
+                            client.track('button_click', {
+                                button_id: this.id,
+                                button_text: $(this).text()
+                            });
+                        });
+                        log('test4', '✓ jQuery event handlers with tracking setup', 'success');
+                    }
+                };
+            });
+            
+            // Load and initialize the module
+            require(['myapp'], function(myapp) {
+                myapp.init();
+            });
+        }
+
+        // Test 5: AMD Conflict Resolution
+        function runTest5() {
+            clearResults('test5');
+            
+            log('test5', 'Testing AMD conflict resolution...', 'info');
+            
+            // Define multiple AMD modules to ensure no conflicts
+            define('module1', [], function() {
+                return { name: 'Module 1', value: 42 };
+            });
+            
+            define('module2', ['jquery'], function($) {
+                return { 
+                    name: 'Module 2', 
+                    testjQuery: function() {
+                        return $('<div>').length === 1;
+                    }
+                };
+            });
+            
+            // Load all modules together
+            require(['module1', 'module2', 'helpin'], function(mod1, mod2, helpin) {
+                log('test5', '✓ All modules loaded successfully', 'success');
+                
+                // Test module 1
+                if (mod1.name === 'Module 1' && mod1.value === 42) {
+                    log('test5', '✓ Module 1 works correctly', 'success');
+                } else {
+                    log('test5', '✗ Module 1 corrupted', 'error');
+                }
+                
+                // Test module 2
+                if (mod2.name === 'Module 2' && mod2.testjQuery()) {
+                    log('test5', '✓ Module 2 works correctly with jQuery', 'success');
+                } else {
+                    log('test5', '✗ Module 2 failed', 'error');
+                }
+                
+                // Test Helpin
+                if (typeof helpin.helpinClient === 'function') {
+                    log('test5', '✓ Helpin module intact', 'success');
+                } else {
+                    log('test5', '✗ Helpin module corrupted', 'error');
+                }
+                
+                // Test that original define still works
+                define('module3', [], function() {
+                    return { name: 'Module 3' };
+                });
+                
+                require(['module3'], function(mod3) {
+                    if (mod3.name === 'Module 3') {
+                        log('test5', '✓ Can still define new modules after Helpin load', 'success');
+                    } else {
+                        log('test5', '✗ Module definition broken', 'error');
+                    }
+                });
+            });
+        }
+
+        // Run all tests
+        function runAllTests() {
+            const tests = [runTest1, runTest2, runTest3, runTest4, runTest5];
+            let index = 0;
+            
+            function runNext() {
+                if (index < tests.length) {
+                    tests[index]();
+                    index++;
+                    setTimeout(runNext, 3000);
+                }
+            }
+            
+            runNext();
+        }
+    </script>
+
+    <div class="test-section">
+        <h2>Run All Tests</h2>
+        <button onclick="runAllTests()">Run All Tests Sequentially</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Instructions</h2>
+        <div class="code-block">
+            <h3>How to use this test suite:</h3>
+            <ol>
+                <li>Click "Run Test 1" to verify jQuery and RequireJS are working</li>
+                <li>Click "Run Test 2" to test standard script tag initialization</li>
+                <li>Click "Run Test 3" to test AMD module loading</li>
+                <li>Click "Run Test 4" to test real-world tracking scenarios</li>
+                <li>Click "Run Test 5" to ensure no conflicts with other AMD modules</li>
+                <li>Monitor the Network Activity Log for tracking requests</li>
+            </ol>
+            
+            <h3>Expected Results:</h3>
+            <ul>
+                <li>All tests should show green success messages</li>
+                <li>No "Mismatched anonymous define()" errors in console</li>
+                <li>Network log should show tracking requests to events.helpin.ai</li>
+                <li>jQuery functionality should remain intact</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

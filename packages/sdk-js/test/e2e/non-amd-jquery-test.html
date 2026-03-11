@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Helpin Non-AMD Test Suite</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-section {
+      background: white;
+      margin: 20px 0;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .test-result {
+      margin: 10px 0;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    .warning {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    .code-block {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      padding: 10px;
+      margin: 10px 0;
+      font-family: monospace;
+      overflow-x: auto;
+    }
+    #network-log {
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+<h1>Helpin Non-AMD Test Suite</h1>
+
+<!-- Test 1: jQuery Presence -->
+<div class="test-section">
+  <h2>Test 1: jQuery Environment</h2>
+  <p>Ensure jQuery is present and functional.</p>
+  <button onclick="runTest1()">Run Test 1</button>
+  <div id="test1-results"></div>
+</div>
+
+<!-- Test 2: Script Tag Initialization -->
+<div class="test-section">
+  <h2>Test 2: Script Tag Initialization</h2>
+  <p>Load Helpin via script tag and test global access.</p>
+  <button onclick="runTest2()">Run Test 2</button>
+  <div id="test2-results"></div>
+</div>
+
+<!-- Test 3: Track Events via Global -->
+<div class="test-section">
+  <h2>Test 3: Event Tracking with Globals</h2>
+  <p>Track events using the globally available Helpin SDK.</p>
+  <button onclick="runTest3()">Run Test 3</button>
+  <div id="test3-results"></div>
+</div>
+
+<!-- Test 4: Event Handler Integration -->
+<div class="test-section">
+  <h2>Test 4: Track Events on DOM Interaction</h2>
+  <p>Bind jQuery event handlers that call Helpin's tracking API.</p>
+  <button onclick="runTest4()">Run Test 4</button>
+  <div id="test4-results"></div>
+</div>
+
+<!-- Network Log -->
+<div class="test-section">
+  <h2>Network Activity Log</h2>
+  <button onclick="clearNetworkLog()">Clear Log</button>
+  <div id="network-log"></div>
+</div>
+
+<!-- Load jQuery only -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<script>
+  function log(testId, message, type = 'info') {
+    const resultsDiv = document.getElementById(`${testId}-results`);
+    const resultDiv = document.createElement('div');
+    resultDiv.className = `test-result ${type}`;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const fullMessage = `[${timestamp}] [${testId}] ${message}`;
+
+    resultDiv.innerHTML = fullMessage;
+    resultsDiv.appendChild(resultDiv);
+
+    switch (type) {
+      case 'success':
+        console.log(fullMessage);
+        break;
+      case 'error':
+        console.error(fullMessage);
+        break;
+      default:
+        console.log(fullMessage);
+    }
+  }
+
+  function logNetwork(message) {
+    const networkLog = document.getElementById('network-log');
+    const entry = document.createElement('div');
+    entry.className = 'test-result info';
+    entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+    networkLog.appendChild(entry);
+    networkLog.scrollTop = networkLog.scrollHeight;
+  }
+
+  function clearNetworkLog() {
+    document.getElementById('network-log').innerHTML = '';
+  }
+
+  function clearResults(testId) {
+    document.getElementById(`${testId}-results`).innerHTML = '';
+  }
+
+  const originalFetch = window.fetch;
+  window.fetch = function(...args) {
+    logNetwork(`Fetch: ${args[0]}`);
+    return originalFetch.apply(this, args);
+  };
+
+  const originalXHR = window.XMLHttpRequest.prototype.open;
+  window.XMLHttpRequest.prototype.open = function(method, url) {
+    logNetwork(`XHR: ${method} ${url}`);
+    return originalXHR.apply(this, arguments);
+  };
+
+  function runTest1() {
+    clearResults('test1');
+    log('test1', 'Verifying jQuery presence...');
+    if (typeof jQuery !== 'undefined') {
+      log('test1', `✓ jQuery loaded: v${jQuery.fn.jquery}`, 'success');
+    } else {
+      log('test1', '✗ jQuery not found', 'error');
+    }
+
+    log('test1', 'Testing jQuery DOM functionality...');
+    try {
+      jQuery('<div>').addClass('test-class');
+      log('test1', '✓ DOM manipulation works', 'success');
+    } catch (e) {
+      log('test1', `✗ Error: ${e.message}`, 'error');
+    }
+  }
+
+  function runTest2() {
+    clearResults('test2');
+
+    ['Helpin', 'helpinClient', 'helpin'].forEach(key => delete window[key]);
+    document.querySelectorAll('script[src*="helpin"]').forEach(script => script.remove());
+
+    log('test2', 'Injecting Helpin script...');
+
+    const script = document.createElement('script');
+    script.src = '/dist/lib.js'; // update if needed
+    script.setAttribute('data-key', 'UMaugVPOWz');
+    script.setAttribute('data-tracking-host', 'https://events.helpin.ai');
+    script.setAttribute('data-autocapture', 'true');
+    script.setAttribute('data-auto-pageview', 'true');
+
+    script.onload = () => {
+      log('test2', '✓ Script loaded successfully', 'success');
+
+      setTimeout(() => {
+        if (typeof window.helpinClient === 'function') {
+          log('test2', '✓ helpinClient global found', 'success');
+          const client = helpinClient({
+            key: 'UMaugVPOWz',
+            trackingHost: 'https://events.helpin.ai'
+          });
+          client.track('test_event_script_load', { source: 'non_amd' });
+          log('test2', '✓ Event sent via global helpinClient', 'success');
+        } else {
+          log('test2', '✗ helpinClient not found on window', 'error');
+        }
+      }, 1000);
+    };
+
+    script.onerror = () => {
+      log('test2', '✗ Script failed to load', 'error');
+    };
+
+    document.head.appendChild(script);
+  }
+
+  function runTest3() {
+    clearResults('test3');
+    log('test3', 'Testing event tracking via globals...');
+
+    if (typeof window.helpinClient === 'function') {
+      const client = helpinClient({
+        key: 'UMaugVPOWz',
+        trackingHost: 'https://events.helpin.ai'
+      });
+      client.track('manual_event', { env: 'non-amd' });
+      log('test3', '✓ Event tracked using global client', 'success');
+    } else {
+      log('test3', '✗ helpinClient is not available', 'error');
+    }
+  }
+
+  function runTest4() {
+    clearResults('test4');
+    log('test4', 'Binding jQuery event to Helpin track...');
+
+    if (typeof window.helpinClient === 'function') {
+      const client = helpinClient({
+        key: 'UMaugVPOWz',
+        trackingHost: 'https://events.helpin.ai'
+      });
+
+      $('button').off('click.umtrack').on('click.umtrack', function() {
+        const id = this.id || 'unknown';
+        client.track('button_clicked', { id, text: $(this).text() });
+        log('test4', `✓ Tracked button click (${id})`, 'success');
+      });
+
+      log('test4', '✓ jQuery event handler bound to all buttons', 'success');
+    } else {
+      log('test4', '✗ helpinClient is not available', 'error');
+    }
+  }
+</script>
+
+<!-- Run All Tests -->
+<div class="test-section">
+  <h2>Run All Tests</h2>
+  <button onclick="(() => { runTest1(); setTimeout(runTest2, 3000); setTimeout(runTest3, 6000); setTimeout(runTest4, 9000); })()">Run All Sequentially</button>
+</div>
+
+<!-- Instructions -->
+<div class="test-section">
+  <h2>Test Instructions</h2>
+  <div class="code-block">
+    <ol>
+      <li>Run each test one by one OR click "Run All Sequentially"</li>
+      <li>Ensure no RequireJS or AMD script is present on this page</li>
+      <li>Verify tracking requests in the Network Activity Log</li>
+    </ol>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,46 @@
+{
+  "name": "@helpin/react",
+  "version": "0.0.0",
+  "description": "Helpin JavaScript SDK for React",
+  "author": "Helpin <hello@helpin.ai>",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "module": "lib/index.es.js",
+  "private": false,
+  "directories": {
+    "lib": "lib"
+  },
+  "files": [
+    "lib"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@helpin/sdk-js": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "15.x || 16.x || 17.x || 18.x || 19.x",
+    "react-router": "5.x || 6.x || 7.x"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^21.0.2",
+    "@rollup/plugin-node-resolve": "^13.1.4",
+    "@rollup/plugin-typescript": "^8.3.1",
+    "@types/react": "17.0.43",
+    "react": "17.0.2",
+    "react-router": "6.2.2",
+    "rollup": "^2.70.1",
+    "rollup-plugin-peer-deps-external": "^2.2.4"
+  },
+  "scripts": {
+    "build": "rollup -c && tsc",
+    "test": "echo \"Error: run tests from root\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/helpin-ai/helpin-js",
+    "directory": "packages/react"
+  }
+}

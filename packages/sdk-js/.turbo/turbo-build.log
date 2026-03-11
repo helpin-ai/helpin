@@ -1,0 +1,22 @@
+
+> @helpin/sdk-js@0.0.0 build /root/teampulse/packages/sdk-js
+> tsc && vite build
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+vite v5.4.21 building for production...
+transforming...
+[plugin:vite:resolve] [plugin vite:resolve] Module "https" has been externalized for browser compatibility, imported by "/root/teampulse/packages/sdk-js/src/transport/https.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "url" has been externalized for browser compatibility, imported by "/root/teampulse/packages/sdk-js/src/transport/https.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+src/transport/https.ts (20:30): "URL" is not exported by "__vite-browser-external", imported by "src/transport/https.ts".
+src/transport/https.ts (34:24): "request" is not exported by "__vite-browser-external", imported by "src/transport/https.ts".
+✓ 18 modules transformed.
+rendering chunks...
+
+[vite:dts] Start generate declaration files...
+computing gzip size...
+dist/helpin.es.js  43.71 kB │ gzip: 11.62 kB
+[vite:dts] Declaration files built in 1920ms.
+
+dist/helpin.cjs.js  34.47 kB │ gzip: 10.39 kB
+dist/lib.js  34.65 kB │ gzip: 10.47 kB
+✓ built in 2.25s

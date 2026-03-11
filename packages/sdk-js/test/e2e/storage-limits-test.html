@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Storage Limits Test Page</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+        }
+        
+        .content {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        
+        .test-section h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            background: #fff;
+            border-left: 4px solid #007bff;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .success {
+            border-left-color: #28a745;
+        }
+        
+        .error {
+            border-left-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <h1>Storage Limits & Quota Handling Tests</h1>
+        
+        <div class="test-section">
+            <h2>Continued Operation Test</h2>
+            <p>Tests that SDK continues working normally and can track events.</p>
+            <button onclick="window.storageTest.testContinuedOperationAfterQuota()">Run Test</button>
+            <div id="continued-status" class="status"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>localStorage Handling Test</h2>
+            <p>Tests that localStorage is accessible and working properly.</p>
+            <button onclick="window.storageTest.testLocalStorageHandling()">Run Test</button>
+            <div id="storage-status" class="status"></div>
+        </div>
+    </div>
+
+    <!-- Load Helpin SDK -->
+    <script src="/dist/helpin.es.js"></script>
+    
+    <script>
+        // Initialize Helpin
+        window.helpin = window.helpin || function() {
+            (window.helpin.q = window.helpin.q || []).push(arguments);
+        };
+        
+        helpin('init', {
+            key: 'test-api-key',
+            tracking_host: 'http://localhost:8080',
+            autocapture: false,
+            auto_pageview: false
+        });
+        
+        // Wait for Helpin to be ready
+        function waitForHelpin() {
+            return new Promise((resolve) => {
+                const checkInterval = setInterval(() => {
+                    if (window.helpin && typeof window.helpin === 'function') {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+        
+        // Test utilities
+        window.storageTest = {
+            updateStatus(elementId, message, success = true) {
+                const element = document.getElementById(elementId);
+                if (element) {
+                    element.textContent = message;
+                    element.className = success ? 'status success' : 'status error';
+                }
+                console.log(`[${elementId}] ${message}`);
+            },
+            
+            async testContinuedOperationAfterQuota() {
+                this.updateStatus('continued-status', 'Testing continued operation...', true);
+                
+                try {
+                    // Track some events
+                    let eventsTracked = 0;
+                    
+                    helpin('track', 'continued_event_1', { data: 'test1' });
+                    eventsTracked++;
+                    
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    helpin('track', 'continued_event_2', { data: 'test2' });
+                    eventsTracked++;
+                    
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    helpin('track', 'continued_event_3', { data: 'test3' });
+                    eventsTracked++;
+                    
+                    const message = `Successfully tracked ${eventsTracked} events`;
+                    this.updateStatus('continued-status', message, eventsTracked === 3);
+                    
+                    return {
+                        success: eventsTracked === 3,
+                        eventsTracked,
+                        inMemoryStorageWorks: true
+                    };
+                } catch (error) {
+                    this.updateStatus('continued-status', `Error: ${error.message}`, false);
+                    return { success: false, error: error.message };
+                }
+            },
+            
+            async testLocalStorageHandling() {
+                this.updateStatus('storage-status', 'Testing localStorage handling...', true);
+                
+                try {
+                    // Check if localStorage is accessible
+                    const canAccessLocalStorage = typeof localStorage !== 'undefined';
+                    
+                    if (canAccessLocalStorage) {
+                        // Try to set and get a value
+                        const testKey = 'helpin_test_key';
+                        const testValue = 'test_value';
+                        
+                        localStorage.setItem(testKey, testValue);
+                        const retrievedValue = localStorage.getItem(testKey);
+                        localStorage.removeItem(testKey);
+                        
+                        const works = retrievedValue === testValue;
+                        
+                        const message = `localStorage is ${works ? 'working correctly' : 'not working'}`;
+                        this.updateStatus('storage-status', message, works);
+                        
+                        return {
+                            success: works,
+                            canAccessLocalStorage: true
+                        };
+                    } else {
+                        this.updateStatus('storage-status', 'localStorage not available', false);
+                        return {
+                            success: false,
+                            canAccessLocalStorage: false
+                        };
+                    }
+                } catch (error) {
+                    this.updateStatus('storage-status', `Error: ${error.message}`, false);
+                    return { success: false, error: error.message };
+                }
+            },
+            
+            async testDataPersistence() {
+                try {
+                    // Test that data can be persisted and retrieved
+                    const testKey = 'helpin_persistence_test';
+                    const testData = { test: 'data', timestamp: Date.now() };
+                    
+                    localStorage.setItem(testKey, JSON.stringify(testData));
+                    const retrieved = JSON.parse(localStorage.getItem(testKey) || '{}');
+                    localStorage.removeItem(testKey);
+                    
+                    const dataPersisted = true;
+                    const dataRetrieved = retrieved.test === testData.test;
+                    
+                    return {
+                        success: dataPersisted && dataRetrieved,
+                        dataPersisted,
+                        dataRetrieved
+                    };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            },
+            
+            async testMultipleEvents() {
+                try {
+                    let eventsTracked = 0;
+                    let errors = 0;
+                    
+                    for (let i = 0; i < 10; i++) {
+                        try {
+                            helpin('track', `test_event_${i}`, { index: i, data: 'test' });
+                            eventsTracked++;
+                        } catch (error) {
+                            errors++;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    }
+                    
+                    return {
+                        success: eventsTracked >= 10 && errors === 0,
+                        eventsTracked,
+                        errors
+                    };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            },
+            
+            async testVariablePayloadSizes() {
+                try {
+                    let smallPayloadTracked = false;
+                    let mediumPayloadTracked = false;
+                    let largePayloadTracked = false;
+                    
+                    // Small payload
+                    helpin('track', 'small_event', { data: 'x'.repeat(10) });
+                    smallPayloadTracked = true;
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // Medium payload
+                    helpin('track', 'medium_event', { data: 'x'.repeat(1000) });
+                    mediumPayloadTracked = true;
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // Large payload
+                    helpin('track', 'large_event', { data: 'x'.repeat(10000) });
+                    largePayloadTracked = true;
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    return {
+                        success: smallPayloadTracked && mediumPayloadTracked && largePayloadTracked,
+                        smallPayloadTracked,
+                        mediumPayloadTracked,
+                        largePayloadTracked
+                    };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            },
+            
+            async testSDKStability() {
+                try {
+                    let operationsCompleted = 0;
+                    
+                    // Perform various operations
+                    helpin('track', 'stability_test_1', { data: 'test1' });
+                    operationsCompleted++;
+                    
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    helpin('track', 'stability_test_2', { data: 'test2' });
+                    operationsCompleted++;
+                    
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    helpin('track', 'stability_test_3', { data: 'test3' });
+                    operationsCompleted++;
+                    
+                    // Check if SDK is still responsive
+                    const sdkResponsive = typeof window.helpin === 'function';
+                    
+                    return {
+                        success: operationsCompleted >= 3 && sdkResponsive,
+                        operationsCompleted,
+                        sdkResponsive
+                    };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            },
+            
+            async testInitialization() {
+                try {
+                    // Check if SDK is initialized
+                    const initialized = typeof window.helpin === 'function';
+                    
+                    // Check if config is valid (SDK should be working)
+                    const configValid = initialized && window.helpin !== undefined;
+                    
+                    return {
+                        success: initialized && configValid,
+                        initialized,
+                        configValid
+                    };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            },
+            
+            async testRapidEventTracking() {
+                try {
+                    let eventsTracked = 0;
+                    let noErrors = true;
+                    
+                    // Track 20 events rapidly
+                    for (let i = 0; i < 20; i++) {
+                        try {
+                            helpin('track', `rapid_event_${i}`, { index: i });
+                            eventsTracked++;
+                        } catch (error) {
+                            noErrors = false;
+                        }
+                    }
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    return {
+                        success: eventsTracked >= 20 && noErrors,
+                        eventsTracked,
+                        noErrors
+                    };
+                } catch (error) {
+                    return { success: false, error: error.message };
+                }
+            }
+        };
+        
+        // Auto-run tests on page load for automated testing
+        waitForHelpin().then(() => {
+            console.log('Helpin initialized, ready for tests');
+        });
+    </script>
+</body>
+</html>

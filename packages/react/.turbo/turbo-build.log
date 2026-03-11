@@ -1,0 +1,8 @@
+
+> @helpin/react@0.0.0 build /root/teampulse/packages/react
+> rollup -c && tsc
+
+[36m
+[1msrc/index.ts[22m → [1mlib/index.es.js[22m...[39m
+[1m[33m(!) Plugin typescript: @rollup/plugin-typescript TS5096: Option 'allowImportingTsExtensions' can only be used when either 'noEmit' or 'emitDeclarationOnly' is set.[39m[22m
+[32mcreated [1mlib/index.es.js[22m in [1m1.8s[22m[39m
