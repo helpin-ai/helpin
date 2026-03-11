@@ -262,6 +262,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
       case 'people':
         return (
           <PeopleTab
+            workspaceId={workspaceId}
             people={settings.people}
             editable={canManageMembers}
             onRefresh={load}

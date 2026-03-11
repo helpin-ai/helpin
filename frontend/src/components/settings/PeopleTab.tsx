@@ -14,7 +14,8 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
-export function PeopleTab({ people, editable, onRefresh }: {
+export function PeopleTab({ workspaceId, people, editable, onRefresh }: {
+  workspaceId: string;
   people: WorkspacePerson[];
   editable: boolean;
   onRefresh: () => void;
@@ -37,7 +38,7 @@ export function PeopleTab({ people, editable, onRefresh }: {
     e.preventDefault();
     if (!editPerson) return;
     setSaving(true);
-    const { error } = await settingsService.updatePerson(editPerson.id, {
+    const { error } = await settingsService.updatePerson(workspaceId, editPerson.id, {
       role, job_role: jobRole, base_salary: Number(salary),
     });
     if (error) toast.error(error);
@@ -46,7 +47,7 @@ export function PeopleTab({ people, editable, onRefresh }: {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await settingsService.deletePerson(id);
+    const { error } = await settingsService.deletePerson(workspaceId, id);
     if (error) toast.error(error);
     else { toast.success('Person removed'); onRefresh(); }
   };
