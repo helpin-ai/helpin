@@ -17,4 +17,5 @@ type SearchResponse struct {
 	Sprints    []SearchResult `json:"sprints"`
 	Objectives []SearchResult `json:"objectives"`
 	Members    []SearchResult `json:"members"`
+	Documents  []SearchResult `json:"documents"`
 }
