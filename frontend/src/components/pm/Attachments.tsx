@@ -44,12 +44,6 @@ function getFileExtension(filename: string): string {
   return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
 }
 
-function getFileName(filename: string): string {
-  const parts = filename.split('.');
-  if (parts.length > 1) parts.pop();
-  return parts.join('.');
-}
-
 function getFileTypeIcon(extension: string): string {
   const iconMap: Record<string, string> = {
     pdf: pdfIcon,
