@@ -228,13 +228,15 @@ export const crmEmailService = {
     api.get<CRMEmailAccount>(`/crm/email/accounts/${id}${qs(workspaceId)}`),
   createAccount: (payload: CreateCRMEmailAccountRequest) =>
     api.post<CRMEmailAccount>(`/crm/email/accounts${qs(payload.workspace_id)}`, payload),
-  deleteAccount: (workspaceId: string, id: string) =>
+  disconnectAccount: (workspaceId: string, id: string) =>
     api.del(`/crm/email/accounts/${id}${qs(workspaceId)}`),
+  purgeAccountData: (workspaceId: string, id: string) =>
+    api.del(`/crm/email/accounts/${id}/data${qs(workspaceId)}`),
   initiateOAuth: (workspaceId: string, provider: 'gmail' | 'microsoft' = 'gmail') =>
     api.get<{ redirect_url: string }>(`/crm/email/oauth/initiate${qs(workspaceId)}&provider=${provider}`),
   sendEmail: (workspaceId: string, payload: { account_id: string; to: string[]; cc?: string[]; subject: string; body_html: string }) =>
     api.post<CRMEmailMessage>(`/crm/email/send${qs(workspaceId)}`, payload),
-  listThreads: (workspaceId: string, filters?: { email_account_id?: string; deal_id?: string; search?: string; page?: number }) =>
+  listThreads: (workspaceId: string, filters?: { email_account_id?: string; contact_id?: string; deal_id?: string; search?: string; page?: number }) =>
     api.get<CRMPaginatedResponse<CRMEmailThread[]>>(`/crm/email/threads${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   listMessages: (workspaceId: string, filters?: { thread_id?: string; email_account_id?: string; contact_id?: string; deal_id?: string; direction?: string; page?: number }) =>
     api.get<CRMPaginatedResponse<CRMEmailMessage[]>>(`/crm/email/messages${qs(workspaceId)}${filterQuery(filters ?? {})}`),

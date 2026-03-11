@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -72,6 +73,22 @@ func (r *CRMEmailRepository) UpdateAccount(ctx context.Context, account *model.C
 	return nil
 }
 
+// GetAccountByNormalizedEmail returns a non-pending account by normalized mailbox
+// identity within a workspace and provider.
+func (r *CRMEmailRepository) GetAccountByNormalizedEmail(ctx context.Context, workspaceID, provider, normalizedEmail string) (*model.CRMEmailAccount, error) {
+	var account model.CRMEmailAccount
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND provider = ? AND normalized_email_address = ?", workspaceID, provider, normalizedEmail).
+		Where("status <> ?", model.CRMEmailAccountStatusPendingOAuth).
+		First(&account).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get email account by normalized email: %w", err)
+	}
+	return &account, nil
+}
+
 // DeleteAccount removes an email account.
 func (r *CRMEmailRepository) DeleteAccount(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.CRMEmailAccount{}).Error; err != nil {
@@ -98,6 +115,39 @@ func (r *CRMEmailRepository) UpdateSyncState(ctx context.Context, accountID stri
 		return fmt.Errorf("update sync state: %w", err)
 	}
 	return nil
+}
+
+// ListAccountsWithSyncedData returns the subset of account IDs that currently
+// have synced email, thread, or calendar records.
+func (r *CRMEmailRepository) ListAccountsWithSyncedData(ctx context.Context, accountIDs []string) (map[string]bool, error) {
+	result := make(map[string]bool, len(accountIDs))
+	if len(accountIDs) == 0 {
+		return result, nil
+	}
+
+	type source struct {
+		table string
+	}
+	sources := []source{
+		{table: "crm_email_threads"},
+		{table: "crm_email_messages"},
+		{table: "crm_calendar_events"},
+	}
+	for _, src := range sources {
+		var ids []string
+		if err := r.db.WithContext(ctx).
+			Table(src.table).
+			Distinct("email_account_id").
+			Where("email_account_id IN ?", accountIDs).
+			Pluck("email_account_id", &ids).Error; err != nil {
+			return nil, fmt.Errorf("list synced account ids from %s: %w", src.table, err)
+		}
+		for _, id := range ids {
+			result[id] = true
+		}
+	}
+
+	return result, nil
 }
 
 // GetMessageByExternalID returns a message by its external Gmail ID within an account.
@@ -128,7 +178,7 @@ func (r *CRMEmailRepository) GetThreadByExternalID(ctx context.Context, accountI
 func (r *CRMEmailRepository) IncrementThreadMessageCount(ctx context.Context, threadID string, lastMessageAt time.Time) error {
 	if err := r.db.WithContext(ctx).Model(&model.CRMEmailThread{}).Where("id = ?", threadID).
 		Updates(map[string]interface{}{
-			"message_count":  gorm.Expr("message_count + 1"),
+			"message_count":   gorm.Expr("message_count + 1"),
 			"last_message_at": lastMessageAt,
 		}).Error; err != nil {
 		return fmt.Errorf("increment thread message count: %w", err)
@@ -152,6 +202,24 @@ func (r *CRMEmailRepository) ListThreads(ctx context.Context, workspaceID string
 
 	if filters.EmailAccountID != nil && *filters.EmailAccountID != "" {
 		query = query.Where("email_account_id = ?", *filters.EmailAccountID)
+	}
+	if filters.ContactID != nil && *filters.ContactID != "" {
+		contactSubquery := r.db.WithContext(ctx).
+			Model(&model.CRMEmailMessage{}).
+			Select("1").
+			Joins("JOIN crm_email_message_contacts ON crm_email_message_contacts.message_id = crm_email_messages.id").
+			Where("crm_email_messages.thread_id = crm_email_threads.id").
+			Where("crm_email_message_contacts.contact_id = ?", *filters.ContactID)
+
+		if r.db.Dialector.Name() == "postgres" {
+			query = query.Where(
+				"crm_email_threads.contact_ids @> ?::jsonb OR EXISTS (?)",
+				fmt.Sprintf(`["%s"]`, *filters.ContactID),
+				contactSubquery,
+			)
+		} else {
+			query = query.Where("EXISTS (?)", contactSubquery)
+		}
 	}
 	if filters.DealID != nil && *filters.DealID != "" {
 		query = query.Where("deal_id = ?", *filters.DealID)
@@ -184,6 +252,95 @@ func (r *CRMEmailRepository) CreateMessage(ctx context.Context, message *model.C
 	return nil
 }
 
+// ReplaceMessageContacts replaces all participant-contact associations for a message
+// and updates the legacy primary contact_id field in the same transaction.
+func (r *CRMEmailRepository) ReplaceMessageContacts(ctx context.Context, messageID string, primaryContactID *string, associations []model.CRMEmailMessageContact) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("message_id = ?", messageID).Delete(&model.CRMEmailMessageContact{}).Error; err != nil {
+			return fmt.Errorf("clear message contacts: %w", err)
+		}
+		if len(associations) > 0 {
+			if err := tx.Create(&associations).Error; err != nil {
+				return fmt.Errorf("create message contacts: %w", err)
+			}
+		}
+		if err := tx.Model(&model.CRMEmailMessage{}).
+			Where("id = ?", messageID).
+			Update("contact_id", primaryContactID).Error; err != nil {
+			return fmt.Errorf("update message contact_id: %w", err)
+		}
+		return nil
+	})
+}
+
+// ListMessagesMissingAssociations returns a batch of messages that do not yet
+// have participant-contact associations.
+func (r *CRMEmailRepository) ListMessagesMissingAssociations(ctx context.Context, limit int) ([]model.CRMEmailMessage, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	subquery := r.db.WithContext(ctx).
+		Model(&model.CRMEmailMessageContact{}).
+		Select("1").
+		Where("crm_email_message_contacts.message_id = crm_email_messages.id")
+
+	var messages []model.CRMEmailMessage
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMEmailMessage{}).
+		Where("NOT EXISTS (?)", subquery).
+		Order("sent_at ASC, id ASC").
+		Limit(limit).
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("list messages missing associations: %w", err)
+	}
+	return messages, nil
+}
+
+// RefreshThreadContactIDs rebuilds the thread-level contact cache from message
+// participant associations.
+func (r *CRMEmailRepository) RefreshThreadContactIDs(ctx context.Context, threadID string) error {
+	var contactIDs []string
+	if err := r.db.WithContext(ctx).
+		Table("crm_email_message_contacts").
+		Distinct("crm_email_message_contacts.contact_id").
+		Joins("JOIN crm_email_messages ON crm_email_messages.id = crm_email_message_contacts.message_id").
+		Where("crm_email_messages.thread_id = ?", threadID).
+		Order("crm_email_message_contacts.contact_id ASC").
+		Pluck("crm_email_message_contacts.contact_id", &contactIDs).Error; err != nil {
+		return fmt.Errorf("list thread contact ids: %w", err)
+	}
+
+	payload, err := json.Marshal(contactIDs)
+	if err != nil {
+		return fmt.Errorf("marshal thread contact ids: %w", err)
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMEmailThread{}).
+		Where("id = ?", threadID).
+		Update("contact_ids", json.RawMessage(payload)).Error; err != nil {
+		return fmt.Errorf("update thread contact ids: %w", err)
+	}
+	return nil
+}
+
+// RefreshAllThreadContactIDs rebuilds the contact cache for all email threads.
+func (r *CRMEmailRepository) RefreshAllThreadContactIDs(ctx context.Context) error {
+	var threadIDs []string
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMEmailThread{}).
+		Order("id ASC").
+		Pluck("id", &threadIDs).Error; err != nil {
+		return fmt.Errorf("list thread ids: %w", err)
+	}
+	for _, threadID := range threadIDs {
+		if err := r.RefreshThreadContactIDs(ctx, threadID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ListMessages returns email messages with optional filters and pagination.
 func (r *CRMEmailRepository) ListMessages(ctx context.Context, workspaceID string, filters model.CRMEmailMessageListFilters, pagination model.PMPagination) ([]model.CRMEmailMessage, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.CRMEmailMessage{}).Where("workspace_id = ?", workspaceID)
@@ -195,7 +352,16 @@ func (r *CRMEmailRepository) ListMessages(ctx context.Context, workspaceID strin
 		query = query.Where("email_account_id = ?", *filters.EmailAccountID)
 	}
 	if filters.ContactID != nil && *filters.ContactID != "" {
-		query = query.Where("contact_id = ?", *filters.ContactID)
+		contactSubquery := r.db.WithContext(ctx).
+			Model(&model.CRMEmailMessageContact{}).
+			Select("1").
+			Where("crm_email_message_contacts.message_id = crm_email_messages.id").
+			Where("crm_email_message_contacts.contact_id = ?", *filters.ContactID)
+		query = query.Where(
+			"crm_email_messages.contact_id = ? OR EXISTS (?)",
+			*filters.ContactID,
+			contactSubquery,
+		)
 	}
 	if filters.DealID != nil && *filters.DealID != "" {
 		query = query.Where("deal_id = ?", *filters.DealID)
@@ -214,5 +380,59 @@ func (r *CRMEmailRepository) ListMessages(ctx context.Context, workspaceID strin
 	if err := query.Order("sent_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&messages).Error; err != nil {
 		return nil, 0, fmt.Errorf("list email messages: %w", err)
 	}
+	if err := r.populateMessageContactIDs(ctx, messages); err != nil {
+		return nil, 0, err
+	}
 	return messages, total, nil
+}
+
+func (r *CRMEmailRepository) populateMessageContactIDs(ctx context.Context, messages []model.CRMEmailMessage) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	messageIDs := make([]string, 0, len(messages))
+	for _, message := range messages {
+		messageIDs = append(messageIDs, message.ID)
+	}
+
+	type row struct {
+		MessageID string
+		ContactID string
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Table("crm_email_message_contacts").
+		Select("message_id, contact_id").
+		Where("message_id IN ?", messageIDs).
+		Order("message_id ASC, participant_role ASC, contact_id ASC").
+		Find(&rows).Error; err != nil {
+		return fmt.Errorf("list message contact ids: %w", err)
+	}
+
+	grouped := make(map[string][]string, len(messages))
+	seen := make(map[string]map[string]struct{}, len(messages))
+	for _, row := range rows {
+		if _, ok := seen[row.MessageID]; !ok {
+			seen[row.MessageID] = map[string]struct{}{}
+		}
+		if _, ok := seen[row.MessageID][row.ContactID]; ok {
+			continue
+		}
+		seen[row.MessageID][row.ContactID] = struct{}{}
+		grouped[row.MessageID] = append(grouped[row.MessageID], row.ContactID)
+	}
+
+	for i := range messages {
+		if ids := grouped[messages[i].ID]; len(ids) > 0 {
+			messages[i].ContactIDs = ids
+			continue
+		}
+		if messages[i].ContactID != nil {
+			messages[i].ContactIDs = []string{*messages[i].ContactID}
+		} else {
+			messages[i].ContactIDs = []string{}
+		}
+	}
+	return nil
 }

@@ -690,11 +690,19 @@ export function useCreateEmailAccount(wsId: string) {
   })
 }
 
-export function useDeleteEmailAccount(wsId: string) {
+export function useDisconnectEmailAccount(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (id: string) => unwrap(await crmEmailService.deleteAccount(wsId, id)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.emailAccounts(wsId) }) },
+    mutationFn: async (id: string) => unwrap(await crmEmailService.disconnectAccount(wsId, id)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
+  })
+}
+
+export function usePurgeEmailAccount(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await crmEmailService.purgeAccountData(wsId, id)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
   })
 }
 

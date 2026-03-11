@@ -425,6 +425,7 @@ export interface ProcessCRMImportRequest {
 
 export type CRMEmailProvider = 'gmail' | 'microsoft';
 export type CRMEmailDirection = 'inbound' | 'outbound';
+export type CRMEmailAccountStatus = 'pending_oauth' | 'connected' | 'disconnected' | 'error';
 
 export interface CRMEmailAccount {
   id: string;
@@ -432,9 +433,14 @@ export interface CRMEmailAccount {
   member_id: string;
   provider: CRMEmailProvider;
   email_address: string;
+  normalized_email_address?: string;
   sync_state: Record<string, unknown>;
+  last_history_id?: string;
   last_synced_at?: string;
   is_active: boolean;
+  status: CRMEmailAccountStatus;
+  disconnected_at?: string;
+  has_synced_data: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -454,7 +460,7 @@ export interface CRMEmailThread {
   subject: string;
   last_message_at: string;
   message_count: number;
-  contact_ids: Record<string, unknown>;
+  contact_ids: string[];
   deal_id?: string;
   created_at: string;
   updated_at: string;
@@ -468,14 +474,15 @@ export interface CRMEmailMessage {
   message_external_id: string;
   from_address: string;
   from_name?: string;
-  to_addresses: Record<string, unknown>;
-  cc_addresses: Record<string, unknown>;
+  to_addresses: string[];
+  cc_addresses: string[];
   subject: string;
   body_text?: string;
   body_html?: string;
   direction: CRMEmailDirection;
   sent_at: string;
   contact_id?: string;
+  contact_ids: string[];
   deal_id?: string;
   created_at: string;
 }
@@ -486,8 +493,8 @@ export interface CreateCRMEmailMessageRequest {
   thread_id?: string;
   from_address: string;
   from_name?: string;
-  to_addresses?: Record<string, unknown>;
-  cc_addresses?: Record<string, unknown>;
+  to_addresses?: string[];
+  cc_addresses?: string[];
   subject: string;
   body_text?: string;
   body_html?: string;

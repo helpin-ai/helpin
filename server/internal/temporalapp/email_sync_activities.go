@@ -3,6 +3,7 @@ package temporalapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,18 +11,27 @@ import (
 
 	"go.temporal.io/sdk/activity"
 
+	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/sync"
 )
 
+type gmailHistorySyncClient interface {
+	GetValidToken(ctx context.Context, account *model.CRMEmailAccount) (string, error)
+	ListMessages(ctx context.Context, accessToken, query string, maxResults int, pageToken string) ([]sync.GmailMessage, string, error)
+	GetMessageDetail(ctx context.Context, accessToken, messageID string) (*sync.GmailMessage, error)
+	GetMailboxProfile(ctx context.Context, accessToken string) (*sync.GmailProfile, error)
+	ListHistory(ctx context.Context, accessToken, startHistoryID string) (*sync.GmailHistoryResult, error)
+}
+
 // EmailSyncActivities contains activities for email synchronization.
 type EmailSyncActivities struct {
-	gmailClient      *sync.GmailSyncClient
+	gmailClient      gmailHistorySyncClient
 	emailRepo        *repository.CRMEmailRepository
-	contactRepo      *repository.CRMContactRepository
 	calendarRepo     *repository.CRMCalendarRepository
 	syncSettingsRepo *repository.CRMEmailSyncSettingsRepository
+	resolver         *crmemail.Resolver
 }
 
 // NewEmailSyncActivities creates email sync activities.
@@ -35,9 +45,9 @@ func NewEmailSyncActivities(
 	return &EmailSyncActivities{
 		gmailClient:      gmailClient,
 		emailRepo:        emailRepo,
-		contactRepo:      contactRepo,
 		calendarRepo:     calendarRepo,
 		syncSettingsRepo: syncSettingsRepo,
+		resolver:         crmemail.NewResolver(contactRepo),
 	}
 }
 
@@ -46,6 +56,12 @@ func (a *EmailSyncActivities) BackfillEmailsActivity(ctx context.Context, accoun
 	account, err := a.emailRepo.GetAccountByID(ctx, accountID)
 	if err != nil || account == nil {
 		return nil, fmt.Errorf("account not found: %s", accountID)
+	}
+	if !account.IsActive {
+		return &EmailSyncResult{}, nil
+	}
+	if a.gmailClient == nil {
+		return nil, fmt.Errorf("gmail sync client not configured")
 	}
 
 	accessToken, err := a.gmailClient.GetValidToken(ctx, account)
@@ -61,49 +77,34 @@ func (a *EmailSyncActivities) BackfillEmailsActivity(ctx context.Context, accoun
 		settings = &defaults
 	}
 
-	// Fetch messages using configured historical sync days.
-	syncDays := settings.HistoricalSyncDays
-	if syncDays <= 0 {
-		syncDays = 90
-	}
-	query := fmt.Sprintf("after:%d", time.Now().AddDate(0, 0, -syncDays).Unix())
-	processed := 0
-	pageToken := ""
-
-	for {
-		activity.RecordHeartbeat(ctx, fmt.Sprintf("processed %d messages", processed))
-
-		messages, nextPage, err := a.gmailClient.ListMessages(ctx, accessToken, query, 100, pageToken)
-		if err != nil {
-			return nil, fmt.Errorf("list messages: %w", err)
+	if account.LastHistoryID != nil && strings.TrimSpace(*account.LastHistoryID) != "" {
+		if err := a.persistAccountCheckpoint(ctx, account, nil, strings.TrimSpace(*account.LastHistoryID)); err != nil {
+			slog.ErrorContext(ctx, "failed to persist existing account checkpoint", "error", err, "account_id", accountID)
 		}
-
-		for i := range messages {
-			if err := a.storeMessage(ctx, account, &messages[i], settings); err != nil {
-				slog.ErrorContext(ctx, "failed to store email", "error", err, "message_id", messages[i].ID)
-				continue
-			}
-			processed++
-			if processed%10 == 0 {
-				activity.RecordHeartbeat(ctx, fmt.Sprintf("processed %d messages", processed))
-			}
-		}
-
-		if nextPage == "" {
-			break
-		}
-		pageToken = nextPage
+		return &EmailSyncResult{NewHistoryID: strings.TrimSpace(*account.LastHistoryID)}, nil
 	}
 
-	// Update sync state.
-	syncState := model.JSONB{"status": "syncing", "last_history_id": ""}
-	if err := a.emailRepo.UpdateSyncState(ctx, accountID, syncState); err != nil {
-		slog.ErrorContext(ctx, "failed to update sync state", "error", err, "account_id", accountID)
+	startTime := historicalSyncStart(settings)
+	if account.LastSyncedAt != nil && account.LastSyncedAt.After(startTime) {
+		startTime = *account.LastSyncedAt
+	}
+
+	processed, err := a.backfillMessagesSince(ctx, account, accessToken, settings, startTime)
+	if err != nil {
+		return nil, err
+	}
+
+	profile, err := a.gmailClient.GetMailboxProfile(ctx, accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("get mailbox profile: %w", err)
+	}
+	if err := a.persistAccountCheckpoint(ctx, account, profile, profile.HistoryID); err != nil {
+		slog.ErrorContext(ctx, "failed to update account checkpoint after backfill", "error", err, "account_id", accountID)
 	}
 
 	slog.Info("backfill email sync complete", "account_id", accountID, "messages_processed", processed)
 
-	return &EmailSyncResult{MessagesProcessed: processed}, nil
+	return &EmailSyncResult{MessagesProcessed: processed, NewHistoryID: strings.TrimSpace(profile.HistoryID)}, nil
 }
 
 // IncrementalSyncActivity fetches new emails since last sync.
@@ -111,6 +112,12 @@ func (a *EmailSyncActivities) IncrementalSyncActivity(ctx context.Context, accou
 	account, err := a.emailRepo.GetAccountByID(ctx, accountID)
 	if err != nil || account == nil {
 		return nil, fmt.Errorf("account not found: %s", accountID)
+	}
+	if !account.IsActive {
+		return &EmailSyncResult{}, nil
+	}
+	if a.gmailClient == nil {
+		return nil, fmt.Errorf("gmail sync client not configured")
 	}
 
 	// Load sync settings once for the entire sync cycle.
@@ -126,41 +133,49 @@ func (a *EmailSyncActivities) IncrementalSyncActivity(ctx context.Context, accou
 		return nil, fmt.Errorf("get valid token: %w", err)
 	}
 
-	// Use timestamp-based sync.
-	query := ""
-	if account.LastSyncedAt != nil {
-		query = fmt.Sprintf("after:%d", account.LastSyncedAt.Unix())
-	} else {
-		query = fmt.Sprintf("after:%d", time.Now().Add(-24*time.Hour).Unix())
+	lastHistoryID := strings.TrimSpace(stringValue(account.LastHistoryID))
+	if lastHistoryID == "" {
+		processed, newHistoryID, recoverErr := a.recoverHistoryCheckpoint(ctx, account, accessToken, settings)
+		return &EmailSyncResult{MessagesProcessed: processed, NewHistoryID: newHistoryID}, recoverErr
 	}
 
-	messages, _, err := a.gmailClient.ListMessages(ctx, accessToken, query, 500, "")
+	history, err := a.gmailClient.ListHistory(ctx, accessToken, lastHistoryID)
 	if err != nil {
-		return nil, fmt.Errorf("list messages: %w", err)
+		if historyCursorExpired(err) {
+			processed, newHistoryID, recoverErr := a.recoverHistoryCheckpoint(ctx, account, accessToken, settings)
+			return &EmailSyncResult{MessagesProcessed: processed, NewHistoryID: newHistoryID}, recoverErr
+		}
+		return nil, fmt.Errorf("list gmail history: %w", err)
 	}
 
 	processed := 0
-	for i := range messages {
-		if err := a.storeMessage(ctx, account, &messages[i], settings); err != nil {
-			slog.ErrorContext(ctx, "failed to store email", "error", err, "message_id", messages[i].ID)
+	for _, messageID := range history.MessageIDs {
+		msg, err := a.gmailClient.GetMessageDetail(ctx, accessToken, messageID)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to get changed gmail message detail", "error", err, "message_id", messageID)
+			continue
+		}
+		if err := a.storeMessage(ctx, account, msg, settings); err != nil {
+			slog.ErrorContext(ctx, "failed to store incremental email", "error", err, "message_id", messageID)
 			continue
 		}
 		processed++
 		if processed%10 == 0 {
-			activity.RecordHeartbeat(ctx, fmt.Sprintf("incremental: processed %d messages", processed))
+			recordHeartbeat(ctx, fmt.Sprintf("incremental: processed %d messages", processed))
 		}
 	}
 
-	// Update last synced at.
-	now := time.Now()
-	account.LastSyncedAt = &now
-	if err := a.emailRepo.UpdateAccount(ctx, account); err != nil {
-		slog.ErrorContext(ctx, "failed to update account last_synced_at", "error", err, "account_id", accountID)
+	newHistoryID := strings.TrimSpace(history.LatestHistoryID)
+	if newHistoryID == "" {
+		newHistoryID = lastHistoryID
+	}
+	if err := a.persistAccountCheckpoint(ctx, account, nil, newHistoryID); err != nil {
+		slog.ErrorContext(ctx, "failed to update account incremental checkpoint", "error", err, "account_id", accountID)
 	}
 
-	slog.Info("incremental email sync complete", "account_id", accountID, "messages_processed", processed)
+	slog.Info("incremental email sync complete", "account_id", accountID, "messages_processed", processed, "history_id", newHistoryID)
 
-	return &EmailSyncResult{MessagesProcessed: processed}, nil
+	return &EmailSyncResult{MessagesProcessed: processed, NewHistoryID: newHistoryID}, nil
 }
 
 // loadSyncSettings loads sync settings for a workspace, returning defaults if not found.
@@ -182,6 +197,137 @@ func (a *EmailSyncActivities) loadSyncSettings(ctx context.Context, workspaceID 
 	return settings, nil
 }
 
+func (a *EmailSyncActivities) backfillMessagesSince(ctx context.Context, account *model.CRMEmailAccount, accessToken string, settings *model.CRMEmailSyncSettings, start time.Time) (int, error) {
+	query := fmt.Sprintf("after:%d", start.Unix())
+	processed := 0
+	pageToken := ""
+
+	for {
+		recordHeartbeat(ctx, fmt.Sprintf("processed %d messages", processed))
+
+		messages, nextPage, err := a.gmailClient.ListMessages(ctx, accessToken, query, 100, pageToken)
+		if err != nil {
+			return processed, fmt.Errorf("list messages: %w", err)
+		}
+
+		for i := range messages {
+			if err := a.storeMessage(ctx, account, &messages[i], settings); err != nil {
+				slog.ErrorContext(ctx, "failed to store email during backfill", "error", err, "message_id", messages[i].ID)
+				continue
+			}
+			processed++
+			if processed%10 == 0 {
+				recordHeartbeat(ctx, fmt.Sprintf("processed %d messages", processed))
+			}
+		}
+
+		if nextPage == "" {
+			break
+		}
+		pageToken = nextPage
+	}
+
+	return processed, nil
+}
+
+func (a *EmailSyncActivities) recoverHistoryCheckpoint(ctx context.Context, account *model.CRMEmailAccount, accessToken string, settings *model.CRMEmailSyncSettings) (int, string, error) {
+	start := historicalSyncStart(settings)
+	if account.LastSyncedAt != nil && account.LastSyncedAt.After(start) {
+		start = *account.LastSyncedAt
+	}
+
+	processed, err := a.backfillMessagesSince(ctx, account, accessToken, settings, start)
+	if err != nil {
+		return processed, "", err
+	}
+
+	profile, err := a.gmailClient.GetMailboxProfile(ctx, accessToken)
+	if err != nil {
+		return processed, "", fmt.Errorf("get mailbox profile after history recovery: %w", err)
+	}
+	newHistoryID := strings.TrimSpace(profile.HistoryID)
+	if err := a.persistAccountCheckpoint(ctx, account, profile, newHistoryID); err != nil {
+		slog.ErrorContext(ctx, "failed to persist recovered account checkpoint", "error", err, "account_id", account.ID)
+	}
+	return processed, newHistoryID, nil
+}
+
+func (a *EmailSyncActivities) persistAccountCheckpoint(ctx context.Context, account *model.CRMEmailAccount, profile *sync.GmailProfile, historyID string) error {
+	now := time.Now().UTC()
+	account.LastSyncedAt = &now
+	account.IsActive = true
+	account.Status = model.CRMEmailAccountStatusConnected
+	account.DisconnectedAt = nil
+	if profile != nil {
+		if normalized := crmemail.NormalizeEmailAddress(profile.EmailAddress); normalized != "" {
+			account.EmailAddress = profile.EmailAddress
+			account.NormalizedEmailAddress = stringPtr(normalized)
+		}
+	}
+	historyID = strings.TrimSpace(historyID)
+	if historyID != "" {
+		account.LastHistoryID = stringPtr(historyID)
+	}
+	account.SyncState = withSyncStatus(account.SyncState, model.CRMEmailAccountStatusConnected)
+	if account.LastHistoryID != nil && *account.LastHistoryID != "" {
+		account.SyncState["last_history_id"] = *account.LastHistoryID
+	}
+	return a.emailRepo.UpdateAccount(ctx, account)
+}
+
+func historicalSyncStart(settings *model.CRMEmailSyncSettings) time.Time {
+	syncDays := 90
+	if settings != nil && settings.HistoricalSyncDays > 0 {
+		syncDays = settings.HistoricalSyncDays
+	}
+	return time.Now().AddDate(0, 0, -syncDays)
+}
+
+func historyCursorExpired(err error) bool {
+	var apiErr *sync.GmailAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	if apiErr.StatusCode == 404 {
+		return true
+	}
+	if apiErr.StatusCode != 400 {
+		return false
+	}
+	body := strings.ToLower(apiErr.Body)
+	return strings.Contains(body, "history") || strings.Contains(body, "stale") || strings.Contains(body, "too old")
+}
+
+func stringPtr(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func withSyncStatus(syncState model.JSONB, status string) model.JSONB {
+	if syncState == nil {
+		syncState = model.JSONB{}
+	}
+	syncState["status"] = status
+	return syncState
+}
+
+func recordHeartbeat(ctx context.Context, details string) {
+	defer func() {
+		_ = recover()
+	}()
+	activity.RecordHeartbeat(ctx, details)
+}
+
 func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.CRMEmailAccount, msg *sync.GmailMessage, settings *model.CRMEmailSyncSettings) error {
 	// Check if already stored.
 	existing, _ := a.emailRepo.GetMessageByExternalID(ctx, account.ID, msg.ID)
@@ -195,13 +341,13 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 	}
 
 	// Check internal exclusion — skip if all participants share the same domain.
-	if settings != nil && model.IsInternalEmail(settings, msg.From, msg.To, account.EmailAddress) {
+	if settings != nil && model.IsInternalEmail(settings, msg.From, msg.To, msg.CC, account.EmailAddress) {
 		return nil // Internal email excluded
 	}
 
 	// Determine direction.
 	direction := model.CRMEmailDirectionInbound
-	if strings.EqualFold(msg.From, account.EmailAddress) {
+	if hasLabel(msg.LabelIDs, "SENT") {
 		direction = model.CRMEmailDirectionOutbound
 	}
 
@@ -229,13 +375,29 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 		}
 	}
 
-	// Build to/cc as JSONB.
-	toJSON, _ := json.Marshal(msg.To)
-	ccJSON, _ := json.Marshal(msg.CC)
+	resolution, err := a.resolver.Resolve(ctx, crmemail.ResolveInput{
+		WorkspaceID: account.WorkspaceID,
+		Direction:   direction,
+		Settings:    settings,
+		SelfEmails:  []string{account.EmailAddress},
+		From: crmemail.Participant{
+			Email: msg.From,
+			Name:  msg.FromName,
+			Role:  model.CRMEmailParticipantRoleFrom,
+		},
+		To: participantsFromNamedAddresses(msg.To, msg.ToNames, model.CRMEmailParticipantRoleTo),
+		CC: participantsFromNamedAddresses(msg.CC, msg.CCNames, model.CRMEmailParticipantRoleCC),
+	})
+	if err != nil {
+		return fmt.Errorf("resolve message participants: %w", err)
+	}
+
+	toJSON, _ := json.Marshal(participantEmails(resolution.To))
+	ccJSON, _ := json.Marshal(participantEmails(resolution.CC))
 
 	var fromNamePtr *string
-	if msg.FromName != "" {
-		fromNamePtr = &msg.FromName
+	if resolution.From.Name != "" {
+		fromNamePtr = &resolution.From.Name
 	}
 
 	var bodyText, bodyHTML *string
@@ -251,7 +413,7 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 		EmailAccountID:    account.ID,
 		ThreadID:          threadID,
 		MessageExternalID: msg.ID,
-		FromAddress:       msg.From,
+		FromAddress:       resolution.From.Email,
 		FromName:          fromNamePtr,
 		ToAddresses:       json.RawMessage(toJSON),
 		CCAddresses:       json.RawMessage(ccJSON),
@@ -260,105 +422,70 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 		BodyHTML:          bodyHTML,
 		Direction:         direction,
 		SentAt:            msg.Date,
+		ContactID:         resolution.PrimaryContactID,
+		ContactIDs:        resolution.ContactIDs,
 	}
 
-	// Auto-match contact by email.
-	contactEmail := msg.From
-	contactName := msg.FromName
-	if direction == model.CRMEmailDirectionOutbound && len(msg.To) > 0 {
-		contactEmail = msg.To[0]
-		// Use recipient's display name from the To header, not the sender's name.
-		contactName = ""
-		if msg.ToNames != nil {
-			contactName = msg.ToNames[strings.ToLower(msg.To[0])]
+	if err := a.emailRepo.CreateMessage(ctx, message); err != nil {
+		return err
+	}
+
+	associations := cloneAssociationsForMessage(message.ID, resolution.Associations)
+	if err := a.emailRepo.ReplaceMessageContacts(ctx, message.ID, resolution.PrimaryContactID, associations); err != nil {
+		return fmt.Errorf("replace message contacts: %w", err)
+	}
+	if threadID != nil {
+		if err := a.emailRepo.RefreshThreadContactIDs(ctx, *threadID); err != nil {
+			slog.ErrorContext(ctx, "failed to refresh thread contacts", "error", err, "thread_id", *threadID)
 		}
-	}
-
-	// Never create a contact for the connected account's own email.
-	isSelf := strings.EqualFold(contactEmail, account.EmailAddress)
-
-	contact := matchContactByEmail(ctx, a.contactRepo, account.WorkspaceID, contactEmail)
-	if contact != nil {
-		message.ContactID = &contact.ID
-	}
-
-	// Auto-create contact if record creation is enabled and no existing contact matched.
-	if contact == nil && settings != nil && !isSelf {
-		contact = a.maybeCreateContactFromEmail(ctx, account.WorkspaceID, contactEmail, contactName, direction, settings)
-		if contact != nil {
-			message.ContactID = &contact.ID
-		}
-	}
-
-	return a.emailRepo.CreateMessage(ctx, message)
-}
-
-// maybeCreateContactFromEmail creates a CRM contact from an email based on record creation settings.
-func (a *EmailSyncActivities) maybeCreateContactFromEmail(ctx context.Context, workspaceID, emailAddr, name, direction string, settings *model.CRMEmailSyncSettings) *model.CRMContact {
-	if settings.RecordCreationMode == "disabled" {
-		return nil
-	}
-
-	// Selective mode: only create for outbound emails.
-	if settings.RecordCreationMode == "selective" && direction != model.CRMEmailDirectionOutbound {
-		return nil
-	}
-
-	// Check if the email prefix is blocked from record creation.
-	if model.IsBlockedRecordPrefix(settings, emailAddr) {
-		return nil
-	}
-
-	emailAddr = strings.TrimSpace(emailAddr)
-	if emailAddr == "" {
-		return nil
-	}
-
-	// Parse name into first/last.
-	firstName := emailAddr // fallback to email as name
-	var lastName *string
-	if name != "" {
-		parts := strings.SplitN(strings.TrimSpace(name), " ", 2)
-		firstName = parts[0]
-		if len(parts) > 1 {
-			lastName = &parts[1]
-		}
-	}
-
-	source := "email_sync"
-	contact := &model.CRMContact{
-		WorkspaceID:    workspaceID,
-		Email:          &emailAddr,
-		FirstName:      firstName,
-		LastName:       lastName,
-		LifecycleStage: "subscriber",
-		Source:         &source,
-	}
-
-	if err := a.contactRepo.Create(ctx, contact); err != nil {
-		slog.ErrorContext(ctx, "failed to auto-create contact from email", "error", err, "email", emailAddr)
-		return nil
-	}
-
-	slog.InfoContext(ctx, "auto-created contact from email sync", "contact_id", contact.ID, "email", emailAddr)
-	return contact
-}
-
-// matchContactByEmail finds a contact matching the given email address.
-func matchContactByEmail(ctx context.Context, contactRepo *repository.CRMContactRepository, workspaceID, emailAddr string) *model.CRMContact {
-	search := strings.TrimSpace(emailAddr)
-	if search == "" {
-		return nil
-	}
-	contacts, _, err := contactRepo.List(ctx, workspaceID, model.CRMContactListFilters{
-		Search: &search,
-	}, model.PMPagination{Page: 1, PerPage: 1})
-	if err != nil || len(contacts) == 0 {
-		return nil
-	}
-	// Only match if the email matches exactly.
-	if contacts[0].Email != nil && strings.EqualFold(*contacts[0].Email, search) {
-		return &contacts[0]
 	}
 	return nil
+}
+
+func participantsFromNamedAddresses(addresses []string, names map[string]string, role string) []crmemail.Participant {
+	result := make([]crmemail.Participant, 0, len(addresses))
+	for _, address := range addresses {
+		normalized := crmemail.NormalizeEmailAddress(address)
+		if normalized == "" {
+			continue
+		}
+		result = append(result, crmemail.Participant{
+			Email: normalized,
+			Name:  strings.TrimSpace(names[normalized]),
+			Role:  role,
+		})
+	}
+	return result
+}
+
+func participantEmails(participants []crmemail.Participant) []string {
+	result := make([]string, 0, len(participants))
+	for _, participant := range participants {
+		if participant.Email == "" {
+			continue
+		}
+		result = append(result, participant.Email)
+	}
+	return result
+}
+
+func cloneAssociationsForMessage(messageID string, associations []model.CRMEmailMessageContact) []model.CRMEmailMessageContact {
+	if len(associations) == 0 {
+		return nil
+	}
+	result := make([]model.CRMEmailMessageContact, 0, len(associations))
+	for _, association := range associations {
+		association.MessageID = messageID
+		result = append(result, association)
+	}
+	return result
+}
+
+func hasLabel(labels []string, target string) bool {
+	for _, label := range labels {
+		if strings.EqualFold(label, target) {
+			return true
+		}
+	}
+	return false
 }

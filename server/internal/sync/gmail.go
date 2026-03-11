@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strings"
 	"time"
 
@@ -38,6 +39,36 @@ type GmailMessage struct {
 	BodyText  string
 	BodyHTML  string
 	HistoryID string
+	LabelIDs  []string
+}
+
+// GmailSendResult contains the identifiers returned by Gmail after sending.
+type GmailSendResult struct {
+	ID       string
+	ThreadID string
+}
+
+// GmailProfile contains mailbox metadata used for sync bookkeeping.
+type GmailProfile struct {
+	EmailAddress string
+	HistoryID    string
+}
+
+// GmailHistoryResult contains message IDs changed since a history cursor and
+// the latest mailbox cursor returned by Gmail.
+type GmailHistoryResult struct {
+	MessageIDs     []string
+	LatestHistoryID string
+}
+
+// GmailAPIError captures non-success Gmail API responses.
+type GmailAPIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *GmailAPIError) Error() string {
+	return fmt.Sprintf("api error (status %d): %s", e.StatusCode, e.Body)
 }
 
 // GmailSyncClient wraps the Gmail REST API for email sync operations.
@@ -46,6 +77,7 @@ type GmailSyncClient struct {
 	emailRepo     *repository.CRMEmailRepository
 	encryptionKey []byte
 	httpClient    *http.Client
+	apiBaseURL    string
 }
 
 // NewGmailSyncClient creates a new GmailSyncClient.
@@ -58,6 +90,7 @@ func NewGmailSyncClient(oauthClient *oauth.GmailOAuthClient, emailRepo *reposito
 		emailRepo:     emailRepo,
 		encryptionKey: encryptionKey,
 		httpClient:    &http.Client{Timeout: 60 * time.Second},
+		apiBaseURL:    gmailAPIBase,
 	}
 }
 
@@ -117,26 +150,45 @@ func (c *GmailSyncClient) GetValidToken(ctx context.Context, account *model.CRME
 
 // GetEmailAddress fetches the authenticated user's email address from the Gmail API.
 func (c *GmailSyncClient) GetEmailAddress(ctx context.Context, accessToken string) (string, error) {
-	var profile struct {
-		EmailAddress string `json:"emailAddress"`
-	}
-	if err := c.apiGet(ctx, accessToken, gmailAPIBase+"/profile", &profile); err != nil {
-		return "", fmt.Errorf("get gmail profile: %w", err)
+	profile, err := c.GetMailboxProfile(ctx, accessToken)
+	if err != nil {
+		return "", err
 	}
 	return profile.EmailAddress, nil
+}
+
+// GetMailboxProfile fetches the authenticated mailbox profile, including the
+// current Gmail history cursor.
+func (c *GmailSyncClient) GetMailboxProfile(ctx context.Context, accessToken string) (*GmailProfile, error) {
+	var profile struct {
+		EmailAddress string `json:"emailAddress"`
+		HistoryID    string `json:"historyId"`
+	}
+	if err := c.apiGet(ctx, accessToken, c.userBaseURL()+"/profile", &profile); err != nil {
+		return nil, fmt.Errorf("get gmail profile: %w", err)
+	}
+	return &GmailProfile{
+		EmailAddress: profile.EmailAddress,
+		HistoryID:    profile.HistoryID,
+	}, nil
 }
 
 // ListMessages fetches messages from Gmail matching the query.
 func (c *GmailSyncClient) ListMessages(ctx context.Context, accessToken, query string, maxResults int, pageToken string) ([]GmailMessage, string, error) {
 	// First, list message IDs.
-	listURL := fmt.Sprintf("%s/messages?q=%s&maxResults=%d", gmailAPIBase, query, maxResults)
+	params := url.Values{}
+	params.Set("q", query)
+	params.Set("maxResults", fmt.Sprintf("%d", maxResults))
 	if pageToken != "" {
-		listURL += "&pageToken=" + pageToken
+		params.Set("pageToken", pageToken)
 	}
+	listURL := c.userBaseURL() + "/messages?" + params.Encode()
 
 	var listResp struct {
-		Messages      []struct{ ID string `json:"id"` } `json:"messages"`
-		NextPageToken string                             `json:"nextPageToken"`
+		Messages []struct {
+			ID string `json:"id"`
+		} `json:"messages"`
+		NextPageToken string `json:"nextPageToken"`
 	}
 	if err := c.apiGet(ctx, accessToken, listURL, &listResp); err != nil {
 		return nil, "", fmt.Errorf("list messages: %w", err)
@@ -158,7 +210,7 @@ func (c *GmailSyncClient) ListMessages(ctx context.Context, accessToken, query s
 
 // GetMessageDetail fetches a full message with body from Gmail.
 func (c *GmailSyncClient) GetMessageDetail(ctx context.Context, accessToken, messageID string) (*GmailMessage, error) {
-	detailURL := fmt.Sprintf("%s/messages/%s?format=full", gmailAPIBase, messageID)
+	detailURL := fmt.Sprintf("%s/messages/%s?format=full", c.userBaseURL(), messageID)
 
 	var raw gmailRawMessage
 	if err := c.apiGet(ctx, accessToken, detailURL, &raw); err != nil {
@@ -168,8 +220,8 @@ func (c *GmailSyncClient) GetMessageDetail(ctx context.Context, accessToken, mes
 	return parseGmailMessage(&raw), nil
 }
 
-// SendMessage sends an email via Gmail API and returns the message ID.
-func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string) (string, error) {
+// SendMessage sends an email via Gmail API and returns the created message and thread IDs.
+func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string) (*GmailSendResult, error) {
 	// Build RFC 2822 MIME message.
 	var b strings.Builder
 	b.WriteString("From: " + from + "\r\n")
@@ -186,29 +238,29 @@ func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from str
 	// Base64url encode the message.
 	encoded := base64.URLEncoding.EncodeToString([]byte(b.String()))
 
-	sendURL := fmt.Sprintf("%s/messages/send", gmailAPIBase)
+	sendURL := fmt.Sprintf("%s/messages/send", c.userBaseURL())
 	payload := fmt.Sprintf(`{"raw":"%s"}`, encoded)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", sendURL, strings.NewReader(payload))
 	if err != nil {
-		return "", fmt.Errorf("create send request: %w", err)
+		return nil, fmt.Errorf("create send request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("send message: %w", err)
+		return nil, fmt.Errorf("send message: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", fmt.Errorf("read send response: %w", err)
+		return nil, fmt.Errorf("read send response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("send failed (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("send failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	var sendResp struct {
@@ -216,10 +268,91 @@ func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from str
 		ThreadID string `json:"threadId"`
 	}
 	if err := json.Unmarshal(body, &sendResp); err != nil {
-		return "", fmt.Errorf("parse send response: %w", err)
+		return nil, fmt.Errorf("parse send response: %w", err)
 	}
 
-	return sendResp.ID, nil
+	return &GmailSendResult{
+		ID:       sendResp.ID,
+		ThreadID: sendResp.ThreadID,
+	}, nil
+}
+
+// ListHistory returns unique message IDs changed since the provided Gmail
+// history cursor, along with the newest cursor returned by Gmail.
+func (c *GmailSyncClient) ListHistory(ctx context.Context, accessToken, startHistoryID string) (*GmailHistoryResult, error) {
+	params := url.Values{}
+	params.Set("startHistoryId", startHistoryID)
+	params.Set("maxResults", "500")
+
+	nextPageToken := ""
+	seen := map[string]struct{}{}
+	messageIDs := make([]string, 0, 64)
+	latestHistoryID := startHistoryID
+
+	for {
+		if nextPageToken != "" {
+			params.Set("pageToken", nextPageToken)
+		} else {
+			params.Del("pageToken")
+		}
+
+		historyURL := c.userBaseURL() + "/history?" + params.Encode()
+		var resp struct {
+			HistoryID     string `json:"historyId"`
+			NextPageToken string `json:"nextPageToken"`
+			History       []struct {
+				Messages []struct {
+					ID string `json:"id"`
+				} `json:"messages"`
+				MessagesAdded []struct {
+					Message struct {
+						ID string `json:"id"`
+					} `json:"message"`
+				} `json:"messagesAdded"`
+				LabelsAdded []struct {
+					Message struct {
+						ID string `json:"id"`
+					} `json:"message"`
+				} `json:"labelsAdded"`
+				LabelsRemoved []struct {
+					Message struct {
+						ID string `json:"id"`
+					} `json:"message"`
+				} `json:"labelsRemoved"`
+			} `json:"history"`
+		}
+		if err := c.apiGet(ctx, accessToken, historyURL, &resp); err != nil {
+			return nil, fmt.Errorf("list history: %w", err)
+		}
+
+		if resp.HistoryID != "" {
+			latestHistoryID = resp.HistoryID
+		}
+		for _, item := range resp.History {
+			for _, message := range item.Messages {
+				appendHistoryMessageID(message.ID, seen, &messageIDs)
+			}
+			for _, entry := range item.MessagesAdded {
+				appendHistoryMessageID(entry.Message.ID, seen, &messageIDs)
+			}
+			for _, entry := range item.LabelsAdded {
+				appendHistoryMessageID(entry.Message.ID, seen, &messageIDs)
+			}
+			for _, entry := range item.LabelsRemoved {
+				appendHistoryMessageID(entry.Message.ID, seen, &messageIDs)
+			}
+		}
+
+		if resp.NextPageToken == "" {
+			break
+		}
+		nextPageToken = resp.NextPageToken
+	}
+
+	return &GmailHistoryResult{
+		MessageIDs:      messageIDs,
+		LatestHistoryID: latestHistoryID,
+	}, nil
 }
 
 // apiGet performs an authenticated GET request to the Gmail API.
@@ -242,7 +375,7 @@ func (c *GmailSyncClient) apiGet(ctx context.Context, accessToken, url string, r
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("api error (status %d): %s", resp.StatusCode, string(body))
+		return &GmailAPIError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	if err := json.Unmarshal(body, result); err != nil {
@@ -251,12 +384,31 @@ func (c *GmailSyncClient) apiGet(ctx context.Context, accessToken, url string, r
 	return nil
 }
 
+func (c *GmailSyncClient) userBaseURL() string {
+	if c.apiBaseURL != "" {
+		return c.apiBaseURL
+	}
+	return gmailAPIBase
+}
+
+func appendHistoryMessageID(id string, seen map[string]struct{}, target *[]string) {
+	if id == "" {
+		return
+	}
+	if _, ok := seen[id]; ok {
+		return
+	}
+	seen[id] = struct{}{}
+	*target = append(*target, id)
+}
+
 // ── Gmail API response types ──
 
 type gmailRawMessage struct {
-	ID        string `json:"id"`
-	ThreadID  string `json:"threadId"`
-	HistoryID string `json:"historyId"`
+	ID        string   `json:"id"`
+	ThreadID  string   `json:"threadId"`
+	HistoryID string   `json:"historyId"`
+	LabelIDs  []string `json:"labelIds"`
 	Payload   struct {
 		Headers []struct {
 			Name  string `json:"name"`
@@ -285,6 +437,7 @@ func parseGmailMessage(raw *gmailRawMessage) *GmailMessage {
 		ID:        raw.ID,
 		ThreadID:  raw.ThreadID,
 		HistoryID: raw.HistoryID,
+		LabelIDs:  append([]string(nil), raw.LabelIDs...),
 	}
 
 	// Parse headers.
@@ -295,10 +448,14 @@ func parseGmailMessage(raw *gmailRawMessage) *GmailMessage {
 		case "from":
 			addr, err := mail.ParseAddress(h.Value)
 			if err == nil {
-				msg.From = addr.Address
+				msg.From = strings.ToLower(strings.TrimSpace(addr.Address))
 				msg.FromName = addr.Name
 			} else {
-				msg.From = h.Value
+				fromAddrs, fromNames := parseAddressListWithNames(h.Value)
+				if len(fromAddrs) > 0 {
+					msg.From = fromAddrs[0]
+					msg.FromName = fromNames[strings.ToLower(fromAddrs[0])]
+				}
 			}
 		case "to":
 			msg.To, msg.ToNames = parseAddressListWithNames(h.Value)
@@ -364,13 +521,25 @@ func parseAddressListWithNames(value string) ([]string, map[string]string) {
 	names := make(map[string]string)
 	addrs, err := mail.ParseAddressList(value)
 	if err != nil {
-		// Fallback: split by comma.
+		// Fallback: parse each comma-separated chunk independently and drop invalid values.
 		parts := strings.Split(value, ",")
 		result := make([]string, 0, len(parts))
 		for _, p := range parts {
 			p = strings.TrimSpace(p)
-			if p != "" {
-				result = append(result, p)
+			if p == "" {
+				continue
+			}
+			addr, parseErr := mail.ParseAddress(p)
+			if parseErr != nil {
+				continue
+			}
+			email := strings.ToLower(strings.TrimSpace(addr.Address))
+			if email == "" {
+				continue
+			}
+			result = append(result, email)
+			if addr.Name != "" {
+				names[email] = addr.Name
 			}
 		}
 		return result, names
