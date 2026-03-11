@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { SupportTicket } from '../pmTypes';
+import type { SupportConversation } from '../pmTypes';
 import type {
   CRMContact,
   CRMCompany,
@@ -91,8 +91,8 @@ export const crmContactService = {
     api.get<CRMPaginatedResponse<CRMActivity[]>>(`/crm/contacts/${contactId}/activities${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listAssociations: (workspaceId: string, contactId: string) =>
     api.get<CRMAssociationEnriched[]>(`/crm/contacts/${contactId}/associations${qs(workspaceId)}`),
-  listSupportTickets: (workspaceId: string, contactId: string, params?: { page?: number; per_page?: number }) =>
-    api.get<{ data: SupportTicket[]; total: number; page: number }>(`/crm/contacts/${contactId}/support-tickets${qs(workspaceId)}${filterQuery(params ?? {})}`),
+  listSupportConversations: (workspaceId: string, contactId: string, params?: { page?: number; per_page?: number }) =>
+    api.get<{ data: SupportConversation[]; total: number; page: number }>(`/crm/contacts/${contactId}/support-conversations${qs(workspaceId)}${filterQuery(params ?? {})}`),
 };
 
 export const crmCompanyService = {

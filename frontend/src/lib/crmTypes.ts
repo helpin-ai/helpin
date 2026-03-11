@@ -15,7 +15,7 @@ export type CRMActivityType = 'note' | 'call' | 'meeting' | 'email' | 'task';
 
 export type PipelineStageType = 'open' | 'won' | 'lost';
 
-export type CRMObjectType = 'contact' | 'company' | 'deal' | 'epic' | 'story' | 'support_ticket';
+export type CRMObjectType = 'contact' | 'company' | 'deal' | 'epic' | 'story' | 'support_conversation';
 
 export interface CRMContact {
   id: string;

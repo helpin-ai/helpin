@@ -1,29 +1,29 @@
 import { api } from '../api';
-import type { SupportTicket, SupportMessage, CreateTicketRequest, CreateMessageRequest, LinkStoryRequest, AssignTicketAgentRequest, PaginatedResponse, AgentRun, TicketStatus } from '../pmTypes';
+import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, PaginatedResponse, AgentRun, TicketStatus } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const supportService = {
-  listTickets: (workspaceId: string, filters?: { status?: string; priority?: string }) => {
-    let path = `/support/tickets${qs(workspaceId)}`;
+  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string }) => {
+    let path = `/support/inbox/conversations${qs(workspaceId)}`;
     if (filters?.status) path += `&status=${filters.status}`;
     if (filters?.priority) path += `&priority=${filters.priority}`;
-    return api.get<PaginatedResponse<SupportTicket[]>>(path);
+    return api.get<PaginatedResponse<SupportConversation[]>>(path);
   },
-  getTicket: (workspaceId: string, id: string) =>
-    api.get<SupportTicket>(`/support/tickets/${id}${qs(workspaceId)}`),
-  createTicket: (workspaceId: string, payload: CreateTicketRequest) =>
-    api.post<SupportTicket>(`/support/tickets${qs(workspaceId)}`, payload),
-  listMessages: (workspaceId: string, ticketId: string) =>
-    api.get<SupportMessage[]>(`/support/tickets/${ticketId}/messages${qs(workspaceId)}`),
-  createMessage: (workspaceId: string, ticketId: string, payload: CreateMessageRequest) =>
-    api.post<SupportMessage>(`/support/tickets/${ticketId}/messages${qs(workspaceId)}`, payload),
-  updateStatus: (workspaceId: string, ticketId: string, status: TicketStatus) =>
-    api.put<SupportTicket>(`/support/tickets/${ticketId}/status${qs(workspaceId)}`, { status }),
-  linkStory: (workspaceId: string, ticketId: string, payload: LinkStoryRequest) =>
-    api.post(`/support/tickets/${ticketId}/link-story${qs(workspaceId)}`, payload),
-  assignAgent: (workspaceId: string, ticketId: string, payload: AssignTicketAgentRequest) =>
-    api.post(`/support/tickets/${ticketId}/assign-agent${qs(workspaceId)}`, payload),
-  runAgent: (workspaceId: string, ticketId: string) =>
-    api.post<AgentRun>(`/support/tickets/${ticketId}/run-agent${qs(workspaceId)}`, {}),
+  getConversation: (workspaceId: string, id: string) =>
+    api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
+  createConversation: (workspaceId: string, payload: CreateConversationRequest) =>
+    api.post<SupportConversation>(`/support/inbox/conversations${qs(workspaceId)}`, payload),
+  listConversationMessages: (workspaceId: string, conversationId: string) =>
+    api.get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
+  createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
+    api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
+  updateConversationStatus: (workspaceId: string, conversationId: string, status: TicketStatus) =>
+    api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/status${qs(workspaceId)}`, { status }),
+  linkConversationStory: (workspaceId: string, conversationId: string, payload: LinkStoryRequest) =>
+    api.post(`/support/inbox/conversations/${conversationId}/link-story${qs(workspaceId)}`, payload),
+  assignConversationAgent: (workspaceId: string, conversationId: string, payload: AssignConversationAgentRequest) =>
+    api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
+  runAgent: (workspaceId: string, conversationId: string) =>
+    api.post<AgentRun>(`/support/inbox/conversations/${conversationId}/run-agent${qs(workspaceId)}`, {}),
 };
