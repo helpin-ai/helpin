@@ -517,7 +517,7 @@ func main() {
 	settingsService := service.NewSettingsService(settingsRepo, cfg.BraveSearchAPIKey)
 	auditService := service.NewRewardAuditService(bonusRepo)
 	draftService := service.NewRewardDraftService(draftRepo)
-	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
+	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
 	orchestrationService := service.NewOrchestrationService(pmEpicRepo, agentRepo, pmActivityService, wsPublisher)
 
 	// Initialize authorization service.

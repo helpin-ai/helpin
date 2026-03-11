@@ -96,7 +96,7 @@ func TestInviteServiceCreateAndAcceptInvitationUsesWorkspaceMemberIdentity(t *te
 		t.Fatalf("add owner member: %v", err)
 	}
 
-	svc := NewInviteService(invitationRepo, workspaceRepo, userRepo, settingsRepo, nil, "https://app.example.com", nil)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "https://app.example.com", nil)
 
 	resp, err := svc.CreateInvitation(ctx, model.CreateInvitationRequest{
 		WorkspaceID: "ws-1",
