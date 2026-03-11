@@ -158,6 +158,24 @@ func (s *PMWorkflowService) Delete(ctx context.Context, id string) error {
 	if wf == nil {
 		return fmt.Errorf("workflow not found")
 	}
+	all, err := s.workflowRepo.ListByWorkspace(ctx, wf.Workflow.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if len(all) <= 1 {
+		return fmt.Errorf("cannot delete the last workflow")
+	}
+	var totalStories int64
+	for _, state := range wf.States {
+		count, err := s.storyRepo.CountByWorkflowState(ctx, state.ID)
+		if err != nil {
+			return err
+		}
+		totalStories += count
+	}
+	if totalStories > 0 {
+		return fmt.Errorf("cannot delete workflow with %d active stories — move or archive them first", totalStories)
+	}
 	if err := s.workflowRepo.Delete(ctx, id); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete workflow", "error", err, "workflow_id", id)
 		return err

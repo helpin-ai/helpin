@@ -10,10 +10,11 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Check, GitBranch, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Copy, EllipsisVertical, GitBranch, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ColorPicker } from '@/components/pm/ColorPicker';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 const STATE_TYPE_ORDER: StateType[] = ['backlog', 'unstarted', 'started', 'done'];
@@ -45,6 +46,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
   const [wfTeamID, setWfTeamID] = useState<string>('none');
   const [wfAutoAssign, setWfAutoAssign] = useState(false);
   const [wfSaving, setWfSaving] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [deleteWorkflowConfirm, setDeleteWorkflowConfirm] = useState<string | null>(null);
 
   // State dialog state
@@ -111,13 +113,14 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
     setWorkflowDialogOpen(true);
   };
 
-  const openEditWorkflow = () => {
-    if (!selected) return;
-    setEditWorkflow(selected);
-    setWfName(selected.workflow.name);
-    setWfDescription(selected.workflow.description ?? '');
-    setWfTeamID(selected.workflow.team_id ?? 'none');
-    setWfAutoAssign(selected.workflow.auto_assign_owner);
+  const openEditWorkflow = (entry?: WorkflowWithStates) => {
+    const target = entry ?? selected;
+    if (!target) return;
+    setEditWorkflow(target);
+    setWfName(target.workflow.name);
+    setWfDescription(target.workflow.description ?? '');
+    setWfTeamID(target.workflow.team_id ?? 'none');
+    setWfAutoAssign(target.workflow.auto_assign_owner);
     setWorkflowDialogOpen(true);
   };
 
@@ -157,6 +160,33 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
       }
     }
     setWfSaving(false);
+  };
+
+  const handleDuplicateWorkflow = async (entry: WorkflowWithStates) => {
+    setDuplicatingId(entry.workflow.id);
+    const { data, error } = await pmWorkflowService.create({
+      workspace_id: workspaceId,
+      name: `${entry.workflow.name} (copy)`,
+      description: entry.workflow.description ?? undefined,
+      team_id: entry.workflow.team_id ?? undefined,
+      auto_assign_owner: entry.workflow.auto_assign_owner,
+    });
+    if (error) { toast.error(error); setDuplicatingId(null); return; }
+    if (data) {
+      for (const state of entry.states) {
+        await pmWorkflowService.createState(workspaceId, data.workflow.id, {
+          name: state.name,
+          state_type: state.state_type,
+          description: state.description ?? undefined,
+          color: state.color ?? undefined,
+          is_default: state.is_default,
+        });
+      }
+      setSelectedId(data.workflow.id);
+    }
+    toast.success('Workflow duplicated');
+    await loadWorkflows();
+    setDuplicatingId(null);
   };
 
   const handleDeleteWorkflow = async (workflowId: string) => {
@@ -303,26 +333,72 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
             <p className="text-sm text-muted-foreground py-4 text-center">No workflows found.</p>
           ) : (
             workflows.map((entry) => (
-              <button
+              <div
                 key={entry.workflow.id}
                 onClick={() => setSelectedId(entry.workflow.id)}
                 className={cn(
-                  'w-full rounded-md border px-3 py-2.5 text-left transition-colors',
+                  'group/card flex items-center gap-2 w-full rounded-md border px-3 py-2.5 text-left transition-colors cursor-pointer',
                   entry.workflow.id === selectedId
                     ? 'border-primary/30 bg-primary/5'
                     : 'border-transparent hover:bg-muted/50'
                 )}
               >
-                <div className="flex items-center gap-2">
-                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="text-sm font-medium truncate">{entry.workflow.name}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    {duplicatingId === entry.workflow.id ? (
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground animate-spin" />
+                    ) : (
+                      <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    <span className="text-sm font-medium truncate">{entry.workflow.name}</span>
+                  </div>
+                  <div className="mt-0.5 ml-5.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>{entry.states.length} states</span>
+                    <span>&middot;</span>
+                    <span className="truncate">{findTeamName(entry.workflow.team_id)}</span>
+                  </div>
                 </div>
-                <div className="mt-0.5 ml-5.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span>{entry.states.length} states</span>
-                  <span>&middot;</span>
-                  <span className="truncate">{findTeamName(entry.workflow.team_id)}</span>
-                </div>
-              </button>
+                {editable && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0 opacity-0 group-hover/card:opacity-100 transition-opacity focus-visible:ring-0 focus-visible:ring-offset-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <EllipsisVertical className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => { setSelectedId(entry.workflow.id); openEditWorkflow(entry); }}>
+                        <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDuplicateWorkflow(entry)}>
+                        <Copy className="h-3.5 w-3.5 mr-2" /> Duplicate
+                      </DropdownMenuItem>
+                      {workflows.length <= 1 ? (
+                        <QuickTooltip label="You must have at least one workflow" side="left">
+                          <DropdownMenuItem
+                            variant="destructive"
+                            className="opacity-40 pointer-events-auto cursor-not-allowed"
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                          </DropdownMenuItem>
+                        </QuickTooltip>
+                      ) : (
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => setDeleteWorkflowConfirm(entry.workflow.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
             ))
           )}
         </div>
@@ -347,41 +423,23 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Workflow header */}
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h3 className="text-lg font-semibold">{selected.workflow.name}</h3>
-                {selected.workflow.description && (
-                  <p className="text-sm text-muted-foreground mt-0.5">{selected.workflow.description}</p>
-                )}
+            {/* Breadcrumb header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-sm min-w-0">
+                <span className="text-muted-foreground truncate">{selected.workflow.name}</span>
+                <span className="text-muted-foreground">/</span>
+                <span className="font-semibold">States</span>
               </div>
-              {editable && (
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={openEditWorkflow}>
-                    <Pencil className="h-3.5 w-3.5" /> Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-destructive hover:text-destructive"
-                    onClick={() => setDeleteWorkflowConfirm(selected.workflow.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )}
             </div>
 
             {/* States */}
-            <div className="space-y-5">
-              <h4 className="text-sm font-medium">States</h4>
-              {STATE_TYPE_ORDER.map((type) => (
-                <section key={type} className="space-y-2">
+            <div className="space-y-0">
+              {STATE_TYPE_ORDER.map((type, typeIdx) => (
+                <section key={type} className={cn('space-y-2 pb-5', typeIdx > 0 && 'pt-3')}>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <div className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
                       <StateTypeIcon stateType={type} className="h-4 w-4" />
                       {STATE_TYPE_LABEL[type]}
-                      <span className="text-xs font-normal text-muted-foreground">({statesByType[type].length})</span>
                     </div>
                     {editable && (
                       <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => openCreateState(type)}>
@@ -408,24 +466,25 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                               <StateTypeIcon stateType={state.state_type} className="h-3.5 w-3.5 shrink-0" />
                             )}
                             <span className="text-sm font-medium truncate">{state.name}</span>
-                          </div>
-                          <div className="flex items-center gap-0.5 shrink-0">
-                            {state.is_default ? (
+                            {state.is_default && (
                               <QuickTooltip label="New stories are created in this state">
                                 <Badge variant="secondary" className="text-xs gap-1 shrink-0 cursor-default">
                                   <Check className="h-3 w-3" /> Default
                                 </Badge>
                               </QuickTooltip>
-                            ) : editable ? (
+                            )}
+                          </div>
+                          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {!state.is_default && editable && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="h-6 text-xs text-muted-foreground"
                                 onClick={() => handleSetDefault(state.id)}
                               >
                                 Set as default
                               </Button>
-                            ) : null}
+                            )}
                             {editable && (
                               <>
                                 <Button
@@ -539,7 +598,6 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setWorkflowDialogOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={wfSaving}>{wfSaving ? 'Saving...' : 'Save'}</Button>
             </DialogFooter>
           </form>
@@ -580,10 +638,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                   </Button>
                 )}
               </div>
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setStateDialogOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={stateSaving || !editable}>{stateSaving ? 'Saving...' : 'Save'}</Button>
-              </div>
+              <Button type="submit" disabled={stateSaving || !editable}>{stateSaving ? 'Saving...' : 'Save'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
