@@ -44,8 +44,8 @@ type Handlers struct {
 	PMStoryTemplate   *handler.PMStoryTemplateHandler
 	Search            *handler.SearchHandler
 	Agent             *handler.AgentHandler
-	Support           *handler.SupportHandler
-	Widget            *handler.WidgetHandler
+	SupportInbox      *handler.SupportInboxHandler
+	SupportInboxWidget *handler.SupportInboxWidgetHandler
 	Git               *handler.GitHandler
 	Orchestration     *handler.OrchestrationHandler
 	Docs              *handler.DocsHandler
@@ -144,10 +144,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
-			r.Get("/config", h.Widget.GetConfig)
-			r.Post("/session", h.Widget.CreateSession)
-			r.Post("/messages", h.Widget.SendMessage)
-			r.Get("/messages", h.Widget.GetMessages)
+			r.Get("/config", h.SupportInboxWidget.GetConfig)
+			r.Post("/session", h.SupportInboxWidget.CreateSession)
+			r.Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		})
 
 		// ---- Protected routes ----
@@ -317,16 +317,39 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
 
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets", h.Support.ListTickets)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets", h.Support.CreateTicket)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets/{id}", h.Support.GetTicket)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets/{id}/associations", h.Associations.ListTicketAssociations)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/tickets/{id}/status", h.Support.UpdateTicketStatus)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tickets/{id}/messages", h.Support.ListMessages)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/messages", h.Support.CreateMessage)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/link-story", h.Support.LinkStory)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/assign-agent", h.Support.AssignAgent)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/run-agent", h.Support.RunAgent)
+				// Legacy /tickets routes (backward compat)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets", h.SupportInbox.ListConversations)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets", h.SupportInbox.CreateConversation)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets/{id}", h.SupportInbox.GetConversation)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets/{id}/associations", h.Associations.ListConversationAssociations)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/tickets/{id}/status", h.SupportInbox.UpdateConversationStatus)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets/{id}/messages", h.SupportInbox.ListConversationMessages)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/messages", h.SupportInbox.CreateConversationMessage)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/link-story", h.SupportInbox.LinkConversationStory)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/run-agent", h.SupportInbox.RunAgent)
+
+				// New /inbox/conversations routes
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations", h.SupportInbox.ListConversations)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations", h.SupportInbox.CreateConversation)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}", h.SupportInbox.GetConversation)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/associations", h.Associations.ListConversationAssociations)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/status", h.SupportInbox.UpdateConversationStatus)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages", h.SupportInbox.ListConversationMessages)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/messages", h.SupportInbox.CreateConversationMessage)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-story", h.SupportInbox.LinkConversationStory)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
+
+				// Canned responses
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses", h.SupportInbox.ListCannedResponses)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses/search", h.SupportInbox.SearchCannedResponses)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/canned-responses", h.SupportInbox.CreateCannedResponse)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/canned-responses/{id}", h.SupportInbox.UpdateCannedResponse)
+				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/canned-responses/{id}", h.SupportInbox.DeleteCannedResponse)
+
+				// Typing indicators
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/typing", h.SupportInbox.TypingIndicator)
 			})
 
 			// PM module
@@ -605,7 +628,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/contacts/{id}", h.CRMContact.Delete)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/activities", h.CRMActivity.ListByContact)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/associations", h.CRMAssociation.ListContactAssociations)
-				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/support-tickets", h.Support.ListContactTickets)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/support-conversations", h.SupportInbox.ListContactConversations)
 
 				// Companies — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies", h.CRMCompany.List)

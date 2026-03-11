@@ -9,7 +9,7 @@ const (
 	CRMObjectDeal    = "deal"
 	CRMObjectEpic    = "epic"
 	CRMObjectStory   = "story"
-	CRMObjectSupportTicket = "support_ticket"
+	CRMObjectSupportConversation = "support_conversation"
 )
 
 // CRMAssociationEnriched extends CRMAssociation with the linked object's display info.

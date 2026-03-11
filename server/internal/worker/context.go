@@ -17,12 +17,12 @@ type ExecutionContext struct {
 	TargetType                string
 	TargetID                  string
 	StoryID                   string
-	TicketID                  string
+	ConversationID            string
 	Agent                     *model.Agent
 	Story                     *model.PMStory
 	Epic                      *model.PMEpic
 	EpicStories               []model.PMStory
-	Ticket                    *model.SupportTicket
+	Conversation              *model.SupportConversation
 	GitIntegration            *model.GitIntegration
 	GitAccessToken            string
 	Repo                      string // e.g. "owner/repo"
@@ -70,8 +70,8 @@ type ServiceBridge struct {
 	AddComment         func(ctx context.Context, workspaceID, storyID, agentID, content string) error
 	UpdateStoryState   func(ctx context.Context, workspaceID, storyID, stateID string) error
 	ListChecklist      func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error)
-	ListTicketMessages func(ctx context.Context, workspaceID, ticketID string) ([]model.SupportMessage, error)
-	UpdateTicketStatus func(ctx context.Context, workspaceID, ticketID, status string) error
+	ListConversationMessages func(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error)
+	UpdateConversationStatus func(ctx context.Context, workspaceID, conversationID, status string) error
 }
 
 // ChecklistItem is a simplified checklist item for tool responses.

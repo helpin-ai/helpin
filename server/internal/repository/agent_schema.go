@@ -27,10 +27,15 @@ BEGIN
            SET target_type = 'story', target_id = story_id::uuid
          WHERE target_id IS NULL AND story_id IS NOT NULL;
 
-        -- Backfill from ticket_id
+        -- Backfill from ticket_id (now called conversation_id)
         UPDATE agent_runs
-           SET target_type = 'support_ticket', target_id = ticket_id::uuid
+           SET target_type = 'support_conversation', target_id = ticket_id::uuid
          WHERE target_id IS NULL AND ticket_id IS NOT NULL;
+
+        -- Rename legacy target_type values
+        UPDATE agent_runs
+           SET target_type = 'support_conversation'
+         WHERE target_type = 'support_ticket';
 
         -- Default any remaining nulls so NOT NULL constraint can be applied
         UPDATE agent_runs

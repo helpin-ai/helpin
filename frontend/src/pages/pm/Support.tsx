@@ -6,11 +6,11 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { supportService } from '@/lib/services/supportService';
 import { agentService } from '@/lib/services/agentService';
 import type {
-  SupportTicket,
+  SupportConversation,
   SupportMessage,
-  TicketStatus,
-  TicketPriority,
-  CreateTicketRequest,
+  ConversationStatus,
+  ConversationPriority,
+  CreateConversationRequest,
   Agent,
   AgentRun,
   AgentRunArtifact,
@@ -39,7 +39,7 @@ import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 
 // ── Badge colors ────────────────────────────────────────────────────
 
-const STATUS_COLORS: Record<TicketStatus, string> = {
+const STATUS_COLORS: Record<ConversationStatus, string> = {
   open: 'bg-blue-100 text-blue-700',
   in_progress: 'bg-amber-100 text-amber-700',
   waiting: 'bg-purple-100 text-purple-700',
@@ -47,7 +47,7 @@ const STATUS_COLORS: Record<TicketStatus, string> = {
   closed: 'bg-gray-100 text-gray-600',
 };
 
-const STATUS_LABELS: Record<TicketStatus, string> = {
+const STATUS_LABELS: Record<ConversationStatus, string> = {
   open: 'Open',
   in_progress: 'In Progress',
   waiting: 'Waiting',
@@ -55,7 +55,7 @@ const STATUS_LABELS: Record<TicketStatus, string> = {
   closed: 'Closed',
 };
 
-const PRIORITY_COLORS: Record<TicketPriority, string> = {
+const PRIORITY_COLORS: Record<ConversationPriority, string> = {
   low: 'bg-gray-100 text-gray-600',
   medium: 'bg-blue-100 text-blue-700',
   high: 'bg-amber-100 text-amber-700',
@@ -75,14 +75,14 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-// ── Ticket List Item ────────────────────────────────────────────────
+// ── Conversation List Item ───────────────────────────────────────────
 
-function TicketRow({
-  ticket,
+function ConversationRow({
+  conversation,
   isSelected,
   onSelect,
 }: {
-  ticket: SupportTicket;
+  conversation: SupportConversation;
   isSelected: boolean;
   onSelect: () => void;
 }) {
@@ -97,20 +97,20 @@ function TicketRow({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">#{ticket.display_id}</span>
-            <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${STATUS_COLORS[ticket.status]}`}>
-              {STATUS_LABELS[ticket.status]}
+            <span className="text-xs text-muted-foreground">#{conversation.display_id}</span>
+            <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${STATUS_COLORS[conversation.status]}`}>
+              {STATUS_LABELS[conversation.status]}
             </Badge>
-            <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${PRIORITY_COLORS[ticket.priority]}`}>
-              {ticket.priority}
+            <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${PRIORITY_COLORS[conversation.priority]}`}>
+              {conversation.priority}
             </Badge>
           </div>
-          <p className="mt-0.5 truncate text-sm font-medium">{ticket.subject}</p>
-          {ticket.customer_name && (
-            <p className="truncate text-xs text-muted-foreground">{ticket.customer_name}</p>
+          <p className="mt-0.5 truncate text-sm font-medium">{conversation.subject}</p>
+          {conversation.customer_name && (
+            <p className="truncate text-xs text-muted-foreground">{conversation.customer_name}</p>
           )}
         </div>
-        <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(ticket.updated_at)}</span>
+        <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(conversation.updated_at)}</span>
       </div>
     </button>
   );
@@ -153,14 +153,14 @@ export function SupportPage() {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
 
-  // ── Tickets state ──
-  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  // ── Conversations state ──
+  const [conversations, setConversations] = useState<SupportConversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('open');
 
-  // ── Selected ticket state ──
-  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
+  // ── Selected conversation state ──
+  const [selectedConversation, setSelectedConversation] = useState<SupportConversation | null>(null);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
@@ -178,7 +178,7 @@ export function SupportPage() {
 
   // ── Create dialog ──
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState<CreateTicketRequest>({
+  const [createForm, setCreateForm] = useState<CreateConversationRequest>({
     subject: '',
     priority: 'medium',
     customer_name: '',
@@ -187,24 +187,24 @@ export function SupportPage() {
   const [creating, setCreating] = useState(false);
 
   // ── Actions state ──
-  const [actionStatus, setActionStatus] = useState<TicketStatus | ''>('');
+  const [actionStatus, setActionStatus] = useState<ConversationStatus | ''>('');
   const [assignAgentId, setAssignAgentId] = useState('');
 
   // ── Mobile view state ──
   const [mobileShowThread, setMobileShowThread] = useState(false);
 
-  // ── Load tickets ──
-  const loadTickets = useCallback(async () => {
+  // ── Load conversations ──
+  const loadConversations = useCallback(async () => {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
     const filters = statusFilter !== 'all' ? { status: statusFilter } : undefined;
-    const res = await supportService.listTickets(workspaceId, filters);
+    const res = await supportService.listConversations(workspaceId, filters);
     if (res.error) {
       setError(res.error);
     } else {
       const data = res.data;
-      setTickets(Array.isArray(data) ? data : (data as any)?.data ?? []);
+      setConversations(Array.isArray(data) ? data : (data as any)?.data ?? []);
     }
     setLoading(false);
   }, [workspaceId, statusFilter]);
@@ -217,8 +217,8 @@ export function SupportPage() {
   }, [workspaceId]);
 
   useEffect(() => {
-    loadTickets();
-  }, [loadTickets]);
+    loadConversations();
+  }, [loadConversations]);
 
   useEffect(() => {
     loadSupportAgents();
@@ -226,26 +226,26 @@ export function SupportPage() {
 
   // ── Load messages ──
   const loadMessages = useCallback(async () => {
-    if (!workspaceId || !selectedTicket) return;
+    if (!workspaceId || !selectedConversation) return;
     setMessagesLoading(true);
-    const res = await supportService.listMessages(workspaceId, selectedTicket.id);
+    const res = await supportService.listConversationMessages(workspaceId, selectedConversation.id);
     if (!res.error) {
       setMessages(res.data ?? []);
     }
     setMessagesLoading(false);
-  }, [workspaceId, selectedTicket]);
+  }, [workspaceId, selectedConversation]);
 
   const loadAgentRuns = useCallback(async () => {
-    if (!workspaceId || !selectedTicket?.assigned_agent_id) {
+    if (!workspaceId || !selectedConversation?.assigned_agent_id) {
       setAgentRuns([]);
       setSelectedRunId(null);
       setRunArtifacts([]);
       return;
     }
-    const res = await agentService.listRuns(workspaceId, selectedTicket.assigned_agent_id);
+    const res = await agentService.listRuns(workspaceId, selectedConversation.assigned_agent_id);
     if (res.error) return;
     const runs = (res.data?.data ?? []).filter(
-      (run) => run.target_type === 'support_ticket' && run.target_id === selectedTicket.id
+      (run) => run.target_type === 'support_conversation' && run.target_id === selectedConversation.id
     );
     setAgentRuns(runs);
     if (runs[0]) {
@@ -258,10 +258,10 @@ export function SupportPage() {
       setSelectedRunId(null);
       setRunArtifacts([]);
     }
-  }, [workspaceId, selectedTicket]);
+  }, [workspaceId, selectedConversation]);
 
   useEffect(() => {
-    if (selectedTicket) {
+    if (selectedConversation) {
       loadMessages();
       loadAgentRuns();
       setReplyContent('');
@@ -272,7 +272,7 @@ export function SupportPage() {
       setSelectedRunId(null);
       setRunArtifacts([]);
     }
-  }, [selectedTicket, loadMessages, loadAgentRuns]);
+  }, [selectedConversation, loadMessages, loadAgentRuns]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -280,9 +280,9 @@ export function SupportPage() {
 
   // ── Send reply ──
   const handleSendReply = async () => {
-    if (!workspaceId || !selectedTicket || !replyContent.trim()) return;
+    if (!workspaceId || !selectedConversation || !replyContent.trim()) return;
     setSending(true);
-    const res = await supportService.createMessage(workspaceId, selectedTicket.id, {
+    const res = await supportService.createConversationMessage(workspaceId, selectedConversation.id, {
       content: replyContent.trim(),
       is_internal: isInternal,
     });
@@ -294,42 +294,42 @@ export function SupportPage() {
     setSending(false);
   };
 
-  // ── Create ticket ──
+  // ── Create conversation ──
   const handleCreate = async () => {
     if (!workspaceId || !createForm.subject.trim()) return;
     setCreating(true);
-    const res = await supportService.createTicket(workspaceId, createForm);
+    const res = await supportService.createConversation(workspaceId, createForm);
     if (!res.error) {
       setCreateOpen(false);
       setCreateForm({ subject: '', priority: 'medium', customer_name: '', customer_email: '' });
-      loadTickets();
+      loadConversations();
     }
     setCreating(false);
   };
 
-  // ── Ticket actions ──
-  const handleChangeStatus = async (status: TicketStatus) => {
-    if (!workspaceId || !selectedTicket) return;
+  // ── Conversation actions ──
+  const handleChangeStatus = async (status: ConversationStatus) => {
+    if (!workspaceId || !selectedConversation) return;
     setActionStatus('');
-    const res = await supportService.updateStatus(workspaceId, selectedTicket.id, status);
+    const res = await supportService.updateConversationStatus(workspaceId, selectedConversation.id, status);
     if (!res.error && res.data) {
-      setSelectedTicket(res.data);
-      loadTickets();
+      setSelectedConversation(res.data);
+      loadConversations();
     }
   };
 
   const handleAssignAgent = async () => {
-    if (!workspaceId || !selectedTicket || !assignAgentId.trim()) return;
-    await supportService.assignAgent(workspaceId, selectedTicket.id, { agent_id: assignAgentId.trim() });
+    if (!workspaceId || !selectedConversation || !assignAgentId.trim()) return;
+    await supportService.assignConversationAgent(workspaceId, selectedConversation.id, { agent_id: assignAgentId.trim() });
     setAssignAgentId('');
-    setSelectedTicket({ ...selectedTicket, assigned_agent_id: assignAgentId.trim() });
+    setSelectedConversation({ ...selectedConversation, assigned_agent_id: assignAgentId.trim() });
   };
 
   const handleRunAgent = async () => {
-    if (!workspaceId || !selectedTicket) return;
+    if (!workspaceId || !selectedConversation) return;
     setRunningAgent(true);
     try {
-      await supportService.runAgent(workspaceId, selectedTicket.id);
+      await supportService.runAgent(workspaceId, selectedConversation.id);
       await loadAgentRuns();
     } finally {
       setRunningAgent(false);
@@ -348,13 +348,13 @@ export function SupportPage() {
     }
   };
 
-  const selectTicket = (ticket: SupportTicket) => {
-    setSelectedTicket(ticket);
+  const selectConversation = (conversation: SupportConversation) => {
+    setSelectedConversation(conversation);
     setMobileShowThread(true);
   };
 
-  const assignedAgent = selectedTicket?.assigned_agent_id
-    ? supportAgents.find((agent) => agent.id === selectedTicket.assigned_agent_id)
+  const assignedAgent = selectedConversation?.assigned_agent_id
+    ? supportAgents.find((agent) => agent.id === selectedConversation.assigned_agent_id)
     : null;
 
   if (!workspace) {
@@ -369,12 +369,12 @@ export function SupportPage() {
         <h1 className="text-xl font-semibold">Support</h1>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="mr-1.5 h-4 w-4" />
-          New Ticket
+          New Conversation
         </Button>
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* Left panel: ticket list */}
+        {/* Left panel: conversation list */}
         <div
           className={`flex w-full flex-col border-r md:w-80 lg:w-96 ${
             mobileShowThread ? 'hidden md:flex' : 'flex'
@@ -395,36 +395,36 @@ export function SupportPage() {
           <div className="flex-1 overflow-y-auto">
             {loading && <p className="p-3 text-sm text-muted-foreground">Loading...</p>}
             {error && <p className="p-3 text-sm text-destructive">{error}</p>}
-            {!loading && tickets.length === 0 && !error && (
+            {!loading && conversations.length === 0 && !error && (
               <div className="flex flex-col items-center justify-center gap-3 py-16">
                 <MessageSquare className="h-10 w-10 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground">No tickets found.</p>
+                <p className="text-sm text-muted-foreground">No conversations found.</p>
               </div>
             )}
-            {tickets.map((ticket) => (
-              <TicketRow
-                key={ticket.id}
-                ticket={ticket}
-                isSelected={selectedTicket?.id === ticket.id}
-                onSelect={() => selectTicket(ticket)}
+            {conversations.map((conversation) => (
+              <ConversationRow
+                key={conversation.id}
+                conversation={conversation}
+                isSelected={selectedConversation?.id === conversation.id}
+                onSelect={() => selectConversation(conversation)}
               />
             ))}
           </div>
         </div>
 
-        {/* Right panel: ticket detail + thread */}
+        {/* Right panel: conversation detail + thread */}
         <div
           className={`flex min-w-0 flex-1 flex-col ${
             !mobileShowThread ? 'hidden md:flex' : 'flex'
           }`}
         >
-          {!selectedTicket ? (
+          {!selectedConversation ? (
             <div className="flex flex-1 items-center justify-center">
-              <p className="text-sm text-muted-foreground">Select a ticket to view</p>
+              <p className="text-sm text-muted-foreground">Select a conversation to view</p>
             </div>
           ) : (
             <>
-              {/* Ticket header */}
+              {/* Conversation header */}
               <div className="border-b px-4 py-3">
                 <div className="flex items-center gap-2">
                   <Button
@@ -435,24 +435,24 @@ export function SupportPage() {
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </Button>
-                  <span className="text-xs text-muted-foreground">#{selectedTicket.display_id}</span>
-                  <Badge variant="secondary" className={`${STATUS_COLORS[selectedTicket.status]}`}>
-                    {STATUS_LABELS[selectedTicket.status]}
+                  <span className="text-xs text-muted-foreground">#{selectedConversation.display_id}</span>
+                  <Badge variant="secondary" className={`${STATUS_COLORS[selectedConversation.status]}`}>
+                    {STATUS_LABELS[selectedConversation.status]}
                   </Badge>
-                  <Badge variant="secondary" className={`${PRIORITY_COLORS[selectedTicket.priority]}`}>
-                    {selectedTicket.priority}
+                  <Badge variant="secondary" className={`${PRIORITY_COLORS[selectedConversation.priority]}`}>
+                    {selectedConversation.priority}
                   </Badge>
                 </div>
-                <h2 className="mt-1 text-lg font-semibold">{selectedTicket.subject}</h2>
+                <h2 className="mt-1 text-lg font-semibold">{selectedConversation.subject}</h2>
                 <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  {selectedTicket.customer_name && <span>Customer: {selectedTicket.customer_name}</span>}
-                  {selectedTicket.assigned_agent_id && (
-                    <span>Agent: {assignedAgent?.name ?? selectedTicket.assigned_agent_id.slice(0, 8)}</span>
+                  {selectedConversation.customer_name && <span>Customer: {selectedConversation.customer_name}</span>}
+                  {selectedConversation.assigned_agent_id && (
+                    <span>Agent: {assignedAgent?.name ?? selectedConversation.assigned_agent_id.slice(0, 8)}</span>
                   )}
-                  {selectedTicket.crm_contact_id && workspace?.slug && (
+                  {selectedConversation.crm_contact_id && workspace?.slug && (
                     <Link
                       to="/w/$slug/crm/contacts/$contactId"
-                      params={{ slug: workspace.slug, contactId: selectedTicket.crm_contact_id }}
+                      params={{ slug: workspace.slug, contactId: selectedConversation.crm_contact_id }}
                       className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700 transition-colors hover:bg-blue-100"
                     >
                       <User className="h-3 w-3" />
@@ -464,8 +464,8 @@ export function SupportPage() {
                 {/* Actions row */}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <Select
-                    value={actionStatus || selectedTicket.status}
-                    onValueChange={(v) => handleChangeStatus(v as TicketStatus)}
+                    value={actionStatus || selectedConversation.status}
+                    onValueChange={(v) => handleChangeStatus(v as ConversationStatus)}
                   >
                     <SelectTrigger className="h-7 w-32 text-xs">
                       <SelectValue placeholder="Status" />
@@ -507,7 +507,7 @@ export function SupportPage() {
                     size="sm"
                     variant="outline"
                     className="h-7 gap-1 text-xs"
-                    disabled={runningAgent || !selectedTicket.assigned_agent_id}
+                    disabled={runningAgent || !selectedConversation.assigned_agent_id}
                     onClick={handleRunAgent}
                   >
                     {runningAgent ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bot className="h-3 w-3" />}
@@ -622,7 +622,7 @@ export function SupportPage() {
 
                 {workspaceId ? (
                   <div className="mt-4">
-                    <AssociationsPanel objectType="support_ticket" objectId={selectedTicket.id} workspaceId={workspaceId} />
+                    <AssociationsPanel objectType="support_conversation" objectId={selectedConversation.id} workspaceId={workspaceId} />
                   </div>
                 ) : null}
               </div>
@@ -631,27 +631,27 @@ export function SupportPage() {
         </div>
       </div>
 
-      {/* Create ticket dialog */}
+      {/* Create conversation dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Create Ticket</DialogTitle>
+            <DialogTitle>Create Conversation</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="ticket-subject">Subject</Label>
+              <Label htmlFor="conversation-subject">Subject</Label>
               <Input
-                id="ticket-subject"
+                id="conversation-subject"
                 value={createForm.subject}
                 onChange={(e) => setCreateForm((f) => ({ ...f, subject: e.target.value }))}
-                placeholder="Ticket subject"
+                placeholder="Conversation subject"
               />
             </div>
             <div className="space-y-1.5">
               <Label>Priority</Label>
               <Select
                 value={createForm.priority ?? 'medium'}
-                onValueChange={(v) => setCreateForm((f) => ({ ...f, priority: v as TicketPriority }))}
+                onValueChange={(v) => setCreateForm((f) => ({ ...f, priority: v as ConversationPriority }))}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -665,18 +665,18 @@ export function SupportPage() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="ticket-customer-name">Customer Name</Label>
+              <Label htmlFor="conversation-customer-name">Customer Name</Label>
               <Input
-                id="ticket-customer-name"
+                id="conversation-customer-name"
                 value={createForm.customer_name ?? ''}
                 onChange={(e) => setCreateForm((f) => ({ ...f, customer_name: e.target.value }))}
                 placeholder="Customer name"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="ticket-customer-email">Customer Email</Label>
+              <Label htmlFor="conversation-customer-email">Customer Email</Label>
               <Input
-                id="ticket-customer-email"
+                id="conversation-customer-email"
                 type="email"
                 value={createForm.customer_email ?? ''}
                 onChange={(e) => setCreateForm((f) => ({ ...f, customer_email: e.target.value }))}

@@ -30,7 +30,7 @@ import {
   useDeleteContact,
   useContactActivities,
   useContactAssociations,
-  useContactSupportTickets,
+  useContactSupportConversations,
   useContactEmails,
   useContactCalendar,
 } from '@/hooks/queries';
@@ -145,7 +145,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const { data: meetingsData } = useContactCalendar(wsId, contactId);
   const { data: activitiesData, refetch: refetchActivities } = useContactActivities(wsId, contactId);
   const { data: associations, refetch: refetchAssociations } = useContactAssociations(wsId, contactId);
-  const { data: supportTicketsData } = useContactSupportTickets(wsId, contactId);
+  const { data: supportConversationsData } = useContactSupportConversations(wsId, contactId);
   const updateContact = useUpdateContact(wsId);
   const deleteContact = useDeleteContact(wsId);
 
@@ -163,7 +163,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const companyName = primaryCompany?.linked_object_name;
   const emailCount = emailsData?.total ?? emailsData?.data?.length ?? 0;
   const meetingCount = meetingsData?.total ?? meetingsData?.data?.length ?? 0;
-  const supportTicketCount = supportTicketsData?.data?.length ?? 0;
+  const supportTicketCount = supportConversationsData?.data?.length ?? 0;
 
   useTitle(fullName);
 
@@ -357,7 +357,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                       Support tickets ({supportTicketCount})
                     </h3>
                     <div className="mt-3 space-y-2">
-                      {supportTicketsData!.data.map((ticket) => (
+                      {supportConversationsData!.data.map((ticket) => (
                         <Link
                           key={ticket.id}
                           to="/w/$slug/pm/support"

@@ -70,7 +70,7 @@ func PayloadFromCalendarEvent(event *CRMCalendarEvent) SignalSourcePayload {
 }
 
 // PayloadFromSupportMessage builds a signal source payload from a support message.
-func PayloadFromSupportMessage(msg *SupportMessage, ticket *SupportTicket) SignalSourcePayload {
+func PayloadFromSupportMessage(msg *SupportMessage, ticket *SupportConversation) SignalSourcePayload {
 	body := msg.Content
 	if len(body) > 3000 {
 		body = body[:3000]

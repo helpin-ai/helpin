@@ -61,10 +61,10 @@ type AgentRunActivities struct {
 	storyRepo       *repository.PMStoryRepository
 	storyLinkRepo   *repository.PMStoryLinkRepository
 	epicRepo        *repository.PMEpicRepository
-	ticketRepo      *repository.SupportTicketRepository
-	commentRepo     *repository.PMCommentRepository
-	checklistRepo   *repository.PMChecklistItemRepository
-	messageRepo     *repository.SupportMessageRepository
+	conversationRepo *repository.SupportConversationRepository
+	commentRepo      *repository.PMCommentRepository
+	checklistRepo    *repository.PMChecklistItemRepository
+	messageRepo      *repository.SupportMessageRepository
 	gitIntRepo      *repository.GitIntegrationRepository
 	gitRepo         *repository.GitRepositoryRepository
 	gitLinkRepo     *repository.StoryGitLinkRepository
@@ -87,7 +87,7 @@ func NewAgentRunActivities(
 	storyRepo *repository.PMStoryRepository,
 	storyLinkRepo *repository.PMStoryLinkRepository,
 	epicRepo *repository.PMEpicRepository,
-	ticketRepo *repository.SupportTicketRepository,
+	conversationRepo *repository.SupportConversationRepository,
 	commentRepo *repository.PMCommentRepository,
 	checklistRepo *repository.PMChecklistItemRepository,
 	messageRepo *repository.SupportMessageRepository,
@@ -111,10 +111,10 @@ func NewAgentRunActivities(
 		storyRepo:       storyRepo,
 		storyLinkRepo:   storyLinkRepo,
 		epicRepo:        epicRepo,
-		ticketRepo:      ticketRepo,
-		commentRepo:     commentRepo,
-		checklistRepo:   checklistRepo,
-		messageRepo:     messageRepo,
+		conversationRepo: conversationRepo,
+		commentRepo:      commentRepo,
+		checklistRepo:    checklistRepo,
+		messageRepo:      messageRepo,
 		gitIntRepo:      gitIntRepo,
 		gitRepo:         gitRepo,
 		gitLinkRepo:     gitLinkRepo,
@@ -136,7 +136,7 @@ type resolvedRunState struct {
 	story          *model.PMStory
 	epic           *model.PMEpic
 	epicStories    []model.PMStory
-	ticket         *model.SupportTicket
+	conversation   *model.SupportConversation
 	profile        model.RuntimeProfile
 	deliveryTarget *model.StoryDeliveryTarget
 	repository     *model.GitRepository
@@ -244,7 +244,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		Story:                     state.story,
 		Epic:                      state.epic,
 		EpicStories:               state.epicStories,
-		Ticket:                    state.ticket,
+		Conversation:              state.conversation,
 		GitIntegration:            state.integration,
 		GitAccessToken:            state.accessToken,
 		Repo:                      repoFullName(state),
@@ -285,8 +285,8 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	if state.story != nil {
 		execCtx.StoryID = state.story.ID
 	}
-	if state.ticket != nil {
-		execCtx.TicketID = state.ticket.ID
+	if state.conversation != nil {
+		execCtx.ConversationID = state.conversation.ID
 	}
 
 	runtimeKind := state.run.RuntimeKind
@@ -376,9 +376,9 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		case run.StoryID != nil:
 			run.TargetType = "story"
 			run.TargetID = *run.StoryID
-		case run.TicketID != nil:
-			run.TargetType = "support_ticket"
-			run.TargetID = *run.TicketID
+		case run.ConversationID != nil:
+			run.TargetType = "support_conversation"
+			run.TargetID = *run.ConversationID
 		}
 	}
 
@@ -422,15 +422,15 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		}
 	}
 
-	if run.TicketID != nil {
-		ticket, err := a.ticketRepo.GetByID(ctx, run.WorkspaceID, *run.TicketID)
+	if run.ConversationID != nil {
+		conversation, err := a.conversationRepo.GetByID(ctx, run.WorkspaceID, *run.ConversationID)
 		if err != nil {
 			return nil, err
 		}
-		if ticket == nil {
-			return nil, fmt.Errorf("ticket not found")
+		if conversation == nil {
+			return nil, fmt.Errorf("conversation not found")
 		}
-		state.ticket = ticket
+		state.conversation = conversation
 	}
 
 	if run.TargetType == "epic" {
@@ -1254,7 +1254,7 @@ func (a *AgentRunActivities) renderLinkedTicketsContext(ctx context.Context, sta
 		storyNames[story.ID] = story.Name
 	}
 
-	tickets, err := a.ticketRepo.ListByLinkedStoryIDs(ctx, state.run.WorkspaceID, storyIDs)
+	tickets, err := a.conversationRepo.ListByLinkedStoryIDs(ctx, state.run.WorkspaceID, storyIDs)
 	if err != nil {
 		return "", err
 	}
@@ -1278,7 +1278,7 @@ func (a *AgentRunActivities) renderLinkedTicketsContext(ctx context.Context, sta
 		}
 
 		entry := header
-		messages, err := a.messageRepo.ListByTicket(ctx, state.run.WorkspaceID, ticket.ID, true)
+		messages, err := a.messageRepo.ListByConversation(ctx, state.run.WorkspaceID, ticket.ID, true)
 		if err != nil {
 			return "", err
 		}
@@ -1996,19 +1996,19 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 		ListChecklist: func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error) {
 			return a.checklistRepo.List(ctx, storyID)
 		},
-		ListTicketMessages: func(ctx context.Context, workspaceID, ticketID string) ([]model.SupportMessage, error) {
-			return a.messageRepo.ListByTicket(ctx, workspaceID, ticketID, true)
+		ListConversationMessages: func(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error) {
+			return a.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
 		},
-		UpdateTicketStatus: func(ctx context.Context, workspaceID, ticketID, status string) error {
-			ticket, err := a.ticketRepo.GetByID(ctx, workspaceID, ticketID)
+		UpdateConversationStatus: func(ctx context.Context, workspaceID, conversationID, status string) error {
+			conversation, err := a.conversationRepo.GetByID(ctx, workspaceID, conversationID)
 			if err != nil {
 				return err
 			}
-			if ticket == nil {
-				return fmt.Errorf("ticket not found")
+			if conversation == nil {
+				return fmt.Errorf("conversation not found")
 			}
-			ticket.Status = status
-			return a.ticketRepo.Update(ctx, ticket)
+			conversation.Status = status
+			return a.conversationRepo.Update(ctx, conversation)
 		},
 	}
 }

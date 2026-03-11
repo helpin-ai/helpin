@@ -51,7 +51,7 @@ type AgentRun struct {
 	WorkspaceID       string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	AgentID           string          `json:"agent_id" gorm:"type:uuid;not null;index"`
 	StoryID           *string         `json:"story_id" gorm:"type:uuid"`
-	TicketID          *string         `json:"ticket_id" gorm:"type:uuid"`
+	ConversationID    *string         `json:"conversation_id" gorm:"type:uuid"`
 	TargetType        string          `json:"target_type" gorm:"not null;default:'story';index"`
 	TargetID          string          `json:"target_id" gorm:"type:uuid;not null;index"`
 	RuntimeKind       string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`

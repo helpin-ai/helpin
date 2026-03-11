@@ -14,6 +14,7 @@ import {
   Tag,
   User,
   Users,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -363,31 +364,44 @@ export function CreateStoryModal({
     onSaveTemplate,
   ]);
 
+  const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className="max-w-6xl sm:max-w-6xl gap-0 overflow-hidden p-0"
         showCloseButton={false}
       >
         <div className="flex h-[85vh] max-h-[960px] flex-col">
           {/* Header */}
-          <div className="px-6 pt-6 pb-2">
-            <h2 className="text-lg font-semibold tracking-tight">
-              {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create new work item'}
-            </h2>
+          <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-semibold">
+                {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create story'}
+              </span>
+              {workflow && !isTemplateMode && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                  <GitBranch className="h-3 w-3" />
+                  {workflow.workflow.name}
+                </span>
+              )}
+            </div>
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleOpenChange(false)}>
+              <X className="h-4 w-4" />
+            </Button>
           </div>
 
           {/* Two-column grid */}
           <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
             {/* Left column — title + description */}
             <div className="min-h-0 flex-1 flex flex-col overflow-y-auto px-6 py-3 gap-4">
-              {/* Workflow badge */}
-              {workflow && (
-                <div className="inline-flex items-center gap-2 rounded-md border border-border/60 px-3 py-1.5 text-sm font-medium text-foreground self-start">
-                  <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-                  {workflow.workflow.name}
-                </div>
-              )}
 
               {/* Title */}
               <Input
@@ -399,6 +413,13 @@ export function CreateStoryModal({
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, name: event.target.value }))
                 }
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab' && !e.shiftKey) {
+                    e.preventDefault();
+                    const editor = e.currentTarget.closest('.flex')?.querySelector<HTMLElement>('.tiptap.ProseMirror');
+                    editor?.focus();
+                  }
+                }}
               />
 
               {/* Description — Tiptap rich text editor */}
@@ -694,7 +715,7 @@ export function CreateStoryModal({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-4 border-t border-border/50 px-6 py-3">
+          <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
             {!isTemplateMode && (
             <div className="mr-auto flex items-center gap-2">
               <Switch checked={createMore} onCheckedChange={setCreateMore} />
@@ -705,7 +726,7 @@ export function CreateStoryModal({
             <Button
               type="button"
               variant="outline"
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleOpenChange(false)}
               disabled={submitting}
             >
               Discard

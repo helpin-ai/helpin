@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget E2E Test Page</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f9fafb;
+    }
+    h1 { color: #111827; }
+    .info {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Widget E2E Test Page</h1>
+  <div class="info">
+    <p>This page is used for E2E testing the Helpin widget.</p>
+    <p>Widget will be loaded via JavaScript in tests.</p>
+  </div>
+
+  <script src="../../dist/lib.js"></script>
+  <script>
+    console.log('Test page loaded');
+  </script>
+</body>
+</html>

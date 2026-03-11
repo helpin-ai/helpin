@@ -32,4 +32,8 @@ Thumbs.db
 plane
 
 # Claude Code
-.claude/settings.local.json
+.claude/settings.local.jsonnode_modules/
+.turbo/
+dist/
+lib/
+*.log

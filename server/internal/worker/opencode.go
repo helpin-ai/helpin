@@ -89,8 +89,8 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	}
 
 	var ticketMessages []model.SupportMessage
-	if execCtx.TicketID != "" && execCtx.Services != nil && execCtx.Services.ListTicketMessages != nil {
-		messages, err := execCtx.Services.ListTicketMessages(execCtx.Context, execCtx.WorkspaceID, execCtx.TicketID)
+	if execCtx.ConversationID != "" && execCtx.Services != nil && execCtx.Services.ListConversationMessages != nil {
+		messages, err := execCtx.Services.ListConversationMessages(execCtx.Context, execCtx.WorkspaceID, execCtx.ConversationID)
 		if err != nil {
 			log.Printf("warning: failed to list ticket messages for opencode run: %v", err)
 		} else {
@@ -98,19 +98,19 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		}
 	}
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Ticket, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
 	userPrompt := BuildUserPrompt(
 		execCtx.Story,
 		execCtx.Epic,
 		execCtx.EpicStories,
-		execCtx.Ticket,
+		execCtx.Conversation,
 		ticketMessages,
 		checklist,
 		execCtx.PlanningStage,
 		execCtx.InitialInstructions,
 	)
-	if execCtx.Ticket != nil {
-		systemPrompt += "\nFor support tickets, respond with valid JSON only in this shape: " +
+	if execCtx.Conversation != nil {
+		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +
 			`{"status":"open|in_progress|pending|resolved|closed","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
 	}
 
@@ -293,7 +293,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 			}
 			artifactWriter.Save(postRunCtx, "orchestration_proposal", "json", string(payload), false)
 		}
-	case execCtx.TargetType == "support_ticket" && execCtx.Ticket != nil:
+	case execCtx.TargetType == "support_conversation" && execCtx.Conversation != nil:
 		summary, err := extractSupportRunSummaryFromResponseText(responseText)
 		if err != nil {
 			return normalizeOpenCodePostRunError(postRunCtx, err)
@@ -304,9 +304,9 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 			return normalizeOpenCodePostRunError(postRunCtx, err)
 		}
 		artifactWriter.Save(postRunCtx, "support_draft", "json", string(payload), false)
-		if summary.Status != nil && execCtx.Services != nil && execCtx.Services.UpdateTicketStatus != nil {
-			if err := execCtx.Services.UpdateTicketStatus(postRunCtx, execCtx.WorkspaceID, execCtx.TicketID, *summary.Status); err != nil {
-				log.Printf("warning: failed to update support ticket status: %v", err)
+		if summary.Status != nil && execCtx.Services != nil && execCtx.Services.UpdateConversationStatus != nil {
+			if err := execCtx.Services.UpdateConversationStatus(postRunCtx, execCtx.WorkspaceID, execCtx.ConversationID, *summary.Status); err != nil {
+				log.Printf("warning: failed to update support conversation status: %v", err)
 			}
 		}
 	default:

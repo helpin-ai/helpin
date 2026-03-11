@@ -1,0 +1,75 @@
+
+> @helpin/widget-core@0.0.0 build /root/teampulse/packages/widget-core
+> vite build
+
+vite v6.4.1 building for production...
+transforming...
+✓ 14 modules transformed.
+rendering chunks...
+
+[vite:dts] Start generate declaration files...
+[96msrc/__tests__/QuickReplies.test.tsx[0m:[93m28[0m:[93m22[0m - [91merror[0m[90m TS2304: [0mCannot find name 'vi'.
+
+[7m28[0m     const onSelect = vi.fn();
+[7m  [0m [91m                     ~~[0m
+[96msrc/__tests__/WidgetLauncher.test.tsx[0m:[93m47[0m:[93m25[0m - [91merror[0m[90m TS2304: [0mCannot find name 'vi'.
+
+[7m47[0m     const handleClick = vi.fn();
+[7m  [0m [91m                        ~~[0m
+[96msrc/components/ChatWindow.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent, Fragment } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/ChatWindow.tsx[0m:[93m2[0m:[93m1[0m - [91merror[0m[90m TS6133: [0m'useState' is declared but its value is never read.
+
+[7m2[0m import { useState } from 'preact/hooks';
+[7m [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/components/ComposeBar.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/CsatRating.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/MessageBubble.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/MessageList.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/PreChatForm.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/QuickReplies.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/StreamingText.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/TypingIndicator.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/WidgetHeader.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+[96msrc/components/WidgetLauncher.tsx[0m:[93m1[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'h' is declared but its value is never read.
+
+[7m1[0m import { h, FunctionComponent } from 'preact';
+[7m [0m [91m         ~[0m
+
+computing gzip size...
+dist/index.js  15.45 kB │ gzip: 4.63 kB
+[vite:dts] Start rollup declaration files...
+Analysis will use the bundled TypeScript version 5.8.2
+*** The target project appears to use TypeScript 5.9.3 which is newer than the bundled compiler engine; consider upgrading API Extractor.
+[vite:dts] Declaration files built in 3495ms.
+
+✓ built in 3.76s

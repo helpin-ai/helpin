@@ -11,6 +11,9 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -28,6 +31,8 @@ import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
+import { pmAutomationService } from '@/lib/services/pmAutomationService';
+import { toast } from 'sonner';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
@@ -126,18 +131,23 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     onClose();
   };
 
+  const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
+
+  const handleClose = () => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+    }
+    onClose();
+  };
+
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="max-w-4xl sm:max-w-4xl gap-0 overflow-hidden p-0" showCloseButton={false}>
         <div className="flex h-[80vh] flex-col">
-          <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onClose}>
+          <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
+            <span className="text-lg font-semibold">Create epic</span>
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
               <X className="h-4 w-4" />
-            </Button>
-            <span className="text-sm font-semibold">Create Epic</span>
-            <Button className="ml-auto" size="sm" onClick={create} disabled={!form.name.trim() || submitting}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              {submitting ? 'Creating...' : 'Create Epic'}
             </Button>
           </div>
 
@@ -155,6 +165,13 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 aria-label="Epic title"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab' && !e.shiftKey) {
+                    e.preventDefault();
+                    const editor = e.currentTarget.parentElement?.querySelector<HTMLElement>('.tiptap.ProseMirror');
+                    editor?.focus();
+                  }
+                }}
                 className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
                 placeholder="Epic title"
               />
@@ -252,6 +269,17 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
               </div>
             </aside>
           </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
+            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
+              Discard
+            </Button>
+            <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting}>
+              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? 'Creating...' : 'Create Epic'}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -274,6 +302,15 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [automationPrompt, setAutomationPrompt] = useState<{
+    teamId: string;
+    teamName: string;
+    sprintCount: number;
+    weeks: number;
+    startDay: number;
+    moveUnfinished: boolean;
+  } | null>(null);
+  const [enablingAutomation, setEnablingAutomation] = useState(false);
 
   const create = async () => {
     if (!form.name.trim() || !form.startDate || !form.endDate || submitting) return;
@@ -292,21 +329,177 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
       return;
     }
     window.dispatchEvent(new CustomEvent('sprint-created'));
+    toast.success('Sprint created');
+
+    // Check if team has sprint automations — prompt if not
+    if (form.teamId) {
+      try {
+        const { data: automations } = await pmAutomationService.list(workspaceId);
+        const hasAutoCreate = automations?.some(
+          (a) => a.automation_type === 'sprint_auto_create' && a.team_id === form.teamId
+        );
+        if (!hasAutoCreate) {
+          const team = teams.find((t) => t.id === form.teamId);
+          const start = new Date(form.startDate);
+          const end = new Date(form.endDate);
+          const durationDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+          const weeks = Math.max(1, Math.round(durationDays / 7));
+          // Brief delay so the user sees the success toast before the prompt
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          setAutomationPrompt({
+            teamId: form.teamId,
+            teamName: team?.name ?? 'this team',
+            sprintCount: 2, // current sprint + 1 ahead
+            weeks,
+            startDay: 1, // Monday
+            moveUnfinished: true,
+          });
+          return;
+        }
+      } catch {
+        // Non-critical — just skip the prompt
+      }
+    }
+
+    onClose();
+  };
+
+  const enableAutomations = async () => {
+    if (!automationPrompt) return;
+    setEnablingAutomation(true);
+
+    const promises = [
+      pmAutomationService.upsert(workspaceId, {
+        workspace_id: workspaceId,
+        automation_type: 'sprint_auto_create',
+        enabled: true,
+        team_id: automationPrompt.teamId,
+        config_int: automationPrompt.sprintCount,
+        config_int2: automationPrompt.weeks,
+        config_int3: automationPrompt.startDay,
+      }),
+    ];
+
+    if (automationPrompt.moveUnfinished) {
+      promises.push(
+        pmAutomationService.upsert(workspaceId, {
+          workspace_id: workspaceId,
+          automation_type: 'sprint_move_unfinished',
+          enabled: true,
+          team_id: automationPrompt.teamId,
+        }),
+      );
+    }
+
+    await Promise.all(promises);
+    setEnablingAutomation(false);
+    toast.success('Sprint automation enabled for ' + automationPrompt.teamName);
+    onClose();
+  };
+
+  const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  if (automationPrompt) {
+    return (
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="max-w-sm">
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-base font-semibold">Set up sprint automation</h3>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Never run out of sprints — the system will automatically create new sprints for {automationPrompt.teamName} so there are always sprints ready to plan into.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Label className="text-xs text-muted-foreground w-28 shrink-0">Always keep</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={automationPrompt.sprintCount}
+                  onChange={(e) => setAutomationPrompt((p) => p ? { ...p, sprintCount: Number(e.target.value) } : p)}
+                  className="w-20 h-8 text-xs"
+                />
+                <span className="text-xs text-muted-foreground">{automationPrompt.sprintCount === 1 ? 'active sprint' : 'active sprints'}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Label className="text-xs text-muted-foreground w-28 shrink-0">Sprint length</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={automationPrompt.weeks}
+                  onChange={(e) => setAutomationPrompt((p) => p ? { ...p, weeks: Number(e.target.value) } : p)}
+                  className="w-20 h-8 text-xs"
+                />
+                <span className="text-xs text-muted-foreground">{automationPrompt.weeks === 1 ? 'week' : 'weeks'}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Label className="text-xs text-muted-foreground w-28 shrink-0">Starts on</Label>
+                <Select
+                  value={String(automationPrompt.startDay)}
+                  onValueChange={(val) => setAutomationPrompt((p) => p ? { ...p, startDay: Number(val) } : p)}
+                >
+                  <SelectTrigger className="h-8 text-xs flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DAYS.map((day, i) => (
+                      <SelectItem key={i} value={String(i)}>{day}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <div>
+                  <p className="text-xs font-medium">Move unfinished stories</p>
+                  <p className="text-[11px] text-muted-foreground">Carry over incomplete stories to the next sprint</p>
+                </div>
+                <Switch
+                  checked={automationPrompt.moveUnfinished}
+                  onCheckedChange={(checked) => setAutomationPrompt((p) => p ? { ...p, moveUnfinished: checked } : p)}
+                />
+              </div>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground">
+              You can change this anytime in Settings &gt; Automations.
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={onClose} disabled={enablingAutomation}>
+                No thanks
+              </Button>
+              <Button size="sm" onClick={enableAutomations} disabled={enablingAutomation}>
+                {enablingAutomation ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                {enablingAutomation ? 'Enabling...' : 'Enable'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
+
+  const handleClose = () => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+    }
     onClose();
   };
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="max-w-4xl sm:max-w-4xl gap-0 overflow-hidden p-0" showCloseButton={false}>
         <div className="flex h-[80vh] flex-col">
-          <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onClose}>
+          <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
+            <span className="text-lg font-semibold">Create sprint</span>
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
               <X className="h-4 w-4" />
-            </Button>
-            <span className="text-sm font-semibold">Create Sprint</span>
-            <Button className="ml-auto" size="sm" onClick={create} disabled={!form.name.trim() || !form.startDate || !form.endDate || submitting}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              {submitting ? 'Creating...' : 'Create Sprint'}
             </Button>
           </div>
 
@@ -324,6 +517,13 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 aria-label="Sprint title"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab' && !e.shiftKey) {
+                    e.preventDefault();
+                    const editor = e.currentTarget.parentElement?.querySelector<HTMLElement>('.tiptap.ProseMirror');
+                    editor?.focus();
+                  }
+                }}
                 className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
                 placeholder="Sprint title"
               />
@@ -377,6 +577,17 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                 />
               </div>
             </aside>
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
+            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
+              Discard
+            </Button>
+            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.startDate || !form.endDate || submitting}>
+              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? 'Creating...' : 'Create Sprint'}
+            </Button>
           </div>
         </div>
       </DialogContent>
@@ -495,18 +706,23 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
     onClose();
   };
 
+  const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
+
+  const handleClose = () => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+    }
+    onClose();
+  };
+
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="max-w-4xl sm:max-w-4xl gap-0 overflow-hidden p-0" showCloseButton={false}>
         <div className="flex h-[80vh] flex-col">
-          <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onClose}>
+          <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
+            <span className="text-lg font-semibold">Create objective</span>
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
               <X className="h-4 w-4" />
-            </Button>
-            <span className="text-sm font-semibold">Create Objective</span>
-            <Button className="ml-auto" size="sm" onClick={create} disabled={!form.name.trim() || submitting}>
-              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              {submitting ? 'Creating...' : 'Create Objective'}
             </Button>
           </div>
 
@@ -524,6 +740,13 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 aria-label="Objective title"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab' && !e.shiftKey) {
+                    e.preventDefault();
+                    const editor = e.currentTarget.parentElement?.querySelector<HTMLElement>('.tiptap.ProseMirror');
+                    editor?.focus();
+                  }
+                }}
                 className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
                 placeholder="Objective title"
               />
@@ -631,6 +854,17 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                 />
               </div>
             </aside>
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
+            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
+              Discard
+            </Button>
+            <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting}>
+              {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+              {submitting ? 'Creating...' : 'Create Objective'}
+            </Button>
           </div>
         </div>
       </DialogContent>

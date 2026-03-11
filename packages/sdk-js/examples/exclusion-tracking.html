@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helpin SDK - Tracking Exclusion Example</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .links {
+            margin: 20px 0;
+            display: flex;
+            flex-wrap: wrap;
+        }
+        .links a {
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .control-panel {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 15px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #e9f7ef;
+        }
+        .events-log {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .event-item {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-bottom: 1px solid #ddd;
+        }
+    </style>
+
+</head>
+<body>
+<h1>Helpin SDK - Tracking Exclusion Example</h1>
+<div class="links">
+    <a href="/examples/index.html">Home</a>
+    <a href="/examples/form-tracking.html">Form Tracking</a>
+    <a href="http://stage.test.local:5173/examples/cross-domain.html">Cross Domain Tracking</a>
+    <a href="http://stage.test.local:5173/examples/autocapture.html">Autocapture</a>
+    <a href="/examples/cookie-less-tracking.html">Cookie Less Tracking</a>
+    <a href="/examples/exclusion-tracking.html">Tracking Exclusion</a>
+</div>
+
+<div class="control-panel">
+    <h2>Tracking Exclusion Controls</h2>
+    <p>Use the buttons below to enable or disable tracking:</p>
+    
+    <button id="enableTracking">Enable Tracking</button>
+    <button id="disableTracking">Disable Tracking</button>
+    <button id="checkStatus">Check Status</button>
+    
+    <div class="status" id="trackingStatus">
+        Tracking status: Checking...
+    </div>
+</div>
+
+<div class="control-panel">
+    <h2>Test Tracking</h2>
+    <p>Try sending events with different tracking states:</p>
+    
+    <button id="trackEvent">Track Test Event</button>
+    <button id="identifyUser">Identify User</button>
+    
+    <div class="events-log" id="eventsLog">
+        <h3>Events Log:</h3>
+    </div>
+</div>
+
+<!-- Load the SDK -->
+<script src="/dist/lib.js"
+        data-key="test-api-key"
+        data-tracking-host="http://localhost:3000"
+        data-autocapture="true"
+        data-form-tracking="true"
+        data-auto-pageview="true"></script>
+
+<!-- Example script -->
+<script>
+    // Function to update the tracking status display
+    function updateTrackingStatus() {
+        const statusElement = document.getElementById('trackingStatus');
+        const isExcluded = localStorage.getItem('helpin_exclusion') === 'true';
+        
+        statusElement.innerHTML = `
+            Tracking status: <strong>${isExcluded ? 'Disabled' : 'Enabled'}</strong><br>
+            <small>localStorage['helpin_exclusion'] = ${localStorage.getItem('helpin_exclusion') || 'null'}</small>
+        `;
+        
+        statusElement.style.backgroundColor = isExcluded ? '#ffebee' : '#e9f7ef';
+    }
+    
+    // Function to log events
+    function logEvent(message) {
+        const logElement = document.getElementById('eventsLog');
+        const eventItem = document.createElement('div');
+        eventItem.className = 'event-item';
+        eventItem.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${message}`;
+        logElement.appendChild(eventItem);
+        
+        // Scroll to bottom
+        logElement.scrollTop = logElement.scrollHeight;
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        // Update status on load
+        updateTrackingStatus();
+        
+        // Enable tracking button
+        document.getElementById('enableTracking').addEventListener('click', function() {
+            localStorage.removeItem('helpin_exclusion');
+            // Or explicitly set to false
+            // localStorage.setItem('helpin_exclusion', 'false');
+            updateTrackingStatus();
+            logEvent('Tracking enabled');
+        });
+        
+        // Disable tracking button
+        document.getElementById('disableTracking').addEventListener('click', function() {
+            localStorage.setItem('helpin_exclusion', 'true');
+            updateTrackingStatus();
+            logEvent('Tracking disabled');
+        });
+        
+        // Check status button
+        document.getElementById('checkStatus').addEventListener('click', function() {
+            updateTrackingStatus();
+            logEvent('Status checked');
+        });
+        
+        // Track event button
+        document.getElementById('trackEvent').addEventListener('click', function() {
+            // Try to track an event
+            window.helpin.track('test_event', {
+                test_property: 'test_value',
+                timestamp: new Date().toISOString()
+            });
+            
+            const isExcluded = localStorage.getItem('helpin_exclusion') === 'true';
+            logEvent(`Attempted to track 'test_event' (${isExcluded ? 'Should be blocked' : 'Should be sent'})`);
+        });
+        
+        // Identify user button
+        document.getElementById('identifyUser').addEventListener('click', function() {
+            // Try to identify a user
+            window.helpin.id({
+                id: 'test-user-' + Math.floor(Math.random() * 1000),
+                email: 'test@example.com',
+                name: 'Test User'
+            });
+            
+            const isExcluded = localStorage.getItem('helpin_exclusion') === 'true';
+            logEvent(`Attempted to identify user (${isExcluded ? 'Should be blocked' : 'Should be sent'})`);
+        });
+    });
+</script>
+</body>
+</html>

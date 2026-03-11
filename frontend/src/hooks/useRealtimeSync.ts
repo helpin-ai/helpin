@@ -77,6 +77,13 @@ export function useRealtimeSync(workspaceId: string) {
       if (event.parent_type === 'story' && event.parent_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.parent_id) })
       }
+    } else if (event.entity === 'support_conversation') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
+    } else if (event.entity === 'support_conversation_message') {
+      if (event.parent_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
+      }
     }
 
     // Child entity events → invalidate parent query cache

@@ -286,10 +286,10 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"properties": map[string]interface{}{},
 	}, toolListStoryChecklist)
 
-	r.register("list_ticket_messages", "List the current support ticket messages.", map[string]interface{}{
+	r.register("list_conversation_messages", "List the current support conversation messages.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
-	}, toolListTicketMessages)
+	}, toolListConversationMessages)
 
 	r.register("draft_support_reply", "Draft a support reply for later human approval.", map[string]interface{}{
 		"type": "object",
@@ -310,16 +310,16 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"content"},
 	}, toolDraftSupportReply)
 
-	r.register("update_ticket_status", "Transition the current support ticket to a different status.", map[string]interface{}{
+	r.register("update_conversation_status", "Transition the current support conversation to a different status.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"status": map[string]interface{}{
 				"type":        "string",
-				"description": "The target ticket status",
+				"description": "The target conversation status",
 			},
 		},
 		"required": []string{"status"},
-	}, toolUpdateTicketStatus)
+	}, toolUpdateConversationStatus)
 
 	return r
 }

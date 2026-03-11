@@ -1,0 +1,1 @@
+(function(){"use strict";const n="helpin-chatbox";function t(){if(document.getElementById(n))return;const e=document.createElement("div");e.className="helpin-client",e.innerHTML=`<div id="${n}"></div>`,document.body.appendChild(e)}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",t):t()})();

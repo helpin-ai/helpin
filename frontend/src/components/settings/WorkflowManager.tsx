@@ -73,13 +73,17 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
     setWorkflows(next);
     setSelectedId((prev) => {
       if (initialWorkflowId && next.some((w) => w.workflow.id === initialWorkflowId)) return initialWorkflowId;
+      if (initialTeamId) {
+        const matchingWorkflow = next.find((w) => w.workflow.team_id === initialTeamId);
+        if (matchingWorkflow) return matchingWorkflow.workflow.id;
+      }
       if (prev && next.some((w) => w.workflow.id === prev)) return prev;
       return next[0]?.workflow.id ?? '';
     });
     setLoading(false);
   };
 
-  useEffect(() => { loadWorkflows(); }, [workspaceId]);
+  useEffect(() => { loadWorkflows(); }, [workspaceId, initialWorkflowId, initialTeamId]);
 
   // --- Derived data ---
 
@@ -107,7 +111,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
     setEditWorkflow(null);
     setWfName('');
     setWfDescription('');
-    setWfTeamID('none');
+    setWfTeamID(initialTeamId ?? 'none');
     setWfAutoAssign(false);
     setWorkflowDialogOpen(true);
   };

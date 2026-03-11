@@ -42,9 +42,9 @@ func TestValidateAgentTargetEnforcesOpinionatedTargetMapping(t *testing.T) {
 			target: "story",
 		},
 		{
-			name:   "support can run on support tickets",
+			name:   "support can run on support conversations",
 			agent:  model.Agent{AgentKind: "llm", AgentClass: model.AgentClassSupport},
-			target: "support_ticket",
+			target: "support_conversation",
 		},
 		{
 			name:      "human cannot run anywhere",

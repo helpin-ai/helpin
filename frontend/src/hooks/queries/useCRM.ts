@@ -104,10 +104,10 @@ export function useContactAssociations(wsId: string, contactId: string) {
   })
 }
 
-export function useContactSupportTickets(wsId: string, contactId: string) {
+export function useContactSupportConversations(wsId: string, contactId: string) {
   return useQuery({
-    queryKey: queryKeys.crm.contactSupportTickets(wsId, contactId),
-    queryFn: async () => unwrap(await crmContactService.listSupportTickets(wsId, contactId)),
+    queryKey: queryKeys.crm.contactSupportConversations(wsId, contactId),
+    queryFn: async () => unwrap(await crmContactService.listSupportConversations(wsId, contactId)),
     enabled: !!wsId && !!contactId,
   })
 }

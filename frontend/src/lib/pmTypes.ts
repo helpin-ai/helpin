@@ -202,7 +202,7 @@ export interface StoryDependencyStory {
 export type AssociationEntityType =
   | 'story'
   | 'epic'
-  | 'support_ticket'
+  | 'support_conversation'
   | 'contact'
   | 'company'
   | 'deal'
@@ -246,7 +246,7 @@ export interface StoryRelationshipGroups {
 export interface GroupedAssociations {
   story_relationships: StoryRelationshipGroups;
   stories: AssociationObjectSummary[];
-  support_tickets: AssociationObjectSummary[];
+  support_conversations: AssociationObjectSummary[];
   crm_records: AssociationObjectSummary[];
   docs: AssociationObjectSummary[];
 }
@@ -899,7 +899,7 @@ export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'native_claude' | 'claude_code' | 'openclaw' | 'zeroclaw';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
-export type AgentTargetType = 'story' | 'support_ticket' | 'epic' | 'document';
+export type AgentTargetType = 'story' | 'support_conversation' | 'epic' | 'document';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 
@@ -933,7 +933,7 @@ export interface AgentRun {
   workspace_id: string;
   agent_id: string;
   story_id?: string;
-  ticket_id?: string;
+  conversation_id?: string;
   target_type: AgentTargetType;
   target_id: string;
   runtime_kind: AgentRuntimeKind;
@@ -1138,18 +1138,18 @@ export interface RunnerActiveRun {
 
 // ── Support ─────────────────────────────────────────────────────────
 
-export type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed';
-export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed';
+export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TicketSource = 'widget' | 'internal' | 'email' | 'api';
 export type MessageSenderType = 'customer' | 'user' | 'agent';
 
-export interface SupportTicket {
+export interface SupportConversation {
   id: string;
   workspace_id: string;
   display_id: number;
   subject: string;
-  status: TicketStatus;
-  priority: TicketPriority;
+  status: ConversationStatus;
+  priority: ConversationPriority;
   customer_name?: string;
   customer_email?: string;
   opened_by_user_id?: string;
@@ -1164,7 +1164,7 @@ export interface SupportTicket {
 export interface SupportMessage {
   id: string;
   workspace_id: string;
-  ticket_id: string;
+  conversation_id: string;
   sender_type: MessageSenderType;
   sender_user_id?: string;
   sender_agent_id?: string;
@@ -1175,9 +1175,9 @@ export interface SupportMessage {
   updated_at: string;
 }
 
-export interface CreateTicketRequest {
+export interface CreateConversationRequest {
   subject: string;
-  priority?: TicketPriority;
+  priority?: ConversationPriority;
   customer_name?: string;
   customer_email?: string;
   source?: TicketSource;
@@ -1192,7 +1192,7 @@ export interface LinkStoryRequest {
   story_id: string;
 }
 
-export interface AssignTicketAgentRequest {
+export interface AssignConversationAgentRequest {
   agent_id: string;
 }
 

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magento 2 RequireJS Conflict Test - Helpin</title>
+    
+    <!-- Simulate Magento 2 RequireJS Environment -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"></script>
+    
+    <script type="text/javascript">
+        // Define mock Magento modules FIRST, before RequireJS config
+        // This ensures they're available when required
+        define('mage/cookies', [], function() {
+            return {
+                get: function(name) {
+                    return document.cookie.split('; ')
+                        .find(row => row.startsWith(name + '='))
+                        ?.split('=')[1];
+                },
+                set: function(name, value) {
+                    document.cookie = name + '=' + value + '; path=/';
+                }
+            };
+        });
+
+        define('Magento_Customer/js/customer-data', [], function() {
+            return {
+                get: function(section) {
+                    return {
+                        subscribe: function(callback) {
+                            callback({ customer: { firstname: 'Test' } });
+                        }
+                    };
+                },
+                set: function(section, data) {
+                    console.log('Customer data set:', section, data);
+                }
+            };
+        });
+
+        // Simulate Magento 2 RequireJS configuration
+        // This runs immediately in the head, just like Magento does
+        requirejs.config({
+            baseUrl: '/',
+            paths: {
+                'jquery': 'https://code.jquery.com/jquery-3.6.0.min',
+                'knockout': 'https://cdnjs.cloudflare.com/ajax/libs/knockout/3.5.1/knockout-min',
+                'domReady': 'https://cdnjs.cloudflare.com/ajax/libs/require-domReady/2.0.1/domReady.min'
+            },
+            shim: {
+                'jquery': {
+                    exports: '$'
+                }
+            }
+        });
+
+        // Track test results
+        window.magentoTestResults = {
+            requireJsWorking: false,
+            requireConfigWorking: false,
+            magentoModulesLoaded: false,
+            helpinLoaded: false,
+            helpinTracking: false,
+            noRequireErrors: true,
+            noDefineErrors: true,
+            magentoFunctionalityWorking: false,
+            errors: [],
+            consoleErrors: []
+        };
+
+        // Capture console errors
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+            const errorMsg = args.join(' ');
+            window.magentoTestResults.consoleErrors.push(errorMsg);
+            
+            // Check for specific error types
+            if (errorMsg.includes('require is undefined') || 
+                errorMsg.includes('require is not a function')) {
+                window.magentoTestResults.noRequireErrors = false;
+            }
+            if (errorMsg.includes('Mismatched anonymous define')) {
+                window.magentoTestResults.noDefineErrors = false;
+            }
+            
+            originalConsoleError.apply(console, args);
+        };
+
+        // Capture window errors
+        window.addEventListener('error', function(event) {
+            const errorMsg = event.message || event.error?.toString() || 'Unknown error';
+            window.magentoTestResults.errors.push(errorMsg);
+            
+            if (errorMsg.includes('require is undefined') || 
+                errorMsg.includes('require is not a function')) {
+                window.magentoTestResults.noRequireErrors = false;
+            }
+            if (errorMsg.includes('Mismatched anonymous define')) {
+                window.magentoTestResults.noDefineErrors = false;
+            }
+        });
+
+        // Test 1: Verify RequireJS is working
+        try {
+            if (typeof require === 'function' && typeof require.config === 'function') {
+                window.magentoTestResults.requireJsWorking = true;
+                console.log('✓ RequireJS is working');
+            }
+        } catch (e) {
+            window.magentoTestResults.errors.push('RequireJS check failed: ' + e.message);
+        }
+
+        // Test 2: Verify require.config works (critical Magento functionality)
+        try {
+            require.config({
+                paths: {
+                    'test-module': '/test/path'
+                }
+            });
+            window.magentoTestResults.requireConfigWorking = true;
+            console.log('✓ require.config() is working');
+        } catch (e) {
+            window.magentoTestResults.errors.push('require.config failed: ' + e.message);
+        }
+    </script>
+
+    <!-- CRITICAL: This is where we inject the Helpin loader using the SAFE approach -->
+    <!-- This simulates adding it to Magento's default_head_blocks.xml -->
+    <script type="text/javascript">
+        /**
+         * SAFE Helpin Loader for Magento 2
+         * This is the solution we're testing for the customer
+         */
+        require(['domReady!'], function () {
+            console.log('🚀 Starting Helpin loader (after Magento ready)...');
+            
+            // Save AMD environment (do NOT touch window.require!)
+            var _define = window.define;
+            var _exports = window.exports;
+            var _module = window.module;
+
+            // Temporarily disable AMD detection only
+            window.define = undefined;
+            window.exports = undefined;
+            window.module = undefined;
+
+            // Initialize Helpin queue
+            window.helpin = window.helpin || function () {
+                (window.helpinQ = window.helpinQ || []).push(arguments);
+            };
+
+            // Create and inject the Helpin script
+            var script = document.createElement('script');
+            script.async = true;
+            script.id = 'um-tracker';
+            script.setAttribute('data-tracking-host', 'https://events.helpin.ai');
+            script.setAttribute('data-key', 'UMaugVPOWz');
+            script.setAttribute('data-autocapture', 'true');
+            script.src = '/dist/lib.js'; // Load local build
+
+            // Restore AMD environment after script loads
+            script.onload = script.onerror = function () {
+                window.define = _define;
+                window.exports = _exports;
+                window.module = _module;
+                
+                console.log('✓ Helpin script loaded, AMD environment restored');
+                window.magentoTestResults.helpinLoaded = true;
+                
+                // Test tracking
+                setTimeout(function() {
+                    try {
+                        window.helpin('track', 'magento_test_event', {
+                            test: 'Magento 2 integration',
+                            timestamp: new Date().toISOString()
+                        });
+                        window.magentoTestResults.helpinTracking = true;
+                        console.log('✓ Helpin tracking working');
+                        updateResults();
+                    } catch (e) {
+                        window.magentoTestResults.errors.push('Tracking failed: ' + e.message);
+                        updateResults();
+                    }
+                }, 1000);
+            };
+
+            document.head.appendChild(script);
+        });
+    </script>
+
+    <!-- Simulate Magento modules that need RequireJS -->
+    <script type="text/javascript">
+        // This simulates Magento inline scripts that call require() immediately
+        // These are the scripts that break when window.require is set to undefined
+        require(['jquery'], function($) {
+            console.log('✓ Magento jQuery module loaded');
+            
+            // Simulate Magento customer data functionality
+            require(['Magento_Customer/js/customer-data'], function(customerData) {
+                console.log('✓ Magento customer-data module loaded');
+                window.magentoTestResults.magentoModulesLoaded = true;
+                
+                // Simulate typical Magento functionality
+                $(document).ready(function() {
+                    $('#magento-button').on('click', function() {
+                        $('#magento-output').text('Magento functionality is working!');
+                        window.magentoTestResults.magentoFunctionalityWorking = true;
+                        console.log('✓ Magento button click handler working');
+                        updateResults();
+                    });
+                });
+                
+                updateResults();
+            });
+        });
+    </script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .test-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 15px;
+            background: #fafafa;
+        }
+        .test-card h3 {
+            margin-top: 0;
+            color: #2c3e50;
+            font-size: 16px;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .status.pass {
+            background: #27ae60;
+            color: white;
+        }
+        .status.fail {
+            background: #e74c3c;
+            color: white;
+        }
+        .status.pending {
+            background: #f39c12;
+            color: white;
+        }
+        .error-list {
+            background: #fee;
+            border: 1px solid #fcc;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .error-item {
+            color: #c0392b;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 5px 0;
+        }
+        .button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+            transition: background 0.3s;
+        }
+        .button:hover {
+            background: #2980b9;
+        }
+        .output {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            min-height: 40px;
+            font-weight: bold;
+            color: #27ae60;
+        }
+        .summary {
+            background: #3498db;
+            color: white;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 20px 0;
+        }
+        .summary h2 {
+            margin-top: 0;
+            color: white;
+        }
+        pre {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Magento 2 + RequireJS + Helpin Integration Test</h1>
+        
+        <div class="summary">
+            <h2>Test Scenario</h2>
+            <p><strong>Customer Issue:</strong> Champagne & Gifts (Magento 2 site) getting "Mismatched anonymous define()" error when loading Helpin SDK</p>
+            <p><strong>Solution Being Tested:</strong> Safe loader that disables AMD detection without breaking RequireJS</p>
+            <p><strong>Critical Requirements:</strong></p>
+            <ul>
+                <li>✓ RequireJS must continue working (require.config, require([...]))</li>
+                <li>✓ No "require is undefined" errors</li>
+                <li>✓ No "Mismatched anonymous define()" errors</li>
+                <li>✓ Magento functionality must work (modules, jQuery, etc.)</li>
+                <li>✓ Helpin must load and track events</li>
+            </ul>
+        </div>
+
+        <h2>Test Results</h2>
+        
+        <div class="test-grid">
+            <div class="test-card">
+                <h3>1. RequireJS Working</h3>
+                <div id="requireJsStatus" class="status pending">PENDING</div>
+                <p>Verifies that RequireJS is functional</p>
+            </div>
+
+            <div class="test-card">
+                <h3>2. require.config() Working</h3>
+                <div id="requireConfigStatus" class="status pending">PENDING</div>
+                <p>Critical for Magento configuration</p>
+            </div>
+
+            <div class="test-card">
+                <h3>3. Magento Modules Loaded</h3>
+                <div id="magentoModulesStatus" class="status pending">PENDING</div>
+                <p>jQuery, customer-data, etc.</p>
+            </div>
+
+            <div class="test-card">
+                <h3>4. No RequireJS Errors</h3>
+                <div id="noRequireErrorsStatus" class="status pending">PENDING</div>
+                <p>No "require is undefined" errors</p>
+            </div>
+
+            <div class="test-card">
+                <h3>5. No AMD Define Errors</h3>
+                <div id="noDefineErrorsStatus" class="status pending">PENDING</div>
+                <p>No "Mismatched anonymous define()" errors</p>
+            </div>
+
+            <div class="test-card">
+                <h3>6. Helpin Loaded</h3>
+                <div id="helpinLoadedStatus" class="status pending">PENDING</div>
+                <p>SDK script loaded successfully</p>
+            </div>
+
+            <div class="test-card">
+                <h3>7. Helpin Tracking</h3>
+                <div id="helpinTrackingStatus" class="status pending">PENDING</div>
+                <p>Events can be tracked</p>
+            </div>
+
+            <div class="test-card">
+                <h3>8. Magento Functionality</h3>
+                <div id="magentoFunctionalityStatus" class="status pending">PENDING</div>
+                <p>Site features still work</p>
+            </div>
+        </div>
+
+        <h2>Interactive Test</h2>
+        <button id="magento-button" class="button">Test Magento Functionality</button>
+        <button id="helpin-test-button" class="button" onclick="testHelpinTracking()">Test Helpin Tracking</button>
+        <div id="magento-output" class="output">Click the buttons to test functionality...</div>
+
+        <h2>Error Log</h2>
+        <div id="errorLog" class="error-list">
+            <div style="color: #27ae60;">No errors detected</div>
+        </div>
+
+        <h2>Detailed Results (JSON)</h2>
+        <pre id="detailedResults">Loading...</pre>
+    </div>
+
+    <script>
+        function updateResults() {
+            const results = window.magentoTestResults;
+            
+            // Update status indicators
+            updateStatus('requireJsStatus', results.requireJsWorking);
+            updateStatus('requireConfigStatus', results.requireConfigWorking);
+            updateStatus('magentoModulesStatus', results.magentoModulesLoaded);
+            updateStatus('noRequireErrorsStatus', results.noRequireErrors);
+            updateStatus('noDefineErrorsStatus', results.noDefineErrors);
+            updateStatus('helpinLoadedStatus', results.helpinLoaded);
+            updateStatus('helpinTrackingStatus', results.helpinTracking);
+            updateStatus('magentoFunctionalityStatus', results.magentoFunctionalityWorking);
+            
+            // Update error log
+            const errorLog = document.getElementById('errorLog');
+            if (results.errors.length > 0 || results.consoleErrors.length > 0) {
+                const allErrors = [...results.errors, ...results.consoleErrors];
+                errorLog.innerHTML = allErrors.map(err => 
+                    `<div class="error-item">❌ ${err}</div>`
+                ).join('');
+            } else {
+                errorLog.innerHTML = '<div style="color: #27ae60;">✓ No errors detected</div>';
+            }
+            
+            // Update detailed results
+            document.getElementById('detailedResults').textContent = 
+                JSON.stringify(results, null, 2);
+        }
+
+        function updateStatus(elementId, isPassing) {
+            const element = document.getElementById(elementId);
+            if (isPassing) {
+                element.className = 'status pass';
+                element.textContent = 'PASS ✓';
+            } else if (isPassing === false) {
+                element.className = 'status fail';
+                element.textContent = 'FAIL ✗';
+            } else {
+                element.className = 'status pending';
+                element.textContent = 'PENDING';
+            }
+        }
+
+        function testHelpinTracking() {
+            try {
+                window.helpin('track', 'manual_test_click', {
+                    button: 'Test Helpin Tracking',
+                    timestamp: new Date().toISOString()
+                });
+                document.getElementById('magento-output').textContent = 
+                    '✓ Helpin tracking event sent!';
+                console.log('✓ Manual Helpin test event sent');
+            } catch (e) {
+                document.getElementById('magento-output').textContent = 
+                    '✗ Helpin tracking failed: ' + e.message;
+                window.magentoTestResults.errors.push('Manual tracking failed: ' + e.message);
+                updateResults();
+            }
+        }
+
+        // Update results periodically
+        setInterval(updateResults, 500);
+        
+        // Initial update
+        setTimeout(updateResults, 100);
+    </script>
+
+</body>
+</html>

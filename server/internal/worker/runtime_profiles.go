@@ -41,10 +41,10 @@ var runtimeProfiles = []model.RuntimeProfile{
 	{
 		Name:               model.AgentClassSupport,
 		RuntimeKind:        "opencode",
-		Description:        "Support-ticket triage and draft replies with human approval before customer-visible sends.",
-		AllowedTools:       []string{"list_ticket_messages", "draft_support_reply", "update_ticket_status"},
+		Description:        "Support conversation triage and draft replies with human approval before customer-visible sends.",
+		AllowedTools:       []string{"list_conversation_messages", "draft_support_reply", "update_conversation_status"},
 		AllowedCommands:    []string{},
-		AllowedTargetTypes: []string{"support_ticket"},
+		AllowedTargetTypes: []string{"support_conversation"},
 		ApprovalRequired:   true,
 		RequiresRepo:       false,
 	},
