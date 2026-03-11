@@ -89,10 +89,10 @@ export const queryKeys = {
   },
 
   support: {
-    tickets: (wsId: string) => ['support', wsId, 'tickets'] as const,
-    ticket: (wsId: string, id: string) => ['support', wsId, 'tickets', id] as const,
-    ticketAssociations: (wsId: string, id: string) => ['support', wsId, 'tickets', id, 'associations'] as const,
-    messages: (wsId: string, ticketId: string) => ['support', wsId, 'tickets', ticketId, 'messages'] as const,
+    conversations: (wsId: string) => ['support', wsId, 'conversations'] as const,
+    conversation: (wsId: string, id: string) => ['support', wsId, 'conversations', id] as const,
+    conversationAssociations: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'associations'] as const,
+    messages: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'messages'] as const,
   },
 
   docs: {
@@ -118,7 +118,7 @@ export const queryKeys = {
     contact: (wsId: string, id: string) => ['crm', wsId, 'contacts', id] as const,
     contactActivities: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'activities'] as const,
     contactAssociations: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'associations'] as const,
-    contactSupportTickets: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'support-tickets'] as const,
+    contactSupportConversations: (wsId: string, contactId: string) => ['crm', wsId, 'contacts', contactId, 'support-conversations'] as const,
 
     companies: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['crm', wsId, 'companies', filters] as const) : (['crm', wsId, 'companies'] as const),

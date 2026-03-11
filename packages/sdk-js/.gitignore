@@ -1,0 +1,8 @@
+node_modules
+.vscode
+.cache
+dist
+mock-server.log
+test-results
+log
+playwright-report

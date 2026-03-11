@@ -29,7 +29,7 @@ import {
   useDeleteContact,
   useContactActivities,
   useContactAssociations,
-  useContactSupportTickets,
+  useContactSupportConversations,
 } from '@/hooks/queries';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
@@ -118,7 +118,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const { data: contact, isLoading } = useContact(wsId, contactId);
   const { data: activitiesData, refetch: refetchActivities } = useContactActivities(wsId, contactId);
   const { data: associations, refetch: refetchAssociations } = useContactAssociations(wsId, contactId);
-  const { data: supportTicketsData } = useContactSupportTickets(wsId, contactId);
+  const { data: supportConversationsData } = useContactSupportConversations(wsId, contactId);
   const updateContact = useUpdateContact(wsId);
   const deleteContact = useDeleteContact(wsId);
 
@@ -278,15 +278,15 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
           <Separator className="my-6" />
 
-          {/* Support Tickets */}
+          {/* Support Conversations */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Support Tickets</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Support Conversations</h3>
             <div className="mt-3">
-              {(!supportTicketsData?.data || supportTicketsData.data.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No support tickets linked to this contact.</p>
+              {(!supportConversationsData?.data || supportConversationsData.data.length === 0) ? (
+                <p className="text-sm text-muted-foreground">No support conversations linked to this contact.</p>
               ) : (
                 <div className="space-y-2">
-                  {supportTicketsData.data.map((ticket) => (
+                  {supportConversationsData.data.map((ticket) => (
                     <Link
                       key={ticket.id}
                       to="/w/$slug/pm/support"

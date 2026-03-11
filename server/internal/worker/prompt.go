@@ -13,7 +13,7 @@ import (
 )
 
 // BuildSystemPrompt assembles the system prompt from agent config, target context, and WORKFLOW.md.
-func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PMEpic, ticket *model.SupportTicket, planningStage, planningMethodology string, config *WorkflowConfig) string {
+func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig) string {
 	var parts []string
 
 	// Epic planning uses a workspace-selected methodology pack; agent notes are additive only.
@@ -50,7 +50,7 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 		}
 	}
 	if ticket != nil {
-		parts = append(parts, "\n## Current Support Ticket")
+		parts = append(parts, "\n## Current Support Conversation")
 		parts = append(parts, fmt.Sprintf("**Subject**: %s", ticket.Subject))
 		if ticket.CustomerName != nil && *ticket.CustomerName != "" {
 			parts = append(parts, fmt.Sprintf("**Customer**: %s", *ticket.CustomerName))
@@ -116,7 +116,7 @@ func BuildUserPrompt(
 	story *model.PMStory,
 	epic *model.PMEpic,
 	epicStories []model.PMStory,
-	ticket *model.SupportTicket,
+	ticket *model.SupportConversation,
 	ticketMessages []model.SupportMessage,
 	checklist []model.PMChecklistItem,
 	planningStage string,

@@ -23,11 +23,11 @@ export function useEpicAssociations(wsId: string, epicId: string) {
   });
 }
 
-export function useTicketAssociations(wsId: string, ticketId: string) {
+export function useConversationAssociations(wsId: string, conversationId: string) {
   return useQuery({
-    queryKey: queryKeys.support.ticketAssociations(wsId, ticketId),
-    queryFn: async () => unwrap(await associationsService.listByTicket(wsId, ticketId)),
-    enabled: !!wsId && !!ticketId,
+    queryKey: queryKeys.support.conversationAssociations(wsId, conversationId),
+    queryFn: async () => unwrap(await associationsService.listByConversation(wsId, conversationId)),
+    enabled: !!wsId && !!conversationId,
   });
 }
 
@@ -67,10 +67,10 @@ export function useCreatePMAssociation(wsId: string) {
     onSuccess: (_, payload) => {
       qc.invalidateQueries({ queryKey: ['pm', wsId] });
       qc.invalidateQueries({ queryKey: ['support', wsId] });
-      if (payload.from_object_type === 'support_ticket' || payload.to_object_type === 'support_ticket') {
-        const ticketId = payload.from_object_type === 'support_ticket' ? payload.from_object_id : payload.to_object_id;
-        qc.invalidateQueries({ queryKey: queryKeys.support.ticketAssociations(wsId, ticketId) });
-        qc.invalidateQueries({ queryKey: queryKeys.support.ticket(wsId, ticketId) });
+      if (payload.from_object_type === 'support_conversation' || payload.to_object_type === 'support_conversation') {
+        const conversationId = payload.from_object_type === 'support_conversation' ? payload.from_object_id : payload.to_object_id;
+        qc.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(wsId, conversationId) });
+        qc.invalidateQueries({ queryKey: queryKeys.support.conversation(wsId, conversationId) });
       }
       if (payload.from_object_type === 'story' || payload.to_object_type === 'story') {
         const storyId = payload.from_object_type === 'story' ? payload.from_object_id : payload.to_object_id;
@@ -98,7 +98,7 @@ export function useDeletePMAssociation(wsId: string) {
   });
 }
 
-export function useCreateDocAssociation(wsId: string, objectType: 'epic' | 'story' | 'support_ticket', objectId: string) {
+export function useCreateDocAssociation(wsId: string, objectType: 'epic' | 'story' | 'support_conversation', objectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ documentId, payload }: { documentId: string; payload: CreateDocsLinkRequest }) =>
@@ -110,13 +110,13 @@ export function useCreateDocAssociation(wsId: string, objectType: 'epic' | 'stor
       } else if (objectType === 'epic') {
         qc.invalidateQueries({ queryKey: queryKeys.pm.epicAssociations(wsId, objectId) });
       } else {
-        qc.invalidateQueries({ queryKey: queryKeys.support.ticketAssociations(wsId, objectId) });
+        qc.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(wsId, objectId) });
       }
     },
   });
 }
 
-export function useDeleteDocAssociation(wsId: string, objectType: 'epic' | 'story' | 'support_ticket', objectId: string) {
+export function useDeleteDocAssociation(wsId: string, objectType: 'epic' | 'story' | 'support_conversation', objectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (linkId: string) =>
@@ -128,7 +128,7 @@ export function useDeleteDocAssociation(wsId: string, objectType: 'epic' | 'stor
       } else if (objectType === 'epic') {
         qc.invalidateQueries({ queryKey: queryKeys.pm.epicAssociations(wsId, objectId) });
       } else {
-        qc.invalidateQueries({ queryKey: queryKeys.support.ticketAssociations(wsId, objectId) });
+        qc.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(wsId, objectId) });
       }
     },
   });

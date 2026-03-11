@@ -1,0 +1,23 @@
+{
+  "name": "@helpin/widget-embed",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/pixel.js",
+  "files": ["dist"],
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@helpin/shared": "workspace:*",
+    "@helpin/widget-core": "workspace:*",
+    "@helpin/sdk-js": "workspace:*"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.3",
+    "preact": "^10.25.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

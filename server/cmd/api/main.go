@@ -185,8 +185,9 @@ func main() {
 		&model.AgentRun{},
 		&model.AgentRunArtifact{},
 		&model.PMStoryLink{},
-		&model.SupportTicket{},
+		&model.SupportConversation{},
 		&model.SupportMessage{},
+		&model.SupportCannedResponse{},
 		&model.SupportWidgetInstallation{},
 		&model.SupportWidgetSession{},
 		&model.GitIntegration{},
@@ -338,10 +339,10 @@ func main() {
 	agentRunRepo := repository.NewAgentRunRepository(db)
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
-	supportTicketRepo := repository.NewSupportTicketRepository(db)
+	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
-	widgetInstallRepo := repository.NewWidgetInstallationRepository(db)
-	widgetSessionRepo := repository.NewWidgetSessionRepository(db)
+	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
+	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
 	storyDeliveryTargetRepo := repository.NewStoryDeliveryTargetRepository(db)
@@ -396,7 +397,8 @@ func main() {
 	pmViewService := service.NewPMViewService(pmViewRepo)
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
-	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, agentRepo, crmAssociationRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher, crmContactRepo)
+	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
+	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -437,7 +439,7 @@ func main() {
 		pmStoryRepo,
 		pmStoryLinkRepo,
 		pmEpicRepo,
-		supportTicketRepo,
+		supportConversationRepo,
 		supportMessageRepo,
 		agentHandoffRepo,
 		settingsRepo,
@@ -473,7 +475,7 @@ func main() {
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
-	associationsService := service.NewAssociationsService(crmAssociationRepo, pmStoryLinkRepo, pmStoryRepo, supportTicketRepo, docsLinkRepo, docsDocumentRepo)
+	associationsService := service.NewAssociationsService(crmAssociationRepo, pmStoryLinkRepo, pmStoryRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	crmPropertyService := service.NewCRMPropertyService(crmPropertyRepo)
 	crmListService := service.NewCRMListService(crmListRepo)
@@ -573,8 +575,8 @@ func main() {
 		PMAutomation:      handler.NewPMAutomationHandler(pmAutomationService),
 		PMStoryTemplate:   handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
 		Agent:             handler.NewAgentHandler(agentService),
-		Support:           handler.NewSupportHandler(supportService, agentService),
-		Widget:            handler.NewWidgetHandler(supportService),
+		SupportInbox:      handler.NewSupportInboxHandler(supportInboxService, agentService),
+		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),
 		Git:               handler.NewGitHandler(gitService),
 		Orchestration:     handler.NewOrchestrationHandler(orchestrationService),
 		Notification:      handler.NewNotificationHandler(notificationService, followerService),

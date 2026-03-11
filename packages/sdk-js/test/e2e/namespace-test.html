@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Helpin Namespace Test</title>
+    
+    <!-- First Helpin instance with default namespace -->
+    <script type="text/javascript">     
+        (function () {
+            window.helpin = window.helpin || (function () { (window.helpinQ = window.helpinQ || []).push(arguments); })
+            var t = document.createElement('script'),
+                s = document.getElementsByTagName('script')[0];
+            t.defer = true;
+            t.id = 'um-tracker-default';
+            t.setAttribute('data-tracking-host', "https://events.helpin.ai")
+            t.setAttribute('data-key', 'UMaugVPOWz');
+            t.setAttribute('data-autocapture', 'true');
+            t.setAttribute('data-auto-pageview', 'true');
+            t.setAttribute('data-namespace', 'helpin');  // Default namespace
+            t.src = '/dist/lib.js';
+            s.parentNode.insertBefore(t, s);
+        })();
+    </script>
+    
+    <!-- Second Helpin instance with custom namespace -->
+    <script type="text/javascript">     
+        (function () {
+            window.analytics = window.analytics || (function () { (window.analyticsQ = window.analyticsQ || []).push(arguments); })
+            var t = document.createElement('script'),
+                s = document.getElementsByTagName('script')[0];
+            t.defer = true;
+            t.id = 'um-tracker-analytics';
+            t.setAttribute('data-tracking-host', "https://events.helpin.ai")
+            t.setAttribute('data-key', 'UMaugVPOWz');
+            t.setAttribute('data-autocapture', 'false');
+            t.setAttribute('data-auto-pageview', 'true');
+            t.setAttribute('data-namespace', 'analytics');  // Custom namespace
+            t.src = '/dist/lib.js';
+            s.parentNode.insertBefore(t, s);
+        })();
+    </script>
+    
+    <!-- Third Helpin instance with another custom namespace -->
+    <script type="text/javascript">     
+        (function () {
+            window.tracker = window.tracker || (function () { (window.trackerQ = window.trackerQ || []).push(arguments); })
+            var t = document.createElement('script'),
+                s = document.getElementsByTagName('script')[0];
+            t.defer = true;
+            t.id = 'um-tracker-tracker';
+            t.setAttribute('data-tracking-host', "https://events.helpin.ai")
+            t.setAttribute('data-key', 'UMaugVPOWz');
+            t.setAttribute('data-autocapture', 'false');
+            t.setAttribute('data-auto-pageview', 'false');  // No auto pageview
+            t.setAttribute('data-namespace', 'tracker');    // Another custom namespace
+            t.src = '/dist/lib.js';
+            s.parentNode.insertBefore(t, s);
+        })();
+    </script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        .test-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow: auto;
+            max-height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Helpin Namespace Test</h1>
+    
+    <div class="test-container">
+        <h2>Namespace Instances</h2>
+        <div id="namespace-status">Checking namespace instances...</div>
+    </div>
+    
+    <div class="test-container">
+        <h2>Track Events</h2>
+        <div>
+            <button onclick="trackDefaultEvent()">Track with Default Namespace</button>
+            <button onclick="trackAnalyticsEvent()">Track with Analytics Namespace</button>
+            <button onclick="trackTrackerEvent()">Track with Tracker Namespace</button>
+        </div>
+    </div>
+    
+    <div class="test-container">
+        <h2>Event Log</h2>
+        <pre id="event-log">Waiting for events...</pre>
+    </div>
+    
+    <script>
+        // Store captured events
+        window.capturedEvents = {
+            default: [],
+            analytics: [],
+            tracker: []
+        };
+        
+        // Check if namespaces are loaded
+        function checkNamespaces() {
+            const statusDiv = document.getElementById('namespace-status');
+            const namespaces = {
+                default: typeof window.helpin === 'function',
+                analytics: typeof window.analytics === 'function',
+                tracker: typeof window.tracker === 'function'
+            };
+            
+            statusDiv.innerHTML = `
+                <ul>
+                    <li>Default namespace (helpin): ${namespaces.default ? '✅ Loaded' : '❌ Not loaded'}</li>
+                    <li>Analytics namespace: ${namespaces.analytics ? '✅ Loaded' : '❌ Not loaded'}</li>
+                    <li>Tracker namespace: ${namespaces.tracker ? '✅ Loaded' : '❌ Not loaded'}</li>
+                </ul>
+            `;
+            
+            return namespaces;
+        }
+        
+        // Track events with different namespaces
+        function trackDefaultEvent() {
+            if (typeof window.helpin === 'function') {
+                window.helpin('track', 'default_namespace_event', {
+                    source: 'default',
+                    timestamp: new Date().toISOString()
+                });
+                logEvent('default', 'default_namespace_event');
+            } else {
+                console.error('Default namespace not loaded');
+            }
+        }
+        
+        function trackAnalyticsEvent() {
+            if (typeof window.analytics === 'function') {
+                window.analytics('track', 'analytics_namespace_event', {
+                    source: 'analytics',
+                    timestamp: new Date().toISOString()
+                });
+                logEvent('analytics', 'analytics_namespace_event');
+            } else {
+                console.error('Analytics namespace not loaded');
+            }
+        }
+        
+        function trackTrackerEvent() {
+            if (typeof window.tracker === 'function') {
+                window.tracker('track', 'tracker_namespace_event', {
+                    source: 'tracker',
+                    timestamp: new Date().toISOString()
+                });
+                logEvent('tracker', 'tracker_namespace_event');
+            } else {
+                console.error('Tracker namespace not loaded');
+            }
+        }
+        
+        // Log events to the UI
+        function logEvent(namespace, eventName) {
+            const eventLog = document.getElementById('event-log');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            window.capturedEvents[namespace].push({
+                eventName,
+                timestamp
+            });
+            
+            let logContent = '';
+            for (const ns in window.capturedEvents) {
+                if (window.capturedEvents[ns].length > 0) {
+                    logContent += `${ns.toUpperCase()} NAMESPACE EVENTS:\n`;
+                    window.capturedEvents[ns].forEach(event => {
+                        logContent += `- ${event.timestamp}: ${event.eventName}\n`;
+                    });
+                    logContent += '\n';
+                }
+            }
+            
+            eventLog.textContent = logContent || 'No events tracked yet';
+        }
+        
+        // Initialize checks when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // First check
+            checkNamespaces();
+            
+            // Check again after a delay to ensure all scripts are loaded
+            setTimeout(checkNamespaces, 2000);
+        });
+        
+        // Make functions available to Playwright
+        window.testHelpers = {
+            checkNamespaces,
+            getEventCounts: function() {
+                return {
+                    default: window.capturedEvents.default.length,
+                    analytics: window.capturedEvents.analytics.length,
+                    tracker: window.capturedEvents.tracker.length
+                };
+            }
+        };
+    </script>
+</body>
+</html>

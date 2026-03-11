@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Helpin AMD Support Test</title>
+    
+    <!-- Load RequireJS first -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"></script>
+    
+    <script type="text/javascript">
+        // Set up RequireJS configuration
+        requirejs.config({
+            paths: {
+                // Point to the local build of Helpin
+                'helpin': '/dist/lib'
+            }
+        });
+        
+        // Track test results
+        window.testResults = {
+            amdLoaded: false,
+            clientCreated: false,
+            trackingWorked: false,
+            errors: []
+        };
+        
+        // Log any errors
+        const originalError = console.error;
+        console.error = function(...args) {
+            window.testResults.errors.push(args);
+            originalError.apply(console, args);
+        };
+        
+        // Use RequireJS to load Helpin
+        require(['helpin'], function(helpin) {
+            try {
+                // Test 1: Check if AMD module loaded correctly
+                window.testResults.amdLoaded = typeof helpin === 'object' && 
+                                              typeof helpin.helpinClient === 'function' &&
+                                              typeof helpin.HelpinClient === 'function';
+                
+                console.log('AMD module loaded:', window.testResults.amdLoaded);
+                
+                // Test 2: Create a client instance
+                const client = helpin.helpinClient({
+                    key: 'UMaugVPOWz',
+                    trackingHost: 'https://events.helpin.ai',
+                    autocapture: true
+                });
+                
+                window.testResults.clientCreated = client instanceof helpin.HelpinClient;
+                console.log('Client created:', window.testResults.clientCreated);
+                
+                // Store client for testing
+                window.helpinClient = client;
+                
+                // Test 3: Track an event
+                client.track('amd_test_event', {
+                    testProperty: 'AMD test value',
+                    timestamp: new Date().toISOString()
+                });
+                
+                window.testResults.trackingWorked = true;
+                console.log('Event tracked');
+                
+                // Update UI with results
+                updateTestResults();
+            } catch (error) {
+                console.error('AMD test error:', error);
+                window.testResults.errors.push(error.toString());
+                updateTestResults();
+            }
+        });
+        
+        function updateTestResults() {
+            const resultsElement = document.getElementById('testResults');
+            if (resultsElement) {
+                resultsElement.innerHTML = JSON.stringify(window.testResults, null, 2);
+                
+                // Update status indicators
+                document.getElementById('amdLoadedStatus').className = 
+                    window.testResults.amdLoaded ? 'success' : 'failure';
+                
+                document.getElementById('clientCreatedStatus').className = 
+                    window.testResults.clientCreated ? 'success' : 'failure';
+                
+                document.getElementById('trackingWorkedStatus').className = 
+                    window.testResults.trackingWorked ? 'success' : 'failure';
+                
+                document.getElementById('errorsStatus').className = 
+                    window.testResults.errors.length === 0 ? 'success' : 'failure';
+            }
+        }
+    </script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        .test-container {
+            margin-bottom: 20px;
+        }
+        .test-item {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        .status-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+            background-color: #ccc;
+        }
+        .success {
+            background-color: #4CAF50;
+        }
+        .failure {
+            background-color: #F44336;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow: auto;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+    </style>
+</head>
+<body>
+    <h1>Helpin AMD Support Test</h1>
+    
+    <div class="test-container">
+        <h2>Test Results</h2>
+        
+        <div class="test-item">
+            <div id="amdLoadedStatus" class="status-indicator"></div>
+            <span>AMD Module Loaded</span>
+        </div>
+        
+        <div class="test-item">
+            <div id="clientCreatedStatus" class="status-indicator"></div>
+            <span>Client Instance Created</span>
+        </div>
+        
+        <div class="test-item">
+            <div id="trackingWorkedStatus" class="status-indicator"></div>
+            <span>Event Tracking</span>
+        </div>
+        
+        <div class="test-item">
+            <div id="errorsStatus" class="status-indicator"></div>
+            <span>No Errors</span>
+        </div>
+    </div>
+    
+    <div class="test-container">
+        <h2>Detailed Results</h2>
+        <pre id="testResults">Running tests...</pre>
+    </div>
+    
+    <div class="test-container">
+        <h2>Manual Testing</h2>
+        <button onclick="runManualTest()">Run Manual Test</button>
+        <pre id="manualTestResults"></pre>
+    </div>
+    
+    <script>
+        // Function for manual testing
+        function runManualTest() {
+            try {
+                const results = {
+                    clientAvailable: false,
+                    eventTracked: false
+                };
+                
+                if (window.helpinClient) {
+                    results.clientAvailable = true;
+                    
+                    // Track a manual test event
+                    window.helpinClient.track('manual_amd_test', {
+                        timestamp: new Date().toISOString(),
+                        manualTest: true
+                    });
+                    
+                    results.eventTracked = true;
+                }
+                
+                document.getElementById('manualTestResults').textContent = 
+                    JSON.stringify(results, null, 2);
+            } catch (error) {
+                document.getElementById('manualTestResults').textContent = 
+                    'Error: ' + error.toString();
+            }
+        }
+    </script>
+</body>
+</html>

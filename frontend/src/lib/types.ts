@@ -83,6 +83,14 @@ export type Permission =
   | 'docs.edit'
   | 'docs.publish'
   | 'docs.admin'
+  | 'crm.read'
+  | 'crm.edit'
+  | 'crm.admin'
+  | 'support.read'
+  | 'support.edit'
+  | 'support.admin'
+  | 'notifications.read'
+  | 'notifications.manage'
   | 'search.read'
   | 'ws.connect';
 

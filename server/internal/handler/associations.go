@@ -30,9 +30,9 @@ func (h *AssociationsHandler) ListStoryAssociations(w http.ResponseWriter, r *ht
 	h.listByObject(w, r, "story")
 }
 
-// ListTicketAssociations handles GET /api/support/tickets/{id}/associations.
-func (h *AssociationsHandler) ListTicketAssociations(w http.ResponseWriter, r *http.Request) {
-	h.listByObject(w, r, "support_ticket")
+// ListConversationAssociations handles GET /api/support/inbox/conversations/{id}/associations.
+func (h *AssociationsHandler) ListConversationAssociations(w http.ResponseWriter, r *http.Request) {
+	h.listByObject(w, r, "support_conversation")
 }
 
 func (h *AssociationsHandler) listByObject(w http.ResponseWriter, r *http.Request, objectType string) {

@@ -527,6 +527,73 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_conversations (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			display_id INTEGER NOT NULL,
+			subject TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'open',
+			priority TEXT NOT NULL DEFAULT 'medium',
+			channel TEXT NOT NULL DEFAULT 'widget',
+			customer_name TEXT,
+			customer_email TEXT,
+			opened_by_user_id TEXT,
+			assigned_agent_id TEXT,
+			linked_story_id TEXT,
+			source TEXT NOT NULL DEFAULT 'internal',
+			crm_contact_id TEXT,
+			resolved_at DATETIME,
+			closed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_messages (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			conversation_id TEXT NOT NULL,
+			ticket_id TEXT,
+			sender_type TEXT NOT NULL,
+			message_type TEXT NOT NULL DEFAULT 'reply',
+			sender_user_id TEXT,
+			sender_agent_id TEXT,
+			sender_display_name TEXT,
+			content TEXT NOT NULL,
+			is_internal BOOLEAN NOT NULL DEFAULT 0,
+			metadata TEXT DEFAULT '{}',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_canned_responses (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			short_code TEXT NOT NULL,
+			title TEXT NOT NULL,
+			content TEXT NOT NULL,
+			created_by_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_widget_installations (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			widget_key TEXT NOT NULL,
+			secret_key TEXT NOT NULL,
+			settings TEXT NOT NULL DEFAULT '{}',
+			active BOOLEAN NOT NULL DEFAULT 1,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_widget_sessions (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			conversation_id TEXT,
+			ticket_id TEXT,
+			session_token TEXT NOT NULL,
+			customer_name TEXT,
+			customer_email TEXT,
+			expires_at DATETIME NOT NULL,
+			created_at DATETIME
+		)`,
 	}
 
 	for _, stmt := range tables {

@@ -71,12 +71,12 @@ func toolListStoryChecklist(ctx *ExecutionContext, input json.RawMessage) (strin
 	return string(result), nil
 }
 
-func toolListTicketMessages(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx.TicketID == "" || ctx.Services == nil || ctx.Services.ListTicketMessages == nil {
-		return "", fmt.Errorf("no support ticket associated with this run")
+func toolListConversationMessages(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.ConversationID == "" || ctx.Services == nil || ctx.Services.ListConversationMessages == nil {
+		return "", fmt.Errorf("no support conversation associated with this run")
 	}
 
-	messages, err := ctx.Services.ListTicketMessages(ctx.Context, ctx.WorkspaceID, ctx.TicketID)
+	messages, err := ctx.Services.ListConversationMessages(ctx.Context, ctx.WorkspaceID, ctx.ConversationID)
 	if err != nil {
 		return "", fmt.Errorf("list ticket messages: %w", err)
 	}
@@ -128,22 +128,22 @@ func toolDraftSupportReply(ctx *ExecutionContext, input json.RawMessage) (string
 	return "Support reply drafted and queued for approval.", nil
 }
 
-func toolUpdateTicketStatus(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func toolUpdateConversationStatus(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
 		Status string `json:"status"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
-	if ctx.TicketID == "" || ctx.Services == nil || ctx.Services.UpdateTicketStatus == nil {
-		return "", fmt.Errorf("no support ticket associated with this run")
+	if ctx.ConversationID == "" || ctx.Services == nil || ctx.Services.UpdateConversationStatus == nil {
+		return "", fmt.Errorf("no support conversation associated with this run")
 	}
 	if strings.TrimSpace(params.Status) == "" {
 		return "", fmt.Errorf("status is required")
 	}
 
-	if err := ctx.Services.UpdateTicketStatus(ctx.Context, ctx.WorkspaceID, ctx.TicketID, params.Status); err != nil {
-		return "", fmt.Errorf("update ticket status: %w", err)
+	if err := ctx.Services.UpdateConversationStatus(ctx.Context, ctx.WorkspaceID, ctx.ConversationID, params.Status); err != nil {
+		return "", fmt.Errorf("update conversation status: %w", err)
 	}
-	return fmt.Sprintf("Ticket status updated to %s.", params.Status), nil
+	return fmt.Sprintf("Conversation status updated to %s.", params.Status), nil
 }

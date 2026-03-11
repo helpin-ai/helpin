@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Helpin Pixel Test Page</title>
+
+    <!-- Load the local development build of Helpin -->
+
+    <script type="text/javascript">     
+        // Setup event capture for testing
+        window.capturedEvents = [];
+        
+        // Override the transport to capture events
+        window.originalTransportSend = null;
+        window.captureEvents = function(enable) {
+            if (enable && !window.originalTransportSend) {
+                // Wait for Helpin to initialize
+                const checkInterval = setInterval(function() {
+                    if (window.helpin && window.helpin.getConfig) {
+                        clearInterval(checkInterval);
+                        
+                        // Get the client instance
+                        const config = window.helpin.getConfig();
+                        if (config && config._client && config._client.transport) {
+                            const transport = config._client.transport;
+                            window.originalTransportSend = transport.send;
+                            
+                            // Override the send method to capture events
+                            transport.send = function(payload) {
+                                window.capturedEvents.push(payload);
+                                return window.originalTransportSend.apply(this, arguments);
+                            };
+                            console.log('Event capture enabled');
+                        }
+                    }
+                }, 100);
+            } else if (!enable && window.originalTransportSend) {
+                // Restore original transport
+                const config = window.helpin.getConfig();
+                if (config && config._client && config._client.transport) {
+                    config._client.transport.send = window.originalTransportSend;
+                    window.originalTransportSend = null;
+                    console.log('Event capture disabled');
+                }
+            }
+        };
+        
+        (function () {
+            window.helpin = window.helpin || (function () { (window.helpinQ = window.helpinQ || []).push(arguments); })
+            var t = document.createElement('script'),
+                s = document.getElementsByTagName('script')[0];
+            t.defer = true;
+            t.id = 'um-tracker';
+            t.setAttribute('data-tracking-host', "https://events.helpin.ai")
+            t.setAttribute('data-key', 'UMaugVPOWz');
+            t.setAttribute('data-autocapture', 'true');
+            t.setAttribute('data-auto-pageview', 'true');  
+            t.src = '/dist/lib.js';
+            s.parentNode.insertBefore(t, s);
+        })();
+      </script>
+</head>
+<body>
+    <h1>Helpin Test Page</h1>
+    <div id="testContainer">
+        <button id="testButton" onclick="testButtonClick()">Test Button</button>
+        <form id="testForm" onsubmit="testFormSubmit(event)">
+            <input type="text" id="testInput" value="test value" />
+            <button type="submit">Submit</button>
+        </form>
+        <div>
+            <button id="test-auto-capture"></button>
+        </div>
+    </div>
+
+    <script>
+        // Test custom event handlers
+        function testButtonClick() {
+            if (typeof window.helpin === 'function') {
+                window.helpin('track', 'button_click', {
+                    buttonId: 'testButton',
+                    timestamp: new Date().toISOString()
+                });
+            } else {
+                console.error('Helpin not initialized');
+            }
+        }
+
+        function testFormSubmit(event) {
+            event.preventDefault();
+            window.helpin('track', 'form_submit', {
+                formId: 'testForm',
+                inputValue: document.getElementById('testInput').value,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Helper function to check if Helpin is loaded
+        function isHelpinLoaded() {
+            return typeof window.helpin !== 'undefined' && 
+                   typeof window.helpin.track === 'function';
+        }
+
+        // Log any errors
+        window.console.errors = [];
+        const originalError = console.error;
+        console.error = function(...args) {
+            window.console.errors.push(args);
+            originalError.apply(console, args);
+        };
+    </script>
+</body>
+</html>

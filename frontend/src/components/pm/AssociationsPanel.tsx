@@ -20,7 +20,7 @@ import {
   useDeleteStoryRelationship,
   useEpicAssociations,
   useStoryAssociations,
-  useTicketAssociations,
+  useConversationAssociations,
 } from '@/hooks/queries';
 import { crmSearchService } from '@/lib/services/crmService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
@@ -33,7 +33,7 @@ import type {
   GroupedAssociations,
   StoryRelationshipAction,
   StoryRelationshipSummary,
-  SupportTicket,
+  SupportConversation,
 } from '@/lib/pmTypes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,7 +41,7 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type AssociationsObjectType = 'story' | 'epic' | 'support_ticket';
+type AssociationsObjectType = 'story' | 'epic' | 'support_conversation';
 type AssociationsTab = 'relationships' | 'stories' | 'support' | 'crm' | 'docs';
 
 interface AssociationsPanelProps {
@@ -64,7 +64,7 @@ function getTabs(objectType: AssociationsObjectType, includeStoryRelationships: 
   switch (objectType) {
     case 'story':
       return includeStoryRelationships ? ['relationships', 'support', 'crm', 'docs'] : ['support', 'crm', 'docs'];
-    case 'support_ticket':
+    case 'support_conversation':
       return ['stories', 'crm', 'docs'];
     default:
       return ['support', 'crm', 'docs'];
@@ -183,22 +183,22 @@ export function AssociationsPanel({
   const [storyResults, setStoryResults] = useState<SearchResult[]>([]);
   const [crmResults, setCRMResults] = useState<CRMSearchResult[]>([]);
   const [docResults, setDocResults] = useState<SearchResult[]>([]);
-  const [ticketResults, setTicketResults] = useState<SupportTicket[]>([]);
+  const [conversationResults, setConversationResults] = useState<SupportConversation[]>([]);
 
   const associationsQuery =
     objectType === 'story'
       ? useStoryAssociations(workspaceId, objectId)
       : objectType === 'epic'
         ? useEpicAssociations(workspaceId, objectId)
-        : useTicketAssociations(workspaceId, objectId);
+        : useConversationAssociations(workspaceId, objectId);
   const data = associationsQuery.data as GroupedAssociations | undefined;
 
   const createRelationship = useCreateStoryRelationship(workspaceId, objectId);
   const deleteRelationship = useDeleteStoryRelationship(workspaceId, objectId);
   const createAssociation = useCreatePMAssociation(workspaceId);
   const deleteAssociation = useDeletePMAssociation(workspaceId);
-  const createDocAssociation = useCreateDocAssociation(workspaceId, objectType, objectId);
-  const deleteDocAssociation = useDeleteDocAssociation(workspaceId, objectType, objectId);
+  const createDocAssociation = useCreateDocAssociation(workspaceId, objectType as 'epic' | 'story' | 'support_conversation', objectId);
+  const deleteDocAssociation = useDeleteDocAssociation(workspaceId, objectType as 'epic' | 'story' | 'support_conversation', objectId);
 
   useEffect(() => {
     setActiveTab((current) => (tabs.includes(current) ? current : tabs[0]));
@@ -210,7 +210,7 @@ export function AssociationsPanel({
       setStoryResults([]);
       setCRMResults([]);
       setDocResults([]);
-      setTicketResults([]);
+      setConversationResults([]);
       setSearching(false);
       return;
     }
@@ -218,15 +218,15 @@ export function AssociationsPanel({
     const handle = window.setTimeout(async () => {
       if (activeTab === 'support') {
         setSearching(true);
-        const response = await supportService.listTickets(workspaceId);
-        const tickets = response.data?.data ?? [];
+        const response = await supportService.listConversations(workspaceId);
+        const items = response.data?.data ?? [];
         const normalized = query.trim().toLowerCase();
-        setTicketResults(
-          tickets.filter((ticket) => {
+        setConversationResults(
+          items.filter((conversation) => {
             if (!normalized) return true;
             return (
-              ticket.subject.toLowerCase().includes(normalized) ||
-              ticket.display_id.toString().includes(normalized)
+              conversation.subject.toLowerCase().includes(normalized) ||
+              conversation.display_id.toString().includes(normalized)
             );
           })
         );
@@ -346,7 +346,7 @@ export function AssociationsPanel({
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder={
                       activeTab === 'support'
-                        ? 'Filter tickets by subject or ID'
+                        ? 'Filter conversations by subject or ID'
                         : activeTab === 'docs'
                           ? 'Search documents'
                           : activeTab === 'crm'
@@ -420,18 +420,18 @@ export function AssociationsPanel({
                     </button>
                   ))}
 
-                  {!searching && activeTab === 'support' && ticketResults.map((ticket) => (
+                  {!searching && activeTab === 'support' && conversationResults.map((conversation) => (
                     <button
-                      key={ticket.id}
+                      key={conversation.id}
                       type="button"
                       className="w-full rounded-lg border border-border/70 px-3 py-2 text-left transition hover:bg-accent"
-                      onClick={() => handleCreateGenericAssociation('support_ticket', ticket.id)}
+                      onClick={() => handleCreateGenericAssociation('support_conversation', conversation.id)}
                     >
                       <div className="flex items-center gap-2">
                         <Ticket className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm font-medium">{ticket.subject}</span>
+                        <span className="text-sm font-medium">{conversation.subject}</span>
                         <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                          T-{ticket.display_id}
+                          T-{conversation.display_id}
                         </Badge>
                       </div>
                     </button>
@@ -456,7 +456,7 @@ export function AssociationsPanel({
                     (activeTab === 'stories' && query.trim().length >= 2 && storyResults.length === 0) ||
                     (activeTab === 'crm' && query.trim().length >= 2 && crmResults.length === 0) ||
                     (activeTab === 'docs' && query.trim().length >= 2 && docResults.length === 0) ||
-                    (activeTab === 'support' && ticketResults.length === 0)) ? (
+                    (activeTab === 'support' && conversationResults.length === 0)) ? (
                     <div className="rounded-lg border border-dashed border-border/70 px-3 py-4 text-sm text-muted-foreground">
                       No results found.
                     </div>
@@ -545,8 +545,8 @@ export function AssociationsPanel({
 
             {activeTab === 'support' && data ? (
               <AssociationList
-                emptyLabel="No linked support tickets"
-                items={data.support_tickets}
+                emptyLabel="No linked support conversations"
+                items={data.support_conversations}
                 onRemove={(associationId) => deleteAssociation.mutate(associationId)}
               />
             ) : null}

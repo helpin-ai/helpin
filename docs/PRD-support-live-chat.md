@@ -1,9 +1,128 @@
 # PRD: Support Live Chat, Inbox, and AI Messenger
 
-**Status:** Draft v13 (canned responses, CSAT survey, typing indicators, email transcript, unread overlay from Chatwoot review, plus all v12 content)  
+**Status:** In Progress - Phase 2 Complete ✅
+**Status:** Draft v14 (canned responses, CSAT survey, typing indicators, email transcript, unread overlay from Chatwoot review, plus all v12 content)  
 **Date:** 2026-03-11  
 **Module:** Support  
 **Product context:** Helpin is a full operating suite spanning PM, CRM, Docs, Notifications, Agents, and Support. This PRD defines support as a first-class suite surface, not a standalone chat product.
+
+---
+
+## Phase 1 Status: ✅ COMPLETE
+
+### Completed Deliverables:
+
+1. **Package Setup**
+   - Created `packages/` directory with pnpm workspace + Turborepo at repo root
+   - Added `pnpm-workspace.yaml` and `turbo.json`
+   - Created `tsconfig.base.json` for shared TypeScript config
+
+2. **SDK Migration** (copied from `/root/helpin-convex-main`)
+   - `@helpin/shared` - Shared types (Conversation, Message, WidgetConfig)
+   - `@helpin/sdk-js` - JavaScript SDK with analytics + widget support
+   - `@helpin/react` - React hooks and provider
+   - `@helpin/nextjs` - Next.js SSR-safe hooks
+   - `@helpin/widget-core` - Chat widget components
+   - `@helpin/widget-embed` - IIFE bundle for embeddable widget
+
+3. **Widget-Core Implementation** (11 components)
+   - `ChatWindow` - Main container
+   - `WidgetLauncher` - Floating button with unread badge
+   - `WidgetHeader` - Header with title, logo, close button
+   - `MessageList` - Scrollable message thread with date separators
+   - `MessageBubble` - Individual message with role styling
+   - `ComposeBar` - Text input with send button, Enter-to-send
+   - `PreChatForm` - Email/name capture before chat
+   - `QuickReplies` - Quick reply buttons
+   - `TypingIndicator` - Animated typing dots
+   - `CsatRating` - 5-point emoji rating
+   - `StreamingText` - Animated AI response text
+
+4. **SDK Widget API** (Intercom-style)
+   - `boot()` - Initialize widget with config
+   - `show()` / `hide()` / `toggle()` - Widget visibility
+   - `showMessages()` / `showConversation()` / `showArticle()` - Navigation
+   - `onShow` / `onHide` / `onUnreadCountChange` / `onUserEmailSupplied` - Callbacks
+   - `getVisitorId()` - Visitor identification
+
+5. **CSS Styling**
+   - Tailwind-aligned design tokens (colors, spacing, radius, shadows)
+   - Responsive mobile layout
+   - Shadow DOM isolation ready
+
+6. **Testing**
+   - 82 unit tests for sdk-js (Vitest)
+   - 49 unit tests for widget-core (Vitest + @testing-library/preact)
+   - E2E test infrastructure with mock API server
+   - All 131 tests passing
+
+### Bundle Sizes (gzipped):
+| Package | Size |
+|---------|------|
+| `@helpin/widget-core` | 4.6 KB |
+| `@helpin/sdk-js` | 10.4 KB |
+| `@helpin/widget-embed` | 0.25 KB |
+
+---
+
+## Phase 2 Status: ✅ COMPLETE
+
+### Completed Deliverables:
+
+1. **Data Model Updates**
+   - Updated `server/internal/model/support.go` with conversation-first models:
+     - `SupportConversation` - renamed from SupportTicket (with alias for backward compat)
+     - `SupportMessage` - added `ConversationID`, `MessageType`, `Metadata` fields
+     - `SupportCannedResponse` - new table for saved reply templates
+   - Created `server/migrations/038_support_conversations.sql` - Migration for new tables/columns:
+     - `support_conversations` table with display_id auto-allocation
+     - New columns on `support_messages`: `message_type`, `metadata`, `conversation_id`
+     - `support_canned_responses` table with search support
+     - Backfill `conversation_id` from legacy `ticket_id`
+
+2. **Repository Layer**
+   - Updated `server/internal/repository/support.go`:
+     - `SupportConversationRepository` - Create (with auto display_id), GetByID, List (with pagination, status/priority filters), Update
+     - `SupportMessageRepository` - Create, ListByTicket (supports both conversation_id and legacy ticket_id)
+     - `SupportCannedResponseRepository` - Create, List, GetByID, Search, Update, Delete
+
+3. **Service Layer**
+   - Updated `server/internal/service/support.go`:
+     - Added canned response CRUD methods
+     - Added typing indicator broadcast functionality
+     - Added `truncate()` utility for text truncation with UTF-8/emoji support
+     - Added `validConversationStatuses` validation map
+     - Added `generateSecureToken()` for secure token generation
+
+4. **Handler Layer**
+   - Updated `server/internal/handler/support.go`:
+     - Added canned response CRUD endpoints (list, create, update, delete)
+     - Added typing indicator endpoint for real-time collaboration
+
+5. **API Wiring**
+   - Updated `server/cmd/api/main.go` - Wired up cannedResponseRepo
+   - Updated `server/internal/router/router.go` - Registered new routes
+
+6. **Testing**
+   - Created `server/internal/service/support_test.go` with comprehensive SQLite tests
+   - **23 test cases passing:**
+     - `TestSupportConversationRepository` (6 subtests): Create/Get, List, Update, GetByID not found, Display ID sequential, Cross-workspace isolation, Pagination
+     - `TestSupportMessageRepository` (4 subtests): Create/List by conversation_id, Legacy ticket_id support, Internal notes filtering, ASC ordering
+     - `TestWidgetInstallationRepository` (5 subtests): Create/GetByWorkspace, GetByWidgetKey, Inactive filtering, Unknown key handling, Update
+     - `TestWidgetSessionRepository` (3 subtests): Create/GetByToken, Unknown token, Update with conversation_id
+     - `TestSupportCannedResponseRepository` (5 subtests): Create/List, Search, Update, Delete, Cross-workspace isolation
+     - `TestTruncate` (6 subtests): Short string, exact length, truncation with ellipsis, UTF-8, emoji, empty
+     - `TestValidConversationStatuses` - Status validation
+     - `TestGenerateSecureToken` (2 subtests): Token length, uniqueness
+   - Fixed test infrastructure:
+     - Added UUID defaults to test DB schema (support_conversations, support_messages, support_canned_responses, support_widget_installations, support_widget_sessions)
+     - Fixed SQLite compatibility (ILIKE → LIKE)
+     - Fixed test data isolation issues with unique workspace IDs and short_codes
+
+### Remaining Phases:
+- **Phase 3**: Inbox MVP (dashboard, widget MVP, CSAT, typing)
+- **Phase 4**: Docs-Aware AI Support
+- **Phase 5**: Advanced Automation
 
 ---
 
