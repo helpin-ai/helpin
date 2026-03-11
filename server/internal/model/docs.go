@@ -52,7 +52,7 @@ const (
 	LinkedObjectProject       = "project"
 	LinkedObjectObjective     = "objective"
 	LinkedObjectSprint        = "sprint"
-	LinkedObjectSupportTicket = "support_ticket"
+	LinkedObjectSupportConversation = "support_conversation"
 )
 
 // ─── Helper types ───────────────────────────────────────────────────────────

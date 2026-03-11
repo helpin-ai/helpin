@@ -122,7 +122,7 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 		rewardSprintQ := "SELECT id FROM reward_sprints WHERE workspace_id = ?"
 		teamQ := "SELECT id FROM workspace_teams WHERE workspace_id = ?"
 		memberQ := "SELECT id FROM workspace_members WHERE workspace_id = ?"
-		ticketQ := "SELECT id FROM support_tickets WHERE workspace_id = ?"
+		ticketQ := "SELECT id FROM support_conversations WHERE workspace_id = ?"
 
 		queries := []string{
 			// ── Phase 1: Indirect children (via subqueries) ──
@@ -168,8 +168,8 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			// Reward profiles (via workspace members)
 			"DELETE FROM reward_profiles WHERE workspace_member_id IN (" + memberQ + ")",
 
-			// Support messages (via tickets for FK ordering)
-			"DELETE FROM support_messages WHERE ticket_id IN (" + ticketQ + ")",
+			// Support messages (via conversations for FK ordering)
+			"DELETE FROM support_messages WHERE conversation_id IN (" + ticketQ + ")",
 
 			// ── Phase 2: Direct workspace_id tables ──
 
@@ -200,7 +200,7 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			"DELETE FROM agent_handoffs WHERE workspace_id = ?",
 
 			// Support module
-			"DELETE FROM support_tickets WHERE workspace_id = ?",
+			"DELETE FROM support_conversations WHERE workspace_id = ?",
 			"DELETE FROM support_widget_sessions WHERE workspace_id = ?",
 			"DELETE FROM support_widget_installations WHERE workspace_id = ?",
 

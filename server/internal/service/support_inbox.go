@@ -14,39 +14,39 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-// SupportService contains support business logic.
-type SupportService struct {
-	ticketRepo         *repository.SupportTicketRepository
+// SupportInboxService contains support business logic.
+type SupportInboxService struct {
+	conversationRepo   *repository.SupportConversationRepository
 	messageRepo        *repository.SupportMessageRepository
 	agentRepo          *repository.AgentRepository
 	assocRepo          *repository.CRMAssociationRepository
-	widgetRepo         *repository.WidgetInstallationRepository
-	sessionRepo        *repository.WidgetSessionRepository
+	installationRepo   *repository.SupportInboxInstallationRepository
+	sessionRepo        *repository.SupportInboxSessionRepository
 	cannedResponseRepo *repository.SupportCannedResponseRepository
 	activitySvc        *PMActivityService
 	wsPublisher        *websocket.Publisher
 	contactRepo        *repository.CRMContactRepository
 }
 
-// NewSupportService creates a new SupportService.
-func NewSupportService(
-	ticketRepo *repository.SupportTicketRepository,
+// NewSupportInboxService creates a new SupportInboxService.
+func NewSupportInboxService(
+	conversationRepo *repository.SupportConversationRepository,
 	messageRepo *repository.SupportMessageRepository,
 	agentRepo *repository.AgentRepository,
 	assocRepo *repository.CRMAssociationRepository,
-	widgetRepo *repository.WidgetInstallationRepository,
-	sessionRepo *repository.WidgetSessionRepository,
+	installationRepo *repository.SupportInboxInstallationRepository,
+	sessionRepo *repository.SupportInboxSessionRepository,
 	cannedResponseRepo *repository.SupportCannedResponseRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 	contactRepo *repository.CRMContactRepository,
-) *SupportService {
-	return &SupportService{
-		ticketRepo:         ticketRepo,
+) *SupportInboxService {
+	return &SupportInboxService{
+		conversationRepo:   conversationRepo,
 		messageRepo:        messageRepo,
 		agentRepo:          agentRepo,
 		assocRepo:          assocRepo,
-		widgetRepo:         widgetRepo,
+		installationRepo:   installationRepo,
 		sessionRepo:        sessionRepo,
 		cannedResponseRepo: cannedResponseRepo,
 		activitySvc:        activitySvc,
@@ -55,17 +55,17 @@ func NewSupportService(
 	}
 }
 
-// ListTickets returns tickets with optional filters.
-func (s *SupportService) ListTickets(ctx context.Context, workspaceID, status, priority string, pagination model.PMPagination) ([]model.SupportTicket, int64, error) {
+// ListConversations returns conversations with optional filters.
+func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID, status, priority string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
-	return s.ticketRepo.List(ctx, workspaceID, status, priority, pagination)
+	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination)
 }
 
-// GetTicket returns a single ticket.
-func (s *SupportService) GetTicket(ctx context.Context, workspaceID, id string) (*model.SupportTicket, error) {
-	ticket, err := s.ticketRepo.GetByID(ctx, workspaceID, id)
+// GetConversation returns a single conversation.
+func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, id string) (*model.SupportConversation, error) {
+	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +75,8 @@ func (s *SupportService) GetTicket(ctx context.Context, workspaceID, id string) 
 	return ticket, nil
 }
 
-// CreateTicket creates a new support ticket.
-func (s *SupportService) CreateTicket(ctx context.Context, req model.CreateTicketRequest, actorID string) (*model.SupportTicket, error) {
+// CreateConversation creates a new support conversation.
+func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.CreateConversationRequest, actorID string) (*model.SupportConversation, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Subject) == "" {
 		return nil, fmt.Errorf("workspace_id and subject are required")
 	}
@@ -90,7 +90,7 @@ func (s *SupportService) CreateTicket(ctx context.Context, req model.CreateTicke
 		source = "internal"
 	}
 
-	ticket := &model.SupportTicket{
+	ticket := &model.SupportConversation{
 		WorkspaceID:    req.WorkspaceID,
 		Subject:        strings.TrimSpace(req.Subject),
 		Status:         "open",
@@ -101,23 +101,23 @@ func (s *SupportService) CreateTicket(ctx context.Context, req model.CreateTicke
 		Source:         source,
 	}
 
-	if err := s.ticketRepo.Create(ctx, ticket); err != nil {
+	if err := s.conversationRepo.Create(ctx, ticket); err != nil {
 		return nil, err
 	}
 
 	// Auto-match or create CRM contact by email.
 	if contactID := s.matchOrCreateCRMContact(ctx, ticket.WorkspaceID, ticket.CustomerEmail, ticket.CustomerName); contactID != nil {
 		ticket.CRMContactID = contactID
-		if err := s.ticketRepo.Update(ctx, ticket); err != nil {
+		if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 			slog.ErrorContext(ctx, "failed to link CRM contact to ticket", "error", err, "ticket_id", ticket.ID)
 		}
 	}
 
-	_ = s.activitySvc.Log(ctx, ticket.WorkspaceID, "support_ticket", ticket.ID, &actorID, "created", nil, nil, &ticket.Subject, nil)
+	_ = s.activitySvc.Log(ctx, ticket.WorkspaceID, "support_conversation", ticket.ID, &actorID, "created", nil, nil, &ticket.Subject, nil)
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",
-		Entity:      "support_ticket",
+		Entity:      "support_conversation",
 		EntityID:    ticket.ID,
 		WorkspaceID: ticket.WorkspaceID,
 		ActorID:     actorID,
@@ -131,13 +131,13 @@ var validConversationStatuses = map[string]bool{
 	"open": true, "in_progress": true, "waiting": true, "resolved": true, "closed": true,
 }
 
-// UpdateTicketStatus changes ticket status.
-func (s *SupportService) UpdateTicketStatus(ctx context.Context, workspaceID, ticketID, status, actorID string) (*model.SupportTicket, error) {
+// UpdateConversationStatus changes conversation status.
+func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, workspaceID, ticketID, status, actorID string) (*model.SupportConversation, error) {
 	if !validConversationStatuses[status] {
 		return nil, fmt.Errorf("invalid status: %s", status)
 	}
 
-	ticket, err := s.ticketRepo.GetByID(ctx, workspaceID, ticketID)
+	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,15 +156,15 @@ func (s *SupportService) UpdateTicketStatus(ctx context.Context, workspaceID, ti
 		ticket.ClosedAt = &now
 	}
 
-	if err := s.ticketRepo.Update(ctx, ticket); err != nil {
+	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "support_ticket", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
+	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
-		Entity:      "support_ticket",
+		Entity:      "support_conversation",
 		EntityID:    ticketID,
 		WorkspaceID: workspaceID,
 		ActorID:     actorID,
@@ -173,16 +173,16 @@ func (s *SupportService) UpdateTicketStatus(ctx context.Context, workspaceID, ti
 	return ticket, nil
 }
 
-// ListMessages returns messages for a ticket.
-func (s *SupportService) ListMessages(ctx context.Context, workspaceID, ticketID string, includeInternal bool) ([]model.SupportMessage, error) {
+// ListConversationMessages returns messages for a conversation.
+func (s *SupportInboxService) ListConversationMessages(ctx context.Context, workspaceID, ticketID string, includeInternal bool) ([]model.SupportMessage, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.messageRepo.ListByTicket(ctx, workspaceID, ticketID, includeInternal)
+	return s.messageRepo.ListByConversation(ctx, workspaceID, ticketID, includeInternal)
 }
 
-// CreateMessage creates a message on a ticket.
-func (s *SupportService) CreateMessage(ctx context.Context, workspaceID, ticketID string, req model.CreateMessageRequest, senderType string, senderUserID, senderAgentID *string, senderDisplayName *string) (*model.SupportMessage, error) {
+// CreateConversationMessage creates a message on a conversation.
+func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, workspaceID, ticketID string, req model.CreateMessageRequest, senderType string, senderUserID, senderAgentID *string, senderDisplayName *string) (*model.SupportMessage, error) {
 	if strings.TrimSpace(req.Content) == "" {
 		return nil, fmt.Errorf("content is required")
 	}
@@ -195,7 +195,6 @@ func (s *SupportService) CreateMessage(ctx context.Context, workspaceID, ticketI
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,
 		ConversationID:    ticketID,
-		TicketID:          &ticketID,
 		SenderType:        senderType,
 		SenderUserID:      senderUserID,
 		SenderAgentID:     senderAgentID,
@@ -211,19 +210,19 @@ func (s *SupportService) CreateMessage(ctx context.Context, workspaceID, ticketI
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",
-		Entity:      "support_message",
+		Entity:      "support_conversation_message",
 		EntityID:    msg.ID,
 		WorkspaceID: workspaceID,
-		ParentType:  "support_ticket",
+		ParentType:  "support_conversation",
 		ParentID:    ticketID,
 	})
 
 	return msg, nil
 }
 
-// LinkStory links a ticket to a story.
-func (s *SupportService) LinkStory(ctx context.Context, workspaceID, ticketID, storyID, actorID string) error {
-	ticket, err := s.ticketRepo.GetByID(ctx, workspaceID, ticketID)
+// LinkConversationStory links a conversation to a story.
+func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspaceID, ticketID, storyID, actorID string) error {
+	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
 	if err != nil {
 		return err
 	}
@@ -232,13 +231,13 @@ func (s *SupportService) LinkStory(ctx context.Context, workspaceID, ticketID, s
 	}
 
 	ticket.LinkedStoryID = &storyID
-	if err := s.ticketRepo.Update(ctx, ticket); err != nil {
+	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
 	}
 
 	assoc := &model.CRMAssociation{
 		WorkspaceID:    workspaceID,
-		FromObjectType: model.CRMObjectSupportTicket,
+		FromObjectType: model.CRMObjectSupportConversation,
 		FromObjectID:   ticketID,
 		ToObjectType:   model.CRMObjectStory,
 		ToObjectID:     storyID,
@@ -247,11 +246,11 @@ func (s *SupportService) LinkStory(ctx context.Context, workspaceID, ticketID, s
 		return err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "support_ticket", ticketID, &actorID, "updated", strPtr("linked_story_id"), nil, &storyID, nil)
+	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_story_id"), nil, &storyID, nil)
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
-		Entity:      "support_ticket",
+		Entity:      "support_conversation",
 		EntityID:    ticketID,
 		WorkspaceID: workspaceID,
 		ActorID:     actorID,
@@ -260,9 +259,9 @@ func (s *SupportService) LinkStory(ctx context.Context, workspaceID, ticketID, s
 	return nil
 }
 
-// AssignAgent assigns an agent to a ticket.
-func (s *SupportService) AssignAgent(ctx context.Context, workspaceID, ticketID, agentID, actorID string) error {
-	ticket, err := s.ticketRepo.GetByID(ctx, workspaceID, ticketID)
+// AssignConversationAgent assigns an agent to a conversation.
+func (s *SupportInboxService) AssignConversationAgent(ctx context.Context, workspaceID, ticketID, agentID, actorID string) error {
+	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
 	if err != nil {
 		return err
 	}
@@ -281,15 +280,15 @@ func (s *SupportService) AssignAgent(ctx context.Context, workspaceID, ticketID,
 	}
 
 	ticket.AssignedAgentID = &agentID
-	if err := s.ticketRepo.Update(ctx, ticket); err != nil {
+	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "support_ticket", ticketID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agentID, nil)
+	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agentID, nil)
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
-		Entity:      "support_ticket",
+		Entity:      "support_conversation",
 		EntityID:    ticketID,
 		WorkspaceID: workspaceID,
 		ActorID:     actorID,
@@ -301,8 +300,8 @@ func (s *SupportService) AssignAgent(ctx context.Context, workspaceID, ticketID,
 // --- Widget methods ---
 
 // CreateWidgetSession creates a new session for external widget chat.
-func (s *SupportService) CreateWidgetSession(ctx context.Context, widgetKey string, customerName, customerEmail *string) (*model.SupportWidgetSession, error) {
-	inst, err := s.widgetRepo.GetByWidgetKey(ctx, widgetKey)
+func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey string, customerName, customerEmail *string) (*model.SupportWidgetSession, error) {
+	inst, err := s.installationRepo.GetByWidgetKey(ctx, widgetKey)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +330,7 @@ func (s *SupportService) CreateWidgetSession(ctx context.Context, widgetKey stri
 }
 
 // GetWidgetSession returns a valid session by token.
-func (s *SupportService) GetWidgetSession(ctx context.Context, token string) (*model.SupportWidgetSession, error) {
+func (s *SupportInboxService) GetWidgetSession(ctx context.Context, token string) (*model.SupportWidgetSession, error) {
 	session, err := s.sessionRepo.GetByToken(ctx, token)
 	if err != nil {
 		return nil, err
@@ -346,7 +345,7 @@ func (s *SupportService) GetWidgetSession(ctx context.Context, token string) (*m
 }
 
 // WidgetCreateMessage creates a message from an external widget user.
-func (s *SupportService) WidgetCreateMessage(ctx context.Context, sessionToken, content string) (*model.SupportMessage, error) {
+func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionToken, content string) (*model.SupportMessage, error) {
 	session, err := s.GetWidgetSession(ctx, sessionToken)
 	if err != nil {
 		return nil, err
@@ -354,7 +353,7 @@ func (s *SupportService) WidgetCreateMessage(ctx context.Context, sessionToken, 
 
 	// If no conversation yet, create one.
 	if session.ConversationID == nil {
-		ticket := &model.SupportTicket{
+		ticket := &model.SupportConversation{
 			WorkspaceID:   session.WorkspaceID,
 			Subject:       truncate(content, 100),
 			Status:        "open",
@@ -369,18 +368,17 @@ func (s *SupportService) WidgetCreateMessage(ctx context.Context, sessionToken, 
 			ticket.CRMContactID = contactID
 		}
 
-		if err := s.ticketRepo.Create(ctx, ticket); err != nil {
+		if err := s.conversationRepo.Create(ctx, ticket); err != nil {
 			return nil, err
 		}
 		session.ConversationID = &ticket.ID
-		session.TicketID = &ticket.ID
 		if err := s.sessionRepo.Update(ctx, session); err != nil {
 			return nil, err
 		}
 
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "created",
-			Entity:      "support_ticket",
+			Entity:      "support_conversation",
 			EntityID:    ticket.ID,
 			WorkspaceID: session.WorkspaceID,
 		})
@@ -394,7 +392,6 @@ func (s *SupportService) WidgetCreateMessage(ctx context.Context, sessionToken, 
 	msg := &model.SupportMessage{
 		WorkspaceID:       session.WorkspaceID,
 		ConversationID:    *session.ConversationID,
-		TicketID:          session.TicketID,
 		SenderType:        "customer",
 		SenderDisplayName: &displayName,
 		Content:           strings.TrimSpace(content),
@@ -408,19 +405,19 @@ func (s *SupportService) WidgetCreateMessage(ctx context.Context, sessionToken, 
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",
-		Entity:      "support_message",
+		Entity:      "support_conversation_message",
 		EntityID:    msg.ID,
 		WorkspaceID: session.WorkspaceID,
-		ParentType:  "support_ticket",
-		ParentID:    *session.TicketID,
+		ParentType:  "support_conversation",
+		ParentID:    *session.ConversationID,
 	})
 
 	return msg, nil
 }
 
 // GetWidgetConfig returns widget config by widget key (public).
-func (s *SupportService) GetWidgetConfig(ctx context.Context, widgetKey string) (*model.SupportWidgetInstallation, error) {
-	return s.widgetRepo.GetByWidgetKey(ctx, widgetKey)
+func (s *SupportInboxService) GetWidgetConfig(ctx context.Context, widgetKey string) (*model.SupportWidgetInstallation, error) {
+	return s.installationRepo.GetByWidgetKey(ctx, widgetKey)
 }
 
 func generateSecureToken(bytes int) (string, error) {
@@ -441,7 +438,7 @@ func truncate(s string, maxLen int) string {
 
 // matchOrCreateCRMContact looks up a CRM contact by email; if not found and
 // we have a name, it auto-creates one with lifecycle_stage=subscriber, source=support.
-func (s *SupportService) matchOrCreateCRMContact(ctx context.Context, workspaceID string, email, name *string) *string {
+func (s *SupportInboxService) matchOrCreateCRMContact(ctx context.Context, workspaceID string, email, name *string) *string {
 	if email == nil || *email == "" {
 		return nil
 	}
@@ -480,27 +477,27 @@ func (s *SupportService) matchOrCreateCRMContact(ctx context.Context, workspaceI
 		slog.ErrorContext(ctx, "failed to auto-create CRM contact from support", "error", err, "workspace_id", workspaceID)
 		return nil
 	}
-	slog.InfoContext(ctx, "auto-created CRM contact from support ticket", "contact_id", contact.ID, "workspace_id", workspaceID)
+	slog.InfoContext(ctx, "auto-created CRM contact from support conversation", "contact_id", contact.ID, "workspace_id", workspaceID)
 	return &contact.ID
 }
 
-// ListContactTickets returns support tickets linked to a CRM contact.
-func (s *SupportService) ListContactTickets(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportTicket, int64, error) {
-	return s.ticketRepo.ListByContact(ctx, workspaceID, contactID, pagination)
+// ListContactConversations returns support conversations linked to a CRM contact.
+func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+	return s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
 }
 
 // ListCannedResponses returns all canned responses for a workspace.
-func (s *SupportService) ListCannedResponses(ctx context.Context, workspaceID string) ([]model.SupportCannedResponse, error) {
+func (s *SupportInboxService) ListCannedResponses(ctx context.Context, workspaceID string) ([]model.SupportCannedResponse, error) {
 	return s.cannedResponseRepo.List(ctx, workspaceID)
 }
 
 // SearchCannedResponses returns canned responses matching a query.
-func (s *SupportService) SearchCannedResponses(ctx context.Context, workspaceID, query string) ([]model.SupportCannedResponse, error) {
+func (s *SupportInboxService) SearchCannedResponses(ctx context.Context, workspaceID, query string) ([]model.SupportCannedResponse, error) {
 	return s.cannedResponseRepo.Search(ctx, workspaceID, query)
 }
 
 // CreateCannedResponse creates a new canned response.
-func (s *SupportService) CreateCannedResponse(ctx context.Context, workspaceID string, req model.CannedResponseRequest, createdByID string) (*model.SupportCannedResponse, error) {
+func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspaceID string, req model.CannedResponseRequest, createdByID string) (*model.SupportCannedResponse, error) {
 	if strings.TrimSpace(req.ShortCode) == "" || strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Content) == "" {
 		return nil, fmt.Errorf("short_code, title, and content are required")
 	}
@@ -519,7 +516,7 @@ func (s *SupportService) CreateCannedResponse(ctx context.Context, workspaceID s
 }
 
 // UpdateCannedResponse updates an existing canned response.
-func (s *SupportService) UpdateCannedResponse(ctx context.Context, workspaceID, id string, req model.CannedResponseRequest) (*model.SupportCannedResponse, error) {
+func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspaceID, id string, req model.CannedResponseRequest) (*model.SupportCannedResponse, error) {
 	response, err := s.cannedResponseRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
@@ -539,12 +536,12 @@ func (s *SupportService) UpdateCannedResponse(ctx context.Context, workspaceID, 
 }
 
 // DeleteCannedResponse deletes a canned response.
-func (s *SupportService) DeleteCannedResponse(ctx context.Context, workspaceID, id string) error {
+func (s *SupportInboxService) DeleteCannedResponse(ctx context.Context, workspaceID, id string) error {
 	return s.cannedResponseRepo.Delete(ctx, workspaceID, id)
 }
 
 // PublishTypingIndicator publishes a typing indicator event via WebSocket.
-func (s *SupportService) PublishTypingIndicator(ctx context.Context, workspaceID, conversationID string, isTyping bool) {
+func (s *SupportInboxService) PublishTypingIndicator(ctx context.Context, workspaceID, conversationID string, isTyping bool) {
 	action := "typing_stopped"
 	if isTyping {
 		action = "typing_started"

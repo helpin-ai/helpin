@@ -276,7 +276,7 @@ func TestSupportMessageRepository(t *testing.T) {
 			t.Error("expected message ID to be set")
 		}
 
-		messages, err := msgRepo.ListByTicket(ctx, workspaceID, conv.ID, true)
+		messages, err := msgRepo.ListByConversation(ctx, workspaceID, conv.ID, true)
 		if err != nil {
 			t.Fatalf("list messages: %v", err)
 		}
@@ -288,19 +288,17 @@ func TestSupportMessageRepository(t *testing.T) {
 		}
 	})
 
-	t.Run("List messages with legacy ticket_id", func(t *testing.T) {
-		// Simulate a legacy message that only has ticket_id set (not conversation_id).
-		legacyTicketID := conv.ID
-		mustExec(t, db, `INSERT INTO support_messages (id, workspace_id, conversation_id, ticket_id, sender_type, content, message_type, is_internal) VALUES (?, ?, '', ?, 'user', 'Legacy message', 'reply', 0)`,
-			"legacy-msg-001", workspaceID, legacyTicketID)
+	t.Run("List messages by conversation_id only", func(t *testing.T) {
+		// After migration 039, ticket_id column is dropped. Only conversation_id is used.
+		mustExec(t, db, `INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal) VALUES (?, ?, ?, 'user', 'Second message', 'reply', 0)`,
+			"msg-002", workspaceID, conv.ID)
 
-		messages, err := msgRepo.ListByTicket(ctx, workspaceID, conv.ID, true)
+		messages, err := msgRepo.ListByConversation(ctx, workspaceID, conv.ID, true)
 		if err != nil {
-			t.Fatalf("list messages with legacy: %v", err)
+			t.Fatalf("list messages: %v", err)
 		}
-		// Should include both the new message (conversation_id) and legacy (ticket_id)
 		if len(messages) < 2 {
-			t.Errorf("expected at least 2 messages (new + legacy), got %d", len(messages))
+			t.Errorf("expected at least 2 messages, got %d", len(messages))
 		}
 	})
 
@@ -319,13 +317,13 @@ func TestSupportMessageRepository(t *testing.T) {
 		}
 
 		// With internal
-		allMsgs, err := msgRepo.ListByTicket(ctx, workspaceID, conv.ID, true)
+		allMsgs, err := msgRepo.ListByConversation(ctx, workspaceID, conv.ID, true)
 		if err != nil {
 			t.Fatalf("list all: %v", err)
 		}
 
 		// Without internal
-		publicMsgs, err := msgRepo.ListByTicket(ctx, workspaceID, conv.ID, false)
+		publicMsgs, err := msgRepo.ListByConversation(ctx, workspaceID, conv.ID, false)
 		if err != nil {
 			t.Fatalf("list public: %v", err)
 		}
@@ -367,7 +365,7 @@ func TestSupportMessageRepository(t *testing.T) {
 			}
 		}
 
-		messages, err := msgRepo.ListByTicket(ctx, orderWS, oConv.ID, true)
+		messages, err := msgRepo.ListByConversation(ctx, orderWS, oConv.ID, true)
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
@@ -390,7 +388,7 @@ func TestWidgetInstallationRepository(t *testing.T) {
 	workspaceID := "ws-widget-test"
 	seedWorkspace(t, db, workspaceID, "Widget Test WS", "widget-test-ws", "user-123")
 
-	repo := repository.NewWidgetInstallationRepository(db)
+	repo := repository.NewSupportInboxInstallationRepository(db)
 	ctx := context.Background()
 
 	t.Run("Create and GetByWorkspace", func(t *testing.T) {
@@ -496,7 +494,7 @@ func TestWidgetSessionRepository(t *testing.T) {
 	workspaceID := "ws-session-test"
 	seedWorkspace(t, db, workspaceID, "Session Test WS", "session-test-ws", "user-123")
 
-	repo := repository.NewWidgetSessionRepository(db)
+	repo := repository.NewSupportInboxSessionRepository(db)
 	ctx := context.Background()
 
 	t.Run("Create and GetByToken", func(t *testing.T) {
@@ -548,7 +546,6 @@ func TestWidgetSessionRepository(t *testing.T) {
 
 		convID := "conv-id-789"
 		session.ConversationID = &convID
-		session.TicketID = &convID
 		if err := repo.Update(ctx, session); err != nil {
 			t.Fatalf("update: %v", err)
 		}
@@ -556,9 +553,6 @@ func TestWidgetSessionRepository(t *testing.T) {
 		fetched, _ := repo.GetByToken(ctx, "token_update_test")
 		if fetched.ConversationID == nil || *fetched.ConversationID != convID {
 			t.Error("expected conversation_id to be set after update")
-		}
-		if fetched.TicketID == nil || *fetched.TicketID != convID {
-			t.Error("expected ticket_id to be set after update")
 		}
 	})
 }

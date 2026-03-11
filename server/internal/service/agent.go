@@ -36,7 +36,7 @@ type AgentService struct {
 	storyRepo        *repository.PMStoryRepository
 	storyLinkRepo    *repository.PMStoryLinkRepository
 	epicRepo         *repository.PMEpicRepository
-	ticketRepo       *repository.SupportTicketRepository
+	conversationRepo *repository.SupportConversationRepository
 	messageRepo      *repository.SupportMessageRepository
 	handoffRepo      *repository.AgentHandoffRepository
 	settingsRepo     *repository.SettingsRepository
@@ -63,7 +63,7 @@ func NewAgentService(
 	storyRepo *repository.PMStoryRepository,
 	storyLinkRepo *repository.PMStoryLinkRepository,
 	epicRepo *repository.PMEpicRepository,
-	ticketRepo *repository.SupportTicketRepository,
+	conversationRepo *repository.SupportConversationRepository,
 	messageRepo *repository.SupportMessageRepository,
 	handoffRepo *repository.AgentHandoffRepository,
 	settingsRepo *repository.SettingsRepository,
@@ -85,7 +85,7 @@ func NewAgentService(
 		storyRepo:        storyRepo,
 		storyLinkRepo:    storyLinkRepo,
 		epicRepo:         epicRepo,
-		ticketRepo:       ticketRepo,
+		conversationRepo: conversationRepo,
 		messageRepo:      messageRepo,
 		handoffRepo:      handoffRepo,
 		settingsRepo:     settingsRepo,
@@ -511,45 +511,45 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actor
 	return run, nil
 }
 
-// RunTicketAgent creates a new ticket-targeted agent run and starts its Temporal workflow.
-func (s *AgentService) RunTicketAgent(ctx context.Context, workspaceID, ticketID, actorID string) (*model.AgentRun, error) {
-	ticket, err := s.ticketRepo.GetByID(ctx, workspaceID, ticketID)
+// RunConversationAgent creates a new conversation-targeted agent run and starts its Temporal workflow.
+func (s *AgentService) RunConversationAgent(ctx context.Context, workspaceID, conversationID, actorID string) (*model.AgentRun, error) {
+	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
 	if err != nil {
-		return nil, fmt.Errorf("get ticket: %w", err)
+		return nil, fmt.Errorf("get conversation: %w", err)
 	}
-	if ticket == nil {
-		return nil, fmt.Errorf("ticket not found")
+	if conversation == nil {
+		return nil, fmt.Errorf("conversation not found")
 	}
-	if ticket.AssignedAgentID == nil || *ticket.AssignedAgentID == "" {
-		return nil, fmt.Errorf("no agent assigned to this ticket")
+	if conversation.AssignedAgentID == nil || *conversation.AssignedAgentID == "" {
+		return nil, fmt.Errorf("no agent assigned to this conversation")
 	}
 
-	agent, err := s.requireRunnableAgent(ctx, workspaceID, *ticket.AssignedAgentID, "support_ticket")
+	agent, err := s.requireRunnableAgent(ctx, workspaceID, *conversation.AssignedAgentID, "support_conversation")
 	if err != nil {
 		return nil, err
 	}
 	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
 
 	input, _ := json.Marshal(map[string]any{
-		"ticket_id": ticketID,
-		"source":    ticket.Source,
+		"conversation_id": conversationID,
+		"source":          conversation.Source,
 	})
 
 	run, err := s.createRun(ctx, createRunParams{
-		workspaceID: workspaceID,
-		agent:       agent,
-		profile:     profile,
-		targetType:  "support_ticket",
-		targetID:    ticketID,
-		ticketID:    &ticketID,
-		actorID:     actorID,
-		input:       input,
+		workspaceID:    workspaceID,
+		agent:          agent,
+		profile:        profile,
+		targetType:     "support_conversation",
+		targetID:       conversationID,
+		conversationID: &conversationID,
+		actorID:        actorID,
+		input:          input,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "support_ticket", ticketID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
 	s.publishRunEvent(run, actorID)
 
 	return run, nil
@@ -590,7 +590,7 @@ func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actor
 		return nil, fmt.Errorf("run does not require approval")
 	}
 
-	if run.TargetType == "support_ticket" && run.TicketID != nil {
+	if run.TargetType == "support_conversation" && run.ConversationID != nil {
 		var summary supportRunSummary
 		_ = json.Unmarshal(run.OutputSummary, &summary)
 		if summary.DraftReply == nil || strings.TrimSpace(summary.DraftReply.Content) == "" {
@@ -598,15 +598,14 @@ func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actor
 		}
 
 		if req.SendMessage {
-			ticket, err := s.ticketRepo.GetByID(ctx, workspaceID, *run.TicketID)
-			if err != nil || ticket == nil {
-				return nil, fmt.Errorf("ticket not found")
+			conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, *run.ConversationID)
+			if err != nil || conversation == nil {
+				return nil, fmt.Errorf("conversation not found")
 			}
 
 			msg := &model.SupportMessage{
 				WorkspaceID:       workspaceID,
-				ConversationID:    *run.TicketID,
-				TicketID:          run.TicketID,
+				ConversationID:    *run.ConversationID,
 				SenderType:        "agent",
 				SenderAgentID:     &run.AgentID,
 				SenderDisplayName: summary.DraftReply.SenderDisplayName,
@@ -623,8 +622,8 @@ func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actor
 				Entity:      "support_message",
 				EntityID:    msg.ID,
 				WorkspaceID: workspaceID,
-				ParentType:  "support_ticket",
-				ParentID:    *run.TicketID,
+				ParentType:  "support_conversation",
+				ParentID:    *run.ConversationID,
 				ActorID:     actorID,
 			})
 		}
@@ -671,8 +670,8 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 		FromAgentID: &run.AgentID,
 		ToAgentID:   req.ToAgentID,
 		ToUserID:    req.ToUserID,
-		StoryID:     run.StoryID,
-		TicketID:    run.TicketID,
+		StoryID:        run.StoryID,
+		ConversationID: run.ConversationID,
 		RunID:       &run.ID,
 		HandoffType: handoffType,
 		Reason:      req.Reason,
@@ -711,8 +710,8 @@ type createRunParams struct {
 	profile     model.RuntimeProfile
 	targetType  string
 	targetID    string
-	storyID     *string
-	ticketID    *string
+	storyID        *string
+	conversationID *string
 	actorID     string
 	input       []byte
 	delivery    *model.StoryDeliveryTarget
@@ -733,7 +732,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 
 	approvalState := "not_required"
-	if params.profile.ApprovalRequired || params.targetType == "support_ticket" {
+	if params.profile.ApprovalRequired || params.targetType == "support_conversation" {
 		approvalState = "pending"
 	}
 	taskQueue := temporalapp.QueueForProfile(params.profile.Name)
@@ -742,7 +741,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		WorkspaceID:       params.workspaceID,
 		AgentID:           params.agent.ID,
 		StoryID:           params.storyID,
-		TicketID:          params.ticketID,
+		ConversationID:    params.conversationID,
 		TargetType:        params.targetType,
 		TargetID:          params.targetID,
 		RuntimeKind:       params.agent.RuntimeKind,

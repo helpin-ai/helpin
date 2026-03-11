@@ -14,7 +14,7 @@ type AssociationsService struct {
 	assocRepo        *repository.CRMAssociationRepository
 	storyLinkRepo    *repository.PMStoryLinkRepository
 	storyRepo        *repository.PMStoryRepository
-	supportRepo      *repository.SupportTicketRepository
+	supportRepo      *repository.SupportConversationRepository
 	docsLinkRepo     *repository.DocsLinkRepository
 	docsDocumentRepo *repository.DocsDocumentRepository
 }
@@ -24,7 +24,7 @@ func NewAssociationsService(
 	assocRepo *repository.CRMAssociationRepository,
 	storyLinkRepo *repository.PMStoryLinkRepository,
 	storyRepo *repository.PMStoryRepository,
-	supportRepo *repository.SupportTicketRepository,
+	supportRepo *repository.SupportConversationRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsDocumentRepo *repository.DocsDocumentRepository,
 ) *AssociationsService {
@@ -60,7 +60,7 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 			DuplicatedBy: []model.StoryRelationshipSummary{},
 		},
 		Stories:        []model.AssociationObjectSummary{},
-		SupportTickets: []model.AssociationObjectSummary{},
+		SupportConversations: []model.AssociationObjectSummary{},
 		CRMRecords:     []model.AssociationObjectSummary{},
 		Docs:           []model.AssociationObjectSummary{},
 	}
@@ -187,14 +187,14 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 	}
 
 	storyIDs := make([]string, 0)
-	supportTicketIDs := make([]string, 0)
+	supportConversationIDs := make([]string, 0)
 	for _, assoc := range assocs {
 		otherType, otherID := otherAssociationSide(assoc, objectType, objectID)
 		switch otherType {
 		case model.CRMObjectStory:
 			storyIDs = append(storyIDs, otherID)
-		case model.CRMObjectSupportTicket:
-			supportTicketIDs = append(supportTicketIDs, otherID)
+		case model.CRMObjectSupportConversation:
+			supportConversationIDs = append(supportConversationIDs, otherID)
 		}
 	}
 
@@ -209,14 +209,14 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 		}
 	}
 
-	ticketsByID := make(map[string]model.SupportTicket)
-	if len(supportTicketIDs) > 0 {
-		tickets, err := s.supportRepo.ListByIDs(ctx, workspaceID, uniqueStrings(supportTicketIDs))
+	conversationsByID := make(map[string]model.SupportConversation)
+	if len(supportConversationIDs) > 0 {
+		conversations, err := s.supportRepo.ListByIDs(ctx, workspaceID, uniqueStrings(supportConversationIDs))
 		if err != nil {
 			return err
 		}
-		for _, ticket := range tickets {
-			ticketsByID[ticket.ID] = ticket
+		for _, conversation := range conversations {
+			conversationsByID[conversation.ID] = conversation
 		}
 	}
 
@@ -237,16 +237,16 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 			}
 			seenStories[story.ID] = struct{}{}
 			response.Stories = append(response.Stories, storyAssociationSummary(assoc.ID, story))
-		case model.CRMObjectSupportTicket:
-			ticket, ok := ticketsByID[otherID]
+		case model.CRMObjectSupportConversation:
+			conversation, ok := conversationsByID[otherID]
 			if !ok {
 				continue
 			}
-			if _, exists := seenSupport[ticket.ID]; exists {
+			if _, exists := seenSupport[conversation.ID]; exists {
 				continue
 			}
-			seenSupport[ticket.ID] = struct{}{}
-			response.SupportTickets = append(response.SupportTickets, supportAssociationSummary(assoc.ID, ticket))
+			seenSupport[conversation.ID] = struct{}{}
+			response.SupportConversations = append(response.SupportConversations, supportAssociationSummary(assoc.ID, conversation))
 		case model.CRMObjectContact, model.CRMObjectCompany, model.CRMObjectDeal:
 			if _, exists := seenCRM[assoc.ID]; exists {
 				continue
@@ -261,7 +261,7 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 	}
 
 	sortAssociationObjects(response.Stories)
-	sortAssociationObjects(response.SupportTickets)
+	sortAssociationObjects(response.SupportConversations)
 	sortAssociationObjects(response.CRMRecords)
 
 	return nil
@@ -310,37 +310,37 @@ func (s *AssociationsService) populateDocsAssociations(ctx context.Context, work
 func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, workspaceID, objectType, objectID string, response *model.GroupedAssociationsResponse) error {
 	switch objectType {
 	case model.CRMObjectStory:
-		tickets, err := s.supportRepo.ListByLinkedStoryIDs(ctx, workspaceID, []string{objectID})
+		conversations, err := s.supportRepo.ListByLinkedStoryIDs(ctx, workspaceID, []string{objectID})
 		if err != nil {
 			return err
 		}
-		existing := make(map[string]struct{}, len(response.SupportTickets))
-		for _, item := range response.SupportTickets {
+		existing := make(map[string]struct{}, len(response.SupportConversations))
+		for _, item := range response.SupportConversations {
 			existing[item.ObjectID] = struct{}{}
 		}
-		for _, ticket := range tickets {
-			if _, ok := existing[ticket.ID]; ok {
+		for _, conversation := range conversations {
+			if _, ok := existing[conversation.ID]; ok {
 				continue
 			}
-			response.SupportTickets = append(response.SupportTickets, supportAssociationSummary("", ticket))
+			response.SupportConversations = append(response.SupportConversations, supportAssociationSummary("", conversation))
 		}
-		sortAssociationObjects(response.SupportTickets)
-	case model.CRMObjectSupportTicket:
-		ticket, err := s.supportRepo.GetByID(ctx, workspaceID, objectID)
+		sortAssociationObjects(response.SupportConversations)
+	case model.CRMObjectSupportConversation:
+		conversation, err := s.supportRepo.GetByID(ctx, workspaceID, objectID)
 		if err != nil {
 			return err
 		}
-		if ticket == nil || ticket.LinkedStoryID == nil || *ticket.LinkedStoryID == "" {
+		if conversation == nil || conversation.LinkedStoryID == nil || *conversation.LinkedStoryID == "" {
 			return nil
 		}
 		existing := make(map[string]struct{}, len(response.Stories))
 		for _, item := range response.Stories {
 			existing[item.ObjectID] = struct{}{}
 		}
-		if _, ok := existing[*ticket.LinkedStoryID]; ok {
+		if _, ok := existing[*conversation.LinkedStoryID]; ok {
 			return nil
 		}
-		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{*ticket.LinkedStoryID})
+		stories, err := s.storyRepo.ListByIDs(ctx, workspaceID, []string{*conversation.LinkedStoryID})
 		if err != nil {
 			return err
 		}
@@ -536,15 +536,15 @@ func storyAssociationSummary(associationID string, story model.PMStory) model.As
 	}
 }
 
-func supportAssociationSummary(associationID string, ticket model.SupportTicket) model.AssociationObjectSummary {
-	displayID := fmt.Sprintf("T-%d", ticket.DisplayID)
-	status := ticket.Status
+func supportAssociationSummary(associationID string, conversation model.SupportConversation) model.AssociationObjectSummary {
+	displayID := fmt.Sprintf("T-%d", conversation.DisplayID)
+	status := conversation.Status
 	return model.AssociationObjectSummary{
 		AssociationID: associationID,
-		ObjectType:    model.CRMObjectSupportTicket,
-		ObjectID:      ticket.ID,
+		ObjectType:    model.CRMObjectSupportConversation,
+		ObjectID:      conversation.ID,
 		DisplayID:     &displayID,
-		Title:         ticket.Subject,
+		Title:         conversation.Subject,
 		Status:        &status,
 	}
 }
@@ -584,7 +584,7 @@ func sortStoryRelationshipGroup(items []model.StoryRelationshipSummary) {
 
 func isSupportedAssociationsObjectType(objectType string) bool {
 	switch objectType {
-	case model.CRMObjectStory, model.CRMObjectEpic, model.CRMObjectSupportTicket:
+	case model.CRMObjectStory, model.CRMObjectEpic, model.CRMObjectSupportConversation:
 		return true
 	default:
 		return false

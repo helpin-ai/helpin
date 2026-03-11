@@ -65,10 +65,10 @@ func main() {
 	storyRepo := repository.NewPMStoryRepository(db)
 	storyLinkRepo := repository.NewPMStoryLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
-	ticketRepo := repository.NewSupportTicketRepository(db)
+	conversationRepo := repository.NewSupportConversationRepository(db)
 	commentRepo := repository.NewPMCommentRepository(db)
 	checklistRepo := repository.NewPMChecklistItemRepository(db)
-	messageRepo := repository.NewSupportMessageRepository(db)
+	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	gitLinkRepo := repository.NewStoryGitLinkRepository(db)
@@ -117,10 +117,10 @@ func main() {
 		storyRepo,
 		storyLinkRepo,
 		epicRepo,
-		ticketRepo,
+		conversationRepo,
 		commentRepo,
 		checklistRepo,
-		messageRepo,
+		supportMessageRepo,
 		gitIntRepo,
 		gitRepo,
 		gitLinkRepo,

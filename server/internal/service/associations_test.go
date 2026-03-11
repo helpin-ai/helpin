@@ -61,7 +61,7 @@ func TestListGroupedStoryAssociationsIncludesRelationshipsLegacySupportAndDocs(t
 	seedAssociationStory(t, db, "story-a", "ws-1", 101, "Story A", false)
 	seedAssociationStory(t, db, "story-b", "ws-1", 102, "Story B", true)
 	seedStoryLink(t, db, "link-1", "ws-1", "story-b", "story-a", model.PMStoryLinkTypeBlocks)
-	seedSupportTicket(t, db, "ticket-1", "ws-1", 11, "Customer asks for Story A", "story-a")
+	seedSupportConversation(t, db, "ticket-1", "ws-1", 11, "Customer asks for Story A", "story-a")
 	seedDocsDocument(t, db, "doc-1", "ws-1", "Spec Doc")
 	seedDocsLink(t, db, "doc-link-1", "ws-1", "doc-1", model.LinkedObjectStory, "story-a")
 
@@ -76,8 +76,8 @@ func TestListGroupedStoryAssociationsIncludesRelationshipsLegacySupportAndDocs(t
 	if grouped.StoryRelationships.BlockedBy[0].IsActive {
 		t.Fatalf("expected completed blocker to be inactive in grouped response")
 	}
-	if len(grouped.SupportTickets) != 1 {
-		t.Fatalf("expected one support ticket association, got %d", len(grouped.SupportTickets))
+	if len(grouped.SupportConversations) != 1 {
+		t.Fatalf("expected one support conversation association, got %d", len(grouped.SupportConversations))
 	}
 	if len(grouped.Docs) != 1 {
 		t.Fatalf("expected one docs association, got %d", len(grouped.Docs))
@@ -89,7 +89,7 @@ func newAssociationsServiceForTest(db *gorm.DB) *AssociationsService {
 		repository.NewCRMAssociationRepository(db),
 		repository.NewPMStoryLinkRepository(db),
 		repository.NewPMStoryRepository(db),
-		repository.NewSupportTicketRepository(db),
+		repository.NewSupportConversationRepository(db),
 		repository.NewDocsLinkRepository(db),
 		repository.NewDocsDocumentRepository(db),
 	)
@@ -139,7 +139,7 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			association_label TEXT,
 			created_at DATETIME
 		)`,
-		`CREATE TABLE support_tickets (
+		`CREATE TABLE support_conversations (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id INTEGER NOT NULL,
@@ -234,14 +234,14 @@ func seedStoryLink(t *testing.T, db *gorm.DB, id, workspaceID, sourceStoryID, ta
 	}
 }
 
-func seedSupportTicket(t *testing.T, db *gorm.DB, id, workspaceID string, displayID int, subject, linkedStoryID string) {
+func seedSupportConversation(t *testing.T, db *gorm.DB, id, workspaceID string, displayID int, subject, linkedStoryID string) {
 	t.Helper()
 	if err := db.Exec(
-		`INSERT INTO support_tickets (id, workspace_id, display_id, subject, status, priority, linked_story_id, source, created_at, updated_at)
+		`INSERT INTO support_conversations (id, workspace_id, display_id, subject, status, priority, linked_story_id, source, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, 'open', 'medium', ?, 'internal', ?, ?)`,
 		id, workspaceID, displayID, subject, linkedStoryID, time.Now().UTC(), time.Now().UTC(),
 	).Error; err != nil {
-		t.Fatalf("seed support ticket: %v", err)
+		t.Fatalf("seed support conversation: %v", err)
 	}
 }
 

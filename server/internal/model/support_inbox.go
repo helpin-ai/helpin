@@ -28,15 +28,11 @@ type SupportConversation struct {
 
 func (SupportConversation) TableName() string { return "support_conversations" }
 
-// SupportTicket kept for backward compatibility - maps to support_conversations
-type SupportTicket = SupportConversation
-
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
 	ID                string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID       string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ConversationID    string    `json:"conversation_id" gorm:"type:uuid;not null;index"` // renamed from TicketID
-	TicketID          *string   `json:"ticket_id" gorm:"type:uuid;index"`                // kept for backward compat
+	ConversationID    string    `json:"conversation_id" gorm:"type:uuid;not null;index"`
 	SenderType        string    `json:"sender_type" gorm:"not null"`                     // customer, user, agent, ai
 	MessageType       string    `json:"message_type" gorm:"not null;default:'reply'"`    // reply, csat_survey, system
 	SenderUserID      *string   `json:"sender_user_id" gorm:"type:uuid"`
@@ -83,8 +79,7 @@ func (SupportWidgetInstallation) TableName() string { return "support_widget_ins
 type SupportWidgetSession struct {
 	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ConversationID *string   `json:"conversation_id" gorm:"type:uuid;index"` // renamed from TicketID
-	TicketID       *string   `json:"ticket_id" gorm:"type:uuid"`             // kept for backward compat
+	ConversationID *string   `json:"conversation_id" gorm:"type:uuid;index"`
 	SessionToken   string    `json:"session_token" gorm:"not null;uniqueIndex"`
 	CustomerName   *string   `json:"customer_name"`
 	CustomerEmail  *string   `json:"customer_email"`
@@ -104,9 +99,6 @@ type CreateConversationRequest struct {
 	Source        string  `json:"source"`
 }
 
-// CreateTicketRequest is the payload for creating a support ticket (alias for backward compat).
-type CreateTicketRequest = CreateConversationRequest
-
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
 	Content     string `json:"content"`
@@ -124,16 +116,10 @@ type AssignConversationAgentRequest struct {
 	AgentID string `json:"agent_id"`
 }
 
-// AssignTicketAgentRequest assigns an agent to a ticket (alias for backward compat).
-type AssignTicketAgentRequest = AssignConversationAgentRequest
-
 // UpdateConversationStatusRequest changes conversation status.
 type UpdateConversationStatusRequest struct {
 	Status string `json:"status"`
 }
-
-// UpdateTicketStatusRequest changes ticket status (alias for backward compat).
-type UpdateTicketStatusRequest = UpdateConversationStatusRequest
 
 // WidgetSessionRequest creates a new widget session.
 type WidgetSessionRequest struct {

@@ -61,7 +61,7 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 	}
 
 	// Build prompts.
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Ticket, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Story, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
 
 	var checklist []model.PMChecklistItem
 	if execCtx.StoryID != "" && execCtx.Services != nil {
@@ -73,9 +73,9 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 	}
 
 	var ticketMessages []model.SupportMessage
-	if execCtx.TicketID != "" && execCtx.Services != nil && execCtx.Services.ListTicketMessages != nil {
+	if execCtx.ConversationID != "" && execCtx.Services != nil && execCtx.Services.ListConversationMessages != nil {
 		var err error
-		ticketMessages, err = execCtx.Services.ListTicketMessages(execCtx.Context, execCtx.WorkspaceID, execCtx.TicketID)
+		ticketMessages, err = execCtx.Services.ListConversationMessages(execCtx.Context, execCtx.WorkspaceID, execCtx.ConversationID)
 		if err != nil {
 			log.Printf("warning: failed to list ticket messages: %v", err)
 		}
@@ -85,7 +85,7 @@ func (e *Executor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error
 		execCtx.Story,
 		execCtx.Epic,
 		execCtx.EpicStories,
-		execCtx.Ticket,
+		execCtx.Conversation,
 		ticketMessages,
 		checklist,
 		execCtx.PlanningStage,

@@ -7,18 +7,18 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
-// WidgetHandler handles public widget HTTP endpoints (no JWT required).
-type WidgetHandler struct {
-	supportService *service.SupportService
+// SupportInboxWidgetHandler handles public widget HTTP endpoints (no JWT required).
+type SupportInboxWidgetHandler struct {
+	supportService *service.SupportInboxService
 }
 
-// NewWidgetHandler creates a new WidgetHandler.
-func NewWidgetHandler(supportService *service.SupportService) *WidgetHandler {
-	return &WidgetHandler{supportService: supportService}
+// NewSupportInboxWidgetHandler creates a new SupportInboxWidgetHandler.
+func NewSupportInboxWidgetHandler(supportService *service.SupportInboxService) *SupportInboxWidgetHandler {
+	return &SupportInboxWidgetHandler{supportService: supportService}
 }
 
 // GetConfig handles GET /api/widget/support/config?widget_key=...
-func (h *WidgetHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxWidgetHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	widgetKey := r.URL.Query().Get("widget_key")
 	if widgetKey == "" {
 		writeError(w, http.StatusBadRequest, "widget_key is required")
@@ -39,7 +39,7 @@ func (h *WidgetHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateSession handles POST /api/widget/support/session.
-func (h *WidgetHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxWidgetHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	var req model.WidgetSessionRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -63,7 +63,7 @@ func (h *WidgetHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // SendMessage handles POST /api/widget/support/messages.
-func (h *WidgetHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxWidgetHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	var req model.WidgetMessageRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -83,7 +83,7 @@ func (h *WidgetHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMessages handles GET /api/widget/support/messages?session_token=...
-func (h *WidgetHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	sessionToken := r.URL.Query().Get("session_token")
 	if sessionToken == "" {
 		writeError(w, http.StatusBadRequest, "session_token is required")
@@ -97,14 +97,11 @@ func (h *WidgetHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	conversationID := session.ConversationID
 	if conversationID == nil {
-		conversationID = session.TicketID // backward compat
-	}
-	if conversationID == nil {
 		writeJSON(w, http.StatusOK, []model.SupportMessage{})
 		return
 	}
 
-	messages, err := h.supportService.ListMessages(r.Context(), session.WorkspaceID, *conversationID, false)
+	messages, err := h.supportService.ListConversationMessages(r.Context(), session.WorkspaceID, *conversationID, false)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

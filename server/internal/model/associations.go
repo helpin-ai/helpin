@@ -50,7 +50,7 @@ type StoryRelationshipGroups struct {
 type GroupedAssociationsResponse struct {
 	StoryRelationships StoryRelationshipGroups    `json:"story_relationships"`
 	Stories            []AssociationObjectSummary `json:"stories"`
-	SupportTickets     []AssociationObjectSummary `json:"support_tickets"`
+	SupportConversations []AssociationObjectSummary `json:"support_conversations"`
 	CRMRecords         []AssociationObjectSummary `json:"crm_records"`
 	Docs               []AssociationObjectSummary `json:"docs"`
 }

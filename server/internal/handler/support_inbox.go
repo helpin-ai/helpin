@@ -10,19 +10,19 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
-// SupportHandler handles internal support HTTP endpoints.
-type SupportHandler struct {
-	supportService *service.SupportService
+// SupportInboxHandler handles internal support HTTP endpoints.
+type SupportInboxHandler struct {
+	supportService *service.SupportInboxService
 	agentService   *service.AgentService
 }
 
-// NewSupportHandler creates a new SupportHandler.
-func NewSupportHandler(supportService *service.SupportService, agentService *service.AgentService) *SupportHandler {
-	return &SupportHandler{supportService: supportService, agentService: agentService}
+// NewSupportInboxHandler creates a new SupportInboxHandler.
+func NewSupportInboxHandler(supportService *service.SupportInboxService, agentService *service.AgentService) *SupportInboxHandler {
+	return &SupportInboxHandler{supportService: supportService, agentService: agentService}
 }
 
-// ListTickets handles GET /api/support/tickets.
-func (h *SupportHandler) ListTickets(w http.ResponseWriter, r *http.Request) {
+// ListConversations handles GET /api/support/tickets.
+func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
@@ -32,13 +32,13 @@ func (h *SupportHandler) ListTickets(w http.ResponseWriter, r *http.Request) {
 	priority := r.URL.Query().Get("priority")
 	pagination := queryPagination(r)
 
-	tickets, total, err := h.supportService.ListTickets(r.Context(), workspaceID, status, priority, pagination)
+	conversations, total, err := h.supportService.ListConversations(r.Context(), workspaceID, status, priority, pagination)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if tickets == nil {
-		tickets = []model.SupportTicket{}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
 	}
 
 	totalPages := 0
@@ -46,7 +46,7 @@ func (h *SupportHandler) ListTickets(w http.ResponseWriter, r *http.Request) {
 		totalPages = int((total + int64(pagination.PerPage) - 1) / int64(pagination.PerPage))
 	}
 	writeJSON(w, http.StatusOK, model.PaginatedResponse{
-		Data:       tickets,
+		Data:       conversations,
 		Total:      int(total),
 		Page:       pagination.Page,
 		PerPage:    pagination.PerPage,
@@ -54,65 +54,65 @@ func (h *SupportHandler) ListTickets(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetTicket handles GET /api/support/tickets/{id}.
-func (h *SupportHandler) GetTicket(w http.ResponseWriter, r *http.Request) {
+// GetConversation handles GET /api/support/tickets/{id}.
+func (h *SupportInboxHandler) GetConversation(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 
-	ticket, err := h.supportService.GetTicket(r.Context(), workspaceID, id)
+	conversation, err := h.supportService.GetConversation(r.Context(), workspaceID, id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, ticket)
+	writeJSON(w, http.StatusOK, conversation)
 }
 
-// CreateTicket handles POST /api/support/tickets.
-func (h *SupportHandler) CreateTicket(w http.ResponseWriter, r *http.Request) {
+// CreateConversation handles POST /api/support/tickets.
+func (h *SupportInboxHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())
 
-	var req model.CreateTicketRequest
+	var req model.CreateConversationRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	req.WorkspaceID = workspaceID
 
-	ticket, err := h.supportService.CreateTicket(r.Context(), req, actorID)
+	conversation, err := h.supportService.CreateConversation(r.Context(), req, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, ticket)
+	writeJSON(w, http.StatusCreated, conversation)
 }
 
-// UpdateTicketStatus handles PUT /api/support/tickets/{id}/status.
-func (h *SupportHandler) UpdateTicketStatus(w http.ResponseWriter, r *http.Request) {
+// UpdateConversationStatus handles PUT /api/support/tickets/{id}/status.
+func (h *SupportInboxHandler) UpdateConversationStatus(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	ticketID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
-	var req model.UpdateTicketStatusRequest
+	var req model.UpdateConversationStatusRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	ticket, err := h.supportService.UpdateTicketStatus(r.Context(), workspaceID, ticketID, req.Status, actorID)
+	conversation, err := h.supportService.UpdateConversationStatus(r.Context(), workspaceID, ticketID, req.Status, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, ticket)
+	writeJSON(w, http.StatusOK, conversation)
 }
 
-// ListMessages handles GET /api/support/tickets/{id}/messages.
-func (h *SupportHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
+// ListConversationMessages handles GET /api/support/tickets/{id}/messages.
+func (h *SupportInboxHandler) ListConversationMessages(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	ticketID := chi.URLParam(r, "id")
 
-	messages, err := h.supportService.ListMessages(r.Context(), workspaceID, ticketID, true)
+	messages, err := h.supportService.ListConversationMessages(r.Context(), workspaceID, ticketID, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -123,8 +123,8 @@ func (h *SupportHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, messages)
 }
 
-// CreateMessage handles POST /api/support/tickets/{id}/messages.
-func (h *SupportHandler) CreateMessage(w http.ResponseWriter, r *http.Request) {
+// CreateConversationMessage handles POST /api/support/tickets/{id}/messages.
+func (h *SupportInboxHandler) CreateConversationMessage(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	ticketID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
@@ -135,7 +135,7 @@ func (h *SupportHandler) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, err := h.supportService.CreateMessage(r.Context(), workspaceID, ticketID, req, "user", &actorID, nil, nil)
+	msg, err := h.supportService.CreateConversationMessage(r.Context(), workspaceID, ticketID, req, "user", &actorID, nil, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -143,8 +143,8 @@ func (h *SupportHandler) CreateMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, msg)
 }
 
-// LinkStory handles POST /api/support/tickets/{id}/link-story.
-func (h *SupportHandler) LinkStory(w http.ResponseWriter, r *http.Request) {
+// LinkConversationStory handles POST /api/support/tickets/{id}/link-story.
+func (h *SupportInboxHandler) LinkConversationStory(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	ticketID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
@@ -155,60 +155,60 @@ func (h *SupportHandler) LinkStory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.supportService.LinkStory(r.Context(), workspaceID, ticketID, req.StoryID, actorID); err != nil {
+	if err := h.supportService.LinkConversationStory(r.Context(), workspaceID, ticketID, req.StoryID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"linked": true})
 }
 
-// AssignAgent handles POST /api/support/tickets/{id}/assign-agent.
-func (h *SupportHandler) AssignAgent(w http.ResponseWriter, r *http.Request) {
+// AssignConversationAgent handles POST /api/support/tickets/{id}/assign-agent.
+func (h *SupportInboxHandler) AssignConversationAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	ticketID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
-	var req model.AssignTicketAgentRequest
+	var req model.AssignConversationAgentRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	if err := h.supportService.AssignAgent(r.Context(), workspaceID, ticketID, req.AgentID, actorID); err != nil {
+	if err := h.supportService.AssignConversationAgent(r.Context(), workspaceID, ticketID, req.AgentID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
 }
 
-// ListContactTickets handles GET /api/crm/contacts/{id}/support-tickets.
-func (h *SupportHandler) ListContactTickets(w http.ResponseWriter, r *http.Request) {
+// ListContactConversations handles GET /api/crm/contacts/{id}/support-tickets.
+func (h *SupportInboxHandler) ListContactConversations(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	contactID := chi.URLParam(r, "id")
 	pagination := queryPagination(r)
 
-	tickets, total, err := h.supportService.ListContactTickets(r.Context(), workspaceID, contactID, pagination)
+	conversations, total, err := h.supportService.ListContactConversations(r.Context(), workspaceID, contactID, pagination)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if tickets == nil {
-		tickets = []model.SupportTicket{}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data":  tickets,
+		"data":  conversations,
 		"total": total,
 		"page":  pagination.Page,
 	})
 }
 
 // RunAgent handles POST /api/support/tickets/{id}/run-agent.
-func (h *SupportHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	ticketID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
-	run, err := h.agentService.RunTicketAgent(r.Context(), workspaceID, ticketID, actorID)
+	run, err := h.agentService.RunConversationAgent(r.Context(), workspaceID, ticketID, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -217,7 +217,7 @@ func (h *SupportHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListCannedResponses handles GET /api/support/inbox/canned-responses.
-func (h *SupportHandler) ListCannedResponses(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxHandler) ListCannedResponses(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
@@ -236,7 +236,7 @@ func (h *SupportHandler) ListCannedResponses(w http.ResponseWriter, r *http.Requ
 }
 
 // SearchCannedResponses handles GET /api/support/inbox/canned-responses/search.
-func (h *SupportHandler) SearchCannedResponses(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxHandler) SearchCannedResponses(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
@@ -260,7 +260,7 @@ func (h *SupportHandler) SearchCannedResponses(w http.ResponseWriter, r *http.Re
 }
 
 // CreateCannedResponse handles POST /api/support/inbox/canned-responses.
-func (h *SupportHandler) CreateCannedResponse(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxHandler) CreateCannedResponse(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
@@ -283,7 +283,7 @@ func (h *SupportHandler) CreateCannedResponse(w http.ResponseWriter, r *http.Req
 }
 
 // UpdateCannedResponse handles PUT /api/support/inbox/canned-responses/{id}.
-func (h *SupportHandler) UpdateCannedResponse(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxHandler) UpdateCannedResponse(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
@@ -306,7 +306,7 @@ func (h *SupportHandler) UpdateCannedResponse(w http.ResponseWriter, r *http.Req
 }
 
 // DeleteCannedResponse handles DELETE /api/support/inbox/canned-responses/{id}.
-func (h *SupportHandler) DeleteCannedResponse(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxHandler) DeleteCannedResponse(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
@@ -322,7 +322,7 @@ func (h *SupportHandler) DeleteCannedResponse(w http.ResponseWriter, r *http.Req
 }
 
 // TypingIndicator handles POST /api/support/inbox/conversations/{id}/typing.
-func (h *SupportHandler) TypingIndicator(w http.ResponseWriter, r *http.Request) {
+func (h *SupportInboxHandler) TypingIndicator(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
