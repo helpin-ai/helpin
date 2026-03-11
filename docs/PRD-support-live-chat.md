@@ -1,6 +1,6 @@
 # PRD: Support Live Chat, Inbox, and AI Messenger
 
-**Status:** Draft v10 (inbox ASCII layouts, chat settings page design with full schema, plus all v9 content)  
+**Status:** Draft v11 (inbox ASCII layouts, 3-page chat settings design with full schema, plus all v9 content)  
 **Date:** 2026-03-11  
 **Module:** Support  
 **Product context:** Helpin is a full operating suite spanning PM, CRM, Docs, Notifications, Agents, and Support. This PRD defines support as a first-class suite surface, not a standalone chat product.
@@ -1178,11 +1178,11 @@ Public widget access should remain based on:
 
 The widget session should later bind to the conversation record once the first message creates or joins the canonical thread.
 
-### 6.5 Chat Settings Page
+### 6.5 Chat Settings Pages
 
-The Chat Settings page lives at `/w/:slug/settings/chat` and is registered as a new section in `SETTINGS_SECTIONS` under a **Support Settings** group. It follows the existing settings pattern: Cards with Switch toggles, Select dropdowns, and Input fields, saved via `PATCH /api/support/inbox/installations`.
+Chat settings are split across **3 sub-pages** under a "Support Settings" group in the workspace settings sidebar. This follows the same pattern as CRM Settings (Pipelines, Email Accounts, Autonomy) — multiple related pages under one group header.
 
-The settings are stored in the `SupportInboxInstallation.Settings` JSONB column and passed to the widget via `GET /api/widget/support/config`.
+All settings are stored in the `SupportInboxInstallation.Settings` JSONB column and passed to the widget via `GET /api/widget/support/config`.
 
 #### Settings Route Registration
 
@@ -1190,22 +1190,67 @@ Add to `SETTINGS_SECTIONS` in `frontend/src/pages/Settings.tsx`:
 
 ```typescript
 {
+  id: 'chat-general',
+  label: 'General',
+  description: 'Widget installation, identity capture, and CRM integration.',
+  icon: MessageSquare,
   group: 'Support Settings',
-  items: [
-    { id: 'chat', label: 'Chat', icon: MessageSquare },
-  ],
-}
+},
+{
+  id: 'chat-ai',
+  label: 'AI & Routing',
+  description: 'Configure AI auto-reply, handoff behavior, and business hours.',
+  icon: Bot,
+  group: 'Support Settings',
+},
+{
+  id: 'chat-appearance',
+  label: 'Appearance',
+  description: 'Customize widget branding, launcher position, and styling.',
+  icon: Palette,
+  group: 'Support Settings',
+},
 ```
 
-Component: `frontend/src/components/settings/ChatSettingsTab.tsx`
-
-#### Settings Page Layout
+**Sidebar rendering:**
 
 ```
-/w/acme/settings/chat
+Settings Sidebar
+├─ Workspace
+│  ├─ General
+│  ├─ Members
+│  └─ Teams
+├─ Project Settings
+│  ├─ Workflows
+│  ├─ Labels
+│  ├─ ...
+├─ CRM Settings
+│  ├─ Pipelines
+│  ├─ Email Accounts
+│  └─ Autonomy
+├─ Support Settings          ← new group
+│  ├─ General                ← /w/:slug/settings/chat-general
+│  ├─ AI & Routing           ← /w/:slug/settings/chat-ai
+│  └─ Appearance             ← /w/:slug/settings/chat-appearance
+└─ ...
+```
+
+**Components:**
+- `frontend/src/components/settings/ChatGeneralTab.tsx`
+- `frontend/src/components/settings/ChatAITab.tsx`
+- `frontend/src/components/settings/ChatAppearanceTab.tsx`
+
+---
+
+#### Page 1: General (`/w/:slug/settings/chat-general`)
+
+Widget installation, identity capture, and CRM integration.
+
+```
+/w/acme/settings/chat-general
 +---------------------------------------------------------------------+
-| Chat Settings                                                       |
-| Configure the support chat widget behavior for your workspace.      |
+| General                                                             |
+| Widget installation, identity capture, and CRM integration.         |
 +---------------------------------------------------------------------+
 |                                                                     |
 | +---------------------------------------------------------------+  |
@@ -1274,18 +1319,35 @@ Component: `frontend/src/components/settings/ChatSettingsTab.tsx`
 | |   lead after their first conversation is resolved.             |  |
 | +---------------------------------------------------------------+  |
 |                                                                     |
+|                                         [Save]                      |
++---------------------------------------------------------------------+
+```
+
+---
+
+#### Page 2: AI & Routing (`/w/:slug/settings/chat-ai`)
+
+AI auto-reply, handoff behavior, and business hours.
+
+```
+/w/acme/settings/chat-ai
++---------------------------------------------------------------------+
+| AI & Routing                                                        |
+| Configure AI auto-reply, handoff behavior, and business hours.      |
++---------------------------------------------------------------------+
+|                                                                     |
 | +---------------------------------------------------------------+  |
-| | AI BEHAVIOR                                                    |  |
-| | Configure how the AI assistant handles conversations.          |  |
+| | AI AUTO-REPLY                                                  |  |
+| | Configure how the AI assistant handles new conversations.      |  |
 | |---------------------------------------------------------------|  |
 | |                                                                |  |
-| | AI Auto-Reply                                      [o]        |  |
-| |   Enable AI to automatically respond to new conversations     |  |
-| |   using your Docs and Help Center content.                     |  |
+| | Enable AI Auto-Reply                               [o]        |  |
+| |   AI automatically responds to new conversations using        |  |
+| |   your Docs and Help Center content.                           |  |
 | |                                                                |  |
 | | ─────────────────────────────────────────────────────────────  |  |
 | |                                                                |  |
-| | AI Confidence Threshold              [0.7                  ]  |  |
+| | Confidence Threshold                 [0.7                  ]  |  |
 | |   Conversations with AI confidence below this score            |  |
 | |   are flagged for human review. Range: 0.0 - 1.0              |  |
 | |                                                                |  |
@@ -1294,44 +1356,23 @@ Component: `frontend/src/components/settings/ChatSettingsTab.tsx`
 | | Show "Talk to a Person"                            [o]        |  |
 | |   Display a button in the widget that lets visitors            |  |
 | |   request a human agent at any time.                           |  |
-| |                                                                |  |
-| | ─────────────────────────────────────────────────────────────  |  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | HANDOFF ROUTING                                                |  |
+| | What happens when AI hands off to a human agent.               |  |
+| |---------------------------------------------------------------|  |
 | |                                                                |  |
 | | Handoff Behavior                     [Assign to team   v]     |  |
-| |   What happens when AI hands off to a human:                   |  |
 | |   - Unassigned: conversation goes to inbox unassigned          |  |
 | |   - Assign to team: route to a specific team                   |  |
 | |   - Round robin: distribute among online agents                |  |
 | |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
 | | Handoff Team                         [Support Team     v]     |  |
 | |   The team that receives AI handoff conversations.             |  |
 | |   Only shown when handoff behavior is "Assign to team".        |  |
-| +---------------------------------------------------------------+  |
-|                                                                     |
-| +---------------------------------------------------------------+  |
-| | WIDGET APPEARANCE                                              |  |
-| | Customize how the chat widget looks on your site.              |  |
-| |---------------------------------------------------------------|  |
-| |                                                                |  |
-| | Brand Color                          [#6366F1            ] [] |  |
-| |   The primary color for the widget launcher and headers.       |  |
-| |                                                                |  |
-| | ─────────────────────────────────────────────────────────────  |  |
-| |                                                                |  |
-| | Launcher Position                    [Bottom Right     v]     |  |
-| |   Where the chat launcher button appears on the page.          |  |
-| |   Options: Bottom Right, Bottom Left                           |  |
-| |                                                                |  |
-| | ─────────────────────────────────────────────────────────────  |  |
-| |                                                                |  |
-| | Launcher Icon                        [Chat Bubble     v]      |  |
-| |   The icon shown on the launcher button.                       |  |
-| |   Options: Chat Bubble, Question Mark, Help, Custom            |  |
-| |                                                                |  |
-| | ─────────────────────────────────────────────────────────────  |  |
-| |                                                                |  |
-| | Show Helpin Branding                               [o]        |  |
-| |   Display "Powered by Helpin" in the widget footer.            |  |
 | +---------------------------------------------------------------+  |
 |                                                                     |
 | +---------------------------------------------------------------+  |
@@ -1364,17 +1405,90 @@ Component: `frontend/src/components/settings/ChatSettingsTab.tsx`
 +---------------------------------------------------------------------+
 ```
 
+---
+
+#### Page 3: Appearance (`/w/:slug/settings/chat-appearance`)
+
+Widget branding, launcher position, and styling.
+
+```
+/w/acme/settings/chat-appearance
++---------------------------------------------------------------------+
+| Appearance                                                          |
+| Customize widget branding, launcher position, and styling.          |
++---------------------------------------------------------------------+
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | BRANDING                                                       |  |
+| | Match the widget to your brand.                                |  |
+| |---------------------------------------------------------------|  |
+| |                                                                |  |
+| | Brand Color                          [#6366F1            ] [] |  |
+| |   The primary color used for the widget launcher,              |  |
+| |   header background, and send button.                          |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Show Helpin Branding                               [o]        |  |
+| |   Display "Powered by Helpin" in the widget footer.            |  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | LAUNCHER                                                       |  |
+| | Configure the floating chat button on your site.               |  |
+| |---------------------------------------------------------------|  |
+| |                                                                |  |
+| | Position                             [Bottom Right     v]     |  |
+| |   Where the launcher button appears on the page.               |  |
+| |   Options: Bottom Right, Bottom Left                           |  |
+| |                                                                |  |
+| | ─────────────────────────────────────────────────────────────  |  |
+| |                                                                |  |
+| | Icon                                 [Chat Bubble      v]     |  |
+| |   The icon shown on the launcher button.                       |  |
+| |   Options: Chat Bubble, Question Mark, Help                    |  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+| +---------------------------------------------------------------+  |
+| | PREVIEW                                                        |  |
+| | Live preview of your widget with current settings.             |  |
+| |---------------------------------------------------------------|  |
+| |                                                                |  |
+| |   +---------------------------------------------+             |  |
+| |   | [Acme Corp Logo]  Acme Corp              [x] |             |  |
+| |   |---------------------------------------------|             |  |
+| |   |                                             |             |  |
+| |   | Hi! How can we help you today?              |             |  |
+| |   |                                             |             |  |
+| |   |                                             |             |  |
+| |   |                                             |             |  |
+| |   |---------------------------------------------|             |  |
+| |   | [Type a message...                   ] [>]  |             |  |
+| |   |---------------------------------------------|             |  |
+| |   |          Powered by Helpin                  |             |  |
+| |   +---------------------------------------------+             |  |
+| |                                                                |  |
+| |                                     [ (chat bubble icon) ]     |  |
+| |                                     ← launcher preview         |  |
+| +---------------------------------------------------------------+  |
+|                                                                     |
+|                                         [Save]                      |
++---------------------------------------------------------------------+
+```
+
+---
+
 #### Full Settings Schema
 
 All settings stored in `SupportInboxInstallation.Settings` JSONB:
 
-**Widget Installation**
+**Widget Installation** (General page)
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `active` | bool | `true` | Master switch — widget hidden when disabled |
 
-**Identity Capture**
+**Identity Capture** (General page)
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -1382,7 +1496,7 @@ All settings stored in `SupportInboxInstallation.Settings` JSONB:
 | `require_name_after_email` | bool | `true` | Ask for name after email (only if email required) |
 | `welcome_message` | string | `"Hi! How can we help you today?"` | Greeting shown when widget opens |
 
-**CRM Integration**
+**CRM Integration** (General page)
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -1390,26 +1504,22 @@ All settings stored in `SupportInboxInstallation.Settings` JSONB:
 | `default_lifecycle_stage` | string | `"subscriber"` | Lifecycle stage for auto-created contacts. Values: `subscriber`, `lead`, `opportunity` |
 | `auto_promote_to_lead` | bool | `false` | Promote subscriber to lead on first resolved conversation |
 
-**AI Behavior**
+**AI Auto-Reply** (AI & Routing page)
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `ai_enabled` | bool | `true` | AI auto-replies to new conversations |
 | `ai_confidence_threshold` | float | `0.7` | Below this score, flag for human review |
 | `show_talk_to_human` | bool | `true` | Show "Talk to a person" button in widget |
-| `handoff_behavior` | string | `"unassigned"` | On AI handoff: `unassigned`, `assign_to_team`, `round_robin` |
-| `handoff_team_id` | string? | `null` | Team ID for `assign_to_team` handoff (nullable) |
 
-**Widget Appearance**
+**Handoff Routing** (AI & Routing page)
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `brand_color` | string | `"#6366F1"` | Primary widget color (hex) |
-| `launcher_position` | string | `"bottom_right"` | Launcher position: `bottom_right`, `bottom_left` |
-| `launcher_icon` | string | `"chat_bubble"` | Icon style: `chat_bubble`, `question_mark`, `help` |
-| `show_branding` | bool | `true` | Show "Powered by Helpin" footer |
+| `handoff_behavior` | string | `"unassigned"` | On AI handoff: `unassigned`, `assign_to_team`, `round_robin` |
+| `handoff_team_id` | string? | `null` | Team ID for `assign_to_team` handoff (nullable) |
 
-**Business Hours**
+**Business Hours** (AI & Routing page)
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -1417,6 +1527,20 @@ All settings stored in `SupportInboxInstallation.Settings` JSONB:
 | `business_hours_timezone` | string | `"UTC"` | IANA timezone for schedule |
 | `business_hours_schedule` | object | `{}` | Day-of-week schedule: `{ "mon": { "start": "09:00", "end": "17:00", "enabled": true }, ... }` |
 | `outside_hours_message` | string | `"We're currently offline. Leave a message and we'll get back to you!"` | Message shown outside business hours |
+
+**Branding** (Appearance page)
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `brand_color` | string | `"#6366F1"` | Primary widget color (hex) |
+| `show_branding` | bool | `true` | Show "Powered by Helpin" footer |
+
+**Launcher** (Appearance page)
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `launcher_position` | string | `"bottom_right"` | Launcher position: `bottom_right`, `bottom_left` |
+| `launcher_icon` | string | `"chat_bubble"` | Icon style: `chat_bubble`, `question_mark`, `help` |
 
 #### Widget Config API Response
 
@@ -1846,9 +1970,12 @@ Deliverables:
 - human handoff path from widget
 - realtime sync in `useRealtimeSync.ts` for support entities
 - frontend terminology migration (ticket → conversation throughout)
-- Chat Settings tab (`frontend/src/components/settings/ChatSettingsTab.tsx`): 6 cards (Widget Installation, Identity Capture, CRM Integration, AI Behavior, Widget Appearance, Business Hours) — see section 6.5 ASCII layout
-- Register `chat` section in `SETTINGS_SECTIONS` under "Support Settings" group
-- Widget key display with copy-to-clipboard and embed code snippet
+- Chat Settings — 3 sub-pages under "Support Settings" group (see section 6.5 for ASCII layouts):
+  - `ChatGeneralTab.tsx`: Widget Installation + Identity Capture + CRM Integration cards
+  - `ChatAITab.tsx`: AI Auto-Reply + Handoff Routing + Business Hours cards
+  - `ChatAppearanceTab.tsx`: Branding + Launcher + live widget Preview cards
+- Register `chat-general`, `chat-ai`, `chat-appearance` sections in `SETTINGS_SECTIONS`
+- Widget key display with copy-to-clipboard, embed code snippet, and regenerate key
 - Settings save flow via `PATCH /api/support/inbox/installations`
 
 Exit criteria:
@@ -2079,23 +2206,28 @@ The current `SupportInboxInstallation.Settings` JSONB is a bare struct with no d
 - Business Hours: `business_hours_enabled`, `business_hours_timezone`, `business_hours_schedule`, `outside_hours_message`
 
 **Missing frontend:**
-- No Chat Settings tab exists. Need `frontend/src/components/settings/ChatSettingsTab.tsx` (see section 6.5 for full ASCII layout)
-- No `chat` section registered in `SETTINGS_SECTIONS` in `frontend/src/pages/Settings.tsx`
+- No Chat Settings pages exist — need 3 tab components (see section 6.5 for ASCII layouts per page)
+- No `chat-general`, `chat-ai`, `chat-appearance` sections registered in `SETTINGS_SECTIONS`
 
-**Action Items:**
-- [ ] Define `SupportInboxSettings` Go struct with all fields and JSON tags in `server/internal/model/support_inbox.go`
+**Action Items (Backend):**
+- [ ] Define `SupportInboxSettings` Go struct with all 20+ fields and JSON tags in `server/internal/model/support_inbox.go`
 - [ ] Add settings validation in `server/internal/service/support_inbox.go`: threshold range (0.0–1.0), handoff team exists when `assign_to_team`, hex color format, business hours schedule structure
 - [ ] Add `GET /api/support/inbox/installations` endpoint (returns full settings for dashboard)
-- [ ] Add `PATCH /api/support/inbox/installations` endpoint (partial update)
+- [ ] Add `PATCH /api/support/inbox/installations` endpoint (partial update — all 3 settings pages save to this endpoint)
 - [ ] Add `POST /api/support/inbox/installations/regenerate-key` endpoint (regenerate widget key)
 - [ ] Update `GET /api/widget/support/config` to return public-facing subset (see section 6.5 Widget Config API Response)
 - [ ] Add `is_online` computation: check `business_hours_enabled` + `business_hours_schedule` against current time in configured timezone
-- [ ] Create `frontend/src/components/settings/ChatSettingsTab.tsx` with 6 Cards: Widget Installation, Identity Capture, CRM Integration, AI Behavior, Widget Appearance, Business Hours
-- [ ] Register `{ id: 'chat', label: 'Chat', icon: MessageSquare }` in `SETTINGS_SECTIONS` under a new "Support Settings" group
+
+**Action Items (Frontend — 3 settings pages):**
+- [ ] Create `frontend/src/components/settings/ChatGeneralTab.tsx` — 3 Cards: Widget Installation (key + embed snippet + active toggle), Identity Capture (email + name + welcome message), CRM Integration (auto-create + lifecycle stage + auto-promote)
+- [ ] Create `frontend/src/components/settings/ChatAITab.tsx` — 3 Cards: AI Auto-Reply (enabled + threshold + talk-to-human), Handoff Routing (behavior + team), Business Hours (enabled + timezone + schedule + outside message)
+- [ ] Create `frontend/src/components/settings/ChatAppearanceTab.tsx` — 3 Cards: Branding (color + show branding), Launcher (position + icon), Preview (live widget preview with current settings)
+- [ ] Register 3 sections in `SETTINGS_SECTIONS` under "Support Settings" group: `chat-general` (General), `chat-ai` (AI & Routing), `chat-appearance` (Appearance)
+- [ ] Add `renderSection()` cases in `Settings.tsx` for all 3 new section IDs
+- [ ] Update `SettingsSection` type union to include `'chat-general' | 'chat-ai' | 'chat-appearance'`
 - [ ] Add TanStack Query hooks: `useChatSettings(workspaceId)`, `useUpdateChatSettings(workspaceId)`, `useRegenerateWidgetKey(workspaceId)` in `frontend/src/hooks/queries/`
 - [ ] Widget key display with copy-to-clipboard button and auto-generated embed snippet
-- [ ] Pass settings to widget via `GET /api/widget/support/config` endpoint
-- [ ] Add API endpoints for updating widget settings (`PATCH /api/support/inbox/installations`)
+- [ ] Barrel export all 3 new tabs from `frontend/src/components/settings/index.ts`
 
 ### 14.7 CRM Association Gaps
 
