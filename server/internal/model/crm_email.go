@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // CRM email providers.
 const (
@@ -43,7 +46,7 @@ type CRMEmailThread struct {
 	Subject          string    `json:"subject" gorm:"not null"`
 	LastMessageAt    time.Time `json:"last_message_at" gorm:"not null"`
 	MessageCount     int       `json:"message_count" gorm:"not null;default:0"`
-	ContactIDs       JSONB     `json:"contact_ids" gorm:"type:jsonb;default:'[]'"`
+	ContactIDs       json.RawMessage `json:"contact_ids" gorm:"type:jsonb;default:'[]'"`
 	DealID           *string   `json:"deal_id" gorm:"type:uuid;index"`
 	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -60,8 +63,8 @@ type CRMEmailMessage struct {
 	MessageExternalID string    `json:"message_external_id"`
 	FromAddress       string    `json:"from_address" gorm:"not null"`
 	FromName          *string   `json:"from_name"`
-	ToAddresses       JSONB     `json:"to_addresses" gorm:"type:jsonb;default:'[]'"`
-	CCAddresses       JSONB     `json:"cc_addresses" gorm:"type:jsonb;default:'[]'"`
+	ToAddresses       json.RawMessage `json:"to_addresses" gorm:"type:jsonb;default:'[]'"`
+	CCAddresses       json.RawMessage `json:"cc_addresses" gorm:"type:jsonb;default:'[]'"`
 	Subject           string    `json:"subject"`
 	BodyText          *string   `json:"body_text"`
 	BodyHTML          *string   `json:"body_html"`
@@ -89,8 +92,8 @@ type CreateCRMEmailMessageRequest struct {
 	ThreadID       *string                `json:"thread_id"`
 	FromAddress    string                 `json:"from_address"`
 	FromName       *string                `json:"from_name"`
-	ToAddresses    map[string]interface{} `json:"to_addresses"`
-	CCAddresses    map[string]interface{} `json:"cc_addresses"`
+	ToAddresses    json.RawMessage `json:"to_addresses"`
+	CCAddresses    json.RawMessage `json:"cc_addresses"`
 	Subject        string                 `json:"subject"`
 	BodyText       *string                `json:"body_text"`
 	BodyHTML       *string                `json:"body_html"`

@@ -12,10 +12,12 @@ import { useState } from 'react';
 interface EmailAccountConnectProps {
   workspaceId: string;
   memberId: string;
+  showAll?: boolean;
 }
 
-export function EmailAccountConnect({ workspaceId }: EmailAccountConnectProps) {
-  const { data: accounts = [] } = useEmailAccounts(workspaceId);
+export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: EmailAccountConnectProps) {
+  const filters = showAll ? undefined : { member_id: memberId };
+  const { data: accounts = [] } = useEmailAccounts(workspaceId, filters);
   const deleteAccount = useDeleteEmailAccount(workspaceId);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<'gmail' | 'microsoft' | null>(null);

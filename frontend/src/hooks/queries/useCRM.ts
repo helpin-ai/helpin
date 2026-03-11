@@ -673,10 +673,10 @@ export function useProcessCRMImport(wsId: string) {
 
 // ── Phase 3: Email & Calendar ──
 
-export function useEmailAccounts(wsId: string) {
+export function useEmailAccounts(wsId: string, filters?: { member_id?: string }) {
   return useQuery({
-    queryKey: queryKeys.crm.emailAccounts(wsId),
-    queryFn: async () => unwrap(await crmEmailService.listAccounts(wsId)),
+    queryKey: [...queryKeys.crm.emailAccounts(wsId), filters ?? {}],
+    queryFn: async () => unwrap(await crmEmailService.listAccounts(wsId, filters)),
     enabled: !!wsId,
   })
 }

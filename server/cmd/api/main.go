@@ -15,6 +15,7 @@ import (
 	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
@@ -55,7 +56,16 @@ func main() {
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
 		PreferSimpleProtocol: true,
-	}), &gorm.Config{})
+	}), &gorm.Config{
+		Logger: gormlogger.New(
+			slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
+			gormlogger.Config{
+				SlowThreshold:             200 * time.Millisecond,
+				IgnoreRecordNotFoundError: true,
+				LogLevel:                  gormlogger.Warn,
+			},
+		),
+	})
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
@@ -471,7 +481,7 @@ func main() {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
 	}
 
-	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, gmailOAuth, encryptionKey, gmailSyncClient)
+	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo)

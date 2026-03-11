@@ -15,27 +15,31 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/sync"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	tclient "go.temporal.io/sdk/client"
 )
 
 // CRMEmailService contains CRM email business logic.
 type CRMEmailService struct {
-	emailRepo     *repository.CRMEmailRepository
-	contactRepo   *repository.CRMContactRepository
-	workspaceRepo *repository.WorkspaceRepository
-	oauthClient   *oauth.GmailOAuthClient
-	encryptionKey []byte
-	gmailSync     *sync.GmailSyncClient
+	emailRepo      *repository.CRMEmailRepository
+	contactRepo    *repository.CRMContactRepository
+	workspaceRepo  *repository.WorkspaceRepository
+	oauthClient    *oauth.GmailOAuthClient
+	encryptionKey  []byte
+	gmailSync      *sync.GmailSyncClient
+	temporalClient tclient.Client
 }
 
 // NewCRMEmailService creates a new CRMEmailService.
-func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository, workspaceRepo *repository.WorkspaceRepository, oauthClient *oauth.GmailOAuthClient, encryptionKey []byte, gmailSync *sync.GmailSyncClient) *CRMEmailService {
+func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository, workspaceRepo *repository.WorkspaceRepository, oauthClient *oauth.GmailOAuthClient, encryptionKey []byte, gmailSync *sync.GmailSyncClient, temporalClient tclient.Client) *CRMEmailService {
 	return &CRMEmailService{
-		emailRepo:     emailRepo,
-		contactRepo:   contactRepo,
-		workspaceRepo: workspaceRepo,
-		oauthClient:   oauthClient,
-		encryptionKey: encryptionKey,
-		gmailSync:     gmailSync,
+		emailRepo:      emailRepo,
+		contactRepo:    contactRepo,
+		workspaceRepo:  workspaceRepo,
+		oauthClient:    oauthClient,
+		encryptionKey:  encryptionKey,
+		gmailSync:      gmailSync,
+		temporalClient: temporalClient,
 	}
 }
 
@@ -85,14 +89,17 @@ func (s *CRMEmailService) CreateAccount(ctx context.Context, req model.CreateCRM
 	return account, nil
 }
 
-// DeleteAccount removes an email account.
-func (s *CRMEmailService) DeleteAccount(ctx context.Context, id string) error {
+// DeleteAccount removes an email account. Only the owner or an admin can delete.
+func (s *CRMEmailService) DeleteAccount(ctx context.Context, id string, userID string, isAdmin bool) error {
 	account, err := s.emailRepo.GetAccountByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	if account == nil {
 		return fmt.Errorf("email account not found")
+	}
+	if !isAdmin && account.MemberID != userID {
+		return fmt.Errorf("not authorized to delete this email account")
 	}
 	return s.emailRepo.DeleteAccount(ctx, id)
 }
@@ -208,6 +215,21 @@ func (s *CRMEmailService) CompleteOAuth(ctx context.Context, state, code string)
 
 	slog.InfoContext(ctx, "completed Gmail OAuth flow", "account_id", account.ID, "workspace_id", account.WorkspaceID)
 
+	// Start email sync workflow.
+	if s.temporalClient != nil {
+		_, err := s.temporalClient.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+			ID:        "email-sync-" + account.ID,
+			TaskQueue: temporalapp.QueueAutomation,
+		}, temporalapp.EmailSyncWorkflow, temporalapp.EmailSyncWorkflowInput{
+			AccountID: account.ID,
+		})
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to start email sync workflow", "error", err, "account_id", account.ID)
+		} else {
+			slog.InfoContext(ctx, "started email sync workflow", "account_id", account.ID)
+		}
+	}
+
 	// Look up workspace slug for redirect.
 	ws, err := s.workspaceRepo.GetByID(ctx, account.WorkspaceID)
 	if err != nil {
@@ -254,8 +276,8 @@ func (s *CRMEmailService) SendEmail(ctx context.Context, accountID string, to, c
 		EmailAccountID:    account.ID,
 		MessageExternalID: messageID,
 		FromAddress:       account.EmailAddress,
-		ToAddresses:       mustUnmarshalJSONB(toJSON),
-		CCAddresses:       mustUnmarshalJSONB(ccJSON),
+		ToAddresses:       toJSON,
+		CCAddresses:       ccJSON,
 		Subject:           subject,
 		BodyHTML:          &bodyHTML,
 		Direction:         model.CRMEmailDirectionOutbound,
@@ -322,8 +344,8 @@ func (s *CRMEmailService) CreateMessage(ctx context.Context, req model.CreateCRM
 		ThreadID:       req.ThreadID,
 		FromAddress:    strings.TrimSpace(req.FromAddress),
 		FromName:       req.FromName,
-		ToAddresses:    model.JSONB(req.ToAddresses),
-		CCAddresses:    model.JSONB(req.CCAddresses),
+		ToAddresses:    req.ToAddresses,
+		CCAddresses:    req.CCAddresses,
 		Subject:        req.Subject,
 		BodyText:       req.BodyText,
 		BodyHTML:       req.BodyHTML,
@@ -366,16 +388,3 @@ func (s *CRMEmailService) matchContactByEmail(ctx context.Context, workspaceID, 
 	return nil
 }
 
-// mustUnmarshalJSONB converts JSON bytes to a JSONB map.
-func mustUnmarshalJSONB(data []byte) model.JSONB {
-	var result model.JSONB
-	if err := json.Unmarshal(data, &result); err != nil {
-		// The data might be a JSON array — wrap it.
-		var arr []interface{}
-		if err2 := json.Unmarshal(data, &arr); err2 == nil {
-			return model.JSONB{"items": arr}
-		}
-		return model.JSONB{}
-	}
-	return result
-}

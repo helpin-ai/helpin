@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -32,6 +33,14 @@ func (h *CRMEmailHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 		MemberID: queryStringPtr(r, "member_id"),
 		Provider: queryStringPtr(r, "provider"),
 	}
+
+	// Non-admins can only see their own accounts.
+	actor := authorization.GetActor(r.Context())
+	if actor != nil && !authorization.NewRBACEngine().Can(actor.Role, authorization.PermSettingsManage) {
+		userID := middleware.GetUserID(r.Context())
+		filters.MemberID = &userID
+	}
+
 	accounts, err := h.emailService.ListAccounts(r.Context(), workspaceID, filters)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -75,7 +84,15 @@ func (h *CRMEmailHandler) CreateAccount(w http.ResponseWriter, r *http.Request) 
 // DeleteAccount handles DELETE /api/crm/email/accounts/{id}.
 func (h *CRMEmailHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.emailService.DeleteAccount(r.Context(), id); err != nil {
+	userID := middleware.GetUserID(r.Context())
+	actor := authorization.GetActor(r.Context())
+	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermSettingsManage)
+
+	if err := h.emailService.DeleteAccount(r.Context(), id, userID, isAdmin); err != nil {
+		if err.Error() == "not authorized to delete this email account" {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

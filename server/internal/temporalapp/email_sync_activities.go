@@ -195,8 +195,8 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 		MessageExternalID: msg.ID,
 		FromAddress:       msg.From,
 		FromName:          fromNamePtr,
-		ToAddresses:       mustUnmarshalJSONB(toJSON),
-		CCAddresses:       mustUnmarshalJSONB(ccJSON),
+		ToAddresses:       json.RawMessage(toJSON),
+		CCAddresses:       json.RawMessage(ccJSON),
 		Subject:           msg.Subject,
 		BodyText:          bodyText,
 		BodyHTML:          bodyHTML,
@@ -217,20 +217,6 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 	return a.emailRepo.CreateMessage(ctx, message)
 }
 
-// mustUnmarshalJSONB converts JSON bytes to a JSONB map.
-// For arrays, it wraps them in a map with an "items" key.
-func mustUnmarshalJSONB(data []byte) model.JSONB {
-	var result model.JSONB
-	if err := json.Unmarshal(data, &result); err != nil {
-		// The data might be a JSON array — wrap it.
-		var arr []interface{}
-		if err2 := json.Unmarshal(data, &arr); err2 == nil {
-			return model.JSONB{"items": arr}
-		}
-		return model.JSONB{}
-	}
-	return result
-}
 
 // matchContactByEmail finds a contact matching the given email address.
 func matchContactByEmail(ctx context.Context, contactRepo *repository.CRMContactRepository, workspaceID, emailAddr string) *model.CRMContact {
