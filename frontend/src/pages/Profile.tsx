@@ -11,10 +11,13 @@ import { Separator } from '@/components/ui/separator';
 import { getInitials } from '@/lib/utils';
 import { Mail } from 'lucide-react';
 import { toast } from 'sonner';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
 
 export default function Profile() {
   useTitle('Profile');
   const { user, updateUser } = useAuthStore();
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [fullName, setFullName] = useState(user?.full_name ?? '');
   const [saving, setSaving] = useState(false);
 
@@ -156,6 +159,10 @@ export default function Profile() {
           </form>
         </CardContent>
       </Card>
+
+      {currentWorkspace && user && (
+        <EmailAccountConnect workspaceId={currentWorkspace.id} memberId={user.id} />
+      )}
     </div>
   );
 }
