@@ -10,7 +10,6 @@ import {
   Globe,
   Loader2,
   Plus,
-  Users,
 } from 'lucide-react'
 import { ICON_MAP } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'

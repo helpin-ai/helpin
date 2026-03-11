@@ -29,7 +29,7 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
-  Plus, Trash2, GripVertical, ExternalLink, Info,
+  Plus, Trash2, GripVertical, Info,
   Globe, Palette, Search, LayoutGrid, LinkIcon, ImageIcon,
 } from 'lucide-react';
 import { IconPicker } from '@/components/ui/icon-picker';

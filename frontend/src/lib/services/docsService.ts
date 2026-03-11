@@ -136,7 +136,7 @@ export const docsService = {
     api.get<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`),
   updateHelpcenterConfig: (wsId: string, payload: UpdateDocsHelpcenterConfigRequest) =>
     api.put<DocsHelpcenterConfig>(`/docs/helpcenter/config${qs(wsId)}`, payload),
-  uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'favicon', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
+  uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'logo_dark' | 'favicon', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
     const token = localStorage.getItem('access_token');
     const formData = new FormData();
     formData.append('file', file);

@@ -102,7 +102,6 @@ export function DocumentLinksPanel({
       navigate({
         to: '/w/$slug/pm/stories',
         params: { slug: wsSlug },
-        search: { story: String(displayId) },
       })
     },
     [navigate, wsSlug],
