@@ -32,7 +32,7 @@ func (SupportConversation) TableName() string { return "support_conversations" }
 type SupportMessage struct {
 	ID                string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID       string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ConversationID    string    `json:"conversation_id" gorm:"type:uuid;not null;index"`
+	ConversationID    string    `json:"conversation_id" gorm:"type:uuid;index"`
 	SenderType        string    `json:"sender_type" gorm:"not null"`                     // customer, user, agent, ai
 	MessageType       string    `json:"message_type" gorm:"not null;default:'reply'"`    // reply, csat_survey, system
 	SenderUserID      *string   `json:"sender_user_id" gorm:"type:uuid"`
