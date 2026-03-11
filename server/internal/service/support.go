@@ -16,15 +16,16 @@ import (
 
 // SupportService contains support business logic.
 type SupportService struct {
-	ticketRepo  *repository.SupportTicketRepository
-	messageRepo *repository.SupportMessageRepository
-	agentRepo   *repository.AgentRepository
-	assocRepo   *repository.CRMAssociationRepository
-	widgetRepo  *repository.WidgetInstallationRepository
-	sessionRepo *repository.WidgetSessionRepository
-	activitySvc *PMActivityService
-	wsPublisher *websocket.Publisher
-	contactRepo *repository.CRMContactRepository
+	ticketRepo         *repository.SupportTicketRepository
+	messageRepo        *repository.SupportMessageRepository
+	agentRepo          *repository.AgentRepository
+	assocRepo          *repository.CRMAssociationRepository
+	widgetRepo         *repository.WidgetInstallationRepository
+	sessionRepo        *repository.WidgetSessionRepository
+	cannedResponseRepo *repository.SupportCannedResponseRepository
+	activitySvc        *PMActivityService
+	wsPublisher        *websocket.Publisher
+	contactRepo        *repository.CRMContactRepository
 }
 
 // NewSupportService creates a new SupportService.
@@ -35,20 +36,22 @@ func NewSupportService(
 	assocRepo *repository.CRMAssociationRepository,
 	widgetRepo *repository.WidgetInstallationRepository,
 	sessionRepo *repository.WidgetSessionRepository,
+	cannedResponseRepo *repository.SupportCannedResponseRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 	contactRepo *repository.CRMContactRepository,
 ) *SupportService {
 	return &SupportService{
-		ticketRepo:  ticketRepo,
-		messageRepo: messageRepo,
-		agentRepo:   agentRepo,
-		assocRepo:   assocRepo,
-		widgetRepo:  widgetRepo,
-		sessionRepo: sessionRepo,
-		activitySvc: activitySvc,
-		wsPublisher: wsPublisher,
-		contactRepo: contactRepo,
+		ticketRepo:         ticketRepo,
+		messageRepo:        messageRepo,
+		agentRepo:          agentRepo,
+		assocRepo:          assocRepo,
+		widgetRepo:         widgetRepo,
+		sessionRepo:        sessionRepo,
+		cannedResponseRepo: cannedResponseRepo,
+		activitySvc:        activitySvc,
+		wsPublisher:        wsPublisher,
+		contactRepo:        contactRepo,
 	}
 }
 
@@ -123,8 +126,17 @@ func (s *SupportService) CreateTicket(ctx context.Context, req model.CreateTicke
 	return ticket, nil
 }
 
+// validConversationStatuses defines allowed status transitions.
+var validConversationStatuses = map[string]bool{
+	"open": true, "in_progress": true, "waiting": true, "resolved": true, "closed": true,
+}
+
 // UpdateTicketStatus changes ticket status.
 func (s *SupportService) UpdateTicketStatus(ctx context.Context, workspaceID, ticketID, status, actorID string) (*model.SupportTicket, error) {
+	if !validConversationStatuses[status] {
+		return nil, fmt.Errorf("invalid status: %s", status)
+	}
+
 	ticket, err := s.ticketRepo.GetByID(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, err
@@ -135,6 +147,14 @@ func (s *SupportService) UpdateTicketStatus(ctx context.Context, workspaceID, ti
 
 	oldStatus := ticket.Status
 	ticket.Status = status
+
+	now := time.Now()
+	switch status {
+	case "resolved":
+		ticket.ResolvedAt = &now
+	case "closed":
+		ticket.ClosedAt = &now
+	}
 
 	if err := s.ticketRepo.Update(ctx, ticket); err != nil {
 		return nil, err
@@ -167,15 +187,22 @@ func (s *SupportService) CreateMessage(ctx context.Context, workspaceID, ticketI
 		return nil, fmt.Errorf("content is required")
 	}
 
+	messageType := req.MessageType
+	if messageType == "" {
+		messageType = "reply"
+	}
+
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,
-		TicketID:          ticketID,
+		ConversationID:    ticketID,
+		TicketID:          &ticketID,
 		SenderType:        senderType,
 		SenderUserID:      senderUserID,
 		SenderAgentID:     senderAgentID,
 		SenderDisplayName: senderDisplayName,
 		Content:           strings.TrimSpace(req.Content),
 		IsInternal:        req.IsInternal,
+		MessageType:       messageType,
 	}
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
@@ -325,8 +352,8 @@ func (s *SupportService) WidgetCreateMessage(ctx context.Context, sessionToken, 
 		return nil, err
 	}
 
-	// If no ticket yet, create one.
-	if session.TicketID == nil {
+	// If no conversation yet, create one.
+	if session.ConversationID == nil {
 		ticket := &model.SupportTicket{
 			WorkspaceID:   session.WorkspaceID,
 			Subject:       truncate(content, 100),
@@ -345,6 +372,7 @@ func (s *SupportService) WidgetCreateMessage(ctx context.Context, sessionToken, 
 		if err := s.ticketRepo.Create(ctx, ticket); err != nil {
 			return nil, err
 		}
+		session.ConversationID = &ticket.ID
 		session.TicketID = &ticket.ID
 		if err := s.sessionRepo.Update(ctx, session); err != nil {
 			return nil, err
@@ -365,11 +393,13 @@ func (s *SupportService) WidgetCreateMessage(ctx context.Context, sessionToken, 
 
 	msg := &model.SupportMessage{
 		WorkspaceID:       session.WorkspaceID,
-		TicketID:          *session.TicketID,
+		ConversationID:    *session.ConversationID,
+		TicketID:          session.TicketID,
 		SenderType:        "customer",
 		SenderDisplayName: &displayName,
 		Content:           strings.TrimSpace(content),
 		IsInternal:        false,
+		MessageType:       "reply",
 	}
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
@@ -402,10 +432,11 @@ func generateSecureToken(bytes int) (string, error) {
 }
 
 func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen-3] + "..."
+	return string(runes[:maxLen-3]) + "..."
 }
 
 // matchOrCreateCRMContact looks up a CRM contact by email; if not found and
@@ -456,4 +487,72 @@ func (s *SupportService) matchOrCreateCRMContact(ctx context.Context, workspaceI
 // ListContactTickets returns support tickets linked to a CRM contact.
 func (s *SupportService) ListContactTickets(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportTicket, int64, error) {
 	return s.ticketRepo.ListByContact(ctx, workspaceID, contactID, pagination)
+}
+
+// ListCannedResponses returns all canned responses for a workspace.
+func (s *SupportService) ListCannedResponses(ctx context.Context, workspaceID string) ([]model.SupportCannedResponse, error) {
+	return s.cannedResponseRepo.List(ctx, workspaceID)
+}
+
+// SearchCannedResponses returns canned responses matching a query.
+func (s *SupportService) SearchCannedResponses(ctx context.Context, workspaceID, query string) ([]model.SupportCannedResponse, error) {
+	return s.cannedResponseRepo.Search(ctx, workspaceID, query)
+}
+
+// CreateCannedResponse creates a new canned response.
+func (s *SupportService) CreateCannedResponse(ctx context.Context, workspaceID string, req model.CannedResponseRequest, createdByID string) (*model.SupportCannedResponse, error) {
+	if strings.TrimSpace(req.ShortCode) == "" || strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Content) == "" {
+		return nil, fmt.Errorf("short_code, title, and content are required")
+	}
+
+	response := &model.SupportCannedResponse{
+		WorkspaceID: workspaceID,
+		ShortCode:   req.ShortCode,
+		Title:       req.Title,
+		Content:     req.Content,
+		CreatedByID: createdByID,
+	}
+	if err := s.cannedResponseRepo.Create(ctx, response); err != nil {
+		return nil, fmt.Errorf("create canned response: %w", err)
+	}
+	return response, nil
+}
+
+// UpdateCannedResponse updates an existing canned response.
+func (s *SupportService) UpdateCannedResponse(ctx context.Context, workspaceID, id string, req model.CannedResponseRequest) (*model.SupportCannedResponse, error) {
+	response, err := s.cannedResponseRepo.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	if response == nil {
+		return nil, fmt.Errorf("canned response not found")
+	}
+
+	response.ShortCode = req.ShortCode
+	response.Title = req.Title
+	response.Content = req.Content
+
+	if err := s.cannedResponseRepo.Update(ctx, response); err != nil {
+		return nil, fmt.Errorf("update canned response: %w", err)
+	}
+	return response, nil
+}
+
+// DeleteCannedResponse deletes a canned response.
+func (s *SupportService) DeleteCannedResponse(ctx context.Context, workspaceID, id string) error {
+	return s.cannedResponseRepo.Delete(ctx, workspaceID, id)
+}
+
+// PublishTypingIndicator publishes a typing indicator event via WebSocket.
+func (s *SupportService) PublishTypingIndicator(ctx context.Context, workspaceID, conversationID string, isTyping bool) {
+	action := "typing_stopped"
+	if isTyping {
+		action = "typing_started"
+	}
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      action,
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+	})
 }

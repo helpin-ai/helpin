@@ -327,6 +327,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/link-story", h.Support.LinkStory)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/assign-agent", h.Support.AssignAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/run-agent", h.Support.RunAgent)
+
+				// Canned responses
+				r.With(requirePerm(authorization.PermPMRead)).Get("/inbox/canned-responses", h.Support.ListCannedResponses)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/inbox/canned-responses/search", h.Support.SearchCannedResponses)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/inbox/canned-responses", h.Support.CreateCannedResponse)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/inbox/canned-responses/{id}", h.Support.UpdateCannedResponse)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/inbox/canned-responses/{id}", h.Support.DeleteCannedResponse)
+
+				// Typing indicators
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/typing", h.Support.TypingIndicator)
 			})
 
 			// PM module

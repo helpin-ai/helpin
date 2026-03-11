@@ -187,6 +187,7 @@ func main() {
 		&model.PMStoryLink{},
 		&model.SupportTicket{},
 		&model.SupportMessage{},
+		&model.SupportCannedResponse{},
 		&model.SupportWidgetInstallation{},
 		&model.SupportWidgetSession{},
 		&model.GitIntegration{},
@@ -396,7 +397,8 @@ func main() {
 	pmViewService := service.NewPMViewService(pmViewRepo)
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
-	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, agentRepo, crmAssociationRepo, widgetInstallRepo, widgetSessionRepo, pmActivityService, wsPublisher, crmContactRepo)
+	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
+	supportService := service.NewSupportService(supportTicketRepo, supportMessageRepo, agentRepo, crmAssociationRepo, widgetInstallRepo, widgetSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)

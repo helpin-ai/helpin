@@ -215,3 +215,127 @@ func (h *SupportHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, run)
 }
+
+// ListCannedResponses handles GET /api/support/inbox/canned-responses.
+func (h *SupportHandler) ListCannedResponses(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	responses, err := h.supportService.ListCannedResponses(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if responses == nil {
+		responses = []model.SupportCannedResponse{}
+	}
+	writeJSON(w, http.StatusOK, responses)
+}
+
+// SearchCannedResponses handles GET /api/support/inbox/canned-responses/search.
+func (h *SupportHandler) SearchCannedResponses(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "query is required")
+		return
+	}
+
+	responses, err := h.supportService.SearchCannedResponses(r.Context(), workspaceID, query)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if responses == nil {
+		responses = []model.SupportCannedResponse{}
+	}
+	writeJSON(w, http.StatusOK, responses)
+}
+
+// CreateCannedResponse handles POST /api/support/inbox/canned-responses.
+func (h *SupportHandler) CreateCannedResponse(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CannedResponseRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	response, err := h.supportService.CreateCannedResponse(r.Context(), workspaceID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, response)
+}
+
+// UpdateCannedResponse handles PUT /api/support/inbox/canned-responses/{id}.
+func (h *SupportHandler) UpdateCannedResponse(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	id := chi.URLParam(r, "id")
+
+	var req model.CannedResponseRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	response, err := h.supportService.UpdateCannedResponse(r.Context(), workspaceID, id, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+// DeleteCannedResponse handles DELETE /api/support/inbox/canned-responses/{id}.
+func (h *SupportHandler) DeleteCannedResponse(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	id := chi.URLParam(r, "id")
+
+	if err := h.supportService.DeleteCannedResponse(r.Context(), workspaceID, id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+// TypingIndicator handles POST /api/support/inbox/conversations/{id}/typing.
+func (h *SupportHandler) TypingIndicator(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	conversationID := chi.URLParam(r, "id")
+
+	var req model.TypingIndicatorRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	h.supportService.PublishTypingIndicator(r.Context(), workspaceID, conversationID, req.IsTyping)
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}

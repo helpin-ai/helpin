@@ -605,12 +605,14 @@ func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actor
 
 			msg := &model.SupportMessage{
 				WorkspaceID:       workspaceID,
-				TicketID:          *run.TicketID,
+				ConversationID:    *run.TicketID,
+				TicketID:          run.TicketID,
 				SenderType:        "agent",
 				SenderAgentID:     &run.AgentID,
 				SenderDisplayName: summary.DraftReply.SenderDisplayName,
 				Content:           summary.DraftReply.Content,
 				IsInternal:        summary.DraftReply.IsInternal,
+				MessageType:       "reply",
 			}
 			if err := s.messageRepo.Create(ctx, msg); err != nil {
 				return nil, fmt.Errorf("create approved support reply: %w", err)

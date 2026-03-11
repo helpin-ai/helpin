@@ -95,12 +95,16 @@ func (h *WidgetHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-	if session.TicketID == nil {
+	conversationID := session.ConversationID
+	if conversationID == nil {
+		conversationID = session.TicketID // backward compat
+	}
+	if conversationID == nil {
 		writeJSON(w, http.StatusOK, []model.SupportMessage{})
 		return
 	}
 
-	messages, err := h.supportService.ListMessages(r.Context(), session.WorkspaceID, *session.TicketID, false)
+	messages, err := h.supportService.ListMessages(r.Context(), session.WorkspaceID, *conversationID, false)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

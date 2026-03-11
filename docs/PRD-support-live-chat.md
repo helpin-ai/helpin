@@ -1,7 +1,7 @@
 # PRD: Support Live Chat, Inbox, and AI Messenger
 
-**Status:** In Progress - Phase 1 Complete ✅
-**Status:** Draft v13 (canned responses, CSAT survey, typing indicators, email transcript, unread overlay from Chatwoot review, plus all v12 content)  
+**Status:** In Progress - Phase 2 Complete ✅
+**Status:** Draft v14 (canned responses, CSAT survey, typing indicators, email transcript, unread overlay from Chatwoot review, plus all v12 content)  
 **Date:** 2026-03-11  
 **Module:** Support  
 **Product context:** Helpin is a full operating suite spanning PM, CRM, Docs, Notifications, Agents, and Support. This PRD defines support as a first-class suite surface, not a standalone chat product.
@@ -63,8 +63,63 @@
 | `@helpin/sdk-js` | 10.4 KB |
 | `@helpin/widget-embed` | 0.25 KB |
 
+---
+
+## Phase 2 Status: ✅ COMPLETE
+
+### Completed Deliverables:
+
+1. **Data Model Updates**
+   - Updated `server/internal/model/support.go` with conversation-first models:
+     - `SupportConversation` - renamed from SupportTicket (with alias for backward compat)
+     - `SupportMessage` - added `ConversationID`, `MessageType`, `Metadata` fields
+     - `SupportCannedResponse` - new table for saved reply templates
+   - Created `server/migrations/038_support_conversations.sql` - Migration for new tables/columns:
+     - `support_conversations` table with display_id auto-allocation
+     - New columns on `support_messages`: `message_type`, `metadata`, `conversation_id`
+     - `support_canned_responses` table with search support
+     - Backfill `conversation_id` from legacy `ticket_id`
+
+2. **Repository Layer**
+   - Updated `server/internal/repository/support.go`:
+     - `SupportConversationRepository` - Create (with auto display_id), GetByID, List (with pagination, status/priority filters), Update
+     - `SupportMessageRepository` - Create, ListByTicket (supports both conversation_id and legacy ticket_id)
+     - `SupportCannedResponseRepository` - Create, List, GetByID, Search, Update, Delete
+
+3. **Service Layer**
+   - Updated `server/internal/service/support.go`:
+     - Added canned response CRUD methods
+     - Added typing indicator broadcast functionality
+     - Added `truncate()` utility for text truncation with UTF-8/emoji support
+     - Added `validConversationStatuses` validation map
+     - Added `generateSecureToken()` for secure token generation
+
+4. **Handler Layer**
+   - Updated `server/internal/handler/support.go`:
+     - Added canned response CRUD endpoints (list, create, update, delete)
+     - Added typing indicator endpoint for real-time collaboration
+
+5. **API Wiring**
+   - Updated `server/cmd/api/main.go` - Wired up cannedResponseRepo
+   - Updated `server/internal/router/router.go` - Registered new routes
+
+6. **Testing**
+   - Created `server/internal/service/support_test.go` with comprehensive SQLite tests
+   - **23 test cases passing:**
+     - `TestSupportConversationRepository` (6 subtests): Create/Get, List, Update, GetByID not found, Display ID sequential, Cross-workspace isolation, Pagination
+     - `TestSupportMessageRepository` (4 subtests): Create/List by conversation_id, Legacy ticket_id support, Internal notes filtering, ASC ordering
+     - `TestWidgetInstallationRepository` (5 subtests): Create/GetByWorkspace, GetByWidgetKey, Inactive filtering, Unknown key handling, Update
+     - `TestWidgetSessionRepository` (3 subtests): Create/GetByToken, Unknown token, Update with conversation_id
+     - `TestSupportCannedResponseRepository` (5 subtests): Create/List, Search, Update, Delete, Cross-workspace isolation
+     - `TestTruncate` (6 subtests): Short string, exact length, truncation with ellipsis, UTF-8, emoji, empty
+     - `TestValidConversationStatuses` - Status validation
+     - `TestGenerateSecureToken` (2 subtests): Token length, uniqueness
+   - Fixed test infrastructure:
+     - Added UUID defaults to test DB schema (support_conversations, support_messages, support_canned_responses, support_widget_installations, support_widget_sessions)
+     - Fixed SQLite compatibility (ILIKE → LIKE)
+     - Fixed test data isolation issues with unique workspace IDs and short_codes
+
 ### Remaining Phases:
-- **Phase 2**: Data Modeling (conversation-first model, API endpoints)
 - **Phase 3**: Inbox MVP (dashboard, widget MVP, CSAT, typing)
 - **Phase 4**: Docs-Aware AI Support
 - **Phase 5**: Advanced Automation
