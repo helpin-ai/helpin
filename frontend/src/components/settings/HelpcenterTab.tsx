@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,13 +8,16 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
-  Plus, Trash2, GripVertical, ExternalLink, Upload, Info,
+  Plus, Trash2, GripVertical, ExternalLink, Upload, X, Info,
+  Globe, Palette, Search, LayoutGrid, LinkIcon, ImageIcon,
 } from 'lucide-react';
 import { IconPicker } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { LINEAR_CARD_CLASS } from './settingsConstants';
 import type {
   HelpcenterHeaderLink,
   HelpcenterFooterLink,
@@ -303,100 +307,121 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-full" />
+      <div className="space-y-6">
+        <Skeleton className="h-16 w-full rounded-lg" />
+        <Skeleton className="h-48 w-full rounded-lg" />
+        <Skeleton className="h-32 w-full rounded-lg" />
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSave} className="space-y-6">
-      {/* ── Top bar: Publishing + Save ── */}
+    <form onSubmit={handleSave} className="space-y-8">
+      {/* ── Top Actions ── */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Switch
-            checked={config.is_published}
-            onCheckedChange={(v) => setConfig({ ...config, is_published: v })}
-          />
-          <div>
-            <p className="text-sm font-medium">Help Center Published</p>
-            <p className="text-xs text-muted-foreground">
-              {config.is_published
-                ? 'Your help center is publicly accessible.'
-                : 'Your help center is not visible to the public.'}
-            </p>
-          </div>
+        <div>
+          <h3 className="text-sm font-medium">Help Center Configuration</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Manage your public help center settings.</p>
         </div>
-        <Button type="submit" disabled={saving}>
-          {saving ? 'Saving...' : 'Save Settings'}
+        <Button type="submit" disabled={saving} size="sm">
+          {saving ? 'Saving...' : 'Save Changes'}
         </Button>
       </div>
 
+      {/* ── Publish Status Bar ── */}
+      <div className="flex items-center gap-4 rounded-lg border bg-card p-4">
+        <Switch
+          checked={config.is_published}
+          onCheckedChange={(v) => setConfig({ ...config, is_published: v })}
+        />
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium">Help Center</p>
+            <Badge variant={config.is_published ? 'default' : 'secondary'} className="text-[11px] px-1.5 py-0">
+              {config.is_published ? 'Live' : 'Offline'}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {config.is_published
+              ? 'Your help center is publicly accessible.'
+              : 'Toggle to make your help center visible to the public.'}
+          </p>
+        </div>
+      </div>
+
       {/* ── Branding ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Branding</CardTitle>
-          <CardDescription>Customize how your public help center looks.</CardDescription>
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-2">
+            <Palette className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Branding</CardTitle>
+          </div>
+          <CardDescription>Customize your help center&apos;s visual identity.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          {/* Row 1: Logo + Favicon side by side */}
-          <div className="grid gap-5 sm:grid-cols-2">
+        <CardContent className="space-y-6">
+          {/* Upload zones side by side */}
+          <div className="grid gap-6 sm:grid-cols-2">
+            {/* Logo upload zone */}
             <div className="space-y-2">
-              <Label>Logo</Label>
-              <p className="text-xs text-muted-foreground">
-                Recommended: 200 &times; 50 px (SVG or PNG). Max 2 MB.
-              </p>
+              <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Logo</Label>
               {config.brand_logo_url ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex h-14 w-28 items-center justify-center rounded-md border bg-muted/40 p-1.5">
-                    <img src={config.brand_logo_url} alt="Logo preview" className="max-h-full max-w-full object-contain" />
+                <div className="group relative flex h-28 items-center justify-center rounded-lg border-2 border-dashed bg-muted/30 transition-colors hover:bg-muted/50">
+                  <img src={config.brand_logo_url} alt="Logo" className="max-h-16 max-w-[160px] object-contain" />
+                  <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-background/80 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button type="button" variant="outline" size="sm" disabled={uploadingLogo} onClick={() => logoInputRef.current?.click()}>
+                      {uploadingLogo ? 'Uploading...' : 'Replace'}
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setConfig({ ...config, brand_logo_url: '' })}>
+                      Remove
+                    </Button>
                   </div>
-                  <Button type="button" variant="outline" size="sm" disabled={uploadingLogo} onClick={() => logoInputRef.current?.click()}>
-                    <Upload className="mr-1.5 h-3.5 w-3.5" />
-                    {uploadingLogo ? 'Uploading...' : 'Replace'}
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setConfig({ ...config, brand_logo_url: '' })} title="Remove logo">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
               ) : (
-                <Button type="button" variant="outline" size="sm" disabled={uploadingLogo} onClick={() => logoInputRef.current?.click()}>
-                  <Upload className="mr-1.5 h-4 w-4" />
-                  {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
-                </Button>
+                <button
+                  type="button"
+                  disabled={uploadingLogo}
+                  onClick={() => logoInputRef.current?.click()}
+                  className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-muted/20 text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted/40 hover:text-foreground"
+                >
+                  <ImageIcon className="h-6 w-6" />
+                  <span className="text-xs">{uploadingLogo ? 'Uploading...' : '200 × 50 px · SVG or PNG'}</span>
+                </button>
               )}
               <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => handleAssetUpload(e, 'logo', setUploadingLogo, 'brand_logo_url')} />
             </div>
+            {/* Favicon upload zone */}
             <div className="space-y-2">
-              <Label>Favicon</Label>
-              <p className="text-xs text-muted-foreground">
-                Recommended: 32 &times; 32 px (ICO, PNG, or SVG). Max 2 MB.
-              </p>
+              <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Favicon</Label>
               {config.favicon_url ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-md border bg-muted/40 p-1">
-                    <img src={config.favicon_url} alt="Favicon preview" className="max-h-full max-w-full object-contain" />
+                <div className="group relative flex h-28 items-center justify-center rounded-lg border-2 border-dashed bg-muted/30 transition-colors hover:bg-muted/50">
+                  <img src={config.favicon_url} alt="Favicon" className="h-10 w-10 object-contain" />
+                  <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-background/80 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button type="button" variant="outline" size="sm" disabled={uploadingFavicon} onClick={() => faviconInputRef.current?.click()}>
+                      {uploadingFavicon ? 'Uploading...' : 'Replace'}
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setConfig({ ...config, favicon_url: '' })}>
+                      Remove
+                    </Button>
                   </div>
-                  <Button type="button" variant="outline" size="sm" disabled={uploadingFavicon} onClick={() => faviconInputRef.current?.click()}>
-                    <Upload className="mr-1.5 h-3.5 w-3.5" />
-                    {uploadingFavicon ? 'Uploading...' : 'Replace'}
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => setConfig({ ...config, favicon_url: '' })} title="Remove favicon">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
               ) : (
-                <Button type="button" variant="outline" size="sm" disabled={uploadingFavicon} onClick={() => faviconInputRef.current?.click()}>
-                  <Upload className="mr-1.5 h-4 w-4" />
-                  {uploadingFavicon ? 'Uploading...' : 'Upload Favicon'}
-                </Button>
+                <button
+                  type="button"
+                  disabled={uploadingFavicon}
+                  onClick={() => faviconInputRef.current?.click()}
+                  className="flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-muted/20 text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted/40 hover:text-foreground"
+                >
+                  <ImageIcon className="h-5 w-5" />
+                  <span className="text-xs">{uploadingFavicon ? 'Uploading...' : '32 × 32 px · ICO, PNG, or SVG'}</span>
+                </button>
               )}
               <input ref={faviconInputRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/x-icon,image/vnd.microsoft.icon" className="hidden" onChange={(e) => handleAssetUpload(e, 'favicon', setUploadingFavicon, 'favicon_url')} />
             </div>
           </div>
-          {/* Row 2: Brand Name + Color + Theme */}
+
+          <Separator />
+
+          {/* Brand Name + Color + Theme */}
           <div className="grid gap-5 sm:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="hc-brand-name">Brand Name</Label>
@@ -410,17 +435,23 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
             <div className="space-y-2">
               <Label htmlFor="hc-brand-color">Brand Color</Label>
               <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  id="hc-brand-color"
-                  value={config.brand_color}
-                  onChange={(e) => setConfig({ ...config, brand_color: e.target.value })}
-                  className="h-9 w-10 cursor-pointer rounded border"
-                />
+                <div className="relative shrink-0">
+                  <div
+                    className="h-9 w-9 rounded-md border shadow-sm cursor-pointer"
+                    style={{ backgroundColor: config.brand_color }}
+                  />
+                  <input
+                    type="color"
+                    id="hc-brand-color"
+                    value={config.brand_color}
+                    onChange={(e) => setConfig({ ...config, brand_color: e.target.value })}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                  />
+                </div>
                 <Input
                   value={config.brand_color}
                   onChange={(e) => setConfig({ ...config, brand_color: e.target.value })}
-                  className="flex-1"
+                  className="flex-1 font-mono text-sm"
                   placeholder="#3b82f6"
                 />
               </div>
@@ -436,7 +467,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
                     <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
                       <p><strong>Light</strong> — Forces light theme, hides toggle</p>
                       <p><strong>Dark</strong> — Forces dark theme, hides toggle</p>
-                      <p><strong>System</strong> — Follows visitor&apos;s OS preference, shows a toggle so they can switch</p>
+                      <p><strong>System</strong> — Follows visitor&apos;s OS, shows toggle</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -451,7 +482,7 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
                 <SelectContent>
                   <SelectItem value="light">Light</SelectItem>
                   <SelectItem value="dark">Dark</SelectItem>
-                  <SelectItem value="system">System (visitor preference)</SelectItem>
+                  <SelectItem value="system">System (auto)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -459,24 +490,28 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
         </CardContent>
       </Card>
 
-      {/* ── Domain & SEO (side by side) ── */}
+      {/* ── Domain & SEO ── */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Domain</CardTitle>
-            <CardDescription>Set up your help center URL.</CardDescription>
+        <Card className={LINEAR_CARD_CLASS}>
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Domain</CardTitle>
+            </div>
+            <CardDescription>Configure your help center URL.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="hc-subdomain">Subdomain</Label>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center">
                 <Input
                   id="hc-subdomain"
                   value={config.subdomain}
                   onChange={(e) => setConfig({ ...config, subdomain: e.target.value })}
                   placeholder="yourcompany"
+                  className="rounded-r-none border-r-0"
                 />
-                <span className="shrink-0 text-sm text-muted-foreground">.helpin.ai</span>
+                <span className="flex h-9 shrink-0 items-center rounded-r-md border bg-muted/50 px-3 text-sm text-muted-foreground">.helpin.ai</span>
               </div>
             </div>
             <div className="space-y-2">
@@ -501,23 +536,27 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>SEO</CardTitle>
-            <CardDescription>Optimize your help center for search engines.</CardDescription>
+        <Card className={LINEAR_CARD_CLASS}>
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">SEO</CardTitle>
+            </div>
+            <CardDescription>Optimize for search engines.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="hc-seo-title">SEO Title</Label>
+              <Label htmlFor="hc-seo-title">Meta Title</Label>
               <Input
                 id="hc-seo-title"
                 value={config.seo_title}
                 onChange={(e) => setConfig({ ...config, seo_title: e.target.value })}
                 placeholder="Help Center - Your Company"
               />
+              <p className="text-[11px] text-muted-foreground">{config.seo_title.length}/60 characters</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="hc-seo-desc">SEO Description</Label>
+              <Label htmlFor="hc-seo-desc">Meta Description</Label>
               <Textarea
                 id="hc-seo-desc"
                 value={config.seo_description}
@@ -525,18 +564,22 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
                 placeholder="Find answers, guides, and documentation..."
                 rows={3}
               />
+              <p className="text-[11px] text-muted-foreground">{config.seo_description.length}/160 characters</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* ── Homepage ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Homepage</CardTitle>
-          <CardDescription>Configure the hero section visitors see first.</CardDescription>
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-2">
+            <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Homepage</CardTitle>
+          </div>
+          <CardDescription>Configure the hero section and featured content visitors see first.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="hc-hero-title">Hero Title</Label>
@@ -567,12 +610,14 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
             />
           </div>
 
+          <Separator />
+
           {/* Featured Cards */}
-          <div className="space-y-3 pt-2">
+          <div className="space-y-3">
             <div>
-              <Label>Featured Cards</Label>
+              <Label className="text-sm">Featured Cards</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Select a space to populate homepage cards from its collections. Uncheck any you don't want to show.
+                Select a space to populate homepage cards from its collections.
               </p>
             </div>
             <Select value={homepageSpaceSlug} onValueChange={handleHomepageSpaceChange}>
@@ -589,12 +634,15 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
             </Select>
 
             {spaceCollections.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {spaceCollections.map(col => {
                   const card = config.homepage_featured_cards.find(c => c.link_value === col.id);
                   const checked = !!card;
                   return (
-                    <div key={col.id} className="flex items-center gap-2 rounded-lg border p-3">
+                    <div
+                      key={col.id}
+                      className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${checked ? 'border-primary/20 bg-primary/[0.03]' : 'border-transparent bg-muted/30'}`}
+                    >
                       <Checkbox
                         checked={checked}
                         onCheckedChange={() => toggleCollection(col.id)}
@@ -609,11 +657,13 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
                             value={card.title}
                             onChange={(e) => updateCardByCollectionId(col.id, { title: e.target.value })}
                             placeholder="Card title"
+                            className="h-8 text-sm"
                           />
                           <Input
                             value={card.description}
                             onChange={(e) => updateCardByCollectionId(col.id, { description: e.target.value })}
                             placeholder="Short description"
+                            className="h-8 text-sm"
                           />
                         </div>
                       ) : (
@@ -628,58 +678,75 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
         </CardContent>
       </Card>
 
-      {/* ── Header & Footer Links (side by side) ── */}
+      {/* ── Navigation ── */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Header Links</CardTitle>
-            <CardDescription>Navigation links in the top bar.</CardDescription>
+        <Card className={LINEAR_CARD_CLASS}>
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-2">
+              <LinkIcon className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Header Links</CardTitle>
+            </div>
+            <CardDescription>Navigation links displayed in the top bar.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {config.header_links.length === 0 && (
+              <p className="text-xs text-muted-foreground py-3 text-center">No header links yet. Add one below.</p>
+            )}
             {config.header_links.map((link, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div key={i} className="flex items-center gap-2 group">
+                <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
                 <Input
                   value={link.label}
                   onChange={(e) => updateHeaderLink(i, { label: e.target.value })}
                   placeholder="Label"
-                  className="w-24"
+                  className="w-28 h-8 text-sm"
                 />
                 <Input
                   value={link.url}
                   onChange={(e) => updateHeaderLink(i, { url: e.target.value })}
                   placeholder="https://..."
-                  className="flex-1"
+                  className="flex-1 h-8 text-sm"
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className={`shrink-0 ${link.external ? 'text-primary' : 'text-muted-foreground'}`}
-                  onClick={() => updateHeaderLink(i, { external: !link.external })}
-                  title={link.external ? 'Opens in new tab' : 'Opens in same tab'}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeHeaderLink(i)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={`h-8 w-8 shrink-0 ${link.external ? 'text-primary' : 'text-muted-foreground/50'}`}
+                        onClick={() => updateHeaderLink(i, { external: !link.external })}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      {link.external ? 'Opens in new tab' : 'Opens in same tab'}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => removeHeaderLink(i)}>
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
                 </Button>
               </div>
             ))}
-            <Button type="button" variant="outline" size="sm" onClick={addHeaderLink}>
-              <Plus className="mr-1 h-4 w-4" /> Add Link
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addHeaderLink}>
+              <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
             </Button>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Footer</CardTitle>
-            <CardDescription>Copyright and footer links.</CardDescription>
+        <Card className={LINEAR_CARD_CLASS}>
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-2">
+              <LinkIcon className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Footer</CardTitle>
+            </div>
+            <CardDescription>Copyright text and footer navigation.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="hc-footer-copyright">Copyright Text</Label>
+              <Label htmlFor="hc-footer-copyright" className="text-sm">Copyright Text</Label>
               <Input
                 id="hc-footer-copyright"
                 value={config.footer_copyright_text}
@@ -687,29 +754,33 @@ export function HelpcenterTab({ workspaceId }: { workspaceId: string }) {
                 placeholder={`\u00A9 ${new Date().getFullYear()} Your Company. All rights reserved.`}
               />
             </div>
+            <Separator />
             <div className="space-y-3">
-              <Label>Footer Links</Label>
+              <Label className="text-sm">Footer Links</Label>
+              {config.footer_links.length === 0 && (
+                <p className="text-xs text-muted-foreground py-2 text-center">No footer links yet.</p>
+              )}
               {config.footer_links.map((link, i) => (
-                <div key={i} className="flex items-center gap-2">
+                <div key={i} className="flex items-center gap-2 group">
                   <Input
                     value={link.label}
                     onChange={(e) => updateFooterLink(i, { label: e.target.value })}
                     placeholder="Label"
-                    className="w-24"
+                    className="w-28 h-8 text-sm"
                   />
                   <Input
                     value={link.url}
                     onChange={(e) => updateFooterLink(i, { url: e.target.value })}
                     placeholder="https://..."
-                    className="flex-1"
+                    className="flex-1 h-8 text-sm"
                   />
-                  <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeFooterLink(i)}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => removeFooterLink(i)}>
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
                 </div>
               ))}
-              <Button type="button" variant="outline" size="sm" onClick={addFooterLink}>
-                <Plus className="mr-1 h-4 w-4" /> Add Link
+              <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addFooterLink}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
               </Button>
             </div>
           </CardContent>
