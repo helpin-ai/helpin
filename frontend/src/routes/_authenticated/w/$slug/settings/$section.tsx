@@ -23,7 +23,7 @@ function SettingsSectionRoute() {
 
   if (section === 'profile') {
     return (
-      <div className="h-full overflow-auto p-4 md:p-6">
+      <div className="h-full overflow-auto p-4 pb-32 md:p-6 md:pb-32">
         <Profile />
       </div>
     )
@@ -31,7 +31,7 @@ function SettingsSectionRoute() {
 
   if (section === 'account') {
     return (
-      <div className="h-full overflow-auto p-4 md:p-6">
+      <div className="h-full overflow-auto p-4 pb-32 md:p-6 md:pb-32">
         <AccountSettings />
       </div>
     )
@@ -39,7 +39,7 @@ function SettingsSectionRoute() {
 
   if (section === 'notifications') {
     return (
-      <div className="h-full overflow-auto p-4 md:p-6">
+      <div className="h-full overflow-auto p-4 pb-32 md:p-6 md:pb-32">
         <NotificationSettings />
       </div>
     )
@@ -50,7 +50,7 @@ function SettingsSectionRoute() {
   }
 
   return (
-    <div className="h-full overflow-auto p-4 md:p-6">
+    <div className="h-full overflow-auto p-4 pb-32 md:p-6 md:pb-32">
       <Settings section={section} initialWorkflowId={workflow} initialTeamId={team} />
     </div>
   )

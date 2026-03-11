@@ -873,9 +873,11 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 </SortableContext>
               </DndContext>
             )}
-            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addHeaderLink}>
-              <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
-            </Button>
+            <div className="flex justify-center">
+              <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addHeaderLink}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -922,9 +924,11 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                   </Button>
                 </div>
               ))}
-              <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addFooterLink}>
-                <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
-              </Button>
+              <div className="flex justify-center">
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addFooterLink}>
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Add Link
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
