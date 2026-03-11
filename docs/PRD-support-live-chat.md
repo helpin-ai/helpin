@@ -1,9 +1,73 @@
 # PRD: Support Live Chat, Inbox, and AI Messenger
 
+**Status:** In Progress - Phase 1 Complete ✅
 **Status:** Draft v13 (canned responses, CSAT survey, typing indicators, email transcript, unread overlay from Chatwoot review, plus all v12 content)  
 **Date:** 2026-03-11  
 **Module:** Support  
 **Product context:** Helpin is a full operating suite spanning PM, CRM, Docs, Notifications, Agents, and Support. This PRD defines support as a first-class suite surface, not a standalone chat product.
+
+---
+
+## Phase 1 Status: ✅ COMPLETE
+
+### Completed Deliverables:
+
+1. **Package Setup**
+   - Created `packages/` directory with pnpm workspace + Turborepo at repo root
+   - Added `pnpm-workspace.yaml` and `turbo.json`
+   - Created `tsconfig.base.json` for shared TypeScript config
+
+2. **SDK Migration** (copied from `/root/helpin-convex-main`)
+   - `@helpin/shared` - Shared types (Conversation, Message, WidgetConfig)
+   - `@helpin/sdk-js` - JavaScript SDK with analytics + widget support
+   - `@helpin/react` - React hooks and provider
+   - `@helpin/nextjs` - Next.js SSR-safe hooks
+   - `@helpin/widget-core` - Chat widget components
+   - `@helpin/widget-embed` - IIFE bundle for embeddable widget
+
+3. **Widget-Core Implementation** (11 components)
+   - `ChatWindow` - Main container
+   - `WidgetLauncher` - Floating button with unread badge
+   - `WidgetHeader` - Header with title, logo, close button
+   - `MessageList` - Scrollable message thread with date separators
+   - `MessageBubble` - Individual message with role styling
+   - `ComposeBar` - Text input with send button, Enter-to-send
+   - `PreChatForm` - Email/name capture before chat
+   - `QuickReplies` - Quick reply buttons
+   - `TypingIndicator` - Animated typing dots
+   - `CsatRating` - 5-point emoji rating
+   - `StreamingText` - Animated AI response text
+
+4. **SDK Widget API** (Intercom-style)
+   - `boot()` - Initialize widget with config
+   - `show()` / `hide()` / `toggle()` - Widget visibility
+   - `showMessages()` / `showConversation()` / `showArticle()` - Navigation
+   - `onShow` / `onHide` / `onUnreadCountChange` / `onUserEmailSupplied` - Callbacks
+   - `getVisitorId()` - Visitor identification
+
+5. **CSS Styling**
+   - Tailwind-aligned design tokens (colors, spacing, radius, shadows)
+   - Responsive mobile layout
+   - Shadow DOM isolation ready
+
+6. **Testing**
+   - 82 unit tests for sdk-js (Vitest)
+   - 49 unit tests for widget-core (Vitest + @testing-library/preact)
+   - E2E test infrastructure with mock API server
+   - All 131 tests passing
+
+### Bundle Sizes (gzipped):
+| Package | Size |
+|---------|------|
+| `@helpin/widget-core` | 4.6 KB |
+| `@helpin/sdk-js` | 10.4 KB |
+| `@helpin/widget-embed` | 0.25 KB |
+
+### Remaining Phases:
+- **Phase 2**: Data Modeling (conversation-first model, API endpoints)
+- **Phase 3**: Inbox MVP (dashboard, widget MVP, CSAT, typing)
+- **Phase 4**: Docs-Aware AI Support
+- **Phase 5**: Advanced Automation
 
 ---
 
