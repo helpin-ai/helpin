@@ -1,0 +1,1884 @@
+# PRD: Support Live Chat, Inbox, and AI Messenger
+
+**Status:** Draft v9 (single-endpoint SDK via ingress-nginx routing, events pipeline context, @helpin/ui exclusion, plus all v8 content)  
+**Date:** 2026-03-11  
+**Module:** Support  
+**Product context:** Helpin is a full operating suite spanning PM, CRM, Docs, Notifications, Agents, and Support. This PRD defines support as a first-class suite surface, not a standalone chat product.
+
+---
+
+## 1. Overview
+
+Build an Intercom Finn-like support inbox for Helpin where customers can start conversations from an embeddable website widget, receive AI-first responses grounded in Helpin Docs and externally published help center content, and seamlessly hand off to human agents inside the Helpin dashboard.
+
+The support product should be modeled around a single **inbox conversation** object. The system should not present or evolve two separate domain concepts, `chat` and `ticket`, with a later conversion from one to the other. In Helpin, the correct coupling is:
+
+- **Support conversation** for customer communication
+- **CRM contact/company/deal** for relationship context
+- **Docs and external docs** for AI grounding
+- **PM story** for operational or engineering follow-through
+
+When deeper product, engineering, or ops work is required, the conversation should escalate into a **PM story**, not into a second support artifact.
+
+### Goals
+
+- AI-first support for web widget conversations
+- Shared inbox for human agents inside the Helpin dashboard
+- Clear conversation-to-CRM identity mapping
+- Clear conversation-to-story escalation workflow
+- Strong reuse of Helpin Docs and external help center docs for AI support
+- Reuse of the frontend/widget package work from `/root/helpin-convex-main`
+- Alignment with the current Helpin stack: React 19, Vite, TanStack Router/Query, Go, Chi, GORM, WebSocket publisher
+
+### Non-Goals for Phase 1
+
+- Voice/video/chat calls
+- WhatsApp, Slack, SMS, or other new external support channels
+- Campaigns or proactive outbound support messages
+- Advanced SLA engine as a primary launch dependency
+- Deep vector infrastructure as a Day 1 blocker
+- Enterprise routing/workforce management
+- Multi-customer group threads
+
+### Product Decisions
+
+1. The canonical support object is **conversation**, not separate `chat` and `ticket` models.
+2. The dashboard surface is **Support Inbox**, not a generic ticket table.
+3. Escalation is **conversation -> PM story**, not chat -> ticket conversion.
+4. External help center docs are not only for public docs delivery; they are also part of Helpin's retrieval strategy for AI support.
+5. The implementation must follow **Helpin's current architecture**, not the reference repo's Fiber backend patterns.
+
+---
+
+## 2. SDK Migration Plan
+
+The reference repo `/root/helpin-convex-main` contains useful package and widget work that should be reused where it accelerates delivery. It should be treated as a **frontend and packaging reference**, not as the backend implementation baseline.
+
+### 2.1 File Inventory: `/root/helpin-convex-main`
+
+| Source Path | Current Value | Use In Helpin |
+|---|---|---|
+| `packages/shared/src/types/*.ts` | Shared types: `Conversation`, `Message` (with `AiSource`, `Attachment`), `WidgetConfig`, `Workspace` (with `WorkspaceBranding`) | Reuse as a starting point, then align field names to Helpin's conversation-first vocabulary and Go model fields |
+| `packages/widget-core/src/types.ts` | `WidgetAdapter` interface contract with methods: `getMessages()`, `sendMessage()`, `startConversation()`, `markAsRead()`, `sendTypingIndicator()`, `getConfig()` | Reuse adapter interface; implement against Helpin REST + WebSocket APIs |
+| `packages/widget-core/src/components/*.tsx` | 11 stub components (all return `null`): `ChatWindow`, `MessageList`, `MessageBubble`, `ComposeBar`, `WidgetHeader`, `WidgetLauncher`, `PreChatForm`, `QuickReplies`, `TypingIndicator`, `CsatRating`, `StreamingText` | Reuse component boundaries and naming; implement all components for real |
+| `packages/widget-core/src/styles/widget.css` | CSS variable definitions with `helpin-` namespace prefix; all class rules empty | Reuse variable structure and namespace; implement actual styles |
+| `packages/helpin-js/src/` | Production-grade client-side analytics SDK: pageview tracking, user identification, UTM capture, scroll depth, retry queue with offline persistence, multiple transports (XHR, Fetch, Beacon, HTTPS) | Reuse as-is for analytics tracking; extend with chat widget initialization so installing the SDK auto-mounts the support widget |
+| `packages/helpin-react/src/` | React Context + hooks for analytics SDK (`HelpinProvider`, `useHelpin`, `usePageView`) | Reuse and extend with chat widget hooks (`useSupportWidget`, `useConversation`) |
+| `packages/helpin-nextjs/src/` | Next.js SSR-safe wrapper: `HelpinProvider` with null-safe client, `useHelpin` with no-op fallback, `middlewareEnv.ts` for Edge Middleware (anonymous ID cookies, IP extraction, server-side event context) | Reuse for Next.js customers who embed the Helpin widget; extend with SSR-safe chat widget hooks |
+| `apps/widget/src/main.tsx` | Widget bootstrap: creates `<div id="helpin-chatbox">` container, configured as Vite IIFE build (`pixel.js`) using Preact | Reuse build approach; implement full widget mount with adapter wiring |
+| `apps/widget/src/adapters/WebSocketWidgetAdapter.ts` | Implements `WidgetAdapter` interface; all methods are no-op stubs | Reimplement against Helpin REST + WebSocket APIs |
+| `packages/ui/` | BROKEN package — exports from non-existent file (`src/index.ts` references missing components). Build fails. | **Do NOT copy.** Helpin uses shadcn/ui directly; this package provides no value. |
+| `backend/internal/realtime/protocol.go` | Realtime protocol ideas | Reference only |
+| `backend/internal/handler/*.go` | Fiber handlers | Reference only; do not port directly |
+| `backend/internal/rag/*.go` | RAG concepts | Reference only for later phases |
+
+### 2.2 Migration Intent
+
+The package work should create a dual-purpose SDK layer for the Helpin suite: **analytics tracking** and **support chat widget**. Installing the Helpin SDK on a customer's site should provide both capabilities from a single script tag or npm install.
+
+**Package responsibilities:**
+
+- `@helpin/shared` — Shared TypeScript types for conversations, messages, widget config, AI sources, branding. Used by all other packages.
+- `@helpin/widget-core` — Framework-agnostic chat widget component library with a pluggable `WidgetAdapter` interface. Contains headless components (ChatWindow, PreChatForm, MessageList, etc.) and CSS with `helpin-` namespace.
+- `@helpin/sdk-js` — Browser SDK that combines analytics tracking (pageviews, events, user identification, UTM capture, scroll depth) with chat widget initialization. When initialized with a `widget_key`, the SDK auto-mounts the support widget. Analytics data feeds CRM signal detection.
+- `@helpin/react` — React Context + hooks for both analytics (`useHelpin`, `usePageView`) and chat (`useSupportWidget`, `useConversation`).
+- `@helpin/nextjs` — Next.js SSR-safe wrapper with Edge Middleware helpers. Provides the same analytics + chat hooks with null-safe fallbacks for server rendering.
+- `@helpin/widget-embed` — Standalone IIFE bundle (`pixel.js`) built with Vite + Preact. This is the script tag customers embed on their website. It bootstraps the widget, creates a shadow DOM container, and connects via the `WidgetAdapter`.
+
+### 2.3 Required Adaptations
+
+#### Shared Types
+
+Update the reference types from:
+
+- `conversation` meaning a generic support object
+- `ticket` assumptions in Helpin server code
+
+to a unified Helpin vocabulary:
+
+- `conversation`
+- `message`
+- `widget_session`
+- `story_escalation`
+- `ai_source`
+
+#### Widget Core
+
+Keep:
+
+- package shape
+- `WidgetAdapter` interface contract
+- headless component boundaries
+- CSS variable structure with `helpin-` namespace
+
+**Component Implementation Plan:**
+
+All 11 components currently return `null`. Each must be fully implemented:
+
+| Component | Responsibility | Key Features |
+|---|---|---|
+| `WidgetLauncher` | Floating button to open/close widget | Workspace branding colors, unread badge, position config |
+| `ChatWindow` | Main widget container | Open/close animation, responsive sizing, shadow DOM isolation |
+| `WidgetHeader` | Top bar with workspace name/logo | Close button, "Powered by Helpin" optional branding |
+| `PreChatForm` | Email + name capture before first message | Validates based on workspace settings (`require_email`, `require_name`), triggers CRM contact match/create |
+| `MessageList` | Scrollable message thread | Auto-scroll, date separators, load-more for history |
+| `MessageBubble` | Individual message rendering | Customer vs AI vs agent styling, internal note exclusion, timestamp |
+| `ComposeBar` | Message input + send button | Enter-to-send, shift+enter for newline, disabled during AI processing |
+| `StreamingText` | AI response streaming display | Token-by-token rendering, typing animation, source citations inline |
+| `TypingIndicator` | Shows when agent/AI is composing | Animated dots, "Agent is typing..." label |
+| `QuickReplies` | Suggested response buttons | AI-suggested follow-ups, "Talk to a person" action |
+| `CsatRating` | Post-resolution satisfaction survey | Star or emoji rating, optional comment, triggers on conversation close |
+
+**Implementation priorities for MVP:** `WidgetLauncher`, `ChatWindow`, `WidgetHeader`, `PreChatForm`, `MessageList`, `MessageBubble`, `ComposeBar`, `QuickReplies` (with "Talk to a person" action). `StreamingText`, `TypingIndicator`, and `CsatRating` can follow in Phase 4.
+
+#### SDKs (`@helpin/sdk-js`, `@helpin/react`, `@helpin/nextjs`)
+
+The current `helpin-js` SDK is a production-grade analytics pixel (forked from usermaven-js) with pageview tracking, user identification, UTM capture, scroll depth, retry queues, and multiple transports. It works but has no chat/widget functionality.
+
+**What to keep as-is:**
+- Event tracking pipeline (`track`, `id`, `lead`, `group`)
+- Automatic pageview tracking with SPA support
+- Retry queue with offline persistence
+- Multiple transports (XHR, Fetch, Beacon)
+- Cross-domain linking
+- Third-party cookie capture (`_ga`, `_fbp`, etc.)
+- Privacy controls (`strict`/`keep`/`comply`)
+
+**What to add:**
+- `initWidget(config)` method on the client that fetches widget config and mounts the chat widget
+- Auto-widget-mount when `widget_key` is present in SDK config
+- `openWidget()` / `closeWidget()` / `toggleWidget()` programmatic controls
+- `onConversationStarted` / `onMessageReceived` callback hooks
+- Widget WebSocket connection management (separate from analytics transport)
+- Identity bridging: analytics `id()` user data passed to widget session for CRM matching
+
+**React wrapper additions (`@helpin/react`):**
+- `useSupportWidget()` hook returning `{ open, close, toggle, isOpen, unreadCount }`
+- `useConversation()` hook for programmatic message access
+- `HelpinProvider` extended to accept `widgetKey` prop
+
+**Next.js wrapper (`@helpin/nextjs`):**
+- Same as React wrapper but SSR-safe (no-op on server, hydrates on client)
+- Preserve existing Edge Middleware helpers (`getAnonymousId`, `getSourceIp`, `describeClient`)
+- These helpers are valuable for Next.js customers who want server-side analytics tracking
+
+### 2.4 Package Structure and Bundling
+
+The SDK packages should live in a **standalone `packages/` directory** at the repo root, not inside `frontend/`. The Helpin dashboard (`frontend/`) is a standalone Vite SPA with no monorepo setup. The SDK packages need their own build pipeline because:
+
+- `@helpin/widget-embed` produces an IIFE bundle (`pixel.js`) for external websites — it cannot share the dashboard's Vite config
+- `@helpin/sdk-js` is a universal JavaScript library (browser + Node) with its own transport layer
+- `@helpin/react` and `@helpin/nextjs` are npm-publishable packages with their own peer dependencies
+
+**Target structure:**
+
+```
+packages/                        # SDK monorepo (pnpm workspaces + Turborepo)
+  shared/                        # @helpin/shared — types only
+  widget-core/                   # @helpin/widget-core — headless components + adapter interface
+  sdk-js/                        # @helpin/sdk-js — analytics + widget init
+  react/                         # @helpin/react — React hooks + provider
+  nextjs/                        # @helpin/nextjs — Next.js SSR-safe wrapper
+  widget-embed/                  # @helpin/widget-embed — IIFE bundle (pixel.js)
+pnpm-workspace.yaml              # workspace: packages/*
+turbo.json                       # build orchestration
+```
+
+**Initial package copy (using linux cp):**
+
+```bash
+# From the repo root (/root/teampulse):
+mkdir -p packages
+
+cp -r /root/helpin-convex-main/packages/shared       packages/shared
+cp -r /root/helpin-convex-main/packages/widget-core   packages/widget-core
+cp -r /root/helpin-convex-main/packages/helpin-js      packages/sdk-js
+cp -r /root/helpin-convex-main/packages/helpin-react   packages/react
+cp -r /root/helpin-convex-main/packages/helpin-nextjs  packages/nextjs
+
+# widget-embed is new — scaffold from apps/widget reference:
+mkdir -p packages/widget-embed/src
+cp /root/helpin-convex-main/apps/widget/src/main.tsx           packages/widget-embed/src/
+cp /root/helpin-convex-main/apps/widget/src/adapters/WebSocketWidgetAdapter.ts packages/widget-embed/src/
+cp /root/helpin-convex-main/apps/widget/vite.config.ts         packages/widget-embed/
+
+# Copy workspace config as starting point:
+cp /root/helpin-convex-main/pnpm-workspace.yaml .
+cp /root/helpin-convex-main/turbo.json .
+```
+
+After copy, adapt each package to Helpin naming and API conventions before building.
+
+**Bundling order:**
+
+1. copy packages from `/root/helpin-convex-main` into `packages/` (cp commands above)
+2. set up pnpm workspace + Turborepo at repo root
+3. adapt shared types to Helpin naming
+4. implement widget-core components
+5. extend sdk-js with chat widget initialization + Intercom-style JS API
+6. build widget-embed IIFE bundle (`pixel.js`)
+7. wire Go APIs for widget endpoints
+8. integrate inbox UI in dashboard
+
+### 2.5 Backend Constraint
+
+The Helpin backend uses:
+
+- Go
+- Chi router
+- GORM
+- current service/repository/handler layering
+
+Therefore:
+
+- do not plan backend work around Fiber
+- do not copy reference backend files directly
+- do use the reference repo for frontend packages, protocol shape, and widget architecture
+
+### 2.6 SDK JavaScript API Methods
+
+The Helpin SDK should expose an Intercom-style JavaScript API via a global `window.Helpin()` command function. This provides a familiar developer experience and allows customers to programmatically control the widget.
+
+#### Lifecycle Methods
+
+| Method | Description |
+|---|---|
+| `Helpin('boot', config)` | Initialize the SDK and mount the widget. Accepts `widget_key`, optional user identity (`email`, `user_id`, `name`), and settings. For SPAs where the user may not be logged in at page load. |
+| `Helpin('shutdown')` | End the current session, clear cookies/localStorage, and unmount the widget. Call on user logout to prevent conversation leakage on shared devices. |
+| `Helpin('update')` | Trigger a check for new messages and update user data without a page refresh. Can be called with no arguments (just check for messages) or with a user data object to update identity. Throttled to 20 calls per 30 minutes. |
+| `Helpin('update', userData)` | Update user identity fields (email, name, custom attributes). If the user is not yet identified, this creates or matches a CRM contact. |
+
+#### Widget Visibility Methods
+
+| Method | Description |
+|---|---|
+| `Helpin('show')` | Open the Messenger panel. If there are existing conversations, shows the conversation list. If none, shows the new conversation view. |
+| `Helpin('hide')` | Close the Messenger panel. Does not hide the launcher button. |
+| `Helpin('showMessages')` | Open the Messenger directly to the conversation list. |
+| `Helpin('showNewMessage')` | Open the Messenger with a new conversation composer. |
+| `Helpin('showNewMessage', content)` | Open the Messenger with a pre-populated message in the composer. |
+| `Helpin('showConversation', conversationId)` | Open a specific conversation by ID. Opens the Messenger first if closed. |
+| `Helpin('showArticle', articleId)` | Display a help center article inline within the Messenger. Opens the Messenger first if closed. |
+
+#### Event Callback Methods
+
+| Method | Description |
+|---|---|
+| `Helpin('onShow', callback)` | Register a callback fired when the Messenger opens. |
+| `Helpin('onHide', callback)` | Register a callback fired when the Messenger closes. |
+| `Helpin('onUnreadCountChange', callback)` | Register a callback fired with `(unreadCount)` whenever unread message count changes. Fires immediately on registration with the current count. Useful for rendering a badge on a custom launcher. |
+| `Helpin('onUserEmailSupplied', callback)` | Register a callback fired when a visitor enters their email in the pre-chat form. Useful for triggering CRM actions or analytics. |
+
+#### Analytics Methods (existing from `helpin-js`)
+
+| Method | Description |
+|---|---|
+| `Helpin('trackEvent', name, metadata?)` | Track a custom event associated with the current user. Metadata is an optional key-value object. Events feed CRM signal detection. |
+| `Helpin('getVisitorId')` | Return the anonymous visitor ID. Can be used to retrieve the visitor via REST API or for cross-domain linking. |
+
+#### Script Tag Installation
+
+```html
+<!-- Basic installation -->
+<script async src="https://cdn.helpin.ai/pixel.js" data-widget-key="wk_xxx"></script>
+
+<!-- With user identity (for logged-in pages) -->
+<script>
+  window.helpinSettings = {
+    widget_key: 'wk_xxx',
+    email: user.email,
+    name: user.name,
+    user_id: user.id,
+    created_at: user.createdAt
+  };
+</script>
+<script async src="https://cdn.helpin.ai/pixel.js"></script>
+```
+
+#### SPA Installation (Boot pattern)
+
+```javascript
+// Load the SDK (script tag or npm install)
+// Then boot when user data is available:
+Helpin('boot', {
+  widget_key: 'wk_xxx',
+  email: 'jane@example.com',
+  name: 'Jane Doe',
+  user_id: '12345'
+});
+
+// On route change in SPA:
+Helpin('update');
+
+// On logout:
+Helpin('shutdown');
+```
+
+#### NPM Installation
+
+```javascript
+// @helpin/react
+import { HelpinProvider, useSupportWidget } from '@helpin/react';
+
+function App() {
+  return (
+    <HelpinProvider widgetKey="wk_xxx" user={{ email, name, userId }}>
+      <MyApp />
+    </HelpinProvider>
+  );
+}
+
+function SupportButton() {
+  const { show, unreadCount } = useSupportWidget();
+  return <button onClick={show}>Support {unreadCount > 0 && `(${unreadCount})`}</button>;
+}
+```
+
+```javascript
+// @helpin/nextjs (SSR-safe)
+import { HelpinProvider, useSupportWidget } from '@helpin/nextjs';
+// Same API as @helpin/react but with no-op fallbacks on server
+```
+
+#### Pre-load Command Queue
+
+Like Intercom, the SDK should support a command queue pattern so calls made before the script loads are queued and replayed:
+
+```javascript
+window.Helpin = window.Helpin || function() {
+  (window.Helpin.q = window.Helpin.q || []).push(arguments);
+};
+Helpin('boot', { widget_key: 'wk_xxx' });
+// ^ This queues the boot call; the real SDK replays it on load
+```
+
+The existing `helpin-js` SDK already has this queue mechanism (`i.q = []; i.c = function(args){i.q.push(args)}`). It should be extended to support the new chat-related methods alongside the existing analytics methods.
+
+### 2.7 SDK Endpoint Architecture
+
+The SDK serves two distinct purposes — **analytics tracking** and **chat conversations** — with separate backend services. Rather than exposing two different hostnames to the SDK, both services sit behind a **single SDK domain** (`sdk.helpin.ai`) with **ingress-nginx path-based routing** splitting traffic at the infrastructure level.
+
+#### Data Flow
+
+| Path Prefix | Backend Service | Storage | Data Characteristics |
+|---|---|---|---|
+| `/v1/events/*` | Rust-based events pipeline (future; Go API initially) | ClickHouse | High-volume, append-only, sessionization + aggregation |
+| `/v1/conversations/*`, `/v1/widget/*`, `/v1/ws` | Go API server (`helpin-server-svc`) | PostgreSQL / Neon | Transactional, low-volume, ACID, real-time delivery |
+
+These are **separate data paths by design**, but the SDK doesn't need to know that. From the SDK's perspective there is one host and the path determines the destination.
+
+#### SDK Config
+
+The existing `helpin-js` SDK has a `trackingHost` config field (default: `t.helpin.ai`). This collapses into a single `host` field:
+
+```typescript
+interface Config {
+  key: string;            // widget_key (wk_xxx)
+  host?: string;          // SDK endpoint (default: 'sdk.helpin.ai')
+  // ... existing analytics config fields
+}
+```
+
+One field. No customer confusion about which URL goes where.
+
+#### Endpoint Resolution
+
+When the SDK boots:
+
+1. Fetch widget config: `GET https://{host}/v1/widget/config?key={widget_key}`
+2. The config response can override `host` for regional or on-prem deployments
+3. Analytics events POST to `https://{host}/v1/events`
+4. Chat REST calls go to `https://{host}/v1/conversations/*` (create, list messages, send message)
+5. WebSocket for real-time chat opens to `wss://{host}/v1/ws?session_token=xxx`
+
+All `/v1/...` paths are rewritten by ingress-nginx to the Go server's internal `/api/...` routes (see Ingress Configuration below). The SDK never sees the internal paths.
+
+#### Why Single Domain with Ingress Routing
+
+A dual-endpoint approach (separate `events.helpin.ai` + `api.prod.helpin.ai` hostnames) was considered and rejected in favor of ingress-level routing:
+
+- **No extra hop**: ingress-nginx is already in the request path for every API call. Path-based routing adds zero latency — it's the same hop that already terminates TLS and forwards to backend services.
+- **Zero incremental complexity**: Helpin already runs `pp-nginx` ingress class in the `helpin` namespace. Adding path rules to the existing Ingress resource is a config change, not a new service.
+- **Same failure domain**: ingress-nginx going down already takes down the Go API. Routing SDK traffic through it doesn't expand the blast radius.
+- **Simpler CORS**: One origin means one set of CORS rules. No cross-origin issues between analytics and chat.
+- **Simpler SDK**: One `host` config field instead of two. Less surface area for customer misconfiguration.
+- **Simpler self-hosted**: On-prem customers configure one URL, not two.
+- **Cookie/auth scope**: Single domain means session tokens and cookies share scope naturally.
+- **Independent scaling**: Still works — ingress-nginx routes to separate k8s Services, each with independent HPA scaling configs.
+- **Graceful migration**: Before the Rust events pipeline exists, ingress routes `/v1/events/*` to the Go API server. When the Rust service is ready, update the Ingress backend — the SDK never changes.
+
+#### Ingress Configuration
+
+The SDK calls `/v1/...` paths but the Go server registers Chi routes at `/api/...`. ingress-nginx handles this with a separate Ingress resource for `sdk.helpin.ai` that uses `rewrite-target` to map the public SDK paths to internal server paths. The existing `ingress-helpin` resource for `api.prod.helpin.ai` and `helpcenter.helpin.ai` stays unchanged.
+
+**New file: `k8s/prod/ingress-sdk.yaml`**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-helpin-sdk
+  namespace: helpin
+  annotations:
+    ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /api/widget/support/$2
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Content-Type, Authorization, X-Session-Token"
+spec:
+  ingressClassName: pp-nginx
+  tls:
+  - hosts:
+    - sdk.helpin.ai
+    secretName: cert-prod-helpin-wildcard
+  rules:
+  - host: sdk.helpin.ai
+    http:
+      paths:
+      # /v1/widget/config → /api/widget/support/config
+      # /v1/conversations/* → /api/widget/support/conversations/*
+      # /v1/ws → /api/widget/support/ws
+      - path: /v1(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: helpin-server-svc
+            port:
+              number: 8080
+---
+# Events ingress — separate resource because it needs a different rewrite target.
+# Initially points to helpin-server-svc; swap backend when Rust pipeline is ready.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-helpin-sdk-events
+  namespace: helpin
+  annotations:
+    ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /api/events/$2
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Content-Type"
+spec:
+  ingressClassName: pp-nginx
+  tls:
+  - hosts:
+    - sdk.helpin.ai
+    secretName: cert-prod-helpin-wildcard
+  rules:
+  - host: sdk.helpin.ai
+    http:
+      paths:
+      - path: /v1/events(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: helpin-server-svc    # Swap to events-pipeline-svc when ready
+            port:
+              number: 8080
+```
+
+**Path mapping summary:**
+
+| SDK calls | Ingress rewrites to | Backend |
+|---|---|---|
+| `GET /v1/widget/config?key=...` | `GET /api/widget/support/config?key=...` | Go API |
+| `POST /v1/conversations` | `POST /api/widget/support/conversations` | Go API |
+| `GET /v1/conversations/:id/messages` | `GET /api/widget/support/conversations/:id/messages` | Go API |
+| `POST /v1/conversations/:id/messages` | `POST /api/widget/support/conversations/:id/messages` | Go API |
+| `WS /v1/ws?session_token=...` | `WS /api/widget/support/ws?session_token=...` | Go API |
+| `POST /v1/events` | `POST /api/events` | Go API (later Rust) |
+
+This means the Go server's Chi routes stay at `/api/widget/support/...` and `/api/events/...` — no backend route changes needed. The SDK only ever sees `/v1/...` paths.
+
+Staging uses `k8s/stage/ingress-sdk.yaml` with `sdk.stage.helpin.ai` and `cert-stage-helpin-wildcard`.
+
+**Annotations explained:**
+- `rewrite-target`: Maps the captured path group to the internal route structure
+- `proxy-read-timeout` / `proxy-send-timeout` at 3600s: Required for WebSocket connections — without these, ingress-nginx closes idle connections after the default 60s
+- CORS annotations: The widget runs on arbitrary customer domains, so `cors-allow-origin: "*"` is required. The events Ingress has a tighter `cors-allow-headers` since it only needs `Content-Type`
+
+#### Script Tag Example
+
+```html
+<script>
+  window.helpinSettings = {
+    widget_key: 'wk_xxx',
+    email: user.email,
+    name: user.name
+  };
+</script>
+<script async src="https://cdn.helpin.ai/pixel.js"></script>
+```
+
+No host configuration needed — `sdk.helpin.ai` is the default. Self-hosted deployments can override with `host: 'sdk.mycompany.com'`.
+
+#### Events Pipeline Context
+
+A Rust-based events pipeline will be added separately to handle analytics event ingestion, sessionization, and aggregation. This pipeline:
+
+- Receives events at `sdk.helpin.ai/v1/events/*` (routed by ingress-nginx)
+- Performs sessionization (30-minute inactivity window)
+- Lands processed data in **ClickHouse** for analytics queries
+- Is entirely independent of the Go API server and PostgreSQL
+
+**Before the Rust pipeline exists**, the ingress routes `/v1/events/*` to `helpin-server-svc` (the Go API). The Go server stores events in a lightweight table or forwards them. When the Rust service is ready, the migration is a one-line Ingress backend swap — the SDK and all customer installations are unaffected.
+
+Conversation data never touches the events pipeline. Messages, typing indicators, and read receipts flow through `/v1/conversations/*` and `/v1/ws` to the Go API server, stored in **PostgreSQL / Neon**.
+
+---
+
+## 3. Architecture
+
+### 3.1 System Architecture Summary
+
+Support is not an isolated module. It is a suite-level surface integrated with:
+
+- **CRM** for contacts, companies, deals, and lead handling
+- **PM** for escalation into stories and downstream execution
+- **Docs** for knowledge retrieval, internal references, and external publishing
+- **Notifications** for future inbox/email alerting and assignment signals
+- **Agents** for AI support replies, drafts, triage, and future autonomous workflows
+- **Realtime** via the existing WebSocket publisher
+
+### 3.2 High-Level System Diagram
+
+```text
+Customer Website                            Helpin Platform
+┌─────────────────────────┐                ┌────────────────────────────────────┐
+│ helpin-widget embed     │                │ Dashboard (React + Vite)          │
+│ - launcher              │                │ - Support Inbox                   │
+│ - pre-chat capture      │                │ - CRM surfaces                    │
+│ - AI/human thread       │                │ - PM story detail                 │
+│ - session persistence   │                │ - Docs / Help Center              │
+└────────────┬────────────┘                └──────────────┬─────────────────────┘
+             │ REST + WebSocket                             │
+             ▼                                              ▼
+      ┌────────────────────────────────────────────────────────────────────┐
+      │ Go API (Chi + GORM + WebSocket Publisher)                         │
+      │ - Support handlers/services/repos                                 │
+      │ - Widget public endpoints                                         │
+      │ - CRM services                                                    │
+      │ - PM story services                                               │
+      │ - Docs / Helpcenter services                                      │
+      │ - Agent services / Temporal workflows                             │
+      └───────────────────────┬───────────────────────────────┬────────────┘
+                              │                               │
+                              ▼                               ▼
+                        PostgreSQL / Neon               LLM Provider(s)
+```
+
+### 3.3 Frontend Architecture
+
+The dashboard implementation must align with the current frontend:
+
+- React 19
+- Vite
+- TanStack Router
+- TanStack Query
+- shared `frontend/src` component and route patterns
+
+Relevant current evidence in the repo:
+
+- support route: `frontend/src/routes/_authenticated/w/$slug/support.tsx`
+- PM support redirect: `frontend/src/routes/_authenticated/w/$slug/pm/support.tsx`
+- support page UI: `frontend/src/pages/pm/Support.tsx`
+
+This means the support inbox is already a suite-level navigation surface and should stay that way.
+
+### 3.4 Backend Architecture
+
+The backend implementation must align with Helpin's handler → service → repository layering.
+
+Support should use a `support_inbox` prefix for its Go files to clearly scope the module within the codebase. The current `support.go` files should be renamed to reflect the conversation-first model:
+
+**Current files → Target files:**
+
+| Layer | Current | Target |
+|---|---|---|
+| Model | `server/internal/model/support.go` | `server/internal/model/support_inbox.go` |
+| Repository | `server/internal/repository/support.go` | `server/internal/repository/support_inbox.go` |
+| Service | `server/internal/service/support.go` | `server/internal/service/support_inbox.go` |
+| Service (new) | — | `server/internal/service/support_inbox_ai.go` |
+| Handler | `server/internal/handler/support.go` | `server/internal/handler/support_inbox.go` |
+| Handler | `server/internal/handler/widget.go` | `server/internal/handler/support_inbox_widget.go` |
+
+**Struct renames within the files:**
+
+| Current | Target |
+|---|---|
+| `SupportTicket` | `SupportConversation` |
+| `SupportMessage` | `SupportConversationMessage` |
+| `SupportWidgetInstallation` | `SupportInboxInstallation` |
+| `SupportWidgetSession` | `SupportInboxSession` |
+| `SupportService` | `SupportInboxService` |
+| `SupportHandler` | `SupportInboxHandler` |
+| `WidgetHandler` | `SupportInboxWidgetHandler` |
+| `SupportTicketRepository` | `SupportConversationRepository` |
+| `SupportMessageRepository` | `SupportConversationMessageRepository` |
+| `WidgetInstallationRepository` | `SupportInboxInstallationRepository` |
+| `WidgetSessionRepository` | `SupportInboxSessionRepository` |
+
+The PRD should evolve the existing support implementation by renaming in place rather than introducing parallel files.
+
+### 3.5 Realtime Architecture
+
+Helpin already has a WebSocket event publisher:
+
+- `server/internal/websocket/publisher.go`
+
+Support currently publishes events for:
+
+- support ticket created/updated
+- support message created
+- agent-run updates
+
+The future conversation-first model should continue this pattern with renamed entities:
+
+- `support_conversation`
+- `support_message`
+- `support_agent_run`
+
+### 3.6 Auth and Access Model
+
+Support has two access surfaces:
+
+#### Internal dashboard access
+
+- authenticated users
+- workspace-scoped
+- permission-controlled through the existing authorization layer
+
+**Current state:** Support routes piggyback on PM permissions (`PermPMRead` / `PermPMEdit`). There are no dedicated support permissions in `server/internal/authorization/permissions.go`. This should be corrected:
+
+| New Permission | Constant | Usage |
+|---|---|---|
+| `support.read` | `PermSupportRead` | List/view conversations, messages |
+| `support.edit` | `PermSupportEdit` | Create/reply/assign/status change |
+| `support.admin` | `PermSupportAdmin` | Widget settings, installation config, SLA rules |
+
+These must be added to `AllPermissions()`, the role-permission matrix, and the router middleware.
+
+#### Public widget access
+
+- no JWT required
+- public widget key
+- short-lived session token
+- limited message-scope operations only
+
+### 3.7 Suite Integration Principle
+
+Helpin Support must behave like a suite module:
+
+- it should appear as a native app surface
+- its data should be linkable via existing cross-object association patterns
+- it should reuse shared infra for audit/activity, notifications, websocket, and agents
+- it should not invent parallel systems when PM/CRM/Docs already exist
+
+---
+
+## 4. Data Model
+
+### 4.1 Canonical Domain Decision
+
+The current repo persists support as:
+
+- `support_tickets` → table
+- `support_messages` → table
+- `support_widget_installations` → table
+- `support_widget_sessions` → table
+- Go files: `model/support.go`, `repository/support.go`, `service/support.go`, `handler/support.go`, `handler/widget.go`
+
+This PRD updates the target model to be **conversation-first** with a `support_inbox` prefix for clear module scoping:
+
+**Target database tables:**
+
+- `support_conversations`
+- `support_conversation_messages`
+- `support_inbox_installations`
+- `support_inbox_sessions`
+
+**Target Go files:**
+
+- `model/support_inbox.go`
+- `repository/support_inbox.go`
+- `service/support_inbox.go`
+- `service/support_inbox_ai.go`
+- `handler/support_inbox.go`
+- `handler/support_inbox_widget.go`
+
+### 4.2 Why Ticket + Chat Is Wrong for Helpin
+
+If Helpin keeps:
+
+- live chat as one concept
+- tickets as another concept
+
+it creates long-term duplication in:
+
+- lifecycle/status logic
+- UI terminology
+- reporting
+- CRM links
+- docs links
+- PM escalation logic
+- agent runtime targeting
+
+The correct product and data model is a single conversation object that can begin in the widget and continue in the inbox.
+
+### 4.3 Conversation State Model
+
+Recommended MVP statuses:
+
+- `open`
+- `waiting`
+- `resolved`
+- `closed`
+
+Optional later states:
+
+- `snoozed`
+- `spam`
+
+If the existing `in_progress` state remains during migration, it can temporarily map to `open` + assignment semantics, but the preferred long-term state vocabulary is simpler and inbox-oriented.
+
+### 4.4 Core Entities
+
+#### A. Support Conversation
+
+Suggested target table:
+
+- `support_conversations`
+
+Fields:
+
+- `id`
+- `workspace_id`
+- `display_id`
+- `subject`
+- `status`
+- `priority`
+- `source` (`widget`, `internal`, `email`, `api`)
+- `channel` (`web_widget`, `dashboard`, `email`)
+- `customer_name`
+- `customer_email`
+- `opened_by_user_id`
+- `assigned_agent_id`
+- `crm_contact_id`
+- `primary_story_id`
+- `first_response_mode` (`ai`, `human`)
+- `ai_handoff_reason`
+- `last_message_at`
+- `resolved_at`
+- `closed_at`
+- `created_at`
+- `updated_at`
+
+#### B. Support Conversation Message
+
+Suggested target table:
+
+- `support_conversation_messages`
+
+Fields:
+
+- `id`
+- `workspace_id`
+- `conversation_id`
+- `sender_type` (`customer`, `user`, `agent`, `ai`, `system`)
+- `sender_user_id`
+- `sender_agent_id`
+- `sender_display_name`
+- `content`
+- `message_type` (`public`, `internal_note`, `system_event`, `ai_answer`)
+- `is_internal`
+- `metadata` JSONB
+- `created_at`
+- `updated_at`
+
+The `metadata` JSON should support:
+
+- AI retrieval sources
+- model/provider metadata
+- confidence score
+- widget browser/session metadata
+- handoff reason
+- structured system events
+
+#### C. Support Inbox Installation
+
+Suggested target table:
+
+- `support_inbox_installations`
+
+Fields:
+
+- `id`
+- `workspace_id`
+- `widget_key`
+- `secret_key`
+- `settings` JSONB
+- `active`
+- `created_at`
+- `updated_at`
+
+#### D. Support Inbox Session
+
+Suggested target table:
+
+- `support_inbox_sessions`
+
+Fields:
+
+- `id`
+- `workspace_id`
+- `conversation_id`
+- `session_token`
+- `customer_name`
+- `customer_email`
+- `crm_contact_id`
+- `anonymous_identity_captured`
+- `expires_at`
+- `created_at`
+
+### 4.5 CRM Relationships
+
+Each conversation should support:
+
+- one primary CRM contact
+- optional association to company/deal via `crm_associations`
+
+Helpin already has CRM association patterns and should extend them instead of introducing support-only custom link tables for everything.
+
+### 4.6 PM Relationships
+
+Each conversation should support:
+
+- one `primary_story_id` for the main execution path
+- optional future associations to multiple stories where necessary
+
+MVP recommendation:
+
+- support one primary story link
+- keep broader associations as a later extension
+
+### 4.7 Docs Relationships
+
+Relevant docs should be represented through:
+
+- `docs_links` where persistent object linking matters
+- message-level AI source metadata for retrieval citations
+
+### 4.8 Current-to-Target Rename Mapping
+
+#### Database Tables
+
+| Current | Target |
+|---|---|
+| `support_tickets` | `support_conversations` |
+| `support_messages` | `support_conversation_messages` |
+| `support_widget_installations` | `support_inbox_installations` |
+| `support_widget_sessions` | `support_inbox_sessions` |
+
+#### Go Files
+
+| Current | Target |
+|---|---|
+| `model/support.go` | `model/support_inbox.go` |
+| `repository/support.go` | `repository/support_inbox.go` |
+| `service/support.go` | `service/support_inbox.go` |
+| — (new) | `service/support_inbox_ai.go` |
+| `handler/support.go` | `handler/support_inbox.go` |
+| `handler/widget.go` | `handler/support_inbox_widget.go` |
+
+#### Go Structs and Constants
+
+| Current | Target |
+|---|---|
+| `SupportTicket` | `SupportConversation` |
+| `SupportMessage` | `SupportConversationMessage` |
+| `SupportWidgetInstallation` | `SupportInboxInstallation` |
+| `SupportWidgetSession` | `SupportInboxSession` |
+| `SupportService` | `SupportInboxService` |
+| `SupportHandler` | `SupportInboxHandler` |
+| `WidgetHandler` | `SupportInboxWidgetHandler` |
+| `SupportTicketRepository` | `SupportConversationRepository` |
+| `SupportMessageRepository` | `SupportConversationMessageRepository` |
+| `WidgetInstallationRepository` | `SupportInboxInstallationRepository` |
+| `WidgetSessionRepository` | `SupportInboxSessionRepository` |
+| `CRMObjectSupportTicket` | `CRMObjectSupportConversation` |
+| `LinkedObjectSupportTicket` | `LinkedObjectSupportConversation` |
+
+#### Frontend Types and Services
+
+| Current | Target |
+|---|---|
+| `SupportTicket` | `SupportConversation` |
+| `SupportMessage.ticket_id` | `SupportConversationMessage.conversation_id` |
+| `TicketStatus` | `ConversationStatus` |
+| `TicketPriority` | `ConversationPriority` |
+| `supportService.listTickets()` | `supportInboxService.listConversations()` |
+| `supportService.getTicket()` | `supportInboxService.getConversation()` |
+| `queryKeys.support.tickets()` | `queryKeys.support.conversations()` |
+| `queryKeys.support.ticket()` | `queryKeys.support.conversation()` |
+
+### 4.9 Migration Strategy
+
+Recommended migration path:
+
+1. rename domain language in UI, API, services, and docs first
+2. add compatibility adapters where necessary
+3. perform table/entity renames early while support is still relatively contained
+4. remove ticket-first naming after inbox APIs are stable
+
+This is the right point to clean up naming before support grows more deeply across the suite.
+
+---
+
+## 5. Inbox UX and Workflow
+
+### 5.1 Dashboard Surface
+
+Agents should work from a native Helpin **Support Inbox** page with a **two-pane default layout**:
+
+- **left pane**: queues, filters, conversation list
+- **main pane**: conversation thread with reply composer
+
+A **slide-out drawer** (right side) opens on demand for context and details. This avoids permanently consuming horizontal space for context that is only needed intermittently. The drawer should be triggered by:
+
+- clicking the customer name / CRM badge in the conversation header
+- clicking a dedicated "Details" or info icon button
+- keyboard shortcut
+
+On mobile, the drawer becomes a full-screen overlay.
+
+### 5.2 Conversation List
+
+Each row should show:
+
+- display ID
+- subject
+- customer name/email
+- latest activity time
+- status
+- priority
+- assignment state
+- AI/human indicator
+
+### 5.3 Conversation Thread
+
+The thread should support:
+
+- customer messages
+- agent messages
+- AI messages
+- internal notes
+- system events
+
+### 5.4 Context Drawer
+
+The context drawer slides out from the right edge when opened. It should contain:
+
+- **CRM contact summary**: name, email, lifecycle stage, lead status, source
+- **Associated company and deal** where available (via `crm_associations`)
+- **Linked PM story**: title, status, link to story detail; button to create story if none linked
+- **AI source references**: docs used for the most recent AI answer, with links
+- **Conversation metadata**: source (widget/internal/email), channel, created time, first response mode
+- **Conversation controls**: status, priority, assignee dropdowns (editable inline)
+- **Associations panel**: reuse existing `AssociationsPanel` component with `support_conversation` object type
+
+The drawer should be dismissible by clicking outside, pressing Escape, or clicking the close button. State (open/closed) should persist within the session but not across page navigations.
+
+### 5.5 Mobile Behavior
+
+The current support page already includes mobile thread switching patterns (`mobileShowThread` state with `ArrowLeft` back button). The PRD should preserve and extend mobile-first behavior for:
+
+- list-to-thread transitions (existing pattern)
+- reply composer access (existing pattern)
+- context drawer opens as full-screen overlay on mobile
+- swipe-to-dismiss drawer on mobile
+
+### 5.6 Internal Notes
+
+Internal notes are required in MVP because support in Helpin is collaborative and context-heavy. These should remain message-like records on the same conversation thread but rendered separately from customer-visible messages.
+
+---
+
+## 6. Widget Experience
+
+### 6.1 Widget Capabilities
+
+The embeddable widget should support:
+
+- launcher button
+- welcome state
+- pre-chat identity capture
+- AI-first response flow
+- conversation history
+- talk-to-human path
+- session persistence
+
+### 6.2 Anonymous Identity Capture
+
+For anonymous users, the widget should ask:
+
+1. **email**
+2. **name**
+
+This is the preferred control pattern because it:
+
+- identifies the customer early
+- enables CRM matching/creation
+- supports follow-up and lead handling
+- matches the desired Intercom-like behavior
+
+### 6.3 Workspace Controls
+
+Workspace admins should be able to configure:
+
+- require email before chatting
+- require name after email
+- auto-create CRM contact on capture
+- default lifecycle stage on create
+- auto-promote to lead or not
+- AI enabled by default
+- display of "Talk to a person"
+
+Recommended MVP defaults:
+
+- require email: `true`
+- require name: `true`
+- auto-create CRM contact: `true`
+- lifecycle stage on auto-create: `subscriber`
+- optional promotion path to `lead`
+
+### 6.4 Session Behavior
+
+Public widget access should remain based on:
+
+- `widget_key`
+- `session_token`
+- short-lived session records
+
+The widget session should later bind to the conversation record once the first message creates or joins the canonical thread.
+
+---
+
+## 7. CRM and Identity Workflow
+
+### 7.1 Contact Matching
+
+When email is captured:
+
+- search existing CRM contacts by email
+- if found, link the conversation to that contact
+- if not found and workspace settings allow, create a new contact
+
+### 7.2 Initial Contact Lifecycle
+
+Today the support service auto-creates contacts with:
+
+- `lifecycle_stage = subscriber`
+- `lead_status = new`
+- `source = support`
+
+That behavior is directionally correct for MVP, but the product should expose admin control over whether inbox-captured contacts become:
+
+- no CRM record
+- `subscriber`
+- `lead`
+
+### 7.3 Manual Promotion
+
+Agents should be able to promote a captured contact to `lead` directly from the inbox or CRM surface.
+
+### 7.4 Future CRM Extensions
+
+Later phases can add:
+
+- company inference from email domain
+- deal matching or creation suggestions
+- signal detection from support conversations
+- CRM suggestions powered by support content
+
+### 7.5 Why CRM Integration Matters for Helpin
+
+Helpin is building a complete suite, so support should not stop at case handling. Inbox identity should naturally feed the relationship system:
+
+- support inquiry -> CRM identity
+- CRM identity -> account context
+- account context -> PM follow-through
+
+---
+
+## 8. PM Story Escalation Workflow
+
+### 8.1 Primary Escalation Action
+
+The primary operational escalation is:
+
+- **Create Story from Conversation**
+
+Not:
+
+- convert chat to ticket
+- duplicate the issue into a second support object
+
+### 8.2 Story Creation Behavior
+
+When an agent creates a story from a conversation, the system should:
+
+- create a PM story in a selected workflow/state
+- copy a concise summary from the conversation
+- optionally attach transcript excerpts
+- preserve customer and CRM context
+- link the story back to the conversation
+
+### 8.3 Division of Responsibility
+
+After story creation:
+
+- the **conversation** remains the customer communication system
+- the **story** becomes the execution system
+
+This separation is essential and fits Helpin's PM architecture cleanly.
+
+### 8.4 Relationship Model
+
+In MVP:
+
+- a conversation has one primary story link
+
+Later:
+
+- broader associations to multiple stories can be supported through the existing association model
+
+### 8.5 Agent and Workflow Tie-In
+
+Support already has agent-run support in the current codebase. The future model should continue to allow:
+
+- assigned support agents
+- draft replies for human approval
+- later automation around story creation or classification
+
+But those runs should target the **conversation** domain model once renaming is complete.
+
+---
+
+## 9. Docs, Help Center, and AI Knowledge
+
+### 9.1 Knowledge Sources
+
+Support AI should retrieve from:
+
+- internal Docs content
+- external help center docs published from external-capable spaces
+- public help center article metadata where useful
+
+### 9.2 Why External Docs Matter
+
+External docs are not just a publishing feature. In Helpin they matter for:
+
+- self-serve support
+- public help center
+- grounding support AI
+- future retrieval/RAG strategy
+
+This should be explicit in the PRD because external docs are already part of the product direction.
+
+### 9.3 Existing Docs Architecture
+
+Helpin already has:
+
+- docs spaces
+- docs collections
+- docs documents
+- docs content
+- docs versions
+- docs links
+- help center config
+- help center article publishing
+- public article resolution by domain/subdomain/slug
+
+The support product should build on this, not create a separate knowledge base stack.
+
+### 9.4 Retrieval Strategy
+
+#### Phase 1 retrieval
+
+Use pragmatic retrieval first:
+
+- PostgreSQL text search on `docs_contents.content_text`
+- joins to document metadata
+- optional filtering to published external docs and allowed internal docs
+
+#### Phase 2 retrieval
+
+Helpin uses Neon PostgreSQL, which supports the `pgvector` extension natively. This makes Phase 2 retrieval achievable without introducing a separate vector database:
+
+- document chunking (split `docs_contents.content_text` into overlapping segments)
+- embedding generation via LLM provider (using existing `internal/llm/` interface)
+- store embeddings in a `docs_content_embeddings` table with `vector(1536)` column (pgvector)
+- hybrid retrieval: combine `to_tsvector` lexical search with `<=>` cosine distance vector search
+- re-ranking with cross-encoder or LLM-based scoring
+- stronger citation confidence with chunk-level provenance
+- broader retrieval sources (internal docs, external help center, conversation history)
+
+### 9.5 AI Output Requirements
+
+AI answers should:
+
+- be grounded in docs
+- provide source snippets where possible
+- hand off cleanly to humans when confidence is low
+- never silently fabricate product behavior
+
+### 9.6 Human Handoff Rules
+
+The system should hand off to a human when:
+
+- the user explicitly asks for a person
+- confidence is low
+- billing/account-sensitive actions are requested
+- engineering/product bugs require investigation
+- policy/risk boundaries require human review
+
+---
+
+## 10. API Design
+
+### 10.1 Internal Dashboard APIs
+
+Recommended target internal API shape:
+
+- `GET /api/support/inbox/conversations`
+- `POST /api/support/inbox/conversations`
+- `GET /api/support/inbox/conversations/{id}`
+- `PATCH /api/support/inbox/conversations/{id}`
+- `GET /api/support/inbox/conversations/{id}/messages`
+- `POST /api/support/inbox/conversations/{id}/messages`
+- `POST /api/support/inbox/conversations/{id}/assign`
+- `POST /api/support/inbox/conversations/{id}/status`
+- `POST /api/support/inbox/conversations/{id}/create-story`
+- `GET /api/support/inbox/conversations/{id}/associations`
+
+### 10.2 Public Widget APIs
+
+The existing public endpoint family can remain conceptually similar:
+
+- `GET /api/widget/support/config?widget_key=...`
+- `POST /api/widget/support/session`
+- `GET /api/widget/support/messages?session_token=...`
+- `POST /api/widget/support/messages`
+
+Under the hood, these should move to conversation-first logic.
+
+### 10.3 Compatibility Layer
+
+During migration, temporary compatibility aliases may be needed for:
+
+- `/support/tickets/*`
+- existing frontend types
+- existing CRM support-ticket endpoints
+
+### 10.4 Association APIs
+
+Support should integrate with the current grouped association model so conversations can surface:
+
+- linked story
+- linked CRM objects
+- linked docs
+
+### 10.5 Story Escalation API
+
+Add a dedicated action endpoint:
+
+- `POST /api/support/inbox/conversations/{id}/create-story`
+
+Payload should support:
+
+- workflow ID
+- workflow state ID
+- optional team ID
+- story type
+- optional assignee/requester defaults
+
+### 10.6 Settings APIs
+
+Support settings should include:
+
+- widget branding
+- identity capture rules
+- CRM auto-create behavior
+- lead conversion default
+- AI enablement and handoff controls
+
+---
+
+## 11. Realtime, Notifications, and Agent Workflows
+
+### 11.1 Realtime
+
+Support should continue using the existing WebSocket publisher pattern (`server/internal/websocket/publisher.go` → `Hub.Broadcast`).
+
+#### Backend Event Publishing
+
+The Go support service should publish `websocket.Event` structs for all state changes. The existing `Event` struct supports `Action`, `Entity`, `EntityID`, `WorkspaceID`, `ActorID`, `ParentType`, and `ParentID` — which is sufficient for all support events.
+
+**Events to publish:**
+
+| Action | Entity | ParentType | ParentID | Trigger |
+|---|---|---|---|---|
+| `created` | `support_conversation` | — | — | New conversation from widget or dashboard |
+| `updated` | `support_conversation` | — | — | Status change, assignment change, priority change |
+| `created` | `support_conversation_message` | `support_conversation` | `{conversation_id}` | New message (customer, agent, AI, or system) |
+| `updated` | `support_conversation` | — | — | Story linked/unlinked |
+| `created` | `support_conversation_message` | `support_conversation` | `{conversation_id}` | AI reply drafted (with `sender_type: ai`) |
+| `updated` | `support_conversation` | — | — | AI handoff (status or assignment change) |
+
+#### Frontend Realtime Sync
+
+The existing `useRealtimeSync` hook (`frontend/src/hooks/useRealtimeSync.ts`) handles WebSocket events by invalidating TanStack Query caches. It currently supports PM, Docs, notifications, and agent runs but has **no support entity handling**.
+
+**Required additions to `useRealtimeSync`:**
+
+```
+// In the onEvent callback, add:
+} else if (event.entity === 'support_conversation') {
+  queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+  queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
+} else if (event.entity === 'support_conversation_message') {
+  if (event.parent_id) {
+    queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.parent_id) })
+  }
+}
+```
+
+This ensures:
+- The conversation list refreshes when any conversation changes
+- The active conversation thread refreshes when new messages arrive (from any source: customer, agent, AI)
+- Multiple agents viewing the same conversation see updates in real time
+
+#### Widget Realtime
+
+The embeddable widget connects to the same WebSocket endpoint but uses session-token auth instead of JWT. Widget clients should receive only events scoped to their active conversation. The widget adapter should:
+
+- Connect via `GET /api/ws?session_token={token}&workspace_id={id}`
+- Listen for `support_conversation_message` events where `parent_id` matches the active conversation
+- Append new messages to the local message list without requiring a full refetch
+- Show typing indicators when an `agent_typing` event is received
+
+### 11.2 Notifications
+
+Helpin already has a notification architecture built around:
+
+- entity-centric notifications
+- event tables
+- per-channel delivery state
+
+Support should not launch by implementing a full support-specific notification system, but the data model should leave room for:
+
+- assignment notifications
+- mentions/internal note notifications
+- unresolved queue alerts
+
+### 11.3 Agents
+
+Helpin already supports agent runs and support-targeted agent behavior. The support inbox should leverage this for:
+
+- draft reply generation
+- triage assistance
+- suggested status updates
+- future summarization and categorization
+
+Current code already supports human approval of drafted support replies. That pattern should be preserved and moved to conversation-first targeting.
+
+---
+
+## 12. Implementation Plan
+
+### 12.1 Phase 0: Product and Naming Alignment
+
+Deliverables:
+
+- approve conversation-first support model
+- approve story escalation as the primary workflow
+- approve docs/external docs as AI knowledge sources
+- approve Chi/GORM architecture as canonical
+
+### 12.2 Phase 1: Package Setup, SDK Migration, and Widget-Core Implementation
+
+Deliverables:
+
+- create `packages/` directory with pnpm workspace + Turborepo at repo root
+- copy and adapt package structure from `/root/helpin-convex-main`
+- adapt `@helpin/shared` types to Helpin conversation-first naming
+- extend `@helpin/sdk-js` with `initWidget()` and widget lifecycle methods
+- extend `@helpin/react` with `useSupportWidget()` and `useConversation()` hooks
+- adapt `@helpin/nextjs` with SSR-safe chat widget hooks
+- implement widget-core MVP components: `WidgetLauncher`, `ChatWindow`, `WidgetHeader`, `PreChatForm`, `MessageList`, `MessageBubble`, `ComposeBar`, `QuickReplies`
+- implement `WebSocketWidgetAdapter` against Helpin REST + WebSocket APIs
+- build `@helpin/widget-embed` IIFE bundle (`pixel.js`) with Preact and shadow DOM isolation
+
+Exit criteria:
+
+- all packages build successfully via `turbo build`
+- `pixel.js` bundle exists and is < 80KB gzipped
+- widget embed loads on a test page, renders launcher, opens chat window
+- analytics tracking continues to work as before
+
+### 12.3 Phase 2: Data Modeling and Go APIs
+
+Deliverables:
+
+- conversation-first model refactor (rename tables, add missing fields including `resolved_at`, `closed_at`, `channel`, `message_type`, `metadata` JSONB)
+- repository/service/handler updates with new `/inbox/conversations` endpoints
+- widget session/message endpoints updated for conversation model
+- CRM identity capture logic with workspace settings
+- `CreateStory` endpoint (creates new PM story from conversation, not just linking)
+- WebSocket event publishing with `support_conversation` and `support_conversation_message` entity names
+- Widget WebSocket auth path (session token alongside JWT)
+- Workspace widget settings API (identity capture rules, AI enablement, branding)
+
+Exit criteria:
+
+- end-to-end conversation create/read/update/message flows work
+- CRM contact matching and auto-creation works with configurable defaults
+- story creation from conversation works
+- realtime events publish correctly for all support state changes
+- widget session creates conversation on first message
+
+### 12.4 Phase 3: Inbox and Widget MVP
+
+Deliverables:
+
+- dashboard inbox page with two-pane layout (list + thread)
+- slide-out context drawer (CRM contact, associations, story link, metadata)
+- widget MVP with pre-chat capture, message thread, and "Talk to a person" action
+- assignment/status flows with auto-set `resolved_at`/`closed_at`
+- internal notes in conversation thread
+- human handoff path from widget
+- realtime sync in `useRealtimeSync.ts` for support entities
+- frontend terminology migration (ticket → conversation throughout)
+
+Exit criteria:
+
+- a website visitor can start a conversation via the embedded widget
+- pre-chat identity capture creates/matches a CRM contact
+- an agent can respond in the inbox and see updates in real time
+- the context drawer shows CRM contact info and allows story creation
+- the conversation can be escalated to a PM story
+- multiple agents viewing the same conversation see updates live
+
+### 12.5 Phase 4: Docs-Aware AI Support
+
+Deliverables:
+
+- wire existing `DocsSearchService.Search()` and `DocsSearchService.PublicSearch()` into new `SupportAIService`
+- AI response flow: customer message → docs retrieval → LLM provider (via existing `internal/llm/` interface) → AI message with source citations
+- `sender_type: ai` and `message_type: ai_answer` message creation with `metadata` JSONB (doc IDs, titles, snippets, confidence)
+- handoff detection logic (explicit user request, low confidence, billing/account keywords)
+- Temporal workflow for async AI response processing
+- `StreamingText` and `TypingIndicator` widget-core components
+- GIN index on `docs_contents.content_text` for production-scale search
+- widget displays AI source citations inline
+
+Exit criteria:
+
+- AI answers are grounded in docs (internal + externally published help center)
+- source citations are visible in both widget and dashboard
+- handoff to human agent works reliably on low confidence or explicit request
+- AI response latency is acceptable (< 5s for non-streaming, streaming starts < 1s)
+
+### 12.6 Phase 5: Advanced Automation and Operations
+
+Deliverables:
+
+- SLA rules
+- richer routing
+- more advanced RAG (chunking, embeddings, hybrid ranking)
+- analytics/reporting (response times, resolution rates, CSAT)
+- `CsatRating` widget-core component
+- analytics pixel data feeding CRM signal detection
+- additional channels
+
+---
+
+## 13. Detailed MVP Requirements
+
+### 13.1 Widget Requirements
+
+- embeddable script/widget bundle
+- configurable launcher and branding
+- email then name capture
+- AI-first reply
+- human fallback
+- session persistence
+
+### 13.2 Inbox Requirements
+
+- list of conversations
+- filter by status
+- view conversation thread
+- send public reply
+- send internal note
+- assign agent
+- update status
+- create story from conversation
+- view associations/context
+
+### 13.3 CRM Requirements
+
+- match contact by email
+- create contact when configured
+- support subscriber/lead default logic
+- display contact context in inbox
+
+### 13.4 Docs/AI Requirements
+
+- retrieve from docs corpus
+- retrieve from externally published docs
+- attach sources to AI answers
+- hand off when uncertain
+
+### 13.5 Architecture Requirements
+
+- React/Vite/TanStack frontend
+- Go/Chi/GORM backend
+- reuse existing websocket publisher
+- avoid Fiber-specific design dependencies
+
+---
+
+## 14. Known Gaps from Current Implementation
+
+The current codebase has a working MVP based on ticket terminology. The following gaps must be addressed to meet PRD requirements:
+
+### 14.1 Data Model Gaps
+
+The current model (`support_tickets`, `support_messages`) uses ticket terminology. Required updates:
+
+- **Missing conversation fields**: `channel`, `first_response_mode`, `ai_handoff_reason`, `last_message_at`, `resolved_at`, `closed_at`
+- **Missing message fields**: `message_type` (`public`, `internal_note`, `system_event`, `ai_answer`), `metadata` JSONB for AI sources/confidence scores
+- **Missing table renames**: `support_tickets` → `support_conversations`, `support_messages` → `support_conversation_messages`
+- **Widget tables**: `support_widget_installations` → `support_inbox_installations`, `support_widget_sessions` → `support_inbox_sessions`
+
+**Action Items:**
+- [ ] Rename `server/internal/model/support.go` → `server/internal/model/support_inbox.go`; rename structs (`SupportTicket` → `SupportConversation`, `SupportMessage` → `SupportConversationMessage`, etc. per section 4.8)
+- [ ] Add missing fields to `SupportConversation`: `channel`, `first_response_mode`, `ai_handoff_reason`, `last_message_at`, `resolved_at`, `closed_at`
+- [ ] Add missing fields to `SupportConversationMessage`: `message_type`, `metadata` JSONB
+- [ ] Create SQL migration to rename tables and add columns
+- [ ] Update `CRMObjectSupportTicket` constant to `CRMObjectSupportConversation` in `server/internal/model/crm_association.go`
+- [ ] Rename repository, service, and handler files and structs per section 3.4 and 4.8 mapping
+- [ ] Update `UpdateStatus` in `server/internal/service/support_inbox.go` to auto-set `resolved_at` when status transitions to `resolved` and `closed_at` when status transitions to `closed`
+
+### 14.2 API Endpoint Gaps
+
+Current endpoints use `/api/support/tickets/*`. Required updates:
+- Add `/api/support/inbox/conversations` endpoints
+- Add `/api/support/inbox/conversations/{id}/create-story` for creating new PM stories (not just linking existing)
+- Current `LinkStory` only links to existing stories
+
+**Action Items:**
+- [ ] Rename `server/internal/handler/support.go` → `server/internal/handler/support_inbox.go`; rename `server/internal/handler/widget.go` → `server/internal/handler/support_inbox_widget.go`
+- [ ] Add new endpoints with `/inbox/conversations` route in renamed handler
+- [ ] Add `CreateStoryFromConversation` method to `server/internal/service/support_inbox.go` that creates a new PM story, copies conversation summary, and links back via `primary_story_id`
+- [ ] Update router in `server/internal/router/router.go` to register new endpoints under `/api/support/inbox/conversations`
+- [ ] Keep legacy `/support/tickets/*` endpoints with deprecation notices for backward compatibility
+
+### 14.3 Widget Gaps
+
+Widget implementation is incomplete:
+- No pre-chat identity capture enforcement (email required, name required)
+- No AI-first response flow
+- No branding/theme configuration in widget settings
+- No welcome state / launcher customization
+- Still creates "ticket" on first message (should be conversation)
+
+**Action Items:**
+- [ ] Implement pre-chat form in widget with email/name capture based on workspace settings
+- [ ] Add AI response flow that queries docs service and streams responses
+- [ ] Add "Talk to Human" button that triggers handoff
+- [ ] Add branding config to `SupportInboxInstallation.Settings` JSONB
+- [ ] Update widget to create `support_conversation` instead of `support_ticket`
+
+### 14.4 AI/Docs Integration Gaps
+
+Docs retrieval infrastructure already exists but is not wired to support:
+- `DocsSearchService.Search()` performs full-text search on `docs_contents.content_text` using PostgreSQL `to_tsvector`/`to_tsquery` with weighted ranking (title=A, content=B)
+- `DocsSearchService.PublicSearch()` searches externally published help center articles (filters by `public_published_at IS NOT NULL`)
+- Plain text is auto-extracted from TipTap JSON on every content save via `extractPlainText()`
+
+Not implemented:
+- No wiring of existing docs search into support AI response flow
+- No confidence scoring or source citations in messages
+- No `sender_type: ai` messages
+- No human handoff logic (AI → human)
+- No message metadata for AI sources
+
+**Action Items:**
+- [ ] Wire existing `DocsSearchService.Search()` and `DocsSearchService.PublicSearch()` into a new `SupportInboxAIService` in `server/internal/service/support_inbox_ai.go`
+- [ ] Build AI response flow: receive customer message → search docs → send context + message to LLM provider (via existing `internal/llm/` interface) → create AI message
+- [ ] Implement AI message creation with `sender_type: ai` and `message_type: ai_answer`
+- [ ] Add `metadata` JSONB to messages for AI sources (doc ID, title, snippet, confidence score)
+- [ ] Add handoff detection logic: explicit user request ("talk to a person"), low LLM confidence, billing/account keywords
+- [ ] Create Temporal workflow for async AI response processing to avoid blocking the widget message endpoint
+- [ ] Add GIN index on `docs_contents.content_text` for production-scale search performance: `CREATE INDEX idx_docs_content_fts ON docs_contents USING GIN(to_tsvector('english', content_text))`
+
+### 14.5 Package Migration Not Started
+
+PRD specifies packages to copy from `/root/helpin-convex-main`:
+- `@helpin/shared`, `@helpin/widget-core`, `@helpin/sdk-js`, `@helpin/react`, `@helpin/nextjs`, `@helpin/widget-embed`
+
+None of these exist in the current Helpin codebase. The dashboard frontend (`frontend/`) is a standalone Vite SPA with no monorepo setup. Packages should live in a separate `packages/` directory at the repo root with their own pnpm workspace.
+
+**Action Items:**
+
+Setup:
+- [ ] Create `packages/` directory at repo root
+- [ ] Add `pnpm-workspace.yaml` at repo root with `packages: ["packages/*"]`
+- [ ] Add `turbo.json` at repo root for build orchestration
+- [ ] Each package gets its own `package.json`, `tsconfig.json`, and Vite/Rollup build config
+
+Package copy (from `/root/helpin-convex-main`):
+```bash
+mkdir -p packages
+cp -r /root/helpin-convex-main/packages/shared       packages/shared
+cp -r /root/helpin-convex-main/packages/widget-core   packages/widget-core
+cp -r /root/helpin-convex-main/packages/helpin-js      packages/sdk-js
+cp -r /root/helpin-convex-main/packages/helpin-react   packages/react
+cp -r /root/helpin-convex-main/packages/helpin-nextjs  packages/nextjs
+mkdir -p packages/widget-embed/src
+cp /root/helpin-convex-main/apps/widget/src/main.tsx           packages/widget-embed/src/
+cp /root/helpin-convex-main/apps/widget/src/adapters/WebSocketWidgetAdapter.ts packages/widget-embed/src/
+cp /root/helpin-convex-main/apps/widget/vite.config.ts         packages/widget-embed/
+cp /root/helpin-convex-main/pnpm-workspace.yaml .
+cp /root/helpin-convex-main/turbo.json .
+```
+
+Package adaptation (after copy):
+- [ ] `packages/shared/` — align `Conversation`, `Message`, `WidgetConfig` field names with Go model fields; add `story_escalation` and `ai_source` types
+- [ ] `packages/widget-core/` — keep adapter interface and component boundaries; implement all 11 stub components (see section 2.3 implementation plan)
+- [ ] `packages/sdk-js/` — keep analytics pipeline as-is; add Intercom-style JS API methods (`boot`, `shutdown`, `show`, `hide`, `showNewMessage`, `showConversation`, `showArticle`, `onUnreadCountChange`, `onUserEmailSupplied` — see section 2.6); add widget WebSocket connection management
+- [ ] `packages/react/` — keep analytics hooks; add `useSupportWidget()` and `useConversation()` hooks; fix leftover Jitsu references in error messages
+- [ ] `packages/nextjs/` — keep SSR-safe analytics wrapper and Edge Middleware helpers; add SSR-safe chat widget hooks with no-op server fallbacks
+- [ ] `packages/widget-embed/` — Vite IIFE build with Preact producing `pixel.js`; imports widget-core components and sdk-js adapter; creates shadow DOM container on customer sites; reads `data-widget-key` from script tag
+
+Widget-core implementation (MVP priority):
+- [ ] Implement `WidgetLauncher`: floating button with workspace branding, unread badge
+- [ ] Implement `ChatWindow`: container with open/close animation, shadow DOM isolation
+- [ ] Implement `WidgetHeader`: workspace name/logo, close button
+- [ ] Implement `PreChatForm`: email + name inputs with validation per workspace settings
+- [ ] Implement `MessageList`: scrollable thread with date separators, auto-scroll
+- [ ] Implement `MessageBubble`: customer/AI/agent message styling
+- [ ] Implement `ComposeBar`: text input with send button, enter-to-send
+- [ ] Implement `QuickReplies`: "Talk to a person" button and AI-suggested follow-ups
+- [ ] Implement `WebSocketWidgetAdapter`: connect to Helpin REST + WebSocket APIs, handle session creation, message send/receive, typing indicators
+
+### 14.6 Workspace Settings Gaps
+
+Widget settings model missing:
+- `require_email_before_chat` (default: true)
+- `require_name_after_email` (default: true)
+- `auto_create_crm_contact` (default: true)
+- `default_lifecycle_stage` (subscriber vs lead)
+- `ai_enabled` (default: true)
+- `show_talk_to_human` (default: true)
+
+**Action Items:**
+- [ ] Update `SupportInboxInstallation.Settings` JSONB schema in `server/internal/model/support_inbox.go`
+- [ ] Add settings validation in `server/internal/service/support_inbox.go`
+- [ ] Add settings UI in `frontend/src/pages/settings/Support.tsx` (or create new settings page)
+- [ ] Pass settings to widget via `GET /api/widget/support/config` endpoint
+- [ ] Add API endpoints for updating widget settings (`PATCH /api/support/inbox/installations`)
+
+### 14.7 CRM Association Gaps
+
+Current: direct `crm_contact_id` on ticket.
+Required: support company/deal associations via `crm_associations` table.
+
+**Action Items:**
+- [ ] Add `CRMObjectSupportConversation` constant in `server/internal/model/crm_association.go`
+- [ ] Update association queries in `server/internal/service/associations.go` to support conversations
+- [ ] Add company/deal association UI in `frontend/src/pages/pm/Support.tsx` context panel
+- [ ] Update `AssociationsPanel` to work with `support_conversation` object type
+
+### 14.8 Realtime Events and Frontend Sync
+
+**Backend:** Currently publishes `support_ticket`, `support_message`. Required: rename to `support_conversation`, `support_conversation_message`.
+
+**Frontend:** `useRealtimeSync.ts` currently handles PM entities (`story`, `epic`, `sprint`, `objective`), Docs entities (`docs_document`, `docs_space`, `docs_collection`), `notification`, and `agent_run`. It has **zero support entity handling** — support events are received via WebSocket but silently ignored.
+
+**Action Items (Backend):**
+- [ ] Update all `websocket.Event` entity names in `server/internal/service/support_inbox.go`: `"support_ticket"` → `"support_conversation"`, `"support_message"` → `"support_conversation_message"`
+- [ ] Publish events for all state changes: conversation create/update, message create, assignment change, story link
+- [ ] Add widget WebSocket auth path: accept `session_token` query param in `GET /api/ws` alongside existing JWT `token` param
+- [ ] Scope widget WebSocket clients to receive only events for their active conversation (filter by `ParentID` or `EntityID` match)
+
+**Action Items (Frontend — Dashboard):**
+- [ ] Add `support_conversation` and `support_conversation_message` handling to `useRealtimeSync.ts` `onEvent` callback
+- [ ] On `support_conversation` events: invalidate `queryKeys.support.conversations(workspaceId)` and `queryKeys.support.conversation(workspaceId, event.entity_id)`
+- [ ] On `support_conversation_message` events: invalidate `queryKeys.support.messages(workspaceId, event.parent_id)` and `queryKeys.support.conversation(workspaceId, event.parent_id)` (to update `last_message_at` in list)
+- [ ] Update `queryKeys.ts`: rename `tickets` → `conversations`, `ticket` → `conversation`, `ticketAssociations` → `conversationAssociations`, `messages` key to use `conversation_id`
+- [ ] Dispatch DOM custom events (`support_conversation-created`, `support_conversation_message-created`) for component listeners
+
+**Action Items (Frontend — Widget):**
+- [ ] Implement WebSocket connection in `WebSocketWidgetAdapter` using session token auth
+- [ ] On `support_conversation_message` events matching active conversation: append message to local list
+- [ ] Show typing indicator on agent/AI typing events
+- [ ] Reconnect with exponential backoff on connection drop
+
+### 14.9 Frontend Terminology
+
+SupportPage.tsx still uses "New Ticket" and ticket terminology throughout. Requires conversation-first terminology update.
+
+**Action Items:**
+- [ ] Update `frontend/src/pages/pm/Support.tsx`: Change "New Ticket" button to "New Conversation"
+- [ ] Update all UI labels: "ticket" → "conversation", "tickets" → "conversations"
+- [ ] Update `frontend/src/lib/pmTypes.ts`: Rename `SupportTicket` to `SupportConversation`, `SupportMessage.ticket_id` to `conversation_id`, `TicketStatus` to `ConversationStatus`, `TicketPriority` to `ConversationPriority`
+- [ ] Update `frontend/src/lib/services/supportService.ts`: Rename methods (`listTickets` → `listConversations`, etc.) and point to new API endpoints
+- [ ] Update `frontend/src/lib/queryKeys.ts`: Rename keys (`tickets` → `conversations`, `ticket` → `conversation`, `ticketAssociations` → `conversationAssociations`)
+
+### 14.10 Widget Embed Build Pipeline
+
+The `@helpin/widget-embed` package needs a dedicated IIFE build pipeline that produces a single `pixel.js` file for customers to embed via `<script>` tag.
+
+**Current state:** The reference repo (`apps/widget/`) has a Vite config for an IIFE build using Preact, but the main entry only creates a `<div>` container and the adapter is a no-op.
+
+**Action Items:**
+- [ ] Create `packages/widget-embed/` with Vite config: `build.lib.entry` → `src/main.tsx`, `build.lib.formats` → `['iife']`, `build.lib.name` → `'HelpinWidget'`, output `pixel.js`
+- [ ] Use Preact for lightweight rendering (38KB vs React's 130KB+ — critical for customer site performance)
+- [ ] `main.tsx` should: read `data-widget-key` from the `<script>` tag, create a shadow DOM container, fetch widget config from `GET /api/widget/support/config`, mount the `ChatWindow` component tree
+- [ ] Implement CSS isolation via shadow DOM to prevent style conflicts with customer sites
+- [ ] Widget script should be loadable async (`<script async src="https://cdn.helpin.ai/pixel.js" data-widget-key="wk_xxx"></script>`)
+- [ ] Add CDN deployment step to CI/CD pipeline for `pixel.js` versioned releases
+- [ ] Widget bundle size target: < 80KB gzipped (Preact + widget-core components + minimal CSS)
+
+### 14.11 Inbox Layout Upgrade
+
+Current `SupportPage.tsx` is a two-pane layout (list + thread) without a context panel. PRD specifies a two-pane default with a slide-out context drawer.
+
+**Action Items:**
+- [ ] Add a "Details" icon button to the conversation header in `frontend/src/pages/pm/Support.tsx`
+- [ ] Implement context drawer using shadcn `Sheet` component (slides from right)
+- [ ] Populate drawer with: CRM contact summary, company/deal associations, linked PM story (or "Create Story" button), AI source references, conversation metadata, inline-editable status/priority/assignee
+- [ ] On mobile: drawer opens as full-screen overlay
+- [ ] Drawer state (open/closed) managed via local component state, not persisted
+
+### 14.12 RBAC Permissions
+
+Support routes currently use PM permissions (`PermPMRead` / `PermPMEdit`). No dedicated support permissions exist.
+
+**Action Items:**
+- [ ] Add `PermSupportRead`, `PermSupportEdit`, `PermSupportAdmin` constants to `server/internal/authorization/permissions.go`
+- [ ] Add new permissions to `AllPermissions()` slice
+- [ ] Update the role-permission matrix to grant support permissions (viewer: read, member: read+edit, manager+: read+edit+admin)
+- [ ] Update `server/internal/router/router.go` to use `PermSupportRead` / `PermSupportEdit` / `PermSupportAdmin` on support routes instead of `PermPMRead` / `PermPMEdit`
+- [ ] Update frontend permission type union in `frontend/src/lib/types.ts` to include `support.read`, `support.edit`, `support.admin`
+
+### 14.13 DI Wiring in main.go
+
+`server/cmd/api/main.go` wires all support repositories, services, and handlers. All renames must be reflected here.
+
+**Action Items:**
+- [ ] Rename repository constructors: `NewSupportTicketRepository` → `NewSupportConversationRepository`, `NewSupportMessageRepository` → `NewSupportConversationMessageRepository`, `NewWidgetInstallationRepository` → `NewSupportInboxInstallationRepository`, `NewWidgetSessionRepository` → `NewSupportInboxSessionRepository`
+- [ ] Rename service constructor: `NewSupportService` → `NewSupportInboxService`; add `NewSupportInboxAIService` wiring with `DocsSearchService` and LLM provider
+- [ ] Rename handler constructors: `NewSupportHandler` → `NewSupportInboxHandler`, `NewWidgetHandler` → `NewSupportInboxWidgetHandler`
+- [ ] Update `AutoMigrate` calls to use renamed model structs
+- [ ] Update `agentService` wiring (it receives `supportTicketRepo` and `supportMessageRepo` — rename references)
+- [ ] Update `associationsService` wiring (it receives `supportTicketRepo` — rename reference)
+
+### 14.14 Agent Run Integration
+
+The existing agent run system already supports support targets. `RunTicketAgent` creates runs with `targetType: "support_ticket"` and `approvalState: "pending"` (support runs always require human approval). `ApproveRun` posts the agent's draft reply as a `SupportMessage` with `sender_type: "agent"`.
+
+**Action Items:**
+- [ ] Rename `RunTicketAgent` → `RunConversationAgent` in `server/internal/service/agent.go`
+- [ ] Update `targetType` from `"support_ticket"` to `"support_conversation"` throughout agent service and Temporal activities
+- [ ] Update approval flow: `ApproveRun` should post to `SupportConversationMessage` (renamed table/struct)
+- [ ] Update `validateAgentTarget` to accept `"support_conversation"` instead of `"support_ticket"`
+- [ ] Update Temporal queue constant `QueueAgentSupport` description/comments to reference conversations
+- [ ] Update `ListTicketMessages` activity function name to `ListConversationMessages` in `server/internal/temporalapp/activities.go`
+- [ ] Update `frontend/src/pages/pm/Support.tsx`: agent run UI already works, but update the run filter from `target_type === 'support_ticket'` to `target_type === 'support_conversation'`
+- [ ] Update `frontend/src/components/pm/AssociationsPanel.tsx`: change `AssociationsObjectType` to include `'support_conversation'` instead of `'support_ticket'`; update tab config
+
+### 14.15 Docs Link Object Type
+
+The `docs_links` model already supports `support_ticket` as a `LinkedObjectType` via `LinkedObjectSupportTicket = "support_ticket"`. This needs renaming.
+
+**Action Items:**
+- [ ] Rename `LinkedObjectSupportTicket` → `LinkedObjectSupportConversation` with value `"support_conversation"` in `server/internal/model/docs.go`
+- [ ] Create migration to update existing `docs_links` rows: `UPDATE docs_links SET linked_object_type = 'support_conversation' WHERE linked_object_type = 'support_ticket'`
+
+---
+
+## 15. Risks and Mitigations
+
+### Risk: Mixed terminology during migration
+
+Mitigation:
+
+- move new product language to `conversation` immediately
+- maintain temporary API compatibility only where required
+
+### Risk: Support grows as a silo
+
+Mitigation:
+
+- specify CRM, PM, Docs, Notifications, and Agents integration explicitly
+
+### Risk: RAG scope delays MVP
+
+Mitigation:
+
+- use PostgreSQL/text search retrieval first
+- phase deeper vector retrieval later
+
+### Risk: Frontend package reuse drifts from Helpin UI conventions
+
+Mitigation:
+
+- reuse package structure and adapters
+- implement UI natively within Helpin design/system patterns
+
+### Risk: Story escalation becomes duplicate issue tracking
+
+Mitigation:
+
+- keep conversation as communication layer
+- keep story as execution layer
+- do not create a second support object
+
+---
+
+## 16. Acceptance Criteria
+
+- The PRD uses a single canonical support object: **conversation**.
+- Support is specified as part of the Helpin suite, with explicit PM, CRM, Docs, and Agent integration.
+- Anonymous widget users are captured with **email first, then name**.
+- Workspace admins can control whether captured users become subscribers or leads.
+- The PRD explicitly states that escalation is to **PM story**, not support-ticket conversion.
+- The PRD explicitly states that external docs are part of the AI retrieval strategy.
+- The PRD aligns the implementation with Helpin's current architecture instead of Fiber.
+- The PRD preserves an original-style comprehensive structure rather than a short replacement memo.
+
+---
+
+## 17. Final Recommendation
+
+Helpin should proceed with a **conversation-first support inbox** that sits naturally inside the broader suite.
+
+This is the cleanest long-term model because:
+
+- customer communication stays in one thread
+- CRM identity is captured and enriched early
+- AI is grounded in Helpin Docs and external help center content
+- execution work is tracked in PM stories
+- the implementation stays aligned with the architecture Helpin already has
+
+That gives Helpin a support product that behaves like a native part of the platform rather than a bolted-on chat tool.
