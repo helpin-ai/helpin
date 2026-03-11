@@ -11,6 +11,10 @@ const (
 	AgentClassReviewer       = "reviewer"
 	AgentClassSupport        = "support"
 	AgentClassHuman          = "human"
+
+	AgentModelProviderAnthropic  = "anthropic"
+	AgentModelProviderOpenAI     = "openai"
+	AgentModelProviderOpenRouter = "openrouter"
 )
 
 // Agent represents a human or LLM agent in a workspace.
@@ -23,10 +27,11 @@ type Agent struct {
 	Role                string          `json:"role"`
 	Status              string          `json:"status" gorm:"not null;default:'idle'"`
 	BackingUserID       *string         `json:"backing_user_id" gorm:"column:user_id;type:uuid"`
-	RuntimeKind         string          `json:"runtime_kind" gorm:"not null;default:'native_claude'"`
+	RuntimeKind         string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
 	CapabilityProfile   string          `json:"capability_profile" gorm:"not null;default:'engineer'"`
 	Skills              json.RawMessage `json:"skills" gorm:"type:jsonb;not null;default:'[]'"`
 	TriggerMode         string          `json:"trigger_mode" gorm:"not null;default:'manual'"`
+	Provider            *string         `json:"provider"`
 	Model               *string         `json:"model"`
 	SystemPrompt        *string         `json:"system_prompt"`
 	PlanningNotes       *string         `json:"planning_notes"`
@@ -49,7 +54,7 @@ type AgentRun struct {
 	TicketID          *string         `json:"ticket_id" gorm:"type:uuid"`
 	TargetType        string          `json:"target_type" gorm:"not null;default:'story';index"`
 	TargetID          string          `json:"target_id" gorm:"type:uuid;not null;index"`
-	RuntimeKind       string          `json:"runtime_kind" gorm:"not null;default:'native_claude'"`
+	RuntimeKind       string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
 	ParentRunID       *string         `json:"parent_run_id" gorm:"type:uuid;index"`
 	HandoffState      *string         `json:"handoff_state"`
 	ApprovalState     string          `json:"approval_state" gorm:"not null;default:'not_required'"`
@@ -107,6 +112,7 @@ type CreateAgentRequest struct {
 	CapabilityProfile  *string         `json:"capability_profile"`
 	Skills             json.RawMessage `json:"skills"`
 	TriggerMode        *string         `json:"trigger_mode"`
+	Provider           *string         `json:"provider"`
 	Model              *string         `json:"model"`
 	SystemPrompt       *string         `json:"system_prompt"`
 	PlanningNotes      *string         `json:"planning_notes"`
@@ -125,6 +131,7 @@ type UpdateAgentRequest struct {
 	CapabilityProfile  *string         `json:"capability_profile"`
 	Skills             json.RawMessage `json:"skills"`
 	TriggerMode        *string         `json:"trigger_mode"`
+	Provider           *string         `json:"provider"`
 	Model              *string         `json:"model"`
 	SystemPrompt       *string         `json:"system_prompt"`
 	PlanningNotes      *string         `json:"planning_notes"`
@@ -162,4 +169,10 @@ type RuntimeProfile struct {
 	AllowedTargetTypes []string `json:"allowed_target_types"`
 	ApprovalRequired   bool     `json:"approval_required"`
 	RequiresRepo       bool     `json:"requires_repo"`
+}
+
+type AgentModelProviderOption struct {
+	Value            string `json:"value"`
+	Label            string `json:"label"`
+	ModelPlaceholder string `json:"model_placeholder"`
 }

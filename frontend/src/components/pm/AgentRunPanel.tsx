@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Bot, Loader2, Play, Clock, CheckCircle2, XCircle, FileCode, FileText, GitPullRequest, StopCircle, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Bot, Loader2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { agentService } from '@/lib/services/agentService';
 import type { AgentRun, AgentRunArtifact } from '@/lib/pmTypes';
-import { formatDistanceToNow, parseISO } from 'date-fns';
+import { ACTIVE_RUN_STATUSES } from './agentRunConstants';
+import { AgentRunTable } from './AgentRunTable';
+import { AgentRunDetail, AgentRunDetailEmpty } from './AgentRunDetail';
 
 interface Props {
   storyId: string;
@@ -13,25 +14,58 @@ interface Props {
   assignedAgentId?: string;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  queued: { label: 'Queued', icon: <Clock className="h-3 w-3" />, variant: 'secondary' },
-  running: { label: 'Running', icon: <Loader2 className="h-3 w-3 animate-spin" />, variant: 'default' },
-  awaiting_approval: { label: 'Awaiting approval', icon: <ShieldCheck className="h-3 w-3" />, variant: 'secondary' },
-  completed: { label: 'Completed', icon: <CheckCircle2 className="h-3 w-3" />, variant: 'outline' },
-  failed: { label: 'Failed', icon: <XCircle className="h-3 w-3" />, variant: 'destructive' },
-  cancelled: { label: 'Cancelled', icon: <XCircle className="h-3 w-3" />, variant: 'secondary' },
-};
+function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifact[] {
+  const displayArtifacts = artifacts.filter(
+    (artifact) => artifact.artifact_type !== 'opencode_stdout_chunk' && artifact.artifact_type !== 'opencode_stderr_chunk',
+  );
 
-const ARTIFACT_ICONS: Record<string, React.ReactNode> = {
-  conversation_log: <FileText className="h-3.5 w-3.5" />,
-  tool_log: <FileText className="h-3.5 w-3.5" />,
-  diff: <FileCode className="h-3.5 w-3.5" />,
-  test_report: <CheckCircle2 className="h-3.5 w-3.5" />,
-  pr_metadata: <GitPullRequest className="h-3.5 w-3.5" />,
-  agent_summary: <Bot className="h-3.5 w-3.5" />,
-  file_bundle: <FileCode className="h-3.5 w-3.5" />,
-  handoff_note: <FileText className="h-3.5 w-3.5" />,
-};
+  const stdoutArtifact = displayArtifacts.find((artifact) => artifact.artifact_type === 'opencode_stdout');
+  const stderrArtifact = displayArtifacts.find((artifact) => artifact.artifact_type === 'opencode_stderr');
+
+  if (!stdoutArtifact) {
+    const stdoutContent = artifacts
+      .filter((artifact) => artifact.artifact_type === 'opencode_stdout_chunk')
+      .map((artifact) => artifact.inline_content ?? '')
+      .join('');
+    if (stdoutContent) {
+      displayArtifacts.unshift({
+        id: 'live-opencode-stdout',
+        workspace_id: artifacts[0]?.workspace_id ?? '',
+        run_id: artifacts[0]?.run_id ?? '',
+        artifact_type: 'opencode_stdout',
+        format: 'text',
+        storage_mode: 'inline',
+        inline_content: stdoutContent,
+        metadata: {},
+        sequence_no: -2,
+        created_at: artifacts[0]?.created_at ?? new Date().toISOString(),
+      });
+    }
+  }
+
+  if (!stderrArtifact) {
+    const stderrContent = artifacts
+      .filter((artifact) => artifact.artifact_type === 'opencode_stderr_chunk')
+      .map((artifact) => artifact.inline_content ?? '')
+      .join('');
+    if (stderrContent) {
+      displayArtifacts.unshift({
+        id: 'live-opencode-stderr',
+        workspace_id: artifacts[0]?.workspace_id ?? '',
+        run_id: artifacts[0]?.run_id ?? '',
+        artifact_type: 'opencode_stderr',
+        format: 'text',
+        storage_mode: 'inline',
+        inline_content: stderrContent,
+        metadata: {},
+        sequence_no: -1,
+        created_at: artifacts[0]?.created_at ?? new Date().toISOString(),
+      });
+    }
+  }
+
+  return displayArtifacts;
+}
 
 export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) {
   const [runs, setRuns] = useState<AgentRun[]>([]);
@@ -54,6 +88,10 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
         (run: AgentRun) => run.target_type === 'story' && run.target_id === storyId
       );
       setRuns(storyRuns);
+      setSelectedRun((current) => {
+        if (!current) return current;
+        return storyRuns.find((run: AgentRun) => run.id === current.id) ?? current;
+      });
     } finally {
       setLoading(false);
     }
@@ -72,7 +110,10 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.parent_type === 'story' && detail?.parent_id === storyId) {
-        fetchRuns();
+        void fetchRuns();
+        if (selectedRun?.id && detail?.entity_id === selectedRun.id) {
+          void loadArtifacts(selectedRun.id);
+        }
       }
     };
     window.addEventListener('agent_run-updated', handler);
@@ -81,7 +122,18 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
       window.removeEventListener('agent_run-updated', handler);
       window.removeEventListener('agent_run-created', handler);
     };
-  }, [storyId, fetchRuns]);
+  }, [storyId, fetchRuns, loadArtifacts, selectedRun?.id]);
+
+  useEffect(() => {
+    if (!selectedRun || !ACTIVE_RUN_STATUSES.has(selectedRun.status)) return;
+    const interval = window.setInterval(() => {
+      void fetchRuns();
+      void loadArtifacts(selectedRun.id);
+    }, 2000);
+    return () => window.clearInterval(interval);
+  }, [fetchRuns, loadArtifacts, selectedRun]);
+
+  const displayArtifacts = useMemo(() => mergeArtifactsForDisplay(artifacts), [artifacts]);
 
   const handleRunAgent = async () => {
     setTriggering(true);
@@ -121,6 +173,13 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
     }
   };
 
+  // Auto-select the newest run after triggering
+  useEffect(() => {
+    if (runs.length > 0 && !selectedRun) {
+      void handleSelectRun(runs[0]);
+    }
+  }, [runs.length]);
+
   if (!assignedAgentId) return null;
 
   return (
@@ -142,113 +201,33 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
         </Button>
       </div>
 
-      {loading ? (
-        <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Loading runs...
+      {/* Master-detail vertical split */}
+      <div className="flex flex-col rounded-md border border-border/60 overflow-hidden">
+        {/* Top: run table */}
+        <div className="max-h-[240px] overflow-auto border-b border-border/60">
+          <AgentRunTable
+            runs={runs}
+            selectedRunId={selectedRun?.id ?? null}
+            onSelectRun={handleSelectRun}
+            loading={loading}
+          />
         </div>
-      ) : runs.length === 0 ? (
-        <p className="py-2 text-xs text-muted-foreground">No runs yet. Click "Run Agent" to start.</p>
-      ) : (
-        <div className="space-y-2">
-          {runs.map((run) => {
-            const cfg = STATUS_CONFIG[run.status] ?? STATUS_CONFIG.queued;
-            const isSelected = selectedRun?.id === run.id;
-            return (
-              <div key={run.id}>
-                <button
-                  onClick={() => handleSelectRun(run)}
-                  className={`w-full rounded-md border px-3 py-2 text-left text-xs transition-colors hover:bg-accent/50 ${isSelected ? 'border-primary bg-accent/30' : 'border-border/60'}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={cfg.variant} className="gap-1 px-1.5 py-0 text-[10px]">
-                        {cfg.icon}
-                        {cfg.label}
-                      </Badge>
-                      <span className="text-muted-foreground">
-                        {formatDistanceToNow(parseISO(run.created_at), { addSuffix: true })}
-                      </span>
-                    </div>
-                    <span className="text-muted-foreground">
-                      {run.tokens_used > 0 && `${(run.tokens_used / 1000).toFixed(1)}k tokens`}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-                    <span>{run.runtime_kind}</span>
-                    {run.runner_pool && <span>pool: {run.runner_pool}</span>}
-                    {run.execution_stage && <span>stage: {run.execution_stage}</span>}
-                    <span>approval: {run.approval_state}</span>
-                    {run.handoff_state && <span>handoff: {run.handoff_state}</span>}
-                  </div>
-                  {(run.repo_full_name || run.working_branch || run.base_branch || run.last_heartbeat_at) && (
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-                      {run.repo_full_name && <span>repo: {run.repo_full_name}</span>}
-                      {run.base_branch && <span>base: {run.base_branch}</span>}
-                      {run.working_branch && <span>branch: {run.working_branch}</span>}
-                      {run.last_heartbeat_at && (
-                        <span>
-                          heartbeat {formatDistanceToNow(parseISO(run.last_heartbeat_at), { addSuffix: true })}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {run.error_message && (
-                    <p className="mt-1 truncate text-destructive">{run.error_message}</p>
-                  )}
-                </button>
 
-                {isSelected && (
-                  <div className="ml-3 mb-1 mt-2 space-y-1.5 border-l-2 border-border pl-3">
-                    <div className="flex flex-wrap gap-2">
-                      {(run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_approval') && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 gap-1 text-[11px]"
-                          disabled={actingOnRun === run.id}
-                          onClick={() => handleCancelRun(run.id)}
-                        >
-                          {actingOnRun === run.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <StopCircle className="h-3 w-3" />}
-                          Cancel
-                        </Button>
-                      )}
-                      {run.approval_state === 'pending' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 gap-1 text-[11px]"
-                          disabled={actingOnRun === run.id}
-                          onClick={() => handleApproveRun(run.id)}
-                        >
-                          {actingOnRun === run.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldCheck className="h-3 w-3" />}
-                          Approve
-                        </Button>
-                      )}
-                    </div>
-
-                    {artifacts.map((artifact) => (
-                      <div key={artifact.id} className="rounded border border-border/60 bg-muted/30 p-2">
-                        <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium">
-                          {ARTIFACT_ICONS[artifact.artifact_type] ?? <FileText className="h-3.5 w-3.5" />}
-                          <span className="capitalize">{artifact.artifact_type.replace(/_/g, ' ')}</span>
-                          <span className="text-muted-foreground">({artifact.format})</span>
-                        </div>
-                        {artifact.inline_content && (
-                          <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all text-[10px] text-muted-foreground">
-                            {artifact.inline_content.slice(0, 2000)}
-                            {artifact.inline_content.length > 2000 && '...'}
-                          </pre>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        {/* Bottom: detail pane */}
+        <div className="min-h-[200px] max-h-[400px] overflow-auto">
+          {selectedRun ? (
+            <AgentRunDetail
+              run={selectedRun}
+              artifacts={displayArtifacts}
+              actingOnRun={actingOnRun}
+              onCancel={handleCancelRun}
+              onApprove={handleApproveRun}
+            />
+          ) : (
+            <AgentRunDetailEmpty />
+          )}
         </div>
-      )}
+      </div>
 
       <Separator className="mt-4" />
     </div>

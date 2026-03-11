@@ -311,3 +311,43 @@ func (h *CRMEmailHandler) ListByDeal(w http.ResponseWriter, r *http.Request) {
 		"page":  pagination.Page,
 	})
 }
+
+// GetEmailSyncSettings handles GET /api/crm/email/sync-settings.
+func (h *CRMEmailHandler) GetEmailSyncSettings(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	settings, err := h.emailService.GetEmailSyncSettings(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+// UpdateEmailSyncSettings handles PUT /api/crm/email/sync-settings.
+func (h *CRMEmailHandler) UpdateEmailSyncSettings(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	var req model.UpdateCRMEmailSyncSettingsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	settings, err := h.emailService.UpdateEmailSyncSettings(r.Context(), workspaceID, req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+// GetDefaultBlockedPrefixes handles GET /api/crm/email/sync-settings/default-prefixes.
+func (h *CRMEmailHandler) GetDefaultBlockedPrefixes(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, model.GetDefaultBlockedRecordPrefixes())
+}

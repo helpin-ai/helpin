@@ -34,8 +34,8 @@ func TestCreateAgentDerivesDefaultsFromAgentClass(t *testing.T) {
 	if created.Role != "Engineer" {
 		t.Fatalf("expected default role Engineer, got %q", created.Role)
 	}
-	if created.RuntimeKind != "native_claude" {
-		t.Fatalf("expected default runtime native_claude, got %q", created.RuntimeKind)
+	if created.RuntimeKind != "opencode" {
+		t.Fatalf("expected default runtime opencode, got %q", created.RuntimeKind)
 	}
 	if created.CapabilityProfile != "engineer" {
 		t.Fatalf("expected engineer capability profile, got %q", created.CapabilityProfile)
@@ -100,6 +100,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			capability_profile TEXT NOT NULL,
 			skills TEXT NOT NULL DEFAULT '[]',
 			trigger_mode TEXT NOT NULL,
+			provider TEXT,
 			model TEXT,
 			system_prompt TEXT,
 			planning_notes TEXT,

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -150,6 +151,9 @@ func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID strin
 	if err != nil {
 		return err
 	}
+	if err := ensureRunNotTerminal(state.run); err != nil {
+		return err
+	}
 
 	now := time.Now()
 	state.run.ExecutionStage = strPtr("preparing")
@@ -176,19 +180,22 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	if err != nil {
 		return ExecuteRunResult{}, err
 	}
+	if err := ensureRunNotTerminal(state.run); err != nil {
+		return ExecuteRunResult{}, err
+	}
 	planningInput, err := a.resolvePlanningRunInput(ctx, state)
 	if err != nil {
 		_ = a.failRun(ctx, state, err.Error())
-		return ExecuteRunResult{}, err
+		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 	if err := a.preparePlanningRepository(ctx, state, planningInput); err != nil {
 		_ = a.failRun(ctx, state, err.Error())
-		return ExecuteRunResult{}, err
+		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 	initialInstructions, err := a.buildInitialInstructions(ctx, state, planningInput)
 	if err != nil {
 		_ = a.failRun(ctx, state, err.Error())
-		return ExecuteRunResult{}, err
+		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 
 	now := time.Now()
@@ -203,14 +210,14 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	workDir, err := workerpkg.PrepareWorkspace(ctx, state.integration, repoFullName(state), state.accessToken)
 	if err != nil {
 		_ = a.failRun(ctx, state, fmt.Sprintf("prepare workspace: %v", err))
-		return ExecuteRunResult{}, err
+		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 	defer os.RemoveAll(workDir)
 
 	if state.repository != nil {
 		if err := a.checkoutRunRef(ctx, workDir, state); err != nil {
 			_ = a.failRun(ctx, state, err.Error())
-			return ExecuteRunResult{}, err
+			return ExecuteRunResult{}, nonRetryableRunError(err)
 		}
 	}
 
@@ -260,7 +267,13 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			}
 			now := time.Now()
 			activity.RecordHeartbeat(ctx, stage)
-			return a.runRepo.UpdateStage(ctx, state.run.WorkspaceID, state.run.ID, stage, &now)
+			state.run.ExecutionStage = &stage
+			state.run.LastHeartbeatAt = &now
+			if err := a.runRepo.UpdateStage(ctx, state.run.WorkspaceID, state.run.ID, stage, &now); err != nil {
+				return err
+			}
+			a.runRepo.Notify(ctx, state.run)
+			return nil
 		},
 		OnGitPush: func(branch, sha string) error {
 			return a.recordPush(ctx, state, branch, sha)
@@ -283,7 +296,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	adapter, err := a.runtimes.Get(runtimeKind)
 	if err != nil {
 		_ = a.failRun(ctx, state, err.Error())
-		return ExecuteRunResult{}, err
+		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 
 	err = adapter.Execute(execCtx, state.run)
@@ -295,12 +308,12 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		}
 		bgCtx := context.Background()
 		_ = a.failRun(bgCtx, state, err.Error())
-		return ExecuteRunResult{}, err
+		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 
 	if err := a.finalizePlanningRun(ctx, state, planningInput); err != nil {
 		_ = a.failRun(ctx, state, err.Error())
-		return ExecuteRunResult{}, err
+		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
 
 	if state.story != nil && execCtx.WorkingBranch != "" {
@@ -2023,6 +2036,29 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 		_ = a.agentRepo.Update(ctx, agent)
 	}
 	return nil
+}
+
+func ensureRunNotTerminal(run *model.AgentRun) error {
+	if run == nil {
+		return nil
+	}
+	switch run.Status {
+	case "failed", "completed", "cancelled", "awaiting_approval":
+		return temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("agent run %s is already in terminal state %q", run.ID, run.Status),
+			"AgentRunTerminalState",
+			nil,
+		)
+	default:
+		return nil
+	}
+}
+
+func nonRetryableRunError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return temporal.NewNonRetryableApplicationError(err.Error(), "AgentRunFailed", err)
 }
 
 func (a *AgentRunActivities) markAgentIdle(ctx context.Context, workspaceID, agentID string, tokens int) error {

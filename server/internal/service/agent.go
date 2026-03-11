@@ -26,6 +26,8 @@ type supportDraftReply struct {
 	ApprovalRequired  bool    `json:"approval_required"`
 }
 
+const stuckPostRunThreshold = 2 * time.Minute
+
 // AgentService contains agent business logic.
 type AgentService struct {
 	agentRepo        *repository.AgentRepository
@@ -48,6 +50,9 @@ type AgentService struct {
 	storyService     *PMStoryService
 	activitySvc      *PMActivityService
 	wsPublisher      *websocket.Publisher
+	anthropicAPIKey  string
+	openAIAPIKey     string
+	openRouterAPIKey string
 }
 
 // NewAgentService creates a new AgentService.
@@ -97,6 +102,13 @@ func NewAgentService(
 	}
 }
 
+func (s *AgentService) SetModelProviderConfig(anthropicAPIKey, openAIAPIKey, openRouterAPIKey string) *AgentService {
+	s.anthropicAPIKey = strings.TrimSpace(anthropicAPIKey)
+	s.openAIAPIKey = strings.TrimSpace(openAIAPIKey)
+	s.openRouterAPIKey = strings.TrimSpace(openRouterAPIKey)
+	return s
+}
+
 // ListAgents returns all agents in a workspace.
 func (s *AgentService) ListAgents(ctx context.Context, workspaceID string) ([]model.Agent, error) {
 	if workspaceID == "" {
@@ -128,6 +140,32 @@ func (s *AgentService) GetAgent(ctx context.Context, workspaceID, id string) (*m
 // ListRuntimeProfiles returns the available runtime profiles.
 func (s *AgentService) ListRuntimeProfiles() []model.RuntimeProfile {
 	return worker.ListRuntimeProfiles()
+}
+
+func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
+	options := make([]model.AgentModelProviderOption, 0, 3)
+	if s.isModelProviderConfigured(model.AgentModelProviderAnthropic) {
+		options = append(options, model.AgentModelProviderOption{
+			Value:            model.AgentModelProviderAnthropic,
+			Label:            "Anthropic",
+			ModelPlaceholder: "claude-sonnet-4-20250514",
+		})
+	}
+	if s.isModelProviderConfigured(model.AgentModelProviderOpenAI) {
+		options = append(options, model.AgentModelProviderOption{
+			Value:            model.AgentModelProviderOpenAI,
+			Label:            "OpenAI",
+			ModelPlaceholder: "gpt-5-mini",
+		})
+	}
+	if s.isModelProviderConfigured(model.AgentModelProviderOpenRouter) {
+		options = append(options, model.AgentModelProviderOption{
+			Value:            model.AgentModelProviderOpenRouter,
+			Label:            "OpenRouter",
+			ModelPlaceholder: "openai/gpt-5-mini",
+		})
+	}
+	return options
 }
 
 // CreateAgent creates a new agent.
@@ -188,6 +226,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		CapabilityProfile:  capabilityProfileForAgentClass(agentClass),
 		Skills:             skills,
 		TriggerMode:        triggerMode,
+		Provider:           trimPtr(req.Provider),
 		Model:              trimPtr(req.Model),
 		SystemPrompt:       trimPtr(req.SystemPrompt),
 		PlanningNotes:      trimPtr(req.PlanningNotes),
@@ -195,6 +234,9 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		MonthlyTokenBudget: normalizeTokenBudget(req.MonthlyTokenBudget),
 	}
 	normalizeAgentRecord(agent)
+	if err := s.validateModelRouting(agent); err != nil {
+		return nil, err
+	}
 
 	if err := s.agentRepo.Create(ctx, agent); err != nil {
 		return nil, err
@@ -256,6 +298,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if req.TriggerMode != nil && strings.TrimSpace(*req.TriggerMode) != "" {
 		agent.TriggerMode = *req.TriggerMode
 	}
+	if req.Provider != nil {
+		agent.Provider = trimPtr(req.Provider)
+	}
 	if req.Model != nil {
 		agent.Model = trimPtr(req.Model)
 	}
@@ -288,6 +333,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		return nil, fmt.Errorf("agent_class human requires agent_kind human")
 	}
 	if err := validateTriggerModeForAgentClass(agent.TriggerMode, agent.AgentClass); err != nil {
+		return nil, err
+	}
+	if err := s.validateModelRouting(agent); err != nil {
 		return nil, err
 	}
 
@@ -370,7 +418,11 @@ func (s *AgentService) ListAgentRuns(ctx context.Context, workspaceID, agentID s
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
-	return s.runRepo.ListByAgent(ctx, workspaceID, agentID, pagination)
+	runs, total, err := s.runRepo.ListByAgent(ctx, workspaceID, agentID, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	return s.reconcileStuckRuns(ctx, runs), total, nil
 }
 
 // GetAgentRun returns a single run.
@@ -381,6 +433,9 @@ func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID strin
 	}
 	if run == nil {
 		return nil, fmt.Errorf("agent run not found")
+	}
+	if updated := s.reconcileStuckRun(ctx, run); updated != nil {
+		run = updated
 	}
 	return run, nil
 }
@@ -401,7 +456,11 @@ func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetTy
 	if strings.TrimSpace(targetType) == "" || strings.TrimSpace(targetID) == "" {
 		return nil, fmt.Errorf("target_type and target_id are required")
 	}
-	return s.runRepo.ListByTarget(ctx, workspaceID, targetType, targetID)
+	runs, err := s.runRepo.ListByTarget(ctx, workspaceID, targetType, targetID)
+	if err != nil {
+		return nil, err
+	}
+	return s.reconcileStuckRuns(ctx, runs), nil
 }
 
 // RunAgent creates a new story-targeted agent run and starts its Temporal workflow.
@@ -663,6 +722,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	if activeRun != nil {
+		if updated := s.reconcileStuckRun(ctx, activeRun); updated != nil {
+			activeRun = updated
+		}
+	}
+	if activeRun != nil && (activeRun.Status == "queued" || activeRun.Status == "running" || activeRun.Status == "awaiting_approval") {
 		return nil, fmt.Errorf("an agent run is already active for this %s", params.targetType)
 	}
 
@@ -828,6 +892,7 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 	if err != nil {
 		return health
 	}
+	activeRuns = s.reconcileStuckRuns(ctx, activeRuns)
 
 	queueIndex := make(map[string]int, len(health.Queues))
 	for idx, queue := range health.Queues {
@@ -836,6 +901,9 @@ func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) 
 
 	now := time.Now()
 	for _, run := range activeRuns {
+		if run.Status != "queued" && run.Status != "running" && run.Status != "awaiting_approval" {
+			continue
+		}
 		taskQueue := stringOrDefault(run.TaskQueue, temporalapp.QueueAutomation)
 		idx, ok := queueIndex[taskQueue]
 		if !ok {
@@ -893,12 +961,67 @@ func stringOrDefault(value *string, fallback string) string {
 	return *value
 }
 
+func (s *AgentService) reconcileStuckRuns(ctx context.Context, runs []model.AgentRun) []model.AgentRun {
+	if len(runs) == 0 {
+		return runs
+	}
+	for idx := range runs {
+		run := runs[idx]
+		if updated := s.reconcileStuckRun(ctx, &run); updated != nil {
+			runs[idx] = *updated
+		}
+	}
+	return runs
+}
+
+func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRun) *model.AgentRun {
+	if !shouldFailStuckPostRun(run, time.Now()) {
+		return run
+	}
+
+	now := time.Now()
+	errMsg := "run was marked failed after OpenCode finished but finalization did not reach a terminal state"
+	run.Status = "failed"
+	run.CompletedAt = &now
+	run.ErrorMessage = &errMsg
+	run.ExecutionStage = strPtr("failed")
+	run.LastHeartbeatAt = &now
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return run
+	}
+	_ = s.markAgentIdle(ctx, run.WorkspaceID, run.AgentID)
+	s.runRepo.Notify(ctx, run)
+	return run
+}
+
+func shouldFailStuckPostRun(run *model.AgentRun, now time.Time) bool {
+	if run == nil || run.Status != "running" || run.RuntimeKind != "opencode" {
+		return false
+	}
+	if !isStuckPostRunStage(run.ExecutionStage) {
+		return false
+	}
+	if run.LastHeartbeatAt == nil {
+		return true
+	}
+	return now.Sub(*run.LastHeartbeatAt) > stuckPostRunThreshold
+}
+
+func isStuckPostRunStage(stage *string) bool {
+	switch derefString(stage) {
+	case "opencode_finished", "persisting_changes", "pushing_changes", "finalizing":
+		return true
+	default:
+		return false
+	}
+}
+
 func validateRuntimeKind(runtimeKind string) error {
 	switch runtimeKind {
-	case "native_claude", "claude_code", "openclaw", "zeroclaw":
+	case "opencode", "native_claude", "claude_code", "openclaw", "zeroclaw":
 		return nil
 	default:
-		return fmt.Errorf("runtime_kind must be one of native_claude, claude_code, openclaw, zeroclaw")
+		return fmt.Errorf("runtime_kind must be one of opencode, native_claude, claude_code, openclaw, zeroclaw")
 	}
 }
 
@@ -924,4 +1047,47 @@ func derefString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func (s *AgentService) validateModelRouting(agent *model.Agent) error {
+	if agent == nil || agent.AgentKind == "human" {
+		return nil
+	}
+	if agent.Provider == nil {
+		if agent.Model == nil || strings.TrimSpace(*agent.Model) == "" {
+			return nil
+		}
+		return fmt.Errorf("provider is required when model is set")
+	}
+
+	provider := normalizeModelProvider(*agent.Provider)
+	if err := validateModelProvider(provider); err != nil {
+		return err
+	}
+	if !s.isModelProviderConfigured(provider) {
+		switch provider {
+		case model.AgentModelProviderAnthropic:
+			return fmt.Errorf("provider anthropic is not configured (missing ANTHROPIC_API_KEY)")
+		case model.AgentModelProviderOpenAI:
+			return fmt.Errorf("provider openai is not configured (missing OPENAI_API_KEY)")
+		case model.AgentModelProviderOpenRouter:
+			return fmt.Errorf("provider openrouter is not configured (missing OPENROUTER_API_KEY)")
+		default:
+			return fmt.Errorf("provider %s is not configured", provider)
+		}
+	}
+	return nil
+}
+
+func (s *AgentService) isModelProviderConfigured(provider string) bool {
+	switch normalizeModelProvider(provider) {
+	case model.AgentModelProviderAnthropic:
+		return strings.TrimSpace(s.anthropicAPIKey) != ""
+	case model.AgentModelProviderOpenAI:
+		return strings.TrimSpace(s.openAIAPIKey) != ""
+	case model.AgentModelProviderOpenRouter:
+		return strings.TrimSpace(s.openRouterAPIKey) != ""
+	default:
+		return false
+	}
 }

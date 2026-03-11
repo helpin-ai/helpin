@@ -77,6 +77,21 @@ func defaultRuntimeKindForAgentClass(agentClass string) string {
 	return worker.GetRuntimeProfile(capabilityProfileForAgentClass(agentClass)).RuntimeKind
 }
 
+func normalizeModelProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "":
+		return ""
+	case model.AgentModelProviderAnthropic, "claude", "claude_direct":
+		return model.AgentModelProviderAnthropic
+	case model.AgentModelProviderOpenAI, "openai_direct":
+		return model.AgentModelProviderOpenAI
+	case model.AgentModelProviderOpenRouter:
+		return model.AgentModelProviderOpenRouter
+	default:
+		return strings.TrimSpace(provider)
+	}
+}
+
 func validateAgentClass(agentClass string) error {
 	switch normalizeAgentClass(agentClass, "", "", "") {
 	case model.AgentClassProductPlanner,
@@ -155,6 +170,7 @@ func normalizeAgentRecord(agent *model.Agent) {
 			agent.TriggerMode = defaultTriggerModeForAgentClass(agent.AgentClass)
 		}
 		agent.Model = nil
+		agent.Provider = nil
 		agent.SystemPrompt = nil
 		agent.PlanningNotes = nil
 		agent.Skills = json.RawMessage("[]")
@@ -167,11 +183,31 @@ func normalizeAgentRecord(agent *model.Agent) {
 		agent.AgentKind = "llm"
 	}
 	agent.BackingUserID = nil
+	if agent.Provider != nil {
+		normalized := normalizeModelProvider(*agent.Provider)
+		if normalized == "" {
+			agent.Provider = nil
+		} else {
+			agent.Provider = &normalized
+		}
+	} else if agent.Model != nil && strings.TrimSpace(*agent.Model) != "" {
+		legacyProvider := model.AgentModelProviderAnthropic
+		agent.Provider = &legacyProvider
+	}
 	if strings.TrimSpace(agent.TriggerMode) == "" || !slices.Contains(allowedTriggerModesForAgentClass(agent.AgentClass), agent.TriggerMode) {
 		agent.TriggerMode = defaultTriggerModeForAgentClass(agent.AgentClass)
 	}
 	if agent.AgentClass != model.AgentClassProductPlanner {
 		agent.PlanningNotes = nil
+	}
+}
+
+func validateModelProvider(provider string) error {
+	switch normalizeModelProvider(provider) {
+	case model.AgentModelProviderAnthropic, model.AgentModelProviderOpenAI, model.AgentModelProviderOpenRouter:
+		return nil
+	default:
+		return fmt.Errorf("provider must be one of anthropic, openai, openrouter")
 	}
 }
 

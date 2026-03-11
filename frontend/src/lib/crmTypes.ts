@@ -743,6 +743,38 @@ export interface UpdateCRMWritingProfileRequest {
   sample_count?: number;
 }
 
+// ── Email Sync Settings ──
+
+export type CRMFilterMode = 'blocklist' | 'allowlist';
+export type CRMRecordCreationMode = 'disabled' | 'selective' | 'always';
+export type CRMInternalExclusion = 'none' | 'exclude';
+
+export interface CRMEmailSyncSettings {
+  id: string;
+  workspace_id: string;
+  historical_sync_days: number;
+  filter_mode: CRMFilterMode;
+  filter_patterns: string[];
+  internal_exclusion: CRMInternalExclusion;
+  include_private_meetings: boolean;
+  include_solo_meetings: boolean;
+  record_creation_mode: CRMRecordCreationMode;
+  blocked_record_prefixes: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateCRMEmailSyncSettingsRequest {
+  historical_sync_days?: number;
+  filter_mode?: CRMFilterMode;
+  filter_patterns?: string[];
+  internal_exclusion?: CRMInternalExclusion;
+  include_private_meetings?: boolean;
+  include_solo_meetings?: boolean;
+  record_creation_mode?: CRMRecordCreationMode;
+  blocked_record_prefixes?: string[];
+}
+
 // ── Phase 6: Search ──
 
 export interface CRMSearchResult {

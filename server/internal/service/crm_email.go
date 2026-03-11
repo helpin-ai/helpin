@@ -21,25 +21,27 @@ import (
 
 // CRMEmailService contains CRM email business logic.
 type CRMEmailService struct {
-	emailRepo      *repository.CRMEmailRepository
-	contactRepo    *repository.CRMContactRepository
-	workspaceRepo  *repository.WorkspaceRepository
-	oauthClient    *oauth.GmailOAuthClient
-	encryptionKey  []byte
-	gmailSync      *sync.GmailSyncClient
-	temporalClient tclient.Client
+	emailRepo        *repository.CRMEmailRepository
+	contactRepo      *repository.CRMContactRepository
+	workspaceRepo    *repository.WorkspaceRepository
+	syncSettingsRepo *repository.CRMEmailSyncSettingsRepository
+	oauthClient      *oauth.GmailOAuthClient
+	encryptionKey    []byte
+	gmailSync        *sync.GmailSyncClient
+	temporalClient   tclient.Client
 }
 
 // NewCRMEmailService creates a new CRMEmailService.
-func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository, workspaceRepo *repository.WorkspaceRepository, oauthClient *oauth.GmailOAuthClient, encryptionKey []byte, gmailSync *sync.GmailSyncClient, temporalClient tclient.Client) *CRMEmailService {
+func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository, workspaceRepo *repository.WorkspaceRepository, syncSettingsRepo *repository.CRMEmailSyncSettingsRepository, oauthClient *oauth.GmailOAuthClient, encryptionKey []byte, gmailSync *sync.GmailSyncClient, temporalClient tclient.Client) *CRMEmailService {
 	return &CRMEmailService{
-		emailRepo:      emailRepo,
-		contactRepo:    contactRepo,
-		workspaceRepo:  workspaceRepo,
-		oauthClient:    oauthClient,
-		encryptionKey:  encryptionKey,
-		gmailSync:      gmailSync,
-		temporalClient: temporalClient,
+		emailRepo:        emailRepo,
+		contactRepo:      contactRepo,
+		workspaceRepo:    workspaceRepo,
+		syncSettingsRepo: syncSettingsRepo,
+		oauthClient:      oauthClient,
+		encryptionKey:    encryptionKey,
+		gmailSync:        gmailSync,
+		temporalClient:   temporalClient,
 	}
 }
 
@@ -386,5 +388,71 @@ func (s *CRMEmailService) matchContactByEmail(ctx context.Context, workspaceID, 
 		return &contacts[0]
 	}
 	return nil
+}
+
+// ── Email Sync Settings ──
+
+// GetEmailSyncSettings returns the email sync settings for a workspace, falling back to defaults.
+func (s *CRMEmailService) GetEmailSyncSettings(ctx context.Context, workspaceID string) (*model.CRMEmailSyncSettings, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	settings, err := s.syncSettingsRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		defaults := model.DefaultEmailSyncSettings()
+		defaults.WorkspaceID = workspaceID
+		return &defaults, nil
+	}
+	return settings, nil
+}
+
+// UpdateEmailSyncSettings updates the email sync settings for a workspace.
+func (s *CRMEmailService) UpdateEmailSyncSettings(ctx context.Context, workspaceID string, req model.UpdateCRMEmailSyncSettingsRequest) (*model.CRMEmailSyncSettings, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+
+	settings, err := s.syncSettingsRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		defaults := model.DefaultEmailSyncSettings()
+		defaults.WorkspaceID = workspaceID
+		settings = &defaults
+	}
+
+	if req.HistoricalSyncDays != nil {
+		settings.HistoricalSyncDays = *req.HistoricalSyncDays
+	}
+	if req.FilterMode != nil {
+		settings.FilterMode = *req.FilterMode
+	}
+	if req.FilterPatterns != nil {
+		settings.FilterPatterns = *req.FilterPatterns
+	}
+	if req.InternalExclusion != nil {
+		settings.InternalExclusion = *req.InternalExclusion
+	}
+	if req.IncludePrivateMeetings != nil {
+		settings.IncludePrivateMeetings = *req.IncludePrivateMeetings
+	}
+	if req.IncludeSoloMeetings != nil {
+		settings.IncludeSoloMeetings = *req.IncludeSoloMeetings
+	}
+	if req.RecordCreationMode != nil {
+		settings.RecordCreationMode = *req.RecordCreationMode
+	}
+	if req.BlockedRecordPrefixes != nil {
+		settings.BlockedRecordPrefixes = *req.BlockedRecordPrefixes
+	}
+
+	if err := s.syncSettingsRepo.Upsert(ctx, settings); err != nil {
+		return nil, err
+	}
+	return settings, nil
 }
 

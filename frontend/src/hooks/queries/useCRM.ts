@@ -19,6 +19,7 @@ import {
   crmWritingProfileService,
   crmSearchService,
   crmAutonomyService,
+  crmEmailSyncSettingsService,
 } from '@/lib/services/crmService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
@@ -903,6 +904,27 @@ export function useUpdateAutonomySettings(wsId: string) {
       unwrap(await crmAutonomyService.update(wsId, settings)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.autonomySettings(wsId) })
+    },
+  })
+}
+
+// ── Email Sync Settings ──
+
+export function useEmailSyncSettings(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.emailSyncSettings(wsId),
+    queryFn: async () => unwrap(await crmEmailSyncSettingsService.get(wsId)),
+    enabled: !!wsId,
+  })
+}
+
+export function useUpdateEmailSyncSettings(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (settings: import('@/lib/crmTypes').UpdateCRMEmailSyncSettingsRequest) =>
+      unwrap(await crmEmailSyncSettingsService.update(wsId, settings)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.emailSyncSettings(wsId) })
     },
   })
 }

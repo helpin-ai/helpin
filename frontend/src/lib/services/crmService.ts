@@ -60,6 +60,8 @@ import type {
   CreateCRMWritingProfileRequest,
   UpdateCRMWritingProfileRequest,
   CRMSearchResult,
+  CRMEmailSyncSettings,
+  UpdateCRMEmailSyncSettingsRequest,
 } from '../crmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -360,6 +362,17 @@ export const crmAutonomyService = {
     api.get<CRMAutonomySettings>(`/crm/autonomy-settings${qs(workspaceId)}`),
   update: (workspaceId: string, settings: CRMAutonomySettings) =>
     api.put<CRMAutonomySettings>(`/crm/autonomy-settings${qs(workspaceId)}`, settings),
+};
+
+// ── Email Sync Settings ──
+
+export const crmEmailSyncSettingsService = {
+  get: (workspaceId: string) =>
+    api.get<CRMEmailSyncSettings>(`/crm/email/sync-settings${qs(workspaceId)}`),
+  update: (workspaceId: string, settings: UpdateCRMEmailSyncSettingsRequest) =>
+    api.put<CRMEmailSyncSettings>(`/crm/email/sync-settings${qs(workspaceId)}`, settings),
+  getDefaultPrefixes: () =>
+    api.get<string[]>('/crm/email/sync-settings/default-prefixes'),
 };
 
 // ── Phase 6: Search ──

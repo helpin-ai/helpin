@@ -8,6 +8,8 @@ import { agentService } from '@/lib/services/agentService';
 import type {
   Agent,
   AgentClass,
+  AgentModelProvider,
+  AgentModelProviderOption,
   AgentRuntimeKind,
   AgentTriggerMode,
   CreateAgentRequest,
@@ -41,13 +43,13 @@ const STATUS_DOT: Record<string, string> = {
   paused: 'bg-gray-400',
 };
 
-const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['native_claude', 'claude_code', 'openclaw', 'zeroclaw'];
+const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'native_claude', 'claude_code', 'openclaw', 'zeroclaw'];
 const ADVANCED_DEFAULT_RUNTIME: Record<AgentClass, AgentRuntimeKind> = {
-  product_planner: 'native_claude',
-  engineer: 'native_claude',
-  reviewer: 'native_claude',
-  support: 'native_claude',
-  human: 'native_claude',
+  product_planner: 'opencode',
+  engineer: 'opencode',
+  reviewer: 'opencode',
+  support: 'opencode',
+  human: 'opencode',
 };
 const ENGINE_TRIGGER_MODE_OPTIONS: AgentTriggerMode[] = ['manual', 'auto_on_assignment', 'auto_on_event'];
 const AGENT_CLASS_LABELS: Record<AgentClass, string> = {
@@ -72,11 +74,18 @@ interface AgentFormData {
   trigger_mode: AgentTriggerMode;
   backing_user_id: string;
   skills: string;
+  provider: AgentModelProvider;
   model: string;
   system_prompt: string;
   planning_notes: string;
   monthly_token_budget: string;
 }
+
+const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
+  { value: 'anthropic', label: 'Anthropic', model_placeholder: 'claude-sonnet-4-20250514' },
+  { value: 'openai', label: 'OpenAI', model_placeholder: 'gpt-5-mini' },
+  { value: 'openrouter', label: 'OpenRouter', model_placeholder: 'openai/gpt-5-mini' },
+];
 
 function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
   return {
@@ -86,6 +95,7 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
     trigger_mode: defaultTriggerModeForClass(agentClass),
     backing_user_id: '',
     skills: '',
+    provider: 'anthropic',
     model: '',
     system_prompt: '',
     planning_notes: '',
@@ -141,6 +151,7 @@ function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentF
       ...next,
       runtime_kind: ADVANCED_DEFAULT_RUNTIME[nextClass],
       trigger_mode: 'manual',
+      provider: 'anthropic',
       model: '',
       system_prompt: '',
       planning_notes: '',
@@ -153,6 +164,7 @@ function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentF
     return {
       ...next,
       backing_user_id: '',
+      provider: 'anthropic',
       system_prompt: '',
       trigger_mode: 'manual',
     };
@@ -187,6 +199,7 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     agent_class: form.agent_class,
     backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : undefined,
     trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : undefined,
+    provider: isLLMAgentClass(form.agent_class) ? form.provider : undefined,
     model: isLLMAgentClass(form.agent_class) ? form.model.trim() : undefined,
     planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
     ...buildAdvancedFields(form, advancedOpen),
@@ -199,6 +212,7 @@ function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean): UpdateA
     agent_class: form.agent_class,
     backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : undefined,
     trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : undefined,
+    provider: isLLMAgentClass(form.agent_class) ? form.provider : undefined,
     model: isLLMAgentClass(form.agent_class) ? form.model.trim() : undefined,
     planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
     ...buildAdvancedFields(form, advancedOpen),
@@ -250,8 +264,10 @@ function AgentCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
-        {agent.agent_kind === 'llm' && agent.model && (
-          <p className="text-xs text-muted-foreground">Model: {agent.model}</p>
+        {agent.agent_kind === 'llm' && (agent.provider || agent.model) && (
+          <p className="text-xs text-muted-foreground">
+            Model: {[agent.provider, agent.model].filter(Boolean).join('/')}
+          </p>
         )}
         {showsTriggerMode(agent.agent_class) && (
           <p className="text-xs text-muted-foreground">Trigger: {agent.trigger_mode}</p>
@@ -281,6 +297,7 @@ export function AgentsPage() {
   const workspaceId = workspace?.id;
 
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [providerOptions, setProviderOptions] = useState<AgentModelProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -304,9 +321,18 @@ export function AgentsPage() {
     setLoading(false);
   }, [workspaceId]);
 
+  const loadProviderOptions = useCallback(async () => {
+    if (!workspaceId) return;
+    const res = await agentService.listModelProviders(workspaceId);
+    if (!res.error && res.data && res.data.length > 0) {
+      setProviderOptions(res.data);
+    }
+  }, [workspaceId]);
+
   useEffect(() => {
     loadAgents();
-  }, [loadAgents]);
+    loadProviderOptions();
+  }, [loadAgents, loadProviderOptions]);
 
   const openCreateDialog = () => {
     setEditingAgent(null);
@@ -325,6 +351,7 @@ export function AgentsPage() {
       trigger_mode: agent.trigger_mode,
       backing_user_id: agent.backing_user_id ?? '',
       skills: agent.skills.join(', '),
+      provider: agent.provider ?? 'anthropic',
       model: agent.model ?? '',
       system_prompt: agent.system_prompt ?? '',
       planning_notes: agent.planning_notes ?? '',
@@ -461,18 +488,39 @@ export function AgentsPage() {
                 />
               </div>
             ) : (
-              <div className="space-y-1.5">
-                <Label htmlFor="agent-model">Model</Label>
-                <Input
-                  id="agent-model"
-                  value={form.model}
-                  onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                  placeholder="e.g. claude-sonnet-4-20250514"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Leave blank to use the runtime default model.
-                </p>
-              </div>
+              <>
+                <div className="space-y-1.5">
+                  <Label>Provider</Label>
+                  <Select
+                    value={form.provider}
+                    onValueChange={(value) => setForm((current) => ({ ...current, provider: value as AgentModelProvider }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {providerOptions.map((provider) => (
+                        <SelectItem key={provider.value} value={provider.value}>
+                          {provider.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="agent-model">Model</Label>
+                  <Input
+                    id="agent-model"
+                    value={form.model}
+                    onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
+                    placeholder={providerOptions.find((option) => option.value === form.provider)?.model_placeholder ?? 'claude-sonnet-4-20250514'}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Leave blank to use the runtime default model for the selected provider.
+                  </p>
+                </div>
+              </>
             )}
 
             {showsTriggerMode(form.agent_class) && (

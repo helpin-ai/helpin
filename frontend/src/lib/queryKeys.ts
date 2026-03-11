@@ -172,6 +172,7 @@ export const queryKeys = {
       status ? (['crm', wsId, 'suggestions', { status }] as const) : (['crm', wsId, 'suggestions'] as const),
     suggestion: (wsId: string, id: string) => ['crm', wsId, 'suggestions', id] as const,
     autonomySettings: (wsId: string) => ['crm', wsId, 'autonomy-settings'] as const,
+    emailSyncSettings: (wsId: string) => ['crm', wsId, 'email-sync-settings'] as const,
 
     // Phase 5
     sequences: (wsId: string) => ['crm', wsId, 'sequences'] as const,

@@ -10,7 +10,7 @@ import (
 var runtimeProfiles = []model.RuntimeProfile{
 	{
 		Name:               model.AgentClassEngineer,
-		RuntimeKind:        "native_claude",
+		RuntimeKind:        "opencode",
 		Description:        "Story-only code implementation with repository, git, and validation tools.",
 		AllowedTools:       []string{"read_file", "read_file_range", "write_file", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "create_branch", "commit_and_push", "open_pr", "add_story_comment", "update_story_state", "list_story_checklist"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "mkdir", "cp", "mv", "pwd", "python", "pip", "cargo", "rustc", "rg"},
@@ -20,7 +20,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 	},
 	{
 		Name:               model.AgentClassProductPlanner,
-		RuntimeKind:        "native_claude",
+		RuntimeKind:        "opencode",
 		Description:        "Epic-only product spec and story planning with repository-aware read access, optional web research, and no mutation tools.",
 		AllowedTools:       []string{"read_file", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search", "add_story_comment", "list_story_checklist"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
@@ -30,7 +30,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 	},
 	{
 		Name:               model.AgentClassReviewer,
-		RuntimeKind:        "native_claude",
+		RuntimeKind:        "opencode",
 		Description:        "Story-only validation and test execution with no repository mutation tools.",
 		AllowedTools:       []string{"read_file", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "add_story_comment", "list_story_checklist"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
@@ -40,7 +40,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 	},
 	{
 		Name:               model.AgentClassSupport,
-		RuntimeKind:        "native_claude",
+		RuntimeKind:        "opencode",
 		Description:        "Support-ticket triage and draft replies with human approval before customer-visible sends.",
 		AllowedTools:       []string{"list_ticket_messages", "draft_support_reply", "update_ticket_status"},
 		AllowedCommands:    []string{},
@@ -50,7 +50,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 	},
 	{
 		Name:               model.AgentClassHuman,
-		RuntimeKind:        "native_claude",
+		RuntimeKind:        "opencode",
 		Description:        "Non-executable placeholder used for explicit assignment and handoffs to human participants.",
 		AllowedTools:       []string{},
 		AllowedCommands:    []string{},

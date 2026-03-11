@@ -95,7 +95,17 @@ func main() {
 	}
 	gmailSyncClient := syncpkg.NewGmailSyncClient(gmailOAuth, crmEmailRepo, encryptionKey)
 
-	runtimes := workerpkg.NewDefaultRuntimeRegistry(cfg.AnthropicAPIKey, cfg.BraveSearchAPIKey, runRepo, artifactRepo)
+	runtimes := workerpkg.NewDefaultRuntimeRegistry(
+		cfg.OpenCodePath,
+		cfg.AnthropicAPIKey,
+		cfg.OpenAIAPIKey,
+		cfg.OpenAIBaseURL,
+		cfg.OpenRouterAPIKey,
+		cfg.OpenRouterBaseURL,
+		cfg.BraveSearchAPIKey,
+		runRepo,
+		artifactRepo,
+	)
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
 		log.Fatalf("failed to initialize github app client: %v", err)
@@ -126,7 +136,8 @@ func main() {
 	)
 
 	// Email sync activities (may be nil if Gmail not configured).
-	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo)
+	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
+	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo)
 
 	// Signal detection activities.
 	crmSignalRepo := repository.NewCRMSignalRepository(db)

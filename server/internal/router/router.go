@@ -15,60 +15,60 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
-	Health             *handler.HealthHandler
-	Auth               *handler.AuthHandler
-	Organization       *handler.OrganizationHandler
-	Workspace          *handler.WorkspaceHandler
-	RewardQuarter      *handler.RewardQuarterHandler
-	RewardSprint       *handler.RewardSprintHandler
-	RewardGoal         *handler.RewardGoalHandler
-	RewardBonus        *handler.RewardBonusHandler
-	RewardFinance      *handler.RewardFinanceHandler
-	Settings           *handler.SettingsHandler
-	RewardAudit        *handler.RewardAuditHandler
-	RewardDraft        *handler.RewardDraftHandler
-	Invite             *handler.InviteHandler
-	PMWorkflow         *handler.PMWorkflowHandler
-	PMImport           *handler.PMImportHandler
-	PMLabel            *handler.PMLabelHandler
-	PMEpic             *handler.PMEpicHandler
-	PMSprint           *handler.PMSprintHandler
-	PMStory            *handler.PMStoryHandler
-	PMComment          *handler.PMCommentHandler
-	PMAttachment       *handler.PMAttachmentHandler
-	PMObjective        *handler.PMObjectiveHandler
-	PMChecklistItem    *handler.PMChecklistItemHandler
-	PMExternalLink     *handler.PMExternalLinkHandler
-	PMView             *handler.PMViewHandler
-	PMAutomation       *handler.PMAutomationHandler
-	PMStoryTemplate    *handler.PMStoryTemplateHandler
-	Search             *handler.SearchHandler
-	Agent              *handler.AgentHandler
-	Support            *handler.SupportHandler
-	Widget             *handler.WidgetHandler
-	Git                *handler.GitHandler
-	Orchestration      *handler.OrchestrationHandler
-	Docs               *handler.DocsHandler
-	Notification       *handler.NotificationHandler
-	UserNotifSettings  *handler.UserNotificationSettingsHandler
-	CRMContact         *handler.CRMContactHandler
-	CRMCompany         *handler.CRMCompanyHandler
-	CRMDeal            *handler.CRMDealHandler
-	CRMAssociation     *handler.CRMAssociationHandler
-	Associations       *handler.AssociationsHandler
-	CRMActivity        *handler.CRMActivityHandler
-	CRMProperty        *handler.CRMPropertyHandler
-	CRMList            *handler.CRMListHandler
-	CRMImport          *handler.CRMImportHandler
-	CRMEmail           *handler.CRMEmailHandler
-	CRMCalendar        *handler.CRMCalendarHandler
-	CRMEnrichment      *handler.CRMEnrichmentHandler
-	CRMSignal          *handler.CRMSignalHandler
-	CRMSuggestion      *handler.CRMSuggestionHandler
-	CRMSequence        *handler.CRMSequenceHandler
+	Health            *handler.HealthHandler
+	Auth              *handler.AuthHandler
+	Organization      *handler.OrganizationHandler
+	Workspace         *handler.WorkspaceHandler
+	RewardQuarter     *handler.RewardQuarterHandler
+	RewardSprint      *handler.RewardSprintHandler
+	RewardGoal        *handler.RewardGoalHandler
+	RewardBonus       *handler.RewardBonusHandler
+	RewardFinance     *handler.RewardFinanceHandler
+	Settings          *handler.SettingsHandler
+	RewardAudit       *handler.RewardAuditHandler
+	RewardDraft       *handler.RewardDraftHandler
+	Invite            *handler.InviteHandler
+	PMWorkflow        *handler.PMWorkflowHandler
+	PMImport          *handler.PMImportHandler
+	PMLabel           *handler.PMLabelHandler
+	PMEpic            *handler.PMEpicHandler
+	PMSprint          *handler.PMSprintHandler
+	PMStory           *handler.PMStoryHandler
+	PMComment         *handler.PMCommentHandler
+	PMAttachment      *handler.PMAttachmentHandler
+	PMObjective       *handler.PMObjectiveHandler
+	PMChecklistItem   *handler.PMChecklistItemHandler
+	PMExternalLink    *handler.PMExternalLinkHandler
+	PMView            *handler.PMViewHandler
+	PMAutomation      *handler.PMAutomationHandler
+	PMStoryTemplate   *handler.PMStoryTemplateHandler
+	Search            *handler.SearchHandler
+	Agent             *handler.AgentHandler
+	Support           *handler.SupportHandler
+	Widget            *handler.WidgetHandler
+	Git               *handler.GitHandler
+	Orchestration     *handler.OrchestrationHandler
+	Docs              *handler.DocsHandler
+	Notification      *handler.NotificationHandler
+	UserNotifSettings *handler.UserNotificationSettingsHandler
+	CRMContact        *handler.CRMContactHandler
+	CRMCompany        *handler.CRMCompanyHandler
+	CRMDeal           *handler.CRMDealHandler
+	CRMAssociation    *handler.CRMAssociationHandler
+	Associations      *handler.AssociationsHandler
+	CRMActivity       *handler.CRMActivityHandler
+	CRMProperty       *handler.CRMPropertyHandler
+	CRMList           *handler.CRMListHandler
+	CRMImport         *handler.CRMImportHandler
+	CRMEmail          *handler.CRMEmailHandler
+	CRMCalendar       *handler.CRMCalendarHandler
+	CRMEnrichment     *handler.CRMEnrichmentHandler
+	CRMSignal         *handler.CRMSignalHandler
+	CRMSuggestion     *handler.CRMSuggestionHandler
+	CRMSequence       *handler.CRMSequenceHandler
 	CRMWritingProfile *handler.CRMWritingProfileHandler
-	CRMSearch          *handler.CRMSearchHandler
-	CRMDealAutomation  *handler.CRMDealAutomationHandler
+	CRMSearch         *handler.CRMSearchHandler
+	CRMDealAutomation *handler.CRMDealAutomationHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -473,6 +473,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents", h.Agent.ListAgents)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agents", h.Agent.CreateAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/runtime-profiles", h.Agent.ListRuntimeProfiles)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-model-providers", h.Agent.ListModelProviders)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/runner-health", h.Agent.GetRunnerHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}", h.Agent.GetAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}", h.Agent.UpdateAgent)
@@ -685,6 +686,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/send", h.CRMEmail.SendEmail)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/emails", h.CRMEmail.ListByContact)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/emails", h.CRMEmail.ListByDeal)
+
+				// Email Sync Settings — crm.admin
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/email/sync-settings", h.CRMEmail.GetEmailSyncSettings)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Put("/email/sync-settings", h.CRMEmail.UpdateEmailSyncSettings)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/email/sync-settings/default-prefixes", h.CRMEmail.GetDefaultBlockedPrefixes)
 
 				// Calendar — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/calendar/events", h.CRMCalendar.List)
