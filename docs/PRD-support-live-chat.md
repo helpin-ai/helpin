@@ -1,6 +1,6 @@
 # PRD: Support Live Chat, Inbox, and AI Messenger
 
-**Status:** Draft v12 (widget config caching strategy, inbox ASCII layouts, 3-page chat settings, plus all v9 content)  
+**Status:** Draft v13 (canned responses, CSAT survey, typing indicators, email transcript, unread overlay from Chatwoot review, plus all v12 content)  
 **Date:** 2026-03-11  
 **Module:** Support  
 **Product context:** Helpin is a full operating suite spanning PM, CRM, Docs, Notifications, Agents, and Support. This PRD defines support as a first-class suite surface, not a standalone chat product.
@@ -794,7 +794,7 @@ Fields:
 - `sender_agent_id`
 - `sender_display_name`
 - `content`
-- `message_type` (`public`, `internal_note`, `system_event`, `ai_answer`)
+- `message_type` (`public`, `internal_note`, `system_event`, `ai_answer`, `csat_survey`)
 - `is_internal`
 - `metadata` JSONB
 - `created_at`
@@ -808,6 +808,7 @@ The `metadata` JSON should support:
 - widget browser/session metadata
 - handoff reason
 - structured system events
+- CSAT survey data (`csat_type`, `rating`, `feedback`, `submitted_at`) for `csat_survey` messages
 
 #### C. Support Inbox Installation
 
@@ -1090,6 +1091,8 @@ The thread should support:
 - AI messages
 - internal notes
 - system events
+- CSAT survey messages (inline rating + feedback — see 6.7.2)
+- typing indicators at bottom of thread (see 6.7.3)
 
 ### 5.4 Context Drawer
 
@@ -1133,6 +1136,10 @@ The embeddable widget should support:
 - conversation history
 - talk-to-human path
 - session persistence
+- unread message overlay (see 6.7.5)
+- typing indicators (see 6.7.3)
+- CSAT survey inline (see 6.7.2)
+- email transcript on resolved conversations (see 6.7.4)
 
 ### 6.2 Anonymous Identity Capture
 
@@ -1210,6 +1217,13 @@ Add to `SETTINGS_SECTIONS` in `frontend/src/pages/Settings.tsx`:
   icon: Palette,
   group: 'Support Settings',
 },
+{
+  id: 'chat-responses',
+  label: 'Canned Responses',
+  description: 'Manage saved reply templates for quick agent responses.',
+  icon: Zap,
+  group: 'Support Settings',
+},
 ```
 
 **Sidebar rendering:**
@@ -1231,7 +1245,8 @@ Settings Sidebar
 ├─ Support Settings          ← new group
 │  ├─ General                ← /w/:slug/settings/chat-general
 │  ├─ AI & Routing           ← /w/:slug/settings/chat-ai
-│  └─ Appearance             ← /w/:slug/settings/chat-appearance
+│  ├─ Appearance             ← /w/:slug/settings/chat-appearance
+│  └─ Canned Responses       ← /w/:slug/settings/chat-responses
 └─ ...
 ```
 
@@ -1727,6 +1742,200 @@ Redis becomes justified later if Helpin needs sub-second config reads under sust
 
 Helpin's approach matches Crisp's instant propagation (the best in the industry) while being simpler to implement — Crisp built a dedicated RTM protocol, whereas Helpin reuses the existing WebSocket hub that's already running for chat messages.
 
+### 6.7 Additional Widget and Inbox Features
+
+The following features were identified from a review of the Chatwoot codebase and are standard across modern support products. They are grouped here with implementation details.
+
+#### 6.7.1 Canned Responses
+
+Pre-written reply templates that agents invoke by typing `/` in the reply composer. Essential for agent productivity — avoids retyping common answers.
+
+**Data model** — new table `support_canned_responses`:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | uuid | PK |
+| `workspace_id` | uuid | FK |
+| `short_code` | string | Trigger shortcode, unique per workspace (e.g., `greeting`, `password-reset`) |
+| `title` | string | Display name shown in search results |
+| `content` | text | Template body. Supports variable interpolation: `{{contact.name}}`, `{{contact.email}}`, `{{agent.name}}` |
+| `created_by_id` | uuid | FK to user who created it |
+| `created_at` | timestamp | |
+| `updated_at` | timestamp | |
+
+**Go files**: `model/support_inbox.go` (struct), `repository/support_inbox.go` (CRUD + search), `service/support_inbox.go` (validation), `handler/support_inbox.go` (endpoints)
+
+**API endpoints**:
+- `GET /api/support/inbox/canned-responses` — list all (with `?search=` query)
+- `POST /api/support/inbox/canned-responses` — create
+- `PUT /api/support/inbox/canned-responses/{id}` — update
+- `DELETE /api/support/inbox/canned-responses/{id}` — delete
+
+**Search ranking** (matching Chatwoot's approach):
+1. `short_code` starts with query (highest)
+2. `short_code` contains query
+3. `title` or `content` contains query (lowest)
+
+**Inbox UI**:
+
+```
+Reply composer:
++----------------------------------------------------+
+| /pass                                              |
++----------------------------------------------------+
+| Canned responses:                                  |
+| /password-reset                                    |
+|   "Hi {{contact.name}}, to reset your password..." |
+| /password-change                                   |
+|   "You can change your password from Settings..."  |
++----------------------------------------------------+
+```
+
+- Typing `/` in the composer triggers a searchable dropdown
+- Arrow keys to navigate, Enter or click to insert
+- Content replaces the `/shortcode` text in the composer
+- Variables are interpolated on send (not on insert — agent can edit first)
+
+**Settings UI**: Add a "Canned Responses" management page under Support Settings group (`/w/:slug/settings/chat-responses`). Simple CRUD table with short_code, title, content columns, and create/edit dialog.
+
+**Phase**: MVP (Phase 3) — critical for agent productivity from day one.
+
+#### 6.7.2 CSAT Survey
+
+Customer satisfaction survey rendered as an inline message in the conversation thread when a conversation is resolved. Not a separate flow — it's a special message type within the existing thread.
+
+**Trigger**: When an agent resolves a conversation, the system automatically sends a CSAT message if `csat_enabled` is `true` in workspace settings (see settings addition below).
+
+**Message representation**: Uses existing `support_conversation_messages` table with:
+- `sender_type: system`
+- `message_type: csat_survey`
+- `metadata` JSONB: `{ "csat_type": "emoji" | "star", "rating": null, "feedback": null, "submitted_at": null }`
+
+When the customer responds, the same message row is updated with their rating and feedback.
+
+**Data model** — add `message_type` enum value `csat_survey` to the message model.
+
+No separate `csat_survey_responses` table needed for MVP — the response data lives in the message's `metadata` JSONB. This keeps things simple and avoids a join table for what is conceptually a single interaction.
+
+**Widget rendering**:
+
+```
++------------------------------------------------+
+| [System · just now]                            |
+|                                                |
+| How would you rate your experience?            |
+|                                                |
+| [ :( ]  [ :| ]  [ :) ]  [ :D ]  [ <3 ]       |
+|                                                |
+| (after selection:)                             |
+| You rated: :D                                  |
+| [Any additional feedback?               ]      |
+|                           [Submit feedback]    |
++------------------------------------------------+
+```
+
+- 5-point emoji scale (matches Chatwoot's default)
+- After selecting a rating, an optional text feedback field appears
+- Submits via `PUT /api/widget/support/messages/{id}` updating the metadata
+- Prevents re-submission once submitted
+- The `CsatRating` widget-core component (already listed in section 2.3) handles this
+
+**Settings addition** — add to `SupportInboxInstallation.Settings` JSONB:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `csat_enabled` | bool | `true` | Send CSAT survey on conversation resolution |
+
+Add this toggle to the **AI & Routing** settings page (`ChatAITab.tsx`) in a new "Customer Satisfaction" card.
+
+**Phase**: Phase 3 (data model + widget component) / Phase 4 (reporting dashboard).
+
+#### 6.7.3 Typing Indicators
+
+Real-time typing indicators showing when an agent is composing a reply (agent → widget) and when a customer is typing (widget → dashboard).
+
+**Backend mechanism**: Uses the existing WebSocket publisher. No database writes — typing events are ephemeral.
+
+**Events**:
+
+| Direction | Event | Entity | Metadata |
+|---|---|---|---|
+| Agent typing | `typing_on` / `typing_off` | `support_conversation` | `{ "user_id": "...", "display_name": "Alex" }` |
+| Customer typing | `typing_on` / `typing_off` | `support_conversation` | `{ "session_id": "..." }` |
+
+**Agent → Widget flow**:
+1. Agent starts typing in reply composer → frontend debounces (300ms) and calls `POST /api/support/inbox/conversations/{id}/typing` with `{ "typing": true }`
+2. Handler publishes `typing_on` WebSocket event scoped to the conversation
+3. Widget receives event → shows `TypingIndicator` component (bouncing dots)
+4. Auto-expires after 30s if no follow-up `typing_on` event
+
+**Widget → Dashboard flow**:
+1. Customer starts typing → widget calls `POST /v1/conversations/{id}/typing` with `{ "typing": true }`
+2. Handler publishes `typing_on` WebSocket event scoped to the conversation
+3. Dashboard `useRealtimeSync` receives event → shows typing indicator below message list
+4. Auto-expires after 30s
+
+**API endpoints**:
+- `POST /api/support/inbox/conversations/{id}/typing` — dashboard (JWT auth)
+- `POST /v1/conversations/{id}/typing` → rewrites to `POST /api/widget/support/conversations/{id}/typing` — widget (session token auth)
+
+**Phase**: MVP (Phase 3) — the `TypingIndicator` widget-core component is already planned; this adds the backend wiring.
+
+#### 6.7.4 Email Transcript
+
+Allows visitors to email themselves a copy of the conversation transcript. Simple feature, useful for reference.
+
+**Widget UI**: When a conversation is resolved, the widget shows a "Email Transcript" button alongside "Start New Conversation":
+
+```
++------------------------------------------------+
+| This conversation has been resolved.           |
+|                                                |
+| [Start New Conversation]  [Email Transcript]   |
++------------------------------------------------+
+```
+
+Clicking "Email Transcript" sends the full conversation text to the customer's email address (captured during pre-chat). If no email was captured, the button is hidden.
+
+**Backend**:
+- `POST /api/widget/support/conversations/{id}/transcript` — widget endpoint (session token auth)
+- The handler formats all public messages (excluding internal notes) into a clean email template
+- Sends via Helpin's existing Postmark email client (`internal/email/`)
+- Includes: workspace name, conversation ID, all messages with timestamps and sender names, AI source citations if any
+
+**Phase**: Phase 4 — nice to have, not launch-blocking. Low implementation effort since Postmark email is already wired.
+
+#### 6.7.5 Unread Message Overlay
+
+When the widget is closed and an agent (or AI) sends a reply, the widget should show a preview of the unread message near the launcher button — not just a badge count.
+
+**Widget rendering**:
+
+```
+                          +------------------------------------+
+                          | Alex from Acme Corp:               |
+                          | I've reset your password. You      |
+                          | should receive an email shortly... |
+                          |                              [x]   |
+                          +------------------------------------+
+                                              [ (bubble icon) 1 ]
+```
+
+- Shows the latest unread message as a floating card near the launcher
+- Includes sender name and a truncated message preview (max 120 chars)
+- Dismiss button `[x]` hides the overlay without opening the widget
+- Clicking the overlay opens the widget to that conversation
+- Multiple unread messages show count badge on launcher; overlay shows only the latest
+- Overlay auto-hides after 15 seconds if not interacted with
+
+**Implementation**:
+- The WebSocket connection stays open even when the widget panel is closed (only the UI is hidden, not the connection)
+- On `support_conversation_message` event with `sender_type != customer`, increment unread count and show overlay
+- Store unread state in `sessionStorage` (cleared when widget is opened)
+- The `onUnreadCountChange` SDK callback (section 2.6) fires whenever this count changes
+
+**Phase**: MVP (Phase 3) — important for engagement; ensures visitors notice agent replies.
+
 ---
 
 ## 7. CRM and Identity Workflow
@@ -1922,6 +2131,12 @@ Recommended target internal API shape:
 - `PATCH /api/support/inbox/conversations/{id}`
 - `GET /api/support/inbox/conversations/{id}/messages`
 - `POST /api/support/inbox/conversations/{id}/messages`
+- `POST /api/support/inbox/conversations/{id}/typing` (typing indicator — see 6.7.3)
+- `POST /api/support/inbox/conversations/{id}/transcript` (email transcript — see 6.7.4)
+- `GET /api/support/inbox/canned-responses` (with `?search=` — see 6.7.1)
+- `POST /api/support/inbox/canned-responses`
+- `PUT /api/support/inbox/canned-responses/{id}`
+- `DELETE /api/support/inbox/canned-responses/{id}`
 - `POST /api/support/inbox/conversations/{id}/assign`
 - `POST /api/support/inbox/conversations/{id}/status`
 - `POST /api/support/inbox/conversations/{id}/create-story`
@@ -2098,13 +2313,17 @@ Exit criteria:
 Deliverables:
 
 - conversation-first model refactor (rename tables, add missing fields including `resolved_at`, `closed_at`, `channel`, `message_type`, `metadata` JSONB)
+- add `csat_survey` to `message_type` enum; add CSAT metadata fields to message `metadata` JSONB schema
+- `support_canned_responses` table: `short_code`, `title`, `content`, `created_by_id` (see section 6.7.1)
+- canned responses CRUD API: `GET/POST/PUT/DELETE /api/support/inbox/canned-responses` with ranked search
 - repository/service/handler updates with new `/inbox/conversations` endpoints
+- typing indicator endpoint: `POST /api/support/inbox/conversations/{id}/typing` — publishes ephemeral WebSocket event, no DB write
 - widget session/message endpoints updated for conversation model
 - CRM identity capture logic with workspace settings
 - `CreateStory` endpoint (creates new PM story from conversation, not just linking)
 - WebSocket event publishing with `support_conversation` and `support_conversation_message` entity names
 - Widget WebSocket auth path (session token alongside JWT)
-- Chat settings backend: expand `SupportInboxInstallation.Settings` JSONB schema with full settings fields (identity capture, CRM integration, AI behavior, widget appearance, business hours — see section 6.5)
+- Chat settings backend: expand `SupportInboxInstallation.Settings` JSONB schema with full settings fields (identity capture, CRM integration, AI behavior, widget appearance, business hours, `csat_enabled` — see sections 6.5, 6.7.2)
 - Chat settings API: `GET /api/support/inbox/installations` (read), `PATCH /api/support/inbox/installations` (update), `POST /api/support/inbox/installations/regenerate-key` (regenerate widget key)
 - Widget config endpoint: `GET /api/widget/support/config?key={widget_key}` returns public-facing subset of settings (see section 6.5 Widget Config API Response)
 - Settings validation in `SupportInboxService`: validate `ai_confidence_threshold` range (0.0–1.0), validate `handoff_team_id` exists when `handoff_behavior` is `assign_to_team`, validate hex color format for `brand_color`
@@ -2129,11 +2348,16 @@ Deliverables:
 - assignment/status flows with auto-set `resolved_at`/`closed_at`
 - internal notes in conversation thread
 - human handoff path from widget
+- canned responses: `/shortcode` composer trigger with ranked search dropdown (see 6.7.1)
+- canned responses management page under Support Settings (`/w/:slug/settings/chat-responses`)
+- typing indicators: agent ↔ customer bidirectional via WebSocket (see 6.7.3)
+- CSAT survey: auto-send `csat_survey` message on resolution, `CsatRating` widget component (see 6.7.2)
+- unread message overlay: floating preview card near launcher when widget is closed (see 6.7.5)
 - realtime sync in `useRealtimeSync.ts` for support entities
 - frontend terminology migration (ticket → conversation throughout)
 - Chat Settings — 3 sub-pages under "Support Settings" group (see section 6.5 for ASCII layouts):
   - `ChatGeneralTab.tsx`: Widget Installation + Identity Capture + CRM Integration cards
-  - `ChatAITab.tsx`: AI Auto-Reply + Handoff Routing + Business Hours cards
+  - `ChatAITab.tsx`: AI Auto-Reply + Handoff Routing + Business Hours + CSAT toggle cards
   - `ChatAppearanceTab.tsx`: Branding + Launcher + live widget Preview cards
 - Register `chat-general`, `chat-ai`, `chat-appearance` sections in `SETTINGS_SECTIONS`
 - Widget key display with copy-to-clipboard, embed code snippet, and regenerate key
@@ -2147,6 +2371,10 @@ Exit criteria:
 - the context drawer shows CRM contact info and allows story creation
 - the conversation can be escalated to a PM story
 - multiple agents viewing the same conversation see updates live
+- agents can use `/shortcode` to insert canned responses in the reply composer
+- typing indicators show in both widget and dashboard in real time
+- CSAT survey appears in widget when conversation is resolved
+- unread message overlay shows near launcher when widget is closed
 - workspace admins can configure chat settings from `/w/:slug/settings/chat`
 - widget respects workspace settings (identity capture rules, branding, AI toggle, business hours)
 
@@ -2159,9 +2387,11 @@ Deliverables:
 - `sender_type: ai` and `message_type: ai_answer` message creation with `metadata` JSONB (doc IDs, titles, snippets, confidence)
 - handoff detection logic (explicit user request, low confidence, billing/account keywords)
 - Temporal workflow for async AI response processing
-- `StreamingText` and `TypingIndicator` widget-core components
+- `StreamingText` widget-core component (TypingIndicator already shipped in Phase 3)
 - GIN index on `docs_contents.content_text` for production-scale search
 - widget displays AI source citations inline
+- email transcript: `POST /api/widget/support/conversations/{id}/transcript` sends formatted transcript via Postmark (see 6.7.4)
+- CSAT reporting dashboard: aggregate ratings by agent, by time period, feedback review
 
 Exit criteria:
 
@@ -2169,6 +2399,8 @@ Exit criteria:
 - source citations are visible in both widget and dashboard
 - handoff to human agent works reliably on low confidence or explicit request
 - AI response latency is acceptable (< 5s for non-streaming, streaming starts < 1s)
+- visitors can email themselves a conversation transcript
+- CSAT data is visible in reporting
 
 ### 12.6 Phase 5: Advanced Automation and Operations
 
@@ -2177,8 +2409,7 @@ Deliverables:
 - SLA rules
 - richer routing
 - more advanced RAG (chunking, embeddings, hybrid ranking)
-- analytics/reporting (response times, resolution rates, CSAT)
-- `CsatRating` widget-core component
+- analytics/reporting (response times, resolution rates)
 - analytics pixel data feeding CRM signal detection
 - additional channels
 
@@ -2507,6 +2738,51 @@ The `docs_links` model already supports `support_ticket` as a `LinkedObjectType`
 **Action Items:**
 - [ ] Rename `LinkedObjectSupportTicket` → `LinkedObjectSupportConversation` with value `"support_conversation"` in `server/internal/model/docs.go`
 - [ ] Create migration to update existing `docs_links` rows: `UPDATE docs_links SET linked_object_type = 'support_conversation' WHERE linked_object_type = 'support_ticket'`
+
+### 14.16 Canned Responses, CSAT, Typing, Transcript, Unread Overlay
+
+Features identified from Chatwoot codebase review (section 6.7). None exist in the current implementation.
+
+**Action Items (Canned Responses — Phase 2/3):**
+- [ ] Create `SupportCannedResponse` model in `server/internal/model/support_inbox.go` with `short_code`, `title`, `content`, `created_by_id`
+- [ ] Add GORM migration for `support_canned_responses` table with unique index on `(workspace_id, short_code)`
+- [ ] Add repository methods: `List`, `Search` (ranked: shortcode prefix > shortcode contains > content contains), `Create`, `Update`, `Delete`
+- [ ] Add 4 handler endpoints: `GET/POST/PUT/DELETE /api/support/inbox/canned-responses`
+- [ ] Frontend: canned response management page at `/w/:slug/settings/chat-responses` under Support Settings group
+- [ ] Frontend: `/` trigger in reply composer — debounced search, dropdown with shortcode + content preview, Enter to insert
+- [ ] Support variable interpolation on send: `{{contact.name}}`, `{{contact.email}}`, `{{agent.name}}`
+
+**Action Items (CSAT Survey — Phase 3):**
+- [ ] Add `csat_survey` to `message_type` enum in `server/internal/model/support_inbox.go`
+- [ ] Add `csat_enabled` field to `SupportInboxSettings` struct (default: `true`)
+- [ ] On conversation resolution: if `csat_enabled`, auto-create a system message with `message_type: csat_survey` and `metadata: { csat_type: "emoji", rating: null, feedback: null }`
+- [ ] Add `PUT /api/widget/support/messages/{id}` endpoint for CSAT submission (updates metadata with rating + feedback + submitted_at)
+- [ ] Implement `CsatRating` widget-core component: 5-point emoji scale, optional feedback text, submit button, prevent re-submission
+- [ ] Add CSAT toggle to `ChatAITab.tsx` settings page in a "Customer Satisfaction" card
+
+**Action Items (Typing Indicators — Phase 3):**
+- [ ] Add `POST /api/support/inbox/conversations/{id}/typing` handler (JWT auth, dashboard)
+- [ ] Add `POST /api/widget/support/conversations/{id}/typing` handler (session token auth, widget)
+- [ ] Both handlers publish ephemeral `typing_on`/`typing_off` WebSocket events — no database write
+- [ ] Frontend: debounce typing detection (300ms) in reply composer, call typing endpoint
+- [ ] Frontend: show typing indicator in conversation thread (agent name + bouncing dots)
+- [ ] Widget: show `TypingIndicator` component when `typing_on` event received, auto-dismiss after 30s
+- [ ] Add `typing_on`/`typing_off` to `useRealtimeSync.ts` event handling
+
+**Action Items (Email Transcript — Phase 4):**
+- [ ] Add `POST /api/widget/support/conversations/{id}/transcript` handler (session token auth)
+- [ ] Format all public messages (exclude internal notes) into HTML email template
+- [ ] Include: workspace name, conversation display ID, messages with timestamps + sender names, AI source citations
+- [ ] Send via existing Postmark email client (`server/internal/email/`)
+- [ ] Widget: show "Email Transcript" button on resolved conversations (only if customer email is known)
+
+**Action Items (Unread Message Overlay — Phase 3):**
+- [ ] Widget: when panel is closed and WS receives `support_conversation_message` with `sender_type != customer`, show floating preview card near launcher
+- [ ] Card content: sender name, truncated message (120 chars max), dismiss `[x]` button
+- [ ] Click overlay → open widget to that conversation
+- [ ] Auto-hide after 15 seconds if not interacted with
+- [ ] Track unread count in `sessionStorage`, clear when widget panel opens
+- [ ] Fire `onUnreadCountChange` SDK callback (already defined in section 2.6)
 
 ---
 
