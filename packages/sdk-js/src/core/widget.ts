@@ -35,7 +35,7 @@ export class WidgetManager {
   private wsRetryCount = 0;
   private wsRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private isShutdown = false;
-  private host = 'sdk.helpin.ai';
+  private host = 'api.helpin.ai';
 
   // Preact mount state
   private mountContainer: HTMLElement | null = null;
