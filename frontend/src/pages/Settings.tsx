@@ -9,7 +9,7 @@ import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, FileText, FolderKanban, GitBranch, Globe, Import, Mail, MessageSquare, Palette, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
+import { Bot, FileText, FolderKanban, GitBranch, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
 import {
   GeneralTab,
   MembersTab,
@@ -28,10 +28,9 @@ import {
   CRMAutonomySettingsTab,
   ChatGeneralTab,
   ChatAITab,
-  ChatAppearanceTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'chat-general' | 'chat-ai' | 'chat-appearance' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'chat-general' | 'chat-ai' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -144,13 +143,6 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'AI & Routing',
     description: 'AI auto-reply, handoff routing, business hours, and CSAT.',
     icon: Bot,
-    group: 'Support Settings',
-  },
-  {
-    id: 'chat-appearance',
-    label: 'Appearance',
-    description: 'Widget branding, colors, launcher position, and icon.',
-    icon: Palette,
     group: 'Support Settings',
   },
   /* {
@@ -357,8 +349,6 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return <ChatGeneralTab workspaceId={workspaceId} />;
       case 'chat-ai':
         return <ChatAITab workspaceId={workspaceId} />;
-      case 'chat-appearance':
-        return <ChatAppearanceTab workspaceId={workspaceId} />;
       default:
         return null;
     }

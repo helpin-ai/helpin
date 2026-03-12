@@ -29,7 +29,6 @@ import {
   Inbox,
   LayoutList,
   Moon,
-  Palette,
   Play,
   Plus,
   RefreshCw,
@@ -587,7 +586,6 @@ export function Sidebar() {
         items: [
           { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
           { link: `/w/${wsSlug}/settings/chat-ai`, label: 'AI & Routing', icon: Bot },
-          { link: `/w/${wsSlug}/settings/chat-appearance`, label: 'Appearance', icon: Palette },
         ],
       },
       {

@@ -8,22 +8,36 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Copy, Key, Code } from 'lucide-react';
+import { Copy, Key, Code, MessageSquare, HelpCircle, CircleHelp } from 'lucide-react';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey } from '@/hooks/queries';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
+import { WidgetPreview } from './WidgetPreview';
 import { API_BASE } from '@/lib/api';
+
+const ICON_OPTIONS = [
+  { value: 'chat_bubble', label: 'Chat Bubble', icon: MessageSquare },
+  { value: 'question_mark', label: 'Question Mark', icon: HelpCircle },
+  { value: 'help', label: 'Help', icon: CircleHelp },
+];
 
 export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const { data, isLoading } = useChatSettings(workspaceId);
   const updateMutation = useUpdateChatSettings(workspaceId);
   const regenerateMutation = useRegenerateWidgetKey(workspaceId);
 
+  // Identity & CRM state
   const [requireEmail, setRequireEmail] = useState(true);
   const [requireName, setRequireName] = useState(false);
   const [welcomeMessage, setWelcomeMessage] = useState('');
   const [autoCreateContact, setAutoCreateContact] = useState(true);
   const [lifecycleStage, setLifecycleStage] = useState('subscriber');
   const [autoPromote, setAutoPromote] = useState(false);
+
+  // Appearance state
+  const [brandColor, setBrandColor] = useState('#6366F1');
+  const [showBranding, setShowBranding] = useState(true);
+  const [launcherPosition, setLauncherPosition] = useState('bottom_right');
+  const [launcherIcon, setLauncherIcon] = useState('chat_bubble');
 
   useEffect(() => {
     if (data?.settings) {
@@ -34,6 +48,10 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setAutoCreateContact(s.auto_create_crm_contact);
       setLifecycleStage(s.default_lifecycle_stage);
       setAutoPromote(s.auto_promote_to_lead);
+      setBrandColor(s.brand_color);
+      setShowBranding(s.show_branding);
+      setLauncherPosition(s.launcher_position);
+      setLauncherIcon(s.launcher_icon);
     }
   }, [data]);
 
@@ -45,6 +63,10 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       auto_create_crm_contact: autoCreateContact,
       default_lifecycle_stage: lifecycleStage,
       auto_promote_to_lead: autoPromote,
+      brand_color: brandColor,
+      show_branding: showBranding,
+      launcher_position: launcherPosition,
+      launcher_icon: launcherIcon,
     }, {
       onSuccess: () => toast.success('Settings saved'),
       onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to save'),
@@ -68,6 +90,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       <div className="space-y-6">
         <Skeleton className="h-48 w-full rounded-lg" />
         <Skeleton className="h-48 w-full rounded-lg" />
+        <Skeleton className="h-64 w-full rounded-lg" />
       </div>
     );
   }
@@ -176,6 +199,94 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               onChange={(e) => setWelcomeMessage(e.target.value)}
               placeholder="Hi there! How can we help you today?"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Appearance + Live Preview */}
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base">Appearance</CardTitle>
+          <CardDescription>Customize the widget's visual appearance.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_380px]">
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Brand Color</Label>
+                <div className="flex items-center gap-2">
+                  <div className="relative shrink-0">
+                    <div
+                      className="h-9 w-9 rounded-md border shadow-sm cursor-pointer"
+                      style={{ backgroundColor: brandColor }}
+                    />
+                    <input
+                      type="color"
+                      value={brandColor}
+                      onChange={(e) => setBrandColor(e.target.value)}
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                    />
+                  </div>
+                  <Input
+                    value={brandColor}
+                    onChange={(e) => setBrandColor(e.target.value)}
+                    className="w-32 font-mono text-sm"
+                    placeholder="#6366F1"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Launcher Position</Label>
+                <Select value={launcherPosition} onValueChange={setLauncherPosition}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bottom_right">Bottom Right</SelectItem>
+                    <SelectItem value="bottom_left">Bottom Left</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Launcher Icon</Label>
+                <Select value={launcherIcon} onValueChange={setLauncherIcon}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ICON_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        <span className="flex items-center gap-2">
+                          <opt.icon className="h-4 w-4" />
+                          {opt.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Show "Powered by" branding</Label>
+                  <p className="text-xs text-muted-foreground">Display branding in the widget footer.</p>
+                </div>
+                <Switch checked={showBranding} onCheckedChange={setShowBranding} />
+              </div>
+            </div>
+
+            <div className="hidden lg:block">
+              <Label className="mb-2 block text-sm font-medium text-muted-foreground">Live Preview</Label>
+              <WidgetPreview
+                brandColor={brandColor}
+                showBranding={showBranding}
+                launcherPosition={launcherPosition}
+                launcherIcon={launcherIcon}
+                welcomeMessage={welcomeMessage}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
