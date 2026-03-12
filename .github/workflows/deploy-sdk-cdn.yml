@@ -1,0 +1,51 @@
+# Deploy SDK to Cloudflare Pages
+# Uncomment when Cloudflare Pages project "helpin-sdk" is created
+# and CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID secrets are added.
+#
+# name: Deploy SDK to Cloudflare Pages
+#
+# on:
+#   push:
+#     branches: [main, develop]
+#     paths:
+#       - "packages/sdk-js/**"
+#       - "packages/widget-core/**"
+#       - "packages/shared/**"
+#
+# permissions:
+#   contents: read
+#
+# concurrency:
+#   group: sdk-cdn-${{ github.ref_name }}
+#   cancel-in-progress: true
+#
+# env:
+#   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+#
+# jobs:
+#   deploy:
+#     name: Build & Deploy SDK
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#
+#       - uses: actions/setup-node@v4
+#         with:
+#           node-version: '22'
+#
+#       - uses: pnpm/action-setup@v4
+#         with:
+#           version: 10
+#
+#       - name: Install dependencies
+#         run: pnpm install --frozen-lockfile
+#
+#       - name: Build SDK (shared → widget-core → sdk-js)
+#         run: pnpm build --filter @helpin/sdk-js...
+#
+#       - name: Deploy to Cloudflare Pages
+#         uses: cloudflare/wrangler-action@v3
+#         with:
+#           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+#           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+#           command: pages deploy packages/sdk-js/dist --project-name=helpin-sdk --branch=${{ github.ref_name == 'main' && 'main' || 'staging' }}
