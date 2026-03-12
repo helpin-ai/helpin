@@ -121,6 +121,7 @@ declare interface MessagesViewProps {
     messages: Message[];
     onSendMessage: (content: string) => void;
     onQuickReply: (content: string) => void;
+    onStartConversation: () => void;
     isTyping?: boolean;
     quickReplies?: string[];
     hasConversation: boolean;
