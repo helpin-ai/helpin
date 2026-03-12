@@ -16,6 +16,13 @@ Internal performance-based quarterly bonus system with integrated project manage
 - **Build orchestrator**: Turborepo (`turbo.json`) — handles dependency ordering across packages
 - **Build order**: `shared` → `widget-core` → `frontend` (turbo resolves via `^build`)
 
+### Git Workflow
+Always pull before pushing to avoid conflicts:
+```bash
+git pull origin <branch>  # Pull latest changes first
+git push origin <branch>  # Then push your commits
+```
+
 ### Build & Dev Commands (from repo root)
 ```bash
 pnpm install              # Install all workspace dependencies
