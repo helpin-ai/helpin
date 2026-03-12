@@ -158,9 +158,13 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   return (
     <>
       <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold">Members</h2>
+        </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <span className="text-sm text-muted-foreground">{members.length} {members.length === 1 ? 'member' : 'members'} in this workspace</span>
           <div className="flex items-center gap-3">
-            {members.length > 0 && (
+            {members.length > 10 && (
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -171,13 +175,12 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                 />
               </div>
             )}
-            <Badge variant="outline" className="text-xs font-normal">{members.length}</Badge>
+            {editable && (
+              <Button size="sm" onClick={openInviteDialog}>
+                <Plus className="h-4 w-4 mr-1" /> Invite Member
+              </Button>
+            )}
           </div>
-          {editable && (
-            <Button size="sm" onClick={openInviteDialog}>
-              <Plus className="h-4 w-4 mr-1" /> Invite Member
-            </Button>
-          )}
         </div>
 
         {members.length === 0 ? (

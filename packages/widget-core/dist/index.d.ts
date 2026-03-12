@@ -126,6 +126,28 @@ declare interface MessagesViewProps {
     hasConversation: boolean;
 }
 
+export declare function mountWidget(container: HTMLElement, options: MountWidgetOptions): void;
+
+export declare interface MountWidgetOptions {
+    config: WidgetConfig;
+    messages?: Message[];
+    isOpen?: boolean;
+    onClose?: () => void;
+    onSendMessage?: (content: string) => void;
+    onQuickReply?: (content: string) => void;
+    showPreChatForm?: boolean;
+    onPreChatSubmit?: (data: {
+        name: string;
+        email: string;
+    }) => void;
+    isTyping?: boolean;
+    quickReplies?: string[];
+    initialView?: WidgetView;
+    showLauncher?: boolean;
+    onLauncherClick?: () => void;
+    unreadCount?: number;
+}
+
 export declare const PreChatForm: FunctionComponent<PreChatFormProps>;
 
 declare interface PreChatFormProps {
@@ -159,6 +181,8 @@ export declare const TypingIndicator: FunctionComponent<TypingIndicatorProps>;
 declare interface TypingIndicatorProps {
     label?: string;
 }
+
+export declare function unmountWidget(container: HTMLElement): void;
 
 export declare interface WidgetAdapter {
     getMessages(conversationId: string): Message[];

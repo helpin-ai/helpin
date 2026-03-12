@@ -358,7 +358,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
 
   return (
     <div className="space-y-4">
-      {section !== 'teams' && (
+      {section !== 'teams' && section !== 'members' && (
         <div>
           <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
           {sectionMeta.description && (

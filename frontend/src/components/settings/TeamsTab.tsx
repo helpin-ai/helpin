@@ -1264,7 +1264,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           <div>
             <h2 className="text-xl font-semibold">Teams</h2>
             <p className="text-sm text-muted-foreground">
-              Create teams, assign members, and manage team-level PM settings.
+              Create teams, assign members, and manage team-level settings.
             </p>
           </div>
           {editable && (
