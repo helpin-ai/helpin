@@ -179,9 +179,7 @@ jobs:
           NODE_OPTIONS=--max-old-space-size=8192 pnpm build
 
       - name: Deploy to Netlify
-        run: |
-          cd build-prod-netlify/frontend
-          npx netlify-cli deploy --dir=dist --no-build --prod --auth=${{ secrets.NETLIFY_AUTH_TOKEN }} --site=${{ secrets.NETLIFY_SITE_ID_PROD }}
+        run: npx netlify-cli deploy --dir=build-prod-netlify/frontend/dist --no-build --prod --auth=${{ secrets.NETLIFY_AUTH_TOKEN }} --site=${{ secrets.NETLIFY_SITE_ID_PROD }}
 
   release:
     name: Create Official Release
