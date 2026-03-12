@@ -1,6 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { render as preactRender, h } from 'preact';
-import { ChatWindow, WidgetLauncher } from '@helpin/widget-core';
+import { mountWidget, unmountWidget } from '@helpin/widget-core';
 
 // Widget-core CSS -- helpin-* prefixed classes, no conflicts with dashboard
 import '@helpin/widget-core/styles';
@@ -21,9 +20,8 @@ interface WidgetPreviewProps {
 
 /**
  * Full-height sticky widget preview panel (Intercom-style).
- * Renders actual @helpin/widget-core Preact components inside a
- * mock browser viewport using CSS `contain: paint` to trap
- * `position: fixed` elements.
+ * Uses mountWidget() from @helpin/widget-core so the widget renders
+ * with its own bundled Preact instance — no dual-instance __H errors.
  */
 export function WidgetPreview({
   brandColor,
@@ -47,56 +45,36 @@ export function WidgetPreview({
 
     const resolvedLogoUrl = logoUrl || workspaceLogoUrl;
 
-    const config = {
-      workspaceId: workspaceName,
-      workspaceName,
-      branding: {
-        primaryColor: brandColor,
-        logoUrl: resolvedLogoUrl,
-        welcomeMessage: welcomeMessage || 'How can we help?',
-        widgetPosition: (launcherPosition === 'bottom_left' ? 'bottom-left' : 'bottom-right') as 'bottom-left' | 'bottom-right',
-        showBranding,
-        launcherIcon: launcherIcon as 'chat_bubble' | 'question_mark' | 'help',
-        colorScheme: (colorScheme || 'light') as 'system' | 'light' | 'dark',
-        buttonColor,
-        buttonIconColor,
+    mountWidget(el, {
+      config: {
+        workspaceId: workspaceName,
+        workspaceName,
+        branding: {
+          primaryColor: brandColor,
+          logoUrl: resolvedLogoUrl,
+          welcomeMessage: welcomeMessage || 'How can we help?',
+          widgetPosition: (launcherPosition === 'bottom_left' ? 'bottom-left' : 'bottom-right') as 'bottom-left' | 'bottom-right',
+          showBranding,
+          launcherIcon: launcherIcon as 'chat_bubble' | 'question_mark' | 'help',
+          colorScheme: (colorScheme || 'light') as 'system' | 'light' | 'dark',
+          buttonColor,
+          buttonIconColor,
+        },
+        features: {
+          aiEnabled: false,
+          fileUploads: false,
+          preChatForm: false,
+          csatRating: false,
+        },
       },
-      features: {
-        aiEnabled: false,
-        fileUploads: false,
-        preChatForm: false,
-        csatRating: false,
-      },
-    };
+      isOpen,
+      onClose: () => setIsOpen(false),
+      onLauncherClick: () => setIsOpen((open) => !open),
+      initialView: 'home',
+    });
 
-    const tree = h(
-      'div',
-      { className: 'helpin-widget', style: { width: '100%', height: '100%' } },
-      h(ChatWindow, {
-        config,
-        messages: [],
-        isOpen,
-        onClose: () => setIsOpen(false),
-        onSendMessage: () => {},
-        onQuickReply: () => {},
-        showPreChatForm: false,
-        onPreChatSubmit: () => {},
-        initialView: 'home',
-      }),
-      h(WidgetLauncher, {
-        onClick: () => setIsOpen((open) => !open),
-        isOpen,
-        unreadCount: 0,
-        brandColor,
-        buttonColor,
-        buttonIconColor,
-        icon: launcherIcon as 'chat_bubble' | 'question_mark' | 'help',
-      }),
-    );
-
-    preactRender(tree, el);
     return () => {
-      preactRender(null, el);
+      unmountWidget(el);
     };
   }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen]);
 
