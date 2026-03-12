@@ -182,8 +182,7 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_PROD }}
-        working-directory: build-prod-netlify/frontend
-        run: npx netlify-cli deploy --dir=dist --no-build --prod
+        run: npx netlify-cli deploy --dir=${{ github.workspace }}/build-prod-netlify/frontend/dist --no-build --prod
 
   release:
     name: Create Official Release
