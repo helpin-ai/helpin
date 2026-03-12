@@ -170,17 +170,11 @@ jobs:
         with:
           version: 10
 
-      - name: Build widget packages
+      - name: Install and build all packages
         run: |
           cd build-stg-netlify
           pnpm install --no-frozen-lockfile
-          pnpm build
-
-      - name: Install dependencies and build frontend
-        run: |
-          cd build-stg-netlify/frontend
-          npm ci
-          NODE_OPTIONS=--max-old-space-size=8192 npm run build
+          NODE_OPTIONS=--max-old-space-size=8192 pnpm build
 
       - name: Deploy to Netlify
         run: |
