@@ -188,7 +188,7 @@ jobs:
         working-directory: build-stg-netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-        run: pnpm dlx netlify-cli@24.2.0 deploy --filter frontend --dir frontend/dist --no-build --prod-if-unlocked
+        run: pnpm --package=netlify-cli@24.2.0 dlx netlify deploy --filter frontend --dir frontend/dist --no-build --prod-if-unlocked
 
   release:
     name: Create RC Release & Update Manifests
