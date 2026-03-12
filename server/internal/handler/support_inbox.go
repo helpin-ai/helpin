@@ -321,6 +321,88 @@ func (h *SupportInboxHandler) DeleteCannedResponse(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
+// GetInstallation handles GET /api/support/inbox/installations.
+func (h *SupportInboxHandler) GetInstallation(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	inst, settings, err := h.supportService.GetInstallation(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
+		ID:          inst.ID,
+		WorkspaceID: inst.WorkspaceID,
+		WidgetKey:   inst.WidgetKey,
+		Settings:    *settings,
+		Active:      inst.Active,
+		CreatedAt:   inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:   inst.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	})
+}
+
+// UpdateInstallationSettings handles PATCH /api/support/inbox/installations.
+func (h *SupportInboxHandler) UpdateInstallationSettings(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	var req model.UpdateInstallationSettingsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	inst, settings, err := h.supportService.UpdateInstallationSettings(r.Context(), workspaceID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
+		ID:          inst.ID,
+		WorkspaceID: inst.WorkspaceID,
+		WidgetKey:   inst.WidgetKey,
+		Settings:    *settings,
+		Active:      inst.Active,
+		CreatedAt:   inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:   inst.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	})
+}
+
+// RegenerateWidgetKey handles POST /api/support/inbox/installations/regenerate-key.
+func (h *SupportInboxHandler) RegenerateWidgetKey(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	inst, err := h.supportService.RegenerateWidgetKey(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	settings := model.DefaultSupportInboxSettings()
+	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
+		ID:          inst.ID,
+		WorkspaceID: inst.WorkspaceID,
+		WidgetKey:   inst.WidgetKey,
+		Settings:    settings,
+		Active:      inst.Active,
+		CreatedAt:   inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:   inst.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	})
+}
+
 // TypingIndicator handles POST /api/support/inbox/conversations/{id}/typing.
 func (h *SupportInboxHandler) TypingIndicator(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

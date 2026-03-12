@@ -152,3 +152,137 @@ type CsatSurveyRequest struct {
 	Rating   int    `json:"rating"`
 	Feedback string `json:"feedback"`
 }
+
+// BusinessHoursDay defines a single day's business hours.
+type BusinessHoursDay struct {
+	Start   string `json:"start"`   // "09:00"
+	End     string `json:"end"`     // "17:00"
+	Enabled bool   `json:"enabled"`
+}
+
+// SupportInboxSettings holds all widget configuration stored as JSONB.
+type SupportInboxSettings struct {
+	// Identity Capture
+	RequireEmailBeforeChat bool   `json:"require_email_before_chat"`
+	RequireNameAfterEmail  bool   `json:"require_name_after_email"`
+	WelcomeMessage         string `json:"welcome_message"`
+
+	// CRM Integration
+	AutoCreateCRMContact  bool   `json:"auto_create_crm_contact"`
+	DefaultLifecycleStage string `json:"default_lifecycle_stage"` // subscriber, lead, opportunity
+	AutoPromoteToLead     bool   `json:"auto_promote_to_lead"`
+
+	// AI Auto-Reply
+	AIEnabled             bool    `json:"ai_enabled"`
+	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
+	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
+
+	// Handoff Routing
+	HandoffBehavior string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
+	HandoffTeamID   *string `json:"handoff_team_id"`
+
+	// Business Hours
+	BusinessHoursEnabled  bool                       `json:"business_hours_enabled"`
+	BusinessHoursTimezone string                     `json:"business_hours_timezone"` // IANA
+	BusinessHoursSchedule map[string]BusinessHoursDay `json:"business_hours_schedule"` // mon-sun
+	OutsideHoursMessage   string                     `json:"outside_hours_message"`
+
+	// Branding
+	BrandColor   string `json:"brand_color"`   // hex "#6366F1"
+	ShowBranding bool   `json:"show_branding"`
+
+	// Launcher
+	LauncherPosition string `json:"launcher_position"` // bottom_right, bottom_left
+	LauncherIcon     string `json:"launcher_icon"`     // chat_bubble, question_mark, help
+
+	// CSAT
+	CSATEnabled bool `json:"csat_enabled"`
+}
+
+// DefaultSupportInboxSettings returns settings with sensible defaults.
+func DefaultSupportInboxSettings() SupportInboxSettings {
+	return SupportInboxSettings{
+		RequireEmailBeforeChat: true,
+		RequireNameAfterEmail:  false,
+		WelcomeMessage:         "Hi there! How can we help you today?",
+		AutoCreateCRMContact:   true,
+		DefaultLifecycleStage:  "subscriber",
+		AutoPromoteToLead:      false,
+		AIEnabled:              false,
+		AIConfidenceThreshold:  0.7,
+		ShowTalkToHuman:        true,
+		HandoffBehavior:        "unassigned",
+		HandoffTeamID:          nil,
+		BusinessHoursEnabled:   false,
+		BusinessHoursTimezone:  "America/New_York",
+		BusinessHoursSchedule: map[string]BusinessHoursDay{
+			"mon": {Start: "09:00", End: "17:00", Enabled: true},
+			"tue": {Start: "09:00", End: "17:00", Enabled: true},
+			"wed": {Start: "09:00", End: "17:00", Enabled: true},
+			"thu": {Start: "09:00", End: "17:00", Enabled: true},
+			"fri": {Start: "09:00", End: "17:00", Enabled: true},
+			"sat": {Start: "09:00", End: "17:00", Enabled: false},
+			"sun": {Start: "09:00", End: "17:00", Enabled: false},
+		},
+		OutsideHoursMessage: "We're currently offline. Leave a message and we'll get back to you!",
+		BrandColor:          "#6366F1",
+		ShowBranding:        true,
+		LauncherPosition:    "bottom_right",
+		LauncherIcon:        "chat_bubble",
+		CSATEnabled:         false,
+	}
+}
+
+// UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
+type UpdateInstallationSettingsRequest struct {
+	RequireEmailBeforeChat *bool    `json:"require_email_before_chat,omitempty"`
+	RequireNameAfterEmail  *bool    `json:"require_name_after_email,omitempty"`
+	WelcomeMessage         *string  `json:"welcome_message,omitempty"`
+	AutoCreateCRMContact   *bool    `json:"auto_create_crm_contact,omitempty"`
+	DefaultLifecycleStage  *string  `json:"default_lifecycle_stage,omitempty"`
+	AutoPromoteToLead      *bool    `json:"auto_promote_to_lead,omitempty"`
+	AIEnabled              *bool    `json:"ai_enabled,omitempty"`
+	AIConfidenceThreshold  *float64 `json:"ai_confidence_threshold,omitempty"`
+	ShowTalkToHuman        *bool    `json:"show_talk_to_human,omitempty"`
+	HandoffBehavior        *string  `json:"handoff_behavior,omitempty"`
+	HandoffTeamID          *string  `json:"handoff_team_id,omitempty"`
+	BusinessHoursEnabled   *bool    `json:"business_hours_enabled,omitempty"`
+	BusinessHoursTimezone  *string  `json:"business_hours_timezone,omitempty"`
+	BusinessHoursSchedule  map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
+	OutsideHoursMessage    *string  `json:"outside_hours_message,omitempty"`
+	BrandColor             *string  `json:"brand_color,omitempty"`
+	ShowBranding           *bool    `json:"show_branding,omitempty"`
+	LauncherPosition       *string  `json:"launcher_position,omitempty"`
+	LauncherIcon           *string  `json:"launcher_icon,omitempty"`
+	CSATEnabled            *bool    `json:"csat_enabled,omitempty"`
+}
+
+// WidgetConfigResponse is the public-facing widget config (no secrets).
+type WidgetConfigResponse struct {
+	WidgetKey              string                     `json:"widget_key"`
+	Active                 bool                       `json:"active"`
+	IsOnline               bool                       `json:"is_online"`
+	RequireEmailBeforeChat bool                       `json:"require_email_before_chat"`
+	RequireNameAfterEmail  bool                       `json:"require_name_after_email"`
+	WelcomeMessage         string                     `json:"welcome_message"`
+	AIEnabled              bool                       `json:"ai_enabled"`
+	ShowTalkToHuman        bool                       `json:"show_talk_to_human"`
+	BusinessHoursEnabled   bool                       `json:"business_hours_enabled"`
+	OutsideHoursMessage    string                     `json:"outside_hours_message"`
+	BrandColor             string                     `json:"brand_color"`
+	ShowBranding           bool                       `json:"show_branding"`
+	LauncherPosition       string                     `json:"launcher_position"`
+	LauncherIcon           string                     `json:"launcher_icon"`
+	CSATEnabled            bool                       `json:"csat_enabled"`
+}
+
+// InstallationSettingsResponse wraps installation + parsed settings for the admin API.
+type InstallationSettingsResponse struct {
+	ID          string                `json:"id"`
+	WorkspaceID string                `json:"workspace_id"`
+	WidgetKey   string                `json:"widget_key"`
+	Settings    SupportInboxSettings  `json:"settings"`
+	Active      bool                  `json:"active"`
+	CreatedAt   string                `json:"created_at"`
+	UpdatedAt   string                `json:"updated_at"`
+}
