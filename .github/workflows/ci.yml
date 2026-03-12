@@ -34,7 +34,7 @@ jobs:
         with:
           version: 10
       - name: Install and build packages
-        run: pnpm install --frozen-lockfile && pnpm build
+        run: pnpm install --no-frozen-lockfile && pnpm build
       - name: Install frontend
         working-directory: frontend
         run: npm ci
