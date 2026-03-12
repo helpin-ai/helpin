@@ -39,6 +39,7 @@ export function WidgetPreview({
   const mountRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(true);
 
+  // Re-render on prop changes — Preact diffs internally, no flicker
   useEffect(() => {
     const el = mountRef.current;
     if (!el) return;
@@ -72,11 +73,15 @@ export function WidgetPreview({
       onLauncherClick: () => setIsOpen((open) => !open),
       initialView: 'home',
     });
-
-    return () => {
-      unmountWidget(el);
-    };
   }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen]);
+
+  // Unmount only when the React component itself unmounts
+  useEffect(() => {
+    return () => {
+      const el = mountRef.current;
+      if (el) unmountWidget(el);
+    };
+  }, []);
 
   const positionSide = launcherPosition === 'bottom_left' ? 'left' : 'right';
 
