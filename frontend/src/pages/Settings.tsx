@@ -101,7 +101,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Help Center',
     description: 'Configure your public help center branding, domain, and SEO.',
     icon: Globe,
-    group: 'Docs',
+    group: 'Support & Docs',
   },
   {
     id: 'crm-pipelines',
@@ -129,14 +129,14 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Chat Widget',
     description: 'Widget installation, identity capture, and CRM integration.',
     icon: MessageSquare,
-    group: 'Support Settings',
+    group: 'Support & Docs',
   },
   {
     id: 'chat-ai',
     label: 'AI & Routing',
     description: 'AI auto-reply, handoff routing, business hours, and CSAT.',
     icon: Bot,
-    group: 'Support Settings',
+    group: 'Support & Docs',
   },
   /* {
     id: 'people',
