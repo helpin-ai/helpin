@@ -75,7 +75,9 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
 
           <div className="helpin-conversation-brand-copy">
             <span className="helpin-conversation-title">{workspaceName}</span>
-            <span className="helpin-conversation-subtitle">The team can also help</span>
+            {config.features?.aiEnabled && (
+              <span className="helpin-conversation-subtitle">The team can also help</span>
+            )}
           </div>
         </div>
 

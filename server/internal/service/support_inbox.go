@@ -549,6 +549,12 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.OutsideHoursMessage != nil {
 		current.OutsideHoursMessage = *patch.OutsideHoursMessage
 	}
+	if patch.WidgetName != nil {
+		current.WidgetName = *patch.WidgetName
+	}
+	if patch.WidgetAvatarURL != nil {
+		current.WidgetAvatarURL = *patch.WidgetAvatarURL
+	}
 	if patch.BrandColor != nil {
 		current.BrandColor = *patch.BrandColor
 	}
@@ -656,13 +662,41 @@ func parseTimeToMinutes(t string) int {
 }
 
 // GetInstallation returns the installation and its parsed settings for a workspace.
+// If no installation exists yet, one is auto-created with default settings and a new widget key.
 func (s *SupportInboxService) GetInstallation(ctx context.Context, workspaceID string) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error) {
 	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if inst == nil {
-		return nil, nil, fmt.Errorf("no widget installation found for this workspace")
+		widgetKey, err := generateSecureToken(16)
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate widget key: %w", err)
+		}
+		secretKey, err := generateSecureToken(32)
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate secret key: %w", err)
+		}
+
+		defaults := model.DefaultSupportInboxSettings()
+		raw, err := json.Marshal(defaults)
+		if err != nil {
+			return nil, nil, fmt.Errorf("marshal default settings: %w", err)
+		}
+
+		inst = &model.SupportWidgetInstallation{
+			WorkspaceID: workspaceID,
+			WidgetKey:   widgetKey,
+			SecretKey:   secretKey,
+			Settings:    string(raw),
+			Active:      true,
+		}
+		if err := s.installationRepo.Create(ctx, inst); err != nil {
+			return nil, nil, fmt.Errorf("create widget installation: %w", err)
+		}
+
+		slog.InfoContext(ctx, "auto-created support widget installation", "workspace_id", workspaceID, "installation_id", inst.ID)
+		return inst, &defaults, nil
 	}
 	settings := parseSettings(inst.Settings)
 	return inst, &settings, nil
@@ -750,6 +784,8 @@ func (s *SupportInboxService) GetPublicWidgetConfig(ctx context.Context, widgetK
 		ShowTalkToHuman:        settings.ShowTalkToHuman,
 		BusinessHoursEnabled:   settings.BusinessHoursEnabled,
 		OutsideHoursMessage:    settings.OutsideHoursMessage,
+		WidgetName:             settings.WidgetName,
+		WidgetAvatarURL:        settings.WidgetAvatarURL,
 		BrandColor:             settings.BrandColor,
 		ShowBranding:           settings.ShowBranding,
 		ColorScheme:            settings.ColorScheme,

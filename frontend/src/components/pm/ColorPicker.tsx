@@ -220,6 +220,104 @@ function HueSlider({
   );
 }
 
+// ── Brand Color Picker (swatch + hex, no presets) ───────────────────
+
+export function BrandColorPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (color: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hsv, setHsv] = useState<HSV>(() => hexToHsv(value || '#6366f1'));
+  const [hexInput, setHexInput] = useState(value);
+
+  useEffect(() => {
+    if (open) {
+      const valid = HEX_REGEX.test(normalizeHex(value)) ? normalizeHex(value) : '#6366f1';
+      setHsv(hexToHsv(valid));
+      setHexInput(valid);
+    }
+  }, [open, value]);
+
+  const handleHsvChange = useCallback(
+    (next: HSV) => {
+      setHsv(next);
+      const hex = hsvToHex(next);
+      setHexInput(hex);
+      onChange(hex);
+    },
+    [onChange],
+  );
+
+  const applyHex = (hex: string) => {
+    const normalized = normalizeHex(hex);
+    if (HEX_REGEX.test(normalized)) {
+      onChange(normalized);
+      setHsv(hexToHsv(normalized));
+      setHexInput(normalized);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="h-9 w-9 shrink-0 rounded-md border shadow-sm cursor-pointer transition-all hover:ring-2 hover:ring-ring hover:ring-offset-1"
+            style={{ backgroundColor: value }}
+          />
+        </PopoverTrigger>
+        <PopoverContent className="w-[260px] p-3" align="start" side="top">
+          <div className="space-y-3">
+            <SaturationArea
+              hsv={hsv}
+              onChange={(s, v) => handleHsvChange({ ...hsv, s, v })}
+            />
+            <HueSlider
+              hue={hsv.h}
+              onChange={(h) => handleHsvChange({ ...hsv, h })}
+            />
+            <div className="flex items-center gap-2">
+              <div
+                className="h-8 w-8 shrink-0 rounded-md border border-border"
+                style={{ backgroundColor: hsvToHex(hsv) }}
+              />
+              <Input
+                value={hexInput}
+                onChange={(e) => setHexInput(e.target.value)}
+                onBlur={() => applyHex(hexInput)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    applyHex(hexInput);
+                  }
+                }}
+                placeholder="#000000"
+                className="h-8 font-mono text-xs"
+              />
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <Input
+        value={value}
+        onChange={(e) => {
+          const v = e.target.value;
+          setHexInput(v);
+          if (HEX_REGEX.test(normalizeHex(v))) {
+            onChange(normalizeHex(v));
+          }
+        }}
+        placeholder="#6366F1"
+        className="w-28 font-mono text-sm"
+      />
+    </div>
+  );
+}
+
 // ── Main ColorPicker ────────────────────────────────────────────────
 
 export function ColorPicker({

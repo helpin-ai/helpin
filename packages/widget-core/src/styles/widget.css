@@ -435,16 +435,30 @@
   margin: 0;
 }
 
-.helpin-messages-new-container {
-  padding: 8px 16px 12px;
+.helpin-messages-ask-container {
+  padding: 16px 24px 20px;
+  display: flex;
+  justify-content: center;
 }
 
-.helpin-messages-new-container .helpin-compose-wrapper {
-  padding: 8px 16px 12px;
+.helpin-messages-ask-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 999px;
+  border: 1px solid var(--helpin-border);
+  background: var(--helpin-bg);
+  color: var(--helpin-fg);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.helpin-messages-new-container .helpin-compose-footer {
-  display: none;
+.helpin-messages-ask-btn:hover {
+  background: var(--helpin-bg-hover, rgba(0, 0, 0, 0.04));
+  border-color: var(--helpin-fg-muted);
 }
 
 .helpin-messages-thread {
