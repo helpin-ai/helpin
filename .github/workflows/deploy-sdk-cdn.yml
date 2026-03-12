@@ -1,6 +1,8 @@
-# Deploy SDK to Cloudflare Pages
-# Uncomment when Cloudflare Pages project "helpin-sdk" is created
-# and CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID secrets are added.
+# Deploy SDK to Cloudflare Pages (cdn.helpin.ai)
+# Uncomment when Cloudflare Pages project "helpin-cdn" is created
+# with custom domain cdn.helpin.ai, and GitHub secrets are added:
+#   - CLOUDFLARE_API_TOKEN
+#   - CLOUDFLARE_ACCOUNT_ID
 #
 # name: Deploy SDK to Cloudflare Pages
 #
@@ -48,4 +50,4 @@
 #         with:
 #           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 #           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-#           command: pages deploy packages/sdk-js/dist --project-name=helpin-sdk --branch=${{ github.ref_name == 'main' && 'main' || 'staging' }}
+#           command: pages deploy packages/sdk-js/dist --project-name=helpin-cdn --branch=${{ github.ref_name == 'main' && 'main' || 'staging' }}
