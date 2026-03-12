@@ -169,6 +169,8 @@ jobs:
           doppler secrets download -t ${{ secrets.DOPPLER_TOKEN_FRONTEND_PROD }} --format=env-no-quotes --no-file > .env
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Install and build all packages
         run: |
