@@ -4,7 +4,7 @@ default:
     @just --list
 
 frontend:
-    cd frontend && npm run dev
+    cd frontend && pnpm dev
 
 backend:
     cd server && go run ./cmd/api
@@ -12,14 +12,14 @@ backend:
 dev:
     # Run frontend and backend together; stop both if either exits.
     bash -c 'set -euo pipefail; \
-      (cd frontend && npm run dev) & frontend_pid=$!; \
+      (cd frontend && pnpm dev) & frontend_pid=$!; \
       (cd server && go run ./cmd/api) & backend_pid=$!; \
       trap "kill $frontend_pid $backend_pid 2>/dev/null || true" EXIT INT TERM; \
       wait -n $frontend_pid $backend_pid'
 
 dev-tmux:
     tmux new-session -d -s helpin -n dev 'cd server && go run ./cmd/api'
-    tmux split-window -h -t helpin:dev 'cd frontend && npm run dev'
+    tmux split-window -h -t helpin:dev 'cd frontend && pnpm dev'
     tmux attach -t helpin
 
 build-server:
@@ -27,7 +27,7 @@ build-server:
     @echo "✅ server built → server/bin/api"
 
 build-frontend:
-    cd frontend && npm install && npm run build
+    pnpm build --filter frontend
     @echo "✅ frontend built → frontend/dist"
 
 help-center:
@@ -38,7 +38,7 @@ build-help-center:
     @echo "✅ help-center built → help-center/dist"
 
 kill-dev:
-    -pkill -f 'npm run dev' 2>/dev/null
+    -pkill -f 'pnpm dev' 2>/dev/null
     -pkill -f 'go run ./cmd/api' 2>/dev/null
     -pkill -f 'vite' 2>/dev/null
     @echo "✅ dev processes killed"
