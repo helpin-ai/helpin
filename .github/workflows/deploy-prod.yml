@@ -190,7 +190,7 @@ jobs:
         working-directory: build-prod-netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-        run: pnpm dlx netlify-cli@24.2.0 deploy --filter frontend --dir frontend/dist --no-build --prod
+        run: pnpm --package=netlify-cli@24.2.0 dlx netlify deploy --filter frontend --dir frontend/dist --no-build --prod
 
   release:
     name: Create Official Release
