@@ -70,7 +70,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=helpin-cdn-stage-js
+          command: pages deploy dist --project-name=helpin-cdn-stage-js --branch=staging
 
   deploy-production:
     name: Deploy to Production (cdn.helpin.ai)
