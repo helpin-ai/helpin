@@ -25,17 +25,13 @@ func (h *SupportInboxWidgetHandler) GetConfig(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Just validate the key is active; return minimal config.
-	inst, err := h.supportService.GetWidgetConfig(r.Context(), widgetKey)
-	if err != nil || inst == nil {
+	config, err := h.supportService.GetPublicWidgetConfig(r.Context(), widgetKey)
+	if err != nil || config == nil {
 		writeError(w, http.StatusNotFound, "widget not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"widget_key": inst.WidgetKey,
-		"active":     inst.Active,
-	})
+	writeJSON(w, http.StatusOK, config)
 }
 
 // CreateSession handles POST /api/widget/support/session.

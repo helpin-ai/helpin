@@ -351,15 +351,15 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 <>
                   <Separator className="my-6" />
 
-                  {/* Support tickets */}
+                  {/* Support Conversations */}
                   <div>
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Support tickets ({supportTicketCount})
+                      Support conversations ({supportTicketCount})
                     </h3>
                     <div className="mt-3 space-y-2">
-                      {supportConversationsData!.data.map((ticket) => (
+                      {supportConversationsData!.data.map((conversation) => (
                         <Link
-                          key={ticket.id}
+                          key={conversation.id}
                           to="/w/$slug/pm/support"
                           params={{ slug: wsSlug }}
                           className="flex items-center gap-3 rounded-md border border-border/60 px-4 py-3 text-sm transition-colors hover:bg-muted/40"
@@ -367,18 +367,18 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                           <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs text-muted-foreground">#{ticket.display_id}</span>
+                              <span className="text-xs text-muted-foreground">#{conversation.display_id}</span>
                               <Badge variant="secondary" className="px-2 py-0 text-[10px]">
-                                {ticket.status}
+                                {conversation.status}
                               </Badge>
                               <Badge variant="secondary" className="px-2 py-0 text-[10px]">
-                                {ticket.priority}
+                                {conversation.priority}
                               </Badge>
                             </div>
-                            <p className="mt-1 truncate font-medium text-foreground">{ticket.subject}</p>
+                            <p className="mt-1 truncate font-medium text-foreground">{conversation.subject}</p>
                           </div>
                           <span className="shrink-0 text-xs text-muted-foreground">
-                            {new Date(ticket.created_at).toLocaleDateString()}
+                            {new Date(conversation.created_at).toLocaleDateString()}
                           </span>
                         </Link>
                       ))}

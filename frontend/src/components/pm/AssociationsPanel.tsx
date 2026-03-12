@@ -7,7 +7,7 @@ import {
   Link2,
   Loader2,
   Search,
-  Ticket,
+  MessageSquareText,
   Trash2,
 } from 'lucide-react';
 
@@ -428,10 +428,10 @@ export function AssociationsPanel({
                       onClick={() => handleCreateGenericAssociation('support_conversation', conversation.id)}
                     >
                       <div className="flex items-center gap-2">
-                        <Ticket className="h-3.5 w-3.5 text-muted-foreground" />
+                        <MessageSquareText className="h-3.5 w-3.5 text-muted-foreground" />
                         <span className="text-sm font-medium">{conversation.subject}</span>
                         <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                          T-{conversation.display_id}
+                          C-{conversation.display_id}
                         </Badge>
                       </div>
                     </button>

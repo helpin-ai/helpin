@@ -7,6 +7,8 @@ export type {
   Attachment,
 } from './types';
 
+export type { WidgetView } from './components/BottomNav';
+
 export { ChatWindow } from './components/ChatWindow';
 export { MessageList } from './components/MessageList';
 export { MessageBubble } from './components/MessageBubble';
@@ -18,3 +20,8 @@ export { QuickReplies } from './components/QuickReplies';
 export { TypingIndicator } from './components/TypingIndicator';
 export { CsatRating } from './components/CsatRating';
 export { StreamingText } from './components/StreamingText';
+export { BottomNav } from './components/BottomNav';
+export { HomeView } from './components/HomeView';
+export { MessagesView } from './components/MessagesView';
+export { HelpView } from './components/HelpView';
+export { ConversationView } from './components/ConversationView';

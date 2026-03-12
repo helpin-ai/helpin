@@ -30,9 +30,10 @@ interface WorkflowManagerProps {
   teams: WorkspaceTeam[];
   editable: boolean;
   initialWorkflowId?: string;
+  initialTeamId?: string;
 }
 
-export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowId }: WorkflowManagerProps) {
+export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowId, initialTeamId }: WorkflowManagerProps) {
   const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [loading, setLoading] = useState(true);

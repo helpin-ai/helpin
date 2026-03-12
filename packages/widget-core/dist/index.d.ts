@@ -1,4 +1,6 @@
 import { FunctionComponent } from 'preact';
+import { Message as Message_2 } from '@helpin/shared';
+import { WidgetConfig as WidgetConfig_2 } from '@helpin/shared';
 
 export declare interface AiSource {
     docId: string;
@@ -13,6 +15,14 @@ export declare interface Attachment {
     fileName: string;
     fileType: string;
     fileSize: number;
+}
+
+export declare const BottomNav: FunctionComponent<BottomNavProps>;
+
+declare interface BottomNavProps {
+    activeView: WidgetView;
+    onNavigate: (view: WidgetBaseView) => void;
+    brandColor?: string;
 }
 
 export declare const ChatWindow: FunctionComponent<ChatWindowProps>;
@@ -31,6 +41,7 @@ declare interface ChatWindowProps {
     }) => void;
     isTyping?: boolean;
     quickReplies?: string[];
+    initialView?: WidgetView;
 }
 
 export declare const ComposeBar: FunctionComponent<ComposeBarProps>;
@@ -39,6 +50,16 @@ declare interface ComposeBarProps {
     onSend: (content: string) => void;
     disabled?: boolean;
     placeholder?: string;
+}
+
+export declare const ConversationView: FunctionComponent<ConversationViewProps>;
+
+declare interface ConversationViewProps {
+    config: WidgetConfig;
+    messages: Message[];
+    onSendMessage: (content: string) => void;
+    onBack: () => void;
+    onClose?: () => void;
 }
 
 export declare const CsatRating: FunctionComponent<CsatRatingProps>;
@@ -54,29 +75,55 @@ export declare interface CustomerInfo {
     metadata?: Record<string, unknown>;
 }
 
-export declare interface Message {
-    id: string;
-    conversationId: string;
-    role: 'customer' | 'agent' | 'ai' | 'system';
-    content: string;
-    senderId?: string;
-    sources?: AiSource[];
-    aiConfidence?: number;
-    attachments?: Attachment[];
-    isInternal: boolean;
-    createdAt: string;
+export declare const HelpView: FunctionComponent<HelpViewProps>;
+
+declare interface HelpViewProps {
+    config: WidgetConfig;
+    onNavigate: (view: 'conversation' | 'messages') => void;
 }
+
+export declare const HomeView: FunctionComponent<HomeViewProps>;
+
+declare interface HomeViewProps {
+    config: WidgetConfig;
+    onSendMessage: (content: string) => void;
+    onNavigate: (view: 'conversation' | 'messages' | 'help') => void;
+    showPreChatForm: boolean;
+    onPreChatSubmit: (data: {
+        name: string;
+        email: string;
+    }) => void;
+}
+
+declare type LauncherIcon = 'chat_bubble' | 'question_mark' | 'help';
+
+export declare type Message = Message_2;
 
 export declare const MessageBubble: FunctionComponent<MessageBubbleProps>;
 
 declare interface MessageBubbleProps {
     message: Message;
+    config?: WidgetConfig;
 }
 
 export declare const MessageList: FunctionComponent<MessageListProps>;
 
 declare interface MessageListProps {
     messages: Message[];
+    showDateSeparators?: boolean;
+    config?: WidgetConfig;
+}
+
+export declare const MessagesView: FunctionComponent<MessagesViewProps>;
+
+declare interface MessagesViewProps {
+    config: WidgetConfig;
+    messages: Message[];
+    onSendMessage: (content: string) => void;
+    onQuickReply: (content: string) => void;
+    isTyping?: boolean;
+    quickReplies?: string[];
+    hasConversation: boolean;
 }
 
 export declare const PreChatForm: FunctionComponent<PreChatFormProps>;
@@ -104,6 +151,7 @@ declare interface StreamingTextProps {
     text: string;
     isStreaming: boolean;
     onComplete?: () => void;
+    charDelayMs?: number;
 }
 
 export declare const TypingIndicator: FunctionComponent<TypingIndicatorProps>;
@@ -122,21 +170,9 @@ export declare interface WidgetAdapter {
     getConfig(): WidgetConfig;
 }
 
-export declare interface WidgetConfig {
-    workspaceId: string;
-    branding: {
-        primaryColor: string;
-        logoUrl?: string;
-        welcomeMessage: string;
-        widgetPosition: 'bottom-right' | 'bottom-left';
-    };
-    features: {
-        aiEnabled: boolean;
-        fileUploads: boolean;
-        preChatForm: boolean;
-        csatRating: boolean;
-    };
-}
+declare type WidgetBaseView = 'home' | 'messages' | 'help';
+
+export declare type WidgetConfig = WidgetConfig_2;
 
 export declare const WidgetHeader: FunctionComponent<WidgetHeaderProps>;
 
@@ -155,6 +191,11 @@ declare interface WidgetLauncherProps {
     isOpen: boolean;
     unreadCount?: number;
     brandColor?: string;
+    buttonColor?: string;
+    buttonIconColor?: string;
+    icon?: LauncherIcon;
 }
+
+export declare type WidgetView = WidgetBaseView | 'conversation';
 
 export { }

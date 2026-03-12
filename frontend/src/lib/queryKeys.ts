@@ -93,6 +93,7 @@ export const queryKeys = {
     conversation: (wsId: string, id: string) => ['support', wsId, 'conversations', id] as const,
     conversationAssociations: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'associations'] as const,
     messages: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'messages'] as const,
+    installation: (wsId: string) => ['support', wsId, 'installation'] as const,
   },
 
   docs: {

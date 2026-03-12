@@ -2,11 +2,17 @@ import type { Config } from './types';
 
 export interface WidgetConfig {
   workspaceId: string;
+  workspaceName?: string;
   branding: {
     primaryColor: string;
     logoUrl?: string;
     welcomeMessage: string;
     widgetPosition: 'bottom-right' | 'bottom-left';
+    showBranding?: boolean;
+    launcherIcon?: 'chat_bubble' | 'question_mark' | 'help';
+    colorScheme?: 'system' | 'light' | 'dark';
+    buttonColor?: string;
+    buttonIconColor?: string;
   };
   features: {
     aiEnabled: boolean;
@@ -270,6 +276,8 @@ export class WidgetManager {
 
   private getWidgetStyles(): string {
     const brandColor = this.widgetConfig?.branding?.primaryColor || '#6366f1';
+    const buttonColor = this.widgetConfig?.branding?.buttonColor || brandColor;
+    const buttonIconColor = this.widgetConfig?.branding?.buttonIconColor || '#ffffff';
     return `
       .helpin-widget {
         position: fixed;
@@ -283,7 +291,7 @@ export class WidgetManager {
         height: 60px;
         border-radius: 50%;
         border: none;
-        background-color: ${brandColor};
+        background-color: ${buttonColor};
         cursor: pointer;
         display: flex;
         align-items: center;
@@ -291,6 +299,7 @@ export class WidgetManager {
         box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
         transition: transform 0.2s;
       }
+      .helpin-launcher svg { fill: ${buttonIconColor}; }
       .helpin-launcher:hover { transform: scale(1.05); }
       .helpin-chat-window {
         position: absolute;
@@ -298,8 +307,8 @@ export class WidgetManager {
         right: 0;
         width: 380px;
         max-width: calc(100vw - 40px);
-        height: 600px;
-        max-height: calc(100vh - 120px);
+        height: 680px;
+        max-height: calc(100vh - 104px);
         background: #fff;
         border-radius: 12px;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);

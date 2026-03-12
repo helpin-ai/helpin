@@ -10,9 +10,27 @@ Internal performance-based quarterly bonus system with integrated project manage
 - **Storage**: AWS S3 / MinIO (presigned URLs + direct upload)
 - **Infra**: Kubernetes with Traefik, Doppler secrets, GHCR container registry
 
-## Development
+## Monorepo Setup
 
-### Backend
+- **Package manager**: pnpm v10 with workspaces (`packages/*`)
+- **Build orchestrator**: Turborepo (`turbo.json`) — handles dependency ordering across packages
+- **Build order**: `shared` → `widget-core` → `frontend` (turbo resolves via `^build`)
+
+### Git Workflow
+Always pull before pushing to avoid conflicts:
+```bash
+git pull origin <branch>  # Pull latest changes first
+git push origin <branch>  # Then push your commits
+```
+
+### Build & Dev Commands (from repo root)
+```bash
+pnpm install              # Install all workspace dependencies
+pnpm build                # Build all packages (turbo build)
+pnpm dev                  # Dev servers for all packages (turbo dev)
+```
+
+### Backend (Go)
 ```bash
 cd server
 go run ./cmd/api
@@ -22,23 +40,51 @@ Requires: `DATABASE_URL`, `JWT_SECRET` env vars. See `server/.env.example` for a
 ### Frontend
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm dev                  # Vite dev server (--host 0.0.0.0)
+pnpm build                # tsc -b && vite build (4GB heap)
 ```
-Requires: `VITE_API_URL` (defaults to `http://localhost:8080/api`)
+Requires: `VITE_API_URL` (defaults to `http://localhost:8080/api`).
+Frontend embeds `widget-core` via Vite alias (not npm import).
 
-### Docker
-```bash
-docker compose up
-```
+### Packages
 
-### Task Runner
+#### `packages/shared` — Shared TypeScript types
 ```bash
-just dev        # Start both backend + frontend
-just backend    # Backend only
-just frontend   # Frontend only
-just build      # Production build
+cd packages/shared
+pnpm build                # vite build → dist/index.js (ES module)
+pnpm typecheck            # tsc --noEmit
 ```
+No dependencies. Exports `Message`, `WidgetConfig`, and other shared interfaces.
+
+#### `packages/widget-core` — Preact chat widget library
+```bash
+cd packages/widget-core
+pnpm build                # vite build → dist/index.js (ES module) + dist/index.d.ts
+pnpm test                 # vitest run (jsdom environment)
+pnpm test:watch           # vitest (watch mode)
+pnpm typecheck            # tsc --noEmit
+```
+Depends on `@helpin/shared`. Built with Vite + `vite-plugin-dts` (rollup types). Peer deps: React 18/19 or Preact 10.
+
+#### `packages/sdk-js` — Embeddable JS SDK
+```bash
+cd packages/sdk-js
+pnpm build                # tsc && vite build → dist/ (UMD + ES + CJS)
+pnpm test                 # vitest run (jsdom, v8 coverage)
+pnpm test:e2e             # playwright (chromium)
+pnpm start                # concurrent dev + example server + mock server
+```
+Independent package (no workspace deps). Multi-format output: `lib.js` (UMD), `helpin.es.js`, `helpin.cjs.js`.
+
+### Testing
+
+All TypeScript packages use **Vitest** + **jsdom**:
+
+| Package | Command | Environment | Coverage |
+|---------|---------|-------------|----------|
+| widget-core | `pnpm test` | jsdom | — |
+| sdk-js | `pnpm test` | jsdom | v8 |
+| sdk-js (e2e) | `pnpm test:e2e` | Playwright/chromium | — |
 
 ## Project Structure
 
@@ -90,6 +136,21 @@ frontend/                        # React SPA
     pages/                       # Page-level components
     routes/                      # TanStack Router file-based routes
     stores/                      # Zustand stores (auth, workspace, org, etc.)
+
+packages/                        # pnpm workspace packages
+  shared/                        # Shared TypeScript types (Message, WidgetConfig)
+    src/index.ts                 # Type exports
+    dist/                        # Built output (ES module)
+  widget-core/                   # Preact chat widget library
+    src/
+      components/                # ChatWindow, ConversationView, ComposeBar, MessageBubble, etc.
+      styles/widget.css          # All widget CSS (design tokens, themes, components)
+      types.ts                   # Re-exports from shared + widget-specific types
+      index.ts                   # Public API exports
+    dist/                        # Built output (ES module + .d.ts)
+  sdk-js/                        # Embeddable JavaScript SDK
+    src/core/widget.ts           # Widget initialization + DOM injection
+    dist/                        # Built output (UMD + ES + CJS)
 
 k8s/                             # Kubernetes manifests
   stage/                         # Staging (stage.helpin.ai)

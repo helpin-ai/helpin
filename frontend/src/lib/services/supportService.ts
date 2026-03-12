@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, PaginatedResponse, AgentRun, ConversationStatus } from '../pmTypes';
+import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, PaginatedResponse, AgentRun, ConversationStatus, SupportInstallationResponse, SupportInboxSettings } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
@@ -26,4 +26,12 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
   runAgent: (workspaceId: string, conversationId: string) =>
     api.post<AgentRun>(`/support/inbox/conversations/${conversationId}/run-agent${qs(workspaceId)}`, {}),
+
+  // Installation settings
+  getInstallation: (workspaceId: string) =>
+    api.get<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`),
+  updateInstallationSettings: (workspaceId: string, settings: Partial<SupportInboxSettings>) =>
+    api.patch<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`, settings),
+  regenerateWidgetKey: (workspaceId: string) =>
+    api.post<SupportInstallationResponse>(`/support/inbox/installations/regenerate-key${qs(workspaceId)}`, {}),
 };

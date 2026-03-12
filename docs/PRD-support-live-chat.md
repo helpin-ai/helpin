@@ -1,62 +1,85 @@
 # PRD: Support Live Chat, Inbox, and AI Messenger
 
-**Status:** In Progress - Phase 2 Complete ✅
-**Status:** Draft v14 (canned responses, CSAT survey, typing indicators, email transcript, unread overlay from Chatwoot review, plus all v12 content)  
-**Date:** 2026-03-11  
-**Module:** Support  
+**Status:** In Progress — Phase 2 Complete
+**Version:** Draft v15
+**Date:** 2026-03-11
+**Module:** Support
 **Product context:** Helpin is a full operating suite spanning PM, CRM, Docs, Notifications, Agents, and Support. This PRD defines support as a first-class suite surface, not a standalone chat product.
 
 ---
 
-## Phase 1 Status: ✅ COMPLETE
+## Phase Progress Tracker
 
-### Completed Deliverables:
+| Phase | Name | Status | Deliverables |
+|-------|------|--------|-------------|
+| 0 | Product & Naming Alignment | ✅ Complete | Conversation-first model approved, Chi/GORM canonical |
+| 1 | Package Setup, SDK Migration & Widget-Core | ✅ Complete | 6 packages, 11 components, 131 tests |
+| 2 | Data Modeling & Go APIs | ✅ Complete | Models, repos, services, handlers, migration, 23 tests |
+| 3 | Inbox & Widget MVP | ⬜ Not Started | Dashboard inbox, widget integration, settings, CSAT, typing |
+| 4 | Docs-Aware AI Support | ⬜ Not Started | AI response flow, citations, handoff, email transcript |
+| 5 | Advanced Automation & Operations | ⬜ Not Started | SLA rules, routing, analytics, embeddings |
 
-1. **Package Setup**
-   - Created `packages/` directory with pnpm workspace + Turborepo at repo root
-   - Added `pnpm-workspace.yaml` and `turbo.json`
-   - Created `tsconfig.base.json` for shared TypeScript config
+---
 
-2. **SDK Migration** (copied from `/root/helpin-convex-main`)
-   - `@helpin/shared` - Shared types (Conversation, Message, WidgetConfig)
-   - `@helpin/sdk-js` - JavaScript SDK with analytics + widget support
-   - `@helpin/react` - React hooks and provider
-   - `@helpin/nextjs` - Next.js SSR-safe hooks
-   - `@helpin/widget-core` - Chat widget components
-   - `@helpin/widget-embed` - IIFE bundle for embeddable widget
+## Phase 0: Product & Naming Alignment ✅
 
-3. **Widget-Core Implementation** (11 components)
-   - `ChatWindow` - Main container
-   - `WidgetLauncher` - Floating button with unread badge
-   - `WidgetHeader` - Header with title, logo, close button
-   - `MessageList` - Scrollable message thread with date separators
-   - `MessageBubble` - Individual message with role styling
-   - `ComposeBar` - Text input with send button, Enter-to-send
-   - `PreChatForm` - Email/name capture before chat
-   - `QuickReplies` - Quick reply buttons
-   - `TypingIndicator` - Animated typing dots
-   - `CsatRating` - 5-point emoji rating
-   - `StreamingText` - Animated AI response text
+- [x] Approve conversation-first support model
+- [x] Approve story escalation as the primary workflow
+- [x] Approve docs/external docs as AI knowledge sources
+- [x] Approve Chi/GORM architecture as canonical
 
-4. **SDK Widget API** (Intercom-style)
-   - `boot()` - Initialize widget with config
-   - `show()` / `hide()` / `toggle()` - Widget visibility
-   - `showMessages()` / `showConversation()` / `showArticle()` - Navigation
-   - `onShow` / `onHide` / `onUnreadCountChange` / `onUserEmailSupplied` - Callbacks
-   - `getVisitorId()` - Visitor identification
+---
 
-5. **CSS Styling**
-   - Tailwind-aligned design tokens (colors, spacing, radius, shadows)
-   - Responsive mobile layout
-   - Shadow DOM isolation ready
+## Phase 1: Package Setup, SDK Migration & Widget-Core ✅
 
-6. **Testing**
-   - 82 unit tests for sdk-js (Vitest)
-   - 49 unit tests for widget-core (Vitest + @testing-library/preact)
-   - E2E test infrastructure with mock API server
-   - All 131 tests passing
+### 1a. Monorepo & Package Setup
+- [x] Create `packages/` directory with pnpm workspace + Turborepo at repo root
+- [x] Add `pnpm-workspace.yaml` and `turbo.json`
+- [x] Create `tsconfig.base.json` for shared TypeScript config
 
-### Bundle Sizes (gzipped):
+### 1b. SDK Migration (from `/root/helpin-convex-main`)
+- [x] `@helpin/shared` — Shared types (Conversation, Message, WidgetConfig)
+- [x] `@helpin/sdk-js` — JavaScript SDK with analytics + widget support
+- [x] `@helpin/react` — React hooks and provider
+- [x] `@helpin/nextjs` — Next.js SSR-safe hooks
+- [x] `@helpin/widget-core` — Chat widget components (Preact)
+- [x] `@helpin/widget-embed` — IIFE bundle for embeddable widget
+
+### 1c. Widget-Core Components (11)
+- [x] `ChatWindow` — Main container with open/close animation
+- [x] `WidgetLauncher` — Floating button with unread badge
+- [x] `WidgetHeader` — Header with title, logo, close button
+- [x] `MessageList` — Scrollable message thread with date separators, smart auto-scroll
+- [x] `MessageBubble` — Individual message with role styling, XSS-safe rendering
+- [x] `ComposeBar` — Text input with send button, Enter-to-send
+- [x] `PreChatForm` — Email/name capture before chat
+- [x] `QuickReplies` — Quick reply buttons
+- [x] `TypingIndicator` — Animated typing dots
+- [x] `CsatRating` — 5-point emoji rating with feedback textarea
+- [x] `StreamingText` — Animated AI response text with cursor
+
+### 1d. SDK Widget API (Intercom-style)
+- [x] `boot()` — Initialize widget with config
+- [x] `show()` / `hide()` / `toggle()` — Widget visibility
+- [x] `showMessages()` / `showConversation()` / `showArticle()` — Navigation
+- [x] `onShow` / `onHide` / `onUnreadCountChange` / `onUserEmailSupplied` — Callbacks
+- [x] `getVisitorId()` — Visitor identification
+- [x] WebSocket connection with exponential backoff + jitter + max retries
+- [x] Event listener cleanup on `shutdown()` (memory leak prevention)
+
+### 1e. CSS & Accessibility
+- [x] Tailwind-aligned design tokens (colors, spacing, radius, shadows)
+- [x] Responsive mobile layout
+- [x] Shadow DOM isolation ready
+- [x] ARIA labels on all interactive elements (buttons, inputs, lists, radio groups)
+
+### 1f. Testing
+- [x] 82 unit tests for sdk-js (Vitest)
+- [x] 49 unit tests for widget-core (Vitest + @testing-library/preact)
+- [x] E2E test infrastructure with mock API server
+- [x] All 131 tests passing
+
+### Bundle Sizes (gzipped)
 | Package | Size |
 |---------|------|
 | `@helpin/widget-core` | 4.6 KB |
@@ -65,64 +88,191 @@
 
 ---
 
-## Phase 2 Status: ✅ COMPLETE
+## Phase 2: Data Modeling & Go APIs ✅
 
-### Completed Deliverables:
+### 2a. Data Model
+- [x] `SupportConversation` model — renamed from SupportTicket (with backward compat alias)
+- [x] `SupportMessage` — added `ConversationID`, `MessageType`, `Metadata` fields
+- [x] `SupportCannedResponse` — new table for saved reply templates
+- [x] Migration `038_support_conversations.sql` — new tables/columns, backfill `conversation_id`
 
-1. **Data Model Updates**
-   - Updated `server/internal/model/support.go` with conversation-first models:
-     - `SupportConversation` - renamed from SupportTicket (with alias for backward compat)
-     - `SupportMessage` - added `ConversationID`, `MessageType`, `Metadata` fields
-     - `SupportCannedResponse` - new table for saved reply templates
-   - Created `server/migrations/038_support_conversations.sql` - Migration for new tables/columns:
-     - `support_conversations` table with display_id auto-allocation
-     - New columns on `support_messages`: `message_type`, `metadata`, `conversation_id`
-     - `support_canned_responses` table with search support
-     - Backfill `conversation_id` from legacy `ticket_id`
+### 2b. Repository Layer
+- [x] `SupportConversationRepository` — Create (auto display_id), GetByID, List (pagination, filters), Update
+- [x] `SupportMessageRepository` — Create, ListByTicket (supports both conversation_id and legacy ticket_id)
+- [x] `SupportCannedResponseRepository` — Create, List, GetByID, Search (ranked), Update, Delete
 
-2. **Repository Layer**
-   - Updated `server/internal/repository/support.go`:
-     - `SupportConversationRepository` - Create (with auto display_id), GetByID, List (with pagination, status/priority filters), Update
-     - `SupportMessageRepository` - Create, ListByTicket (supports both conversation_id and legacy ticket_id)
-     - `SupportCannedResponseRepository` - Create, List, GetByID, Search, Update, Delete
+### 2c. Service Layer
+- [x] Canned response CRUD methods
+- [x] Typing indicator broadcast functionality
+- [x] `truncate()` utility with UTF-8/emoji support
+- [x] `validConversationStatuses` validation map
+- [x] `generateSecureToken()` for secure token generation
 
-3. **Service Layer**
-   - Updated `server/internal/service/support.go`:
-     - Added canned response CRUD methods
-     - Added typing indicator broadcast functionality
-     - Added `truncate()` utility for text truncation with UTF-8/emoji support
-     - Added `validConversationStatuses` validation map
-     - Added `generateSecureToken()` for secure token generation
+### 2d. Handler Layer
+- [x] Canned response CRUD endpoints (list, create, update, delete)
+- [x] Typing indicator endpoint for real-time collaboration
 
-4. **Handler Layer**
-   - Updated `server/internal/handler/support.go`:
-     - Added canned response CRUD endpoints (list, create, update, delete)
-     - Added typing indicator endpoint for real-time collaboration
+### 2e. API Wiring
+- [x] `server/cmd/api/main.go` — Wired cannedResponseRepo
+- [x] `server/internal/router/router.go` — Registered new routes
 
-5. **API Wiring**
-   - Updated `server/cmd/api/main.go` - Wired up cannedResponseRepo
-   - Updated `server/internal/router/router.go` - Registered new routes
+### 2f. Testing
+- [x] `server/internal/service/support_test.go` — 23 test cases passing
+  - `TestSupportConversationRepository` (6 subtests)
+  - `TestSupportMessageRepository` (4 subtests)
+  - `TestWidgetInstallationRepository` (5 subtests)
+  - `TestWidgetSessionRepository` (3 subtests)
+  - `TestSupportCannedResponseRepository` (5 subtests)
+  - `TestTruncate` (6 subtests)
+  - `TestValidConversationStatuses`, `TestGenerateSecureToken` (2 subtests)
+- [x] SQLite test compatibility (ILIKE → LIKE)
+- [x] Test data isolation with unique workspace IDs
 
-6. **Testing**
-   - Created `server/internal/service/support_test.go` with comprehensive SQLite tests
-   - **23 test cases passing:**
-     - `TestSupportConversationRepository` (6 subtests): Create/Get, List, Update, GetByID not found, Display ID sequential, Cross-workspace isolation, Pagination
-     - `TestSupportMessageRepository` (4 subtests): Create/List by conversation_id, Legacy ticket_id support, Internal notes filtering, ASC ordering
-     - `TestWidgetInstallationRepository` (5 subtests): Create/GetByWorkspace, GetByWidgetKey, Inactive filtering, Unknown key handling, Update
-     - `TestWidgetSessionRepository` (3 subtests): Create/GetByToken, Unknown token, Update with conversation_id
-     - `TestSupportCannedResponseRepository` (5 subtests): Create/List, Search, Update, Delete, Cross-workspace isolation
-     - `TestTruncate` (6 subtests): Short string, exact length, truncation with ellipsis, UTF-8, emoji, empty
-     - `TestValidConversationStatuses` - Status validation
-     - `TestGenerateSecureToken` (2 subtests): Token length, uniqueness
-   - Fixed test infrastructure:
-     - Added UUID defaults to test DB schema (support_conversations, support_messages, support_canned_responses, support_widget_installations, support_widget_sessions)
-     - Fixed SQLite compatibility (ILIKE → LIKE)
-     - Fixed test data isolation issues with unique workspace IDs and short_codes
+---
 
-### Remaining Phases:
-- **Phase 3**: Inbox MVP (dashboard, widget MVP, CSAT, typing)
-- **Phase 4**: Docs-Aware AI Support
-- **Phase 5**: Advanced Automation
+## Phase 3: Inbox & Widget MVP ⬜
+
+> **Goal:** End-to-end live chat — visitor starts conversation in widget, agent responds in inbox dashboard, real-time sync between both.
+
+### 3a. Dashboard Inbox Page
+- [ ] Two-pane layout (conversation list + thread) — see Section 5.1
+- [ ] Slide-out context drawer (CRM contact, associations, story link, metadata) — Section 14.11
+- [ ] Assignment/status flows with auto-set `resolved_at`/`closed_at`
+- [ ] Internal notes in conversation thread
+- [ ] Frontend terminology migration (ticket → conversation throughout) — Section 14.9
+
+### 3b. Widget Integration
+- [ ] Wire pre-chat form to workspace settings (email/name enforcement)
+- [ ] Widget creates `support_conversation` on first message (not ticket)
+- [ ] "Talk to a Human" button triggers handoff
+- [ ] Branding config from `SupportInboxInstallation.Settings`
+- [ ] WebSocket connection in widget with session token auth
+
+### 3c. Canned Responses (Frontend)
+- [ ] `/shortcode` composer trigger with ranked search dropdown — Section 6.7.1
+- [ ] Canned response management page at `/w/:slug/settings/chat-responses`
+- [ ] Variable interpolation on send: `{{contact.name}}`, `{{contact.email}}`, `{{agent.name}}`
+
+### 3d. Typing Indicators
+- [ ] Agent ↔ customer bidirectional via WebSocket — Section 6.7.3
+- [ ] Debounced typing detection (300ms) in reply composer
+- [ ] `typing_on`/`typing_off` in `useRealtimeSync.ts`
+- [ ] Widget shows `TypingIndicator` on agent typing, auto-dismiss after 30s
+
+### 3e. CSAT Survey
+- [ ] Auto-send `csat_survey` message on conversation resolution — Section 6.7.2
+- [ ] `PUT /api/widget/support/messages/{id}` for CSAT submission
+- [ ] `csat_enabled` field in `SupportInboxSettings` (default: true)
+- [ ] CSAT toggle in `ChatAITab.tsx` settings
+
+### 3f. Unread Message Overlay
+- [ ] Floating preview card near launcher when widget is closed — Section 6.7.5
+- [ ] Sender name + truncated message (120 chars), dismiss button
+- [ ] Auto-hide after 15 seconds
+- [ ] Track unread count in `sessionStorage`, fire `onUnreadCountChange` callback
+
+### 3g. Chat Settings (Backend)
+- [ ] Define `SupportInboxSettings` struct with 20+ fields — Section 6.5
+- [ ] Settings validation: threshold range, handoff team exists, hex color, business hours
+- [ ] `GET /api/support/inbox/installations` — read full settings
+- [ ] `PATCH /api/support/inbox/installations` — partial update
+- [ ] `POST /api/support/inbox/installations/regenerate-key` — regenerate widget key
+- [ ] `GET /api/widget/support/config` — public-facing settings subset
+- [ ] `is_online` computation from business hours + timezone
+
+### 3h. Chat Settings (Frontend — 3 Pages)
+- [ ] `ChatGeneralTab.tsx` — Widget Installation + Identity Capture + CRM Integration
+- [ ] `ChatAITab.tsx` — AI Auto-Reply + Handoff Routing + Business Hours + CSAT toggle
+- [ ] `ChatAppearanceTab.tsx` — Branding + Launcher + Live Widget Preview
+- [ ] Register `chat-general`, `chat-ai`, `chat-appearance` in `SETTINGS_SECTIONS`
+- [ ] Widget key display with copy-to-clipboard + embed code snippet
+- [ ] TanStack Query hooks: `useChatSettings`, `useUpdateChatSettings`, `useRegenerateWidgetKey`
+
+### 3i. Realtime Sync
+- [ ] Add `support_conversation` + `support_conversation_message` to `useRealtimeSync.ts`
+- [ ] Invalidate query keys on support events
+- [ ] Widget WebSocket auth path (session token alongside JWT)
+- [ ] Scope widget WS clients to their active conversation only
+
+### 3j. RBAC Permissions
+- [ ] Add `PermSupportRead`, `PermSupportEdit`, `PermSupportAdmin` — Section 14.12
+- [ ] Update role-permission matrix
+- [ ] Update router to use support permissions instead of PM permissions
+
+### 3k. Remaining Backend Cleanup
+- [ ] Rename repository/service/handler constructors per Section 14.13
+- [ ] Update `CRMObjectSupportTicket` → `CRMObjectSupportConversation`
+- [ ] Update agent run integration (ticket → conversation) — Section 14.14
+- [ ] Update docs link object type — Section 14.15
+- [ ] Update WebSocket event entity names (ticket → conversation) — Section 14.8
+
+### Phase 3 Exit Criteria
+- A website visitor can start a conversation via the embedded widget
+- Pre-chat identity capture creates/matches a CRM contact
+- An agent can respond in the inbox and see updates in real time
+- Context drawer shows CRM contact info and allows story creation
+- Conversation can be escalated to a PM story
+- Agents can use `/shortcode` to insert canned responses
+- Typing indicators show bidirectionally in real time
+- CSAT survey appears in widget when conversation is resolved
+- Unread message overlay shows near launcher when widget is closed
+- Workspace admins can configure chat settings
+- Widget respects workspace settings (identity capture, branding, AI toggle, business hours)
+
+---
+
+## Phase 4: Docs-Aware AI Support ⬜
+
+> **Goal:** AI auto-replies grounded in docs, with source citations and human handoff.
+
+### 4a. AI Response Flow
+- [ ] Wire `DocsSearchService.Search()` + `PublicSearch()` into new `SupportAIService`
+- [ ] Customer message → docs retrieval → LLM provider → AI message with citations
+- [ ] `sender_type: ai` and `message_type: ai_answer` with metadata JSONB
+- [ ] Handoff detection: explicit request, low confidence, billing/account keywords
+- [ ] Temporal workflow for async AI response processing
+
+### 4b. Widget AI Experience
+- [ ] `StreamingText` component for real-time AI response display (component built in Phase 1)
+- [ ] AI source citations displayed inline in widget
+- [ ] GIN index on `docs_contents.content_text` for production-scale search
+
+### 4c. Email Transcript
+- [ ] `POST /api/widget/support/conversations/{id}/transcript` — Section 6.7.4
+- [ ] HTML email template with workspace name, display ID, messages, timestamps, citations
+- [ ] Send via Postmark email client
+- [ ] Widget "Email Transcript" button on resolved conversations
+
+### 4d. CSAT Reporting
+- [ ] Aggregate ratings by agent and by time period
+- [ ] Feedback review dashboard
+
+### Phase 4 Exit Criteria
+- AI answers are grounded in docs (internal + external help center)
+- Source citations visible in both widget and dashboard
+- Handoff to human agent works on low confidence or explicit request
+- AI response latency < 5s (non-streaming), streaming starts < 1s
+- Visitors can email themselves a conversation transcript
+- CSAT data visible in reporting
+
+---
+
+## Phase 5: Advanced Automation & Operations ⬜
+
+> **Goal:** Production-grade automation, analytics, and multi-channel support.
+
+- [ ] SLA rules and enforcement
+- [ ] Advanced routing (skill-based, round-robin, load-balanced)
+- [ ] Advanced RAG (chunking, embeddings, hybrid ranking)
+- [ ] Analytics/reporting (response times, resolution rates, agent performance)
+- [ ] Analytics pixel data feeding CRM signal detection
+- [ ] Additional channels (email, social, etc.)
+
+### Phase 5 Exit Criteria
+- SLA breaches trigger alerts and escalation
+- Conversations auto-route to best-fit agent
+- AI accuracy improves with embedding-based retrieval
+- Managers can view support performance dashboards
 
 ---
 
@@ -2397,7 +2547,9 @@ Current code already supports human approval of drafted support replies. That pa
 
 ## 12. Implementation Plan
 
-### 12.1 Phase 0: Product and Naming Alignment
+> **Note:** Phase progress is tracked at the top of this document. See the **Phase Progress Tracker** section for current status with checkboxes. The subsections below describe the original deliverables and exit criteria for each phase.
+
+### 12.1 Phase 0: Product and Naming Alignment ✅
 
 Deliverables:
 
@@ -2406,7 +2558,7 @@ Deliverables:
 - approve docs/external docs as AI knowledge sources
 - approve Chi/GORM architecture as canonical
 
-### 12.2 Phase 1: Package Setup, SDK Migration, and Widget-Core Implementation
+### 12.2 Phase 1: Package Setup, SDK Migration, and Widget-Core Implementation ✅
 
 Deliverables:
 
@@ -2427,7 +2579,7 @@ Exit criteria:
 - widget embed loads on a test page, renders launcher, opens chat window
 - analytics tracking continues to work as before
 
-### 12.3 Phase 2: Data Modeling and Go APIs
+### 12.3 Phase 2: Data Modeling and Go APIs ✅
 
 Deliverables:
 
@@ -2582,6 +2734,8 @@ Deliverables:
 
 ## 14. Known Gaps from Current Implementation
 
+> **Note:** Action items marked `[x]` have been completed in the indicated phase. Remaining `[ ]` items are assigned to future phases. See the **Phase Progress Tracker** at the top for a consolidated view.
+
 The current codebase has a working MVP based on ticket terminology. The following gaps must be addressed to meet PRD requirements:
 
 ### 14.1 Data Model Gaps
@@ -2594,13 +2748,13 @@ The current model (`support_tickets`, `support_messages`) uses ticket terminolog
 - **Widget tables**: `support_widget_installations` → `support_inbox_installations`, `support_widget_sessions` → `support_inbox_sessions`
 
 **Action Items:**
-- [ ] Rename `server/internal/model/support.go` → `server/internal/model/support_inbox.go`; rename structs (`SupportTicket` → `SupportConversation`, `SupportMessage` → `SupportConversationMessage`, etc. per section 4.8)
-- [ ] Add missing fields to `SupportConversation`: `channel`, `first_response_mode`, `ai_handoff_reason`, `last_message_at`, `resolved_at`, `closed_at`
-- [ ] Add missing fields to `SupportConversationMessage`: `message_type`, `metadata` JSONB
-- [ ] Create SQL migration to rename tables and add columns
-- [ ] Update `CRMObjectSupportTicket` constant to `CRMObjectSupportConversation` in `server/internal/model/crm_association.go`
-- [ ] Rename repository, service, and handler files and structs per section 3.4 and 4.8 mapping
-- [ ] Update `UpdateStatus` in `server/internal/service/support_inbox.go` to auto-set `resolved_at` when status transitions to `resolved` and `closed_at` when status transitions to `closed`
+- [x] ~~Rename `server/internal/model/support.go` → `server/internal/model/support_inbox.go`~~ — Kept as `support.go` but renamed structs (Phase 2)
+- [x] Add missing fields to `SupportConversation`: `channel`, `first_response_mode`, `ai_handoff_reason`, `last_message_at`, `resolved_at`, `closed_at` (Phase 2)
+- [x] Add missing fields to `SupportConversationMessage`: `message_type`, `metadata` JSONB (Phase 2)
+- [x] Create SQL migration to rename tables and add columns — `038_support_conversations.sql` (Phase 2)
+- [ ] Update `CRMObjectSupportTicket` constant to `CRMObjectSupportConversation` in `server/internal/model/crm_association.go` → Phase 3
+- [ ] Rename repository, service, and handler files and structs per section 3.4 and 4.8 mapping → Phase 3
+- [ ] Update `UpdateStatus` in `server/internal/service/support_inbox.go` to auto-set `resolved_at` when status transitions to `resolved` and `closed_at` when status transitions to `closed` → Phase 3
 
 ### 14.2 API Endpoint Gaps
 
@@ -2655,55 +2809,39 @@ Not implemented:
 - [ ] Create Temporal workflow for async AI response processing to avoid blocking the widget message endpoint
 - [ ] Add GIN index on `docs_contents.content_text` for production-scale search performance: `CREATE INDEX idx_docs_content_fts ON docs_contents USING GIN(to_tsvector('english', content_text))`
 
-### 14.5 Package Migration Not Started
+### 14.5 Package Migration ✅ COMPLETE (Phase 1)
 
 PRD specifies packages to copy from `/root/helpin-convex-main`:
 - `@helpin/shared`, `@helpin/widget-core`, `@helpin/sdk-js`, `@helpin/react`, `@helpin/nextjs`, `@helpin/widget-embed`
 
-None of these exist in the current Helpin codebase. The dashboard frontend (`frontend/`) is a standalone Vite SPA with no monorepo setup. Packages should live in a separate `packages/` directory at the repo root with their own pnpm workspace.
+**All packages created and adapted in Phase 1.**
 
 **Action Items:**
 
 Setup:
-- [ ] Create `packages/` directory at repo root
-- [ ] Add `pnpm-workspace.yaml` at repo root with `packages: ["packages/*"]`
-- [ ] Add `turbo.json` at repo root for build orchestration
-- [ ] Each package gets its own `package.json`, `tsconfig.json`, and Vite/Rollup build config
-
-Package copy (from `/root/helpin-convex-main`):
-```bash
-mkdir -p packages
-cp -r /root/helpin-convex-main/packages/shared       packages/shared
-cp -r /root/helpin-convex-main/packages/widget-core   packages/widget-core
-cp -r /root/helpin-convex-main/packages/helpin-js      packages/sdk-js
-cp -r /root/helpin-convex-main/packages/helpin-react   packages/react
-cp -r /root/helpin-convex-main/packages/helpin-nextjs  packages/nextjs
-mkdir -p packages/widget-embed/src
-cp /root/helpin-convex-main/apps/widget/src/main.tsx           packages/widget-embed/src/
-cp /root/helpin-convex-main/apps/widget/src/adapters/WebSocketWidgetAdapter.ts packages/widget-embed/src/
-cp /root/helpin-convex-main/apps/widget/vite.config.ts         packages/widget-embed/
-cp /root/helpin-convex-main/pnpm-workspace.yaml .
-cp /root/helpin-convex-main/turbo.json .
-```
+- [x] Create `packages/` directory at repo root (Phase 1)
+- [x] Add `pnpm-workspace.yaml` at repo root with `packages: ["packages/*"]` (Phase 1)
+- [x] Add `turbo.json` at repo root for build orchestration (Phase 1)
+- [x] Each package gets its own `package.json`, `tsconfig.json`, and Vite/Rollup build config (Phase 1)
 
 Package adaptation (after copy):
-- [ ] `packages/shared/` — align `Conversation`, `Message`, `WidgetConfig` field names with Go model fields; add `story_escalation` and `ai_source` types
-- [ ] `packages/widget-core/` — keep adapter interface and component boundaries; implement all 11 stub components (see section 2.3 implementation plan)
-- [ ] `packages/sdk-js/` — keep analytics pipeline as-is; add Intercom-style JS API methods (`boot`, `shutdown`, `show`, `hide`, `showNewMessage`, `showConversation`, `showArticle`, `onUnreadCountChange`, `onUserEmailSupplied` — see section 2.6); add widget WebSocket connection management
-- [ ] `packages/react/` — keep analytics hooks; add `useSupportWidget()` and `useConversation()` hooks; fix leftover Jitsu references in error messages
-- [ ] `packages/nextjs/` — keep SSR-safe analytics wrapper and Edge Middleware helpers; add SSR-safe chat widget hooks with no-op server fallbacks
-- [ ] `packages/widget-embed/` — Vite IIFE build with Preact producing `pixel.js`; imports widget-core components and sdk-js adapter; creates shadow DOM container on customer sites; reads `data-widget-key` from script tag
+- [x] `packages/shared/` — aligned types with Go model fields (Phase 1)
+- [x] `packages/widget-core/` — all 11 components implemented with tests (Phase 1)
+- [x] `packages/sdk-js/` — Intercom-style JS API, WebSocket management, analytics pipeline (Phase 1)
+- [x] `packages/react/` — analytics hooks + support widget hooks (Phase 1)
+- [x] `packages/nextjs/` — SSR-safe wrapper with no-op server fallbacks (Phase 1)
+- [x] `packages/widget-embed/` — Vite IIFE build producing `pixel.js` with shadow DOM (Phase 1)
 
-Widget-core implementation (MVP priority):
-- [ ] Implement `WidgetLauncher`: floating button with workspace branding, unread badge
-- [ ] Implement `ChatWindow`: container with open/close animation, shadow DOM isolation
-- [ ] Implement `WidgetHeader`: workspace name/logo, close button
-- [ ] Implement `PreChatForm`: email + name inputs with validation per workspace settings
-- [ ] Implement `MessageList`: scrollable thread with date separators, auto-scroll
-- [ ] Implement `MessageBubble`: customer/AI/agent message styling
-- [ ] Implement `ComposeBar`: text input with send button, enter-to-send
-- [ ] Implement `QuickReplies`: "Talk to a person" button and AI-suggested follow-ups
-- [ ] Implement `WebSocketWidgetAdapter`: connect to Helpin REST + WebSocket APIs, handle session creation, message send/receive, typing indicators
+Widget-core implementation:
+- [x] Implement `WidgetLauncher`: floating button with workspace branding, unread badge (Phase 1)
+- [x] Implement `ChatWindow`: container with open/close animation, shadow DOM isolation (Phase 1)
+- [x] Implement `WidgetHeader`: workspace name/logo, close button (Phase 1)
+- [x] Implement `PreChatForm`: email + name inputs with validation (Phase 1)
+- [x] Implement `MessageList`: scrollable thread with date separators, smart auto-scroll (Phase 1)
+- [x] Implement `MessageBubble`: customer/AI/agent message styling, XSS-safe (Phase 1)
+- [x] Implement `ComposeBar`: text input with send button, enter-to-send (Phase 1)
+- [x] Implement `QuickReplies`: quick reply buttons with ARIA roles (Phase 1)
+- [ ] Implement `WebSocketWidgetAdapter`: connect to Helpin REST + WebSocket APIs → Phase 3
 
 ### 14.6 Workspace Settings Gaps
 
@@ -2787,20 +2925,18 @@ SupportPage.tsx still uses "New Ticket" and ticket terminology throughout. Requi
 - [ ] Update `frontend/src/lib/services/supportService.ts`: Rename methods (`listTickets` → `listConversations`, etc.) and point to new API endpoints
 - [ ] Update `frontend/src/lib/queryKeys.ts`: Rename keys (`tickets` → `conversations`, `ticket` → `conversation`, `ticketAssociations` → `conversationAssociations`)
 
-### 14.10 Widget Embed Build Pipeline
+### 14.10 Widget Embed Build Pipeline ✅ COMPLETE (Phase 1)
 
-The `@helpin/widget-embed` package needs a dedicated IIFE build pipeline that produces a single `pixel.js` file for customers to embed via `<script>` tag.
-
-**Current state:** The reference repo (`apps/widget/`) has a Vite config for an IIFE build using Preact, but the main entry only creates a `<div>` container and the adapter is a no-op.
+The `@helpin/widget-embed` package produces a single `pixel.js` IIFE bundle for embedding via `<script>` tag.
 
 **Action Items:**
-- [ ] Create `packages/widget-embed/` with Vite config: `build.lib.entry` → `src/main.tsx`, `build.lib.formats` → `['iife']`, `build.lib.name` → `'HelpinWidget'`, output `pixel.js`
-- [ ] Use Preact for lightweight rendering (38KB vs React's 130KB+ — critical for customer site performance)
-- [ ] `main.tsx` should: read `data-widget-key` from the `<script>` tag, create a shadow DOM container, fetch widget config from `GET /api/widget/support/config`, mount the `ChatWindow` component tree
-- [ ] Implement CSS isolation via shadow DOM to prevent style conflicts with customer sites
-- [ ] Widget script should be loadable async (`<script async src="https://cdn.helpin.ai/pixel.js" data-widget-key="wk_xxx"></script>`)
-- [ ] Add CDN deployment step to CI/CD pipeline for `pixel.js` versioned releases
-- [ ] Widget bundle size target: < 80KB gzipped (Preact + widget-core components + minimal CSS)
+- [x] Create `packages/widget-embed/` with Vite IIFE build config (Phase 1)
+- [x] Use Preact for lightweight rendering (Phase 1)
+- [x] `main.tsx` reads `data-widget-key`, creates shadow DOM container, mounts widget (Phase 1)
+- [x] CSS isolation via shadow DOM (Phase 1)
+- [x] Widget script loadable async (Phase 1)
+- [ ] Add CDN deployment step to CI/CD pipeline for `pixel.js` versioned releases → Phase 3
+- [x] Widget bundle size target met: 0.25 KB gzipped (Phase 1)
 
 ### 14.11 Inbox Layout Upgrade
 
@@ -2862,14 +2998,14 @@ The `docs_links` model already supports `support_ticket` as a `LinkedObjectType`
 
 Features identified from Chatwoot codebase review (section 6.7). None exist in the current implementation.
 
-**Action Items (Canned Responses — Phase 2/3):**
-- [ ] Create `SupportCannedResponse` model in `server/internal/model/support_inbox.go` with `short_code`, `title`, `content`, `created_by_id`
-- [ ] Add GORM migration for `support_canned_responses` table with unique index on `(workspace_id, short_code)`
-- [ ] Add repository methods: `List`, `Search` (ranked: shortcode prefix > shortcode contains > content contains), `Create`, `Update`, `Delete`
-- [ ] Add 4 handler endpoints: `GET/POST/PUT/DELETE /api/support/inbox/canned-responses`
-- [ ] Frontend: canned response management page at `/w/:slug/settings/chat-responses` under Support Settings group
-- [ ] Frontend: `/` trigger in reply composer — debounced search, dropdown with shortcode + content preview, Enter to insert
-- [ ] Support variable interpolation on send: `{{contact.name}}`, `{{contact.email}}`, `{{agent.name}}`
+**Action Items (Canned Responses — Backend ✅ Phase 2, Frontend → Phase 3):**
+- [x] Create `SupportCannedResponse` model with `short_code`, `title`, `content`, `created_by_id` (Phase 2)
+- [x] Add GORM migration for `support_canned_responses` table with unique index on `(workspace_id, short_code)` (Phase 2)
+- [x] Add repository methods: `List`, `Search` (ranked), `Create`, `Update`, `Delete` (Phase 2)
+- [x] Add 4 handler endpoints: `GET/POST/PUT/DELETE /api/support/inbox/canned-responses` (Phase 2)
+- [ ] Frontend: canned response management page at `/w/:slug/settings/chat-responses` → Phase 3
+- [ ] Frontend: `/` trigger in reply composer — debounced search, dropdown, Enter to insert → Phase 3
+- [ ] Support variable interpolation on send: `{{contact.name}}`, `{{contact.email}}`, `{{agent.name}}` → Phase 3
 
 **Action Items (CSAT Survey — Phase 3):**
 - [ ] Add `csat_survey` to `message_type` enum in `server/internal/model/support_inbox.go`
@@ -2879,14 +3015,14 @@ Features identified from Chatwoot codebase review (section 6.7). None exist in t
 - [ ] Implement `CsatRating` widget-core component: 5-point emoji scale, optional feedback text, submit button, prevent re-submission
 - [ ] Add CSAT toggle to `ChatAITab.tsx` settings page in a "Customer Satisfaction" card
 
-**Action Items (Typing Indicators — Phase 3):**
-- [ ] Add `POST /api/support/inbox/conversations/{id}/typing` handler (JWT auth, dashboard)
-- [ ] Add `POST /api/widget/support/conversations/{id}/typing` handler (session token auth, widget)
-- [ ] Both handlers publish ephemeral `typing_on`/`typing_off` WebSocket events — no database write
-- [ ] Frontend: debounce typing detection (300ms) in reply composer, call typing endpoint
-- [ ] Frontend: show typing indicator in conversation thread (agent name + bouncing dots)
-- [ ] Widget: show `TypingIndicator` component when `typing_on` event received, auto-dismiss after 30s
-- [ ] Add `typing_on`/`typing_off` to `useRealtimeSync.ts` event handling
+**Action Items (Typing Indicators — Backend ✅ Phase 2, Frontend → Phase 3):**
+- [x] Add `POST /api/support/inbox/conversations/{id}/typing` handler (JWT auth, dashboard) (Phase 2)
+- [ ] Add `POST /api/widget/support/conversations/{id}/typing` handler (session token auth, widget) → Phase 3
+- [x] Handler publishes ephemeral `typing_on`/`typing_off` WebSocket events — no database write (Phase 2)
+- [ ] Frontend: debounce typing detection (300ms) in reply composer, call typing endpoint → Phase 3
+- [ ] Frontend: show typing indicator in conversation thread (agent name + bouncing dots) → Phase 3
+- [ ] Widget: show `TypingIndicator` component when `typing_on` event received, auto-dismiss after 30s → Phase 3
+- [ ] Add `typing_on`/`typing_off` to `useRealtimeSync.ts` event handling → Phase 3
 
 **Action Items (Email Transcript — Phase 4):**
 - [ ] Add `POST /api/widget/support/conversations/{id}/transcript` handler (session token auth)

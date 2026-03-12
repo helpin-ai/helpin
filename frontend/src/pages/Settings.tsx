@@ -9,7 +9,7 @@ import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, FileText, FolderKanban, GitBranch, Globe, Import, Mail, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
+import { Bot, FileText, FolderKanban, GitBranch, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
 import {
   GeneralTab,
   MembersTab,
@@ -26,9 +26,11 @@ import {
   HelpcenterTab,
   CRMEmailSettingsTab,
   CRMAutonomySettingsTab,
+  ChatGeneralTab,
+  ChatAITab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'chat-general' | 'chat-ai' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -128,6 +130,20 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     description: 'Configure self-driving deal automation thresholds.',
     icon: Sliders,
     group: 'CRM Settings',
+  },
+  {
+    id: 'chat-general',
+    label: 'Chat Widget',
+    description: 'Widget installation, identity capture, and CRM integration.',
+    icon: MessageSquare,
+    group: 'Support Settings',
+  },
+  {
+    id: 'chat-ai',
+    label: 'AI & Routing',
+    description: 'AI auto-reply, handoff routing, business hours, and CSAT.',
+    icon: Bot,
+    group: 'Support Settings',
   },
   /* {
     id: 'people',
@@ -311,6 +327,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             teams={settings.teams}
             editable={canAdminWorkflows}
             initialWorkflowId={initialWorkflowId}
+            initialTeamId={initialTeamId}
           />
         );
       case 'labels':
@@ -329,6 +346,10 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
         return <CRMEmailSettingsTab workspaceId={workspaceId} />;
       case 'crm-autonomy':
         return <CRMAutonomySettingsTab workspaceId={workspaceId} />;
+      case 'chat-general':
+        return <ChatGeneralTab workspaceId={workspaceId} />;
+      case 'chat-ai':
+        return <ChatAITab workspaceId={workspaceId} />;
       default:
         return null;
     }

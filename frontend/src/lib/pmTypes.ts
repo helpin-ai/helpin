@@ -1196,6 +1196,51 @@ export interface AssignConversationAgentRequest {
   agent_id: string;
 }
 
+// ── Support Installation Settings ───────────────────────────────────
+
+export interface BusinessHoursDay {
+  start: string;
+  end: string;
+  enabled: boolean;
+}
+
+export interface SupportInboxSettings {
+  require_email_before_chat: boolean;
+  require_name_after_email: boolean;
+  welcome_message: string;
+  auto_create_crm_contact: boolean;
+  default_lifecycle_stage: string;
+  auto_promote_to_lead: boolean;
+  ai_enabled: boolean;
+  ai_confidence_threshold: number;
+  show_talk_to_human: boolean;
+  handoff_behavior: string;
+  handoff_team_id: string | null;
+  business_hours_enabled: boolean;
+  business_hours_timezone: string;
+  business_hours_schedule: Record<string, BusinessHoursDay>;
+  outside_hours_message: string;
+  brand_color: string;
+  show_branding: boolean;
+  color_scheme: string;
+  button_color: string;
+  button_icon_color: string;
+  logo_url: string;
+  launcher_position: string;
+  launcher_icon: string;
+  csat_enabled: boolean;
+}
+
+export interface SupportInstallationResponse {
+  id: string;
+  workspace_id: string;
+  widget_key: string;
+  settings: SupportInboxSettings;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Git Integration ─────────────────────────────────────────────────
 
 export interface GitIntegration {

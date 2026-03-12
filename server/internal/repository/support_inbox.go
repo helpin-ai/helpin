@@ -91,6 +91,16 @@ func (r *SupportInboxInstallationRepository) Update(ctx context.Context, inst *m
 	return nil
 }
 
+// RegenerateKeys updates just the widget_key and secret_key columns.
+func (r *SupportInboxInstallationRepository) RegenerateKeys(ctx context.Context, id, widgetKey, secretKey string) error {
+	if err := r.db.WithContext(ctx).Model(&model.SupportWidgetInstallation{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{"widget_key": widgetKey, "secret_key": secretKey}).Error; err != nil {
+		return fmt.Errorf("regenerate widget keys: %w", err)
+	}
+	return nil
+}
+
 // SupportInboxSessionRepository handles widget sessions.
 type SupportInboxSessionRepository struct {
 	db *gorm.DB
