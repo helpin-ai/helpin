@@ -176,11 +176,19 @@ jobs:
           pnpm install --no-frozen-lockfile
           NODE_OPTIONS=--max-old-space-size=8192 pnpm build
 
+      - name: Link Netlify site
+        working-directory: build-stg-netlify
+        env:
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_STAGE }}
+        run: |
+          mkdir -p .netlify
+          printf '{\"siteId\":\"%s\"}\n' "$NETLIFY_SITE_ID" > .netlify/state.json
+
       - name: Deploy to Netlify
+        working-directory: build-stg-netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_STAGE }}
-        run: npx netlify-cli deploy --dir=${{ github.workspace }}/build-stg-netlify/frontend/dist --no-build --prod-if-unlocked
+        run: pnpm dlx netlify-cli@24.2.0 deploy --filter frontend --dir frontend/dist --no-build --prod-if-unlocked
 
   release:
     name: Create RC Release & Update Manifests
@@ -284,4 +292,3 @@ jobs:
           git commit -m "chore: update helpin stage images to ${RC_TAG} [skip ci]" || echo "No manifest changes"
           git pull --rebase origin develop
           git push origin develop
-
