@@ -177,7 +177,11 @@ jobs:
           NODE_OPTIONS=--max-old-space-size=8192 pnpm build
 
       - name: Deploy to Netlify
-        run: npx netlify-cli deploy --dir=${{ github.workspace }}/build-stg-netlify/frontend/dist --no-build --prod-if-unlocked --auth=${{ secrets.NETLIFY_AUTH_TOKEN }} --site=${{ secrets.NETLIFY_SITE_ID_STAGE }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID_STAGE }}
+        working-directory: build-stg-netlify/frontend
+        run: npx netlify-cli deploy --dir=dist --no-build --prod-if-unlocked
 
   release:
     name: Create RC Release & Update Manifests
