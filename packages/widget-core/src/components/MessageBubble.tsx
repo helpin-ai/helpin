@@ -1,8 +1,9 @@
 import { FunctionComponent } from 'preact';
-import type { Message } from '../types';
+import type { Message, WidgetConfig } from '../types';
 
 interface MessageBubbleProps {
   message: Message;
+  config?: WidgetConfig;
 }
 
 function escapeHtml(str: string): string {
@@ -11,7 +12,20 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
-export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({ message }) => {
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({ message, config }) => {
   const isCustomer = message.role === 'customer';
   const isAI = message.role === 'ai';
   const isAgent = message.role === 'agent';
@@ -28,39 +42,51 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({ message }
     .filter(Boolean)
     .join(' ');
 
-  const roleLabel = isCustomer ? 'You' : isAI ? 'AI assistant' : isAgent ? 'Support agent' : 'System';
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  const roleLabel = isAI ? 'AI Agent' : isAgent ? 'Agent' : isSystem ? 'System' : '';
+  const senderName = isCustomer ? '' : (config?.workspaceName || 'Support');
 
   return (
-    <div className={bubbleClass} role="listitem" aria-label={`${roleLabel} message`}>
-      <div
-        className="helpin-message-content"
-        dangerouslySetInnerHTML={{ __html: escapeHtml(message.content) }}
-      />
+    <div
+      className={`helpin-message-row ${isCustomer ? 'helpin-message-row--customer' : 'helpin-message-row--agent'}`}
+      role="listitem"
+      aria-label={`${roleLabel || 'You'} message`}
+    >
+      <div className={bubbleClass}>
+        <div
+          className="helpin-message-content"
+          dangerouslySetInnerHTML={{ __html: escapeHtml(message.content) }}
+        />
 
-      {message.sources && message.sources.length > 0 && (
-        <div className="helpin-message-sources">
-          {message.sources.map((source, idx) => (
-            <div key={idx} className="helpin-source-item">
-              {source.title}
-            </div>
-          ))}
-        </div>
-      )}
+        {message.sources && message.sources.length > 0 && (
+          <div className="helpin-message-sources">
+            {message.sources.map((source, idx) => (
+              <div key={idx} className="helpin-source-item">
+                {source.title}
+              </div>
+            ))}
+          </div>
+        )}
 
-      {message.aiConfidence !== undefined && (
-        <div className="helpin-message-confidence">
-          Confidence: {Math.round(message.aiConfidence * 100)}%
-        </div>
-      )}
-
-      <div className="helpin-message-time" aria-label={`Sent at ${formatTime(message.createdAt)}`}>
-        {formatTime(message.createdAt)}
+        {message.aiConfidence !== undefined && (
+          <div className="helpin-message-confidence">
+            Confidence: {Math.round(message.aiConfidence * 100)}%
+          </div>
+        )}
       </div>
+
+      {!isCustomer && senderName && (
+        <div className="helpin-message-attribution">
+          <span className="helpin-message-sender">{senderName}</span>
+          {roleLabel && (
+            <>
+              <span className="helpin-message-attr-dot">&middot;</span>
+              <span>{roleLabel}</span>
+            </>
+          )}
+          <span className="helpin-message-attr-dot">&middot;</span>
+          <span>{formatRelativeTime(message.createdAt)}</span>
+        </div>
+      )}
     </div>
   );
 };

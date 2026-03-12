@@ -21,7 +21,7 @@ export declare const BottomNav: FunctionComponent<BottomNavProps>;
 
 declare interface BottomNavProps {
     activeView: WidgetView;
-    onNavigate: (view: WidgetView) => void;
+    onNavigate: (view: WidgetBaseView) => void;
     brandColor?: string;
 }
 
@@ -52,6 +52,16 @@ declare interface ComposeBarProps {
     placeholder?: string;
 }
 
+export declare const ConversationView: FunctionComponent<ConversationViewProps>;
+
+declare interface ConversationViewProps {
+    config: WidgetConfig;
+    messages: Message[];
+    onSendMessage: (content: string) => void;
+    onBack: () => void;
+    onClose?: () => void;
+}
+
 export declare const CsatRating: FunctionComponent<CsatRatingProps>;
 
 declare interface CsatRatingProps {
@@ -69,7 +79,7 @@ export declare const HelpView: FunctionComponent<HelpViewProps>;
 
 declare interface HelpViewProps {
     config: WidgetConfig;
-    onNavigate: (view: 'messages') => void;
+    onNavigate: (view: 'conversation' | 'messages') => void;
 }
 
 export declare const HomeView: FunctionComponent<HomeViewProps>;
@@ -77,7 +87,7 @@ export declare const HomeView: FunctionComponent<HomeViewProps>;
 declare interface HomeViewProps {
     config: WidgetConfig;
     onSendMessage: (content: string) => void;
-    onNavigate: (view: 'messages' | 'help') => void;
+    onNavigate: (view: 'conversation' | 'messages' | 'help') => void;
     showPreChatForm: boolean;
     onPreChatSubmit: (data: {
         name: string;
@@ -93,12 +103,15 @@ export declare const MessageBubble: FunctionComponent<MessageBubbleProps>;
 
 declare interface MessageBubbleProps {
     message: Message;
+    config?: WidgetConfig;
 }
 
 export declare const MessageList: FunctionComponent<MessageListProps>;
 
 declare interface MessageListProps {
     messages: Message[];
+    showDateSeparators?: boolean;
+    config?: WidgetConfig;
 }
 
 export declare const MessagesView: FunctionComponent<MessagesViewProps>;
@@ -157,6 +170,8 @@ export declare interface WidgetAdapter {
     getConfig(): WidgetConfig;
 }
 
+declare type WidgetBaseView = 'home' | 'messages' | 'help';
+
 export declare type WidgetConfig = WidgetConfig_2;
 
 export declare const WidgetHeader: FunctionComponent<WidgetHeaderProps>;
@@ -181,6 +196,6 @@ declare interface WidgetLauncherProps {
     icon?: LauncherIcon;
 }
 
-export declare type WidgetView = 'home' | 'messages' | 'help';
+export declare type WidgetView = WidgetBaseView | 'conversation';
 
 export { }

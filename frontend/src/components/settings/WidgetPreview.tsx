@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { render as preactRender, h } from 'preact';
 import { ChatWindow, WidgetLauncher } from '@helpin/widget-core';
 
@@ -20,9 +20,10 @@ interface WidgetPreviewProps {
 }
 
 /**
- * Renders actual @helpin/widget-core Preact components inside the React dashboard
- * using an imperative Preact render bridge. The preview container uses CSS `contain: paint`
- * to trap `position: fixed` elements within the preview bounds.
+ * Full-height sticky widget preview panel (Intercom-style).
+ * Renders actual @helpin/widget-core Preact components inside a
+ * mock browser viewport using CSS `contain: paint` to trap
+ * `position: fixed` elements.
  */
 export function WidgetPreview({
   brandColor,
@@ -38,6 +39,7 @@ export function WidgetPreview({
   logoUrl,
 }: WidgetPreviewProps) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(true);
 
   useEffect(() => {
     const el = mountRef.current;
@@ -73,8 +75,8 @@ export function WidgetPreview({
       h(ChatWindow, {
         config,
         messages: [],
-        isOpen: true,
-        onClose: () => {},
+        isOpen,
+        onClose: () => setIsOpen(false),
         onSendMessage: () => {},
         onQuickReply: () => {},
         showPreChatForm: false,
@@ -82,8 +84,8 @@ export function WidgetPreview({
         initialView: 'home',
       }),
       h(WidgetLauncher, {
-        onClick: () => {},
-        isOpen: false,
+        onClick: () => setIsOpen((open) => !open),
+        isOpen,
         unreadCount: 0,
         brandColor,
         buttonColor,
@@ -96,117 +98,55 @@ export function WidgetPreview({
     return () => {
       preactRender(null, el);
     };
-  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl]);
+  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl, isOpen]);
 
   const positionSide = launcherPosition === 'bottom_left' ? 'left' : 'right';
 
   return (
     <>
       <style>{`
-        .widget-preview-scope {
+        .widget-preview-panel {
           position: relative;
-          height: 480px;
+          width: 100%;
+          height: 100%;
+          min-height: 0;
+          padding: 16px;
+          box-sizing: border-box;
           overflow: hidden;
           contain: paint;
+          background: repeating-conic-gradient(
+            rgba(0,0,0,0.03) 0% 25%, transparent 0% 50%
+          ) 50% / 16px 16px;
+          border-radius: 8px;
+          border: 1px solid var(--border, #e5e7eb);
         }
-        .widget-preview-scope .helpin-chat-window {
+
+        /* Chat window — full natural size, anchored bottom-right */
+        .widget-preview-panel .helpin-chat-window {
           position: absolute;
-          width: 320px;
-          height: 400px;
-          max-height: none;
-          bottom: 70px;
-          ${positionSide}: 12px;
+          width: 370px;
+          max-width: calc(100% - 32px);
+          height: calc(100% - 116px);
+          max-height: 680px;
+          bottom: 96px;
+          ${positionSide}: 16px;
           animation: none;
+          border-radius: 16px;
+          box-shadow: 0 8px 30px rgba(0,0,0,0.12);
         }
-        .widget-preview-scope .helpin-launcher {
+
+        /* Launcher — natural size */
+        .widget-preview-panel .helpin-launcher {
           position: absolute;
-          width: 48px;
-          height: 48px;
-          bottom: 12px;
-          ${positionSide}: 12px;
-          left: ${positionSide === 'left' ? '12px' : 'auto'};
-          right: ${positionSide === 'right' ? '12px' : 'auto'};
-        }
-        .widget-preview-scope .helpin-compose-input {
-          font-size: 12px;
-          padding: 8px 12px;
-        }
-        .widget-preview-scope .helpin-compose-send {
-          width: 32px;
-          height: 32px;
-        }
-        .widget-preview-scope .helpin-home-welcome {
-          font-size: 16px;
-        }
-        .widget-preview-scope .helpin-home-header {
-          padding: 24px 16px 20px;
-        }
-        .widget-preview-scope .helpin-home-content {
-          padding: 12px 14px 0;
-        }
-        .widget-preview-scope .helpin-home-input {
-          padding: 8px 12px;
-          font-size: 12px;
-        }
-        .widget-preview-scope .helpin-home-send {
-          width: 32px;
-          height: 32px;
-        }
-        .widget-preview-scope .helpin-home-action {
-          padding: 10px 10px;
-        }
-        .widget-preview-scope .helpin-home-action-title {
-          font-size: 12px;
-        }
-        .widget-preview-scope .helpin-home-action-desc {
-          font-size: 10px;
-        }
-        .widget-preview-scope .helpin-home-logo {
-          width: 36px;
-          height: 36px;
-        }
-        .widget-preview-scope .helpin-home-logo-placeholder {
-          width: 36px;
-          height: 36px;
-          font-size: 15px;
-        }
-        .widget-preview-scope .helpin-bottom-nav-label {
-          font-size: 9px;
-        }
-        .widget-preview-scope .helpin-bottom-nav-item svg {
-          width: 18px;
-          height: 18px;
-        }
-        .widget-preview-scope .helpin-powered-by {
-          font-size: 9px;
-          padding: 4px 12px 2px;
-        }
-        .widget-preview-scope .helpin-window-close {
-          width: 26px;
-          height: 26px;
-          top: 8px;
-          right: 8px;
-        }
-        .widget-preview-scope .helpin-window-close svg {
-          width: 14px;
-          height: 14px;
-        }
-        .widget-preview-scope .helpin-pre-chat-welcome {
-          font-size: 13px;
-        }
-        .widget-preview-scope .helpin-input {
-          padding: 8px 12px;
-          font-size: 12px;
-        }
-        .widget-preview-scope .helpin-btn-primary {
-          padding: 8px 12px;
-          font-size: 12px;
-        }
-        .widget-preview-scope .helpin-header-branding {
-          font-size: 9px;
+          width: 56px;
+          height: 56px;
+          bottom: 16px;
+          ${positionSide}: 16px;
+          left: ${positionSide === 'left' ? '16px' : 'auto'};
+          right: ${positionSide === 'right' ? '16px' : 'auto'};
         }
       `}</style>
-      <div className="widget-preview-scope rounded-lg border bg-muted/20">
+      <div className="widget-preview-panel">
         <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
       </div>
     </>

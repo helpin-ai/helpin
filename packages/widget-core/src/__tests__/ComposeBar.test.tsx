@@ -14,7 +14,7 @@ describe('ComposeBar', () => {
   it('uses default placeholder when not provided', () => {
     const { container } = render(<ComposeBar onSend={() => {}} />);
     const textarea = container.querySelector('.helpin-compose-input') as HTMLTextAreaElement;
-    expect(textarea.placeholder).toBe('Type a message...');
+    expect(textarea.placeholder).toBe('Ask a question...');
   });
 
   it('is disabled when disabled prop is true', () => {

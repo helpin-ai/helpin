@@ -24,3 +24,4 @@ export { BottomNav } from './components/BottomNav';
 export { HomeView } from './components/HomeView';
 export { MessagesView } from './components/MessagesView';
 export { HelpView } from './components/HelpView';
+export { ConversationView } from './components/ConversationView';

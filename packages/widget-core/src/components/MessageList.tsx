@@ -1,13 +1,19 @@
 import { FunctionComponent } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
-import type { Message } from '../types';
+import type { Message, WidgetConfig } from '../types';
 import { MessageBubble } from './MessageBubble';
 
 interface MessageListProps {
   messages: Message[];
+  showDateSeparators?: boolean;
+  config?: WidgetConfig;
 }
 
-export const MessageList: FunctionComponent<MessageListProps> = ({ messages }) => {
+export const MessageList: FunctionComponent<MessageListProps> = ({
+  messages,
+  showDateSeparators = true,
+  config,
+}) => {
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,6 +41,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({ messages }) =
   };
 
   const getDateSeparator = (dateStr: string, idx: number): string | null => {
+    if (!showDateSeparators) return null;
     if (idx === 0) return formatDate(dateStr);
     const prevDate = new Date(messages[idx - 1].createdAt);
     const currDate = new Date(dateStr);
@@ -55,7 +62,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({ messages }) =
                 <span>{dateSeparator}</span>
               </div>
             )}
-            <MessageBubble message={message} />
+            <MessageBubble message={message} config={config} />
           </div>
         );
       })}
