@@ -2,7 +2,7 @@ import { useRef, useEffect } from 'react';
 import { render as preactRender, h } from 'preact';
 import { ChatWindow, WidgetLauncher } from '@helpin/widget-core';
 
-// Widget-core CSS — helpin-* prefixed classes, no conflicts with dashboard
+// Widget-core CSS -- helpin-* prefixed classes, no conflicts with dashboard
 import '@helpin/widget-core/styles';
 
 interface WidgetPreviewProps {
@@ -13,6 +13,10 @@ interface WidgetPreviewProps {
   welcomeMessage: string;
   workspaceName?: string;
   workspaceLogoUrl?: string;
+  colorScheme?: string;
+  buttonColor?: string;
+  buttonIconColor?: string;
+  logoUrl?: string;
 }
 
 /**
@@ -28,6 +32,10 @@ export function WidgetPreview({
   welcomeMessage,
   workspaceName = 'Your Company',
   workspaceLogoUrl,
+  colorScheme = 'light',
+  buttonColor,
+  buttonIconColor,
+  logoUrl,
 }: WidgetPreviewProps) {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -35,20 +43,26 @@ export function WidgetPreview({
     const el = mountRef.current;
     if (!el) return;
 
+    const resolvedLogoUrl = logoUrl || workspaceLogoUrl;
+
     const config = {
       workspaceId: workspaceName,
+      workspaceName,
       branding: {
         primaryColor: brandColor,
-        logoUrl: workspaceLogoUrl,
-        welcomeMessage: welcomeMessage || 'Hi! How can we help you today?',
-        widgetPosition: (launcherPosition === 'bottom_left' ? 'bottom-left' : 'bottom-right') as const,
+        logoUrl: resolvedLogoUrl,
+        welcomeMessage: welcomeMessage || 'How can we help?',
+        widgetPosition: (launcherPosition === 'bottom_left' ? 'bottom-left' : 'bottom-right') as 'bottom-left' | 'bottom-right',
         showBranding,
         launcherIcon: launcherIcon as 'chat_bubble' | 'question_mark' | 'help',
+        colorScheme: (colorScheme || 'light') as 'system' | 'light' | 'dark',
+        buttonColor,
+        buttonIconColor,
       },
       features: {
         aiEnabled: false,
         fileUploads: false,
-        preChatForm: true,
+        preChatForm: false,
         csatRating: false,
       },
     };
@@ -63,14 +77,17 @@ export function WidgetPreview({
         onClose: () => {},
         onSendMessage: () => {},
         onQuickReply: () => {},
-        showPreChatForm: true,
+        showPreChatForm: false,
         onPreChatSubmit: () => {},
+        initialView: 'home',
       }),
       h(WidgetLauncher, {
         onClick: () => {},
         isOpen: false,
         unreadCount: 0,
         brandColor,
+        buttonColor,
+        buttonIconColor,
         icon: launcherIcon as 'chat_bubble' | 'question_mark' | 'help',
       }),
     );
@@ -79,7 +96,7 @@ export function WidgetPreview({
     return () => {
       preactRender(null, el);
     };
-  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl]);
+  }, [brandColor, showBranding, launcherPosition, launcherIcon, welcomeMessage, workspaceName, workspaceLogoUrl, colorScheme, buttonColor, buttonIconColor, logoUrl]);
 
   const positionSide = launcherPosition === 'bottom_left' ? 'left' : 'right';
 
@@ -88,17 +105,17 @@ export function WidgetPreview({
       <style>{`
         .widget-preview-scope {
           position: relative;
-          height: 420px;
+          height: 480px;
           overflow: hidden;
           contain: paint;
         }
         .widget-preview-scope .helpin-chat-window {
           position: absolute;
-          width: 300px;
-          height: 320px;
+          width: 320px;
+          height: 400px;
           max-height: none;
           bottom: 70px;
-          ${positionSide}: 16px;
+          ${positionSide}: 12px;
           animation: none;
         }
         .widget-preview-scope .helpin-launcher {
@@ -106,9 +123,9 @@ export function WidgetPreview({
           width: 48px;
           height: 48px;
           bottom: 12px;
-          ${positionSide}: 16px;
-          left: ${positionSide === 'left' ? '16px' : 'auto'};
-          right: ${positionSide === 'right' ? '16px' : 'auto'};
+          ${positionSide}: 12px;
+          left: ${positionSide === 'left' ? '12px' : 'auto'};
+          right: ${positionSide === 'right' ? '12px' : 'auto'};
         }
         .widget-preview-scope .helpin-compose-input {
           font-size: 12px;
@@ -117,6 +134,62 @@ export function WidgetPreview({
         .widget-preview-scope .helpin-compose-send {
           width: 32px;
           height: 32px;
+        }
+        .widget-preview-scope .helpin-home-welcome {
+          font-size: 16px;
+        }
+        .widget-preview-scope .helpin-home-header {
+          padding: 24px 16px 20px;
+        }
+        .widget-preview-scope .helpin-home-content {
+          padding: 12px 14px 0;
+        }
+        .widget-preview-scope .helpin-home-input {
+          padding: 8px 12px;
+          font-size: 12px;
+        }
+        .widget-preview-scope .helpin-home-send {
+          width: 32px;
+          height: 32px;
+        }
+        .widget-preview-scope .helpin-home-action {
+          padding: 10px 10px;
+        }
+        .widget-preview-scope .helpin-home-action-title {
+          font-size: 12px;
+        }
+        .widget-preview-scope .helpin-home-action-desc {
+          font-size: 10px;
+        }
+        .widget-preview-scope .helpin-home-logo {
+          width: 36px;
+          height: 36px;
+        }
+        .widget-preview-scope .helpin-home-logo-placeholder {
+          width: 36px;
+          height: 36px;
+          font-size: 15px;
+        }
+        .widget-preview-scope .helpin-bottom-nav-label {
+          font-size: 9px;
+        }
+        .widget-preview-scope .helpin-bottom-nav-item svg {
+          width: 18px;
+          height: 18px;
+        }
+        .widget-preview-scope .helpin-powered-by {
+          font-size: 9px;
+          padding: 4px 12px 2px;
+        }
+        .widget-preview-scope .helpin-window-close {
+          width: 26px;
+          height: 26px;
+          top: 8px;
+          right: 8px;
+        }
+        .widget-preview-scope .helpin-window-close svg {
+          width: 14px;
+          height: 14px;
         }
         .widget-preview-scope .helpin-pre-chat-welcome {
           font-size: 13px;

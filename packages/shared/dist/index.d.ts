@@ -1,4 +1,4 @@
-declare interface AiSource {
+export declare interface AiSource {
     docId: string;
     title: string;
     snippet: string;
@@ -6,7 +6,7 @@ declare interface AiSource {
     language: string;
 }
 
-declare interface Attachment {
+export declare interface Attachment {
     fileKey: string;
     fileName: string;
     fileType: string;
@@ -61,11 +61,17 @@ export declare interface User {
 
 export declare interface WidgetConfig {
     workspaceId: string;
+    workspaceName?: string;
     branding: {
         primaryColor: string;
         logoUrl?: string;
         welcomeMessage: string;
         widgetPosition: 'bottom-right' | 'bottom-left';
+        showBranding: boolean;
+        launcherIcon?: 'chat_bubble' | 'question_mark' | 'help';
+        colorScheme?: 'system' | 'light' | 'dark';
+        buttonColor?: string;
+        buttonIconColor?: string;
     };
     features: {
         aiEnabled: boolean;
@@ -87,7 +93,7 @@ export declare interface Workspace {
     createdAt: string;
 }
 
-declare interface WorkspaceBranding {
+export declare interface WorkspaceBranding {
     primaryColor: string;
     logoUrl?: string;
     welcomeMessage: string;

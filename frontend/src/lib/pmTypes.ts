@@ -1222,6 +1222,10 @@ export interface SupportInboxSettings {
   outside_hours_message: string;
   brand_color: string;
   show_branding: boolean;
+  color_scheme: string;
+  button_color: string;
+  button_icon_color: string;
+  logo_url: string;
   launcher_position: string;
   launcher_icon: string;
   csat_enabled: boolean;

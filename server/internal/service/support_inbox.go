@@ -555,6 +555,18 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.ShowBranding != nil {
 		current.ShowBranding = *patch.ShowBranding
 	}
+	if patch.ColorScheme != nil {
+		current.ColorScheme = *patch.ColorScheme
+	}
+	if patch.ButtonColor != nil {
+		current.ButtonColor = *patch.ButtonColor
+	}
+	if patch.ButtonIconColor != nil {
+		current.ButtonIconColor = *patch.ButtonIconColor
+	}
+	if patch.LogoURL != nil {
+		current.LogoURL = *patch.LogoURL
+	}
 	if patch.LauncherPosition != nil {
 		current.LauncherPosition = *patch.LauncherPosition
 	}
@@ -576,6 +588,16 @@ func validateSettings(s model.SupportInboxSettings) error {
 	}
 	if s.BrandColor != "" && !hexColorRegex.MatchString(s.BrandColor) {
 		return fmt.Errorf("brand_color must be a valid hex color (e.g. #6366F1)")
+	}
+	if s.ButtonColor != "" && !hexColorRegex.MatchString(s.ButtonColor) {
+		return fmt.Errorf("button_color must be a valid hex color (e.g. #000000)")
+	}
+	if s.ButtonIconColor != "" && !hexColorRegex.MatchString(s.ButtonIconColor) {
+		return fmt.Errorf("button_icon_color must be a valid hex color (e.g. #FFFFFF)")
+	}
+	validColorScheme := map[string]bool{"system": true, "light": true, "dark": true}
+	if s.ColorScheme != "" && !validColorScheme[s.ColorScheme] {
+		return fmt.Errorf("color_scheme must be system, light, or dark")
 	}
 	validHandoff := map[string]bool{"unassigned": true, "assign_to_team": true, "round_robin": true}
 	if !validHandoff[s.HandoffBehavior] {
@@ -730,6 +752,10 @@ func (s *SupportInboxService) GetPublicWidgetConfig(ctx context.Context, widgetK
 		OutsideHoursMessage:    settings.OutsideHoursMessage,
 		BrandColor:             settings.BrandColor,
 		ShowBranding:           settings.ShowBranding,
+		ColorScheme:            settings.ColorScheme,
+		ButtonColor:            settings.ButtonColor,
+		ButtonIconColor:        settings.ButtonIconColor,
+		LogoURL:                settings.LogoURL,
 		LauncherPosition:       settings.LauncherPosition,
 		LauncherIcon:           settings.LauncherIcon,
 		CSATEnabled:            settings.CSATEnabled,

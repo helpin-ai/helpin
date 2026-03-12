@@ -17,6 +17,14 @@ export declare interface Attachment {
     fileSize: number;
 }
 
+export declare const BottomNav: FunctionComponent<BottomNavProps>;
+
+declare interface BottomNavProps {
+    activeView: WidgetView;
+    onNavigate: (view: WidgetView) => void;
+    brandColor?: string;
+}
+
 export declare const ChatWindow: FunctionComponent<ChatWindowProps>;
 
 declare interface ChatWindowProps {
@@ -33,6 +41,7 @@ declare interface ChatWindowProps {
     }) => void;
     isTyping?: boolean;
     quickReplies?: string[];
+    initialView?: WidgetView;
 }
 
 export declare const ComposeBar: FunctionComponent<ComposeBarProps>;
@@ -56,6 +65,26 @@ export declare interface CustomerInfo {
     metadata?: Record<string, unknown>;
 }
 
+export declare const HelpView: FunctionComponent<HelpViewProps>;
+
+declare interface HelpViewProps {
+    config: WidgetConfig;
+    onNavigate: (view: 'messages') => void;
+}
+
+export declare const HomeView: FunctionComponent<HomeViewProps>;
+
+declare interface HomeViewProps {
+    config: WidgetConfig;
+    onSendMessage: (content: string) => void;
+    onNavigate: (view: 'messages' | 'help') => void;
+    showPreChatForm: boolean;
+    onPreChatSubmit: (data: {
+        name: string;
+        email: string;
+    }) => void;
+}
+
 declare type LauncherIcon = 'chat_bubble' | 'question_mark' | 'help';
 
 export declare type Message = Message_2;
@@ -70,6 +99,18 @@ export declare const MessageList: FunctionComponent<MessageListProps>;
 
 declare interface MessageListProps {
     messages: Message[];
+}
+
+export declare const MessagesView: FunctionComponent<MessagesViewProps>;
+
+declare interface MessagesViewProps {
+    config: WidgetConfig;
+    messages: Message[];
+    onSendMessage: (content: string) => void;
+    onQuickReply: (content: string) => void;
+    isTyping?: boolean;
+    quickReplies?: string[];
+    hasConversation: boolean;
 }
 
 export declare const PreChatForm: FunctionComponent<PreChatFormProps>;
@@ -135,7 +176,11 @@ declare interface WidgetLauncherProps {
     isOpen: boolean;
     unreadCount?: number;
     brandColor?: string;
+    buttonColor?: string;
+    buttonIconColor?: string;
     icon?: LauncherIcon;
 }
+
+export declare type WidgetView = 'home' | 'messages' | 'help';
 
 export { }

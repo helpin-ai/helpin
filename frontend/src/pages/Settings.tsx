@@ -327,6 +327,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             teams={settings.teams}
             editable={canAdminWorkflows}
             initialWorkflowId={initialWorkflowId}
+            initialTeamId={initialTeamId}
           />
         );
       case 'labels':
