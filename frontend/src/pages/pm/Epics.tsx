@@ -5,7 +5,6 @@ import { createColumnHelper, type VisibilityState } from '@tanstack/react-table'
 import { useTitle } from '@/hooks/useTitle';
 import {
   CalendarDays,
-  Hexagon,
   Layers,
   Minus,
   Plus,
@@ -98,7 +97,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         size: 999,
         cell: (info) => (
           <div className="flex items-center gap-2.5 min-w-0">
-            <Hexagon className="h-4 w-4 shrink-0 text-violet-500" />
+            <Layers className="h-4 w-4 shrink-0 text-violet-500" />
             <span className="truncate font-medium text-sm">{info.row.original.epic.name}</span>
           </div>
         ),
@@ -340,7 +339,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       {loading ? null : epics.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 px-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
-            <Hexagon className="h-7 w-7 text-violet-500" />
+            <Layers className="h-7 w-7 text-violet-500" />
           </div>
           <h3 className="text-lg font-semibold mb-1.5">Create your first epic</h3>
           <p className="text-sm text-muted-foreground text-center max-w-md mb-6">

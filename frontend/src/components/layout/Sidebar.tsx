@@ -19,7 +19,6 @@ import {
   GanttChart,
   Globe,
   EllipsisVertical,
-  Hexagon,
   Import,
   Layers,
   Lightbulb,
@@ -451,7 +450,7 @@ export function Sidebar() {
 
   const createOptions = [
     { key: 'story' as const, label: 'Story', icon: SquareKanban, pages: ['stories'] },
-    { key: 'epic' as const, label: 'Epic', icon: Hexagon, pages: ['epics'] },
+    { key: 'epic' as const, label: 'Epic', icon: Layers, pages: ['epics'] },
     { key: 'sprint' as const, label: 'Sprint', icon: RefreshCw, pages: ['sprints'] },
     { key: 'objective' as const, label: 'Objective', icon: Target, pages: ['objectives'] },
   ];
