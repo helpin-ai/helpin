@@ -25,7 +25,8 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@helpin/widget-core": ["../packages/widget-core/dist/index.d.ts"]
     }
   },
   "include": ["src"]

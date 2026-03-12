@@ -1,4 +1,6 @@
 import { FunctionComponent } from 'preact';
+import { Message as Message_2 } from '@helpin/shared';
+import { WidgetConfig as WidgetConfig_2 } from '@helpin/shared';
 
 export declare interface AiSource {
     docId: string;
@@ -54,18 +56,9 @@ export declare interface CustomerInfo {
     metadata?: Record<string, unknown>;
 }
 
-export declare interface Message {
-    id: string;
-    conversationId: string;
-    role: 'customer' | 'agent' | 'ai' | 'system';
-    content: string;
-    senderId?: string;
-    sources?: AiSource[];
-    aiConfidence?: number;
-    attachments?: Attachment[];
-    isInternal: boolean;
-    createdAt: string;
-}
+declare type LauncherIcon = 'chat_bubble' | 'question_mark' | 'help';
+
+export declare type Message = Message_2;
 
 export declare const MessageBubble: FunctionComponent<MessageBubbleProps>;
 
@@ -104,6 +97,7 @@ declare interface StreamingTextProps {
     text: string;
     isStreaming: boolean;
     onComplete?: () => void;
+    charDelayMs?: number;
 }
 
 export declare const TypingIndicator: FunctionComponent<TypingIndicatorProps>;
@@ -122,21 +116,7 @@ export declare interface WidgetAdapter {
     getConfig(): WidgetConfig;
 }
 
-export declare interface WidgetConfig {
-    workspaceId: string;
-    branding: {
-        primaryColor: string;
-        logoUrl?: string;
-        welcomeMessage: string;
-        widgetPosition: 'bottom-right' | 'bottom-left';
-    };
-    features: {
-        aiEnabled: boolean;
-        fileUploads: boolean;
-        preChatForm: boolean;
-        csatRating: boolean;
-    };
-}
+export declare type WidgetConfig = WidgetConfig_2;
 
 export declare const WidgetHeader: FunctionComponent<WidgetHeaderProps>;
 
@@ -155,6 +135,7 @@ declare interface WidgetLauncherProps {
     isOpen: boolean;
     unreadCount?: number;
     brandColor?: string;
+    icon?: LauncherIcon;
 }
 
 export { }

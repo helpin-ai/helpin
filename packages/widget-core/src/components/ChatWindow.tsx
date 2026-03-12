@@ -36,6 +36,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
   const position = config.branding?.widgetPosition || 'bottom-right';
   const brandColor = config.branding?.primaryColor || '#6366f1';
+  const showBranding = config.branding?.showBranding ?? true;
 
   return (
     <div
@@ -50,7 +51,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         logoUrl={config.branding?.logoUrl}
         onClose={onClose}
         brandColor={brandColor}
-        showBranding={config.features?.csatRating}
+        showBranding={config.branding?.showBranding ?? true}
       />
 
       <div className="helpin-chat-content">
@@ -74,6 +75,9 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
           </Fragment>
         )}
       </div>
+      {showBranding && (
+        <div className="helpin-footer-branding">Powered by Helpin</div>
+      )}
     </div>
   );
 };

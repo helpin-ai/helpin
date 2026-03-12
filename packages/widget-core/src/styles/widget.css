@@ -183,14 +183,12 @@
   opacity: 1;
 }
 
-.helpin-header-branding {
-  position: absolute;
-  bottom: 2px;
-  left: 0;
-  right: 0;
+.helpin-footer-branding {
   text-align: center;
-  font-size: 10px;
-  opacity: 0.6;
+  font-size: 11px;
+  color: var(--helpin-fg-muted);
+  padding: 6px 16px;
+  border-top: 1px solid var(--helpin-border);
 }
 
 /* Chat Content */

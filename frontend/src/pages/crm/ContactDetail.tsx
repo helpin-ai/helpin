@@ -286,9 +286,9 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 <p className="text-sm text-muted-foreground">No support conversations linked to this contact.</p>
               ) : (
                 <div className="space-y-2">
-                  {supportConversationsData.data.map((ticket) => (
+                  {supportConversationsData.data.map((conversation) => (
                     <Link
-                      key={ticket.id}
+                      key={conversation.id}
                       to="/w/$slug/pm/support"
                       params={{ slug: wsSlug }}
                       className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2 text-sm transition-colors hover:bg-muted/50"
@@ -296,18 +296,18 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                       <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">#{ticket.display_id}</span>
+                          <span className="text-xs text-muted-foreground">#{conversation.display_id}</span>
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                            {ticket.status}
+                            {conversation.status}
                           </Badge>
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                            {ticket.priority}
+                            {conversation.priority}
                           </Badge>
                         </div>
-                        <p className="mt-0.5 truncate font-medium">{ticket.subject}</p>
+                        <p className="mt-0.5 truncate font-medium">{conversation.subject}</p>
                       </div>
                       <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {new Date(ticket.created_at).toLocaleDateString()}
+                        {new Date(conversation.created_at).toLocaleDateString()}
                       </span>
                     </Link>
                   ))}

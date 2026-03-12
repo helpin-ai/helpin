@@ -5,6 +5,8 @@ export interface WidgetConfig {
     logoUrl?: string;
     welcomeMessage: string;
     widgetPosition: 'bottom-right' | 'bottom-left';
+    showBranding: boolean;
+    launcherIcon?: 'chat_bubble' | 'question_mark' | 'help';
   };
   features: {
     aiEnabled: boolean;

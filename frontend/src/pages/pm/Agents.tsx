@@ -63,7 +63,7 @@ const AGENT_CLASS_DESCRIPTIONS: Record<AgentClass, string> = {
   product_planner: 'Epic-only PRD, spec, and story planning.',
   engineer: 'Story-only implementation and delivery.',
   reviewer: 'Story-only review, testing, and readiness checks.',
-  support: 'Support-ticket triage and draft replies.',
+  support: 'Support conversation triage and draft replies.',
   human: 'Non-runnable placeholder for explicit handoffs.',
 };
 
