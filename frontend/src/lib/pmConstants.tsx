@@ -1,7 +1,7 @@
 import {
   Ban,
   Bug,
-  CircleAlert,
+  ChevronsUp,
   CircleCheck,
   CircleDashed,
   CircleDot,
@@ -21,12 +21,12 @@ import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, Story
 
 export const PRIORITY_CONFIG: Record<
   Priority,
-  { icon: React.ElementType; color: string; label: string }
+  { icon: React.ElementType; color: string; label: string; bold?: boolean }
 > = {
-  urgent: { icon: CircleAlert, color: 'text-red-500', label: 'Urgent' },
-  high: { icon: SignalHigh, color: 'text-orange-500', label: 'High' },
-  medium: { icon: SignalMedium, color: 'text-amber-500', label: 'Medium' },
-  low: { icon: SignalLow, color: 'text-sky-500', label: 'Low' },
+  urgent: { icon: ChevronsUp, color: 'text-red-500', label: 'Urgent', bold: true },
+  high: { icon: SignalHigh, color: 'text-orange-500', label: 'High', bold: true },
+  medium: { icon: SignalMedium, color: 'text-amber-500', label: 'Medium', bold: true },
+  low: { icon: SignalLow, color: 'text-sky-500', label: 'Low', bold: true },
   none: { icon: Ban, color: 'text-zinc-400', label: 'None' },
 };
 
@@ -39,7 +39,7 @@ export function PriorityIcon({
 }) {
   const config = PRIORITY_CONFIG[priority];
   const Icon = config.icon;
-  return <Icon className={`${className} ${config.color}`} />;
+  return <Icon className={`${className} ${config.color}`} {...(config.bold ? { strokeWidth: 3 } : {})} />;
 }
 
 // ── Severity icons & colors ─────────────────────────────────────────

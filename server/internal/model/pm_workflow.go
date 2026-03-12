@@ -107,3 +107,8 @@ type WorkflowWithStates struct {
 	Workflow PMWorkflow        `json:"workflow"`
 	States   []PMWorkflowState `json:"states"`
 }
+
+// CopyWorkflowToTeamRequest is the payload for copying a workflow to a team.
+type CopyWorkflowToTeamRequest struct {
+	TeamID string `json:"team_id"`
+}

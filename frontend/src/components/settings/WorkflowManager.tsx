@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { ArrowDown, ArrowUp, Check, Copy, EllipsisVertical, GitBranch, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ColorPicker } from '@/components/pm/ColorPicker';
+import { PRESET_COLORS } from '@/components/pm/ColorPicker';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -381,8 +382,8 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                       <DropdownMenuItem onClick={() => handleDuplicateWorkflow(entry)}>
                         <Copy className="h-3.5 w-3.5 mr-2" /> Duplicate
                       </DropdownMenuItem>
-                      {workflows.length <= 1 ? (
-                        <QuickTooltip label="You must have at least one workflow" side="left">
+                      {workflows.length <= 1 || (!entry.workflow.team_id && workflows.filter((w) => !w.workflow.team_id).length <= 1) ? (
+                        <QuickTooltip label={!entry.workflow.team_id ? 'Must keep at least one default workflow' : 'You must have at least one workflow'} side="left">
                           <DropdownMenuItem
                             variant="destructive"
                             className="opacity-40 pointer-events-auto cursor-not-allowed"
@@ -631,7 +632,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
               </div>
               <div className="space-y-2">
                 <Label>Color <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <ColorPicker value={stateColor || '#3b82f6'} onChange={setStateColor} />
+                <ColorPicker value={stateColor || PRESET_COLORS[0]} onChange={setStateColor} />
               </div>
             </div>
             <DialogFooter className="justify-between">

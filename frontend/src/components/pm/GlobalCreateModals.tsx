@@ -199,7 +199,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
+                    {teams.length === 0 && <SelectItem value="__none__">None</SelectItem>}
                     {teams.map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}
@@ -551,7 +551,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
+                    {teams.length === 0 && <SelectItem value="__none__">None</SelectItem>}
                     {teams.map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}

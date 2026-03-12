@@ -306,6 +306,9 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: entry.epic.id } });
   };
 
+  const showHeaderIntro = epics.length > 0;
+  const showHeaderActions = epics.length > 0;
+
   if (!workspace) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
@@ -313,15 +316,19 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   return (
     <div className="space-y-4">
       <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">Epics</h2>
-          <p className="text-sm text-muted-foreground">Track long-running initiatives and their story progress.</p>
-        </div>
-        <DisplayPropertiesPopover
-          allProperties={ALL_PROPERTIES}
-          visible={visibleColumns}
-          onChange={setVisibleColumns}
-        />
+        {showHeaderIntro ? (
+          <div>
+            <h2 className="text-xl font-semibold">Epics</h2>
+            <p className="text-sm text-muted-foreground">Track long-running initiatives and their story progress.</p>
+          </div>
+        ) : <div />}
+        {showHeaderActions && (
+          <DisplayPropertiesPopover
+            allProperties={ALL_PROPERTIES}
+            visible={visibleColumns}
+            onChange={setVisibleColumns}
+          />
+        )}
       </header>
 
       {error ? (
@@ -330,9 +337,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         </div>
       ) : null}
 
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading epics...</p>
-      ) : epics.length === 0 ? (
+      {loading ? null : epics.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 px-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
             <Hexagon className="h-7 w-7 text-violet-500" />

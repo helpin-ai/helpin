@@ -130,7 +130,7 @@ func newSettingsService(t *testing.T) (*SettingsService, *gorm.DB) {
 	db := newTestDB(t)
 	addSettingsExtraTables(t, db)
 	repo := repository.NewSettingsRepository(db)
-	svc := NewSettingsService(repo, "")
+	svc := NewSettingsService(repo, nil, "")
 	return svc, db
 }
 
@@ -416,7 +416,7 @@ func TestUpdateSystem_AllowsBraveWithAPIKey(t *testing.T) {
 	db := newTestDB(t)
 	addSettingsExtraTables(t, db)
 	repo := repository.NewSettingsRepository(db)
-	svc := NewSettingsService(repo, "test-brave-key-123")
+	svc := NewSettingsService(repo, nil, "test-brave-key-123")
 	ctx := context.Background()
 
 	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")

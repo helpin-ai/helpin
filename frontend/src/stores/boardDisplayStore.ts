@@ -18,7 +18,7 @@ export const DISPLAY_PROPERTY_LABELS = {
 
 /** Keys shown in the Kanban board display menu */
 export const BOARD_PROPERTY_KEYS: DisplayPropertyKey[] = [
-  'story_type', 'priority', 'severity', 'epic', 'labels',
+  'story_type', 'priority', 'severity', 'epic', 'sprint', 'labels',
   'estimate', 'due_date', 'blocked', 'assignee',
 ];
 
@@ -50,7 +50,9 @@ const ALL_ON: DisplayProperties = {
 
 const STORAGE_KEY = (wsId: string) => `pm_board_display_${wsId}`;
 
-function loadFromStorage(workspaceId: string): { properties: DisplayProperties; showEmptyColumns: boolean } {
+export type BoardGroupBy = 'status' | 'members';
+
+function loadFromStorage(workspaceId: string): { properties: DisplayProperties; showEmptyColumns: boolean; groupBy: BoardGroupBy } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY(workspaceId));
     if (raw) {
@@ -58,15 +60,16 @@ function loadFromStorage(workspaceId: string): { properties: DisplayProperties; 
       return {
         properties: { ...ALL_ON, ...parsed.properties },
         showEmptyColumns: parsed.showEmptyColumns ?? true,
+        groupBy: parsed.groupBy === 'members' ? 'members' : 'status',
       };
     }
   } catch {}
-  return { properties: { ...ALL_ON }, showEmptyColumns: true };
+  return { properties: { ...ALL_ON }, showEmptyColumns: true, groupBy: 'status' };
 }
 
-function saveToStorage(workspaceId: string, properties: DisplayProperties, showEmptyColumns: boolean) {
+function saveToStorage(workspaceId: string, properties: DisplayProperties, showEmptyColumns: boolean, groupBy: BoardGroupBy) {
   try {
-    localStorage.setItem(STORAGE_KEY(workspaceId), JSON.stringify({ properties, showEmptyColumns }));
+    localStorage.setItem(STORAGE_KEY(workspaceId), JSON.stringify({ properties, showEmptyColumns, groupBy }));
   } catch {}
 }
 
@@ -74,33 +77,42 @@ interface BoardDisplayState {
   workspaceId: string | null;
   properties: DisplayProperties;
   showEmptyColumns: boolean;
+  groupBy: BoardGroupBy;
   init: (workspaceId: string) => void;
   toggleProperty: (key: DisplayPropertyKey) => void;
   toggleShowEmptyColumns: () => void;
+  setGroupBy: (value: BoardGroupBy) => void;
 }
 
 export const useBoardDisplayStore = create<BoardDisplayState>((set, get) => ({
   workspaceId: null,
   properties: { ...ALL_ON },
   showEmptyColumns: true,
+  groupBy: 'status' as BoardGroupBy,
 
   init: (workspaceId) => {
     if (get().workspaceId === workspaceId) return;
     const loaded = loadFromStorage(workspaceId);
-    set({ workspaceId, properties: loaded.properties, showEmptyColumns: loaded.showEmptyColumns });
+    set({ workspaceId, properties: loaded.properties, showEmptyColumns: loaded.showEmptyColumns, groupBy: loaded.groupBy });
   },
 
   toggleProperty: (key) => {
-    const { workspaceId, properties, showEmptyColumns } = get();
+    const { workspaceId, properties, showEmptyColumns, groupBy } = get();
     const next = { ...properties, [key]: !properties[key] };
     set({ properties: next });
-    if (workspaceId) saveToStorage(workspaceId, next, showEmptyColumns);
+    if (workspaceId) saveToStorage(workspaceId, next, showEmptyColumns, groupBy);
   },
 
   toggleShowEmptyColumns: () => {
-    const { workspaceId, properties, showEmptyColumns } = get();
+    const { workspaceId, properties, showEmptyColumns, groupBy } = get();
     const next = !showEmptyColumns;
     set({ showEmptyColumns: next });
-    if (workspaceId) saveToStorage(workspaceId, properties, next);
+    if (workspaceId) saveToStorage(workspaceId, properties, next, groupBy);
+  },
+
+  setGroupBy: (value) => {
+    const { workspaceId, properties, showEmptyColumns } = get();
+    set({ groupBy: value });
+    if (workspaceId) saveToStorage(workspaceId, properties, showEmptyColumns, value);
   },
 }));

@@ -25,4 +25,8 @@ export const pmWorkflowService = {
     api.del(`/pm/workflows/${workflowId}/states/${stateId}${qs(workspaceId)}`),
   reorderStates: (workspaceId: string, workflowId: string, stateIds: string[]) =>
     api.put(`/pm/workflows/${workflowId}/states/reorder${qs(workspaceId)}`, { state_ids: stateIds }),
+  resolveTeamWorkflow: (workspaceId: string, teamId: string) =>
+    api.get<WorkflowWithStates>(`/pm/workflows/resolve${qs(workspaceId)}&team_id=${encodeURIComponent(teamId)}`),
+  copyToTeam: (workspaceId: string, workflowId: string, teamId: string) =>
+    api.post<WorkflowWithStates>(`/pm/workflows/${workflowId}/copy-to-team${qs(workspaceId)}`, { team_id: teamId }),
 };

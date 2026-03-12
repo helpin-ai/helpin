@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   CalendarDays,
   Check,
+  Milestone,
+  Rocket,
   UserPlus,
 } from 'lucide-react';
 import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
@@ -12,12 +14,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { UserAvatar } from './UserAvatar';
 import type { Priority, Severity, Story } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
-import { formatEstimateDisplay } from '@/components/pm/EstimatePicker';
+import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimatePicker';
 import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
@@ -50,6 +52,8 @@ interface StoryCardProps {
   onOwnerChanged?: (story: Story) => void;
   onPriorityChanged?: (story: Story) => void;
   onSeverityChanged?: (story: Story) => void;
+  onEstimateChanged?: (story: Story) => void;
+  showStateBadge?: boolean;
 }
 
 export function StoryCard({
@@ -63,6 +67,8 @@ export function StoryCard({
   onOwnerChanged,
   onPriorityChanged,
   onSeverityChanged,
+  onEstimateChanged,
+  showStateBadge = false,
 }: StoryCardProps) {
   const {
     attributes,
@@ -88,6 +94,7 @@ export function StoryCard({
     priority: fieldVis.priority && displayProps.priority,
     severity: fieldVis.severity && displayProps.severity,
     epic: fieldVis.epic && displayProps.epic,
+    sprint: (fieldVis.sprint ?? true) && (displayProps.sprint ?? true),
     labels: (fieldVis.labels ?? true) && displayProps.labels,
     estimate: fieldVis.estimate && displayProps.estimate,
     due_date: fieldVis.due_date && displayProps.due_date,
@@ -189,6 +196,21 @@ export function StoryCard({
     [workspaceId, story.id, story.severity, onSeverityChanged],
   );
 
+  const handleChangeEstimate = useCallback(
+    async (_display: string, apiValue: number | undefined) => {
+      if (!workspaceId || apiValue === story.estimate) return;
+      try {
+        const result = await pmStoryService.update(workspaceId, story.id, { estimate: apiValue ?? 0 });
+        if (result.data?.story) {
+          onEstimateChanged?.(result.data.story);
+        }
+      } catch {
+        // Board will show stale data until next refresh
+      }
+    },
+    [workspaceId, story.id, story.estimate, onEstimateChanged],
+  );
+
   const titleIsLong = story.name.length > 60;
 
   return (
@@ -207,12 +229,18 @@ export function StoryCard({
         }
       }}
       className={cn(
-        'group cursor-pointer rounded-lg border border-border/60 bg-background p-3 shadow-sm transition-all',
+        'group cursor-pointer rounded-lg border border-border/60 bg-background shadow-sm transition-all overflow-hidden',
         'hover:border-border hover:shadow-md',
         isDragging && 'opacity-50',
         isOverlay && 'ring-1 ring-primary/30 shadow-lg',
+        showStateBadge && story.state_color && 'flex flex-row',
       )}
     >
+      {/* State color accent bar (member board only) */}
+      {showStateBadge && story.state_color && (
+        <div className="w-0.5 shrink-0 self-stretch rounded-l-lg" style={{ backgroundColor: story.state_color }} />
+      )}
+      <div className="p-3 flex-1 min-w-0">
       {/* Row 1: Story type + Epic + Team + Priority */}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {vis.story_type && (
@@ -225,8 +253,11 @@ export function StoryCard({
           <TooltipContent side="top">{storyTypeCfg.label}</TooltipContent>
         </Tooltip>
         )}
-        {vis.epic && story.epic_name && (
-          <span className="truncate text-[11px] text-muted-foreground max-w-[120px]">{story.epic_name}</span>
+        {showStateBadge && story.state_name && (
+          <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
+            <StateTypeIcon stateType={(story.state_type as import('@/lib/pmTypes').StateType) ?? 'unstarted'} className="h-3 w-3" />
+            {story.state_name}
+          </span>
         )}
 
         <span className="flex-1" />
@@ -310,16 +341,32 @@ export function StoryCard({
       {titleIsLong ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <h4 className="mt-1.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
+            <h4 className="mt-3.5 mb-3.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
               {story.name}
             </h4>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-[300px]">{story.name}</TooltipContent>
         </Tooltip>
       ) : (
-        <h4 className="mt-1.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
+        <h4 className="mt-3.5 mb-3.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
           {story.name}
         </h4>
+      )}
+
+      {/* Epic row */}
+      {vis.epic && story.epic_name && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Rocket className="h-3 w-3 shrink-0" />
+          <span className="truncate">{story.epic_name}</span>
+        </div>
+      )}
+
+      {/* Sprint row */}
+      {vis.sprint && story.sprint_name && (
+        <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Milestone className="h-3 w-3 shrink-0" />
+          <span className="truncate">{story.sprint_name}</span>
+        </div>
       )}
 
       {/* Row 3: Property pills */}
@@ -418,11 +465,20 @@ export function StoryCard({
             </TooltipContent>
           </Tooltip>
         )}
-        {vis.estimate && story.estimate != null && (
-              <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
-                {formatEstimateDisplay(story.estimate, story.team_id)}
-              </span>
-        )}
+        {vis.estimate && (workspaceId ? (
+          <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            <EstimatePicker
+              value={story.estimate != null ? String(story.estimate) : ''}
+              teamId={story.team_id}
+              onChange={handleChangeEstimate}
+              className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground hover:bg-muted cursor-pointer')}
+            />
+          </span>
+        ) : story.estimate != null ? (
+          <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
+            {formatEstimateDisplay(story.estimate, story.team_id)}
+          </span>
+        ) : null)}
         <span className="flex-1" />
         {/* Assignee avatar / assign button */}
         {vis.assignee && (assignableMembers && workspaceId ? (
@@ -498,6 +554,7 @@ export function StoryCard({
             <TooltipContent side="top">{currentOwnerName || 'Unassigned'}</TooltipContent>
           </Tooltip>
         ))}
+      </div>
       </div>
     </article>
   );

@@ -559,7 +559,6 @@ export function Sidebar() {
       {
         label: 'Project Settings',
         items: [
-          { link: `/w/${wsSlug}/settings/workflows`, label: 'Workflows', icon: FolderKanban },
           { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
           { link: `/w/${wsSlug}/settings/story-templates`, label: 'Story Templates', icon: FileText },
           { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },

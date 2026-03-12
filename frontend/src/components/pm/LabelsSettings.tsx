@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Loader2, Pencil, Plus, Tag, Trash2, X } from 'lucide-react';
+import { Loader2, Pencil, Plus, Tag, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
@@ -103,21 +105,25 @@ function LabelForm({
   initial,
   teams,
   onSave,
-  onCancel,
   saving,
+  className,
 }: {
   initial: LabelFormState;
   teams: Array<{ id: string; name: string }>;
   onSave: (form: LabelFormState) => void;
-  onCancel: () => void;
   saving: boolean;
+  className?: string;
 }) {
   const [form, setForm] = useState<LabelFormState>(initial);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    setForm(initial);
+  }, [initial]);
+
+  useEffect(() => {
     nameRef.current?.focus();
-  }, []);
+  }, [initial]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,12 +132,9 @@ function LabelForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-border/60 bg-muted/30 p-3.5 space-y-3">
-      <div className="flex items-center gap-2.5">
-        <span
-          className="h-3.5 w-3.5 rounded-full shrink-0 ring-2 ring-background"
-          style={{ backgroundColor: form.color || '#64748b' }}
-        />
+    <form onSubmit={handleSubmit} className={className ?? 'rounded-lg border border-border/60 bg-muted/30 p-3.5 space-y-4'}>
+      <div className="space-y-2">
+        <Label>Name</Label>
         <Input
           ref={nameRef}
           placeholder="Label name"
@@ -140,19 +143,23 @@ function LabelForm({
           className="h-8 text-sm"
         />
       </div>
-      <Input
-        placeholder="Description (optional)"
-        value={form.description}
-        onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-        className="h-8 text-sm"
-      />
-      <div className="flex items-center gap-2">
+      <div className="space-y-2">
+        <Label>Description</Label>
+        <Input
+          placeholder="Description (optional)"
+          value={form.description}
+          onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+          className="h-8 text-sm"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Scope</Label>
         <Select value={form.team_id || '__shared__'} onValueChange={(value) => setForm((f) => ({ ...f, team_id: value === '__shared__' ? '' : value }))}>
-          <SelectTrigger className="h-8 w-[180px] text-sm">
-            <SelectValue placeholder="For everyone" />
+          <SelectTrigger className="h-8 w-full text-sm">
+            <SelectValue placeholder="All teams" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__shared__">For everyone</SelectItem>
+            <SelectItem value="__shared__">All teams</SelectItem>
             {teams.map((team) => (
               <SelectItem key={team.id} value={team.id}>
                 {team.name}
@@ -160,18 +167,17 @@ function LabelForm({
             ))}
           </SelectContent>
         </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Color</Label>
         <ColorPicker value={form.color} onChange={(c) => setForm((f) => ({ ...f, color: c }))} />
       </div>
-      <div className="flex items-center gap-2 pt-1">
-        <Button type="submit" size="sm" disabled={saving || !form.name.trim()}>
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-          Save
+      <DialogFooter className="pt-2">
+        <Button type="submit" disabled={saving || !form.name.trim()}>
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {saving ? 'Saving...' : 'Save'}
         </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
-          <X className="h-3.5 w-3.5" />
-          Cancel
-        </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }
@@ -182,9 +188,24 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
+  const [labelDialogOpen, setLabelDialogOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [scopeFilter, setScopeFilter] = useState<string>(initialTeamId || '__all__');
+
+  const getCreateInitialForm = (): LabelFormState => ({
+    ...emptyForm,
+    team_id: scopeFilter !== '__all__' && scopeFilter !== '__shared__' ? scopeFilter : '',
+  });
+
+  const editingEntry = editingId ? labels.find((entry) => entry.label.id === editingId) ?? null : null;
+  const dialogInitialForm: LabelFormState = editingEntry
+    ? {
+        name: editingEntry.label.name,
+        description: editingEntry.label.description || '',
+        color: editingEntry.label.color || PRESET_COLORS[0],
+        team_id: editingEntry.label.team_id || '',
+      }
+    : getCreateInitialForm();
 
   const reload = useCallback(async () => {
     const teamId = scopeFilter === '__all__' || scopeFilter === '__shared__' ? undefined : scopeFilter;
@@ -209,7 +230,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
     });
     setSaving(false);
     if (!error) {
-      setShowCreate(false);
+      setLabelDialogOpen(false);
       reload();
     }
   };
@@ -224,6 +245,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
     });
     setSaving(false);
     if (!error) {
+      setLabelDialogOpen(false);
       setEditingId(null);
       reload();
     }
@@ -252,8 +274,8 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All labels</SelectItem>
-            <SelectItem value="__shared__">For everyone</SelectItem>
+              <SelectItem value="__all__">All labels</SelectItem>
+            <SelectItem value="__shared__">All teams</SelectItem>
             {teams.map((team) => (
               <SelectItem key={team.id} value={team.id}>
                 {team.name} labels
@@ -261,13 +283,13 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
             ))}
           </SelectContent>
         </Select>
-        {editable && !showCreate && (
+        {editable && (
           <Button
             variant="outline"
             size="sm"
             className="ml-auto"
             onClick={() => {
-              setShowCreate(true);
+              setLabelDialogOpen(true);
               setEditingId(null);
             }}
           >
@@ -277,18 +299,34 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
         )}
       </div>
 
-      {editable && showCreate && (
-        <LabelForm
-          initial={emptyForm}
-          teams={teams}
-          onSave={handleCreate}
-          onCancel={() => setShowCreate(false)}
-          saving={saving}
-        />
-      )}
+      <Dialog
+        open={labelDialogOpen}
+        onOpenChange={(open) => {
+          setLabelDialogOpen(open);
+          if (!open) setEditingId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>{editingEntry ? 'Edit label' : 'Create label'}</DialogTitle>
+          </DialogHeader>
+          <LabelForm
+            initial={dialogInitialForm}
+            teams={teams}
+            onSave={(form) => {
+              if (editingEntry) {
+                return handleUpdate(editingEntry.label.id, form);
+              }
+              return handleCreate(form);
+            }}
+            saving={saving}
+            className="space-y-3"
+          />
+        </DialogContent>
+      </Dialog>
 
       <div>
-        {labels.length === 0 && !showCreate && (
+        {labels.length === 0 && !labelDialogOpen && (
           <div className="flex flex-col items-center gap-3 py-12 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
               <Tag className="h-6 w-6 text-muted-foreground/60" />
@@ -304,7 +342,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setShowCreate(true);
+                  setLabelDialogOpen(true);
                   setEditingId(null);
                 }}
               >
@@ -315,21 +353,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
           </div>
         )}
         {labels.map((entry) =>
-          editingId === entry.label.id ? (
-            <LabelForm
-              key={entry.label.id}
-              initial={{
-                name: entry.label.name,
-                description: entry.label.description || '',
-                color: entry.label.color || PRESET_COLORS[0],
-                team_id: entry.label.team_id || '',
-              }}
-              teams={teams}
-              onSave={(form) => handleUpdate(entry.label.id, form)}
-              onCancel={() => setEditingId(null)}
-              saving={saving}
-            />
-          ) : deleteConfirmId === entry.label.id ? (
+          deleteConfirmId === entry.label.id ? (
             <div
               key={entry.label.id}
               className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5"
@@ -365,7 +389,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
               editable={editable}
               onEdit={() => {
                 setEditingId(entry.label.id);
-                setShowCreate(false);
+                setLabelDialogOpen(true);
               }}
               onDelete={() => setDeleteConfirmId(entry.label.id)}
             />

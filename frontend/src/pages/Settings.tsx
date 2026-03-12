@@ -55,13 +55,6 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     group: 'Workspace',
   },
   {
-    id: 'workflows',
-    label: 'Workflows',
-    description: '',
-    icon: GitBranch,
-    group: 'Project Settings',
-  },
-  {
     id: 'labels',
     label: 'Labels',
     description: '',
@@ -251,6 +244,8 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             workspaceId={workspaceId}
             organizationId={currentWorkspace?.organization_id}
             editable={canManageMembers}
+            teams={settings.teams}
+            userMemberships={settings.user_memberships}
           />
         );
       case 'teams':
@@ -321,12 +316,18 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           />
         );
       case 'workflows':
+        // Workflows are now managed per-team; fall through to teams
         return (
-          <WorkflowManager
+          <TeamsTab
             workspaceId={workspaceId}
             teams={settings.teams}
-            editable={canAdminWorkflows}
-            initialWorkflowId={initialWorkflowId}
+            userMemberships={settings.user_memberships}
+            invitationPreassignments={settings.invitation_team_preassignments}
+            teamEstimateSettings={settings.team_estimate_settings}
+            teamFieldVisibility={settings.team_field_visibility}
+            teamRepoDefaults={settings.team_repo_defaults}
+            editable={canManageTeams}
+            onRefresh={load}
             initialTeamId={initialTeamId}
           />
         );

@@ -62,10 +62,10 @@ func (r *PMWorkflowRepository) GetByID(ctx context.Context, id string) (*model.W
 }
 
 // GetByTeamID returns a team-specific workflow with states.
-func (r *PMWorkflowRepository) GetByTeamID(ctx context.Context, teamID string) (*model.WorkflowWithStates, error) {
+func (r *PMWorkflowRepository) GetByTeamID(ctx context.Context, workspaceID, teamID string) (*model.WorkflowWithStates, error) {
 	var wf model.PMWorkflow
 	if err := r.db.WithContext(ctx).
-		Where("team_id = ?", teamID).
+		Where("workspace_id = ? AND team_id = ?", workspaceID, teamID).
 		Order("created_at ASC").
 		First(&wf).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -79,6 +79,61 @@ func (r *PMWorkflowRepository) GetByTeamID(ctx context.Context, teamID string) (
 		return nil, err
 	}
 	return &model.WorkflowWithStates{Workflow: wf, States: states}, nil
+}
+
+// CopyWorkflow duplicates a workflow and its states, optionally assigning it to a team.
+func (r *PMWorkflowRepository) CopyWorkflow(ctx context.Context, source *model.WorkflowWithStates, newName string, teamID *string) (*model.WorkflowWithStates, error) {
+	var result *model.WorkflowWithStates
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		wf := model.PMWorkflow{
+			WorkspaceID:     source.Workflow.WorkspaceID,
+			Name:            newName,
+			Description:     source.Workflow.Description,
+			TeamID:          teamID,
+			AutoAssignOwner: source.Workflow.AutoAssignOwner,
+		}
+		if err := tx.Create(&wf).Error; err != nil {
+			return fmt.Errorf("copy workflow: %w", err)
+		}
+
+		states := make([]model.PMWorkflowState, len(source.States))
+		var defaultStateID string
+		for i, s := range source.States {
+			states[i] = model.PMWorkflowState{
+				WorkflowID: wf.ID,
+				Name:       s.Name,
+				StateType:  s.StateType,
+				Position:   s.Position,
+				Color:      s.Color,
+				IsDefault:  s.IsDefault,
+			}
+			if err := tx.Create(&states[i]).Error; err != nil {
+				return fmt.Errorf("copy workflow state: %w", err)
+			}
+			if s.IsDefault {
+				defaultStateID = states[i].ID
+			}
+			if source.Workflow.DefaultStateID != nil && *source.Workflow.DefaultStateID == s.ID {
+				defaultStateID = states[i].ID
+			}
+		}
+
+		if defaultStateID != "" {
+			if err := tx.Model(&model.PMWorkflow{}).
+				Where("id = ?", wf.ID).
+				Update("default_state_id", defaultStateID).Error; err != nil {
+				return fmt.Errorf("copy workflow default state: %w", err)
+			}
+			wf.DefaultStateID = &defaultStateID
+		}
+
+		result = &model.WorkflowWithStates{Workflow: wf, States: states}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // Create inserts a workflow.
@@ -185,8 +240,8 @@ func (r *PMWorkflowRepository) SeedDefaultWorkflow(ctx context.Context, workspac
 		defaultColor := func(c string) *string { return &c }
 		states := []model.PMWorkflowState{
 			{WorkflowID: wf.ID, Name: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0, IsDefault: false, Color: defaultColor("#9ca3af")},
-			{WorkflowID: wf.ID, Name: "Ready for Dev", StateType: model.PMStateTypeUnstarted, Position: 1, IsDefault: true, Color: defaultColor("#f59e0b")},
-			{WorkflowID: wf.ID, Name: "In Development", StateType: model.PMStateTypeStarted, Position: 2, IsDefault: false, Color: defaultColor("#3b82f6")},
+			{WorkflowID: wf.ID, Name: "To Do", StateType: model.PMStateTypeUnstarted, Position: 1, IsDefault: true, Color: defaultColor("#f59e0b")},
+			{WorkflowID: wf.ID, Name: "In Progress", StateType: model.PMStateTypeStarted, Position: 2, IsDefault: false, Color: defaultColor("#3b82f6")},
 			{WorkflowID: wf.ID, Name: "In Review", StateType: model.PMStateTypeStarted, Position: 3, IsDefault: false, Color: defaultColor("#8b5cf6")},
 			{WorkflowID: wf.ID, Name: "Done", StateType: model.PMStateTypeDone, Position: 4, IsDefault: false, Color: defaultColor("#22c55e")},
 		}

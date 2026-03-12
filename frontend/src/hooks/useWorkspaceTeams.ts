@@ -56,7 +56,10 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
         const { data } = await settingsService.getAll(workspaceId);
         if (data) {
           cachedWorkspaceId = workspaceId;
-          cachedTeams = data.teams;
+          cachedTeams = data.teams.map((t) => ({
+            ...t,
+            name: t.name ? t.name.charAt(0).toUpperCase() + t.name.slice(1) : t.name,
+          }));
           cachedPeople = data.people;
           cachedMemberships = data.memberships;
           cachedUserMemberships = data.user_memberships;

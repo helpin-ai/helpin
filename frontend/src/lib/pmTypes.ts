@@ -187,7 +187,11 @@ export interface Story {
   updated_at: string;
   // Enriched by board/list endpoints
   epic_name?: string;
+  sprint_name?: string;
   owner_name?: string;
+  state_name?: string;
+  state_type?: StateType;
+  state_color?: string;
   labels?: Label[];
 }
 
@@ -303,6 +307,14 @@ export interface ColumnStoriesResponse {
   stories: Story[];
   story_groups?: StoryGroup[];
   total: number;
+}
+
+export interface StoryMemberColumn {
+  member: AssignableMember | null;
+  stories: Story[];
+  story_count: number;
+  point_total: number;
+  has_more: boolean;
 }
 
 export interface StoryStateCount {

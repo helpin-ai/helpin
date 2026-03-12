@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -68,8 +69,9 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
   }
 
   // Fallback: free-form number input (no team config or disabled)
+  const [freeformOpen, setFreeformOpen] = useState(false);
   return (
-    <Popover>
+    <Popover open={freeformOpen} onOpenChange={setFreeformOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -91,6 +93,12 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
           onChange={(e) => {
             const next = e.target.value;
             onChange(next, next === '' ? undefined : Number(next));
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              setFreeformOpen(false);
+            }
           }}
         />
       </PopoverContent>

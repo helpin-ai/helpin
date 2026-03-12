@@ -224,9 +224,13 @@ type StoryDependencyStory struct {
 // BoardStory is a story enriched with relation names for board display.
 type BoardStory struct {
 	PMStory
-	EpicName  *string   `json:"epic_name,omitempty"`
-	OwnerName *string   `json:"owner_name,omitempty"`
-	Labels    []PMLabel `json:"labels"`
+	EpicName   *string   `json:"epic_name,omitempty"`
+	SprintName *string   `json:"sprint_name,omitempty"`
+	OwnerName  *string   `json:"owner_name,omitempty"`
+	StateName  *string   `json:"state_name,omitempty"`
+	StateType  *string   `json:"state_type,omitempty"`
+	StateColor *string   `json:"state_color,omitempty"`
+	Labels     []PMLabel `json:"labels"`
 }
 
 // StoryGroup is a labeled bucket of stories inside a board column.
@@ -244,6 +248,15 @@ type StoryStateColumn struct {
 	StoryCount  int             `json:"story_count"`
 	PointTotal  int             `json:"point_total"`
 	HasMore     bool            `json:"has_more"`
+}
+
+// StoryMemberColumn is the data shape for member-grouped board columns.
+type StoryMemberColumn struct {
+	Member     *AssignableMember `json:"member"`
+	Stories    []BoardStory      `json:"stories"`
+	StoryCount int               `json:"story_count"`
+	PointTotal int               `json:"point_total"`
+	HasMore    bool              `json:"has_more"`
 }
 
 // ColumnStoriesResponse is the paginated payload for a single board column.

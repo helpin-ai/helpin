@@ -528,13 +528,18 @@ func (r *PMStoryRepository) ListColumnStories(ctx context.Context, stateID strin
 func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []model.PMStory) []model.BoardStory {
 	stories = r.applyDependencySummaries(ctx, stories)
 	epicIDs := map[string]struct{}{}
+	sprintIDs := map[string]struct{}{}
 	ownerMemberIDs := map[string]struct{}{}
 	ownerIDs := map[string]struct{}{}
+	stateIDs := map[string]struct{}{}
 	storyIDs := make([]string, len(stories))
 	for i, s := range stories {
 		storyIDs[i] = s.ID
 		if s.EpicID != nil {
 			epicIDs[*s.EpicID] = struct{}{}
+		}
+		if s.SprintID != nil {
+			sprintIDs[*s.SprintID] = struct{}{}
 		}
 		if s.OwnerMemberID != nil {
 			ownerMemberIDs[*s.OwnerMemberID] = struct{}{}
@@ -542,22 +547,37 @@ func (r *PMStoryRepository) collectAndEnrich(ctx context.Context, stories []mode
 		if s.OwnerID != nil {
 			ownerIDs[*s.OwnerID] = struct{}{}
 		}
+		stateIDs[s.WorkflowStateID] = struct{}{}
 	}
 	epicNameMap := r.batchEpicNames(ctx, epicIDs)
+	sprintNameMap := r.batchSprintNames(ctx, sprintIDs)
 	ownerNameMap := r.batchMemberNames(ctx, ownerMemberIDs)
 	legacyOwnerNameMap := r.batchOwnerNames(ctx, ownerIDs)
 	labelMap := r.batchStoryLabels(ctx, storyIDs)
-	return r.enrichBoardStories(stories, epicNameMap, ownerNameMap, legacyOwnerNameMap, labelMap)
+	stateInfoMap := r.batchStateInfo(ctx, stateIDs)
+	return r.enrichBoardStories(stories, epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap, labelMap, stateInfoMap)
 }
 
-// enrichBoardStories maps epic/owner names and labels onto raw stories for board display.
-func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicNameMap, ownerNameMap, legacyOwnerNameMap map[string]string, labelMap map[string][]model.PMLabel) []model.BoardStory {
+// stateInfo holds denormalized workflow state metadata for board stories.
+type stateInfo struct {
+	Name      string
+	StateType string
+	Color     string
+}
+
+// enrichBoardStories maps epic/owner names, state info, and labels onto raw stories for board display.
+func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap map[string]string, labelMap map[string][]model.PMLabel, stateInfoMap map[string]stateInfo) []model.BoardStory {
 	result := make([]model.BoardStory, 0, len(stories))
 	for _, story := range stories {
 		bs := model.BoardStory{PMStory: story, Labels: []model.PMLabel{}}
 		if story.EpicID != nil {
 			if name, ok := epicNameMap[*story.EpicID]; ok {
 				bs.EpicName = &name
+			}
+		}
+		if story.SprintID != nil {
+			if name, ok := sprintNameMap[*story.SprintID]; ok {
+				bs.SprintName = &name
 			}
 		}
 		if story.OwnerMemberID != nil {
@@ -571,6 +591,11 @@ func (r *PMStoryRepository) enrichBoardStories(stories []model.PMStory, epicName
 		}
 		if labels, ok := labelMap[story.ID]; ok {
 			bs.Labels = labels
+		}
+		if si, ok := stateInfoMap[story.WorkflowStateID]; ok {
+			bs.StateName = &si.Name
+			bs.StateType = &si.StateType
+			bs.StateColor = &si.Color
 		}
 		result = append(result, bs)
 	}
@@ -639,6 +664,28 @@ func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryF
 }
 
 // batchEpicNames looks up epic names by IDs.
+func (r *PMStoryRepository) batchSprintNames(ctx context.Context, sprintIDs map[string]struct{}) map[string]string {
+	result := map[string]string{}
+	if len(sprintIDs) == 0 {
+		return result
+	}
+	ids := make([]string, 0, len(sprintIDs))
+	for id := range sprintIDs {
+		ids = append(ids, id)
+	}
+	var rows []struct {
+		ID   string
+		Name string
+	}
+	if err := r.db.WithContext(ctx).Table("pm_sprints").Select("id, name").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return result
+	}
+	for _, row := range rows {
+		result[row.ID] = row.Name
+	}
+	return result
+}
+
 func (r *PMStoryRepository) batchEpicNames(ctx context.Context, epicIDs map[string]struct{}) map[string]string {
 	epicNameMap := map[string]string{}
 	if len(epicIDs) == 0 {
@@ -736,6 +783,302 @@ func (r *PMStoryRepository) batchStoryLabels(ctx context.Context, storyIDs []str
 		result[row.StoryID] = append(result[row.StoryID], label)
 	}
 	return result
+}
+
+// batchStateInfo batch-loads workflow state name, type, and color for a set of state IDs.
+func (r *PMStoryRepository) batchStateInfo(ctx context.Context, stateIDs map[string]struct{}) map[string]stateInfo {
+	result := map[string]stateInfo{}
+	if len(stateIDs) == 0 {
+		return result
+	}
+	ids := make([]string, 0, len(stateIDs))
+	for id := range stateIDs {
+		ids = append(ids, id)
+	}
+	var rows []struct {
+		ID        string `gorm:"column:id"`
+		Name      string `gorm:"column:name"`
+		StateType string `gorm:"column:state_type"`
+		Color     string `gorm:"column:color"`
+	}
+	if err := r.db.WithContext(ctx).
+		Table("pm_workflow_states").
+		Select("id, name, state_type, color").
+		Where("id IN ?", ids).
+		Scan(&rows).Error; err != nil {
+		return result
+	}
+	for _, row := range rows {
+		result[row.ID] = stateInfo{Name: row.Name, StateType: row.StateType, Color: row.Color}
+	}
+	return result
+}
+
+// ListByMember returns board columns grouped by owner member.
+func (r *PMStoryRepository) ListByMember(ctx context.Context, workspaceID, workflowID string, filters model.PMStoryFilters, perMemberLimit int, includeEmpty bool, memberIDs []string) ([]model.StoryMemberColumn, error) {
+	// Get all workflow state IDs for the selected workflow.
+	var stateIDs []string
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMWorkflowState{}).
+		Where("workflow_id = ?", workflowID).
+		Pluck("id", &stateIDs).Error; err != nil {
+		return nil, fmt.Errorf("list workflow states: %w", err)
+	}
+	if len(stateIDs) == 0 {
+		return []model.StoryMemberColumn{}, nil
+	}
+
+	baseQuery := r.db.WithContext(ctx).
+		Model(&model.PMStory{}).
+		Where("workflow_state_id IN ? AND archived = false", stateIDs)
+	baseQuery = r.applyBoardFilters(baseQuery, filters)
+
+	// Aggregate counts per owner_member_id (NULL grouped as unassigned).
+	type memberAggregate struct {
+		OwnerMemberID *string `gorm:"column:owner_member_id"`
+		StoryCount    int     `gorm:"column:story_count"`
+		PointTotal    int     `gorm:"column:point_total"`
+	}
+	var aggregateRows []memberAggregate
+	if err := baseQuery.
+		Select("pm_stories.owner_member_id, COUNT(pm_stories.id) AS story_count, COALESCE(SUM(pm_stories.estimate), 0) AS point_total").
+		Group("pm_stories.owner_member_id").
+		Scan(&aggregateRows).Error; err != nil {
+		return nil, fmt.Errorf("list member board aggregates: %w", err)
+	}
+
+	aggregates := map[string]memberAggregate{} // key: member_id or "" for unassigned
+	for _, row := range aggregateRows {
+		key := ""
+		if row.OwnerMemberID != nil {
+			key = *row.OwnerMemberID
+		}
+		aggregates[key] = row
+	}
+
+	// Collect all member keys that have stories.
+	memberKeys := make([]string, 0, len(aggregates))
+	for key := range aggregates {
+		memberKeys = append(memberKeys, key)
+	}
+
+	// Fetch visible stories per member.
+	var allStories []model.PMStory
+	type columnMeta struct {
+		memberKey  string
+		totalCount int
+		pointTotal int
+		hasMore    bool
+		visible    []model.PMStory
+	}
+	metaMap := map[string]*columnMeta{}
+
+	for _, key := range memberKeys {
+		query := r.db.WithContext(ctx).
+			Where("workflow_state_id IN ? AND archived = false", stateIDs)
+		query = r.applyBoardFilters(query, filters)
+		if key == "" {
+			query = query.Where("owner_member_id IS NULL")
+		} else {
+			query = query.Where("owner_member_id = ?", key)
+		}
+		query = query.Order("position ASC, updated_at DESC")
+		if perMemberLimit > 0 {
+			query = query.Limit(perMemberLimit)
+		}
+
+		var stories []model.PMStory
+		if err := query.Find(&stories).Error; err != nil {
+			return nil, fmt.Errorf("list member column stories: %w", err)
+		}
+		allStories = append(allStories, stories...)
+
+		agg := aggregates[key]
+		metaMap[key] = &columnMeta{
+			memberKey:  key,
+			totalCount: agg.StoryCount,
+			pointTotal: agg.PointTotal,
+			hasMore:    agg.StoryCount > len(stories),
+			visible:    stories,
+		}
+	}
+
+	// Enrich all stories at once.
+	enriched := r.collectAndEnrich(ctx, allStories)
+	enrichedMap := make(map[string]model.BoardStory, len(enriched))
+	for _, bs := range enriched {
+		enrichedMap[bs.ID] = bs
+	}
+
+	// Collect all unique member IDs that need member info.
+	memberInfoIDs := map[string]struct{}{}
+	for _, key := range memberKeys {
+		if key != "" {
+			memberInfoIDs[key] = struct{}{}
+		}
+	}
+	if includeEmpty {
+		for _, id := range memberIDs {
+			memberInfoIDs[id] = struct{}{}
+		}
+	}
+
+	// Batch-load AssignableMember info.
+	memberInfoMap := map[string]model.AssignableMember{}
+	if len(memberInfoIDs) > 0 {
+		ids := make([]string, 0, len(memberInfoIDs))
+		for id := range memberInfoIDs {
+			ids = append(ids, id)
+		}
+		var members []model.AssignableMember
+		if err := r.db.WithContext(ctx).
+			Table("workspace_members wm").
+			Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email) AS display_name, u.avatar_url, wm.status").
+			Joins("LEFT JOIN users u ON u.id = wm.user_id").
+			Where("wm.id IN ?", ids).
+			Scan(&members).Error; err != nil {
+			return nil, fmt.Errorf("load member info: %w", err)
+		}
+		for _, m := range members {
+			memberInfoMap[m.ID] = m
+		}
+	}
+
+	// Build columns: unassigned first, then members sorted by display_name.
+	var columns []model.StoryMemberColumn
+
+	// Unassigned column.
+	if meta, ok := metaMap[""]; ok {
+		colStories := make([]model.BoardStory, 0, len(meta.visible))
+		for _, s := range meta.visible {
+			colStories = append(colStories, enrichedMap[s.ID])
+		}
+		columns = append(columns, model.StoryMemberColumn{
+			Member:     nil,
+			Stories:    colStories,
+			StoryCount: meta.totalCount,
+			PointTotal: meta.pointTotal,
+			HasMore:    meta.hasMore,
+		})
+	} else if includeEmpty {
+		columns = append(columns, model.StoryMemberColumn{
+			Member:     nil,
+			Stories:    []model.BoardStory{},
+			StoryCount: 0,
+			PointTotal: 0,
+			HasMore:    false,
+		})
+	}
+
+	// Assigned member columns sorted by display_name.
+	type memberEntry struct {
+		memberID string
+		name     string
+	}
+	var memberEntries []memberEntry
+	seen := map[string]bool{}
+	for _, key := range memberKeys {
+		if key == "" {
+			continue
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		name := key
+		if m, ok := memberInfoMap[key]; ok {
+			name = m.DisplayName
+		}
+		memberEntries = append(memberEntries, memberEntry{memberID: key, name: name})
+	}
+
+	// Add empty columns for members without stories.
+	if includeEmpty {
+		for _, id := range memberIDs {
+			if !seen[id] {
+				seen[id] = true
+				name := id
+				if m, ok := memberInfoMap[id]; ok {
+					name = m.DisplayName
+				}
+				memberEntries = append(memberEntries, memberEntry{memberID: id, name: name})
+			}
+		}
+	}
+
+	sort.Slice(memberEntries, func(i, j int) bool {
+		return strings.ToLower(memberEntries[i].name) < strings.ToLower(memberEntries[j].name)
+	})
+
+	for _, entry := range memberEntries {
+		meta := metaMap[entry.memberID]
+		var colStories []model.BoardStory
+		totalCount := 0
+		pointTotal := 0
+		hasMore := false
+		if meta != nil {
+			colStories = make([]model.BoardStory, 0, len(meta.visible))
+			for _, s := range meta.visible {
+				colStories = append(colStories, enrichedMap[s.ID])
+			}
+			totalCount = meta.totalCount
+			pointTotal = meta.pointTotal
+			hasMore = meta.hasMore
+		} else {
+			colStories = []model.BoardStory{}
+		}
+
+		m := memberInfoMap[entry.memberID]
+		columns = append(columns, model.StoryMemberColumn{
+			Member:     &m,
+			Stories:    colStories,
+			StoryCount: totalCount,
+			PointTotal: pointTotal,
+			HasMore:    hasMore,
+		})
+	}
+
+	return columns, nil
+}
+
+// ListMemberColumnStories returns a page of stories for a single member column, enriched for board display.
+func (r *PMStoryRepository) ListMemberColumnStories(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+	var stateIDs []string
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMWorkflowState{}).
+		Where("workflow_id = ?", workflowID).
+		Pluck("id", &stateIDs).Error; err != nil {
+		return nil, 0, fmt.Errorf("list workflow states: %w", err)
+	}
+	if len(stateIDs) == 0 {
+		return []model.BoardStory{}, 0, nil
+	}
+
+	storyQuery := r.db.WithContext(ctx).
+		Where("workflow_state_id IN ? AND archived = false", stateIDs)
+	storyQuery = r.applyBoardFilters(storyQuery, filters)
+
+	if memberID == nil {
+		storyQuery = storyQuery.Where("owner_member_id IS NULL")
+	} else {
+		storyQuery = storyQuery.Where("owner_member_id = ?", *memberID)
+	}
+
+	var total int64
+	if err := storyQuery.Model(&model.PMStory{}).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count member column stories: %w", err)
+	}
+
+	var stories []model.PMStory
+	if err := storyQuery.
+		Order("position ASC, updated_at DESC").
+		Offset(offset).Limit(limit).
+		Find(&stories).Error; err != nil {
+		return nil, 0, fmt.Errorf("list member column stories: %w", err)
+	}
+
+	enriched := r.collectAndEnrich(ctx, stories)
+	return enriched, int(total), nil
 }
 
 // CountByState returns story counts grouped by state for a workflow.
