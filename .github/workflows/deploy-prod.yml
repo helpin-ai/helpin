@@ -174,7 +174,7 @@ jobs:
       - name: Build widget packages
         run: |
           cd build-prod-netlify
-          pnpm install --frozen-lockfile
+          pnpm install --no-frozen-lockfile
           pnpm build
 
       - name: Install dependencies and build frontend
