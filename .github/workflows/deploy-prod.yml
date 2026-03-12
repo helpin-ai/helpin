@@ -167,7 +167,17 @@ jobs:
           cd build-prod-netlify/frontend
           doppler secrets download -t ${{ secrets.DOPPLER_TOKEN_FRONTEND_PROD }} --format=env-no-quotes --no-file > .env
 
-      - name: Install dependencies and build
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Build widget packages
+        run: |
+          cd build-prod-netlify
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Install dependencies and build frontend
         run: |
           cd build-prod-netlify/frontend
           npm ci
