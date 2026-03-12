@@ -45,6 +45,10 @@
 #       - name: Build SDK (shared → widget-core → sdk-js)
 #         run: pnpm build --filter @helpin/sdk-js...
 #
+#       - name: Prepare CDN deploy directory
+#         run: |
+#           cp packages/sdk-js/dist-cdn/index.html packages/sdk-js/dist/index.html
+#
 #       - name: Deploy to Cloudflare Pages
 #         uses: cloudflare/wrangler-action@v3
 #         with:

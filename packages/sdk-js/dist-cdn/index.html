@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helpin SDK</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #333; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .container { max-width: 640px; padding: 48px 24px; text-align: center; }
+        .logo { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 15px; margin-bottom: 40px; }
+        .code { background: #1e1e1e; color: #d4d4d4; border-radius: 8px; padding: 20px 24px; text-align: left; font-family: 'Menlo', 'Monaco', 'Courier New', monospace; font-size: 13px; line-height: 1.6; margin-bottom: 32px; overflow-x: auto; }
+        .code .comment { color: #6a9955; }
+        .code .tag { color: #569cd6; }
+        .code .attr { color: #9cdcfe; }
+        .code .str { color: #ce9178; }
+        .links { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+        .links a { color: #2563eb; text-decoration: none; font-size: 14px; font-weight: 500; padding: 8px 16px; border: 1px solid #e5e7eb; border-radius: 6px; transition: all 0.15s; }
+        .links a:hover { background: #f0f4ff; border-color: #2563eb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">Helpin SDK</div>
+        <p class="subtitle">Embed the Helpin chat widget on your website</p>
+        <div class="code"><span class="comment">&lt;!-- Add before &lt;/body&gt; --&gt;</span>
+&lt;<span class="tag">script</span> <span class="attr">src</span>=<span class="str">"https://cdn.helpin.ai/lib.js"</span>
+        <span class="attr">data-key</span>=<span class="str">"YOUR_WIDGET_KEY"</span>&gt;&lt;/<span class="tag">script</span>&gt;</div>
+        <div class="links">
+            <a href="https://helpin.ai">Homepage</a>
+            <a href="https://docs.helpin.ai">Documentation</a>
+        </div>
+    </div>
+</body>
+</html>
