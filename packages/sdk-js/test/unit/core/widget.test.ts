@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WidgetManager } from '../../../src/core/widget';
+import { mountWidget } from '@helpin/widget-core';
 
 describe('WidgetManager', () => {
   let widget: WidgetManager;
@@ -85,17 +86,23 @@ describe('WidgetManager', () => {
       expect(callback).toHaveBeenCalled();
     });
 
-    it('should toggle visibility', async () => {
+    it('should toggle visibility via mountWidget', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
-      
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      mockMount.mockClear();
+
       widget.show();
-      const chatWindow = document.querySelector('.helpin-chat-window') as HTMLElement;
-      expect(chatWindow.style.display).not.toBe('none');
-      
+      expect(mockMount).toHaveBeenCalled();
+      const showCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
+      expect(showCall[1].isOpen).toBe(true);
+
+      mockMount.mockClear();
       widget.hide();
-      const chatWindowHidden = document.querySelector('.helpin-chat-window') as HTMLElement;
-      expect(chatWindowHidden.style.display).toBe('none');
+      expect(mockMount).toHaveBeenCalled();
+      const hideCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
+      expect(hideCall[1].isOpen).toBe(false);
     });
   });
 
