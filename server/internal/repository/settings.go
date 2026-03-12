@@ -271,11 +271,13 @@ func (r *SettingsRepository) CreateTeam(ctx context.Context, req model.CreateTea
 			return err
 		}
 		t := &model.WorkspaceTeam{
-			WorkspaceID: req.WorkspaceID,
-			Name:        req.Name,
-			Handle:      req.Handle,
-			Description: req.Description,
-			ManagerID:   managerID,
+			WorkspaceID:      req.WorkspaceID,
+			Name:             req.Name,
+			Handle:           req.Handle,
+			Description:      req.Description,
+			ManagerID:        managerID,
+			TeamType:         req.TeamType,
+			DefaultStoryType: req.DefaultStoryType,
 		}
 		if err := tx.Create(t).Error; err != nil {
 			return fmt.Errorf("create team: %w", err)
@@ -318,6 +320,12 @@ func (r *SettingsRepository) UpdateTeam(ctx context.Context, id string, req mode
 			}
 			updates["manager_id"] = managerID
 		}
+		if req.TeamType != nil {
+			updates["team_type"] = *req.TeamType
+		}
+		if req.DefaultStoryType != nil {
+			updates["default_story_type"] = *req.DefaultStoryType
+		}
 
 		if err := tx.Model(&model.WorkspaceTeam{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return fmt.Errorf("update team: %w", err)
@@ -335,12 +343,27 @@ func (r *SettingsRepository) UpdateTeam(ctx context.Context, id string, req mode
 	return team, nil
 }
 
-// DeleteTeam removes a team by ID.
+// DeleteTeam removes a team by ID, including its workflow and states.
+// Most FK constraints use ON DELETE CASCADE/SET NULL, so the DB handles
+// related rows automatically. We only explicitly delete team workflows
+// (and their states) to avoid orphaning them (ON DELETE SET NULL would
+// leave them as workspace-level workflows).
 func (r *SettingsRepository) DeleteTeam(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("team_id = ?", id).Delete(&model.TeamWorkspaceMembership{}).Error; err != nil {
-			return fmt.Errorf("delete workspace member team memberships: %w", err)
+		// Delete workflow states for team-specific workflows, then the workflows themselves.
+		var workflowIDs []string
+		if err := tx.Model(&model.PMWorkflow{}).Where("team_id = ?", id).Pluck("id", &workflowIDs).Error; err != nil {
+			return fmt.Errorf("find team workflows: %w", err)
 		}
+		if len(workflowIDs) > 0 {
+			if err := tx.Where("workflow_id IN ?", workflowIDs).Delete(&model.PMWorkflowState{}).Error; err != nil {
+				return fmt.Errorf("delete team workflow states: %w", err)
+			}
+			if err := tx.Where("id IN ?", workflowIDs).Delete(&model.PMWorkflow{}).Error; err != nil {
+				return fmt.Errorf("delete team workflows: %w", err)
+			}
+		}
+		// Delete the team — FK cascades handle memberships, estimate settings, etc.
 		if err := tx.Where("id = ?", id).Delete(&model.WorkspaceTeam{}).Error; err != nil {
 			return fmt.Errorf("delete team: %w", err)
 		}

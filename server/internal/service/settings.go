@@ -14,16 +14,41 @@ import (
 // SettingsService handles workspace configuration business logic.
 type SettingsService struct {
 	settingsRepo      *repository.SettingsRepository
+	pmWorkflowService *PMWorkflowService
 	braveSearchAPIKey string
 	logger            *slog.Logger
 }
 
 var teamHandlePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+var validTeamTypes = map[string]struct{}{
+	"engineering": {},
+	"product":     {},
+	"design":      {},
+	"support":     {},
+	"marketing":   {},
+	"operations":  {},
+	"custom":      {},
+}
+
+func isValidTeamType(value string) bool {
+	_, ok := validTeamTypes[value]
+	return ok
+}
+
+func isValidDefaultStoryType(value string) bool {
+	switch value {
+	case model.PMStoryTypeFeature, model.PMStoryTypeBug, model.PMStoryTypeChore:
+		return true
+	default:
+		return false
+	}
+}
 
 // NewSettingsService creates a new SettingsService.
-func NewSettingsService(settingsRepo *repository.SettingsRepository, braveSearchAPIKey string) *SettingsService {
+func NewSettingsService(settingsRepo *repository.SettingsRepository, pmWorkflowService *PMWorkflowService, braveSearchAPIKey string) *SettingsService {
 	return &SettingsService{
 		settingsRepo:      settingsRepo,
+		pmWorkflowService: pmWorkflowService,
 		braveSearchAPIKey: strings.TrimSpace(braveSearchAPIKey),
 		logger:            slog.Default().With("service", "settings"),
 	}
@@ -56,6 +81,18 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.Handle = &handle
+	if strings.TrimSpace(req.TeamType) == "" {
+		req.TeamType = "engineering"
+	}
+	if !isValidTeamType(req.TeamType) {
+		return nil, fmt.Errorf("invalid team_type")
+	}
+	if strings.TrimSpace(req.DefaultStoryType) == "" {
+		req.DefaultStoryType = model.PMStoryTypeFeature
+	}
+	if !isValidDefaultStoryType(req.DefaultStoryType) {
+		return nil, fmt.Errorf("invalid default_story_type")
+	}
 
 	team, err := s.settingsRepo.CreateTeam(ctx, req)
 	if err != nil {
@@ -69,6 +106,14 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 			return nil, err
 		}
 	}
+	// Seed a default workflow for the new team.
+	if s.pmWorkflowService != nil {
+		if err := s.pmWorkflowService.SeedTeamWorkflow(ctx, req.WorkspaceID, team.ID, req.Name); err != nil {
+			s.logger.ErrorContext(ctx, "failed to seed team workflow", "error", err, "team_id", team.ID, "workspace_id", req.WorkspaceID)
+			// Non-fatal: team was created successfully, workflow can be added later.
+		}
+	}
+
 	s.logger.InfoContext(ctx, "team created", "team_id", team.ID, "workspace_id", req.WorkspaceID, "team_name", req.Name)
 	return team, nil
 }
@@ -95,6 +140,26 @@ func (s *SettingsService) UpdateTeam(ctx context.Context, id string, req model.U
 			return nil, err
 		}
 		req.Handle = &handle
+	}
+	if req.TeamType != nil {
+		teamType := strings.TrimSpace(*req.TeamType)
+		if teamType == "" {
+			teamType = "engineering"
+		}
+		if !isValidTeamType(teamType) {
+			return nil, fmt.Errorf("invalid team_type")
+		}
+		req.TeamType = &teamType
+	}
+	if req.DefaultStoryType != nil {
+		defaultStoryType := strings.TrimSpace(*req.DefaultStoryType)
+		if defaultStoryType == "" {
+			defaultStoryType = model.PMStoryTypeFeature
+		}
+		if !isValidDefaultStoryType(defaultStoryType) {
+			return nil, fmt.Errorf("invalid default_story_type")
+		}
+		req.DefaultStoryType = &defaultStoryType
 	}
 	return s.settingsRepo.UpdateTeam(ctx, id, req)
 }

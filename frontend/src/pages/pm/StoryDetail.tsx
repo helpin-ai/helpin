@@ -53,6 +53,7 @@ import { ChecklistItems } from '@/components/pm/ChecklistItems';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
 import { DatePicker } from '@/components/ui/date-picker';
 import { getInitials } from '@/lib/utils';
+import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
@@ -269,6 +270,7 @@ export function StoryDetailPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [hasGitIntegration, setHasGitIntegration] = useState(false);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
 
@@ -293,6 +295,14 @@ export function StoryDetailPage() {
   );
 
   useTitle(form?.name ? `${storyDetail?.story.display_id} ${form.name}` : 'Story');
+
+  // Check if GitHub is connected
+  useEffect(() => {
+    if (!workspaceId) return;
+    gitService.listIntegrations(workspaceId).then((res) => {
+      setHasGitIntegration((res.data ?? []).some((i) => i.active));
+    });
+  }, [workspaceId]);
 
   // ── Load all data in parallel ───────────────────────────────────
   useEffect(() => {
@@ -971,7 +981,7 @@ export function StoryDetailPage() {
           />
 
           {/* Delivery */}
-          {fieldVis.delivery && (
+          {hasGitIntegration && fieldVis.delivery && (
             <StoryDeliveryPanel
               workspaceId={workspaceId!}
               storyDetail={storyDetail}
@@ -980,7 +990,7 @@ export function StoryDetailPage() {
           )}
 
           {/* Git Links & Agent Runs */}
-          {fieldVis.dev_history && (
+          {hasGitIntegration && fieldVis.dev_history && (
             <>
               <StoryGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId!} />
               <AgentRunPanel

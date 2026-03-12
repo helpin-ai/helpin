@@ -215,7 +215,7 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			"DELETE FROM reward_quarters WHERE workspace_id = ?",
 
 			// Workspace structure
-			"DELETE FROM team_workspace_memberships WHERE workspace_id = ?",
+			"DELETE FROM team_workspace_memberships WHERE team_id IN (" + teamQ + ") OR workspace_member_id IN (" + memberQ + ")",
 			"DELETE FROM workspace_managers WHERE workspace_id = ?",
 			"DELETE FROM job_role_criteria WHERE workspace_id = ?",
 			"DELETE FROM bonus_tiers WHERE workspace_id = ?",
@@ -462,7 +462,7 @@ func (r *WorkspaceRepository) ListAssignableMembers(ctx context.Context, workspa
 			wm.user_id,
 			wm.role,
 			wm.email,
-			wm.display_name,
+			COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email) AS display_name,
 			u.avatar_url,
 			wm.status,
 			wm.invited_by,
@@ -471,7 +471,7 @@ func (r *WorkspaceRepository) ListAssignableMembers(ctx context.Context, workspa
 		`).
 		Joins("LEFT JOIN users u ON u.id = wm.user_id").
 		Where("wm.workspace_id = ? AND wm.status <> ?", workspaceID, model.WorkspaceMemberStatusRevoked).
-		Order("CASE wm.status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, LOWER(wm.display_name) ASC, LOWER(wm.email) ASC").
+		Order("CASE wm.status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, LOWER(COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email)) ASC, LOWER(wm.email) ASC").
 		Scan(&members).Error
 	if err != nil {
 		return nil, fmt.Errorf("list assignable workspace members: %w", err)

@@ -9,6 +9,7 @@ import type {
   Story,
   StoryDetail,
   StoryLabelLinkRequest,
+  StoryMemberColumn,
   StoryStateColumn,
   StoryStateCount,
   StoryUserLinkRequest,
@@ -95,6 +96,48 @@ export const pmStoryService = {
       });
     }
     return api.get<ColumnStoriesResponse>(`/pm/stories/board/column?${params.toString()}`);
+  },
+  listBoardByMember: (
+    workspaceId: string,
+    workflowId: string,
+    filters?: Record<string, string | undefined>,
+    perMemberLimit?: number,
+    includeEmpty?: boolean,
+    memberIds?: string[]
+  ) => {
+    const params = new URLSearchParams();
+    params.set('workspace_id', workspaceId);
+    params.set('workflow_id', workflowId);
+    if (perMemberLimit && perMemberLimit > 0) params.set('per_member_limit', String(perMemberLimit));
+    if (includeEmpty) params.set('include_empty', 'true');
+    if (memberIds?.length) params.set('member_ids', memberIds.join(','));
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+      });
+    }
+    return api.get<StoryMemberColumn[]>(`/pm/stories/board/members?${params.toString()}`);
+  },
+  listBoardMemberColumn: (
+    workspaceId: string,
+    workflowId: string,
+    memberId: string | null,
+    offset: number,
+    limit: number,
+    filters?: Record<string, string | undefined>
+  ) => {
+    const params = new URLSearchParams();
+    params.set('workspace_id', workspaceId);
+    params.set('workflow_id', workflowId);
+    if (memberId) params.set('member_id', memberId);
+    params.set('offset', String(offset));
+    params.set('limit', String(limit));
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+      });
+    }
+    return api.get<ColumnStoriesResponse>(`/pm/stories/board/members/column?${params.toString()}`);
   },
   countByState: (workspaceId: string, workflowId: string) =>
     api.get<StoryStateCount[]>(`/pm/stories/counts?${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),

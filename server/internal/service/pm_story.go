@@ -983,6 +983,25 @@ func (s *PMStoryService) ListColumnStories(ctx context.Context, stateID string, 
 	return s.storyRepo.ListColumnStories(ctx, stateID, filters, offset, limit)
 }
 
+// ListByMember returns board columns grouped by owner member.
+func (s *PMStoryService) ListByMember(ctx context.Context, workspaceID, workflowID string, filters model.PMStoryFilters, perMemberLimit int, includeEmpty bool, memberIDs []string) ([]model.StoryMemberColumn, error) {
+	if workspaceID == "" || workflowID == "" {
+		return nil, fmt.Errorf("workspace_id and workflow_id are required")
+	}
+	return s.storyRepo.ListByMember(ctx, workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
+}
+
+// ListMemberColumnStories returns a page of stories for a single member board column.
+func (s *PMStoryService) ListMemberColumnStories(ctx context.Context, workspaceID, workflowID string, memberID *string, filters model.PMStoryFilters, offset, limit int) ([]model.BoardStory, int, error) {
+	if workspaceID == "" || workflowID == "" {
+		return nil, 0, fmt.Errorf("workspace_id and workflow_id are required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.storyRepo.ListMemberColumnStories(ctx, workspaceID, workflowID, memberID, filters, offset, limit)
+}
+
 // CountByState returns state-level story counts for a workflow.
 func (s *PMStoryService) CountByState(ctx context.Context, workflowID string) ([]model.StoryStateCount, error) {
 	if workflowID == "" {

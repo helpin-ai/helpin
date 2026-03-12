@@ -56,6 +56,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import type { DocsCollection, DocsDocument, DocStatus } from '@/lib/docsTypes'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import { UserAvatar } from '@/components/pm/UserAvatar'
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog'
@@ -112,6 +113,7 @@ export function DocsSpaceDetail() {
   const [editSpaceOpen, setEditSpaceOpen] = useState(false)
   const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null)
   const [movingDoc, setMovingDoc] = useState<DocsDocument | null>(null)
+  const [deleteConfirmDoc, setDeleteConfirmDoc] = useState<DocsDocument | null>(null)
 
   useTitle(space?.name ?? 'Space')
 
@@ -143,6 +145,13 @@ export function DocsSpaceDetail() {
   useEffect(() => {
     setActiveCollection(collectionParam)
   }, [collectionParam])
+
+  const activeCollectionDocuments = activeCollection === '__uncollected__'
+    ? uncollected
+    : activeCollection
+      ? collectionMap.get(activeCollection) ?? []
+      : documents ?? []
+  const showStatusFilter = (collections ?? []).length > 0 && (activeCollectionDocuments.length > 0 || Boolean(filterStatus))
 
   const deleteCollection = useDeleteDocsCollection(wsId)
   const updateSpace = useUpdateDocsSpace(wsId)
@@ -204,6 +213,17 @@ export function DocsSpaceDetail() {
       toast.error(err instanceof Error ? err.message : 'Failed to duplicate')
     } finally {
       setDuplicatingDocId((current) => (current === doc.id ? null : current))
+    }
+  }
+
+  const handleConfirmDeleteDoc = async () => {
+    if (!deleteConfirmDoc) return
+    try {
+      await deleteDoc.mutateAsync(deleteConfirmDoc.id)
+      toast.success('Document deleted')
+      setDeleteConfirmDoc(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete')
     }
   }
 
@@ -424,7 +444,7 @@ export function DocsSpaceDetail() {
       </div>}
 
       {/* Filters row */}
-      {(collections ?? []).length > 0 && <div className="flex items-center justify-end gap-2">
+      {showStatusFilter && <div className="flex items-center justify-end gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -464,11 +484,7 @@ export function DocsSpaceDetail() {
 
       {/* Document list */}
       {(() => {
-        const baseDocs = activeCollection === '__uncollected__'
-          ? uncollected
-          : activeCollection
-            ? collectionMap.get(activeCollection) ?? []
-            : documents ?? []
+        const baseDocs = activeCollectionDocuments
 
         const filtered = baseDocs
 
@@ -664,12 +680,7 @@ export function DocsSpaceDetail() {
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
-                          onClick={() => {
-                            deleteDoc.mutate(doc.id, {
-                              onSuccess: () => toast.success('Document deleted'),
-                              onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to delete'),
-                            })
-                          }}
+                          onClick={() => setDeleteConfirmDoc(doc)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           Delete
@@ -697,6 +708,16 @@ export function DocsSpaceDetail() {
         }
         confirmText={confirmDelete?.name ?? ''}
         onConfirm={handleConfirmDelete}
+      />
+
+      <ConfirmDialog
+        open={deleteConfirmDoc !== null}
+        onOpenChange={(open) => { if (!open) setDeleteConfirmDoc(null) }}
+        title="Delete document"
+        description="This will permanently delete the document and its saved content. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleConfirmDeleteDoc}
       />
 
       <SpaceDialog

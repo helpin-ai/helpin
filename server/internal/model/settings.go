@@ -57,6 +57,8 @@ type WorkspaceTeam struct {
 	Handle               *string   `json:"handle" gorm:"uniqueIndex:idx_workspace_team_handle,priority:2"`
 	Description          *string   `json:"description"`
 	ManagerID            *string   `json:"manager_id" gorm:"type:uuid"`
+	TeamType             string    `json:"team_type" gorm:"not null;default:'engineering'"`
+	DefaultStoryType     string    `json:"default_story_type" gorm:"not null;default:'feature'"`
 	DocsPublisherEnabled bool      `json:"docs_publisher_enabled" gorm:"not null;default:false"`
 	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt            time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -273,19 +275,23 @@ type FullWorkspaceConfig struct {
 
 // CreateTeamRequest is the payload for creating a team.
 type CreateTeamRequest struct {
-	WorkspaceID string  `json:"workspace_id"`
-	Name        string  `json:"name"`
-	Handle      *string `json:"handle"`
-	Description *string `json:"description"`
-	ManagerID   *string `json:"manager_id"`
+	WorkspaceID      string  `json:"workspace_id"`
+	Name             string  `json:"name"`
+	Handle           *string `json:"handle"`
+	Description      *string `json:"description"`
+	ManagerID        *string `json:"manager_id"`
+	TeamType         string  `json:"team_type"`
+	DefaultStoryType string  `json:"default_story_type"`
 }
 
 // UpdateTeamRequest is the payload for updating a team.
 type UpdateTeamRequest struct {
-	Name        *string `json:"name"`
-	Handle      *string `json:"handle"`
-	Description *string `json:"description"`
-	ManagerID   *string `json:"manager_id"`
+	Name             *string `json:"name"`
+	Handle           *string `json:"handle"`
+	Description      *string `json:"description"`
+	ManagerID        *string `json:"manager_id"`
+	TeamType         *string `json:"team_type"`
+	DefaultStoryType *string `json:"default_story_type"`
 }
 
 // UpdateTeamRepoDefaultRequest configures the delivery repository default for a team.

@@ -745,6 +745,9 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			handle TEXT,
 			description TEXT,
 			manager_id TEXT,
+			team_type TEXT NOT NULL DEFAULT 'engineering',
+			default_story_type TEXT NOT NULL DEFAULT 'feature',
+			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

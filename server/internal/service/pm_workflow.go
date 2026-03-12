@@ -419,6 +419,109 @@ func (s *PMWorkflowService) ReorderStates(ctx context.Context, workflowID string
 	return nil
 }
 
+// ResolveTeamWorkflow returns the workflow for a team, falling back to the workspace default.
+func (s *PMWorkflowService) ResolveTeamWorkflow(ctx context.Context, workspaceID, teamID string) (*model.WorkflowWithStates, error) {
+	if workspaceID == "" || teamID == "" {
+		return nil, fmt.Errorf("workspace_id and team_id are required")
+	}
+
+	// Try team-specific workflow first.
+	wf, err := s.workflowRepo.GetByTeamID(ctx, workspaceID, teamID)
+	if err != nil {
+		return nil, err
+	}
+	if wf != nil {
+		s.logger.DebugContext(ctx, "resolved team workflow", "team_id", teamID, "workflow_id", wf.Workflow.ID)
+		return wf, nil
+	}
+
+	// Fall back to the workspace default workflow (team_id IS NULL).
+	wf, err = s.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if wf == nil {
+		return nil, fmt.Errorf("no default workflow found for workspace")
+	}
+	s.logger.DebugContext(ctx, "resolved default workflow for team", "team_id", teamID, "workflow_id", wf.Workflow.ID)
+	return wf, nil
+}
+
+// CopyToTeam copies a source workflow to a target team.
+func (s *PMWorkflowService) CopyToTeam(ctx context.Context, sourceWorkflowID, targetTeamID, workspaceID string) (*model.WorkflowWithStates, error) {
+	if sourceWorkflowID == "" || targetTeamID == "" || workspaceID == "" {
+		return nil, fmt.Errorf("source_workflow_id, target_team_id, and workspace_id are required")
+	}
+
+	// Validate source workflow exists.
+	source, err := s.workflowRepo.GetByID(ctx, sourceWorkflowID)
+	if err != nil {
+		return nil, err
+	}
+	if source == nil {
+		return nil, fmt.Errorf("source workflow not found")
+	}
+
+	// Check target team doesn't already have a workflow.
+	existing, err := s.workflowRepo.GetByTeamID(ctx, workspaceID, targetTeamID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, fmt.Errorf("team already has a workflow")
+	}
+
+	newName := source.Workflow.Name + " (Copy)"
+	result, err := s.workflowRepo.CopyWorkflow(ctx, source, newName, &targetTeamID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to copy workflow to team", "error", err, "source_workflow_id", sourceWorkflowID, "team_id", targetTeamID)
+		return nil, err
+	}
+	s.logger.InfoContext(ctx, "workflow copied to team", "source_workflow_id", sourceWorkflowID, "new_workflow_id", result.Workflow.ID, "team_id", targetTeamID)
+	return result, nil
+}
+
+// SeedTeamWorkflow creates a default workflow for a newly created team.
+func (s *PMWorkflowService) SeedTeamWorkflow(ctx context.Context, workspaceID, teamID, teamName string) error {
+	// Check if team already has a workflow.
+	existing, err := s.workflowRepo.GetByTeamID(ctx, workspaceID, teamID)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return nil
+	}
+
+	// Try to copy from the workspace default workflow.
+	defaultWf, err := s.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	if defaultWf != nil && len(defaultWf.States) > 0 {
+		name := teamName + " Workflow"
+		_, err := s.workflowRepo.CopyWorkflow(ctx, defaultWf, name, &teamID)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to seed team workflow from default", "error", err, "team_id", teamID)
+			return err
+		}
+		s.logger.InfoContext(ctx, "team workflow seeded from default", "team_id", teamID, "workspace_id", workspaceID)
+		return nil
+	}
+
+	// No default workflow exists; create a fresh one.
+	_, err = s.Create(ctx, model.CreateWorkflowRequest{
+		WorkspaceID: workspaceID,
+		Name:        teamName + " Workflow",
+		TeamID:      &teamID,
+	})
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to seed fresh team workflow", "error", err, "team_id", teamID)
+		return err
+	}
+	s.logger.InfoContext(ctx, "team workflow seeded with defaults", "team_id", teamID, "workspace_id", workspaceID)
+	return nil
+}
+
 // SeedWorkspaceDefaults seeds default workflow, epic states, and labels.
 func (s *PMWorkflowService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
 	if workspaceID == "" {
