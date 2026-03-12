@@ -8,11 +8,11 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     resolve: {
-      alias: {
-        '@helpin/widget-core/styles': resolve(__dirname, '../widget-core/src/styles/widget.css'),
-        '@helpin/widget-core': resolve(__dirname, '../widget-core/dist/index.js'),
-        '@helpin/shared': resolve(__dirname, '../shared/dist/index.js'),
-      },
+      alias: [
+        { find: /^@helpin\/widget-core\/styles/, replacement: resolve(__dirname, '../widget-core/src/styles/widget.css') },
+        { find: /^@helpin\/widget-core$/, replacement: resolve(__dirname, '../widget-core/dist/index.js') },
+        { find: /^@helpin\/shared$/, replacement: resolve(__dirname, '../shared/dist/index.js') },
+      ],
     },
     build: {
       lib: {
@@ -26,6 +26,7 @@ export default defineConfig(({ command, mode }) => {
           return `helpin.${format}.js`;
         },
       },
+      cssCodeSplit: false,
       rollupOptions: {
         external: [], // Everything bundled inline (including widget-core + preact)
         output: {
