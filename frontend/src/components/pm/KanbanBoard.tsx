@@ -35,7 +35,7 @@ import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar } from './Story
 import { StoryListView } from './StoryListView';
 import { ViewBar } from './ViewBar';
 import { BoardDisplayMenu } from './BoardDisplayMenu';
-import { useBoardDisplayStore, type BoardGroupBy } from '@/stores/boardDisplayStore';
+import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 
 interface KanbanBoardProps {
@@ -393,7 +393,6 @@ function MemberColumn({ column, collapsed, onToggleCollapse, onCreate, onOpen, f
 
 export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const {
-    workflows,
     workflow,
     columns,
     loading,
@@ -402,7 +401,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     filters,
     columnLoading,
     loadBoard,
-    setWorkflow,
     setTeamFilter,
     setFilters,
     createStory,

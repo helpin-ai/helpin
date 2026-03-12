@@ -9,7 +9,7 @@ import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, FileText, FolderKanban, GitBranch, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
+import { Bot, FileText, FolderKanban, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
 import {
   GeneralTab,
   MembersTab,
@@ -20,7 +20,6 @@ import {
   SystemTab,
   AITab,
   ProjectDeliveryTab,
-  WorkflowManager,
   AutomationsTab,
   ImportTab,
   HelpcenterTab,
@@ -171,12 +170,12 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
 export const isSettingsSection = (value: string): value is SettingsSection =>
   SETTINGS_SECTIONS.some((section) => section.id === value) || value === 'account';
 
-export default function Settings({ section, initialWorkflowId, initialTeamId }: { section: SettingsSection; initialWorkflowId?: string; initialTeamId?: string }) {
+export default function Settings({ section, initialTeamId }: { section: SettingsSection; initialWorkflowId?: string; initialTeamId?: string }) {
   useTitle('Settings');
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const { data: access } = useWorkspaceAccess(wsId);
-  const { canManageSettings, canManageMembers, canManageTeams, canAdminWorkflows, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
+  const { canManageSettings, canManageMembers, canManageTeams, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 

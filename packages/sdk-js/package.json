@@ -33,6 +33,10 @@
     "tracking"
   ],
   "license": "MIT",
+  "dependencies": {
+    "@helpin/widget-core": "workspace:*",
+    "@helpin/shared": "workspace:*"
+  },
   "devDependencies": {
     "@playwright/test": "^1.40.0",
     "@testing-library/dom": "^10.4.0",

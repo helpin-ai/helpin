@@ -1240,6 +1240,8 @@ export interface SupportInboxSettings {
   logo_url: string;
   launcher_position: string;
   launcher_icon: string;
+  widget_name: string;
+  widget_avatar_url: string;
   csat_enabled: boolean;
 }
 
