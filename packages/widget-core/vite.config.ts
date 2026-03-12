@@ -11,7 +11,9 @@ export default defineConfig({
       fileName: 'index',
     },
     rollupOptions: {
-      external: ['preact', 'react', 'react-dom'],
+      // preact is bundled into the dist so widget-core is self-contained
+      // and avoids dual-instance __H errors when used in React host apps
+      external: [],
     },
   },
 });
