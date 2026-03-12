@@ -265,6 +265,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             teamRepoDefaults={settings.team_repo_defaults}
             editable={canManageTeams}
             onRefresh={load}
+            initialTeamId={initialTeamId}
           />
         );
       case 'people':
@@ -326,7 +327,6 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             teams={settings.teams}
             editable={canAdminWorkflows}
             initialWorkflowId={initialWorkflowId}
-            initialTeamId={initialTeamId}
           />
         );
       case 'labels':

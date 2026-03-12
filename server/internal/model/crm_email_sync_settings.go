@@ -8,18 +8,18 @@ import (
 
 // CRMEmailSyncSettings defines the email sync configuration for the CRM module.
 type CRMEmailSyncSettings struct {
-	ID                    string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID           string          `json:"workspace_id" gorm:"type:uuid;uniqueIndex;not null"`
-	HistoricalSyncDays    int             `json:"historical_sync_days" gorm:"not null;default:90"`
-	FilterMode            string          `json:"filter_mode" gorm:"not null;default:'blocklist'"`
-	FilterPatterns        json.RawMessage `json:"filter_patterns" gorm:"type:jsonb;not null;default:'[]'"`
-	InternalExclusion     string          `json:"internal_exclusion" gorm:"not null;default:'none'"`
-	IncludePrivateMeetings bool           `json:"include_private_meetings" gorm:"not null;default:false"`
-	IncludeSoloMeetings   bool            `json:"include_solo_meetings" gorm:"not null;default:false"`
-	RecordCreationMode    string          `json:"record_creation_mode" gorm:"not null;default:'selective'"`
-	BlockedRecordPrefixes json.RawMessage `json:"blocked_record_prefixes" gorm:"type:jsonb;not null;default:'[]'"`
-	CreatedAt             time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt             time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                     string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID            string          `json:"workspace_id" gorm:"type:uuid;uniqueIndex;not null"`
+	HistoricalSyncDays     int             `json:"historical_sync_days" gorm:"not null;default:90"`
+	FilterMode             string          `json:"filter_mode" gorm:"not null;default:'blocklist'"`
+	FilterPatterns         json.RawMessage `json:"filter_patterns" gorm:"type:jsonb;not null;default:'[]'"`
+	InternalExclusion      string          `json:"internal_exclusion" gorm:"not null;default:'none'"`
+	IncludePrivateMeetings bool            `json:"include_private_meetings" gorm:"not null;default:false"`
+	IncludeSoloMeetings    bool            `json:"include_solo_meetings" gorm:"not null;default:false"`
+	RecordCreationMode     string          `json:"record_creation_mode" gorm:"not null;default:'selective'"`
+	BlockedRecordPrefixes  json.RawMessage `json:"blocked_record_prefixes" gorm:"type:jsonb;not null;default:'[]'"`
+	CreatedAt              time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt              time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (CRMEmailSyncSettings) TableName() string { return "crm_email_sync_settings" }
@@ -284,14 +284,14 @@ func DefaultEmailSyncSettings() CRMEmailSyncSettings {
 
 // UpdateCRMEmailSyncSettingsRequest is the payload for updating email sync settings.
 type UpdateCRMEmailSyncSettingsRequest struct {
-	HistoricalSyncDays     *int              `json:"historical_sync_days"`
-	FilterMode             *string           `json:"filter_mode"`
-	FilterPatterns         *json.RawMessage  `json:"filter_patterns"`
-	InternalExclusion      *string           `json:"internal_exclusion"`
-	IncludePrivateMeetings *bool             `json:"include_private_meetings"`
-	IncludeSoloMeetings    *bool             `json:"include_solo_meetings"`
-	RecordCreationMode     *string           `json:"record_creation_mode"`
-	BlockedRecordPrefixes  *json.RawMessage  `json:"blocked_record_prefixes"`
+	HistoricalSyncDays     *int             `json:"historical_sync_days"`
+	FilterMode             *string          `json:"filter_mode"`
+	FilterPatterns         *json.RawMessage `json:"filter_patterns"`
+	InternalExclusion      *string          `json:"internal_exclusion"`
+	IncludePrivateMeetings *bool            `json:"include_private_meetings"`
+	IncludeSoloMeetings    *bool            `json:"include_solo_meetings"`
+	RecordCreationMode     *string          `json:"record_creation_mode"`
+	BlockedRecordPrefixes  *json.RawMessage `json:"blocked_record_prefixes"`
 }
 
 // GetDefaultBlockedRecordPrefixes returns a copy of the DefaultBlockedRecordPrefixes slice.
@@ -351,8 +351,9 @@ func matchesAnyPattern(email string, patterns []string) bool {
 	return false
 }
 
-// IsInternalEmail checks if an email is internal (all participants share the same domain as the account).
-func IsInternalEmail(settings *CRMEmailSyncSettings, fromAddr string, toAddrs []string, accountEmail string) bool {
+// IsInternalEmail checks if an email is internal (all participants share the
+// same domain as the account).
+func IsInternalEmail(settings *CRMEmailSyncSettings, fromAddr string, toAddrs []string, ccAddrs []string, accountEmail string) bool {
 	if settings.InternalExclusion != "exclude" {
 		return false
 	}
@@ -368,6 +369,11 @@ func IsInternalEmail(settings *CRMEmailSyncSettings, fromAddr string, toAddrs []
 
 	for _, to := range toAddrs {
 		if domainFromEmail(to) != accountDomain {
+			return false
+		}
+	}
+	for _, cc := range ccAddrs {
+		if domainFromEmail(cc) != accountDomain {
 			return false
 		}
 	}

@@ -235,7 +235,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
             number="02"
             icon={Clock}
             title="Historical Sync Period"
-            description="How many days of email history to sync when a new account is connected."
+            description="How many days of email history to backfill on a first connect or when Gmail forces a recovery sync."
           />
           <div className="ml-[52px] flex items-center gap-4">
             <Select
@@ -254,7 +254,7 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
               </SelectContent>
             </Select>
             <span className="text-xs italic text-muted-foreground/70">
-              Changes only affect newly connected accounts
+              Changes apply to first-time mailbox backfills and history-cursor recovery windows
             </span>
           </div>
         </CardContent>

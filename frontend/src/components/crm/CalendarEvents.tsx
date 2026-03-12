@@ -1,4 +1,4 @@
-import { Calendar, MapPin, Clock } from 'lucide-react';
+import { Calendar, Clock3, MapPin } from 'lucide-react';
 import { format } from 'date-fns';
 import { useContactCalendar, useDealCalendar } from '@/hooks/queries/useCRM';
 import type { CRMCalendarEvent } from '@/lib/crmTypes';
@@ -12,16 +12,35 @@ interface CalendarEventsProps {
 export function CalendarEvents({ workspaceId, contactId, dealId }: CalendarEventsProps) {
   const contactQuery = useContactCalendar(workspaceId, contactId ?? '');
   const dealQuery = useDealCalendar(workspaceId, dealId ?? '');
-
   const query = contactId ? contactQuery : dealQuery;
-  const events = (query.data?.data ?? []) as CRMCalendarEvent[];
+  const events = [...((query.data?.data ?? []) as CRMCalendarEvent[])].sort(
+    (left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime(),
+  );
+
+  if (query.isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={index} className="animate-pulse rounded-lg border border-border/60 px-4 py-4">
+            <div className="h-4 w-40 rounded bg-muted" />
+            <div className="mt-3 h-3 w-60 rounded bg-muted" />
+            <div className="mt-2 h-3 w-36 rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   if (events.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-        <Calendar className="mb-2 h-8 w-8 opacity-40" />
-        <p className="text-sm">No calendar events linked</p>
-        <p className="mt-1 text-xs text-muted-foreground/70">Calendar integration coming soon</p>
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-12 text-center">
+        <div className="rounded-full bg-muted p-3">
+          <Calendar className="h-7 w-7 text-muted-foreground" />
+        </div>
+        <p className="mt-4 text-base font-medium text-foreground">No meetings tracked</p>
+        <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+          Calendar activity will appear here once events are linked to this contact.
+        </p>
       </div>
     );
   }
@@ -29,23 +48,32 @@ export function CalendarEvents({ workspaceId, contactId, dealId }: CalendarEvent
   return (
     <div className="space-y-3">
       {events.map((event) => (
-        <div key={event.id} className="rounded-md border p-3">
-          <p className="text-sm font-medium">{event.title}</p>
-          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              {format(new Date(event.start_time), 'MMM d, yyyy h:mm a')} - {format(new Date(event.end_time), 'h:mm a')}
+        <div key={event.id} className="rounded-lg border border-border/60 bg-background px-4 py-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">{event.title}</p>
+              {event.description ? (
+                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{event.description}</p>
+              ) : null}
+            </div>
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">
+              {format(new Date(event.start_time), 'MMM d')}
             </span>
-            {event.location && (
-              <span className="flex items-center gap-1">
-                <MapPin className="h-3 w-3" />
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <Clock3 className="h-3.5 w-3.5" />
+              {format(new Date(event.start_time), 'MMM d, yyyy h:mm a')} to{' '}
+              {format(new Date(event.end_time), 'h:mm a')}
+            </span>
+            {event.location ? (
+              <span className="inline-flex items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5" />
                 {event.location}
               </span>
-            )}
+            ) : null}
           </div>
-          {event.description && (
-            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{event.description}</p>
-          )}
         </div>
       ))}
     </div>

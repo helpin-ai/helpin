@@ -89,14 +89,31 @@ func (h *CRMEmailHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) 
 	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermSettingsManage)
 
 	if err := h.emailService.DeleteAccount(r.Context(), id, userID, isAdmin); err != nil {
-		if err.Error() == "not authorized to delete this email account" {
+		if err.Error() == "not authorized to disconnect this email account" {
 			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "email account deleted"})
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "email account disconnected; synced history preserved"})
+}
+
+// PurgeAccountData handles DELETE /api/crm/email/accounts/{id}/data.
+func (h *CRMEmailHandler) PurgeAccountData(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	actor := authorization.GetActor(r.Context())
+	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
+
+	if err := h.emailService.PurgeAccountData(r.Context(), id, isAdmin); err != nil {
+		if err.Error() == "not authorized to purge email account data" {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "email account and synced history permanently deleted"})
 }
 
 // OAuthCallback handles POST /api/crm/email/accounts/{id}/oauth-callback (stub).
@@ -195,6 +212,7 @@ func (h *CRMEmailHandler) ListThreads(w http.ResponseWriter, r *http.Request) {
 	}
 	filters := model.CRMEmailThreadListFilters{
 		EmailAccountID: queryStringPtr(r, "email_account_id"),
+		ContactID:      queryStringPtr(r, "contact_id"),
 		DealID:         queryStringPtr(r, "deal_id"),
 		Search:         queryStringPtr(r, "search"),
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/config"
+	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/handler"
@@ -237,6 +238,7 @@ func main() {
 		&model.CRMEmailAccount{},
 		&model.CRMEmailThread{},
 		&model.CRMEmailMessage{},
+		&model.CRMEmailMessageContact{},
 		&model.CRMCalendarEvent{},
 		// CRM Phase 4: Intelligence
 		&model.CRMEnrichmentResult{},
@@ -266,6 +268,11 @@ func main() {
 	slog.Info("startup: running DropLegacyWorkspaceIdentitySchema")
 	if err := repository.DropLegacyWorkspaceIdentitySchema(db); err != nil {
 		slog.Error("failed to drop legacy workspace identity schema", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("startup: running MigrateCRMEmailAssociations")
+	if err := repository.MigrateCRMEmailAssociations(db); err != nil {
+		slog.Error("failed to migrate crm email associations", "error", err)
 		os.Exit(1)
 	}
 
@@ -375,6 +382,18 @@ func main() {
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
 	crmSequenceRepo := repository.NewCRMSequenceRepository(db)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
+	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
+
+	crmEmailResolver := crmemail.NewResolver(crmContactRepo)
+	crmEmailBackfillRunner := crmemail.NewBackfillRunner(crmEmailRepo, crmEmailSyncSettingsRepo, crmEmailResolver)
+	go func() {
+		slog.Info("startup: running CRM email association backfill")
+		if err := crmEmailBackfillRunner.Run(context.Background()); err != nil {
+			slog.Error("crm email association backfill failed", "error", err)
+			return
+		}
+		slog.Info("startup: CRM email association backfill complete")
+	}()
 
 	// Initialize services.
 	authService := service.NewAuthService(userRepo, jwtManager)
@@ -498,7 +517,6 @@ func main() {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
 	}
 
-	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
