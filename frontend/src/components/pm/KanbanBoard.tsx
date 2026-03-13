@@ -113,7 +113,7 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
   }
 
   return (
-    <section className="flex h-full w-[360px] shrink-0 flex-col">
+    <section className="flex h-full w-[340px] shrink-0 flex-col">
       <header className="flex items-center justify-between px-3 pt-4 pb-3 relative">
         {column.state.color && (
           <div className="absolute top-0 left-3 right-3 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
@@ -308,7 +308,7 @@ function MemberColumn({ column, collapsed, onToggleCollapse, onCreate, onOpen, f
   }
 
   return (
-    <section className="flex h-full w-[360px] shrink-0 flex-col">
+    <section className="flex h-full w-[340px] shrink-0 flex-col">
       <header className="flex items-center justify-between px-3 pt-4 pb-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold">

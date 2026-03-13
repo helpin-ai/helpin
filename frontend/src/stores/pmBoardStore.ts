@@ -277,14 +277,8 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       // Explicit workflow ID provided — use it
       selected = workflowRes.data.find((workflow) => workflow.workflow.id === workflowId) ?? workflowRes.data[0] ?? null;
     } else if (teamId) {
-      // Team filter active — resolve the team's workflow
-      const teamWorkflow = workflowRes.data.find((w) => w.workflow.team_id === teamId);
-      if (teamWorkflow) {
-        selected = teamWorkflow;
-      } else {
-        // Fall back to workspace default (no team_id)
-        selected = workflowRes.data.find((w) => !w.workflow.team_id) ?? workflowRes.data[0] ?? null;
-      }
+      // Team filter active — resolve the team's workflow (never fall back to shared default)
+      selected = workflowRes.data.find((w) => w.workflow.team_id === teamId) ?? null;
     } else {
       // No team filter — use saved workflow or first available
       const resolvedId = getSavedWorkflowId(workspaceId);
@@ -324,7 +318,12 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     let selected: WorkflowWithStates | null = null;
     if (teamId) {
       const teamWorkflow = workflows.find((w) => w.workflow.team_id === teamId);
-      selected = teamWorkflow ?? workflows.find((w) => !w.workflow.team_id) ?? workflows[0] ?? null;
+      if (!teamWorkflow) {
+        // Team workflow not in cache — reload full board to trigger backend auto-seed
+        await get().loadBoard(workspaceId);
+        return;
+      }
+      selected = teamWorkflow;
     } else {
       const resolvedId = getSavedWorkflowId(workspaceId);
       selected = resolvedId
