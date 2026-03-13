@@ -6,11 +6,8 @@ pub fn create_consumer_kafka_config(brokers: String) -> ClientConfig {
     let security_protocol =
         std::env::var("KAFKA_SECURITY_PROTOCOL").unwrap_or_else(|_| "SASL_SSL".into());
     let sasl = std::env::var("KAFKA_SASL").unwrap_or_else(|_| "SCRAM-SHA-256".into());
-    let group_id = "rust-kafka-consumer";
-    // let group_id = format!(
-    //     "rust-kafka-consumer",
-    //     // std::env::var("APP_ENV").unwrap_or_else(|_| "".into())
-    // );
+    let group_id =
+        std::env::var("KAFKA_GROUP_ID").unwrap_or_else(|_| "helpin-rust-consumer".into());
 
     let mut config = ClientConfig::new();
 
