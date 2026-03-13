@@ -6,10 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Copy, Key, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon } from 'lucide-react';
-import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey } from '@/hooks/queries';
+import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon } from 'lucide-react';
+import { useChatSettings, useUpdateChatSettings } from '@/hooks/queries';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { WidgetPreview } from './WidgetPreview';
 import { API_BASE } from '@/lib/api';
@@ -55,7 +54,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data, isLoading } = useChatSettings(workspaceId);
   const updateMutation = useUpdateChatSettings(workspaceId);
-  const regenerateMutation = useRegenerateWidgetKey(workspaceId);
 
   const [snippetTab, setSnippetTab] = useState<'basic' | 'advanced'>('basic');
 
@@ -129,12 +127,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     });
   };
 
-  const handleRegenerate = () => {
-    regenerateMutation.mutate(undefined, {
-      onSuccess: () => toast.success('Widget key regenerated'),
-      onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to regenerate'),
-    });
-  };
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
