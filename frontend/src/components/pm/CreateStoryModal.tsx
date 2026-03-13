@@ -328,24 +328,25 @@ export function CreateStoryModal({
       throw new Error(resolved.error ?? 'Failed to resolve team workflow');
     }
 
+    const resolvedData = resolved.data;
     const currentState = workflow.states.find((state) => state.id === stateId);
     const nextState =
-      resolved.data.states.find((state) => state.id === stateId) ??
+      resolvedData.states.find((state) => state.id === stateId) ??
       (currentState
-        ? resolved.data.states.find((state) => state.state_type === currentState.state_type) ??
-          resolved.data.states.find((state) => state.name === currentState.name)
+        ? resolvedData.states.find((state) => state.state_type === currentState.state_type) ??
+          resolvedData.states.find((state) => state.name === currentState.name)
         : undefined) ??
-      (resolved.data.workflow.default_state_id
-        ? resolved.data.states.find((state) => state.id === resolved.data.workflow.default_state_id)
+      (resolvedData.workflow.default_state_id
+        ? resolvedData.states.find((state) => state.id === resolvedData.workflow.default_state_id)
         : undefined) ??
-      resolved.data.states[0];
+      resolvedData.states[0];
 
     if (!nextState) {
       throw new Error('No workflow state available for the selected team');
     }
 
     return {
-      workflowId: resolved.data.workflow.id,
+      workflowId: resolvedData.workflow.id,
       workflowStateId: nextState.id,
     };
   }, [form.team_id, workflow, stateId, workspaceId]);
