@@ -633,11 +633,11 @@ func (s *CRMSummaryService) generateSummaryLLM(ctx context.Context, payload summ
 	}
 
 	var output summaryGenerationOutput
-	if err := json.Unmarshal([]byte(resp.Content), &output); err != nil {
+	if err := llm.UnmarshalResponse(resp.Content, &output); err != nil {
 		var wrapper struct {
 			Summary summaryGenerationOutput `json:"summary"`
 		}
-		if err2 := json.Unmarshal([]byte(resp.Content), &wrapper); err2 != nil {
+		if err2 := llm.UnmarshalResponse(resp.Content, &wrapper); err2 != nil {
 			slog.Error("failed to parse crm summary response", "error", err, "content", resp.Content)
 			return summaryGenerationOutput{}, fmt.Errorf("parse crm summary response: %w", err)
 		}

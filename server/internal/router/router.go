@@ -247,6 +247,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Read
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/", h.Settings.GetAll)
+				r.With(requirePerm(authorization.PermSettingsManage)).Get("/ai-automations", h.Settings.GetAIAutomations)
 
 				// Settings management (admin+)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/initialize", h.Settings.Initialize)

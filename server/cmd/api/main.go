@@ -254,6 +254,7 @@ func main() {
 		&model.CRMAutonomySettings{},
 		// CRM Email Sync Settings
 		&model.CRMEmailSyncSettings{},
+		&model.AutomationHealthSnapshot{},
 	); err != nil {
 		slog.Error("failed to auto-migrate", "error", err)
 		os.Exit(1)
@@ -284,6 +285,11 @@ func main() {
 	slog.Info("startup: running MigrateCRMSummarySchema")
 	if err := repository.MigrateCRMSummarySchema(db); err != nil {
 		slog.Error("failed to migrate crm summary schema", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("startup: running MigrateAutomationHealthSchema")
+	if err := repository.MigrateAutomationHealthSchema(db); err != nil {
+		slog.Error("failed to migrate automation health schema", "error", err)
 		os.Exit(1)
 	}
 
@@ -395,6 +401,7 @@ func main() {
 	crmSequenceRepo := repository.NewCRMSequenceRepository(db)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
+	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 
 	crmEmailResolver := crmemail.NewResolver(crmContactRepo)
 	crmEmailBackfillRunner := crmemail.NewBackfillRunner(crmEmailRepo, crmEmailSyncSettingsRepo, crmEmailResolver)
@@ -414,6 +421,8 @@ func main() {
 	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
+	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
+	pmAutomationService.SetHealthObserver(automationHealthService)
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, emailClient, cfg.AppBaseURL)
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
@@ -563,6 +572,7 @@ func main() {
 	goalService := service.NewRewardGoalService(goalRepo)
 	bonusService := service.NewRewardBonusService(bonusRepo, scoringRepo)
 	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
+	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, agentRepo, agentRunRepo, automationHealthRepo, agentService)
 	auditService := service.NewRewardAuditService(bonusRepo)
 	draftService := service.NewRewardDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
@@ -586,7 +596,7 @@ func main() {
 		RewardGoal:         handler.NewRewardGoalHandler(goalService),
 		RewardBonus:        handler.NewRewardBonusHandler(bonusService),
 		RewardFinance:      handler.NewRewardFinanceHandler(bonusService),
-		Settings:           handler.NewSettingsHandler(settingsService),
+		Settings:           handler.NewSettingsHandler(settingsService, automationInventoryService),
 		RewardAudit:        handler.NewRewardAuditHandler(auditService),
 		RewardDraft:        handler.NewRewardDraftHandler(draftService),
 		Invite:             handler.NewInviteHandler(inviteService),

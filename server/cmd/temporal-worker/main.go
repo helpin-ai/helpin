@@ -87,6 +87,7 @@ func main() {
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
+	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -156,8 +157,9 @@ func main() {
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	wsHub := ws.NewHub()
 	wsPublisher := ws.NewPublisher(wsHub)
-	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher)
-	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService)
+	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
+	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
+	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
 
 	// Deal management activities.
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)

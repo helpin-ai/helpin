@@ -1,6 +1,7 @@
 package temporalapp
 
 import (
+	"errors"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -40,8 +41,12 @@ func EmailSyncWorkflow(ctx workflow.Context, input EmailSyncWorkflowInput) error
 
 		var syncResult EmailSyncResult
 		if err := workflow.ExecuteActivity(ctx, "EmailSyncActivities.IncrementalSyncActivity", input.AccountID).Get(ctx, &syncResult); err != nil {
-			// Log but continue — transient failures shouldn't stop the workflow
-			continue
+			// Non-retryable errors (e.g. deleted account) should terminate the workflow.
+			var appErr *temporal.ApplicationError
+			if errors.As(err, &appErr) && !appErr.NonRetryable() {
+				continue
+			}
+			return err
 		}
 	}
 }

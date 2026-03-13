@@ -448,3 +448,54 @@ export interface RewardAuditEntry {
   affected_count: number;
   performed_at: string;
 }
+
+export type AutomationKind = 'built_in_automation' | 'contextual_agent' | 'custom_automation';
+export type AutomationHealthStatus = 'healthy' | 'warning' | 'error' | 'inactive' | 'unknown';
+
+export interface AutomationHealthSummary {
+  status: AutomationHealthStatus;
+  last_seen_at?: string;
+  last_success_at?: string;
+  last_error_at?: string;
+  last_error_message?: string;
+  freshness: string;
+  metrics: Record<string, unknown>;
+}
+
+export interface AutomationInventoryItem {
+  inventory_id: string;
+  catalog_id: string;
+  kind: AutomationKind;
+  module: string;
+  group: string;
+  title: string;
+  description: string;
+  scope_type: string;
+  scope_id: string;
+  scope_label: string;
+  target_types: string[];
+  trigger_modes: string[];
+  config_scope: string;
+  execution_style: string;
+  user_governed: boolean;
+  enabled: boolean;
+  current_write_surface: string;
+  current_write_path?: string;
+  current_run_surface: string;
+  current_run_path?: string;
+  output_surface: string;
+  diagnostics_surface: string;
+  health: AutomationHealthSummary;
+}
+
+export interface AutomationInventoryGroup {
+  id: string;
+  title: string;
+  description: string;
+}
+
+export interface AutomationInventoryResponse {
+  groups: AutomationInventoryGroup[];
+  items: AutomationInventoryItem[];
+  generated_at: string;
+}

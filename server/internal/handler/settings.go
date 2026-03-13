@@ -12,12 +12,13 @@ import (
 
 // SettingsHandler handles workspace settings HTTP requests.
 type SettingsHandler struct {
-	settingsService *service.SettingsService
+	settingsService   *service.SettingsService
+	automationService *service.AutomationInventoryService
 }
 
 // NewSettingsHandler creates a new SettingsHandler.
-func NewSettingsHandler(settingsService *service.SettingsService) *SettingsHandler {
-	return &SettingsHandler{settingsService: settingsService}
+func NewSettingsHandler(settingsService *service.SettingsService, automationService *service.AutomationInventoryService) *SettingsHandler {
+	return &SettingsHandler{settingsService: settingsService, automationService: automationService}
 }
 
 // GetAll handles GET /api/settings?workspace_id=xxx.
@@ -35,6 +36,27 @@ func (h *SettingsHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, cfg)
+}
+
+// GetAIAutomations handles GET /api/settings/ai-automations?workspace_id=xxx.
+func (h *SettingsHandler) GetAIAutomations(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if h.automationService == nil {
+		writeError(w, http.StatusServiceUnavailable, "automation inventory is unavailable")
+		return
+	}
+
+	inventory, err := h.automationService.GetWorkspaceInventory(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, inventory)
 }
 
 // Initialize handles POST /api/settings/initialize.

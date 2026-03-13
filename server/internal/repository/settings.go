@@ -130,6 +130,11 @@ func (r *SettingsRepository) GetWorkspaceSettings(ctx context.Context, workspace
 	return r.getSettings(ctx, workspaceID)
 }
 
+// ListTeams returns teams for a workspace without loading the full settings graph.
+func (r *SettingsRepository) ListTeams(ctx context.Context, workspaceID string) ([]model.WorkspaceTeam, error) {
+	return r.listTeams(ctx, workspaceID)
+}
+
 func (r *SettingsRepository) listTeams(ctx context.Context, workspaceID string) ([]model.WorkspaceTeam, error) {
 	var teams []model.WorkspaceTeam
 	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("name").Find(&teams).Error

@@ -2,6 +2,7 @@ package temporalapp
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -74,6 +75,10 @@ type summaryRefresher interface {
 // CRMSummaryActivities contains summary generation and reconciliation activities.
 type CRMSummaryActivities struct {
 	summaryService summaryRefresher
+	healthObserver interface {
+		ObserveSuccess(ctx context.Context, workspaceID, catalogID, scopeType, scopeID string, metrics model.JSONB) error
+		ObserveFailure(ctx context.Context, workspaceID, catalogID, scopeType, scopeID, message string, metrics model.JSONB) error
+	}
 }
 
 // NewCRMSummaryActivities creates CRM summary Temporal activities.
@@ -81,12 +86,106 @@ func NewCRMSummaryActivities(summaryService summaryRefresher) *CRMSummaryActivit
 	return &CRMSummaryActivities{summaryService: summaryService}
 }
 
+func (a *CRMSummaryActivities) SetHealthObserver(observer interface {
+	ObserveSuccess(ctx context.Context, workspaceID, catalogID, scopeType, scopeID string, metrics model.JSONB) error
+	ObserveFailure(ctx context.Context, workspaceID, catalogID, scopeType, scopeID, message string, metrics model.JSONB) error
+}) *CRMSummaryActivities {
+	a.healthObserver = observer
+	return a
+}
+
 // RefreshSummaryActivity recomputes one CRM summary artifact.
 func (a *CRMSummaryActivities) RefreshSummaryActivity(ctx context.Context, input model.CRMEntitySummaryRefreshInput) (*model.CRMEntitySummaryRefreshResult, error) {
-	return a.summaryService.RefreshSummary(ctx, input)
+	result, err := a.summaryService.RefreshSummary(ctx, input)
+	if err != nil {
+		a.observeFailure(ctx, input.WorkspaceID, summaryCatalogID(input.EntityType), err, model.JSONB{
+			"entity_type": input.EntityType,
+			"entity_id":   input.EntityID,
+		})
+		return result, err
+	}
+	if result == nil {
+		result = &model.CRMEntitySummaryRefreshResult{
+			EntityType: input.EntityType,
+			EntityID:   input.EntityID,
+			Status:     model.CRMEntitySummaryStatusError,
+		}
+	}
+	a.observeSuccess(ctx, input.WorkspaceID, summaryCatalogID(input.EntityType), model.JSONB{
+		"entity_type":         input.EntityType,
+		"entity_id":           input.EntityID,
+		"status":              result.Status,
+		"needs_continue":      result.NeedsContinue,
+		"highlights":          result.Highlights,
+		"source_email_count":  result.SourceEmailCount,
+		"source_signal_count": result.SourceSignalCount,
+	})
+	return result, nil
 }
 
 // DailyReconciliationActivity enqueues refreshes for active deals and recently touched contacts.
 func (a *CRMSummaryActivities) DailyReconciliationActivity(ctx context.Context) (*model.CRMSummaryReconciliationResult, error) {
-	return a.summaryService.RunDailyReconciliation(ctx)
+	result, err := a.summaryService.RunDailyReconciliation(ctx)
+	if err != nil {
+		a.observeFailure(ctx, "", "crm.contact_summary_refresh", err, model.JSONB{"mode": "daily_reconciliation"})
+		a.observeFailure(ctx, "", "crm.deal_summary_refresh", err, model.JSONB{"mode": "daily_reconciliation"})
+		return result, err
+	}
+	if result != nil {
+		metrics := model.JSONB{
+			"mode":            "daily_reconciliation",
+			"contacts_queued": result.ContactsQueued,
+			"deals_queued":    result.DealsQueued,
+		}
+		a.observeSuccess(ctx, "", "crm.contact_summary_refresh", metrics)
+		a.observeSuccess(ctx, "", "crm.deal_summary_refresh", metrics)
+	}
+	return result, nil
+}
+
+func summaryCatalogID(entityType string) string {
+	switch entityType {
+	case "contact":
+		return "crm.contact_summary_refresh"
+	case "deal":
+		return "crm.deal_summary_refresh"
+	default:
+		return ""
+	}
+}
+
+func (a *CRMSummaryActivities) observeSuccess(ctx context.Context, workspaceID, catalogID string, metrics model.JSONB) {
+	if a == nil || a.healthObserver == nil || catalogID == "" {
+		return
+	}
+	scopeID := workspaceID
+	if scopeID == "" {
+		if value, ok := metrics["workspace_id"].(string); ok && value != "" {
+			scopeID = value
+		}
+	}
+	if scopeID == "" {
+		return
+	}
+	_ = a.healthObserver.ObserveSuccess(ctx, scopeID, catalogID, model.AutomationScopeWorkspace, scopeID, metrics)
+}
+
+func (a *CRMSummaryActivities) observeFailure(ctx context.Context, workspaceID, catalogID string, cause error, metrics model.JSONB) {
+	if a == nil || a.healthObserver == nil || catalogID == "" || cause == nil {
+		return
+	}
+	scopeID := workspaceID
+	if scopeID == "" {
+		if value, ok := metrics["workspace_id"].(string); ok && value != "" {
+			scopeID = value
+		}
+	}
+	if scopeID == "" {
+		return
+	}
+	message := cause.Error()
+	if len(message) > 500 {
+		message = fmt.Sprintf("%.500s", message)
+	}
+	_ = a.healthObserver.ObserveFailure(ctx, scopeID, catalogID, model.AutomationScopeWorkspace, scopeID, message, metrics)
 }

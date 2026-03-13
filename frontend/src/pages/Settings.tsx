@@ -9,7 +9,7 @@ import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, FileText, FolderKanban, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
+import { Bot, FileText, FolderKanban, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Sparkles, Tag, Users, type LucideIcon } from 'lucide-react';
 import {
   GeneralTab,
   MembersTab,
@@ -25,11 +25,12 @@ import {
   HelpcenterTab,
   CRMEmailSettingsTab,
   CRMAutonomySettingsTab,
+  AIAutomationsTab,
   ChatGeneralTab,
   ChatAITab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'chat-general' | 'chat-ai' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'system' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -122,6 +123,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     description: 'Configure self-driving deal automation thresholds.',
     icon: Sliders,
     group: 'CRM Settings',
+  },
+  {
+    id: 'ai-automations',
+    label: 'AI & Automations',
+    description: 'Read-only inventory and health for shared built-ins and contextual agents.',
+    icon: Sparkles,
+    group: 'AI & Automations',
   },
   {
     id: 'chat-general',
@@ -346,6 +354,15 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <CRMEmailSettingsTab workspaceId={workspaceId} />;
       case 'crm-autonomy':
         return <CRMAutonomySettingsTab workspaceId={workspaceId} />;
+      case 'ai-automations':
+        if (!canManageSettings) {
+          return (
+            <div className="rounded-none border border-border bg-card px-6 py-8 text-sm text-muted-foreground">
+              You do not have permission to view the shared AI & Automations governance surface.
+            </div>
+          );
+        }
+        return <AIAutomationsTab workspaceId={workspaceId} />;
       case 'chat-general':
         return <ChatGeneralTab workspaceId={workspaceId} />;
       case 'chat-ai':

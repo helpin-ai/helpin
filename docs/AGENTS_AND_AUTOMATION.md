@@ -1,5 +1,14 @@
 # Teampulse: Agents And Automation
 
+This document remains the source of truth for the current explicit agent model.
+
+For the broader cross-app automation control-plane taxonomy introduced in Phase 1c, see:
+
+- `docs/automation-taxonomy-rfc.md`
+- `docs/automation-taxonomy-seed-catalog.md`
+- `docs/automation-taxonomy-migration.md`
+- `docs/automation-taxonomy-product-ia.md`
+
 ## Overview
 
 Teampulse treats agents as opinionated workflow participants inside PM and support.
@@ -72,7 +81,7 @@ Allowed mappings:
 - `product_planner` -> `epic`
 - `engineer` -> `story`
 - `reviewer` -> `story`
-- `support` -> `support_ticket`
+- `support` -> `support_conversation`
 - `human` -> not runnable
 
 This means:

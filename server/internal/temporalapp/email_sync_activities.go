@@ -11,6 +11,7 @@ import (
 
 	"go.temporal.io/sdk/activity"
 	tclient "go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
@@ -69,7 +70,11 @@ func NewEmailSyncActivities(
 func (a *EmailSyncActivities) BackfillEmailsActivity(ctx context.Context, accountID string) (*EmailSyncResult, error) {
 	account, err := a.emailRepo.GetAccountByID(ctx, accountID)
 	if err != nil || account == nil {
-		return nil, fmt.Errorf("account not found: %s", accountID)
+		return nil, temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("account not found: %s", accountID),
+			"ACCOUNT_NOT_FOUND",
+			fmt.Errorf("account not found: %s", accountID),
+		)
 	}
 	if !account.IsActive {
 		return &EmailSyncResult{}, nil
@@ -137,7 +142,11 @@ func (a *EmailSyncActivities) BackfillEmailsActivity(ctx context.Context, accoun
 func (a *EmailSyncActivities) IncrementalSyncActivity(ctx context.Context, accountID string) (*EmailSyncResult, error) {
 	account, err := a.emailRepo.GetAccountByID(ctx, accountID)
 	if err != nil || account == nil {
-		return nil, fmt.Errorf("account not found: %s", accountID)
+		return nil, temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("account not found: %s", accountID),
+			"ACCOUNT_NOT_FOUND",
+			fmt.Errorf("account not found: %s", accountID),
+		)
 	}
 	if !account.IsActive {
 		return &EmailSyncResult{}, nil

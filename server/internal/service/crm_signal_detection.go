@@ -75,12 +75,12 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 
 	// Parse response
 	var detected []DetectedSignal
-	if err := json.Unmarshal([]byte(resp.Content), &detected); err != nil {
+	if err := llm.UnmarshalResponse(resp.Content, &detected); err != nil {
 		// Try wrapping in case response has a wrapper object
 		var wrapper struct {
 			Signals []DetectedSignal `json:"signals"`
 		}
-		if err2 := json.Unmarshal([]byte(resp.Content), &wrapper); err2 != nil {
+		if err2 := llm.UnmarshalResponse(resp.Content, &wrapper); err2 != nil {
 			slog.Error("failed to parse signal detection response", "error", err, "content", resp.Content)
 			return nil, fmt.Errorf("parse detection response: %w", err)
 		}
