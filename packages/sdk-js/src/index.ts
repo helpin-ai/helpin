@@ -33,8 +33,7 @@ function initFromScript(script: HTMLScriptElement): HelpinClient {
   const config: Partial<Config> = {
     key: script.getAttribute('data-key') || undefined,
     trackingHost:
-      script.getAttribute('data-tracking-host') ||
-      'https://client.prod.helpin.ai',
+      script.getAttribute('data-tracking-host') || undefined,
     logLevel: parseLogLevel(script.getAttribute('data-log-level')),
     autoPageview:
       script.getAttribute('data-auto-pageview') === 'false'

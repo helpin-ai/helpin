@@ -77,8 +77,21 @@
         </div>
     </div>
 
-    <!-- Load the SDK from local build -->
-    <script src="/dist/lib.js" data-no-auto-init="true"></script>
+    <!-- Load the SDK using the same loader pattern as production -->
+    <script type="text/javascript">
+      (function () {
+        window.helpin = window.helpin || (function () {
+          (window.helpinQ = window.helpinQ || []).push(arguments);
+        });
+        var t = document.createElement('script'),
+            s = document.getElementsByTagName('script')[0];
+        t.defer = true;
+        t.id = 'helpin-widget';
+        t.setAttribute('data-no-auto-init', 'true');
+        t.src = '/dist/lib.js'; // local build; swap to https://cdn.helpin.ai/lib.js for prod
+        s.parentNode.insertBefore(t, s);
+      })();
+    </script>
 
     <script>
         // Intercept console for the log panel
@@ -126,11 +139,11 @@
             helpin('shutdown');
         }
 
-        // Register callbacks
-        window.helpinQ = window.helpinQ || [];
-        helpinQ.push(['onLoad', function() {
-            addLog('info', 'SDK loaded and ready');
-        }]);
+        // Register callbacks once SDK loads
+        helpin('onShow', function() { addLog('info', 'Widget shown'); });
+        helpin('onHide', function() { addLog('info', 'Widget hidden'); });
+        helpin('onUnreadCountChange', function(count) { addLog('info', 'Unread count:', count); });
+        helpin('onUserEmailSupplied', function(email) { addLog('info', 'User email supplied:', email); });
     </script>
 </body>
 </html>

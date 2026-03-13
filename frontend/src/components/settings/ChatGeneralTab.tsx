@@ -11,7 +11,6 @@ import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, 
 import { useChatSettings, useUpdateChatSettings } from '@/hooks/queries';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { WidgetPreview } from './WidgetPreview';
-import { API_BASE } from '@/lib/api';
 import { CodeBlock } from '@/components/ui/code-block';
 import { BrandColorPicker } from '@/components/pm/ColorPicker';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -176,7 +175,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   }
 
   const widgetKey = data?.widget_key ?? '';
-  const apiHost = API_BASE.replace('/api', '');
   const embedSnippet = `<script type="text/javascript">
   (function () {
     window.helpin = window.helpin || (function () {
@@ -187,8 +185,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-key', '${widgetKey}');
-    t.setAttribute('data-host', '${apiHost}');
-    t.src = '${apiHost}/widget.js';
+    t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
   })();
 </script>`;
@@ -202,16 +199,18 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-key', '${widgetKey}');
-    t.setAttribute('data-host', '${apiHost}');
-    t.src = '${apiHost}/widget.js';
+    t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
   })();
 
   // Identify logged-in users (optional)
-  helpin('identify', {
-    email: 'user@example.com',
-    name: 'Jane Doe',
-    userId: 'your-internal-id'
+  helpin('boot', {
+    key: '${widgetKey}',
+    user: {
+      email: 'user@example.com',
+      name: 'Jane Doe',
+      userId: 'your-internal-id'
+    }
   });
 </script>`;
 
