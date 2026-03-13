@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-eventpipeline-web
+  labels:
+    app: helpin-eventpipeline-web
+  namespace: helpin
+spec:
+  replicas: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: helpin-eventpipeline-web
+  template:
+    metadata:
+      labels:
+        app: helpin-eventpipeline-web
+    spec:
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      # TLS init container commented out — using SCRAM auth for now.
+      # Uncomment when migrating to mTLS.
+      # initContainers:
+      #   - name: secret-to-file
+      #     image: alpine
+      #     command:
+      #       - /bin/sh
+      #       - -c
+      #       - |
+      #         mkdir -p /data/tls/producer && mkdir -p /data/tls/consumer
+      #         echo "$PRODUCER_CA_CRT"  > /data/tls/producer/ca.crt
+      #         echo "$PRODUCER_CLIENT_CRT"  > /data/tls/producer/client.crt
+      #         echo "$PRODUCER_CLIENT_KEY"  > /data/tls/producer/client.key
+      #         echo "$CONSUMER_CA_CRT"  > /data/tls/consumer/ca.crt
+      #         echo "$CONSUMER_CLIENT_CRT"  > /data/tls/consumer/client.crt
+      #         echo "$CONSUMER_CLIENT_KEY"  > /data/tls/consumer/client.key
+      #     env:
+      #       - name: PRODUCER_CA_CRT
+      #         valueFrom:
+      #           secretKeyRef:
+      #             name: helpin-cluster-ca-cert
+      #             key: ca.crt
+      #       - name: PRODUCER_CLIENT_CRT
+      #         valueFrom:
+      #           secretKeyRef:
+      #             name: helpin-eventpipeline-capture
+      #             key: user.crt
+      #       - name: PRODUCER_CLIENT_KEY
+      #         valueFrom:
+      #           secretKeyRef:
+      #             name: helpin-eventpipeline-capture
+      #             key: user.key
+      #       - name: CONSUMER_CA_CRT
+      #         valueFrom:
+      #           secretKeyRef:
+      #             name: helpin-cluster-ca-cert
+      #             key: ca.crt
+      #       - name: CONSUMER_CLIENT_CRT
+      #         valueFrom:
+      #           secretKeyRef:
+      #             name: helpin-eventpipeline-transform
+      #             key: user.crt
+      #       - name: CONSUMER_CLIENT_KEY
+      #         valueFrom:
+      #           secretKeyRef:
+      #             name: helpin-eventpipeline-transform
+      #             key: user.key
+      #     volumeMounts:
+      #       - name: secret-volume
+      #         mountPath: /data/tls
+      containers:
+        - name: main
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:prod-latest
+          command: ["./target/release/events-pipeline"]
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            limits:
+              cpu: "3"
+              memory: 4092Mi
+            requests:
+              cpu: "2"
+              memory: 2Gi
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/liveness
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health/liveness
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          volumeMounts:
+            # - name: secret-volume        # Uncomment for mTLS
+            #   mountPath: /app/data/tls
+            - name: fallback-volume
+              mountPath: /app/data/fallback
+        - name: replay-worker
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:prod-latest
+          command: ["./target/release/replay-worker"]
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+            requests:
+              cpu: "200m"
+              memory: 256Mi
+          volumeMounts:
+            # - name: secret-volume        # Uncomment for mTLS
+            #   mountPath: /app/data/tls
+            - name: fallback-volume
+              mountPath: /app/data/fallback
+      volumes:
+        # - name: secret-volume            # Uncomment for mTLS
+        #   emptyDir: {}
+        - name: fallback-volume
+          emptyDir:
+            sizeLimit: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  namespace: helpin
+  labels:
+    app: helpin-eventpipeline-web
+  name: helpin-eventpipeline-web
+spec:
+  ports:
+    - name: helpin-eventpipeline-web-port
+      port: 80
+      protocol: TCP
+      targetPort: 3000
+    - name: helpin-eventpipeline-metrics-port
+      port: 81
+      protocol: TCP
+      targetPort: 3001
+  selector:
+    app: helpin-eventpipeline-web
+  type: ClusterIP
+status:
+  loadBalancer: {}

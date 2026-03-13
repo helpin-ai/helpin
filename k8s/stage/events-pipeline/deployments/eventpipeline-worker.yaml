@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-eventpipeline-worker
+  labels:
+    app: helpin-eventpipeline-worker
+  namespace: helpin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-eventpipeline-worker
+  template:
+    metadata:
+      labels:
+        app: helpin-eventpipeline-worker
+    spec:
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      # TLS init container commented out — using SCRAM auth for now.
+      # initContainers:
+      #   - name: secret-to-file
+      #     image: alpine
+      #     command: [...]
+      #     env: [... helpin-cluster-ca-cert, helpin-eventpipeline-capture, helpin-eventpipeline-transform ...]
+      #     volumeMounts:
+      #       - name: secret-volume
+      #         mountPath: /data/tls
+      containers:
+        - name: main
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:stage-latest
+          command: ["./target/release/consumer"]
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            limits:
+              cpu: "3"
+              memory: 4092Mi
+            requests:
+              cpu: "2"
+              memory: 2Gi
+          # volumeMounts:                  # Uncomment for mTLS
+          #   - name: secret-volume
+          #     mountPath: /app/data/tls
+      # volumes:                           # Uncomment for mTLS
+      #   - name: secret-volume
+      #     emptyDir: {}

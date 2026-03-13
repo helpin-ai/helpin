@@ -308,28 +308,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               </p>
             </div>
 
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5">
-                  <Key className="h-3.5 w-3.5" />
-                  Regenerate Key
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Regenerate Widget Key?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will invalidate the current widget key. You will need to update the embed snippet on all pages where it is installed.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleRegenerate} disabled={regenerateMutation.isPending}>
-                    {regenerateMutation.isPending ? 'Regenerating...' : 'Regenerate'}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            {/* Regenerate Key button hidden — endpoint preserved for future use */}
           </CardContent>
         </Card>
 

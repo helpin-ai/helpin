@@ -565,7 +565,7 @@ func main() {
 	_ = signalDetectionService // Used by Temporal workers
 
 	orgService := service.NewOrganizationService(orgRepo)
-	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, crmDealService)
+	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, crmDealService, supportInboxService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
 	sprintService := service.NewRewardSprintService(sprintRepo, scoringRepo)
@@ -738,7 +738,7 @@ func main() {
 	var topHandler http.Handler = r
 	if wsHandler != nil {
 		topHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if req.URL.Path == "/api/ws" {
+			if req.URL.Path == "/api/ws" || req.URL.Path == "/widget/ws" {
 				wsHandler.ServeHTTP(w, req)
 				return
 			}

@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -17,6 +18,18 @@ func NewSupportInboxWidgetHandler(supportService *service.SupportInboxService) *
 	return &SupportInboxWidgetHandler{supportService: supportService}
 }
 
+// GetWidgetTokens handles GET /api/internal/widget-tokens.
+// Returns all active widget installations as tokens for the events-pipeline.
+// Protected by INTERNAL_API_SECRET bearer token.
+func (h *SupportInboxWidgetHandler) GetWidgetTokens(w http.ResponseWriter, r *http.Request) {
+	tokens, err := h.supportService.ListWidgetTokens(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to fetch widget tokens")
+		return
+	}
+	writeJSON(w, http.StatusOK, model.WidgetTokensResponse{Tokens: tokens})
+}
+
 // GetConfig handles GET /api/widget/support/config?widget_key=...
 func (h *SupportInboxWidgetHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	widgetKey := r.URL.Query().Get("widget_key")
@@ -26,6 +39,23 @@ func (h *SupportInboxWidgetHandler) GetConfig(w http.ResponseWriter, r *http.Req
 	}
 
 	config, err := h.supportService.GetPublicWidgetConfig(r.Context(), widgetKey)
+	if err != nil || config == nil {
+		writeError(w, http.StatusNotFound, "widget not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, config)
+}
+
+// GetConfigByID handles GET /api/settings/website/{id}
+func (h *SupportInboxWidgetHandler) GetConfigByID(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	config, err := h.supportService.GetPublicWidgetConfigByID(r.Context(), id)
 	if err != nil || config == nil {
 		writeError(w, http.StatusNotFound, "widget not found")
 		return

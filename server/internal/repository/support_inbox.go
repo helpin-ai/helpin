@@ -75,6 +75,18 @@ func (r *SupportInboxInstallationRepository) GetByWidgetKey(ctx context.Context,
 	return &inst, nil
 }
 
+// GetByID returns the installation by its UUID.
+func (r *SupportInboxInstallationRepository) GetByID(ctx context.Context, id string) (*model.SupportWidgetInstallation, error) {
+	var inst model.SupportWidgetInstallation
+	if err := r.db.WithContext(ctx).Where("id = ? AND active = true", id).First(&inst).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get widget by id: %w", err)
+	}
+	return &inst, nil
+}
+
 // Create creates a new installation.
 func (r *SupportInboxInstallationRepository) Create(ctx context.Context, inst *model.SupportWidgetInstallation) error {
 	if err := r.db.WithContext(ctx).Create(inst).Error; err != nil {
@@ -89,6 +101,15 @@ func (r *SupportInboxInstallationRepository) Update(ctx context.Context, inst *m
 		return fmt.Errorf("update widget installation: %w", err)
 	}
 	return nil
+}
+
+// ListAllActive returns all active widget installations across all workspaces.
+func (r *SupportInboxInstallationRepository) ListAllActive(ctx context.Context) ([]model.SupportWidgetInstallation, error) {
+	var installations []model.SupportWidgetInstallation
+	if err := r.db.WithContext(ctx).Where("active = true").Find(&installations).Error; err != nil {
+		return nil, fmt.Errorf("list active installations: %w", err)
+	}
+	return installations, nil
 }
 
 // RegenerateKeys updates just the widget_key and secret_key columns.

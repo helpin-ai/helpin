@@ -1,0 +1,79 @@
+version: '3'
+
+services:
+  # streams: 
+  #   build: 
+  #      context: ./kafka-streams
+  #      dockerfile: Dockerfile
+  #      args:
+  #        DOPPLER_SECRET: "dp.st.dev.oyqqr4sNqMCiCrNoxUMasmcEqL9xYYQrQnDTTjAUWV0"
+  #        APP_RELEASE_VERSION: "1.0.0"
+  # dragonfly:
+  #   image: 'docker.dragonflydb.io/dragonflydb/dragonfly'
+  #   ulimits:
+  #     memlock: -1
+  #   ports:
+  #     - "6379:6379"
+  #   # For better performance, consider `host` mode instead `port` to avoid docker NAT.
+  #   # `host` mode is NOT currently supported in Swarm Mode.
+  #   # https://docs.docker.com/compose/compose-file/compose-file-v3/#network_mode
+  #   # network_mode: "host"
+  #   volumes:
+  #     - dragonflydata:/data
+  # zoo1:
+  #   image: confluentinc/cp-zookeeper:7.3.2
+  #   ports:
+  #     - "2181:2181"
+  #   environment:
+  #     ZOOKEEPER_CLIENT_PORT: 2181
+  #     ZOOKEEPER_SERVER_ID: 1
+  #     ZOOKEEPER_SERVERS: zoo1:2888:3888
+  #   networks:
+  #     - kafka-network
+
+  # kafka-ui:
+  #   container_name: kafka-ui
+  #   image: provectuslabs/kafka-ui:latest
+  #   ports:
+  #     - 8080:8080 # Changed to avoid port clash with akhq
+  #   depends_on:
+  #     - kafka1
+  #   environment:
+  #     KAFKA_CLUSTERS_0_NAME: local
+  #     KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:19092
+  #     DYNAMIC_CONFIG_ENABLED: 'true'
+  #   networks:
+  #     - kafka-network
+
+  # kafka1:
+  #   image: confluentinc/cp-kafka:7.3.2
+  #   ports:
+  #     - "9092:9092"
+  #     - "29092:29092"
+  #   environment:
+  #     KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka1:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
+  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+  #     KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+  #     KAFKA_ZOOKEEPER_CONNECT: "zoo1:2181"
+  #     KAFKA_BROKER_ID: 1
+  #     # KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+  #     # KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+  #     # KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+  #   networks:
+  #     - kafka-network
+  upsert:
+    build: 
+      context: ./eventpipeline-upsert
+      dockerfile: Dockerfile
+      args:
+        DOPPLER_SECRET: "dp.st.dev_upsert_pipeline.plbjmhEsCyH22A7k8Y8iqp0GlJ5xGk4SId0OSntk8P7"
+        APP_RELEASE_VERSION: "1.0.0"
+  
+
+networks:
+  kafka-network:
+    driver: bridge
+
+# volumes:
+#   dragonflydata:

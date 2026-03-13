@@ -1,0 +1,1 @@
+curl http://localhost:3000/api.12e?p_asdas=ferrisisbae -X POST  -e "https://www.facebook.com" -H "Content-Type: application/json" -H "X-Forwarded-For: 95.10.187.240" --data '{"api_key": "ferrisisbae", "event_type": "test", "url":"https://usermaven.com", "user": {"id": "test", "custom":{"plan": "trial"}}}'

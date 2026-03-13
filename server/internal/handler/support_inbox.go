@@ -385,18 +385,17 @@ func (h *SupportInboxHandler) RegenerateWidgetKey(w http.ResponseWriter, r *http
 		return
 	}
 
-	inst, err := h.supportService.RegenerateWidgetKey(r.Context(), workspaceID)
+	inst, settings, err := h.supportService.RegenerateWidgetKey(r.Context(), workspaceID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	settings := model.DefaultSupportInboxSettings()
 	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
 		ID:          inst.ID,
 		WorkspaceID: inst.WorkspaceID,
 		WidgetKey:   inst.WidgetKey,
-		Settings:    settings,
+		Settings:    *settings,
 		Active:      inst.Active,
 		CreatedAt:   inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   inst.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),

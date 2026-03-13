@@ -1,0 +1,63 @@
+# Strimzi KafkaUser — SCRAM-SHA-512 with least-privilege ACLs (stage).
+# Same ACLs as prod, separate user for environment isolation.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: helpin-eventpipeline
+  namespace: eventpipeline
+  labels:
+    strimzi.io/cluster: cluster
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+      - resource:
+          type: topic
+          name: helpin.events.raw
+          patternType: literal
+        operations: [Write, Describe, Create]
+        host: "*"
+      - resource:
+          type: topic
+          name: helpin.events.raw
+          patternType: literal
+        operations: [Read, Describe]
+        host: "*"
+      - resource:
+          type: topic
+          name: helpin.events.enriched
+          patternType: literal
+        operations: [Write, Read, Describe, Create]
+        host: "*"
+      - resource:
+          type: topic
+          name: helpin.events.enriched.dlq
+          patternType: literal
+        operations: [Write, Describe, Create]
+        host: "*"
+      - resource:
+          type: topic
+          name: helpin.events.sessionized
+          patternType: literal
+        operations: [Write, Read, Describe, Create]
+        host: "*"
+      - resource:
+          type: topic
+          name: helpin-eventpipeline-kstreams
+          patternType: prefix
+        operations: [Write, Read, Describe, Create, Delete]
+        host: "*"
+      - resource:
+          type: group
+          name: helpin-
+          patternType: prefix
+        operations: [Read, Describe]
+        host: "*"
+      - resource:
+          type: transactionalId
+          name: helpin-
+          patternType: prefix
+        operations: [Write, Describe]
+        host: "*"

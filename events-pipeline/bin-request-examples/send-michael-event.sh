@@ -1,0 +1,15 @@
+curl 'http://localhost:3000/api.hfb14?p_p3yb2=ferrisisbae&cookie_policy=strict&ip_policy=strict' \
+  -H 'authority: events.usermaven.com' \
+  -H 'accept: */*' \
+  -H 'accept-language: en-GB,en;q=0.9' \
+  -H 'content-type: application/json' \
+  -H 'origin: https://beziehungsweise.cc' \
+  -H 'sec-ch-ua: "Not.A/Brand";v="8", "Chromium";v="114", "Google Chrome";v="114"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "macOS"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: cross-site' \
+  -H "X-Forwarded-For: 95.10.187.240" \
+  --data-raw '[{"event_id":"","user":{"anonymous_id":""},"ids":{},"utc_time":"2023-07-13T07:45:49.266000Z","local_tz_offset":-180,"referer":"","url":"https://beziehungsweise.cc/","page_title":"Marke dich einzigartig | beziehungsweise consulting","doc_path":"/","doc_host":"beziehungsweise.cc","doc_search":"","screen_resolution":"1440x900","vp_size":"1440x352","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36","user_language":"en-GB","doc_encoding":"UTF-8","utm":{},"click_id":{},"api_key":"UMppT4L6UZ","src":"usermaven","event_type":"pageview"}]' \
+  --compressed

@@ -1,0 +1,352 @@
+use std::env;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use serde::Deserialize;
+use tokio::task::spawn;
+use tokio::time::sleep;
+
+#[derive(Deserialize, Debug, PartialEq, Eq, Hash, Clone)]
+pub struct Token {
+    pub id: String,
+    pub client_secret: String,
+    pub server_secret: String,
+    pub origins: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct Tokens {
+    tokens: Vec<Token>,
+}
+
+#[derive(Debug)]
+pub struct HttpTokens {
+    pub tokens: Vec<Token>,
+}
+
+impl HttpTokens {
+    pub async fn new() -> Arc<Mutex<Self>> {
+        tracing::info!("Loading authorization tokens");
+
+        // Retry with backoff on startup (3 attempts: 2s, 5s, 10s)
+        let backoff_delays = [
+            Duration::from_secs(2),
+            Duration::from_secs(5),
+            Duration::from_secs(10),
+        ];
+        let mut tokens: Option<Vec<Token>> = None;
+
+        for (attempt, delay) in backoff_delays.iter().enumerate() {
+            match Self::fetch_tokens().await {
+                Ok(t) if !t.is_empty() => {
+                    tokens = Some(t);
+                    break;
+                }
+                Ok(_) => {
+                    tracing::warn!(
+                        "Token fetch attempt {} returned empty tokens, retrying in {:?}",
+                        attempt + 1,
+                        delay
+                    );
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        "Token fetch attempt {} failed: {:?}, retrying in {:?}",
+                        attempt + 1,
+                        err,
+                        delay
+                    );
+                }
+            }
+            if attempt < backoff_delays.len() - 1 {
+                sleep(*delay).await;
+            }
+        }
+
+        // Last attempt if all retries failed
+        let tokens = match tokens {
+            Some(t) => t,
+            None => match Self::fetch_tokens().await {
+                Ok(t) => {
+                    if t.is_empty() {
+                        tracing::error!(
+                            "All token fetch attempts returned empty. Starting with no tokens."
+                        );
+                    }
+                    t
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "All token fetch attempts failed: {:?}. Starting with no tokens.",
+                        err
+                    );
+                    vec![]
+                }
+            },
+        };
+
+        tracing::info!("Tokens loaded: {:?} tokens", tokens.len());
+        let tokens_list = Arc::new(Mutex::new(HttpTokens { tokens }));
+        let cloned_tokens = Arc::clone(&tokens_list);
+        spawn(Self::update_tokens(cloned_tokens));
+        tokens_list
+    }
+
+    async fn update_tokens(tokens_list: Arc<Mutex<Self>>) {
+        tracing::debug!("Running background task to update tokens every 10 seconds.");
+        loop {
+            sleep(Duration::from_secs(10)).await;
+            let new_tokens = match Self::fetch_tokens().await {
+                Ok(tokens) => tokens,
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to fetch new tokens: {:?}. Keeping stale tokens.",
+                        err
+                    );
+                    continue;
+                }
+            };
+
+            if new_tokens.is_empty() {
+                tracing::warn!("Token fetch returned empty list. Keeping stale tokens.");
+                continue;
+            }
+
+            let mut tokens = match tokens_list.lock() {
+                Ok(tokens) => tokens,
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to acquire lock on tokens: {:?}. Will retry next cycle.",
+                        err
+                    );
+                    continue;
+                }
+            };
+
+            tracing::debug!("Authorization mutex locked, checking if tokens have changed");
+            tracing::info!(
+                "Authorization HTTP tokens updated. Total tokens: {:?}",
+                new_tokens.len()
+            );
+            tokens.tokens = new_tokens;
+        }
+    }
+
+    async fn fetch_tokens() -> Result<Vec<Token>, String> {
+        let url = env::var("HTTP_TOKENS_URL").map_err(|_| {
+            "HTTP_TOKENS_URL env var is not set".to_string()
+        })?;
+
+        let client = reqwest::Client::new();
+        let mut request = client.get(&url);
+
+        // Attach bearer token if INTERNAL_API_SECRET is set
+        if let Ok(secret) = env::var("INTERNAL_API_SECRET") {
+            request = request.bearer_auth(secret);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request to {} failed: {}", url, e))?;
+
+        if !response.status().is_success() {
+            return Err(format!(
+                "HTTP tokens endpoint returned status {}",
+                response.status()
+            ));
+        }
+
+        let tokens_response: Tokens = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse tokens response: {}", e))?;
+
+        tracing::debug!("Fetched {} tokens", tokens_response.tokens.len());
+        Ok(tokens_response.tokens)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FakeHttpTokens {
+        tokens: Vec<Token>,
+    }
+
+    impl FakeHttpTokens {
+        fn new(tokens: Vec<Token>) -> Self {
+            FakeHttpTokens { tokens }
+        }
+
+        async fn fetch_tokens(&self) -> Result<Vec<Token>, ()> {
+            Ok(self.tokens.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_new() {
+        let fake_tokens = vec![
+            Token {
+                id: "1".to_string(),
+                client_secret: "secret".to_string(),
+                server_secret: "secret".to_string(),
+                origins: vec!["localhost".to_string()],
+            },
+        ];
+
+        let fake_http_tokens = FakeHttpTokens::new(fake_tokens.clone());
+
+        let http_tokens = Arc::new(Mutex::new(HttpTokens {
+            tokens: fake_tokens,
+        }));
+
+        let result = fake_http_tokens.fetch_tokens().await.unwrap();
+        assert_eq!(result, http_tokens.lock().unwrap().tokens);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_tokens() {
+        let fake_tokens = vec![
+            Token {
+                id: "1".to_string(),
+                client_secret: "secret".to_string(),
+                server_secret: "secret".to_string(),
+                origins: vec!["localhost".to_string()],
+            },
+        ];
+
+        let fake_http_tokens = FakeHttpTokens::new(fake_tokens.clone());
+
+        let result = fake_http_tokens.fetch_tokens().await.unwrap();
+        assert_eq!(result, fake_tokens);
+    }
+
+    // --- Tests for real fetch_tokens error handling ---
+
+    #[tokio::test]
+    async fn test_fetch_tokens_missing_env_var() {
+        // Ensure HTTP_TOKENS_URL is not set for this test
+        env::remove_var("HTTP_TOKENS_URL");
+
+        let result = HttpTokens::fetch_tokens().await;
+        assert!(result.is_err(), "Should error when HTTP_TOKENS_URL not set");
+        assert!(
+            result.unwrap_err().contains("HTTP_TOKENS_URL"),
+            "Error should mention the missing env var"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_tokens_http_server_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/tokens")
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .create_async()
+            .await;
+
+        env::set_var("HTTP_TOKENS_URL", format!("{}/tokens", server.url()));
+
+        let result = HttpTokens::fetch_tokens().await;
+        assert!(result.is_err(), "Should error on 500 response");
+        assert!(
+            result.unwrap_err().contains("500"),
+            "Error should contain the status code"
+        );
+
+        mock.assert_async().await;
+        env::remove_var("HTTP_TOKENS_URL");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_tokens_http_not_found() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/tokens")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        env::set_var("HTTP_TOKENS_URL", format!("{}/tokens", server.url()));
+
+        let result = HttpTokens::fetch_tokens().await;
+        assert!(result.is_err(), "Should error on 404 response");
+
+        mock.assert_async().await;
+        env::remove_var("HTTP_TOKENS_URL");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_tokens_invalid_json_response() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/tokens")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("this is not json")
+            .create_async()
+            .await;
+
+        env::set_var("HTTP_TOKENS_URL", format!("{}/tokens", server.url()));
+
+        let result = HttpTokens::fetch_tokens().await;
+        assert!(result.is_err(), "Should error on invalid JSON response");
+        assert!(
+            result.unwrap_err().contains("parse"),
+            "Error should mention parsing failure"
+        );
+
+        mock.assert_async().await;
+        env::remove_var("HTTP_TOKENS_URL");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_tokens_success() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/tokens")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"tokens": [{"id": "1", "client_secret": "cs1", "server_secret": "ss1", "origins": ["localhost"]}]}"#)
+            .create_async()
+            .await;
+
+        env::set_var("HTTP_TOKENS_URL", format!("{}/tokens", server.url()));
+
+        let result = HttpTokens::fetch_tokens().await;
+        assert!(result.is_ok(), "Should succeed with valid response");
+        let tokens = result.unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].id, "1");
+        assert_eq!(tokens[0].client_secret, "cs1");
+        assert_eq!(tokens[0].server_secret, "ss1");
+
+        mock.assert_async().await;
+        env::remove_var("HTTP_TOKENS_URL");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_tokens_empty_list() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/tokens")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"tokens": []}"#)
+            .create_async()
+            .await;
+
+        env::set_var("HTTP_TOKENS_URL", format!("{}/tokens", server.url()));
+
+        let result = HttpTokens::fetch_tokens().await;
+        assert!(result.is_ok(), "Empty tokens list is valid");
+        assert_eq!(result.unwrap().len(), 0);
+
+        mock.assert_async().await;
+        env::remove_var("HTTP_TOKENS_URL");
+    }
+}

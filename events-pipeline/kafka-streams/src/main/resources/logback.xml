@@ -1,0 +1,18 @@
+<configuration>
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <logger name="com.eventspipeline" level="INFO" />
+   <logger name="org.apache.kafka" level="INFO"/>
+    <logger name="kafka" level="INFO"/>
+    <logger name="kafka.log.Log" level="INFO"/>
+    <logger name="kafka.cluster" level="INFO"/>
+    <logger name="kafka.server.KafkaServer" level="INFO"/>
+    <logger name="kafka.network.RequestChannel" level="INFO"/>
+  <root level="INFO">
+    <appender-ref ref="STDOUT" />
+  </root>
+</configuration>
