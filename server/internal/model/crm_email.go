@@ -160,3 +160,80 @@ type CRMEmailMessageListFilters struct {
 	DealID         *string
 	Direction      *string
 }
+
+// CRMEmailSyncError captures the last sync failure recorded for a mailbox.
+type CRMEmailSyncError struct {
+	Operation string `json:"operation"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+}
+
+// CRMEmailSyncCycleStats captures aggregate stats for the most recent sync cycle.
+type CRMEmailSyncCycleStats struct {
+	Mode                string     `json:"mode"`
+	StartedAt           *time.Time `json:"started_at"`
+	CompletedAt         *time.Time `json:"completed_at"`
+	MessagesSeen        int        `json:"messages_seen"`
+	MessagesStored      int        `json:"messages_stored"`
+	DuplicatesSkipped   int        `json:"duplicates_skipped"`
+	FilteredSkipped     int        `json:"filtered_skipped"`
+	InternalSkipped     int        `json:"internal_skipped"`
+	ContactsCreated     int        `json:"contacts_created"`
+	AssociationsWritten int        `json:"associations_written"`
+	ThreadsTouched      int        `json:"threads_touched"`
+	RecoveryTriggered   bool       `json:"recovery_triggered"`
+}
+
+// CRMEmailSyncDiagnostics is the normalized read model derived from sync_state.
+type CRMEmailSyncDiagnostics struct {
+	Status              string                  `json:"status"`
+	Phase               string                  `json:"phase"`
+	LastAttemptAt       *time.Time              `json:"last_attempt_at"`
+	LastSuccessAt       *time.Time              `json:"last_success_at"`
+	LastFailureAt       *time.Time              `json:"last_failure_at"`
+	ConsecutiveFailures int                     `json:"consecutive_failures"`
+	LastHistoryID       *string                 `json:"last_history_id"`
+	LastError           *CRMEmailSyncError      `json:"last_error"`
+	LastCycle           *CRMEmailSyncCycleStats `json:"last_cycle"`
+}
+
+// CRMEmailSyncedDataCounts summarizes stored mailbox records.
+type CRMEmailSyncedDataCounts struct {
+	Threads        int64 `json:"threads"`
+	Messages       int64 `json:"messages"`
+	CalendarEvents int64 `json:"calendar_events"`
+}
+
+// CRMEmailAssociationHealth summarizes email association consistency.
+type CRMEmailAssociationHealth struct {
+	MessagesMissingAssociations int64 `json:"messages_missing_associations"`
+	ThreadsWithEmptyContactIDs  int64 `json:"threads_with_empty_contact_ids"`
+}
+
+// CRMEmailAccountDiagnostics is the admin diagnostics read model for a mailbox.
+type CRMEmailAccountDiagnostics struct {
+	AccountID              string                    `json:"account_id"`
+	WorkspaceID            string                    `json:"workspace_id"`
+	MemberID               string                    `json:"member_id"`
+	Provider               string                    `json:"provider"`
+	EmailAddress           string                    `json:"email_address"`
+	NormalizedEmailAddress *string                   `json:"normalized_email_address"`
+	AccountStatus          string                    `json:"account_status"`
+	IsActive               bool                      `json:"is_active"`
+	DisconnectedAt         *time.Time                `json:"disconnected_at"`
+	LastSyncedAt           *time.Time                `json:"last_synced_at"`
+	LastHistoryID          *string                   `json:"last_history_id"`
+	HasSyncedData          bool                      `json:"has_synced_data"`
+	Sync                   CRMEmailSyncDiagnostics   `json:"sync"`
+	Counts                 CRMEmailSyncedDataCounts  `json:"counts"`
+	AssociationHealth      CRMEmailAssociationHealth `json:"association_health"`
+}
+
+// CRMEmailRebuildAssociationsResult summarizes the association repair job.
+type CRMEmailRebuildAssociationsResult struct {
+	MessagesScanned     int `json:"messages_scanned"`
+	MessagesRepaired    int `json:"messages_repaired"`
+	AssociationsWritten int `json:"associations_written"`
+	ThreadsRefreshed    int `json:"threads_refreshed"`
+	ContactsCreated     int `json:"contacts_created"`
+}

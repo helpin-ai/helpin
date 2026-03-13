@@ -6,6 +6,22 @@ import { useBuyerSignals, useHealthScores } from '@/hooks/queries/useCRM';
 import { Badge } from '@/components/ui/badge';
 import { Activity, Heart } from 'lucide-react';
 import { useTitle } from '@/hooks/useTitle';
+import type { CRMBuyerSignal } from '@/lib/crmTypes';
+
+function formatSignalSource(signal: CRMBuyerSignal) {
+  switch (signal.source_type) {
+    case 'email':
+      return 'Email';
+    case 'meeting':
+      return 'Meeting';
+    case 'support':
+      return 'Support';
+    case 'note':
+      return 'Note';
+    default:
+      return 'Manual';
+  }
+}
 
 export function InsightsPage() {
   useTitle('CRM Insights');
@@ -44,18 +60,35 @@ export function InsightsPage() {
                 <div className="space-y-2">
                   {signals.slice(0, 10).map((signal) => (
                     <div key={signal.id} className="rounded-md border p-2.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="outline" className="text-xs capitalize">
                             {signal.signal_type.replace(/_/g, ' ')}
                           </Badge>
-                          <span className="text-xs text-muted-foreground">{signal.source_type}</span>
+                          <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+                            {formatSignalSource(signal)}
+                          </Badge>
+                          {signal.metadata?.message_direction ? (
+                            <span className="text-xs capitalize text-muted-foreground">{signal.metadata.message_direction}</span>
+                          ) : null}
                         </div>
                         <span className="text-xs text-muted-foreground">{Math.round(signal.confidence * 100)}%</span>
                       </div>
                       {signal.summary && (
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{signal.summary}</p>
+                        <p className="mt-1 text-sm text-foreground">{signal.summary}</p>
                       )}
+                      {signal.evidence_excerpt ? (
+                        <p className="mt-1 line-clamp-3 rounded-sm border-l-2 border-border/70 pl-2 text-xs italic text-muted-foreground">
+                          "{signal.evidence_excerpt}"
+                        </p>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                        <span>{new Date(signal.detected_at).toLocaleString()}</span>
+                        {typeof signal.metadata?.participant_count === 'number' ? (
+                          <span>{signal.metadata.participant_count} participants</span>
+                        ) : null}
+                        {signal.source_thread_id ? <span>Thread linked</span> : null}
+                      </div>
                     </div>
                   ))}
                 </div>

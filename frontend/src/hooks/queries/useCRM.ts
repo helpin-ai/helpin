@@ -13,6 +13,7 @@ import {
   crmCalendarService,
   crmEnrichmentService,
   crmSignalService,
+  crmSummaryService,
   crmHealthScoreService,
   crmSuggestionService,
   crmSequenceService,
@@ -810,6 +811,30 @@ export function useCreateBuyerSignal(wsId: string) {
   return useMutation({
     mutationFn: async (data: CreateCRMBuyerSignalRequest) => unwrap(await crmSignalService.create(data)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }) },
+  })
+}
+
+export function useContactSummary(wsId: string, contactId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.contactSummary(wsId, contactId),
+    queryFn: async () => unwrap(await crmSummaryService.getForContact(wsId, contactId)),
+    enabled: !!wsId && !!contactId,
+    refetchInterval: (query) => {
+      const summary = query.state.data as { status?: string } | null | undefined
+      return summary?.status === 'pending_refresh' || summary?.status === 'stale' ? 15000 : false
+    },
+  })
+}
+
+export function useDealSummary(wsId: string, dealId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.dealSummary(wsId, dealId),
+    queryFn: async () => unwrap(await crmSummaryService.getForDeal(wsId, dealId)),
+    enabled: !!wsId && !!dealId,
+    refetchInterval: (query) => {
+      const summary = query.state.data as { status?: string } | null | undefined
+      return summary?.status === 'pending_refresh' || summary?.status === 'stale' ? 15000 : false
+    },
   })
 }
 

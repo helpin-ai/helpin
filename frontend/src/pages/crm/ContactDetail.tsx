@@ -38,6 +38,7 @@ import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { CalendarEvents } from '@/components/crm/CalendarEvents';
 import { BuyerSignals } from '@/components/crm/BuyerSignals';
+import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { EnrichmentCard } from '@/components/crm/EnrichmentCard';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { useTitle } from '@/hooks/useTitle';
@@ -319,6 +320,15 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">{contact.display_id}</p>
+
+              <Separator className="my-6" />
+
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Summary</h3>
+                <div className="mt-3">
+                  <EntitySummaryCard workspaceId={wsId} contactId={contactId} />
+                </div>
+              </div>
 
               <Separator className="my-6" />
 

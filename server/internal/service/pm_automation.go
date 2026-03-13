@@ -21,6 +21,7 @@ type PMAutomationService struct {
 	activityService *PMActivityService
 	wsPublisher     *websocket.Publisher
 	logger          *slog.Logger
+	healthObserver  AutomationHealthObserver
 }
 
 // NewPMAutomationService creates a new PMAutomationService.
@@ -43,6 +44,11 @@ func NewPMAutomationService(
 		wsPublisher:     wsPublisher,
 		logger:          slog.Default().With("service", "pm_automation"),
 	}
+}
+
+func (s *PMAutomationService) SetHealthObserver(observer AutomationHealthObserver) *PMAutomationService {
+	s.healthObserver = observer
+	return s
 }
 
 // List returns all automations for a workspace.
@@ -109,32 +115,69 @@ func (s *PMAutomationService) OnStoryStateChange(ctx context.Context, story *mod
 	// Only check epic automations relevant to the new state type
 	if newState.StateType == model.PMStateTypeStarted {
 		if auto, _ := s.automationRepo.GetByType(ctx, story.WorkspaceID, model.PMAutomationTypeEpicAutoStart, nil); auto != nil && auto.Enabled {
-			s.handleEpicAutoStart(ctx, *auto, epicID, newState)
+			mutated, err := s.handleEpicAutoStart(ctx, *auto, epicID, newState)
+			if err != nil {
+				s.observeFailure(ctx, story.WorkspaceID, "pm.epic_auto_start", model.AutomationScopeWorkspace, story.WorkspaceID, err, model.JSONB{
+					"epic_id":   epicID,
+					"story_id":  story.ID,
+					"state_id":  newState.ID,
+					"mutated":   false,
+					"triggered": true,
+				})
+			} else {
+				s.observeSuccess(ctx, story.WorkspaceID, "pm.epic_auto_start", model.AutomationScopeWorkspace, story.WorkspaceID, model.JSONB{
+					"epic_id":   epicID,
+					"story_id":  story.ID,
+					"state_id":  newState.ID,
+					"mutated":   mutated,
+					"triggered": true,
+				})
+			}
 		}
 	} else if newState.StateType == model.PMStateTypeDone {
 		if auto, _ := s.automationRepo.GetByType(ctx, story.WorkspaceID, model.PMAutomationTypeEpicAutoComplete, nil); auto != nil && auto.Enabled {
-			s.handleEpicAutoComplete(ctx, *auto, epicID, newState)
+			mutated, err := s.handleEpicAutoComplete(ctx, *auto, epicID, newState)
+			if err != nil {
+				s.observeFailure(ctx, story.WorkspaceID, "pm.epic_auto_complete", model.AutomationScopeWorkspace, story.WorkspaceID, err, model.JSONB{
+					"epic_id":   epicID,
+					"story_id":  story.ID,
+					"state_id":  newState.ID,
+					"mutated":   false,
+					"triggered": true,
+				})
+			} else {
+				s.observeSuccess(ctx, story.WorkspaceID, "pm.epic_auto_complete", model.AutomationScopeWorkspace, story.WorkspaceID, model.JSONB{
+					"epic_id":   epicID,
+					"story_id":  story.ID,
+					"state_id":  newState.ID,
+					"mutated":   mutated,
+					"triggered": true,
+				})
+			}
 		}
 	}
 }
 
-func (s *PMAutomationService) handleEpicAutoStart(ctx context.Context, auto model.PMAutomation, epicID string, newState *model.PMWorkflowState) {
+func (s *PMAutomationService) handleEpicAutoStart(ctx context.Context, auto model.PMAutomation, epicID string, newState *model.PMWorkflowState) (bool, error) {
 	if newState.StateType != model.PMStateTypeStarted {
-		return
+		return false, nil
 	}
 	if auto.ConfigStateID == nil || *auto.ConfigStateID == "" {
-		return
+		return false, nil
 	}
 
 	epicWithStats, err := s.epicRepo.GetWithStats(ctx, epicID)
 	if err != nil || epicWithStats == nil {
-		return
+		if err != nil {
+			return false, err
+		}
+		return false, nil
 	}
 	epic := epicWithStats.Epic
 
 	// Only auto-start if epic hasn't started yet
 	if epic.Started {
-		return
+		return false, nil
 	}
 
 	// Resolve the target epic state to verify it exists
@@ -145,38 +188,42 @@ func (s *PMAutomationService) handleEpicAutoStart(ctx context.Context, auto mode
 	epic.StartedAt = &now
 
 	if err := s.epicRepo.Update(ctx, &epic); err != nil {
-		return
+		return false, err
 	}
 
 	if err := s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, nil, "auto-started by automation", nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for epic auto-start", "error", err, "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID})
+	return true, nil
 }
 
-func (s *PMAutomationService) handleEpicAutoComplete(ctx context.Context, auto model.PMAutomation, epicID string, newState *model.PMWorkflowState) {
+func (s *PMAutomationService) handleEpicAutoComplete(ctx context.Context, auto model.PMAutomation, epicID string, newState *model.PMWorkflowState) (bool, error) {
 	if newState.StateType != model.PMStateTypeDone {
-		return
+		return false, nil
 	}
 	if auto.ConfigStateID == nil || *auto.ConfigStateID == "" {
-		return
+		return false, nil
 	}
 
 	epicWithStats, err := s.epicRepo.GetWithStats(ctx, epicID)
 	if err != nil || epicWithStats == nil {
-		return
+		if err != nil {
+			return false, err
+		}
+		return false, nil
 	}
 	epic := epicWithStats.Epic
 	stats := epicWithStats.Stats
 
 	// Only auto-complete if ALL stories are done
 	if stats.StoryCount == 0 || stats.DoneStoryCount != stats.StoryCount {
-		return
+		return false, nil
 	}
 
 	// Already completed
 	if epic.Completed {
-		return
+		return false, nil
 	}
 
 	now := time.Now().UTC()
@@ -189,13 +236,14 @@ func (s *PMAutomationService) handleEpicAutoComplete(ctx context.Context, auto m
 	}
 
 	if err := s.epicRepo.Update(ctx, &epic); err != nil {
-		return
+		return false, err
 	}
 
 	if err := s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, nil, "auto-completed by automation", nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for epic auto-complete", "error", err, "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID})
+	return true, nil
 }
 
 // RunSprintAutomations runs background sprint automations.
@@ -219,6 +267,11 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 			continue
 		}
 		teamID := *cfg.TeamID
+		metrics := model.JSONB{
+			"evaluated":     true,
+			"created_count": 0,
+		}
+		failed := false
 		targetCount := *cfg.ConfigInt
 		weekLength := *cfg.ConfigInt2
 		startDay := 1 // Monday default
@@ -236,6 +289,8 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 		sprints, err := s.sprintRepo.List(ctx, cfg.WorkspaceID, filters)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "failed to list sprints for auto-create", "error", err, "workspace_id", cfg.WorkspaceID, "team_id", teamID)
+			s.observeFailure(ctx, cfg.WorkspaceID, "pm.sprint_auto_create", model.AutomationScopeTeam, teamID, err, metrics)
+			failed = true
 			continue
 		}
 
@@ -278,6 +333,8 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 			overlap, err := s.sprintRepo.HasDateOverlap(ctx, cfg.WorkspaceID, &teamID, nextStart, endDate, nil)
 			if err != nil {
 				s.logger.ErrorContext(ctx, "failed to check sprint date overlap", "error", err, "workspace_id", cfg.WorkspaceID, "team_id", teamID)
+				s.observeFailure(ctx, cfg.WorkspaceID, "pm.sprint_auto_create", model.AutomationScopeTeam, teamID, err, metrics)
+				failed = true
 				break
 			}
 			if overlap {
@@ -298,10 +355,16 @@ func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {
 			}
 			if err := s.sprintRepo.Create(ctx, sprint); err != nil {
 				s.logger.ErrorContext(ctx, "failed to auto-create sprint", "error", err, "workspace_id", cfg.WorkspaceID, "team_id", teamID)
+				s.observeFailure(ctx, cfg.WorkspaceID, "pm.sprint_auto_create", model.AutomationScopeTeam, teamID, err, metrics)
+				failed = true
 				break
 			}
+			metrics["created_count"] = metrics["created_count"].(int) + 1
 			s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "sprint", EntityID: sprint.ID, WorkspaceID: cfg.WorkspaceID})
 			nextStart = endDate.AddDate(0, 0, 1)
+		}
+		if !failed {
+			s.observeSuccess(ctx, cfg.WorkspaceID, "pm.sprint_auto_create", model.AutomationScopeTeam, teamID, metrics)
 		}
 	}
 }
@@ -321,12 +384,19 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 			continue
 		}
 		teamID := *cfg.TeamID
+		metrics := model.JSONB{
+			"evaluated":     true,
+			"stories_moved": 0,
+		}
+		failed := false
 
 		// Find sprints that just ended (within catch window)
 		filters := model.PMSprintListFilters{TeamID: &teamID}
 		sprints, err := s.sprintRepo.List(ctx, cfg.WorkspaceID, filters)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "failed to list sprints for move-unfinished", "error", err, "workspace_id", cfg.WorkspaceID, "team_id", teamID)
+			s.observeFailure(ctx, cfg.WorkspaceID, "pm.sprint_move_unfinished", model.AutomationScopeTeam, teamID, err, metrics)
+			failed = true
 			continue
 		}
 
@@ -375,6 +445,8 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 		stories, err := s.sprintRepo.ListStories(ctx, endedSprint.ID)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "failed to list stories for move-unfinished", "error", err, "sprint_id", endedSprint.ID, "workspace_id", cfg.WorkspaceID)
+			s.observeFailure(ctx, cfg.WorkspaceID, "pm.sprint_move_unfinished", model.AutomationScopeTeam, teamID, err, metrics)
+			failed = true
 			continue
 		}
 
@@ -390,7 +462,11 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 				s.logger.ErrorContext(ctx, "failed to move unfinished story to next sprint", "error", err, "story_id", story.ID, "next_sprint_id", nextSprint.ID)
 				continue
 			}
+			metrics["stories_moved"] = metrics["stories_moved"].(int) + 1
 			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "story", EntityID: story.ID, WorkspaceID: cfg.WorkspaceID})
+		}
+		if !failed {
+			s.observeSuccess(ctx, cfg.WorkspaceID, "pm.sprint_move_unfinished", model.AutomationScopeTeam, teamID, metrics)
 		}
 	}
 }
@@ -413,5 +489,23 @@ func isValidAutomationType(t string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func (s *PMAutomationService) observeSuccess(ctx context.Context, workspaceID, catalogID, scopeType, scopeID string, metrics model.JSONB) {
+	if s == nil || s.healthObserver == nil {
+		return
+	}
+	if err := s.healthObserver.ObserveSuccess(ctx, workspaceID, catalogID, scopeType, scopeID, metrics); err != nil {
+		s.logger.WarnContext(ctx, "failed to record automation health success", "error", err, "catalog_id", catalogID, "workspace_id", workspaceID)
+	}
+}
+
+func (s *PMAutomationService) observeFailure(ctx context.Context, workspaceID, catalogID, scopeType, scopeID string, cause error, metrics model.JSONB) {
+	if s == nil || s.healthObserver == nil || cause == nil {
+		return
+	}
+	if err := s.healthObserver.ObserveFailure(ctx, workspaceID, catalogID, scopeType, scopeID, cause.Error(), metrics); err != nil {
+		s.logger.WarnContext(ctx, "failed to record automation health failure", "error", err, "catalog_id", catalogID, "workspace_id", workspaceID)
 	}
 }

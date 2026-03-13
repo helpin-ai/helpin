@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -28,6 +30,34 @@ func (r *CRMSignalRepository) CreateSignal(ctx context.Context, signal *model.CR
 		return fmt.Errorf("create buyer signal: %w", err)
 	}
 	return nil
+}
+
+// CreateSignalIfAbsent inserts a buyer signal once for a given source and signal type.
+func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *model.CRMBuyerSignal) (bool, error) {
+	if signal == nil {
+		return false, nil
+	}
+	var existing model.CRMBuyerSignal
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", signal.WorkspaceID).
+		Where("source_type = ?", signal.SourceType).
+		Where("source_id = ?", signal.SourceID).
+		Where("signal_type = ?", signal.SignalType).
+		First(&existing).Error
+	if err == nil {
+		return false, nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, fmt.Errorf("lookup buyer signal by source: %w", err)
+	}
+
+	if err := r.db.WithContext(ctx).Create(signal).Error; err != nil {
+		if isDuplicateKeyError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("create buyer signal if absent: %w", err)
+	}
+	return true, nil
 }
 
 // ListSignals returns buyer signals with optional filters.
@@ -66,6 +96,33 @@ func (r *CRMSignalRepository) DeleteSignal(ctx context.Context, id string) error
 		return fmt.Errorf("delete buyer signal: %w", err)
 	}
 	return nil
+}
+
+// HasRecentSignalForThread returns true when a same-type signal already exists
+// for the same thread inside the provided window.
+func (r *CRMSignalRepository) HasRecentSignalForThread(ctx context.Context, workspaceID, threadID, signalType string, since time.Time) (bool, error) {
+	if workspaceID == "" || threadID == "" || signalType == "" {
+		return false, nil
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMBuyerSignal{}).
+		Where("workspace_id = ?", workspaceID).
+		Where("source_thread_id = ?", threadID).
+		Where("signal_type = ?", signalType).
+		Where("detected_at >= ?", since).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("count recent thread signals: %w", err)
+	}
+	return count > 0, nil
+}
+
+func isDuplicateKeyError(err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "duplicate key") || strings.Contains(message, "unique constraint")
 }
 
 // ── Deal Health Scores ──

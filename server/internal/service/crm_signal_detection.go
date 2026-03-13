@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/llm"
@@ -12,17 +13,27 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
+const repeatedThreadSignalWindow = 24 * time.Hour
+
 // SignalDetectionService uses LLM to detect buyer signals from various sources.
 type SignalDetectionService struct {
-	llmProvider llm.Provider
-	signalRepo  *repository.CRMSignalRepository
+	llmProvider    llm.Provider
+	signalRepo     *repository.CRMSignalRepository
+	summaryRefresh interface {
+		RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
+		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
+	}
 }
 
 // NewSignalDetectionService creates a new signal detection service.
-func NewSignalDetectionService(llmProvider llm.Provider, signalRepo *repository.CRMSignalRepository) *SignalDetectionService {
+func NewSignalDetectionService(llmProvider llm.Provider, signalRepo *repository.CRMSignalRepository, summaryRefresh interface {
+	RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
+	RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
+}) *SignalDetectionService {
 	return &SignalDetectionService{
-		llmProvider: llmProvider,
-		signalRepo:  signalRepo,
+		llmProvider:    llmProvider,
+		signalRepo:     signalRepo,
+		summaryRefresh: summaryRefresh,
 	}
 }
 
@@ -64,48 +75,63 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 
 	// Parse response
 	var detected []DetectedSignal
-	if err := json.Unmarshal([]byte(resp.Content), &detected); err != nil {
+	if err := llm.UnmarshalResponse(resp.Content, &detected); err != nil {
 		// Try wrapping in case response has a wrapper object
 		var wrapper struct {
 			Signals []DetectedSignal `json:"signals"`
 		}
-		if err2 := json.Unmarshal([]byte(resp.Content), &wrapper); err2 != nil {
+		if err2 := llm.UnmarshalResponse(resp.Content, &wrapper); err2 != nil {
 			slog.Error("failed to parse signal detection response", "error", err, "content", resp.Content)
 			return nil, fmt.Errorf("parse detection response: %w", err)
 		}
 		detected = wrapper.Signals
 	}
 
-	// Create buyer signal records
+	payload := payloads[0]
+
+	// Create buyer signal records.
 	var signals []model.CRMBuyerSignal
 	for _, d := range detected {
 		if d.Confidence < 0.3 {
 			continue // Skip very low confidence
 		}
 
-		// Find the matching payload for context
-		var payload *model.SignalSourcePayload
-		for i := range payloads {
-			payload = &payloads[i]
-			break // Use first payload as default context
+		if payload.SourceThreadID != nil && *payload.SourceThreadID != "" {
+			exists, err := s.signalRepo.HasRecentSignalForThread(ctx, payload.WorkspaceID, *payload.SourceThreadID, d.SignalType, time.Now().Add(-repeatedThreadSignalWindow))
+			if err != nil {
+				return nil, err
+			}
+			if exists {
+				slog.Info("skipping repeated thread-level buyer signal", "workspace_id", payload.WorkspaceID, "thread_id", *payload.SourceThreadID, "signal_type", d.SignalType)
+				continue
+			}
 		}
 
 		signal := model.CRMBuyerSignal{
-			WorkspaceID: payload.WorkspaceID,
-			ContactID:   payload.ContactID,
-			DealID:      payload.DealID,
-			SignalType:  d.SignalType,
-			SourceType:  payload.SourceType,
-			SourceID:    &payload.SourceID,
-			Summary:     d.Summary,
-			Confidence:  d.Confidence,
-			DetectedAt:  time.Now(),
+			WorkspaceID:     payload.WorkspaceID,
+			ContactID:       payload.ContactID,
+			DealID:          payload.DealID,
+			SignalType:      d.SignalType,
+			SourceType:      payload.SourceType,
+			SourceID:        &payload.SourceID,
+			SourceThreadID:  payload.SourceThreadID,
+			Summary:         d.Summary,
+			EvidenceExcerpt: optionalExcerpt(d.RawEvidence),
+			Metadata:        buildSignalMetadata(payload),
+			Confidence:      d.Confidence,
+			DetectedAt:      time.Now(),
 		}
 
-		if err := s.signalRepo.CreateSignal(ctx, &signal); err != nil {
+		created, err := s.signalRepo.CreateSignalIfAbsent(ctx, &signal)
+		if err != nil {
 			slog.Error("failed to store detected signal", "error", err, "signal_type", d.SignalType)
 			continue
 		}
+		if !created {
+			continue
+		}
+
+		s.requestSummaryRefresh(ctx, signal)
 
 		signals = append(signals, signal)
 	}
@@ -139,3 +165,42 @@ Example response:
   {"signal_type": "buying_intent", "summary": "Prospect asked about enterprise pricing and requested a demo call", "confidence": 0.92, "raw_evidence": "Can you send me the pricing for your enterprise plan? We'd like to schedule a demo next week."},
   {"signal_type": "budget_signal", "summary": "Budget approved for Q2 tooling purchase", "confidence": 0.85, "raw_evidence": "Our team has budget approved for Q2 to invest in a new project management tool."}
 ]`
+
+func optionalExcerpt(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if len(value) > 500 {
+		value = value[:500]
+	}
+	return &value
+}
+
+func buildSignalMetadata(payload model.SignalSourcePayload) model.JSONB {
+	metadata := model.JSONB{
+		"message_direction": payload.Direction,
+		"participant_count": len(payload.Participants),
+		"ingestion_version": "phase1a",
+	}
+	if payload.SourceThreadExternalID != nil && *payload.SourceThreadExternalID != "" {
+		metadata["thread_external_id"] = *payload.SourceThreadExternalID
+	}
+	return metadata
+}
+
+func (s *SignalDetectionService) requestSummaryRefresh(ctx context.Context, signal model.CRMBuyerSignal) {
+	if s == nil || s.summaryRefresh == nil {
+		return
+	}
+	if signal.ContactID != nil && *signal.ContactID != "" {
+		if err := s.summaryRefresh.RequestContactRefresh(ctx, signal.WorkspaceID, *signal.ContactID); err != nil {
+			slog.ErrorContext(ctx, "failed to request contact summary refresh from detected signal", "error", err, "workspace_id", signal.WorkspaceID, "contact_id", *signal.ContactID, "signal_id", signal.ID)
+		}
+	}
+	if signal.DealID != nil && *signal.DealID != "" {
+		if err := s.summaryRefresh.RequestDealRefresh(ctx, signal.WorkspaceID, *signal.DealID); err != nil {
+			slog.ErrorContext(ctx, "failed to request deal summary refresh from detected signal", "error", err, "workspace_id", signal.WorkspaceID, "deal_id", *signal.DealID, "signal_id", signal.ID)
+		}
+	}
+}

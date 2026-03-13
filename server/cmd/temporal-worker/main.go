@@ -82,6 +82,12 @@ func main() {
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
+	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
+	crmDealRepo := repository.NewCRMDealRepository(db)
+	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
+	crmSignalRepo := repository.NewCRMSignalRepository(db)
+	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
+	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -137,10 +143,8 @@ func main() {
 
 	// Email sync activities (may be nil if Gmail not configured).
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
-	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo)
 
 	// Signal detection activities.
-	crmSignalRepo := repository.NewCRMSignalRepository(db)
 	var llmProvider llm.Provider
 	switch cfg.CRMLLMProvider {
 	case "openai":
@@ -148,26 +152,25 @@ func main() {
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
-	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo)
+	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
+	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
+	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	wsHub := ws.NewHub()
 	wsPublisher := ws.NewPublisher(wsHub)
-	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher)
+	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
+	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
+	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
 
 	// Deal management activities.
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
-	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
-	crmDealRepo := repository.NewCRMDealRepository(db)
-	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	dealMgmtActivities := temporalapp.NewDealManagementActivities(dealAutomationService)
 
-	_ = crmCompanyRepo // available for future enrichment activities
-
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, dealMgmtActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -191,7 +194,7 @@ func main() {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, dealMgmtActivities *temporalapp.DealManagementActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 	}
@@ -223,6 +226,18 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 		w.RegisterActivityWithOptions(signalActivities.NotifySignalsActivity, activity.RegisterOptions{
 			Name: "SignalDetectionActivities.NotifySignalsActivity",
+		})
+	}
+
+	// Register CRM summary workflows and activities.
+	w.RegisterWorkflow(temporalapp.CRMEntitySummaryWorkflow)
+	w.RegisterWorkflow(temporalapp.CRMSummaryDailyReconciliationWorkflow)
+	if summaryActivities != nil {
+		w.RegisterActivityWithOptions(summaryActivities.RefreshSummaryActivity, activity.RegisterOptions{
+			Name: "CRMSummaryActivities.RefreshSummaryActivity",
+		})
+		w.RegisterActivityWithOptions(summaryActivities.DailyReconciliationActivity, activity.RegisterOptions{
+			Name: "CRMSummaryActivities.DailyReconciliationActivity",
 		})
 	}
 

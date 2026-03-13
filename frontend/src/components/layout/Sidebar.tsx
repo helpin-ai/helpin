@@ -34,6 +34,7 @@ import {
   Settings,
   Settings2,
   Sliders,
+  Sparkles,
   SquareKanban,
   Sun,
   Tag,
@@ -122,7 +123,7 @@ function saveExpandedTeams(wsId: string, teams: Set<string>) {
 }
 
 // ── Settings group collapse persistence ──
-const COLLAPSIBLE_SETTINGS_GROUPS = new Set(['Project Settings', 'Support & Docs', 'CRM Settings', 'Data']);
+const COLLAPSIBLE_SETTINGS_GROUPS = new Set(['Project Settings', 'Support & Docs', 'CRM Settings', 'AI & Automations', 'Data']);
 
 function getCollapsedSettingsGroups(): Set<string> {
   try {
@@ -372,7 +373,7 @@ export function Sidebar() {
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
   const initials = getInitials(user?.full_name || user?.email);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { isAdmin } = usePermissions(access);
+  const { isAdmin, canManageSettings } = usePermissions(access);
 
   const { teams: allTeams } = useWorkspaceTeams(workspaceId);
   const myTeamMemberships = access?.team_memberships ?? [];
@@ -582,6 +583,12 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/crm-autonomy`, label: 'Autonomy', icon: Sliders },
         ],
       },
+      ...(canManageSettings ? [{
+        label: 'AI & Automations',
+        items: [
+          { link: `/w/${wsSlug}/settings/ai-automations`, label: 'Inventory & Health', icon: Sparkles },
+        ],
+      }] : []),
       {
         label: 'Data',
         items: [

@@ -45,6 +45,7 @@ import type {
   CreateCRMEnrichmentRequest,
   CRMBuyerSignal,
   CreateCRMBuyerSignalRequest,
+  CRMEntitySummary,
   CRMDealHealthScore,
   CreateCRMDealHealthScoreRequest,
   CRMSuggestion,
@@ -285,6 +286,13 @@ export const crmSignalService = {
     api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listByDeal: (workspaceId: string, dealId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+};
+
+export const crmSummaryService = {
+  getForContact: (workspaceId: string, contactId: string) =>
+    api.get<CRMEntitySummary | null>(`/crm/contacts/${contactId}/summary${qs(workspaceId)}`),
+  getForDeal: (workspaceId: string, dealId: string) =>
+    api.get<CRMEntitySummary | null>(`/crm/deals/${dealId}/summary${qs(workspaceId)}`),
 };
 
 export const crmHealthScoreService = {
