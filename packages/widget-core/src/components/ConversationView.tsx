@@ -3,6 +3,7 @@ import { useState } from 'preact/hooks';
 import type { Message, WidgetConfig } from '../types';
 import { MessageList } from './MessageList';
 import { ComposeBar } from './ComposeBar';
+import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 interface ConversationViewProps {
   config: WidgetConfig;
@@ -11,10 +12,6 @@ interface ConversationViewProps {
   onBack: () => void;
   onClose?: () => void;
 }
-
-const BACK_ICON = 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z';
-const MORE_ICON = 'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z';
-const CLOSE_ICON = 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
 
 export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   config,
@@ -59,9 +56,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           onClick={onBack}
           aria-label="Back"
         >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <path d={BACK_ICON} />
-          </svg>
+          <ChevronLeftIcon size={20} />
         </button>
 
         <div className="helpin-conversation-brand">
@@ -87,9 +82,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
             className="helpin-conversation-header-btn"
             aria-label="More options"
           >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d={MORE_ICON} />
-            </svg>
+            <MoreVerticalIcon size={20} />
           </button>
           {onClose && (
             <button
@@ -98,9 +91,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
               onClick={onClose}
               aria-label="Close"
             >
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <path d={CLOSE_ICON} />
-              </svg>
+              <XIcon size={20} />
             </button>
           )}
         </div>
