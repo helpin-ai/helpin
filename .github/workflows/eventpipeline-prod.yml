@@ -120,5 +120,6 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add k8s/prod/events-pipeline/
             git commit -m "chore: update helpin events-pipeline prod images to ${{ needs.version.outputs.tag }} [skip ci]"
+            git pull --rebase origin main
             git push origin main
           fi

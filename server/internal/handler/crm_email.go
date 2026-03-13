@@ -116,6 +116,48 @@ func (h *CRMEmailHandler) PurgeAccountData(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "email account and synced history permanently deleted"})
 }
 
+// GetAccountDiagnostics handles GET /api/crm/email/accounts/{id}/diagnostics.
+func (h *CRMEmailHandler) GetAccountDiagnostics(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	actor := authorization.GetActor(r.Context())
+	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
+
+	diagnostics, err := h.emailService.GetAccountDiagnostics(r.Context(), id, isAdmin)
+	if err != nil {
+		switch err.Error() {
+		case "not authorized to view email account diagnostics":
+			writeError(w, http.StatusForbidden, err.Error())
+		case "email account not found":
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, diagnostics)
+}
+
+// RebuildAssociations handles POST /api/crm/email/accounts/{id}/maintenance/rebuild-associations.
+func (h *CRMEmailHandler) RebuildAssociations(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	actor := authorization.GetActor(r.Context())
+	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
+
+	result, err := h.emailService.RebuildAccountAssociations(r.Context(), id, isAdmin)
+	if err != nil {
+		switch err.Error() {
+		case "not authorized to rebuild email associations":
+			writeError(w, http.StatusForbidden, err.Error())
+		case "email account not found":
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // OAuthCallback handles POST /api/crm/email/accounts/{id}/oauth-callback (stub).
 func (h *CRMEmailHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

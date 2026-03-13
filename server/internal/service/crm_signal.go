@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -11,12 +12,19 @@ import (
 
 // CRMSignalService contains CRM signal and deal health business logic.
 type CRMSignalService struct {
-	signalRepo *repository.CRMSignalRepository
+	signalRepo     *repository.CRMSignalRepository
+	summaryRefresh interface {
+		RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
+		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
+	}
 }
 
 // NewCRMSignalService creates a new CRMSignalService.
-func NewCRMSignalService(signalRepo *repository.CRMSignalRepository) *CRMSignalService {
-	return &CRMSignalService{signalRepo: signalRepo}
+func NewCRMSignalService(signalRepo *repository.CRMSignalRepository, summaryRefresh interface {
+	RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
+	RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
+}) *CRMSignalService {
+	return &CRMSignalService{signalRepo: signalRepo, summaryRefresh: summaryRefresh}
 }
 
 // ── Buyer Signals ──
@@ -46,20 +54,24 @@ func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRM
 	}
 
 	signal := &model.CRMBuyerSignal{
-		WorkspaceID: req.WorkspaceID,
-		ContactID:   req.ContactID,
-		DealID:      req.DealID,
-		SignalType:  req.SignalType,
-		SourceType:  sourceType,
-		SourceID:    req.SourceID,
-		Summary:     req.Summary,
-		Confidence:  confidence,
-		DetectedAt:  time.Now(),
+		WorkspaceID:     req.WorkspaceID,
+		ContactID:       req.ContactID,
+		DealID:          req.DealID,
+		SignalType:      req.SignalType,
+		SourceType:      sourceType,
+		SourceID:        req.SourceID,
+		SourceThreadID:  req.SourceThreadID,
+		Summary:         req.Summary,
+		EvidenceExcerpt: req.EvidenceExcerpt,
+		Metadata:        model.JSONB(req.Metadata),
+		Confidence:      confidence,
+		DetectedAt:      time.Now(),
 	}
 
 	if err := s.signalRepo.CreateSignal(ctx, signal); err != nil {
 		return nil, err
 	}
+	s.requestSummaryRefresh(ctx, signal)
 	return signal, nil
 }
 
@@ -114,4 +126,20 @@ func (s *CRMSignalService) CreateHealthScore(ctx context.Context, req model.Crea
 		return nil, err
 	}
 	return score, nil
+}
+
+func (s *CRMSignalService) requestSummaryRefresh(ctx context.Context, signal *model.CRMBuyerSignal) {
+	if s == nil || s.summaryRefresh == nil || signal == nil {
+		return
+	}
+	if signal.ContactID != nil && *signal.ContactID != "" {
+		if err := s.summaryRefresh.RequestContactRefresh(ctx, signal.WorkspaceID, *signal.ContactID); err != nil {
+			slog.ErrorContext(ctx, "failed to request contact summary refresh from manual crm signal", "error", err, "workspace_id", signal.WorkspaceID, "contact_id", *signal.ContactID, "signal_id", signal.ID)
+		}
+	}
+	if signal.DealID != nil && *signal.DealID != "" {
+		if err := s.summaryRefresh.RequestDealRefresh(ctx, signal.WorkspaceID, *signal.DealID); err != nil {
+			slog.ErrorContext(ctx, "failed to request deal summary refresh from manual crm signal", "error", err, "workspace_id", signal.WorkspaceID, "deal_id", *signal.DealID, "signal_id", signal.ID)
+		}
+	}
 }

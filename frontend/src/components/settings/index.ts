@@ -13,5 +13,6 @@ export { ImportTab } from './ImportTab';
 export { HelpcenterTab } from './HelpcenterTab';
 export { CRMEmailSettingsTab } from './CRMEmailSettingsTab';
 export { CRMAutonomySettingsTab } from './CRMAutonomySettingsTab';
+export { AIAutomationsTab } from './AIAutomationsTab';
 export { ChatGeneralTab } from './ChatGeneralTab';
 export { ChatAITab } from './ChatAITab';

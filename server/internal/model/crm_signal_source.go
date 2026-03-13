@@ -1,20 +1,33 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
+
+// SignalParticipant captures a normalized source participant.
+type SignalParticipant struct {
+	Email string `json:"email"`
+	Name  string `json:"name,omitempty"`
+	Role  string `json:"role"`
+}
 
 // SignalSourcePayload is a unified format for signal detection inputs.
 type SignalSourcePayload struct {
-	SourceType    string    `json:"source_type"`    // "email", "meeting", "support"
-	SourceID      string    `json:"source_id"`
-	WorkspaceID   string    `json:"workspace_id"`
-	ContactID     *string   `json:"contact_id"`
-	DealID        *string   `json:"deal_id"`
-	Subject       string    `json:"subject"`
-	Body          string    `json:"body"`
-	Participants  []string  `json:"participants"`
-	Direction     string    `json:"direction"` // "inbound", "outbound", "bilateral"
-	OccurredAt    time.Time `json:"occurred_at"`
-	ThreadContext string    `json:"thread_context"` // preceding messages, truncated
+	SourceType             string              `json:"source_type"` // "email", "meeting", "support"
+	SourceID               string              `json:"source_id"`
+	SourceThreadID         *string             `json:"source_thread_id,omitempty"`
+	SourceThreadExternalID *string             `json:"source_thread_external_id,omitempty"`
+	WorkspaceID            string              `json:"workspace_id"`
+	ContactID              *string             `json:"contact_id"`
+	DealID                 *string             `json:"deal_id"`
+	Subject                string              `json:"subject"`
+	Body                   string              `json:"body"`
+	Participants           []SignalParticipant `json:"participants"`
+	Direction              string              `json:"direction"` // "inbound", "outbound", "bilateral"
+	OccurredAt             time.Time           `json:"occurred_at"`
+	ThreadContext          string              `json:"thread_context"` // preceding messages, truncated
 }
 
 // PayloadFromEmail builds a signal source payload from an email message.
@@ -31,19 +44,37 @@ func PayloadFromEmail(msg *CRMEmailMessage, threadSubject string) SignalSourcePa
 		body = body[:3000]
 	}
 
-	participants := []string{msg.FromAddress}
+	participants := []SignalParticipant{
+		{
+			Email: msg.FromAddress,
+			Name:  stringValue(msg.FromName),
+			Role:  CRMEmailParticipantRoleFrom,
+		},
+	}
+	for _, email := range parseAddressJSONArray(msg.ToAddresses) {
+		participants = append(participants, SignalParticipant{Email: email, Role: CRMEmailParticipantRoleTo})
+	}
+	for _, email := range parseAddressJSONArray(msg.CCAddresses) {
+		participants = append(participants, SignalParticipant{Email: email, Role: CRMEmailParticipantRoleCC})
+	}
+
+	subject := threadSubject
+	if subject == "" {
+		subject = msg.Subject
+	}
 
 	return SignalSourcePayload{
-		SourceType:   CRMSignalSourceEmail,
-		SourceID:     msg.ID,
-		WorkspaceID:  msg.WorkspaceID,
-		ContactID:    msg.ContactID,
-		DealID:       msg.DealID,
-		Subject:      msg.Subject,
-		Body:         body,
-		Participants: participants,
-		Direction:    msg.Direction,
-		OccurredAt:   msg.SentAt,
+		SourceType:     CRMSignalSourceEmail,
+		SourceID:       msg.ID,
+		SourceThreadID: msg.ThreadID,
+		WorkspaceID:    msg.WorkspaceID,
+		ContactID:      msg.ContactID,
+		DealID:         msg.DealID,
+		Subject:        subject,
+		Body:           body,
+		Participants:   participants,
+		Direction:      msg.Direction,
+		OccurredAt:     msg.SentAt,
 	}
 }
 
@@ -96,4 +127,30 @@ func PayloadFromSupportMessage(msg *SupportMessage, ticket *SupportConversation)
 		Direction:   direction,
 		OccurredAt:  msg.CreatedAt,
 	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func parseAddressJSONArray(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
 }

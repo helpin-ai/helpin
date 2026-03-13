@@ -69,7 +69,7 @@ spec:
       #         mountPath: /data/tls
       containers:
         - name: main
-          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-v0.1.1
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-v0.1.4
           command: ["./target/release/consumer"]
           envFrom:
             - secretRef:

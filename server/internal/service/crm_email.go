@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
+	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
@@ -88,10 +89,18 @@ type CRMEmailService struct {
 	gmailSync        gmailMailboxClient
 	syncRunner       emailSyncWorkflowRunner
 	resolver         *crmemail.Resolver
+	signalIngestion  *crmsignal.IngestionService
+	summaryRefresh   interface {
+		RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
+		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
+	}
 }
 
 // NewCRMEmailService creates a new CRMEmailService.
-func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository, workspaceRepo *repository.WorkspaceRepository, syncSettingsRepo *repository.CRMEmailSyncSettingsRepository, oauthClient *oauth.GmailOAuthClient, encryptionKey []byte, gmailSync *sync.GmailSyncClient, temporalClient tclient.Client) *CRMEmailService {
+func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *repository.CRMContactRepository, workspaceRepo *repository.WorkspaceRepository, syncSettingsRepo *repository.CRMEmailSyncSettingsRepository, oauthClient *oauth.GmailOAuthClient, encryptionKey []byte, gmailSync *sync.GmailSyncClient, temporalClient tclient.Client, summaryRefresh interface {
+	RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
+	RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
+}) *CRMEmailService {
 	return &CRMEmailService{
 		emailRepo:        emailRepo,
 		contactRepo:      contactRepo,
@@ -102,6 +111,8 @@ func NewCRMEmailService(emailRepo *repository.CRMEmailRepository, contactRepo *r
 		gmailSync:        gmailSync,
 		syncRunner:       &temporalEmailSyncWorkflowRunner{client: temporalClient},
 		resolver:         crmemail.NewResolver(contactRepo),
+		signalIngestion:  crmsignal.NewIngestionService(emailRepo, crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation)),
+		summaryRefresh:   summaryRefresh,
 	}
 }
 
@@ -139,6 +150,52 @@ func (s *CRMEmailService) GetAccount(ctx context.Context, id string) (*model.CRM
 	return account, nil
 }
 
+// GetAccountDiagnostics returns the admin diagnostics read model for a mailbox.
+func (s *CRMEmailService) GetAccountDiagnostics(ctx context.Context, id string, isAdmin bool) (*model.CRMEmailAccountDiagnostics, error) {
+	if !isAdmin {
+		return nil, fmt.Errorf("not authorized to view email account diagnostics")
+	}
+
+	account, err := s.GetAccount(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	counts, err := s.emailRepo.GetAccountRecordCounts(ctx, account.ID)
+	if err != nil {
+		return nil, err
+	}
+	messagesMissing, err := s.emailRepo.CountMessagesMissingAssociationsByAccount(ctx, account.ID)
+	if err != nil {
+		return nil, err
+	}
+	threadsWithEmptyCache, err := s.emailRepo.CountThreadsWithEmptyContactIDsByAccount(ctx, account.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.CRMEmailAccountDiagnostics{
+		AccountID:              account.ID,
+		WorkspaceID:            account.WorkspaceID,
+		MemberID:               account.MemberID,
+		Provider:               account.Provider,
+		EmailAddress:           account.EmailAddress,
+		NormalizedEmailAddress: account.NormalizedEmailAddress,
+		AccountStatus:          account.Status,
+		IsActive:               account.IsActive,
+		DisconnectedAt:         account.DisconnectedAt,
+		LastSyncedAt:           account.LastSyncedAt,
+		LastHistoryID:          account.LastHistoryID,
+		HasSyncedData:          account.HasSyncedData,
+		Sync:                   crmemail.DecodeSyncDiagnostics(account.SyncState, account.LastHistoryID),
+		Counts:                 counts,
+		AssociationHealth: model.CRMEmailAssociationHealth{
+			MessagesMissingAssociations: messagesMissing,
+			ThreadsWithEmptyContactIDs:  threadsWithEmptyCache,
+		},
+	}, nil
+}
+
 // CreateAccount creates a new email account (OAuth stub).
 func (s *CRMEmailService) CreateAccount(ctx context.Context, req model.CreateCRMEmailAccountRequest) (*model.CRMEmailAccount, error) {
 	if req.WorkspaceID == "" || req.EmailAddress == "" || req.Provider == "" {
@@ -156,7 +213,7 @@ func (s *CRMEmailService) CreateAccount(ctx context.Context, req model.CreateCRM
 		NormalizedEmailAddress: optionalStringPtr(normalizeMailboxEmail(req.EmailAddress)),
 		IsActive:               true,
 		Status:                 model.CRMEmailAccountStatusConnected,
-		SyncState:              model.JSONB{"status": model.CRMEmailAccountStatusConnected},
+		SyncState:              crmemail.MarkConnectedIdle(nil, ""),
 	}
 
 	if err := s.emailRepo.CreateAccount(ctx, account); err != nil {
@@ -191,7 +248,9 @@ func (s *CRMEmailService) DeleteAccount(ctx context.Context, id string, userID s
 	account.IsActive = false
 	account.Status = model.CRMEmailAccountStatusDisconnected
 	account.DisconnectedAt = &now
-	account.SyncState = withSyncStatus(account.SyncState, model.CRMEmailAccountStatusDisconnected)
+	account.SyncState = crmemail.MarkDisconnected(account.SyncState, stringValue(account.LastHistoryID), now)
+
+	slog.InfoContext(ctx, "disconnected crm email mailbox", "workspace_id", account.WorkspaceID, "account_id", account.ID, "provider", account.Provider)
 
 	return s.emailRepo.UpdateAccount(ctx, account)
 }
@@ -213,6 +272,8 @@ func (s *CRMEmailService) PurgeAccountData(ctx context.Context, id string, isAdm
 	if err := s.cancelEmailSync(ctx, account.ID); err != nil {
 		slog.WarnContext(ctx, "failed to cancel email sync during purge", "error", err, "account_id", account.ID)
 	}
+
+	slog.InfoContext(ctx, "purging crm email mailbox data", "workspace_id", account.WorkspaceID, "account_id", account.ID, "provider", account.Provider)
 
 	return s.emailRepo.DeleteAccount(ctx, id)
 }
@@ -258,7 +319,7 @@ func (s *CRMEmailService) InitiateOAuth(ctx context.Context, workspaceID, member
 		IsActive:     false,
 		Status:       model.CRMEmailAccountStatusPendingOAuth,
 		OAuthState:   &state,
-		SyncState:    model.JSONB{"status": model.CRMEmailAccountStatusPendingOAuth},
+		SyncState:    model.JSONB{"status": model.CRMEmailAccountStatusPendingOAuth, "phase": crmemail.SyncPhaseIdle},
 	}
 
 	if err := s.emailRepo.CreateAccount(ctx, account); err != nil {
@@ -340,10 +401,7 @@ func (s *CRMEmailService) CompleteOAuth(ctx context.Context, state, code string)
 	if (target.LastHistoryID == nil || *target.LastHistoryID == "") && strings.TrimSpace(profile.HistoryID) != "" {
 		target.LastHistoryID = optionalStringPtr(strings.TrimSpace(profile.HistoryID))
 	}
-	target.SyncState = withSyncStatus(target.SyncState, model.CRMEmailAccountStatusConnected)
-	if target.LastHistoryID != nil && *target.LastHistoryID != "" {
-		target.SyncState["last_history_id"] = *target.LastHistoryID
-	}
+	target.SyncState = crmemail.MarkConnectedIdle(target.SyncState, stringValue(target.LastHistoryID))
 
 	if err := s.emailRepo.UpdateAccount(ctx, target); err != nil {
 		return "", fmt.Errorf("update account: %w", err)
@@ -367,6 +425,88 @@ func (s *CRMEmailService) CompleteOAuth(ctx context.Context, state, code string)
 	}
 
 	return ws.Slug, nil
+}
+
+// RebuildAccountAssociations repairs missing email-contact associations for a mailbox.
+func (s *CRMEmailService) RebuildAccountAssociations(ctx context.Context, id string, isAdmin bool) (*model.CRMEmailRebuildAssociationsResult, error) {
+	if !isAdmin {
+		return nil, fmt.Errorf("not authorized to rebuild email associations")
+	}
+
+	account, err := s.GetAccount(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	settings, err := s.GetEmailSyncSettings(ctx, account.WorkspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("load email sync settings: %w", err)
+	}
+
+	slog.InfoContext(ctx, "rebuilding crm email associations", "workspace_id", account.WorkspaceID, "account_id", account.ID, "provider", account.Provider)
+
+	const batchSize = 200
+	result := &model.CRMEmailRebuildAssociationsResult{}
+	refreshedThreads := make(map[string]struct{})
+
+	for {
+		messages, err := s.emailRepo.ListMessagesMissingAssociationsByAccount(ctx, account.ID, batchSize)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to list crm email messages for association rebuild", "error", err, "account_id", account.ID)
+			return nil, err
+		}
+		if len(messages) == 0 {
+			break
+		}
+
+		for i := range messages {
+			message := messages[i]
+			result.MessagesScanned++
+
+			resolution, err := s.resolver.Resolve(ctx, crmemail.ResolveInput{
+				WorkspaceID: account.WorkspaceID,
+				Direction:   message.Direction,
+				Settings:    settings,
+				SelfEmails:  []string{account.EmailAddress},
+				From: crmemail.Participant{
+					Email: message.FromAddress,
+					Name:  stringValue(message.FromName),
+					Role:  model.CRMEmailParticipantRoleFrom,
+				},
+				To: participantsFromAddresses(crmemail.ParseAddressJSONArray(message.ToAddresses), model.CRMEmailParticipantRoleTo),
+				CC: participantsFromAddresses(crmemail.ParseAddressJSONArray(message.CCAddresses), model.CRMEmailParticipantRoleCC),
+			})
+			if err != nil {
+				slog.ErrorContext(ctx, "failed to resolve crm email participants during rebuild", "error", err, "account_id", account.ID, "message_id", message.ID)
+				return nil, fmt.Errorf("resolve message participants: %w", err)
+			}
+
+			associations := cloneAssociationsForMessage(message.ID, resolution.Associations)
+			if err := s.emailRepo.ReplaceMessageContacts(ctx, message.ID, resolution.PrimaryContactID, associations); err != nil {
+				slog.ErrorContext(ctx, "failed to rewrite crm email associations", "error", err, "account_id", account.ID, "message_id", message.ID)
+				return nil, fmt.Errorf("replace message contacts: %w", err)
+			}
+
+			result.MessagesRepaired++
+			result.AssociationsWritten += len(associations)
+			result.ContactsCreated += resolution.ContactsCreated
+			if message.ThreadID != nil && *message.ThreadID != "" {
+				refreshedThreads[*message.ThreadID] = struct{}{}
+			}
+		}
+	}
+
+	for threadID := range refreshedThreads {
+		if err := s.emailRepo.RefreshThreadContactIDs(ctx, threadID); err != nil {
+			slog.ErrorContext(ctx, "failed to refresh crm email thread cache during rebuild", "error", err, "account_id", account.ID, "thread_id", threadID)
+			return nil, fmt.Errorf("refresh thread contact ids: %w", err)
+		}
+		result.ThreadsRefreshed++
+	}
+
+	slog.InfoContext(ctx, "completed crm email association rebuild", "workspace_id", account.WorkspaceID, "account_id", account.ID, "messages_scanned", result.MessagesScanned, "messages_repaired", result.MessagesRepaired, "associations_written", result.AssociationsWritten, "threads_refreshed", result.ThreadsRefreshed, "contacts_created", result.ContactsCreated)
+
+	return result, nil
 }
 
 // SendEmail sends an email via Gmail API and stores the outbound message.
@@ -467,6 +607,8 @@ func (s *CRMEmailService) SendEmail(ctx context.Context, accountID string, to, c
 			slog.ErrorContext(ctx, "failed to refresh sent email thread contacts", "error", err, "thread_id", *threadID)
 		}
 	}
+	s.enqueueBuyerSignalDetection(ctx, message.ID)
+	s.requestSummaryRefreshForMessage(ctx, message, "manual_send")
 
 	slog.InfoContext(ctx, "email sent", "account_id", accountID, "message_id", sendResult.ID, "to", to)
 
@@ -576,6 +718,8 @@ func (s *CRMEmailService) CreateMessage(ctx context.Context, req model.CreateCRM
 			slog.ErrorContext(ctx, "failed to refresh manual message thread contacts", "error", err, "thread_id", *req.ThreadID)
 		}
 	}
+	s.enqueueBuyerSignalDetection(ctx, message.ID)
+	s.requestSummaryRefreshForMessage(ctx, message, "manual_create")
 	return message, nil
 }
 
@@ -694,14 +838,6 @@ func normalizeMailboxEmail(value string) string {
 	return crmemail.NormalizeEmailAddress(value)
 }
 
-func withSyncStatus(syncState model.JSONB, status string) model.JSONB {
-	if syncState == nil {
-		syncState = model.JSONB{}
-	}
-	syncState["status"] = status
-	return syncState
-}
-
 func emailSyncWorkflowID(accountID string) string {
 	return "email-sync-" + accountID
 }
@@ -738,12 +874,49 @@ func (s *CRMEmailService) populateHasSyncedData(ctx context.Context, accounts []
 	return nil
 }
 
+func (s *CRMEmailService) enqueueBuyerSignalDetection(ctx context.Context, messageID string) {
+	if s == nil || s.signalIngestion == nil || messageID == "" {
+		return
+	}
+	if _, err := s.signalIngestion.EnqueueEmailMessage(ctx, messageID); err != nil {
+		slog.ErrorContext(ctx, "failed to enqueue crm buyer signal detection", "error", err, "message_id", messageID)
+	}
+}
+
+func (s *CRMEmailService) requestSummaryRefreshForMessage(ctx context.Context, message *model.CRMEmailMessage, source string) {
+	if s == nil || s.summaryRefresh == nil || message == nil {
+		return
+	}
+
+	if message.DealID != nil && *message.DealID != "" {
+		if err := s.summaryRefresh.RequestDealRefresh(ctx, message.WorkspaceID, *message.DealID); err != nil {
+			slog.ErrorContext(ctx, "failed to request deal summary refresh from crm email message", "error", err, "workspace_id", message.WorkspaceID, "deal_id", *message.DealID, "message_id", message.ID, "source", source)
+		}
+	}
+
+	if len(message.ContactIDs) == 1 {
+		if err := s.summaryRefresh.RequestContactRefresh(ctx, message.WorkspaceID, message.ContactIDs[0]); err != nil {
+			slog.ErrorContext(ctx, "failed to request contact summary refresh from crm email message", "error", err, "workspace_id", message.WorkspaceID, "contact_id", message.ContactIDs[0], "message_id", message.ID, "source", source)
+		}
+		return
+	}
+
+	if message.DealID == nil && len(message.ContactIDs) > 1 {
+		slog.InfoContext(ctx, "skipping contact summary refresh for multi-contact crm email without deal", "workspace_id", message.WorkspaceID, "message_id", message.ID, "contact_count", len(message.ContactIDs), "source", source)
+	}
+}
+
 // ── Email Sync Settings ──
 
 // GetEmailSyncSettings returns the email sync settings for a workspace, falling back to defaults.
 func (s *CRMEmailService) GetEmailSyncSettings(ctx context.Context, workspaceID string) (*model.CRMEmailSyncSettings, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if s.syncSettingsRepo == nil {
+		defaults := model.DefaultEmailSyncSettings()
+		defaults.WorkspaceID = workspaceID
+		return &defaults, nil
 	}
 	settings, err := s.syncSettingsRepo.GetByWorkspace(ctx, workspaceID)
 	if err != nil {
@@ -761,6 +934,9 @@ func (s *CRMEmailService) GetEmailSyncSettings(ctx context.Context, workspaceID 
 func (s *CRMEmailService) UpdateEmailSyncSettings(ctx context.Context, workspaceID string, req model.UpdateCRMEmailSyncSettingsRequest) (*model.CRMEmailSyncSettings, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if s.syncSettingsRepo == nil {
+		return nil, fmt.Errorf("email sync settings repository not configured")
 	}
 
 	settings, err := s.syncSettingsRepo.GetByWorkspace(ctx, workspaceID)
