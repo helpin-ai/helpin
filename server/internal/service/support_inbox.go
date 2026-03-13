@@ -733,13 +733,20 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 }
 
 // RegenerateWidgetKey generates a new widget key + secret key.
+// If no installation exists yet, one is created with default settings.
 func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspaceID string) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error) {
 	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// No installation yet — create one (handles edge cases where seeding was missed).
 	if inst == nil {
-		return nil, nil, fmt.Errorf("no widget installation found for this workspace")
+		inst, settings, err := s.GetInstallation(ctx, workspaceID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create widget installation: %w", err)
+		}
+		return inst, settings, nil
 	}
 
 	newWidgetKey, err := generateSecureToken(16)
