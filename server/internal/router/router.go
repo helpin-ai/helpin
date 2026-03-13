@@ -104,6 +104,23 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	})
 	r.Get("/health", h.Health.Check)
 
+	// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
+	// Mounted at /widget (outside /api) so the ingress path /widget/* works directly.
+	r.Route("/widget", func(r chi.Router) {
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins:   []string{"*"},
+			AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+			AllowedHeaders:   []string{"Content-Type"},
+			AllowCredentials: false,
+			MaxAge:           3600,
+		}))
+		r.Get("/config", h.SupportInboxWidget.GetConfig)
+		r.Post("/session", h.SupportInboxWidget.CreateSession)
+		r.Post("/messages", h.SupportInboxWidget.SendMessage)
+		r.Get("/messages", h.SupportInboxWidget.GetMessages)
+		r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
+	})
+
 	r.Route("/api", func(r chi.Router) {
 		// ---- Public routes ----
 		r.Post("/auth/signup", h.Auth.Signup)
