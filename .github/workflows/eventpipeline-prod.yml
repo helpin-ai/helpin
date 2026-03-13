@@ -83,7 +83,7 @@ jobs:
       - name: Build and push KStreams image
         uses: docker/build-push-action@v5
         with:
-          context: events-pipeline/kstreams
+          context: events-pipeline/kafka-streams
           push: true
           tags: |
             ${{ env.KSTREAMS_IMAGE }}:prod-latest
