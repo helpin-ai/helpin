@@ -83,9 +83,11 @@ public class SessionEventWindowStream {
                 config.put("sasl.mechanism", saslMechanism);
 
                 String saslUsername = getEnvironmentVariable("KAFKA_SASL_USERNAME");
+                if (saslUsername == null) saslUsername = getEnvironmentVariable("KAFKA_USERNAME");
                 String saslPassword = getEnvironmentVariable("KAFKA_SASL_PASSWORD");
+                if (saslPassword == null) saslPassword = getEnvironmentVariable("KAFKA_PASSWORD");
                 if (saslUsername == null || saslPassword == null) {
-                    throw new RuntimeException("KAFKA_SASL_USERNAME and KAFKA_SASL_PASSWORD are required for SASL auth.");
+                    throw new RuntimeException("KAFKA_SASL_USERNAME/KAFKA_USERNAME and KAFKA_SASL_PASSWORD/KAFKA_PASSWORD are required for SASL auth.");
                 }
                 String jaasConfig = "org.apache.kafka.common.security.scram.ScramLoginModule required "
                         + "username=\"" + saslUsername + "\" "
