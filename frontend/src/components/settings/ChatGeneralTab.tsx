@@ -7,8 +7,8 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon } from 'lucide-react';
-import { useChatSettings, useUpdateChatSettings } from '@/hooks/queries';
+import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound } from 'lucide-react';
+import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey } from '@/hooks/queries';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { WidgetPreview } from './WidgetPreview';
 import { CodeBlock } from '@/components/ui/code-block';
@@ -53,6 +53,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data, isLoading } = useChatSettings(workspaceId);
   const updateMutation = useUpdateChatSettings(workspaceId);
+  const regenerateKeyMutation = useRegenerateWidgetKey(workspaceId);
 
   const [snippetTab, setSnippetTab] = useState<'basic' | 'advanced'>('basic');
 
@@ -253,53 +254,77 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             <CardDescription>Embed the chat widget on your website by adding the snippet to your HTML.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-sm">Widget Key</Label>
-              <div className="flex items-center gap-2">
-                <Input value={widgetKey} readOnly className="font-mono text-sm" />
-                <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => copyToClipboard(widgetKey, 'Widget key')}>
-                  <Copy className="h-4 w-4" />
+            {!widgetKey ? (
+              <div className="flex flex-col items-center gap-3 py-6 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                  <KeyRound className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">No API key found</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Generate an API key to embed the chat widget on your website.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => regenerateKeyMutation.mutate(undefined, {
+                    onSuccess: () => toast.success('Widget API key generated'),
+                    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to generate key'),
+                  })}
+                  disabled={regenerateKeyMutation.isPending}
+                  size="sm"
+                >
+                  {regenerateKeyMutation.isPending ? 'Generating...' : 'Generate API Key'}
                 </Button>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-sm">Widget Key</Label>
+                  <div className="flex items-center gap-2">
+                    <Input value={widgetKey} readOnly className="font-mono text-sm" />
+                    <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => copyToClipboard(widgetKey, 'Widget key')}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
 
-            <div className="space-y-2">
-              <Label className="text-sm">Embed Snippet</Label>
-              <div className="flex items-center gap-1 p-0.5 rounded-md border bg-muted/30 w-fit mb-2">
-                <button
-                  onClick={() => setSnippetTab('basic')}
-                  className={`px-2.5 py-1 rounded text-xs transition-colors ${
-                    snippetTab === 'basic'
-                      ? 'bg-background shadow-sm font-medium text-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  Basic
-                </button>
-                <button
-                  onClick={() => setSnippetTab('advanced')}
-                  className={`px-2.5 py-1 rounded text-xs transition-colors ${
-                    snippetTab === 'advanced'
-                      ? 'bg-background shadow-sm font-medium text-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  With User Identity
-                </button>
-              </div>
-              <CodeBlock
-                code={snippetTab === 'basic' ? embedSnippet : jsApiSnippet}
-                language="markup"
-                showLineNumbers
-              />
-              <p className="text-xs text-muted-foreground">
-                {snippetTab === 'basic'
-                  ? 'Add this script tag before the closing </body> tag on every page where you want the widget.'
-                  : 'Use this to identify logged-in users. Replace the placeholder values with real user data from your app.'}
-              </p>
-            </div>
-
-            {/* Regenerate Key button hidden — endpoint preserved for future use */}
+                <div className="space-y-2">
+                  <Label className="text-sm">Embed Snippet</Label>
+                  <div className="flex items-center gap-1 p-0.5 rounded-md border bg-muted/30 w-fit mb-2">
+                    <button
+                      onClick={() => setSnippetTab('basic')}
+                      className={`px-2.5 py-1 rounded text-xs transition-colors ${
+                        snippetTab === 'basic'
+                          ? 'bg-background shadow-sm font-medium text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      Basic
+                    </button>
+                    <button
+                      onClick={() => setSnippetTab('advanced')}
+                      className={`px-2.5 py-1 rounded text-xs transition-colors ${
+                        snippetTab === 'advanced'
+                          ? 'bg-background shadow-sm font-medium text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      With User Identity
+                    </button>
+                  </div>
+                  <CodeBlock
+                    code={snippetTab === 'basic' ? embedSnippet : jsApiSnippet}
+                    language="markup"
+                    showLineNumbers
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {snippetTab === 'basic'
+                      ? 'Add this script tag before the closing </body> tag on every page where you want the widget.'
+                      : 'Use this to identify logged-in users. Replace the placeholder values with real user data from your app.'}
+                  </p>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
