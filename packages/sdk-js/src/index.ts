@@ -321,11 +321,96 @@ if (isWindowAvailable()) {
       return currentScript.src.includes('lib.js');
     }
 
+    function initializeWidgetBridge() {
+      // Set up widget + analytics bridge so helpin('boot', ...) and
+      // helpin('init', {...}) work even with data-no-auto-init="true".
+      const namespace = currentScript?.getAttribute('data-namespace') || 'helpin';
+      const queueName = `${namespace}Q`;
+      const existingQueue: any[][] = (window as any)[queueName] || [];
+      let analyticsClient: HelpinClient | null = null;
+
+      function widgetFunction(...args: any[]) {
+        const method = args[0];
+
+        // Analytics client initialization: helpin('init', { key, trackingHost, ... })
+        if (method === 'init') {
+          const config = args[1] as Partial<Config>;
+          if (!config?.key || !config?.trackingHost) {
+            console.error('Helpin: init requires key and trackingHost');
+            return;
+          }
+          analyticsClient = helpinClient(config);
+          scriptTagClient = analyticsClient;
+          isInitialized = true;
+          return;
+        }
+
+        // Widget methods
+        const widgetMethods: Record<string, Function> = {
+          boot: (settings: WidgetSettings) => widgetManager.boot(settings),
+          shutdown: () => widgetManager.shutdown(),
+          show: () => widgetManager.show(),
+          hide: () => widgetManager.hide(),
+          toggle: () => widgetManager.toggle(),
+          showMessages: () => widgetManager.showMessages(),
+          showNewMessage: (content?: string) => widgetManager.showNewMessage(content),
+          showConversation: (id: string) => widgetManager.showConversation(id),
+          showArticle: (id: string) => widgetManager.showArticle(id),
+          onShow: (cb: (...a: any[]) => void) => widgetManager.onShow(cb),
+          onHide: (cb: (...a: any[]) => void) => widgetManager.onHide(cb),
+          onUnreadCountChange: (cb: (...a: any[]) => void) => widgetManager.onUnreadCountChange(cb),
+          onUserEmailSupplied: (cb: (...a: any[]) => void) => widgetManager.onUserEmailSupplied(cb),
+          onMessageReceived: (cb: (...a: any[]) => void) => widgetManager.onMessageReceived(cb),
+          onConversationStarted: (cb: (...a: any[]) => void) => widgetManager.onConversationStarted(cb),
+          getVisitorId: () => widgetManager.getVisitorId(),
+          isWidgetReady: () => widgetManager.isWidgetReady(),
+        };
+
+        if (widgetMethods[method]) {
+          return widgetMethods[method].apply(null, args.slice(1));
+        }
+
+        // Analytics methods — forward to client if initialized
+        if (analyticsClient && typeof (analyticsClient as any)[method] === 'function') {
+          return (analyticsClient as any)[method].apply(analyticsClient, args.slice(1));
+        }
+
+        console.error(`Helpin: Method "${method}" not found`);
+      }
+
+      // Replace the queue stub with the real function
+      (window as any)[namespace] = widgetFunction;
+
+      // Override push so future calls are processed immediately
+      existingQueue.push = function (...items: any[]) {
+        for (const item of items) {
+          if (Array.isArray(item)) {
+            widgetFunction.apply(null, item);
+          } else {
+            widgetFunction.apply(null, [item]);
+          }
+        }
+        return Array.prototype.push.apply(this, items);
+      };
+
+      // Drain existing queue
+      while (existingQueue.length > 0) {
+        const item = existingQueue.shift();
+        if (item) {
+          widgetFunction.apply(null, item);
+        }
+      }
+    }
+
     function initialize() {
       if (shouldAutoInitialize()) {
         console.log('[Helpin] Auto-initializing from script tag');
         scriptTagClient = initFromScript(currentScript!);
         isInitialized = true;
+      } else if (currentScript && !isInitialized) {
+        // No analytics client, but still set up widget bridge
+        // so helpin('boot', {...}) works with data-no-auto-init
+        initializeWidgetBridge();
       }
     }
 
