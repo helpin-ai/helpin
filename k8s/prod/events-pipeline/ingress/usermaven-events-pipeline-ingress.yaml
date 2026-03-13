@@ -4,16 +4,17 @@ metadata:
   name: ingress-helpin-eventpipeline
   namespace: helpin
   annotations:
+    ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: pp-nginx
   tls:
     - hosts:
-        - client.helpin.ai
+        - client.prod.helpin.ai
       secretName: cert-prod-helpin-wildcard
   rules:
-    - host: client.helpin.ai
+    - host: client.prod.helpin.ai
       http:
         paths:
           # Events capture (Rust service)
