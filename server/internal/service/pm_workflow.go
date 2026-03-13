@@ -435,15 +435,21 @@ func (s *PMWorkflowService) ResolveTeamWorkflow(ctx context.Context, workspaceID
 		return wf, nil
 	}
 
-	// Fall back to the workspace default workflow (team_id IS NULL).
-	wf, err = s.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
+	// No team workflow found — auto-seed one from the workspace default.
+	s.logger.InfoContext(ctx, "auto-seeding workflow for team", "team_id", teamID, "workspace_id", workspaceID)
+	if err := s.SeedTeamWorkflow(ctx, workspaceID, teamID, "Team"); err != nil {
+		return nil, fmt.Errorf("auto-seed team workflow: %w", err)
+	}
+
+	// Re-fetch the newly created team workflow.
+	wf, err = s.workflowRepo.GetByTeamID(ctx, workspaceID, teamID)
 	if err != nil {
 		return nil, err
 	}
 	if wf == nil {
-		return nil, fmt.Errorf("no default workflow found for workspace")
+		return nil, fmt.Errorf("team workflow not found after seeding")
 	}
-	s.logger.DebugContext(ctx, "resolved default workflow for team", "team_id", teamID, "workflow_id", wf.Workflow.ID)
+	s.logger.InfoContext(ctx, "resolved auto-seeded team workflow", "team_id", teamID, "workflow_id", wf.Workflow.ID)
 	return wf, nil
 }
 

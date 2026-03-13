@@ -469,7 +469,7 @@ export function Sidebar() {
   const secondaryOptions = createOptions.filter((o) => o.key !== primaryCreate.key);
 
   const railItems: RailItem[] = [
-    { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/stories` },
+    { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
 // { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
@@ -482,6 +482,7 @@ export function Sidebar() {
       {
         label: '',
         items: [
+          { link: `/w/${wsSlug}/pm/my-work`, label: 'My Work', icon: ClipboardCheck },
           { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
           { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },

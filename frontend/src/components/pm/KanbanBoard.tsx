@@ -113,7 +113,7 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
   }
 
   return (
-    <section className="flex h-full w-[360px] shrink-0 flex-col">
+    <section className="flex h-full w-[340px] shrink-0 flex-col">
       <header className="flex items-center justify-between px-3 pt-4 pb-3 relative">
         {column.state.color && (
           <div className="absolute top-0 left-3 right-3 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
@@ -308,7 +308,7 @@ function MemberColumn({ column, collapsed, onToggleCollapse, onCreate, onOpen, f
   }
 
   return (
-    <section className="flex h-full w-[360px] shrink-0 flex-col">
+    <section className="flex h-full w-[340px] shrink-0 flex-col">
       <header className="flex items-center justify-between px-3 pt-4 pb-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
@@ -440,10 +440,11 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     }
   }, [groupBy, workflow, showEmptyColumns, activeMemberIds, loadMemberBoard]);
 
-  // Sync URL team param → store on mount / prop change; default to first team
+  // Sync URL team param → store on mount / prop change.
+  // No team in the URL means "all work", not "first team".
   useEffect(() => {
-    setTeamFilter(teamId ?? teams[0]?.id ?? null);
-  }, [teamId, teams, setTeamFilter]);
+    setTeamFilter(teamId ?? null);
+  }, [teamId, setTeamFilter]);
 
   const [refLabels, setRefLabels] = useState<Label[]>([]);
   const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
@@ -727,14 +728,15 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         {/* Team selector — only shown when no team is pre-selected via URL */}
         {!teamId && teams.length > 0 && (
           <Select
-            value={storeTeamId ?? teams[0]?.id ?? ''}
-            onValueChange={(value) => setTeamFilter(value)}
+            value={storeTeamId ?? '__all__'}
+            onValueChange={(value) => setTeamFilter(value === '__all__' ? null : value)}
           >
             <SelectTrigger className="h-7 w-auto gap-1.5 text-xs px-2.5">
               <span className="text-muted-foreground">Team:</span>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="__all__">All teams</SelectItem>
               {teams.map((t) => (
                 <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
               ))}

@@ -6,5 +6,5 @@ export const Route = createFileRoute('/_authenticated/w/$slug/pm/')({
 
 function PmIndex() {
   const { slug } = Route.useParams()
-  return <Navigate to="/w/$slug/pm/stories" params={{ slug }} replace />
+  return <Navigate to="/w/$slug/pm/my-work" params={{ slug }} replace />
 }

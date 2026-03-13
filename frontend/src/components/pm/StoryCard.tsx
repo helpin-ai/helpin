@@ -5,8 +5,7 @@ import {
   AlertTriangle,
   CalendarDays,
   Check,
-  Milestone,
-  Rocket,
+  Layers,
   UserPlus,
 } from 'lucide-react';
 import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
@@ -14,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { UserAvatar } from './UserAvatar';
 import type { Priority, Severity, Story } from '@/lib/pmTypes';
@@ -356,7 +355,7 @@ export function StoryCard({
       {/* Epic row */}
       {vis.epic && story.epic_name && (
         <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Rocket className="h-3 w-3 shrink-0" />
+          <Layers className="h-3 w-3 shrink-0" />
           <span className="truncate">{story.epic_name}</span>
         </div>
       )}
@@ -364,7 +363,7 @@ export function StoryCard({
       {/* Sprint row */}
       {vis.sprint && story.sprint_name && (
         <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Milestone className="h-3 w-3 shrink-0" />
+          <SprintIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
           <span className="truncate">{story.sprint_name}</span>
         </div>
       )}

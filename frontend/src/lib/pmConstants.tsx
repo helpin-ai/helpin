@@ -12,6 +12,7 @@ import {
   SignalLow,
   SignalMedium,
   Sparkles,
+  RefreshCw,
   TriangleAlert,
   Wrench,
 } from 'lucide-react';
@@ -88,6 +89,16 @@ export function StateTypeIcon({
   const config = STATE_TYPE_ICON_CONFIG[stateType];
   const Icon = config.icon;
   return <Icon className={`${className} ${config.color}`} />;
+}
+
+// ── Sprint icon ───────────────────────────────────────────────────
+
+export function SprintIcon({
+  className = 'h-4 w-4 text-muted-foreground',
+}: {
+  className?: string;
+}) {
+  return <RefreshCw className={className} />;
 }
 
 // ── Sprint status config ──────────────────────────────────────────
