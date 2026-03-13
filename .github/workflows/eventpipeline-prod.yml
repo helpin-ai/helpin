@@ -110,9 +110,9 @@ jobs:
           generate_release_notes: true
       - name: Update K8s manifests
         run: |
-          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:prod-latest|g" k8s/prod/events-pipeline/deployments/eventpipeline-web.yaml
-          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:prod-latest|g" k8s/prod/events-pipeline/deployments/eventpipeline-worker.yaml
-          sed -i "s|${{ env.KSTREAMS_IMAGE }}:[^ ]*|${{ env.KSTREAMS_IMAGE }}:prod-latest|g" k8s/prod/events-pipeline/deployments/eventpipeline-kstreams.yaml
+          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}|g" k8s/prod/events-pipeline/deployments/eventpipeline-web.yaml
+          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}|g" k8s/prod/events-pipeline/deployments/eventpipeline-worker.yaml
+          sed -i "s|${{ env.KSTREAMS_IMAGE }}:[^ ]*|${{ env.KSTREAMS_IMAGE }}:${{ needs.version.outputs.tag }}|g" k8s/prod/events-pipeline/deployments/eventpipeline-kstreams.yaml
           if git diff --quiet; then
             echo "No manifest changes needed"
           else
