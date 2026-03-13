@@ -70,6 +70,7 @@ type Handlers struct {
 	CRMWritingProfile  *handler.CRMWritingProfileHandler
 	CRMSearch          *handler.CRMSearchHandler
 	CRMDealAutomation  *handler.CRMDealAutomationHandler
+	PMRoadmap          *handler.PMRoadmapHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -449,6 +450,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/story-templates", h.PMStoryTemplate.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/story-templates/{id}", h.PMStoryTemplate.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/story-templates/{id}", h.PMStoryTemplate.Delete)
+
+				// Roadmap — pm.read
+				r.With(requirePerm(authorization.PermPMRead)).Get("/roadmap", h.PMRoadmap.Get)
 
 				// Epics — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics", h.PMEpic.List)

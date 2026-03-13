@@ -483,8 +483,8 @@ export function Sidebar() {
         label: '',
         items: [
           { link: `/w/${wsSlug}/pm/my-work`, label: 'My Work', icon: ClipboardCheck },
-          { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
           { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
+          { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },
           { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
         ],

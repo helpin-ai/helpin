@@ -427,7 +427,9 @@ func main() {
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
 	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
+	pmRoadmapRepo := repository.NewPMRoadmapRepository(db)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmRoadmapService := service.NewPMRoadmapService(pmEpicService, pmRoadmapRepo)
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher, notificationService)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
@@ -607,6 +609,7 @@ func main() {
 		PMImport:           handler.NewPMImportHandler(pmImportService),
 		PMLabel:            handler.NewPMLabelHandler(pmLabelService),
 		PMEpic:             handler.NewPMEpicHandler(pmEpicService),
+		PMRoadmap:          handler.NewPMRoadmapHandler(pmRoadmapService),
 		PMSprint:           handler.NewPMSprintHandler(pmSprintService),
 		PMStory:            handler.NewPMStoryHandler(pmStoryService),
 		PMComment:          handler.NewPMCommentHandler(pmCommentService),

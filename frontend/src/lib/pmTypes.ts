@@ -4,7 +4,7 @@ export type StoryType = 'feature' | 'bug' | 'chore';
 export type StateType = 'backlog' | 'unstarted' | 'started' | 'done';
 export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 export type Severity = 'none' | 'minor' | 'major' | 'critical';
-export type EpicHealth = 'on_track' | 'at_risk' | 'off_track';
+export type EpicHealth = 'no_health' | 'on_track' | 'at_risk' | 'off_track';
 export type SprintStatus = 'unstarted' | 'started' | 'done';
 
 export interface Workflow {
@@ -112,11 +112,24 @@ export interface EpicStats {
   unstarted_count: number;
 }
 
+export interface RoadmapObjectiveRef {
+  id: string;
+  name: string;
+}
+
 export interface EpicWithStats {
   epic: Epic;
   labels: Label[];
+  objectives: RoadmapObjectiveRef[];
   stats: EpicStats;
   suggested_health: EpicHealth;
+}
+
+export type RoadmapEpic = EpicWithStats;
+
+export interface RoadmapData {
+  epics: EpicWithStats[];
+  objectives: Objective[];
 }
 
 export interface PMSprint {
