@@ -16,7 +16,7 @@ spec:
         app: helpin-eventpipeline-worker
     spec:
       imagePullSecrets:
-        - name: ghcr-json-key
+        - name: ghcr-helpin-json-key
       # TLS init container commented out — using SCRAM auth for now.
       # Uncomment when migrating to mTLS.
       # initContainers:
