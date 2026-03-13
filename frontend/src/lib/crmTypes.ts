@@ -578,7 +578,15 @@ export type CRMSignalType =
   | 'champion_signal'
   | 'risk_signal';
 
-export type CRMSignalSourceType = 'email' | 'meeting' | 'note' | 'manual';
+export type CRMSignalSourceType = 'email' | 'meeting' | 'note' | 'manual' | 'support';
+
+export interface CRMSignalMetadata {
+  message_direction?: string;
+  participant_count?: number;
+  thread_external_id?: string;
+  ingestion_version?: string;
+  skip_reason?: string;
+}
 
 export interface CRMBuyerSignal {
   id: string;
@@ -588,7 +596,10 @@ export interface CRMBuyerSignal {
   signal_type: CRMSignalType;
   source_type: CRMSignalSourceType;
   source_id?: string;
+  source_thread_id?: string;
   summary: string;
+  evidence_excerpt?: string;
+  metadata?: CRMSignalMetadata;
   confidence: number;
   detected_at: string;
   created_at: string;
@@ -601,8 +612,43 @@ export interface CreateCRMBuyerSignalRequest {
   signal_type: CRMSignalType;
   source_type?: CRMSignalSourceType;
   source_id?: string;
+  source_thread_id?: string;
   summary: string;
+  evidence_excerpt?: string;
+  metadata?: Record<string, unknown>;
   confidence?: number;
+}
+
+export type CRMEntitySummaryStatus = 'pending_refresh' | 'ready' | 'stale' | 'error';
+export type CRMSummaryHighlightKind = 'momentum' | 'risk' | 'next_step' | 'stakeholder' | 'signal';
+
+export interface SummaryHighlight {
+  kind: CRMSummaryHighlightKind;
+  text: string;
+}
+
+export interface CRMEntitySummaryMetadata {
+  source_email_count?: number;
+  source_signal_count?: number;
+  generation_version?: string;
+}
+
+export interface CRMEntitySummary {
+  id: string;
+  workspace_id: string;
+  entity_type: 'contact' | 'deal';
+  entity_id: string;
+  summary_markdown: string;
+  highlights: SummaryHighlight[];
+  status: CRMEntitySummaryStatus;
+  computed_at?: string;
+  source_window_start?: string;
+  source_window_end?: string;
+  last_triggered_at?: string;
+  last_error?: string;
+  metadata?: CRMEntitySummaryMetadata;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CRMDealHealthScore {

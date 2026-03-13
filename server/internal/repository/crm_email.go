@@ -150,6 +150,32 @@ func (r *CRMEmailRepository) ListAccountsWithSyncedData(ctx context.Context, acc
 	return result, nil
 }
 
+// GetAccountRecordCounts returns synced record counts for a mailbox.
+func (r *CRMEmailRepository) GetAccountRecordCounts(ctx context.Context, accountID string) (model.CRMEmailSyncedDataCounts, error) {
+	var counts model.CRMEmailSyncedDataCounts
+
+	if err := r.db.WithContext(ctx).
+		Table("crm_email_threads").
+		Where("email_account_id = ?", accountID).
+		Count(&counts.Threads).Error; err != nil {
+		return counts, fmt.Errorf("count email threads: %w", err)
+	}
+	if err := r.db.WithContext(ctx).
+		Table("crm_email_messages").
+		Where("email_account_id = ?", accountID).
+		Count(&counts.Messages).Error; err != nil {
+		return counts, fmt.Errorf("count email messages: %w", err)
+	}
+	if err := r.db.WithContext(ctx).
+		Table("crm_calendar_events").
+		Where("email_account_id = ?", accountID).
+		Count(&counts.CalendarEvents).Error; err != nil {
+		return counts, fmt.Errorf("count calendar events: %w", err)
+	}
+
+	return counts, nil
+}
+
 // GetMessageByExternalID returns a message by its external Gmail ID within an account.
 func (r *CRMEmailRepository) GetMessageByExternalID(ctx context.Context, accountID, externalID string) (*model.CRMEmailMessage, error) {
 	var message model.CRMEmailMessage
@@ -162,6 +188,38 @@ func (r *CRMEmailRepository) GetMessageByExternalID(ctx context.Context, account
 	return &message, nil
 }
 
+// GetMessageByID returns a message by ID with participant contact IDs populated.
+func (r *CRMEmailRepository) GetMessageByID(ctx context.Context, id string) (*model.CRMEmailMessage, error) {
+	var message model.CRMEmailMessage
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&message).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get email message: %w", err)
+	}
+	type row struct {
+		ContactID string
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Table("crm_email_message_contacts").
+		Select("contact_id").
+		Where("message_id = ?", message.ID).
+		Order("participant_role ASC, contact_id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list message contact ids: %w", err)
+	}
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if _, exists := seen[row.ContactID]; exists {
+			continue
+		}
+		seen[row.ContactID] = struct{}{}
+		message.ContactIDs = append(message.ContactIDs, row.ContactID)
+	}
+	return &message, nil
+}
+
 // GetThreadByExternalID returns a thread by its external Gmail thread ID within an account.
 func (r *CRMEmailRepository) GetThreadByExternalID(ctx context.Context, accountID, externalID string) (*model.CRMEmailThread, error) {
 	var thread model.CRMEmailThread
@@ -170,6 +228,18 @@ func (r *CRMEmailRepository) GetThreadByExternalID(ctx context.Context, accountI
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get thread by external id: %w", err)
+	}
+	return &thread, nil
+}
+
+// GetThreadByID returns a thread by ID.
+func (r *CRMEmailRepository) GetThreadByID(ctx context.Context, id string) (*model.CRMEmailThread, error) {
+	var thread model.CRMEmailThread
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&thread).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get email thread: %w", err)
 	}
 	return &thread, nil
 }
@@ -297,6 +367,70 @@ func (r *CRMEmailRepository) ListMessagesMissingAssociations(ctx context.Context
 	return messages, nil
 }
 
+// ListMessagesMissingAssociationsByAccount returns a batch of messages for one mailbox
+// that do not yet have participant-contact associations.
+func (r *CRMEmailRepository) ListMessagesMissingAssociationsByAccount(ctx context.Context, accountID string, limit int) ([]model.CRMEmailMessage, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	subquery := r.db.WithContext(ctx).
+		Model(&model.CRMEmailMessageContact{}).
+		Select("1").
+		Where("crm_email_message_contacts.message_id = crm_email_messages.id")
+
+	var messages []model.CRMEmailMessage
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMEmailMessage{}).
+		Where("email_account_id = ?", accountID).
+		Where("NOT EXISTS (?)", subquery).
+		Order("sent_at ASC, id ASC").
+		Limit(limit).
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("list account messages missing associations: %w", err)
+	}
+	return messages, nil
+}
+
+// CountMessagesMissingAssociationsByAccount returns the number of mailbox messages without participant associations.
+func (r *CRMEmailRepository) CountMessagesMissingAssociationsByAccount(ctx context.Context, accountID string) (int64, error) {
+	subquery := r.db.WithContext(ctx).
+		Model(&model.CRMEmailMessageContact{}).
+		Select("1").
+		Where("crm_email_message_contacts.message_id = crm_email_messages.id")
+
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMEmailMessage{}).
+		Where("email_account_id = ?", accountID).
+		Where("NOT EXISTS (?)", subquery).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count messages missing associations: %w", err)
+	}
+	return count, nil
+}
+
+// CountThreadsWithEmptyContactIDsByAccount returns the number of threads whose cache is empty
+// even though message-contact associations exist.
+func (r *CRMEmailRepository) CountThreadsWithEmptyContactIDsByAccount(ctx context.Context, accountID string) (int64, error) {
+	associationSubquery := r.db.WithContext(ctx).
+		Table("crm_email_message_contacts").
+		Select("1").
+		Joins("JOIN crm_email_messages ON crm_email_messages.id = crm_email_message_contacts.message_id").
+		Where("crm_email_messages.thread_id = crm_email_threads.id")
+
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMEmailThread{}).
+		Where("email_account_id = ?", accountID).
+		Where("EXISTS (?)", associationSubquery).
+		Where("COALESCE(CAST(contact_ids AS TEXT), '') IN ('', '[]')").
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count threads with empty contact cache: %w", err)
+	}
+	return count, nil
+}
+
 // RefreshThreadContactIDs rebuilds the thread-level contact cache from message
 // participant associations.
 func (r *CRMEmailRepository) RefreshThreadContactIDs(ctx context.Context, threadID string) error {
@@ -339,6 +473,33 @@ func (r *CRMEmailRepository) RefreshAllThreadContactIDs(ctx context.Context) err
 		}
 	}
 	return nil
+}
+
+// ListRecentMessagesForThread returns the most recent earlier messages in a
+// thread before the provided message. Results are ordered oldest-first.
+func (r *CRMEmailRepository) ListRecentMessagesForThread(ctx context.Context, threadID, beforeMessageID string, beforeSentAt time.Time, limit int) ([]model.CRMEmailMessage, error) {
+	if threadID == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 3
+	}
+
+	query := r.db.WithContext(ctx).
+		Model(&model.CRMEmailMessage{}).
+		Where("thread_id = ?", threadID).
+		Where("(sent_at < ?) OR (sent_at = ? AND id <> ?)", beforeSentAt, beforeSentAt, beforeMessageID).
+		Order("sent_at DESC, id DESC").
+		Limit(limit)
+
+	var messages []model.CRMEmailMessage
+	if err := query.Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("list recent thread messages: %w", err)
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+	return messages, nil
 }
 
 // ListMessages returns email messages with optional filters and pagination.

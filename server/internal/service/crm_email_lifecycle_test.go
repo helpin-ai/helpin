@@ -40,12 +40,19 @@ func setupCRMEmailLifecycleTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS crm_contacts (
-			id TEXT PRIMARY KEY,
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			display_id TEXT NOT NULL,
 			first_name TEXT NOT NULL,
 			last_name TEXT,
 			email TEXT,
+			phone TEXT,
+			job_title TEXT,
+			lifecycle_stage TEXT NOT NULL DEFAULT 'subscriber',
+			lead_status TEXT NOT NULL DEFAULT 'new',
+			owner_member_id TEXT,
+			avatar_url TEXT,
+			source TEXT,
 			custom_properties BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -77,7 +84,7 @@ func setupCRMEmailLifecycleTestDB(t *testing.T) *gorm.DB {
 			ON crm_email_accounts(workspace_id, provider, normalized_email_address)
 			WHERE normalized_email_address IS NOT NULL`,
 		`CREATE TABLE IF NOT EXISTS crm_email_threads (
-			id TEXT PRIMARY KEY,
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			email_account_id TEXT NOT NULL REFERENCES crm_email_accounts(id) ON DELETE CASCADE,
 			thread_external_id TEXT NOT NULL,
@@ -90,7 +97,7 @@ func setupCRMEmailLifecycleTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS crm_email_messages (
-			id TEXT PRIMARY KEY,
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			email_account_id TEXT NOT NULL REFERENCES crm_email_accounts(id) ON DELETE CASCADE,
 			thread_id TEXT REFERENCES crm_email_threads(id) ON DELETE SET NULL,
@@ -107,6 +114,14 @@ func setupCRMEmailLifecycleTestDB(t *testing.T) *gorm.DB {
 			contact_id TEXT,
 			deal_id TEXT,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS crm_email_message_contacts (
+			message_id TEXT NOT NULL,
+			contact_id TEXT NOT NULL,
+			participant_role TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (message_id, contact_id, participant_role)
 		)`,
 		`CREATE TABLE IF NOT EXISTS crm_calendar_events (
 			id TEXT PRIMARY KEY,
@@ -251,6 +266,9 @@ func TestCRMEmailService_DeleteAccountDisconnectsAndPreservesData(t *testing.T) 
 	}
 	if stored.DisconnectedAt == nil {
 		t.Fatal("expected disconnected_at to be set")
+	}
+	if stored.SyncState["phase"] != crmemail.SyncPhaseDisconnected {
+		t.Fatalf("sync_state.phase = %v, want %q", stored.SyncState["phase"], crmemail.SyncPhaseDisconnected)
 	}
 	if len(runner.canceled) != 1 || runner.canceled[0] != "acct-1" {
 		t.Fatalf("canceled workflows = %v, want acct-1", runner.canceled)
@@ -422,6 +440,15 @@ func TestCRMEmailService_CompleteOAuthReusesDisconnectedMailbox(t *testing.T) {
 	if stored.NormalizedEmailAddress == nil || *stored.NormalizedEmailAddress != "owner@example.com" {
 		t.Fatalf("normalized_email_address = %v, want owner@example.com", stored.NormalizedEmailAddress)
 	}
+	if stored.SyncState["status"] != model.CRMEmailAccountStatusConnected {
+		t.Fatalf("sync_state.status = %v, want connected", stored.SyncState["status"])
+	}
+	if stored.SyncState["phase"] != crmemail.SyncPhaseIdle {
+		t.Fatalf("sync_state.phase = %v, want %q", stored.SyncState["phase"], crmemail.SyncPhaseIdle)
+	}
+	if stored.SyncState["last_error"] != nil {
+		t.Fatalf("sync_state.last_error = %v, want nil", stored.SyncState["last_error"])
+	}
 	if stored.AccessTokenEncrypted == nil || stored.RefreshTokenEncrypted == nil {
 		t.Fatal("expected fresh encrypted tokens to be stored")
 	}
@@ -435,6 +462,169 @@ func TestCRMEmailService_CompleteOAuthReusesDisconnectedMailbox(t *testing.T) {
 	}
 	if len(runner.started) != 1 || runner.started[0] != "acct-existing" {
 		t.Fatalf("started workflows = %v, want acct-existing", runner.started)
+	}
+}
+
+func TestCRMEmailService_GetAccountDiagnostics(t *testing.T) {
+	db := setupCRMEmailLifecycleTestDB(t)
+	emailRepo := repository.NewCRMEmailRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	ctx := context.Background()
+
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO workspaces (id, name, slug, owner_id, timezone) VALUES (?, ?, ?, ?, ?)`, "ws-1", "Workspace", "workspace", "owner-1", "UTC")
+	now := time.Now().UTC()
+	account := &model.CRMEmailAccount{
+		ID:                     "acct-1",
+		WorkspaceID:            "ws-1",
+		MemberID:               "member-1",
+		Provider:               model.CRMEmailProviderGmail,
+		EmailAddress:           "owner@example.com",
+		NormalizedEmailAddress: testStringPtr("owner@example.com"),
+		LastHistoryID:          testStringPtr("hist-1"),
+		LastSyncedAt:           testTimePtr(now.Add(-time.Minute)),
+		IsActive:               true,
+		Status:                 model.CRMEmailAccountStatusConnected,
+		SyncState: model.JSONB{
+			"status":               model.CRMEmailAccountStatusError,
+			"phase":                crmemail.SyncPhaseError,
+			"last_history_id":      "hist-1",
+			"last_failure_at":      now.Format(time.RFC3339Nano),
+			"consecutive_failures": 2,
+			"last_error": map[string]interface{}{
+				"operation": "list_history",
+				"code":      "sync_error",
+				"message":   "history too old",
+			},
+			"last_cycle": map[string]interface{}{
+				"mode":                 "incremental",
+				"started_at":           now.Add(-2 * time.Minute).Format(time.RFC3339Nano),
+				"completed_at":         now.Add(-time.Minute).Format(time.RFC3339Nano),
+				"messages_seen":        4,
+				"messages_stored":      2,
+				"duplicates_skipped":   1,
+				"filtered_skipped":     0,
+				"internal_skipped":     1,
+				"contacts_created":     1,
+				"associations_written": 2,
+				"threads_touched":      1,
+				"recovery_triggered":   true,
+			},
+		},
+	}
+	if err := emailRepo.CreateAccount(ctx, account); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO crm_email_threads (id, workspace_id, email_account_id, thread_external_id, subject, last_message_at, message_count, contact_ids) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS BLOB))`,
+		"thread-1", "ws-1", "acct-1", "ext-thread-1", "Subject", now, 1, `[]`)
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO crm_email_messages (id, workspace_id, email_account_id, thread_id, message_external_id, from_address, to_addresses, cc_addresses, subject, direction, sent_at) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS BLOB), CAST(? AS BLOB), ?, ?, ?)`,
+		"msg-1", "ws-1", "acct-1", "thread-1", "external-1", "buyer@example.com", `["owner@example.com"]`, `[]`, "Subject", model.CRMEmailDirectionInbound, now)
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO crm_calendar_events (id, workspace_id, email_account_id, external_event_id, title, start_time, end_time, attendees, contact_ids) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS BLOB), CAST(? AS BLOB))`,
+		"evt-1", "ws-1", "acct-1", "event-1", "Meeting", now, now.Add(time.Hour), `[]`, `[]`)
+
+	svc := &CRMEmailService{
+		emailRepo:     emailRepo,
+		contactRepo:   contactRepo,
+		workspaceRepo: workspaceRepo,
+		resolver:      crmemail.NewResolver(contactRepo),
+	}
+
+	diagnostics, err := svc.GetAccountDiagnostics(ctx, "acct-1", true)
+	if err != nil {
+		t.Fatalf("GetAccountDiagnostics: %v", err)
+	}
+	if diagnostics.Counts.Threads != 1 || diagnostics.Counts.Messages != 1 || diagnostics.Counts.CalendarEvents != 1 {
+		t.Fatalf("counts = %+v, want 1/1/1", diagnostics.Counts)
+	}
+	if diagnostics.AssociationHealth.MessagesMissingAssociations != 1 {
+		t.Fatalf("messages_missing_associations = %d, want 1", diagnostics.AssociationHealth.MessagesMissingAssociations)
+	}
+	if diagnostics.Sync.ConsecutiveFailures != 2 {
+		t.Fatalf("consecutive_failures = %d, want 2", diagnostics.Sync.ConsecutiveFailures)
+	}
+	if diagnostics.Sync.LastError == nil || diagnostics.Sync.LastError.Operation != "list_history" {
+		t.Fatalf("last_error = %+v, want list_history", diagnostics.Sync.LastError)
+	}
+	if diagnostics.Sync.LastCycle == nil || diagnostics.Sync.LastCycle.MessagesSeen != 4 || !diagnostics.Sync.LastCycle.RecoveryTriggered {
+		t.Fatalf("last_cycle = %+v, want populated recovery stats", diagnostics.Sync.LastCycle)
+	}
+}
+
+func TestCRMEmailService_RebuildAccountAssociations(t *testing.T) {
+	db := setupCRMEmailLifecycleTestDB(t)
+	emailRepo := repository.NewCRMEmailRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	ctx := context.Background()
+
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO workspaces (id, name, slug, owner_id, timezone) VALUES (?, ?, ?, ?, ?)`, "ws-1", "Workspace", "workspace", "owner-1", "UTC")
+	account := &model.CRMEmailAccount{
+		ID:                     "acct-1",
+		WorkspaceID:            "ws-1",
+		MemberID:               "member-1",
+		Provider:               model.CRMEmailProviderGmail,
+		EmailAddress:           "owner@example.com",
+		NormalizedEmailAddress: testStringPtr("owner@example.com"),
+		IsActive:               true,
+		Status:                 model.CRMEmailAccountStatusConnected,
+		SyncState:              crmemail.MarkConnectedIdle(nil, ""),
+	}
+	if err := emailRepo.CreateAccount(ctx, account); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, email, custom_properties) VALUES (?, ?, ?, ?, ?, CAST(? AS BLOB))`,
+		"contact-1", "ws-1", "C-1", "Buyer", "buyer@example.com", `{}`)
+
+	now := time.Now().UTC()
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO crm_email_threads (id, workspace_id, email_account_id, thread_external_id, subject, last_message_at, message_count, contact_ids) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS BLOB))`,
+		"thread-1", "ws-1", "acct-1", "ext-thread-1", "Subject", now, 1, `[]`)
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO crm_email_messages (id, workspace_id, email_account_id, thread_id, message_external_id, from_address, to_addresses, cc_addresses, subject, direction, sent_at) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS BLOB), CAST(? AS BLOB), ?, ?, ?)`,
+		"msg-1", "ws-1", "acct-1", "thread-1", "external-1", "buyer@example.com", `["owner@example.com"]`, `[]`, "Subject", model.CRMEmailDirectionInbound, now)
+
+	svc := &CRMEmailService{
+		emailRepo:     emailRepo,
+		contactRepo:   contactRepo,
+		workspaceRepo: workspaceRepo,
+		resolver:      crmemail.NewResolver(contactRepo),
+	}
+
+	result, err := svc.RebuildAccountAssociations(ctx, "acct-1", true)
+	if err != nil {
+		t.Fatalf("RebuildAccountAssociations: %v", err)
+	}
+	if result.MessagesScanned != 1 || result.MessagesRepaired != 1 {
+		t.Fatalf("result = %+v, want one scanned and repaired message", result)
+	}
+	if result.AssociationsWritten != 1 {
+		t.Fatalf("associations_written = %d, want 1", result.AssociationsWritten)
+	}
+	if result.ThreadsRefreshed != 1 {
+		t.Fatalf("threads_refreshed = %d, want 1", result.ThreadsRefreshed)
+	}
+
+	var assocCount int64
+	if err := db.Table("crm_email_message_contacts").Where("message_id = ?", "msg-1").Count(&assocCount).Error; err != nil {
+		t.Fatalf("count associations: %v", err)
+	}
+	if assocCount != 1 {
+		t.Fatalf("association count = %d, want 1", assocCount)
+	}
+
+	var storedMessage model.CRMEmailMessage
+	if err := db.Table("crm_email_messages").Where("id = ?", "msg-1").First(&storedMessage).Error; err != nil {
+		t.Fatalf("load message: %v", err)
+	}
+	if storedMessage.ContactID == nil || *storedMessage.ContactID != "contact-1" {
+		t.Fatalf("contact_id = %v, want contact-1", storedMessage.ContactID)
+	}
+
+	var storedThread model.CRMEmailThread
+	if err := db.Table("crm_email_threads").Where("id = ?", "thread-1").First(&storedThread).Error; err != nil {
+		t.Fatalf("load thread: %v", err)
+	}
+	if string(storedThread.ContactIDs) != `["contact-1"]` {
+		t.Fatalf("thread contact_ids = %s, want [\"contact-1\"]", string(storedThread.ContactIDs))
 	}
 }
 

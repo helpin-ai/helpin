@@ -23,6 +23,7 @@ import { useDeal, useUpdateDeal, useDeleteDeal, useDealActivities, useDealAssoci
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { DealHealthScore } from '@/components/crm/DealHealthScore';
 import { BuyerSignals } from '@/components/crm/BuyerSignals';
+import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { useTitle } from '@/hooks/useTitle';
@@ -212,6 +213,15 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
             <p className="text-xs text-muted-foreground">
               {currentStageName}{probabilityValue != null ? ` · ${probabilityValue}% prob.` : ''}{formattedAmount ? ` · ${formattedAmount}` : ''}
             </p>
+          </div>
+
+          <Separator className="my-6" />
+
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Summary</h3>
+            <div className="mt-3">
+              <EntitySummaryCard workspaceId={wsId} dealId={dealId} />
+            </div>
           </div>
 
           <Separator className="my-6" />

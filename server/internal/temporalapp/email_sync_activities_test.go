@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
+	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/sync"
@@ -21,6 +22,17 @@ type fakeHistorySyncClient struct {
 	getMessageDetailFn  func(ctx context.Context, accessToken, messageID string) (*sync.GmailMessage, error)
 	getMailboxProfileFn func(ctx context.Context, accessToken string) (*sync.GmailProfile, error)
 	listHistoryFn       func(ctx context.Context, accessToken, startHistoryID string) (*sync.GmailHistoryResult, error)
+}
+
+type fakeSignalStarter struct {
+	messageIDs []string
+	payloads   [][]model.SignalSourcePayload
+}
+
+func (f *fakeSignalStarter) StartEmailSignalDetection(ctx context.Context, messageID string, payloads []model.SignalSourcePayload) error {
+	f.messageIDs = append(f.messageIDs, messageID)
+	f.payloads = append(f.payloads, payloads)
+	return nil
 }
 
 func (f *fakeHistorySyncClient) GetValidToken(ctx context.Context, account *model.CRMEmailAccount) (string, error) {
@@ -160,7 +172,7 @@ func TestEmailSyncActivities_StoreMessageUsesSentLabelAndAssociatesAllParticipan
 	db := setupEmailSyncActivitiesTestDB(t)
 	emailRepo := repository.NewCRMEmailRepository(db)
 	contactRepo := repository.NewCRMContactRepository(db)
-	activities := NewEmailSyncActivities(nil, emailRepo, contactRepo, nil, nil)
+	activities := NewEmailSyncActivities(nil, emailRepo, contactRepo, nil, nil, nil, nil)
 	ctx := context.Background()
 
 	account := &model.CRMEmailAccount{
@@ -189,8 +201,12 @@ func TestEmailSyncActivities_StoreMessageUsesSentLabelAndAssociatesAllParticipan
 		LabelIDs: []string{"SENT"},
 	}
 
-	if err := activities.storeMessage(ctx, account, msg, &settings); err != nil {
+	result, err := activities.storeMessage(ctx, account, msg, &settings)
+	if err != nil {
 		t.Fatalf("storeMessage: %v", err)
+	}
+	if !result.Stored || result.AssociationsWritten != 2 {
+		t.Fatalf("store result = %+v, want stored with two associations", result)
 	}
 
 	var stored model.CRMEmailMessage
@@ -229,7 +245,7 @@ func TestEmailSyncActivities_InternalExclusionHonorsCC(t *testing.T) {
 	db := setupEmailSyncActivitiesTestDB(t)
 	emailRepo := repository.NewCRMEmailRepository(db)
 	contactRepo := repository.NewCRMContactRepository(db)
-	activities := NewEmailSyncActivities(nil, emailRepo, contactRepo, nil, nil)
+	activities := NewEmailSyncActivities(nil, emailRepo, contactRepo, nil, nil, nil, nil)
 	ctx := context.Background()
 
 	account := &model.CRMEmailAccount{
@@ -259,8 +275,12 @@ func TestEmailSyncActivities_InternalExclusionHonorsCC(t *testing.T) {
 		LabelIDs: []string{"SENT"},
 	}
 
-	if err := activities.storeMessage(ctx, account, msg, &settings); err != nil {
+	result, err := activities.storeMessage(ctx, account, msg, &settings)
+	if err != nil {
 		t.Fatalf("storeMessage: %v", err)
+	}
+	if !result.Stored {
+		t.Fatalf("store result = %+v, want stored message", result)
 	}
 
 	var count int64
@@ -269,6 +289,59 @@ func TestEmailSyncActivities_InternalExclusionHonorsCC(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("stored message count = %d, want 1 (external cc should bypass internal exclusion)", count)
+	}
+}
+
+func TestEmailSyncActivities_StoreMessageEnqueuesSignalDetectionForEligibleMessage(t *testing.T) {
+	db := setupEmailSyncActivitiesTestDB(t)
+	emailRepo := repository.NewCRMEmailRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	activities := NewEmailSyncActivities(nil, emailRepo, contactRepo, nil, nil, nil, nil)
+	starter := &fakeSignalStarter{}
+	activities.signalIngestion = crmsignal.NewIngestionService(emailRepo, starter)
+	ctx := context.Background()
+
+	account := &model.CRMEmailAccount{
+		ID:           "acct-1",
+		WorkspaceID:  "ws-1",
+		MemberID:     "member-1",
+		Provider:     "gmail",
+		EmailAddress: "owner@example.com",
+		IsActive:     true,
+	}
+	if err := emailRepo.CreateAccount(ctx, account); err != nil {
+		t.Fatalf("seed account: %v", err)
+	}
+
+	settings := model.DefaultEmailSyncSettings()
+	settings.RecordCreationMode = "always"
+
+	msg := &sync.GmailMessage{
+		ID:       "gmail-msg-signal-1",
+		ThreadID: "gmail-thread-signal-1",
+		Subject:  "Pricing question",
+		From:     "buyer@example.com",
+		To:       []string{"owner@example.com"},
+		BodyText: "Can you send pricing for the enterprise plan?",
+		Date:     time.Now(),
+	}
+
+	result, err := activities.storeMessage(ctx, account, msg, &settings)
+	if err != nil {
+		t.Fatalf("storeMessage: %v", err)
+	}
+	if !result.Stored {
+		t.Fatalf("store result = %+v, want stored message", result)
+	}
+	if len(starter.messageIDs) != 1 {
+		t.Fatalf("started workflows = %v, want 1", starter.messageIDs)
+	}
+	if len(starter.payloads) != 1 || len(starter.payloads[0]) != 1 {
+		t.Fatalf("payloads = %#v, want one payload", starter.payloads)
+	}
+	payload := starter.payloads[0][0]
+	if payload.SourceID == "" || payload.Body == "" {
+		t.Fatalf("payload = %+v, want source id and body", payload)
 	}
 }
 
@@ -336,6 +409,22 @@ func TestEmailSyncActivities_IncrementalSyncUsesHistoryCursor(t *testing.T) {
 	}
 	if stored.LastSyncedAt == nil {
 		t.Fatal("expected last_synced_at to be updated")
+	}
+	if stored.SyncState["phase"] != crmemail.SyncPhaseIdle {
+		t.Fatalf("sync_state.phase = %v, want %q", stored.SyncState["phase"], crmemail.SyncPhaseIdle)
+	}
+	if stored.SyncState["status"] != model.CRMEmailAccountStatusConnected {
+		t.Fatalf("sync_state.status = %v, want connected", stored.SyncState["status"])
+	}
+	lastCycle, ok := stored.SyncState["last_cycle"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("sync_state.last_cycle = %T, want map", stored.SyncState["last_cycle"])
+	}
+	if got := int(lastCycle["messages_seen"].(float64)); got != 1 {
+		t.Fatalf("last_cycle.messages_seen = %d, want 1", got)
+	}
+	if got := int(lastCycle["messages_stored"].(float64)); got != 1 {
+		t.Fatalf("last_cycle.messages_stored = %d, want 1", got)
 	}
 
 	var messageCount int64
@@ -417,5 +506,15 @@ func TestEmailSyncActivities_IncrementalSyncRecoversExpiredHistoryCursor(t *test
 	}
 	if stored.LastHistoryID == nil || *stored.LastHistoryID != "hist-fresh" {
 		t.Fatalf("last_history_id = %v, want hist-fresh", stored.LastHistoryID)
+	}
+	if stored.SyncState["phase"] != crmemail.SyncPhaseIdle {
+		t.Fatalf("sync_state.phase = %v, want %q", stored.SyncState["phase"], crmemail.SyncPhaseIdle)
+	}
+	lastCycle, ok := stored.SyncState["last_cycle"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("sync_state.last_cycle = %T, want map", stored.SyncState["last_cycle"])
+	}
+	if recoveryTriggered, ok := lastCycle["recovery_triggered"].(bool); !ok || !recoveryTriggered {
+		t.Fatalf("last_cycle.recovery_triggered = %v, want true", lastCycle["recovery_triggered"])
 	}
 }

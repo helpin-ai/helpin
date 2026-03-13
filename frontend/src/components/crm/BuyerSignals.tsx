@@ -20,6 +20,21 @@ interface BuyerSignalsProps {
   dealId?: string;
 }
 
+function formatSource(signal: CRMBuyerSignal) {
+  switch (signal.source_type) {
+    case 'email':
+      return 'Email';
+    case 'meeting':
+      return 'Meeting';
+    case 'support':
+      return 'Support';
+    case 'note':
+      return 'Note';
+    default:
+      return 'Manual';
+  }
+}
+
 export function BuyerSignals({ workspaceId, contactId, dealId }: BuyerSignalsProps) {
   const contactQuery = useContactSignals(workspaceId, contactId ?? '');
   const dealQuery = useDealSignals(workspaceId, dealId ?? '');
@@ -40,13 +55,32 @@ export function BuyerSignals({ workspaceId, contactId, dealId }: BuyerSignalsPro
           <div key={signal.id} className="flex items-start gap-2 rounded-md border p-2.5">
             <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${config.color}`} />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" className="text-xs">{config.label}</Badge>
+                <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+                  {formatSource(signal)}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{Math.round(signal.confidence * 100)}%</span>
                 <span className="text-xs text-muted-foreground">
                   {formatDistanceToNow(new Date(signal.detected_at), { addSuffix: true })}
                 </span>
               </div>
               <p className="mt-0.5 text-sm">{signal.summary}</p>
+              {signal.evidence_excerpt ? (
+                <p className="mt-1 rounded-sm border-l-2 border-border/70 pl-2 text-xs italic text-muted-foreground">
+                  "{signal.evidence_excerpt}"
+                </p>
+              ) : null}
+              {signal.metadata?.message_direction || signal.metadata?.participant_count ? (
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  {signal.metadata?.message_direction ? (
+                    <span className="capitalize">{signal.metadata.message_direction}</span>
+                  ) : null}
+                  {typeof signal.metadata?.participant_count === 'number' ? (
+                    <span>{signal.metadata.participant_count} participants</span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         );

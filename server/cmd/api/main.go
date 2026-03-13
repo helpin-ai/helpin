@@ -243,6 +243,7 @@ func main() {
 		// CRM Phase 4: Intelligence
 		&model.CRMEnrichmentResult{},
 		&model.CRMBuyerSignal{},
+		&model.CRMEntitySummary{},
 		&model.CRMDealHealthScore{},
 		&model.CRMSuggestion{},
 		// CRM Phase 5: Sequences & Writing
@@ -273,6 +274,16 @@ func main() {
 	slog.Info("startup: running MigrateCRMEmailAssociations")
 	if err := repository.MigrateCRMEmailAssociations(db); err != nil {
 		slog.Error("failed to migrate crm email associations", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("startup: running MigrateCRMSignalSchema")
+	if err := repository.MigrateCRMSignalSchema(db); err != nil {
+		slog.Error("failed to migrate crm signal schema", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("startup: running MigrateCRMSummarySchema")
+	if err := repository.MigrateCRMSummarySchema(db); err != nil {
+		slog.Error("failed to migrate crm summary schema", "error", err)
 		os.Exit(1)
 	}
 
@@ -379,6 +390,7 @@ func main() {
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
+	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
 	crmSequenceRepo := repository.NewCRMSequenceRepository(db)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
@@ -517,15 +529,6 @@ func main() {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
 	}
 
-	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient)
-	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
-	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
-	crmSignalService := service.NewCRMSignalService(crmSignalRepo)
-	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
-	crmSequenceService := service.NewCRMSequenceService(crmSequenceRepo)
-	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
-	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
-
 	// Initialize LLM provider for signal detection and deal automation.
 	var llmProvider llm.Provider
 	switch cfg.CRMLLMProvider {
@@ -538,7 +541,17 @@ func main() {
 		slog.Info("LLM provider configured for signal detection")
 	}
 
-	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo)
+	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
+	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
+	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
+	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
+	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService)
+	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
+	crmSequenceService := service.NewCRMSequenceService(crmSequenceRepo)
+	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
+	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
+
+	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	_ = signalDetectionService // Used by Temporal workers
 
@@ -564,59 +577,60 @@ func main() {
 
 	// Initialize handlers.
 	handlers := router.Handlers{
-		Health:            handler.NewHealthHandler(),
-		Auth:              handler.NewAuthHandler(authService),
-		Organization:      handler.NewOrganizationHandler(orgService),
-		Workspace:         handler.NewWorkspaceHandler(workspaceService),
-		RewardQuarter:     handler.NewRewardQuarterHandler(quarterService),
-		RewardSprint:      handler.NewRewardSprintHandler(sprintService),
-		RewardGoal:        handler.NewRewardGoalHandler(goalService),
-		RewardBonus:       handler.NewRewardBonusHandler(bonusService),
-		RewardFinance:     handler.NewRewardFinanceHandler(bonusService),
-		Settings:          handler.NewSettingsHandler(settingsService),
-		RewardAudit:       handler.NewRewardAuditHandler(auditService),
-		RewardDraft:       handler.NewRewardDraftHandler(draftService),
-		Invite:            handler.NewInviteHandler(inviteService),
-		PMWorkflow:        handler.NewPMWorkflowHandler(pmWorkflowService),
-		PMImport:          handler.NewPMImportHandler(pmImportService),
-		PMLabel:           handler.NewPMLabelHandler(pmLabelService),
-		PMEpic:            handler.NewPMEpicHandler(pmEpicService),
-		PMSprint:          handler.NewPMSprintHandler(pmSprintService),
-		PMStory:           handler.NewPMStoryHandler(pmStoryService),
-		PMComment:         handler.NewPMCommentHandler(pmCommentService),
-		PMAttachment:      handler.NewPMAttachmentHandler(pmAttachmentService),
-		PMObjective:       handler.NewPMObjectiveHandler(pmObjectiveService),
-		PMChecklistItem:   handler.NewPMChecklistItemHandler(pmChecklistItemService),
-		PMExternalLink:    handler.NewPMExternalLinkHandler(pmExternalLinkService),
-		PMView:            handler.NewPMViewHandler(pmViewService),
-		Search:            handler.NewSearchHandler(searchService),
-		PMAutomation:      handler.NewPMAutomationHandler(pmAutomationService),
-		PMStoryTemplate:   handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
-		Agent:             handler.NewAgentHandler(agentService),
-		SupportInbox:      handler.NewSupportInboxHandler(supportInboxService, agentService),
+		Health:             handler.NewHealthHandler(),
+		Auth:               handler.NewAuthHandler(authService),
+		Organization:       handler.NewOrganizationHandler(orgService),
+		Workspace:          handler.NewWorkspaceHandler(workspaceService),
+		RewardQuarter:      handler.NewRewardQuarterHandler(quarterService),
+		RewardSprint:       handler.NewRewardSprintHandler(sprintService),
+		RewardGoal:         handler.NewRewardGoalHandler(goalService),
+		RewardBonus:        handler.NewRewardBonusHandler(bonusService),
+		RewardFinance:      handler.NewRewardFinanceHandler(bonusService),
+		Settings:           handler.NewSettingsHandler(settingsService),
+		RewardAudit:        handler.NewRewardAuditHandler(auditService),
+		RewardDraft:        handler.NewRewardDraftHandler(draftService),
+		Invite:             handler.NewInviteHandler(inviteService),
+		PMWorkflow:         handler.NewPMWorkflowHandler(pmWorkflowService),
+		PMImport:           handler.NewPMImportHandler(pmImportService),
+		PMLabel:            handler.NewPMLabelHandler(pmLabelService),
+		PMEpic:             handler.NewPMEpicHandler(pmEpicService),
+		PMSprint:           handler.NewPMSprintHandler(pmSprintService),
+		PMStory:            handler.NewPMStoryHandler(pmStoryService),
+		PMComment:          handler.NewPMCommentHandler(pmCommentService),
+		PMAttachment:       handler.NewPMAttachmentHandler(pmAttachmentService),
+		PMObjective:        handler.NewPMObjectiveHandler(pmObjectiveService),
+		PMChecklistItem:    handler.NewPMChecklistItemHandler(pmChecklistItemService),
+		PMExternalLink:     handler.NewPMExternalLinkHandler(pmExternalLinkService),
+		PMView:             handler.NewPMViewHandler(pmViewService),
+		Search:             handler.NewSearchHandler(searchService),
+		PMAutomation:       handler.NewPMAutomationHandler(pmAutomationService),
+		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
+		Agent:              handler.NewAgentHandler(agentService),
+		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),
 		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),
-		Git:               handler.NewGitHandler(gitService),
-		Orchestration:     handler.NewOrchestrationHandler(orchestrationService),
-		Notification:      handler.NewNotificationHandler(notificationService, followerService),
-		UserNotifSettings: handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
-		CRMContact:        handler.NewCRMContactHandler(crmContactService),
-		CRMCompany:        handler.NewCRMCompanyHandler(crmCompanyService),
-		CRMDeal:           handler.NewCRMDealHandler(crmDealService),
-		CRMAssociation:    handler.NewCRMAssociationHandler(crmAssociationService),
-		Associations:      handler.NewAssociationsHandler(associationsService),
-		CRMActivity:       handler.NewCRMActivityHandler(crmActivityService),
-		CRMProperty:       handler.NewCRMPropertyHandler(crmPropertyService),
-		CRMList:           handler.NewCRMListHandler(crmListService),
-		CRMImport:         handler.NewCRMImportHandler(crmImportService),
-		CRMEmail:          handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
-		CRMCalendar:       handler.NewCRMCalendarHandler(crmCalendarService),
-		CRMEnrichment:     handler.NewCRMEnrichmentHandler(crmEnrichmentService),
-		CRMSignal:         handler.NewCRMSignalHandler(crmSignalService),
-		CRMSuggestion:     handler.NewCRMSuggestionHandler(crmSuggestionService),
-		CRMSequence:       handler.NewCRMSequenceHandler(crmSequenceService),
-		CRMWritingProfile: handler.NewCRMWritingProfileHandler(crmWritingProfileService),
-		CRMSearch:         handler.NewCRMSearchHandler(crmSearchService),
-		CRMDealAutomation: handler.NewCRMDealAutomationHandler(dealAutomationService),
+		Git:                handler.NewGitHandler(gitService),
+		Orchestration:      handler.NewOrchestrationHandler(orchestrationService),
+		Notification:       handler.NewNotificationHandler(notificationService, followerService),
+		UserNotifSettings:  handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
+		CRMContact:         handler.NewCRMContactHandler(crmContactService),
+		CRMCompany:         handler.NewCRMCompanyHandler(crmCompanyService),
+		CRMDeal:            handler.NewCRMDealHandler(crmDealService),
+		CRMAssociation:     handler.NewCRMAssociationHandler(crmAssociationService),
+		Associations:       handler.NewAssociationsHandler(associationsService),
+		CRMActivity:        handler.NewCRMActivityHandler(crmActivityService),
+		CRMProperty:        handler.NewCRMPropertyHandler(crmPropertyService),
+		CRMList:            handler.NewCRMListHandler(crmListService),
+		CRMImport:          handler.NewCRMImportHandler(crmImportService),
+		CRMEmail:           handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
+		CRMCalendar:        handler.NewCRMCalendarHandler(crmCalendarService),
+		CRMEnrichment:      handler.NewCRMEnrichmentHandler(crmEnrichmentService),
+		CRMSignal:          handler.NewCRMSignalHandler(crmSignalService),
+		CRMSummary:         handler.NewCRMSummaryHandler(crmSummaryService),
+		CRMSuggestion:      handler.NewCRMSuggestionHandler(crmSuggestionService),
+		CRMSequence:        handler.NewCRMSequenceHandler(crmSequenceService),
+		CRMWritingProfile:  handler.NewCRMWritingProfileHandler(crmWritingProfileService),
+		CRMSearch:          handler.NewCRMSearchHandler(crmSearchService),
+		CRMDealAutomation:  handler.NewCRMDealAutomationHandler(dealAutomationService),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,
@@ -640,6 +654,10 @@ func main() {
 
 	// Set up router.
 	r := router.New(handlers, jwtManager, authzService, slugResolver, cfg.CORSOrigins)
+
+	if err := crmSummaryService.EnsureDailyReconciliation(context.Background()); err != nil {
+		slog.Error("failed to ensure crm summary daily reconciliation workflow", "error", err)
+	}
 
 	// Start background ticker for iteration automations.
 	automationDone := make(chan struct{})

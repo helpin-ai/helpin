@@ -15,60 +15,61 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
-	Health            *handler.HealthHandler
-	Auth              *handler.AuthHandler
-	Organization      *handler.OrganizationHandler
-	Workspace         *handler.WorkspaceHandler
-	RewardQuarter     *handler.RewardQuarterHandler
-	RewardSprint      *handler.RewardSprintHandler
-	RewardGoal        *handler.RewardGoalHandler
-	RewardBonus       *handler.RewardBonusHandler
-	RewardFinance     *handler.RewardFinanceHandler
-	Settings          *handler.SettingsHandler
-	RewardAudit       *handler.RewardAuditHandler
-	RewardDraft       *handler.RewardDraftHandler
-	Invite            *handler.InviteHandler
-	PMWorkflow        *handler.PMWorkflowHandler
-	PMImport          *handler.PMImportHandler
-	PMLabel           *handler.PMLabelHandler
-	PMEpic            *handler.PMEpicHandler
-	PMSprint          *handler.PMSprintHandler
-	PMStory           *handler.PMStoryHandler
-	PMComment         *handler.PMCommentHandler
-	PMAttachment      *handler.PMAttachmentHandler
-	PMObjective       *handler.PMObjectiveHandler
-	PMChecklistItem   *handler.PMChecklistItemHandler
-	PMExternalLink    *handler.PMExternalLinkHandler
-	PMView            *handler.PMViewHandler
-	PMAutomation      *handler.PMAutomationHandler
-	PMStoryTemplate   *handler.PMStoryTemplateHandler
-	Search            *handler.SearchHandler
-	Agent             *handler.AgentHandler
-	SupportInbox      *handler.SupportInboxHandler
+	Health             *handler.HealthHandler
+	Auth               *handler.AuthHandler
+	Organization       *handler.OrganizationHandler
+	Workspace          *handler.WorkspaceHandler
+	RewardQuarter      *handler.RewardQuarterHandler
+	RewardSprint       *handler.RewardSprintHandler
+	RewardGoal         *handler.RewardGoalHandler
+	RewardBonus        *handler.RewardBonusHandler
+	RewardFinance      *handler.RewardFinanceHandler
+	Settings           *handler.SettingsHandler
+	RewardAudit        *handler.RewardAuditHandler
+	RewardDraft        *handler.RewardDraftHandler
+	Invite             *handler.InviteHandler
+	PMWorkflow         *handler.PMWorkflowHandler
+	PMImport           *handler.PMImportHandler
+	PMLabel            *handler.PMLabelHandler
+	PMEpic             *handler.PMEpicHandler
+	PMSprint           *handler.PMSprintHandler
+	PMStory            *handler.PMStoryHandler
+	PMComment          *handler.PMCommentHandler
+	PMAttachment       *handler.PMAttachmentHandler
+	PMObjective        *handler.PMObjectiveHandler
+	PMChecklistItem    *handler.PMChecklistItemHandler
+	PMExternalLink     *handler.PMExternalLinkHandler
+	PMView             *handler.PMViewHandler
+	PMAutomation       *handler.PMAutomationHandler
+	PMStoryTemplate    *handler.PMStoryTemplateHandler
+	Search             *handler.SearchHandler
+	Agent              *handler.AgentHandler
+	SupportInbox       *handler.SupportInboxHandler
 	SupportInboxWidget *handler.SupportInboxWidgetHandler
-	Git               *handler.GitHandler
-	Orchestration     *handler.OrchestrationHandler
-	Docs              *handler.DocsHandler
-	Notification      *handler.NotificationHandler
-	UserNotifSettings *handler.UserNotificationSettingsHandler
-	CRMContact        *handler.CRMContactHandler
-	CRMCompany        *handler.CRMCompanyHandler
-	CRMDeal           *handler.CRMDealHandler
-	CRMAssociation    *handler.CRMAssociationHandler
-	Associations      *handler.AssociationsHandler
-	CRMActivity       *handler.CRMActivityHandler
-	CRMProperty       *handler.CRMPropertyHandler
-	CRMList           *handler.CRMListHandler
-	CRMImport         *handler.CRMImportHandler
-	CRMEmail          *handler.CRMEmailHandler
-	CRMCalendar       *handler.CRMCalendarHandler
-	CRMEnrichment     *handler.CRMEnrichmentHandler
-	CRMSignal         *handler.CRMSignalHandler
-	CRMSuggestion     *handler.CRMSuggestionHandler
-	CRMSequence       *handler.CRMSequenceHandler
-	CRMWritingProfile *handler.CRMWritingProfileHandler
-	CRMSearch         *handler.CRMSearchHandler
-	CRMDealAutomation *handler.CRMDealAutomationHandler
+	Git                *handler.GitHandler
+	Orchestration      *handler.OrchestrationHandler
+	Docs               *handler.DocsHandler
+	Notification       *handler.NotificationHandler
+	UserNotifSettings  *handler.UserNotificationSettingsHandler
+	CRMContact         *handler.CRMContactHandler
+	CRMCompany         *handler.CRMCompanyHandler
+	CRMDeal            *handler.CRMDealHandler
+	CRMAssociation     *handler.CRMAssociationHandler
+	Associations       *handler.AssociationsHandler
+	CRMActivity        *handler.CRMActivityHandler
+	CRMProperty        *handler.CRMPropertyHandler
+	CRMList            *handler.CRMListHandler
+	CRMImport          *handler.CRMImportHandler
+	CRMEmail           *handler.CRMEmailHandler
+	CRMCalendar        *handler.CRMCalendarHandler
+	CRMEnrichment      *handler.CRMEnrichmentHandler
+	CRMSignal          *handler.CRMSignalHandler
+	CRMSummary         *handler.CRMSummaryHandler
+	CRMSuggestion      *handler.CRMSuggestionHandler
+	CRMSequence        *handler.CRMSequenceHandler
+	CRMWritingProfile  *handler.CRMWritingProfileHandler
+	CRMSearch          *handler.CRMSearchHandler
+	CRMDealAutomation  *handler.CRMDealAutomationHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -707,6 +708,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts", h.CRMEmail.CreateAccount)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}", h.CRMEmail.GetAccount)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/email/accounts/{id}", h.CRMEmail.DeleteAccount)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/email/accounts/{id}/diagnostics", h.CRMEmail.GetAccountDiagnostics)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/email/accounts/{id}/maintenance/rebuild-associations", h.CRMEmail.RebuildAssociations)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Delete("/email/accounts/{id}/data", h.CRMEmail.PurgeAccountData)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts/{id}/oauth-callback", h.CRMEmail.OAuthCallback)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/threads", h.CRMEmail.ListThreads)
@@ -740,6 +743,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/signals/{id}", h.CRMSignal.DeleteSignal)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/signals", h.CRMSignal.ListByContact)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/signals", h.CRMSignal.ListByDeal)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/summary", h.CRMSummary.GetContactSummary)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/summary", h.CRMSummary.GetDealSummary)
 
 				// Health Scores — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/health-scores", h.CRMSignal.ListHealthScores)

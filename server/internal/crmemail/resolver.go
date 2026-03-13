@@ -41,6 +41,7 @@ type ResolveResult struct {
 	Associations     []model.CRMEmailMessageContact
 	ContactIDs       []string
 	PrimaryContactID *string
+	ContactsCreated  int
 }
 
 // Resolver matches message participants to contacts and creates new contacts
@@ -110,11 +111,14 @@ func (r *Resolver) Resolve(ctx context.Context, input ResolveInput) (*ResolveRes
 
 		contact, ok := resolvedContacts[participant.Email]
 		if !ok && shouldAutoCreateContact(input.Settings, input.Direction, participant.Email) {
-			created, err := r.createContact(ctx, input.WorkspaceID, participant.Email, participant.Name)
+			created, wasCreated, err := r.createContact(ctx, input.WorkspaceID, participant.Email, participant.Name)
 			if err != nil {
 				return nil, err
 			}
 			if created != nil {
+				if wasCreated {
+					result.ContactsCreated++
+				}
 				contact = *created
 				resolvedContacts[participant.Email] = contact
 				ok = true
@@ -235,18 +239,18 @@ func shouldAutoCreateContact(settings *model.CRMEmailSyncSettings, direction, em
 	return !model.IsBlockedRecordPrefix(settings, email)
 }
 
-func (r *Resolver) createContact(ctx context.Context, workspaceID, email, displayName string) (*model.CRMContact, error) {
+func (r *Resolver) createContact(ctx context.Context, workspaceID, email, displayName string) (*model.CRMContact, bool, error) {
 	existing, err := r.contactRepo.GetByEmail(ctx, workspaceID, email)
 	if err != nil {
-		return nil, fmt.Errorf("get contact by email: %w", err)
+		return nil, false, fmt.Errorf("get contact by email: %w", err)
 	}
 	if existing != nil {
-		return existing, nil
+		return existing, false, nil
 	}
 
 	displayID, err := r.contactRepo.GetNextDisplayID(ctx, workspaceID)
 	if err != nil {
-		return nil, fmt.Errorf("allocate contact display_id: %w", err)
+		return nil, false, fmt.Errorf("allocate contact display_id: %w", err)
 	}
 
 	firstName, lastName := deriveContactName(displayName, email)
@@ -266,15 +270,15 @@ func (r *Resolver) createContact(ctx context.Context, workspaceID, email, displa
 		if isDuplicateCreateError(err) {
 			existing, lookupErr := r.contactRepo.GetByEmail(ctx, workspaceID, email)
 			if lookupErr != nil {
-				return nil, fmt.Errorf("lookup duplicated contact by email: %w", lookupErr)
+				return nil, false, fmt.Errorf("lookup duplicated contact by email: %w", lookupErr)
 			}
 			if existing != nil {
-				return existing, nil
+				return existing, false, nil
 			}
 		}
-		return nil, fmt.Errorf("create contact from email: %w", err)
+		return nil, false, fmt.Errorf("create contact from email: %w", err)
 	}
-	return contact, nil
+	return contact, true, nil
 }
 
 func isDuplicateCreateError(err error) bool {
