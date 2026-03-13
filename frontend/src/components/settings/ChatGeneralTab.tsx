@@ -189,11 +189,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     t.setAttribute('data-tracking-host', 'https://client.prod.helpin.ai');
     t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
-
-    helpin('boot', {
-      key: '${widgetKey}',
-      host: 'https://client.prod.helpin.ai'
-    });
   })();
 </script>`;
   const jsApiSnippet = `<script type="text/javascript">
@@ -213,7 +208,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     // Identify logged-in users (optional)
     helpin('boot', {
       key: '${widgetKey}',
-      host: 'https://client.prod.helpin.ai',
       user: {
         email: 'user@example.com',
         name: 'Jane Doe',
