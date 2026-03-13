@@ -206,7 +206,7 @@ export function ObjectivesPage() {
   }
 
   return (
-    <div>
+    <div className="max-w-7xl mx-auto">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-semibold">Objectives</h1>
         {canEdit && (
@@ -303,7 +303,7 @@ function ObjectiveCard({
 
   return (
     <article
-      className="group flex flex-col rounded-lg border border-border/60 bg-card transition-all hover:shadow-sm hover:border-border cursor-pointer"
+      className="group flex flex-col rounded-lg border border-border/60 bg-card transition-all hover:shadow-md hover:border-border cursor-pointer"
       onClick={onClick}
     >
       {/* Header */}

@@ -31,6 +31,14 @@ export const PRIORITY_CONFIG: Record<
   none: { icon: Ban, color: 'text-zinc-400', label: 'None' },
 };
 
+export const PRIORITY_BORDER_COLOR: Record<Priority, string> = {
+  urgent: 'border-red-400 dark:border-red-600',
+  high: 'border-orange-400 dark:border-orange-600',
+  medium: 'border-amber-400 dark:border-amber-600',
+  low: 'border-sky-400 dark:border-sky-600',
+  none: 'border-border',
+};
+
 export function PriorityIcon({
   priority,
   className = 'h-4 w-4',

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -72,8 +73,8 @@ func TestPMEpicService_Create(t *testing.T) {
 		if epic.Epic.ID == "" {
 			t.Error("expected non-empty ID")
 		}
-		if epic.Epic.Health != model.PMEpicHealthOnTrack {
-			t.Errorf("health = %q, want %q", epic.Epic.Health, model.PMEpicHealthOnTrack)
+		if epic.Epic.Health != model.PMEpicHealthNone {
+			t.Errorf("health = %q, want %q", epic.Epic.Health, model.PMEpicHealthNone)
 		}
 		if epic.Epic.Archived {
 			t.Error("expected archived = false")
@@ -583,6 +584,7 @@ func TestIsValidEpicHealth(t *testing.T) {
 		input string
 		want  bool
 	}{
+		{name: "no_health", input: model.PMEpicHealthNone, want: true},
 		{name: "on_track", input: model.PMEpicHealthOnTrack, want: true},
 		{name: "at_risk", input: model.PMEpicHealthAtRisk, want: true},
 		{name: "off_track", input: model.PMEpicHealthOffTrack, want: true},
@@ -605,23 +607,97 @@ func TestIsValidEpicHealth(t *testing.T) {
 func TestComputeEpicSuggestedHealth(t *testing.T) {
 	t.Parallel()
 
-	t.Run("no dates returns on_track", func(t *testing.T) {
+	makeEpic := func(start, end time.Time, storyCount, doneCount int) *model.EpicWithStats {
+		return &model.EpicWithStats{
+			Epic: model.PMEpic{
+				PlannedStartDate: &start,
+				Deadline:         &end,
+			},
+			Stats: model.PMEpicStats{
+				StoryCount:     storyCount,
+				DoneStoryCount: doneCount,
+			},
+		}
+	}
+
+	t.Run("no dates returns no_health", func(t *testing.T) {
 		epic := &model.EpicWithStats{
 			Stats: model.PMEpicStats{StoryCount: 5, DoneStoryCount: 0},
 		}
-		result := computeEpicSuggestedHealth(epic)
+		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 13, 12, 0, 0, 0, time.UTC))
+		if result != model.PMEpicHealthNone {
+			t.Errorf("got %q, want %q", result, model.PMEpicHealthNone)
+		}
+	})
+
+	t.Run("no stories returns no_health", func(t *testing.T) {
+		epic := &model.EpicWithStats{
+			Stats: model.PMEpicStats{StoryCount: 0},
+		}
+		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 13, 12, 0, 0, 0, time.UTC))
+		if result != model.PMEpicHealthNone {
+			t.Errorf("got %q, want %q", result, model.PMEpicHealthNone)
+		}
+	})
+
+	t.Run("before start returns no_health", func(t *testing.T) {
+		start := time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC)
+		end := time.Date(2026, time.March, 27, 0, 0, 0, 0, time.UTC)
+		epic := makeEpic(start, end, 4, 0)
+		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 13, 12, 0, 0, 0, time.UTC))
+		if result != model.PMEpicHealthNone {
+			t.Errorf("got %q, want %q", result, model.PMEpicHealthNone)
+		}
+	})
+
+	t.Run("start day with no progress remains on_track", func(t *testing.T) {
+		start := time.Date(2026, time.March, 13, 0, 0, 0, 0, time.UTC)
+		end := time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC)
+		epic := makeEpic(start, end, 2, 0)
+		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 13, 18, 0, 0, 0, time.UTC))
 		if result != model.PMEpicHealthOnTrack {
 			t.Errorf("got %q, want %q", result, model.PMEpicHealthOnTrack)
 		}
 	})
 
-	t.Run("no stories returns on_track", func(t *testing.T) {
-		epic := &model.EpicWithStats{
-			Stats: model.PMEpicStats{StoryCount: 0},
-		}
-		result := computeEpicSuggestedHealth(epic)
+	t.Run("deadline day is not automatically overdue", func(t *testing.T) {
+		start := time.Date(2026, time.March, 13, 0, 0, 0, 0, time.UTC)
+		end := time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC)
+		epic := makeEpic(start, end, 2, 1)
+		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 14, 9, 0, 0, 0, time.UTC))
 		if result != model.PMEpicHealthOnTrack {
 			t.Errorf("got %q, want %q", result, model.PMEpicHealthOnTrack)
+		}
+	})
+
+	t.Run("after deadline with incomplete work returns off_track", func(t *testing.T) {
+		start := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+		end := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
+		epic := makeEpic(start, end, 4, 3)
+		result := computeEpicSuggestedHealthAt(epic, time.Date(2026, time.March, 13, 8, 0, 0, 0, time.UTC))
+		if result != model.PMEpicHealthOffTrack {
+			t.Errorf("got %q, want %q", result, model.PMEpicHealthOffTrack)
+		}
+	})
+
+	t.Run("gap thresholds map to on_track at_risk and off_track", func(t *testing.T) {
+		start := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+		end := time.Date(2026, time.March, 19, 0, 0, 0, 0, time.UTC)
+		now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
+
+		onTrack := makeEpic(start, end, 10, 4) // expected 50%, actual 40%, gap 10
+		if result := computeEpicSuggestedHealthAt(onTrack, now); result != model.PMEpicHealthOnTrack {
+			t.Errorf("on_track got %q, want %q", result, model.PMEpicHealthOnTrack)
+		}
+
+		atRisk := makeEpic(start, end, 10, 3) // expected 50%, actual 30%, gap 20
+		if result := computeEpicSuggestedHealthAt(atRisk, now); result != model.PMEpicHealthAtRisk {
+			t.Errorf("at_risk got %q, want %q", result, model.PMEpicHealthAtRisk)
+		}
+
+		offTrack := makeEpic(start, end, 10, 2) // expected 50%, actual 20%, gap 30
+		if result := computeEpicSuggestedHealthAt(offTrack, now); result != model.PMEpicHealthOffTrack {
+			t.Errorf("off_track got %q, want %q", result, model.PMEpicHealthOffTrack)
 		}
 	})
 }

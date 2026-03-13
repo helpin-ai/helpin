@@ -94,7 +94,7 @@ export function Header() {
     };
 
     if (section === "pm") {
-      crumbs.push({ label: "Projects", to: `/w/${slug}/pm/stories` });
+      crumbs.push({ label: "Projects", to: `/w/${slug}/pm/my-work` });
       if (subRoute[1]) {
         const pmSub = subRoute[1];
         const pmLabel = pmSubMap[pmSub] ?? pmSub.replace(/-/g, " ");

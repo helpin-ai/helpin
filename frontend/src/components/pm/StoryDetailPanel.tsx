@@ -1058,7 +1058,7 @@ export function StoryDetailPanel({
 }: StoryDetailPanelProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[85vw] !max-w-[85vw] p-0" showCloseButton={false}>
+      <SheetContent side="right" className="w-[75vw] !max-w-[75vw] p-0" showCloseButton={false}>
         <SheetTitle className="sr-only">Story Detail</SheetTitle>
         {storyDetail ? (
           <StoryDetailPanelBody

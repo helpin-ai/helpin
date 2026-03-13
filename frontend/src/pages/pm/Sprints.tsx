@@ -247,7 +247,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-7xl mx-auto">
       <header className="flex items-center justify-between">
         {showHeaderIntro ? (
           <div>
@@ -393,7 +393,7 @@ function SprintCard({
   return (
     <>
       <Card
-        className="group cursor-pointer transition hover:shadow-md"
+        className="group cursor-pointer transition-all border-border/60 hover:shadow-md hover:border-border"
         onClick={onOpen}
       >
         <CardHeader className="pb-2">

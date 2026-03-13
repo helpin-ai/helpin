@@ -877,7 +877,7 @@ func createPMEpicObjectiveTables(t *testing.T, db *gorm.DB) {
 			completed_at DATETIME,
 			position INTEGER NOT NULL DEFAULT 0,
 			color TEXT,
-			health TEXT NOT NULL DEFAULT 'on_track',
+			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
 			orchestrator_agent_id TEXT,

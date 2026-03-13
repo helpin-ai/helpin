@@ -30,7 +30,7 @@ import { useSession } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
-import { StoryDetailPanel } from './StoryDetailPanel';
+import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { StoryFilterProvider, StoryFilterTrigger, StoryFilterBar } from './StoryFilters';
 import { StoryListView } from './StoryListView';
 import { ViewBar } from './ViewBar';
@@ -460,9 +460,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createStateId, setCreateStateId] = useState<string>('');
   const [createOwnerMemberId, setCreateOwnerMemberId] = useState<string | undefined>(undefined);
-  const [selectedStory, setSelectedStory] = useState<Awaited<ReturnType<typeof pmStoryService.get>>['data'] | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const openStoryPanel = useStoryPanelStore((s) => s.openStory);
   const VIEW_MODE_KEY = `pm_view_mode_${workspaceId}`;
   const [viewMode, setViewModeState] = useState<'board' | 'list'>(() => {
     try {
@@ -518,53 +516,78 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     return () => window.removeEventListener('story-created', handler);
   }, [refreshBoard, groupBy, loadMemberBoard, showEmptyColumns, activeMemberIds]);
 
-  // Re-fetch open story detail when WS story events arrive
-  useEffect(() => {
-    const refetchDetail = (e: Event) => {
-      const storyId = selectedStory?.story?.id;
-      if (!storyId || !detailOpen) return;
-      const detail = (e as CustomEvent)?.detail;
-      if (detail?.entity_id === storyId) {
-        pmStoryService.get(workspaceId, storyId).then((res) => {
-          if (res.data) setSelectedStory(res.data);
-        });
-      }
-    };
-    window.addEventListener('story-updated', refetchDetail);
-    return () => {
-      window.removeEventListener('story-updated', refetchDetail);
-    };
-  }, [workspaceId, selectedStory?.story?.id, detailOpen]);
-
+  // Open ?story= URL param in global panel on mount
   useEffect(() => {
     if (!workflow) return;
     const maybeStory = new URLSearchParams(window.location.search).get('story');
     if (!maybeStory) return;
     const match = maybeStory.match(/^(\d+)$/);
     if (!match) return;
-
     (async () => {
-      const displayId = Number(match[1]);
-      const res = await pmStoryService.getByDisplayId(workspaceId, displayId);
-      if (res.data) {
-        setSelectedStory(res.data);
-        setDetailOpen(true);
-      }
+      const res = await pmStoryService.getByDisplayId(workspaceId, Number(match[1]));
+      if (res.data) openStoryPanel(res.data.story.id);
     })();
-  }, [workspaceId, workflow]);
+  }, [workspaceId, workflow, openStoryPanel]);
 
   const openStory = useCallback(
-    async (story: Story) => {
-      setSelectedStory(null);
-      setDetailLoading(true);
-      setDetailOpen(true);
-      const detail = await pmStoryService.get(workspaceId, story.id);
-      setDetailLoading(false);
-      if (!detail.data) return;
-      setSelectedStory(detail.data);
-    },
-    [workspaceId]
+    (story: Story) => openStoryPanel(story.id),
+    [openStoryPanel]
   );
+
+  // Listen for global panel events to patch board state
+  useEffect(() => {
+    const onUpdated = (e: Event) => {
+      const updated = (e as CustomEvent)?.detail?.story;
+      if (!updated) return;
+      const story = { ...updated.story };
+      const ownerKey = story.owner_member_id;
+      if (ownerKey && !story.owner_name) {
+        story.owner_name = updated.owner_member
+          ? ownerNameMap.get(updated.owner_member.id) ?? updated.owner_member.display_name ?? updated.owner_member.email
+          : ownerNameMap.get(ownerKey);
+      }
+      if (groupBy === 'members') {
+        const stateCol = columns.find((c) => c.state.id === story.workflow_state_id);
+        if (stateCol) {
+          story.state_name = stateCol.state.name;
+          story.state_type = stateCol.state.state_type;
+          story.state_color = stateCol.state.color;
+        }
+        const cols = usePMBoardStore.getState().memberColumns;
+        const patched = cols.map((col: StoryMemberColumn) => {
+          const idx = col.stories.findIndex((s) => s.id === story.id);
+          if (idx < 0) return col;
+          const stories = [...col.stories];
+          stories[idx] = { ...stories[idx], ...story };
+          return { ...col, stories };
+        });
+        usePMBoardStore.setState({ memberColumns: patched });
+      } else {
+        if (!patchStory('updated', story.id, story)) refreshBoard();
+      }
+    };
+    const onArchived = (e: Event) => {
+      const storyId = (e as CustomEvent)?.detail?.storyId;
+      if (!storyId) return;
+      if (groupBy === 'members') {
+        const cols = usePMBoardStore.getState().memberColumns;
+        const updated = cols.map((col: StoryMemberColumn) => {
+          const idx = col.stories.findIndex((s) => s.id === storyId);
+          if (idx < 0) return col;
+          return { ...col, stories: col.stories.filter((s) => s.id !== storyId), story_count: col.story_count - 1 };
+        });
+        usePMBoardStore.setState({ memberColumns: updated });
+      } else {
+        if (!patchStory('deleted', storyId)) refreshBoard();
+      }
+    };
+    window.addEventListener('story-panel-updated', onUpdated);
+    window.addEventListener('story-panel-archived', onArchived);
+    return () => {
+      window.removeEventListener('story-panel-updated', onUpdated);
+      window.removeEventListener('story-panel-archived', onArchived);
+    };
+  }, [groupBy, columns, ownerNameMap, patchStory, refreshBoard]);
 
   const findStateIdByItemId = useCallback(
     (id: string) => {
@@ -898,67 +921,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         />
       ) : null}
 
-      <StoryDetailPanel
-        workspaceId={workspaceId}
-        open={detailOpen}
-        loading={detailLoading}
-        onOpenChange={setDetailOpen}
-        storyDetail={selectedStory}
-        states={workflow?.states ?? []}
-        onStoryUpdated={(updated) => {
-          setSelectedStory(updated);
-          const story = { ...updated.story };
-          const ownerKey = story.owner_member_id;
-          if (ownerKey && !story.owner_name) {
-            story.owner_name = updated.owner_member
-              ? ownerNameMap.get(updated.owner_member.id) ?? updated.owner_member.display_name ?? updated.owner_member.email
-              : ownerNameMap.get(ownerKey);
-          }
-          if (groupBy === 'members') {
-            // Enrich with state info from workflow columns
-            const stateCol = columns.find((c) => c.state.id === story.workflow_state_id);
-            if (stateCol) {
-              story.state_name = stateCol.state.name;
-              story.state_type = stateCol.state.state_type;
-              story.state_color = stateCol.state.color;
-            }
-            const cols = usePMBoardStore.getState().memberColumns;
-            const patched = cols.map((col) => {
-              const idx = col.stories.findIndex((s) => s.id === story.id);
-              if (idx < 0) return col;
-              const stories = [...col.stories];
-              stories[idx] = { ...stories[idx], ...story };
-              return { ...col, stories };
-            });
-            usePMBoardStore.setState({ memberColumns: patched });
-          } else {
-            const patched = patchStory('updated', story.id, story);
-            if (!patched) {
-              refreshBoard();
-            }
-          }
-        }}
-        onStoryArchived={() => {
-          setDetailOpen(false);
-          const storyId = selectedStory?.story.id ?? '';
-          setSelectedStory(null);
-          if (groupBy === 'members') {
-            const cols = usePMBoardStore.getState().memberColumns;
-            const updated = cols.map((col) => {
-              const idx = col.stories.findIndex((s) => s.id === storyId);
-              if (idx < 0) return col;
-              const stories = col.stories.filter((s) => s.id !== storyId);
-              return { ...col, stories, story_count: col.story_count - 1 };
-            });
-            usePMBoardStore.setState({ memberColumns: updated });
-          } else {
-            const patched = patchStory('deleted', storyId);
-            if (!patched) {
-              refreshBoard();
-            }
-          }
-        }}
-      />
     </div>
     </StoryFilterProvider>
   );

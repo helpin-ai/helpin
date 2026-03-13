@@ -51,7 +51,7 @@ export default function JoinWorkspace() {
     }
     toast.success(`Joined ${info?.workspace_name}!`);
     await queryClient.invalidateQueries({ queryKey: ['workspaces'] });
-    navigate({ to: '/w/$slug/pm/stories', params: { slug: info?.workspace_slug ?? '' } });
+    navigate({ to: '/w/$slug/pm/my-work', params: { slug: info?.workspace_slug ?? '' } });
   };
 
   if (loading) {
@@ -115,7 +115,7 @@ export default function JoinWorkspace() {
       useAuthStore.setState({ user: data.user, serverUnreachable: false });
       toast.success(`Welcome to ${info?.workspace_name}!`);
       await queryClient.invalidateQueries({ queryKey: ['workspaces'] });
-      navigate({ to: '/w/$slug/pm/stories', params: { slug: data.workspace_slug } });
+      navigate({ to: '/w/$slug/pm/my-work', params: { slug: data.workspace_slug } });
     };
 
     return (
