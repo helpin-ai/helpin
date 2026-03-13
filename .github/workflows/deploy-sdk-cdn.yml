@@ -45,13 +45,16 @@ jobs:
         run: pnpm build --filter @helpin/sdk-js...
 
       - name: Prepare CDN deploy directory
-        run: cp packages/sdk-js/dist-cdn/index.html packages/sdk-js/dist/index.html
+        run: |
+          mkdir -p packages/sdk-js/cdn-deploy
+          cp packages/sdk-js/dist/lib.js packages/sdk-js/cdn-deploy/lib.js
+          cp packages/sdk-js/dist-cdn/index.html packages/sdk-js/cdn-deploy/index.html
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: sdk-dist
-          path: packages/sdk-js/dist
+          path: packages/sdk-js/cdn-deploy
 
   deploy-staging:
     name: Deploy to Staging (cdn-stage.helpin.ai)
