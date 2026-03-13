@@ -42,6 +42,11 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(isOpen);
 
+  // Sync activeView when initialView prop changes (e.g. first-open → conversation)
+  useEffect(() => {
+    setActiveView(initialView);
+  }, [initialView]);
+
   useEffect(() => {
     let frameId: number | undefined;
     let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;

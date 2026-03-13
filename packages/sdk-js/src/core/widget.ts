@@ -35,6 +35,7 @@ export class WidgetManager {
   private wsRetryCount = 0;
   private wsRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private isShutdown = false;
+  private hasBeenOpened = false;
   private host = 'client.prod.helpin.ai';
 
   // Preact mount state
@@ -87,6 +88,7 @@ export class WidgetManager {
     this.sessionToken = null;
     this.isOpen = false;
     this.unreadCount = 0;
+    this.hasBeenOpened = false;
     this.wsRetryCount = 0;
     this.messages = [];
     this.currentView = 'home';
@@ -104,6 +106,11 @@ export class WidgetManager {
   show(): void {
     this.isOpen = true;
     this.unreadCount = 0;
+    // First open goes straight to conversation so users can ask a question
+    if (!this.hasBeenOpened) {
+      this.hasBeenOpened = true;
+      this.currentView = 'conversation';
+    }
     this.ensureWidget();
     this.render();
     this.triggerCallback('onShow');

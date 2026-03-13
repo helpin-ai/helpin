@@ -106,6 +106,14 @@ function initFromScript(script: HTMLScriptElement): HelpinClient {
 
   initializeNamespacedClient(namespace, client);
 
+  // Auto-boot widget using the same key and host from script attributes
+  if (config.key) {
+    widgetManager.boot({
+      key: config.key,
+      host: config.trackingHost,
+    });
+  }
+
   return client;
 }
 
