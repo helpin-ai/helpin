@@ -52,8 +52,8 @@ public class SessionEventWindowStream {
     static Properties streamsConfig(final String bootstrapServers, final String stateDir, String AUTH_REQUIRED,
             String SECURITY_PROTOCOL) {
         final Properties config = new Properties();
-        config.put(StreamsConfig.APPLICATION_ID_CONFIG, "DSL-kafka-consumer");
-        config.put(StreamsConfig.CLIENT_ID_CONFIG, "eventpipeline-sessionized-client");
+        config.put(StreamsConfig.APPLICATION_ID_CONFIG, "helpin-eventpipeline-kstreams");
+        config.put(StreamsConfig.CLIENT_ID_CONFIG, "helpin-eventpipeline-sessionized-client");
         config.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         config.put(StreamsConfig.STATE_DIR_CONFIG, stateDir);
         config.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
@@ -65,36 +65,55 @@ public class SessionEventWindowStream {
                 Serdes.String().getClass().getName());
         config.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG,
                 Serdes.String().getClass().getName());
-        config.put(ConsumerConfig.GROUP_ID_CONFIG, "DSL-kafka-consumer");
+        config.put(ConsumerConfig.GROUP_ID_CONFIG, "helpin-eventpipeline-kstreams");
         config.put("compression.type", "lz4");
-        System.out.println("Auth present ");
-        System.out.println("Security protocol" + SECURITY_PROTOCOL);
-        System.out.println("Auth required " + AUTH_REQUIRED);
+        System.out.println("Auth required: " + AUTH_REQUIRED);
+        System.out.println("Security protocol: " + SECURITY_PROTOCOL);
         if (AUTH_REQUIRED != null && AUTH_REQUIRED.equals("true") &&
                 SECURITY_PROTOCOL != null) {
 
-            String truststorePassword = getEnvironmentVariable("TRUSTSTORE_PASSWORD");
-            System.out.println("Truststore password: " + truststorePassword);
-            config.put("security.protocol", "SSL");
-            config.put("ssl.truststore.location", "src/main/java/com/eventspipeline/resources/tls/cluster.p12");
+            config.put("security.protocol", SECURITY_PROTOCOL);
 
-            if (truststorePassword != null && !truststorePassword.isEmpty()) {
-                System.out.println("Truststore password: " + truststorePassword);
+            if (SECURITY_PROTOCOL.equals("SASL_PLAINTEXT") || SECURITY_PROTOCOL.equals("SASL_SSL")) {
+                // SASL/SCRAM authentication
+                String saslMechanism = getEnvironmentVariable("KAFKA_SASL_MECHANISM");
+                if (saslMechanism == null || saslMechanism.isEmpty()) {
+                    saslMechanism = "SCRAM-SHA-512";
+                }
+                config.put("sasl.mechanism", saslMechanism);
+
+                String saslUsername = getEnvironmentVariable("KAFKA_SASL_USERNAME");
+                String saslPassword = getEnvironmentVariable("KAFKA_SASL_PASSWORD");
+                if (saslUsername == null || saslPassword == null) {
+                    throw new RuntimeException("KAFKA_SASL_USERNAME and KAFKA_SASL_PASSWORD are required for SASL auth.");
+                }
+                String jaasConfig = "org.apache.kafka.common.security.scram.ScramLoginModule required "
+                        + "username=\"" + saslUsername + "\" "
+                        + "password=\"" + saslPassword + "\";";
+                config.put("sasl.jaas.config", jaasConfig);
+                System.out.println("Configured SASL/" + saslMechanism + " auth for user: " + saslUsername);
+            }
+
+            if (SECURITY_PROTOCOL.equals("SSL") || SECURITY_PROTOCOL.equals("SASL_SSL")) {
+                // TLS/SSL certificate configuration
+                String truststorePassword = getEnvironmentVariable("TRUSTSTORE_PASSWORD");
+                if (truststorePassword == null || truststorePassword.isEmpty()) {
+                    throw new RuntimeException("No TRUSTSTORE_PASSWORD environment variable found.");
+                }
+                config.put("ssl.truststore.location", "src/main/java/com/eventspipeline/resources/tls/cluster.p12");
                 config.put("ssl.truststore.password", truststorePassword);
-            } else {
-                throw new RuntimeException("No TRUSTSTORE_PASSWORD environment variable found.");
-            }
-            config.put("ssl.truststore.type", "PKCS12");
-            config.put("ssl.keystore.location", "src/main/java/com/eventspipeline/resources/tls/user.p12");
-            String keystorePassword = getEnvironmentVariable("KEYSTORE_PASSWORD");
-            if (keystorePassword != null && !keystorePassword.isEmpty()) {
+                config.put("ssl.truststore.type", "PKCS12");
+
+                String keystorePassword = getEnvironmentVariable("KEYSTORE_PASSWORD");
+                if (keystorePassword == null || keystorePassword.isEmpty()) {
+                    throw new RuntimeException("No KEYSTORE_PASSWORD environment variable found.");
+                }
+                config.put("ssl.keystore.location", "src/main/java/com/eventspipeline/resources/tls/user.p12");
                 config.put("ssl.keystore.password", keystorePassword);
-                System.out.println("Keystore password: " + keystorePassword);
-            } else {
-                throw new RuntimeException("No KEYSTORE_PASSWORD environment variable found.");
+                config.put("ssl.keystore.type", "PKCS12");
+                config.put("ssl.endpoint.identification.algorithm", "");
+                System.out.println("Configured SSL/TLS auth");
             }
-            config.put("ssl.keystore.type", "PKCS12");
-            config.put("ssl.endpoint.identification.algorithm", "");
         }
 
         return config;
