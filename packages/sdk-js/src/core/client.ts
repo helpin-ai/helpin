@@ -33,6 +33,10 @@ export class HelpinClient {
   private namespace: string;
 
   constructor(config: Config) {
+    // Ensure trackingHost has protocol so URLs aren't treated as relative paths
+    if (config.trackingHost && !/^https?:\/\//.test(config.trackingHost)) {
+      config.trackingHost = `https://${config.trackingHost}`;
+    }
     this.config = this.mergeConfig(config, defaultConfig);
     this.logger = getLogger(this.config.logLevel);
     this.namespace = config.namespace || 'default';
