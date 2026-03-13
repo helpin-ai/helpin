@@ -3,10 +3,9 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useOrganizationMembers } from '@/hooks/queries';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
-import type { MemberWithUser, Invitation } from '@/lib/types';
+import type { MemberWithUser, Invitation, TeamUserMembership, WorkspaceTeam } from '@/lib/types';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,14 +14,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { Copy, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Copy, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { LINEAR_CARD_CLASS } from './settingsConstants';
 
-export function MembersTab({ workspaceId, organizationId, editable }: {
+export function MembersTab({ workspaceId, organizationId, editable, teams, userMemberships }: {
   workspaceId: string;
   organizationId?: string;
   editable: boolean;
+  teams: WorkspaceTeam[];
+  userMemberships: TeamUserMembership[];
 }) {
   const [members, setMembers] = useState<MemberWithUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -33,6 +33,7 @@ export function MembersTab({ workspaceId, organizationId, editable }: {
   const [sending, setSending] = useState(false);
   const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [query, setQuery] = useState('');
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -58,6 +59,35 @@ export function MembersTab({ workspaceId, organizationId, editable }: {
       (m) => m.email.toLowerCase().includes(q) || (m.full_name && m.full_name.toLowerCase().includes(q))
     );
   }, [availableOrgMembers, invEmail]);
+
+  const teamNamesByUserId = useMemo(() => {
+    const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
+    const memberships = new Map<string, string[]>();
+
+    userMemberships.forEach((membership) => {
+      const teamName = teamNameById.get(membership.team_id);
+      if (!teamName) return;
+      const current = memberships.get(membership.user_id) ?? [];
+      current.push(teamName);
+      memberships.set(membership.user_id, current);
+    });
+
+    memberships.forEach((names, userId) => {
+      memberships.set(userId, [...names].sort((a, b) => a.localeCompare(b)));
+    });
+
+    return memberships;
+  }, [teams, userMemberships]);
+
+  const filteredMembers = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    if (!search) return members;
+    return members.filter((member) =>
+      [member.full_name, member.email, member.role]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(search))
+    );
+  }, [members, query]);
 
   const loadData = async () => {
     setLoading(true);
@@ -126,65 +156,130 @@ export function MembersTab({ workspaceId, organizationId, editable }: {
   if (loading) return <Skeleton className="h-96" />;
 
   return (
-    <Card className={LINEAR_CARD_CLASS}>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-base">Members</CardTitle>
-            <Badge variant="outline" className="text-xs font-normal">{members.length}</Badge>
-          </div>
-          {editable && (
-            <Button size="sm" onClick={openInviteDialog}>
-              <Plus className="h-4 w-4 mr-1" /> Invite Member
-            </Button>
-          )}
+    <>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold">Members</h2>
         </div>
-      </CardHeader>
-      <CardContent>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <span className="text-sm text-muted-foreground">{members.length} {members.length === 1 ? 'member' : 'members'} in this workspace</span>
+          <div className="flex items-center gap-3">
+            {members.length > 10 && (
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="h-9 w-60 pl-9"
+                  placeholder="Search members..."
+                />
+              </div>
+            )}
+            {editable && (
+              <Button size="sm" onClick={openInviteDialog}>
+                <Plus className="h-4 w-4 mr-1" /> Invite Member
+              </Button>
+            )}
+          </div>
+        </div>
+
         {members.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">No members yet.</p>
+          <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border text-center">
+            <div className="space-y-1">
+              <p className="font-medium">No members yet</p>
+              <p className="text-sm text-muted-foreground">
+                Invite teammates to give them access to this workspace.
+              </p>
+            </div>
+            {editable && (
+              <Button onClick={openInviteDialog}>
+                <Plus className="h-4 w-4 mr-1" />
+                Invite Member
+              </Button>
+            )}
+          </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-hidden rounded-lg border border-border">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-[280px]">Name</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
+                  <TableHead>Teams</TableHead>
+                  <TableHead className="w-[120px]">Role</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2.5">
-                        <UserAvatar name={m.full_name || m.email} className="h-7 w-7" fallbackClassName="text-[10px]" />
-                        {m.full_name || '—'}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{m.email}</TableCell>
-                    <TableCell>
-                      <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
+                {filteredMembers.map((m) => {
+                  const teamNames = teamNamesByUserId.get(m.user_id) ?? [];
+                  const hasWorkspaceWideTeamAccess = m.role === 'owner' || m.role === 'admin';
+                  const hasAllTeams = hasWorkspaceWideTeamAccess || (teams.length > 0 && teamNames.length === teams.length);
+
+                  return (
+                    <TableRow key={m.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <UserAvatar name={m.full_name || m.email} className="h-8 w-8" fallbackClassName="text-[10px]" />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{m.full_name || '—'}</p>
+                            {!m.full_name && (
+                              <p className="truncate text-xs text-muted-foreground">{m.email}</p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{m.email}</TableCell>
+                      <TableCell>
+                        {hasAllTeams ? (
+                          <Badge variant="outline" className="text-xs font-normal">
+                            All teams
+                          </Badge>
+                        ) : teamNames.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {teamNames.map((teamName) => (
+                              <Badge key={`${m.user_id}-${teamName}`} variant="outline" className="text-xs font-normal">
+                                {teamName}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {filteredMembers.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                      No members match your search.
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </div>
         )}
 
-        {/* Pending Invitations */}
         {editable && invitations.filter((inv) => inv.status === 'pending').length > 0 && (
-          <div className="mt-6">
-            <h4 className="text-sm font-medium mb-2">Pending Invitations</h4>
-            <div className="overflow-x-auto">
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-sm font-medium">Pending Invitations</h3>
+              <p className="text-sm text-muted-foreground">
+                Invitations that have been sent but not yet accepted.
+              </p>
+            </div>
+            <div className="overflow-hidden rounded-lg border border-border">
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Sent</TableHead>
-                    <TableHead className="w-24">Actions</TableHead>
+                    <TableHead className="w-[120px]">Role</TableHead>
+                    <TableHead className="w-[140px]">Sent</TableHead>
+                    <TableHead className="w-[120px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -223,7 +318,7 @@ export function MembersTab({ workspaceId, organizationId, editable }: {
             </div>
           </div>
         )}
-      </CardContent>
+      </div>
 
       <Dialog open={inviteOpen} onOpenChange={closeInviteDialog}>
         <DialogContent>
@@ -337,6 +432,6 @@ export function MembersTab({ workspaceId, organizationId, editable }: {
           )}
         </DialogContent>
       </Dialog>
-    </Card>
+    </>
   );
 }

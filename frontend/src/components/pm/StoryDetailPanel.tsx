@@ -17,7 +17,7 @@ import {
   Link2,
   Loader2,
   Maximize2,
-  MoreHorizontal,
+  MoreVertical,
   Paperclip,
   RefreshCw,
   ShieldAlert,
@@ -54,6 +54,7 @@ import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
 import { StoryDeliveryPanel } from '@/components/pm/StoryDeliveryPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
 import { getInitials } from '@/lib/utils';
+import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
@@ -302,7 +303,15 @@ function StoryDetailPanelBody({
   const [saving, setSaving] = useState(false);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [hasGitIntegration, setHasGitIntegration] = useState(false);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
+
+  // Check if GitHub is connected
+  useEffect(() => {
+    gitService.listIntegrations(workspaceId).then((res) => {
+      setHasGitIntegration((res.data ?? []).some((i) => i.active));
+    });
+  }, [workspaceId]);
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(storyDetail.story.updated_at);
@@ -578,7 +587,7 @@ function StoryDetailPanelBody({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7">
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -615,7 +624,7 @@ function StoryDetailPanelBody({
       {/* ── Two-column grid ─────────────────────────────────────── */}
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
         {/* ── Left column (main content) ────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 py-5">
+        <div className="min-h-0 overflow-y-auto px-8 py-5 pb-40">
           {/* Title */}
           <input
             type="text"
@@ -735,7 +744,7 @@ function StoryDetailPanelBody({
           </div>
 
           {/* Delivery */}
-          {fieldVis.delivery && (
+          {hasGitIntegration && fieldVis.delivery && (
             <StoryDeliveryPanel
               workspaceId={workspaceId}
               storyDetail={storyDetail}
@@ -744,7 +753,7 @@ function StoryDetailPanelBody({
           )}
 
           {/* Git Links & Agent Runs */}
-          {fieldVis.dev_history && (
+          {hasGitIntegration && fieldVis.dev_history && (
             <>
               <StoryGitPanel storyId={storyDetail.story.id} workspaceId={workspaceId} />
               <AgentRunPanel
@@ -797,7 +806,7 @@ function StoryDetailPanelBody({
         </div>
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
-        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
+        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5 pb-40">
           {/* Story ID */}
           <div className="mb-4">
             <span className="text-sm font-semibold text-foreground">{storyDetail.story.display_id}</span>
@@ -895,7 +904,7 @@ function StoryDetailPanelBody({
               <SidebarPopoverSelect
                 value={form.team_id || '__none__'}
                 options={[
-                  { value: '__none__', label: 'No team' },
+                  ...(teams.length === 0 ? [{ value: '__none__', label: 'No team' }] : []),
                   ...teams.map((t) => ({ value: t.id, label: t.name })),
                 ]}
                 onChange={(v) => {
@@ -1021,14 +1030,6 @@ function StoryDetailPanelBody({
             includeStoryRelationships={false}
           />
         </aside>
-      </div>
-
-      {/* ── Footer ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-end border-t border-border/60 px-4 py-2 text-xs text-muted-foreground">
-        <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-amber-600" onClick={() => setArchiveConfirmOpen(true)}>
-          <Archive className="mr-1 h-3 w-3" />
-          Archive
-        </Button>
       </div>
 
       <ConfirmDialog

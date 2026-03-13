@@ -170,3 +170,48 @@ func (h *PMWorkflowHandler) ReorderStates(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "states reordered"})
 }
+
+// CopyToTeam handles POST /api/pm/workflows/{id}/copy-to-team.
+func (h *PMWorkflowHandler) CopyToTeam(w http.ResponseWriter, r *http.Request) {
+	workflowID := chi.URLParam(r, "id")
+	var req model.CopyWorkflowToTeamRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.TeamID == "" {
+		writeError(w, http.StatusBadRequest, "team_id is required")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	workflow, err := h.workflowService.CopyToTeam(r.Context(), workflowID, req.TeamID, workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, workflow)
+}
+
+// ResolveTeamWorkflow handles GET /api/pm/workflows/resolve.
+func (h *PMWorkflowHandler) ResolveTeamWorkflow(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	teamID := r.URL.Query().Get("team_id")
+	if teamID == "" {
+		writeError(w, http.StatusBadRequest, "team_id query param is required")
+		return
+	}
+	workflow, err := h.workflowService.ResolveTeamWorkflow(r.Context(), workspaceID, teamID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, workflow)
+}

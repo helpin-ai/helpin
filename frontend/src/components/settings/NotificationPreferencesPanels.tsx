@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Bell, BellOff, ChevronRight, Globe, Mail, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -51,40 +51,6 @@ const WEEKDAY_OPTIONS = [
 ];
 
 const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-
-function formatDateTimeLocal(value?: string | null) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-  ].join('-') + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function toISOStringFromLocal(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-}
-
-function formatResumeTime(value?: string | null, timezone?: string) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone || DEFAULT_TIMEZONE,
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(date);
-}
 
 function isActiveDnd(doNotDisturb?: boolean, dndUntil?: string | null) {
   if (dndUntil) {
@@ -168,11 +134,6 @@ function TimezonePicker({
 export function AccountNotificationPreferences({ cardClassName }: CardClassNameProps) {
   const { data: settings, isLoading } = useUserNotificationSettings();
   const updateSettings = useUpdateUserNotificationSettings();
-  const [dndUntilInput, setDndUntilInput] = useState('');
-
-  useEffect(() => {
-    setDndUntilInput(formatDateTimeLocal(settings?.dnd_until));
-  }, [settings?.dnd_until]);
 
   const handleSettingsUpdate = (payload: UpdateUserNotificationSettingsRequest) => {
     updateSettings.mutate(payload, {
@@ -190,27 +151,13 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
 
   const handleDndToggle = (enabled: boolean) => {
     if (!enabled) {
-      setDndUntilInput('');
       handleSettingsUpdate({ do_not_disturb: false, dnd_until: null });
       return;
     }
 
-    const dndUntil = dndUntilInput ? toISOStringFromLocal(dndUntilInput) : null;
     handleSettingsUpdate({
       do_not_disturb: true,
-      dnd_until: dndUntil,
-    });
-  };
-
-  const handleApplyDndUntil = () => {
-    const dndUntil = dndUntilInput ? toISOStringFromLocal(dndUntilInput) : null;
-    if (dndUntilInput && !dndUntil) {
-      toast.error('Enter a valid date and time');
-      return;
-    }
-    handleSettingsUpdate({
-      do_not_disturb: true,
-      dnd_until: dndUntil,
+      dnd_until: null,
     });
   };
 
@@ -230,7 +177,6 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
   const emailEnabled = settings?.email_enabled ?? true;
   const dndActive = isActiveDnd(settings?.do_not_disturb, settings?.dnd_until);
   const usesDigestSchedule = digestFrequency === 'daily' || digestFrequency === 'weekly';
-  const resumeTime = formatResumeTime(settings?.dnd_until, settings?.timezone);
 
   if (isLoading) {
     return <Skeleton className="h-96 w-full" />;
@@ -239,18 +185,11 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
   return (
     <div className="space-y-4">
       <Card className={cardClassName}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Do Not Disturb
-          </CardTitle>
-          <CardDescription>Pause inbox and email notifications across every workspace on your account.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="pt-6">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium">Pause all notifications</p>
-              <p className="text-xs text-muted-foreground">Turn this on to stop new in-app and email notifications everywhere.</p>
+              <p className="text-xs text-muted-foreground">Stop new inbox and email notifications across every workspace on your account until you turn this back off.</p>
             </div>
             <Switch
               checked={dndActive}
@@ -258,51 +197,6 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
               onCheckedChange={handleDndToggle}
             />
           </div>
-
-          {dndActive ? (
-            <>
-              <Separator />
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="dnd-until">Pause until</Label>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <Input
-                      id="dnd-until"
-                      type="datetime-local"
-                      value={dndUntilInput}
-                      disabled={updateSettings.isPending}
-                      onChange={(event) => setDndUntilInput(event.target.value)}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={updateSettings.isPending}
-                      onClick={handleApplyDndUntil}
-                    >
-                      Apply
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      disabled={updateSettings.isPending}
-                      onClick={() => {
-                        setDndUntilInput('');
-                        handleSettingsUpdate({ do_not_disturb: true, dnd_until: null });
-                      }}
-                    >
-                      Pause indefinitely
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Set an end time for DND, or leave it blank to keep notifications paused until you turn them back on.
-                  </p>
-                </div>
-                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  {resumeTime ? `Notifications resume on ${resumeTime} (${settings?.timezone ?? DEFAULT_TIMEZONE}).` : 'Notifications are paused indefinitely.'}
-                </div>
-              </div>
-            </>
-          ) : null}
         </CardContent>
       </Card>
 

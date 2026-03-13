@@ -19,7 +19,6 @@ import {
   GanttChart,
   Globe,
   EllipsisVertical,
-  Hexagon,
   Import,
   Layers,
   Lightbulb,
@@ -123,7 +122,7 @@ function saveExpandedTeams(wsId: string, teams: Set<string>) {
 }
 
 // ── Settings group collapse persistence ──
-const COLLAPSIBLE_SETTINGS_GROUPS = new Set(['Project Settings', 'Docs', 'CRM Settings', 'Support Settings', 'Data']);
+const COLLAPSIBLE_SETTINGS_GROUPS = new Set(['Project Settings', 'Support & Docs', 'CRM Settings', 'Data']);
 
 function getCollapsedSettingsGroups(): Set<string> {
   try {
@@ -451,7 +450,7 @@ export function Sidebar() {
 
   const createOptions = [
     { key: 'story' as const, label: 'Story', icon: SquareKanban, pages: ['stories'] },
-    { key: 'epic' as const, label: 'Epic', icon: Hexagon, pages: ['epics'] },
+    { key: 'epic' as const, label: 'Epic', icon: Layers, pages: ['epics'] },
     { key: 'sprint' as const, label: 'Sprint', icon: RefreshCw, pages: ['sprints'] },
     { key: 'objective' as const, label: 'Objective', icon: Target, pages: ['objectives'] },
   ];
@@ -559,7 +558,6 @@ export function Sidebar() {
       {
         label: 'Project Settings',
         items: [
-          { link: `/w/${wsSlug}/settings/workflows`, label: 'Workflows', icon: FolderKanban },
           { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
           { link: `/w/${wsSlug}/settings/story-templates`, label: 'Story Templates', icon: FileText },
           { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
@@ -568,9 +566,11 @@ export function Sidebar() {
         ],
       },
       {
-        label: 'Docs',
+        label: 'Support & Docs',
         items: [
           { link: `/w/${wsSlug}/settings/helpcenter`, label: 'Help Center', icon: Globe },
+          { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
+          { link: `/w/${wsSlug}/settings/chat-ai`, label: 'AI & Routing', icon: Bot },
         ],
       },
       {
@@ -579,13 +579,6 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/crm-pipelines`, label: 'Pipelines', icon: FolderKanban },
           { link: `/w/${wsSlug}/settings/crm-email`, label: 'Email Accounts', icon: Mail },
           { link: `/w/${wsSlug}/settings/crm-autonomy`, label: 'Autonomy', icon: Sliders },
-        ],
-      },
-      {
-        label: 'Support Settings',
-        items: [
-          { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
-          { link: `/w/${wsSlug}/settings/chat-ai`, label: 'AI & Routing', icon: Bot },
         ],
       },
       {

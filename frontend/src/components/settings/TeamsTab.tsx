@@ -7,7 +7,9 @@ import { inviteService } from '@/lib/services/inviteService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import type { WorkspaceTeam, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale, TeamRepoDefault } from '@/lib/types';
-import type { GitRepository, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { GitRepository, StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { SettingsSection } from '@/pages/Settings';
 import { UserAvatar, getAvatarColor } from '@/components/pm/UserAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -20,17 +22,26 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn, getInitials } from '@/lib/utils';
-import { ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, Plus, RefreshCw, Search, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
+import { Check, ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
+import {
+  buildPresetFieldVisibility,
+  slugifyTeamHandle,
+  TEAM_TYPE_OPTIONS,
+  TEAM_TYPE_PRESETS,
+  type DefaultStoryType,
+  type TeamType,
+  type VisibilityFieldKey,
+} from '@/lib/teamPresets';
 
-const slugifyTeamHandle = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+const STORY_TYPE_LABELS: Record<DefaultStoryType, string> = {
+  feature: 'Feature',
+  bug: 'Bug',
+  chore: 'Chore',
+};
 
 /* ── Helper Forms ── */
 
@@ -140,7 +151,6 @@ function EstimateSettingsForm({ teamId, initial, saving, onSave }: {
   );
 }
 
-type VisibilityFieldKey = keyof Omit<TeamFieldVisibility, 'id' | 'team_id' | 'created_at' | 'updated_at'>;
 type FieldVisibilityGroup = 'Classification' | 'Planning' | 'Other' | 'Panels';
 
 const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; group: FieldVisibilityGroup }[] = [
@@ -157,6 +167,20 @@ const FIELD_VISIBILITY_FIELDS: { key: VisibilityFieldKey; label: string; group: 
   { key: 'dev_history', label: 'Development History', group: 'Panels' },
 ];
 
+const FIELD_VISIBILITY_HELP: Record<VisibilityFieldKey, string> = {
+  priority: 'Shows the urgency level for a story so the team can quickly sort what matters most.',
+  story_type: 'Shows whether the story is a feature, bug, or chore.',
+  severity: 'Shows impact level, usually for bugs or operational issues. This starts off for new teams by default.',
+  epic: 'Lets stories roll up into larger initiatives.',
+  sprint: 'Lets stories be assigned to sprint cycles.',
+  estimate: 'Shows effort sizing on stories for planning and forecasting.',
+  labels: 'Adds lightweight tags for categorization and filtering.',
+  due_date: 'Shows target due dates directly on stories.',
+  blocked: 'Lets the team mark a story as blocked when it cannot move forward.',
+  delivery: 'Shows delivery-related metadata such as repo and branch context.',
+  dev_history: 'Shows linked pull requests, commits, and related development activity.',
+};
+
 function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
   teamId: string;
   initial: TeamFieldVisibility | null;
@@ -166,7 +190,7 @@ function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
   const [fields, setFields] = useState<Record<VisibilityFieldKey, boolean>>(() => {
     const defaults = {} as Record<VisibilityFieldKey, boolean>;
     for (const f of FIELD_VISIBILITY_FIELDS) {
-      defaults[f.key] = initial ? initial[f.key] : true;
+      defaults[f.key] = initial ? initial[f.key] : f.key === 'severity' || f.key === 'blocked' ? false : true;
     }
     return defaults;
   });
@@ -174,7 +198,7 @@ function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
   useEffect(() => {
     const next = {} as Record<VisibilityFieldKey, boolean>;
     for (const f of FIELD_VISIBILITY_FIELDS) {
-      next[f.key] = initial ? initial[f.key] : true;
+      next[f.key] = initial ? initial[f.key] : f.key === 'severity' || f.key === 'blocked' ? false : true;
     }
     setFields(next);
   }, [initial, teamId]);
@@ -191,7 +215,23 @@ function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{group}</p>
           {FIELD_VISIBILITY_FIELDS.filter((f) => f.group === group).map((f) => (
             <div key={f.key} className="flex items-center justify-between">
-              <p className="text-sm font-medium">{f.label}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium">{f.label}</p>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border/70 text-[10px] font-semibold text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+                      aria-label={`Help for ${f.label}`}
+                    >
+                      ?
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="w-56 text-pretty leading-relaxed">
+                    {FIELD_VISIBILITY_HELP[f.key]}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Switch
                 checked={fields[f.key]}
                 onCheckedChange={(checked) => setFields((prev) => ({ ...prev, [f.key]: checked }))}
@@ -384,8 +424,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [name, setName] = useState('');
   const [handle, setHandle] = useState('');
   const [description, setDescription] = useState('');
+  const [teamType, setTeamType] = useState<TeamType>('engineering');
+  const [defaultStoryType, setDefaultStoryType] = useState<DefaultStoryType>('feature');
+  const [storyTypeTouched, setStoryTypeTouched] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [query, setQuery] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(initialTeamId ?? null);
 
   useEffect(() => {
@@ -403,6 +445,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [repositoriesLoading, setRepositoriesLoading] = useState(false);
   const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
+  const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
@@ -475,15 +518,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     return () => { mounted = false; };
   }, [workspaceId]);
 
-  const filteredTeams = [...teams]
-    .filter((team) => {
-      const search = query.trim().toLowerCase();
-      if (!search) return true;
-      return [team.name, team.handle, team.description]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(search));
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const filteredTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name));
 
   const selectedTeam = selectedTeamId ? teams.find((t) => t.id === selectedTeamId) ?? null : null;
 
@@ -504,11 +539,20 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     ? workspaceMembers.filter((member) => !userMemberships.some((membership) => membership.team_id === selectedTeam.id && membership.user_id === member.user_id))
     : [];
 
+  useEffect(() => {
+    if (!storyTypeTouched) {
+      setDefaultStoryType(TEAM_TYPE_PRESETS[teamType].defaultStoryType);
+    }
+  }, [teamType, storyTypeTouched]);
+
   const openCreate = () => {
     setEditTeam(null);
     setName('');
     setHandle('');
     setDescription('');
+    setTeamType('engineering');
+    setDefaultStoryType(TEAM_TYPE_PRESETS.engineering.defaultStoryType);
+    setStoryTypeTouched(false);
     setDialogOpen(true);
   };
 
@@ -517,6 +561,9 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     setName(team.name);
     setHandle(team.handle ?? '');
     setDescription(team.description ?? '');
+    setTeamType(team.team_type ?? 'engineering');
+    setDefaultStoryType(team.default_story_type ?? 'feature');
+    setStoryTypeTouched(false);
     setDialogOpen(true);
   };
 
@@ -533,6 +580,8 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
       name,
       handle: handle.trim() ? slugifyTeamHandle(handle) : undefined,
       description: description || undefined,
+      team_type: teamType,
+      default_story_type: defaultStoryType,
     };
     if (editTeam) {
       const { error } = await settingsService.updateTeam(workspaceId, editTeam.id, payload);
@@ -546,6 +595,16 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
       const { data, error } = await settingsService.createTeam({ workspace_id: workspaceId, ...payload });
       if (error) toast.error(error);
       else {
+        const createdTeamId = data?.id;
+        if (createdTeamId) {
+          const preset = TEAM_TYPE_PRESETS[teamType];
+          const [estimateRes, fieldVisRes] = await Promise.all([
+            settingsService.updateTeamEstimateSettings(workspaceId, createdTeamId, preset.estimate),
+            settingsService.updateTeamFieldVisibility(workspaceId, createdTeamId, buildPresetFieldVisibility(teamType)),
+          ]);
+          if (estimateRes.error) toast.error(estimateRes.error);
+          if (fieldVisRes.error) toast.error(fieldVisRes.error);
+        }
         toast.success('Team created');
         setDialogOpen(false);
         setSelectedTeamId(data?.id ?? null);
@@ -632,9 +691,24 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     const deliveryMeta = teamRepoDefault
       ? `${repoRecord?.full_name ?? 'Repo selected'} · ${teamRepoDefault.base_branch}`
       : 'Not configured';
+    const teamOwnWorkflow = workflows.find((w) => w.workflow.team_id === selectedTeam.id);
+    const activeTeamWorkflow = teamOwnWorkflow ?? workflows.find((w) => !w.workflow.team_id);
+    const workflowMeta = activeTeamWorkflow
+      ? (
+        <span className="flex flex-wrap items-center gap-1">
+          {activeTeamWorkflow.states.slice().sort((a, b) => a.position - b.position).map((s, i) => (
+            <span key={s.id} className="inline-flex items-center gap-1">
+              {i > 0 && <span className="text-muted-foreground/50">→</span>}
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: s.color ?? '#9ca3af' }} />
+              <span>{s.name}</span>
+            </span>
+          ))}
+        </span>
+      )
+      : 'Not configured';
     const settingsGroups: {
       label?: string;
-      rows: { key: string; icon: LucideIcon; title: string; description: string; meta: string; action: () => void; disabled: boolean }[];
+      rows: { key: string; icon: LucideIcon; title: string; description: string; meta: React.ReactNode; action: () => void; disabled: boolean }[];
     }[] = [
       {
         rows: [
@@ -642,8 +716,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             key: 'general',
             icon: Settings2,
             title: 'General',
-            description: 'Name, identifier, and broader settings',
-            meta: selectedTeam.handle ? `@${selectedTeam.handle}` : '',
+            description: 'Name, identifier, team type, and story defaults',
+            meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', TEAM_TYPE_OPTIONS.find((option) => option.value === (selectedTeam.team_type ?? 'engineering'))?.label ?? 'Engineering', STORY_TYPE_LABELS[selectedTeam.default_story_type ?? 'feature']]
+              .filter(Boolean)
+              .join(' · '),
             action: () => openEdit(selectedTeam),
             disabled: !editable,
           },
@@ -659,7 +735,30 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         ],
       },
       {
-        label: 'Stories & issues',
+        label: 'Workflow',
+        rows: [
+          {
+            key: 'workflow',
+            icon: GitBranch,
+            title: 'Workflow states',
+            description: 'Manage workflow states for this team',
+            meta: workflowMeta,
+            action: () => setWorkflowDialogOpen(true),
+            disabled: false,
+          },
+          {
+            key: 'automations',
+            icon: RefreshCw,
+            title: 'Automations',
+            description: 'Sprint and epic automations for this team',
+            meta: '',
+            action: () => openSettingsSection('automations'),
+            disabled: false,
+          },
+        ],
+      },
+      {
+        label: 'Story options',
         rows: [
           {
             key: 'field-visibility',
@@ -709,29 +808,6 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               }
             },
             disabled: !editable,
-          },
-        ],
-      },
-      {
-        label: 'Workflow',
-        rows: [
-          {
-            key: 'workflow',
-            icon: GitBranch,
-            title: 'Issue statuses & automations',
-            description: 'Customize issue statuses and automations',
-            meta: '',
-            action: () => openSettingsSection('workflows'),
-            disabled: false,
-          },
-          {
-            key: 'automations',
-            icon: RefreshCw,
-            title: 'Automations',
-            description: 'Sprint and epic automations for this team',
-            meta: '',
-            action: () => openSettingsSection('automations'),
-            disabled: false,
           },
         ],
       },
@@ -848,6 +924,53 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                     rows={4}
                     placeholder="Describe what this team owns."
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Team Type</Label>
+                  <Select value={teamType} onValueChange={(value) => setTeamType(value as TeamType)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TEAM_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {TEAM_TYPE_OPTIONS.find((option) => option.value === teamType)?.description}
+                  </p>
+                  {!editTeam && (
+                    <p className="text-xs text-muted-foreground">
+                      New teams get recommended estimate and story field defaults based on this preset.
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Default Story Type</Label>
+                  <Select
+                    value={defaultStoryType}
+                    onValueChange={(value) => {
+                      setDefaultStoryType(value as DefaultStoryType);
+                      setStoryTypeTouched(true);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(['feature', 'bug', 'chore'] as DefaultStoryType[]).map((storyType) => (
+                        <SelectItem key={storyType} value={storyType}>
+                          {STORY_TYPE_LABELS[storyType]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Used as the starting type when someone creates a story for this team.
+                  </p>
                 </div>
               </div>
               <DialogFooter>
@@ -1096,6 +1219,39 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             />
           </DialogContent>
         </Dialog>
+
+        {/* Workflow States Editor Dialog */}
+        <Dialog open={workflowDialogOpen} onOpenChange={setWorkflowDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Workflow States</DialogTitle>
+            </DialogHeader>
+            {activeTeamWorkflow ? (
+              <TeamWorkflowStateEditor
+                workspaceId={workspaceId}
+                workflow={activeTeamWorkflow}
+                editable={editable}
+                onUpdate={(updated) => {
+                  setWorkflows((prev) => prev.map((w) => w.workflow.id === updated.workflow.id ? updated : w));
+                }}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground py-2">No workflow configured for this team.</p>
+            )}
+            <DialogFooter>
+              <Button onClick={() => setWorkflowDialogOpen(false)}>Done</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      <ConfirmDialog
+        open={deleteTeamConfirm !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTeamConfirm(null); }}
+        title="Delete team"
+        description="This will permanently delete the team and remove all member assignments. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteTeamConfirm) handleDelete(deleteTeamConfirm); setDeleteTeamConfirm(null); }}
+      />
       </>
     );
   }
@@ -1108,28 +1264,15 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
           <div>
             <h2 className="text-xl font-semibold">Teams</h2>
             <p className="text-sm text-muted-foreground">
-              Create teams, assign members, and manage team-level PM settings.
+              Create teams, assign members, and manage team-level settings.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {teams.length > 0 && (
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className="h-9 w-60 pl-9"
-                  placeholder="Search teams..."
-                />
-              </div>
-            )}
-            {editable && (
-              <Button size="sm" onClick={openCreate}>
-                <Plus className="h-4 w-4 mr-1" />
-                New Team
-              </Button>
-            )}
-          </div>
+          {editable && (
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-1" />
+              New Team
+            </Button>
+          )}
         </div>
 
         {teams.length === 0 ? (
@@ -1158,12 +1301,14 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   <TableHead className="w-[280px]">Name</TableHead>
                   <TableHead className="w-[140px]">Handle</TableHead>
                   <TableHead className="w-[100px]">Members</TableHead>
+                  <TableHead className="w-[100px]">Workflow</TableHead>
                   <TableHead>Description</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredTeams.map((team) => {
-                  const memberCount = getTeamMemberships(team.id).length;
+                  const teamMembers = getTeamMemberships(team.id);
+                  const memberCount = teamMembers.length;
                   return (
                     <TableRow
                       key={team.id}
@@ -1200,7 +1345,31 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-muted-foreground">{memberCount}</span>
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex -space-x-1.5">
+                            {teamMembers.slice(0, 4).map(({ membership, user }) => (
+                              <UserAvatar
+                                key={membership.id}
+                                name={user?.full_name ?? user?.email ?? '?'}
+                                className="h-5 w-5 ring-1 ring-background"
+                              />
+                            ))}
+                          </div>
+                          {memberCount > 4 && (
+                            <span className="text-xs text-muted-foreground">+{memberCount - 4}</span>
+                          )}
+                          {memberCount === 0 && (
+                            <span className="text-xs text-muted-foreground/50">&mdash;</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">
+                          {(() => {
+                            const wf = workflows.find((w) => w.workflow.team_id === team.id);
+                            return wf ? `${wf.states.length} states` : '\u2014';
+                          })()}
+                        </span>
                       </TableCell>
                       <TableCell>
                         <span className="line-clamp-1 text-sm text-muted-foreground">
@@ -1210,13 +1379,6 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                     </TableRow>
                   );
                 })}
-                {filteredTeams.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
-                      No teams match your search.
-                    </TableCell>
-                  </TableRow>
-                )}
               </TableBody>
             </Table>
           </div>
@@ -1271,5 +1433,238 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         onConfirm={() => { if (deleteTeamConfirm) handleDelete(deleteTeamConfirm); setDeleteTeamConfirm(null); }}
       />
     </>
+  );
+}
+
+// ── Inline Workflow State Editor ──────────────────────────────────────
+
+const STATE_TYPE_ORDER: StateType[] = ['backlog', 'unstarted', 'started', 'done'];
+const STATE_TYPE_LABEL: Record<StateType, string> = {
+  backlog: 'Backlog',
+  unstarted: 'Not started',
+  started: 'Started',
+  done: 'Done',
+};
+
+function TeamWorkflowStateEditor({
+  workspaceId,
+  workflow,
+  editable,
+  onUpdate,
+}: {
+  workspaceId: string;
+  workflow: WorkflowWithStates;
+  editable: boolean;
+  onUpdate: (updated: WorkflowWithStates) => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [addingType, setAddingType] = useState<StateType | null>(null);
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  const sorted = workflow.states.slice().sort((a, b) => a.position - b.position);
+  const grouped = STATE_TYPE_ORDER.map((type) => ({
+    type,
+    label: STATE_TYPE_LABEL[type],
+    states: sorted.filter((s) => s.state_type === type),
+  })).filter((g) => g.states.length > 0 || addingType === g.type);
+
+  const handleRename = async (state: WorkflowState) => {
+    const trimmed = editName.trim();
+    if (!trimmed || trimmed === state.name) {
+      setEditingId(null);
+      return;
+    }
+    setSaving(true);
+    const { data, error } = await pmWorkflowService.updateState(workspaceId, workflow.workflow.id, state.id, { name: trimmed });
+    setSaving(false);
+    if (error) { toast.error(error); return; }
+    if (data) {
+      onUpdate({
+        ...workflow,
+        states: workflow.states.map((s) => s.id === state.id ? { ...s, name: trimmed } : s),
+      });
+    }
+    setEditingId(null);
+  };
+
+  const handleColorChange = async (state: WorkflowState, color: string) => {
+    const { error } = await pmWorkflowService.updateState(workspaceId, workflow.workflow.id, state.id, { color });
+    if (error) { toast.error(error); return; }
+    onUpdate({
+      ...workflow,
+      states: workflow.states.map((s) => s.id === state.id ? { ...s, color } : s),
+    });
+  };
+
+  const handleAdd = async () => {
+    const trimmed = newName.trim();
+    if (!trimmed || !addingType) return;
+    setSaving(true);
+    const statesOfType = sorted.filter((s) => s.state_type === addingType);
+    const position = statesOfType.length > 0 ? statesOfType[statesOfType.length - 1].position + 1 : sorted.length;
+    const { data, error } = await pmWorkflowService.createState(workspaceId, workflow.workflow.id, {
+      name: trimmed,
+      state_type: addingType,
+      position,
+      color: newColor,
+    });
+    setSaving(false);
+    if (error) { toast.error(error); return; }
+    if (data && typeof data === 'object' && 'id' in data && 'workflow_id' in data) {
+      const createdState = data as WorkflowState;
+      onUpdate({ ...workflow, states: [...workflow.states, createdState] });
+    }
+    setNewName('');
+    setNewColor(PRESET_COLORS[0]);
+    setAddingType(null);
+  };
+
+  const handleDelete = async (stateId: string) => {
+    setSaving(true);
+    const { error } = await pmWorkflowService.removeState(workspaceId, workflow.workflow.id, stateId);
+    setSaving(false);
+    if (error) { toast.error(error); return; }
+    onUpdate({ ...workflow, states: workflow.states.filter((s) => s.id !== stateId) });
+    setDeleteConfirm(null);
+  };
+
+  return (
+    <div className="space-y-4 py-2">
+      {grouped.map((group) => (
+        <div key={group.type}>
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
+            {group.label}
+          </p>
+          <div className="space-y-1">
+            {group.states.map((state) => (
+              <div
+                key={state.id}
+                className="group flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5"
+              >
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/60 transition-transform hover:scale-110"
+                      style={{ backgroundColor: state.color ?? '#9ca3af' }}
+                      disabled={!editable}
+                    />
+                  </PopoverTrigger>
+                  {editable && (
+                    <PopoverContent className="w-auto p-2" align="start">
+                      <ColorPicker value={state.color ?? '#9ca3af'} onChange={(c) => handleColorChange(state, c)} />
+                    </PopoverContent>
+                  )}
+                </Popover>
+
+                {editingId === state.id ? (
+                  <Input
+                    autoFocus
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onBlur={() => handleRename(state)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRename(state); if (e.key === 'Escape') setEditingId(null); }}
+                    className="h-6 flex-1 text-xs px-1 py-0"
+                    disabled={saving}
+                  />
+                ) : (
+                  <span className="flex-1 text-sm truncate">{state.name}</span>
+                )}
+
+                {editable && editingId !== state.id && (
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                      onClick={() => { setEditingId(state.id); setEditName(state.name); }}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    {workflow.states.length > 1 && (
+                      <button
+                        type="button"
+                        className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-muted"
+                        onClick={() => setDeleteConfirm(state.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {addingType === group.type && (
+              <div className="flex items-center gap-2 rounded-md border border-primary/40 bg-background px-2.5 py-1.5">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/60 transition-transform hover:scale-110"
+                      style={{ backgroundColor: newColor }}
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-2" align="start">
+                    <ColorPicker value={newColor} onChange={setNewColor} />
+                  </PopoverContent>
+                </Popover>
+                <Input
+                  autoFocus
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setAddingType(null); setNewName(''); } }}
+                  placeholder="State name..."
+                  className="h-6 flex-1 text-xs px-1 py-0 border-0 shadow-none focus-visible:ring-0"
+                  disabled={saving}
+                />
+                <button
+                  type="button"
+                  className="h-5 w-5 flex items-center justify-center rounded text-primary hover:bg-muted"
+                  onClick={handleAdd}
+                  disabled={saving || !newName.trim()}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:bg-muted"
+                  onClick={() => { setAddingType(null); setNewName(''); }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {editable && addingType !== group.type && (
+            <button
+              type="button"
+              className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => { setAddingType(group.type); setNewName(''); setNewColor(PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)]); }}
+            >
+              <Plus className="h-3 w-3" /> Add state
+            </button>
+          )}
+        </div>
+      ))}
+
+      {!editable && (
+        <p className="text-xs text-muted-foreground">You don't have permission to edit workflow states.</p>
+      )}
+
+      <ConfirmDialog
+        open={deleteConfirm !== null}
+        onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}
+        title="Delete state"
+        description="Stories in this state will need to be moved to another state. This cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteConfirm) handleDelete(deleteConfirm); }}
+      />
+    </div>
   );
 }

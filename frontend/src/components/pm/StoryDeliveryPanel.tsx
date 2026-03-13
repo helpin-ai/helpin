@@ -109,6 +109,9 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
     };
   }, [storyDetail.story.id, workspaceId]);
 
+  // Hide delivery section entirely when no GitHub repos are connected
+  if (!loading && repositories.length === 0 && !target) return null;
+
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedAgentId),
     [agents, selectedAgentId],

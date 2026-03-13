@@ -187,6 +187,10 @@ type SupportInboxSettings struct {
 	BusinessHoursSchedule map[string]BusinessHoursDay `json:"business_hours_schedule"` // mon-sun
 	OutsideHoursMessage   string                      `json:"outside_hours_message"`
 
+	// Widget Identity
+	WidgetName      string `json:"widget_name"`       // display name in widget header (defaults to workspace name)
+	WidgetAvatarURL string `json:"widget_avatar_url"` // custom avatar URL for the widget
+
 	// Branding
 	BrandColor      string `json:"brand_color"` // hex "#6366F1"
 	ShowBranding    bool   `json:"show_branding"`
@@ -229,6 +233,8 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 			"sun": {Start: "09:00", End: "17:00", Enabled: false},
 		},
 		OutsideHoursMessage: "We're currently offline. Leave a message and we'll get back to you!",
+		WidgetName:          "",
+		WidgetAvatarURL:     "",
 		BrandColor:          "#6366F1",
 		ShowBranding:        true,
 		ColorScheme:         "light",
@@ -258,6 +264,8 @@ type UpdateInstallationSettingsRequest struct {
 	BusinessHoursTimezone  *string                     `json:"business_hours_timezone,omitempty"`
 	BusinessHoursSchedule  map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
 	OutsideHoursMessage    *string                     `json:"outside_hours_message,omitempty"`
+	WidgetName             *string                     `json:"widget_name,omitempty"`
+	WidgetAvatarURL        *string                     `json:"widget_avatar_url,omitempty"`
 	BrandColor             *string                     `json:"brand_color,omitempty"`
 	ShowBranding           *bool                       `json:"show_branding,omitempty"`
 	ColorScheme            *string                     `json:"color_scheme,omitempty"`
@@ -281,6 +289,8 @@ type WidgetConfigResponse struct {
 	ShowTalkToHuman        bool   `json:"show_talk_to_human"`
 	BusinessHoursEnabled   bool   `json:"business_hours_enabled"`
 	OutsideHoursMessage    string `json:"outside_hours_message"`
+	WidgetName             string `json:"widget_name"`
+	WidgetAvatarURL        string `json:"widget_avatar_url"`
 	BrandColor             string `json:"brand_color"`
 	ShowBranding           bool   `json:"show_branding"`
 	ColorScheme            string `json:"color_scheme"`

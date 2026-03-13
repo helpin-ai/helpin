@@ -7,7 +7,7 @@ import {
   ChevronRight,
   Hash,
   Heart,
-  Hexagon,
+  Layers,
   Loader2,
   User,
   Users,
@@ -344,7 +344,7 @@ export function EpicDetailPage() {
         </Button>
 
         <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          <Hexagon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+          <Layers className="h-3.5 w-3.5 shrink-0 text-violet-500" />
           <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
             Epics
           </button>
@@ -525,7 +525,7 @@ export function EpicDetailPage() {
             </MetadataRow>
 
             {/* Planning Repo */}
-            <MetadataRow icon={Hexagon} label="Plan repo">
+            <MetadataRow icon={Layers} label="Plan repo">
               <SidebarPopoverSelect
                 value={form.planning_repository_id || '__none__'}
                 options={[

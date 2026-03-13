@@ -342,6 +342,8 @@ export interface WorkspaceTeam {
   handle?: string;
   description?: string;
   manager_id?: string;
+  team_type?: 'engineering' | 'product' | 'design' | 'support' | 'marketing' | 'sales' | 'hr' | 'operations' | 'custom';
+  default_story_type?: 'feature' | 'bug' | 'chore';
 }
 
 export interface WorkspacePerson {

@@ -59,6 +59,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE);
   const [showArchived, setShowArchived] = useState(false);
+  const [hasArchivedSprints, setHasArchivedSprints] = useState(false);
 
   const VIEW_MODE_KEY = `pm_view_mode_sprints_${workspaceId}`;
   const [viewMode, setViewModeState] = useState<'cards' | 'table'>(() => {
@@ -198,12 +199,16 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
-    const res = await pmSprintService.list(workspaceId, { archived: showArchived, team_id: teamId });
+    const [res, archivedRes] = await Promise.all([
+      pmSprintService.list(workspaceId, { archived: showArchived, team_id: teamId }),
+      pmSprintService.list(workspaceId, { archived: true, team_id: teamId }),
+    ]);
     if (res.error || !res.data) {
       setError(res.error ?? 'Failed to load sprints');
       setLoading(false);
       return;
     }
+    setHasArchivedSprints(Boolean(archivedRes.data?.length));
     setSprints(res.data);
     setLoading(false);
   };
@@ -226,6 +231,10 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: entry.sprint.id } });
   };
 
+  const showHeaderActions = sprints.length > 0 || showArchived;
+  const showHeaderIntro = sprints.length > 0;
+  const showArchivedToggle = hasArchivedSprints || showArchived;
+
   const handleArchiveToggle = async (entry: SprintWithStats) => {
     if (!workspaceId) return;
     const next = !entry.sprint.archived;
@@ -240,46 +249,51 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   return (
     <div className="space-y-4">
       <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">Sprints</h2>
-          <p className="text-sm text-muted-foreground">Plan cycles and monitor story completion.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant={showArchived ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => setShowArchived((v) => !v)}
-          >
-            <Archive className="h-3.5 w-3.5" />
-            {showArchived ? 'Showing archived' : 'Archived'}
-          </Button>
-          {viewMode === 'table' && (
-            <DisplayPropertiesPopover
-              allProperties={ALL_PROPERTIES}
-              visible={visibleColumns}
-              onChange={setVisibleColumns}
-            />
-          )}
-          <div className="flex items-center rounded-md border border-border/60">
-            <Button
-              variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-r-none px-2.5"
-              onClick={() => setViewMode('cards')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-l-none px-2.5"
-              onClick={() => setViewMode('table')}
-            >
-              <LayoutList className="h-4 w-4" />
-            </Button>
+        {showHeaderIntro ? (
+          <div>
+            <h2 className="text-xl font-semibold">Sprints</h2>
+            <p className="text-sm text-muted-foreground">Plan cycles and monitor story completion.</p>
           </div>
-        </div>
+        ) : <div />}
+        {showHeaderActions && (
+          <div className="flex items-center gap-2">
+            {showArchivedToggle && (
+              <Button
+                variant={showArchived ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => setShowArchived((v) => !v)}
+              >
+                {showArchived ? 'Showing archived' : 'Show archived'}
+              </Button>
+            )}
+            {viewMode === 'table' && (
+              <DisplayPropertiesPopover
+                allProperties={ALL_PROPERTIES}
+                visible={visibleColumns}
+                onChange={setVisibleColumns}
+              />
+            )}
+            <div className="flex items-center rounded-md border border-border/60">
+              <Button
+                variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-8 rounded-r-none px-2.5"
+                onClick={() => setViewMode('cards')}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-8 rounded-l-none px-2.5"
+                onClick={() => setViewMode('table')}
+              >
+                <LayoutList className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </header>
 
       {error ? (
@@ -288,9 +302,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
         </div>
       ) : null}
 
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading sprints...</p>
-      ) : sprints.length === 0 ? (
+      {loading ? null : sprints.length === 0 ? (
         showArchived ? (
           <div className="flex flex-col items-center justify-center py-16 px-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/50 mb-5">

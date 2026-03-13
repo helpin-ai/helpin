@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CalendarDays,
@@ -59,6 +59,7 @@ interface CreateStoryModalProps {
   workflow?: WorkflowWithStates;
   initialStateId?: string;
   initialTeamId?: string;
+  initialOwnerMemberId?: string;
   onCreate?: (payload: CreateStoryRequest) => Promise<void>;
   mode?: 'story' | 'template';
   editingTemplate?: StoryTemplate | null;
@@ -73,7 +74,7 @@ const defaultState = {
   name: "",
   story_type: "feature" as StoryType,
   description: "",
-  priority: "none" as Priority,
+  priority: "medium" as Priority,
   severity: "none" as Severity,
   estimate: "",
   epic_id: "",
@@ -164,6 +165,7 @@ export function CreateStoryModal({
   workflow,
   initialStateId,
   initialTeamId,
+  initialOwnerMemberId,
   onCreate,
   mode = 'story',
   editingTemplate,
@@ -175,11 +177,14 @@ export function CreateStoryModal({
   const [createMore, setCreateMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [storyTypeDirty, setStoryTypeDirty] = useState(false);
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<StoryTemplate[]>([]);
   const { teams } = useWorkspaceTeams(workspaceId);
+  const teamsRef = useRef(teams);
+  teamsRef.current = teams;
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id || null);
   const { data: membership } = useSession(workspaceId);
@@ -187,6 +192,10 @@ export function CreateStoryModal({
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
+  );
+  const selectedTeamDefaultStoryType = useMemo(
+    () => (teams.find((team) => team.id === form.team_id)?.default_story_type as StoryType | undefined) ?? 'feature',
+    [teams, form.team_id],
   );
 
   useEffect(() => {
@@ -207,12 +216,30 @@ export function CreateStoryModal({
         deadline: '',
         label_ids: editingTemplate.label_ids ? (() => { try { return JSON.parse(editingTemplate.label_ids!); } catch { return []; } })() : [],
       });
+      setStoryTypeDirty(true);
     } else {
-      setForm({ ...defaultState, requester_member_id: isTemplateMode ? '' : currentMemberId, team_id: initialTeamId ?? '' });
+      const initialTeam = teamsRef.current.find((team) => team.id === (initialTeamId ?? ''));
+      setForm({
+        ...defaultState,
+        story_type: (initialTeam?.default_story_type as StoryType | undefined) ?? 'feature',
+        requester_member_id: isTemplateMode ? '' : currentMemberId,
+        team_id: initialTeamId ?? '',
+        owner_member_id: initialOwnerMemberId ?? '',
+      });
+      setStoryTypeDirty(false);
     }
     setStateId(initialStateId ?? '');
     setError(null);
-  }, [open, initialStateId, initialTeamId, currentMemberId, isTemplateMode, editingTemplate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial story type; including it causes form reset on background refetch
+  }, [open, initialStateId, initialTeamId, initialOwnerMemberId, currentMemberId, isTemplateMode, editingTemplate]);
+
+  useEffect(() => {
+    if (storyTypeDirty || (isTemplateMode && editingTemplate)) return;
+    setForm((current) => {
+      if (current.story_type === selectedTeamDefaultStoryType) return current;
+      return { ...current, story_type: selectedTeamDefaultStoryType };
+    });
+  }, [selectedTeamDefaultStoryType, storyTypeDirty, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
     if (!open) return;
@@ -335,7 +362,15 @@ export function CreateStoryModal({
         });
 
         if (createMore) {
-          setForm({ ...defaultState, requester_member_id: currentMemberId, team_id: initialTeamId ?? '' });
+          const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
+          setForm({
+            ...defaultState,
+            story_type: (resetTeam?.default_story_type as StoryType | undefined) ?? 'feature',
+            requester_member_id: currentMemberId,
+            team_id: initialTeamId ?? '',
+            owner_member_id: initialOwnerMemberId ?? '',
+          });
+          setStoryTypeDirty(false);
           setStateId(initialStateId ?? '');
         } else {
           onOpenChange(false);
@@ -382,17 +417,9 @@ export function CreateStoryModal({
         <div className="flex h-[85vh] max-h-[960px] flex-col">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
-            <div className="flex items-center gap-3">
-              <span className="text-lg font-semibold">
-                {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create story'}
-              </span>
-              {workflow && !isTemplateMode && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                  <GitBranch className="h-3 w-3" />
-                  {workflow.workflow.name}
-                </span>
-              )}
-            </div>
+            <span className="text-lg font-semibold">
+              {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create story'}
+            </span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleOpenChange(false)}>
               <X className="h-4 w-4" />
             </Button>
@@ -532,9 +559,10 @@ export function CreateStoryModal({
                   <SidebarPopoverSelect
                     value={form.story_type}
                     options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
-                    onChange={(value) =>
-                      setForm((prev) => ({ ...prev, story_type: value as StoryType }))
-                    }
+                    onChange={(value) => {
+                      setStoryTypeDirty(true);
+                      setForm((prev) => ({ ...prev, story_type: value as StoryType }));
+                    }}
                     renderTrigger={() => (
                       <>
                         <StoryTypeIcon storyType={form.story_type} className="h-3.5 w-3.5" />
@@ -591,14 +619,17 @@ export function CreateStoryModal({
                     <SidebarPopoverSelect
                       value={form.team_id || "__none__"}
                       options={[
-                        { value: "__none__", label: "No team" },
+                        ...(teams.length === 0 ? [{ value: "__none__", label: "No team" }] : []),
                         ...teams.map((t) => ({ value: t.id, label: t.name })),
                       ]}
                       onChange={(value) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          team_id: value === "__none__" ? "" : value,
-                        }))
+                        {
+                          setStoryTypeDirty(false);
+                          setForm((prev) => ({
+                            ...prev,
+                            team_id: value === "__none__" ? "" : value,
+                          }));
+                        }
                       }
                       renderTrigger={() => <span>{currentTeamName}</span>}
                     />

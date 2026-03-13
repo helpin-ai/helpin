@@ -44,6 +44,7 @@ import {
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import type { DocsDocument, DocStatus } from '@/lib/docsTypes'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 
@@ -80,6 +81,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null)
   const [movingDoc, setMovingDoc] = useState<DocsDocument | null>(null)
+  const [deleteConfirmDoc, setDeleteConfirmDoc] = useState<DocsDocument | null>(null)
 
   const filters = useMemo(() => {
     if (filterMode === 'drafts') return { status: 'draft' }
@@ -137,6 +139,17 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
       toast.error(err instanceof Error ? err.message : 'Failed to duplicate')
     } finally {
       setDuplicatingDocId((current) => (current === doc.id ? null : current))
+    }
+  }
+
+  const handleDeleteDoc = async () => {
+    if (!deleteConfirmDoc) return
+    try {
+      await deleteDoc.mutateAsync(deleteConfirmDoc.id)
+      toast.success('Document deleted')
+      setDeleteConfirmDoc(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete')
     }
   }
 
@@ -340,12 +353,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
-                            onClick={() => {
-                              deleteDoc.mutate(doc.id, {
-                                onSuccess: () => toast.success('Document deleted'),
-                                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to delete'),
-                              })
-                            }}
+                            onClick={() => setDeleteConfirmDoc(doc)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                             Delete
@@ -372,6 +380,16 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
           currentCollectionId={movingDoc.collection_id}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmDoc !== null}
+        onOpenChange={(open) => { if (!open) setDeleteConfirmDoc(null) }}
+        title="Delete document"
+        description="This will permanently delete the document and its saved content. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteDoc}
+      />
     </div>
   )
 }

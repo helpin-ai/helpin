@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -120,6 +121,69 @@ func (h *PMStoryHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request)
 		Stories:     stories,
 		StoryGroups: storyGroups,
 		Total:       total,
+	})
+}
+
+// ListBoardByMember handles GET /api/pm/stories/board/members?workflow_id=...&workspace_id=...
+func (h *PMStoryHandler) ListBoardByMember(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	workflowID := r.URL.Query().Get("workflow_id")
+	if workflowID == "" {
+		writeError(w, http.StatusBadRequest, "workflow_id is required")
+		return
+	}
+	filters := boardFilters(r)
+	perMemberLimit := queryInt(r, "per_member_limit", 0)
+	includeEmpty := r.URL.Query().Get("include_empty") == "true"
+	var memberIDs []string
+	if raw := r.URL.Query().Get("member_ids"); raw != "" {
+		memberIDs = strings.Split(raw, ",")
+	}
+	columns, err := h.storyService.ListByMember(r.Context(), workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if columns == nil {
+		columns = []model.StoryMemberColumn{}
+	}
+	writeJSON(w, http.StatusOK, columns)
+}
+
+// ListBoardMemberColumn handles GET /api/pm/stories/board/members/column?workspace_id=...&workflow_id=...&member_id=...
+func (h *PMStoryHandler) ListBoardMemberColumn(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	workflowID := r.URL.Query().Get("workflow_id")
+	if workflowID == "" {
+		writeError(w, http.StatusBadRequest, "workflow_id is required")
+		return
+	}
+	filters := boardFilters(r)
+	offset := queryInt(r, "offset", 0)
+	limit := queryInt(r, "limit", 50)
+	var memberID *string
+	if raw := r.URL.Query().Get("member_id"); raw != "" {
+		memberID = &raw
+	}
+	stories, total, err := h.storyService.ListMemberColumnStories(r.Context(), workspaceID, workflowID, memberID, filters, offset, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if stories == nil {
+		stories = []model.BoardStory{}
+	}
+	writeJSON(w, http.StatusOK, model.ColumnStoriesResponse{
+		Stories: stories,
+		Total:   total,
 	})
 }
 

@@ -70,6 +70,7 @@ import { DocsEditor } from '@/components/docs/DocsEditor'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -136,6 +137,7 @@ export function DocsDocumentDetail() {
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
   const [slugDialogOpen, setSlugDialogOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
   const { copied: linkCopied, copy: copyLink } = useCopyToClipboard()
 
@@ -757,7 +759,7 @@ export function DocsDocumentDetail() {
                   )}
                   <button
                     type="button"
-                    onClick={handleDelete}
+                    onClick={() => setDeleteConfirmOpen(true)}
                     disabled={doc.is_locked}
                     className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50 disabled:pointer-events-none"
                   >
@@ -792,15 +794,27 @@ export function DocsDocumentDetail() {
         canEdit={canEditDocs}
       />
       {doc && (
-        <MoveDocumentDialog
-          wsId={wsId}
-          open={moveDialogOpen}
-          onOpenChange={setMoveDialogOpen}
-          docId={docId}
-          docTitle={doc.title}
-          currentSpaceId={doc.space_id}
-          currentCollectionId={doc.collection_id}
-        />
+        <>
+          <MoveDocumentDialog
+            wsId={wsId}
+            open={moveDialogOpen}
+            onOpenChange={setMoveDialogOpen}
+            docId={docId}
+            docTitle={doc.title}
+            currentSpaceId={doc.space_id}
+            currentCollectionId={doc.collection_id}
+          />
+
+          <ConfirmDialog
+            open={deleteConfirmOpen}
+            onOpenChange={setDeleteConfirmOpen}
+            title="Delete document"
+            description="This will permanently delete the document and its saved content. This action cannot be undone."
+            confirmLabel="Delete"
+            variant="destructive"
+            onConfirm={handleDelete}
+          />
+        </>
       )}
       {/* Slug confirmation dialog for external help center articles */}
       <Dialog open={slugDialogOpen} onOpenChange={setSlugDialogOpen}>

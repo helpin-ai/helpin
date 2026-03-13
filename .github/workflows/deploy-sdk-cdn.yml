@@ -1,0 +1,90 @@
+# Deploy SDK to Cloudflare Pages
+# Cloudflare Pages projects:
+#   - helpin-cdn-js (production): cdn.helpin.ai
+#   - helpin-cdn-stage-js (staging): cdn-stage.helpin.ai
+# Required GitHub secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+name: Deploy SDK to Cloudflare Pages
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "packages/sdk-js/**"
+      - "packages/widget-core/**"
+      - "packages/shared/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-cdn-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: Build SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build SDK (shared → widget-core → sdk-js)
+        run: pnpm build --filter @helpin/sdk-js...
+
+      - name: Prepare CDN deploy directory
+        run: cp packages/sdk-js/dist-cdn/index.html packages/sdk-js/dist/index.html
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-dist
+          path: packages/sdk-js/dist
+
+  deploy-staging:
+    name: Deploy to Staging (cdn-stage.helpin.ai)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_name == 'develop'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-dist
+          path: dist
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=helpin-cdn-stage-js --branch=staging
+
+  deploy-production:
+    name: Deploy to Production (cdn.helpin.ai)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_name == 'main'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-dist
+          path: dist
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=helpin-cdn-js

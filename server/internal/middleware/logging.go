@@ -30,28 +30,24 @@ func RequestLogger(next http.Handler) http.Handler {
 		next.ServeHTTP(rw, r)
 		duration := time.Since(start)
 
-		attrs := []slog.Attr{
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.Int("status", rw.statusCode),
-			slog.Int64("duration_ms", duration.Milliseconds()),
+		attrs := []any{
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rw.statusCode,
+			"duration_ms", duration.Milliseconds(),
 		}
 
 		if userID := GetUserID(r.Context()); userID != "" {
-			attrs = append(attrs, slog.String("user_id", userID))
+			attrs = append(attrs, "user_id", userID)
 		}
 
-		level := slog.LevelInfo
 		switch {
 		case rw.statusCode >= 500:
-			level = slog.LevelError
+			slog.ErrorContext(r.Context(), "http request", attrs...)
 		case rw.statusCode >= 400:
-			level = slog.LevelWarn
+			slog.WarnContext(r.Context(), "http request", attrs...)
+		default:
+			slog.InfoContext(r.Context(), "http request", attrs...)
 		}
-
-		logger := slog.Default()
-		record := slog.NewRecord(time.Now(), level, "http request", 0)
-		record.AddAttrs(attrs...)
-		_ = logger.Handler().Handle(r.Context(), record)
 	})
 }

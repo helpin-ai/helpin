@@ -7,6 +7,13 @@ export default defineConfig(({ command, mode }) => {
   const isBuild = command === 'build';
 
   return {
+    resolve: {
+      alias: [
+        { find: /^@helpin\/widget-core\/styles/, replacement: resolve(__dirname, '../widget-core/src/styles/widget.css') },
+        { find: /^@helpin\/widget-core$/, replacement: resolve(__dirname, '../widget-core/dist/index.js') },
+        { find: /^@helpin\/shared$/, replacement: resolve(__dirname, '../shared/dist/index.js') },
+      ],
+    },
     build: {
       lib: {
         entry: resolve(__dirname, 'src/index.ts'),
@@ -19,8 +26,9 @@ export default defineConfig(({ command, mode }) => {
           return `helpin.${format}.js`;
         },
       },
+      cssCodeSplit: false,
       rollupOptions: {
-        external: [], // Add external dependencies here if needed
+        external: [], // Everything bundled inline (including widget-core + preact)
         output: {
           globals: {
             module: 'module',
@@ -35,10 +43,9 @@ export default defineConfig(({ command, mode }) => {
           insertTypesEntry: true,
           include: ['src/**/*.ts'],
           exclude: ['test', 'node_modules'],
-          outDir: 'dist', // Changed from outputDir to outDir
+          outDir: 'dist',
         }),
-      // Add other plugins here if needed
-    ].filter(Boolean), // Filter out any falsey values (like 'false') to avoid Vite warnings
+    ].filter(Boolean),
     server: {
       open: '/examples/index.html',
       watch: {

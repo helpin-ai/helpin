@@ -9,7 +9,7 @@ import { LabelsSettings } from '@/components/pm/LabelsSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, FileText, FolderKanban, GitBranch, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
+import { Bot, FileText, FolderKanban, Globe, Import, Mail, MessageSquare, RefreshCw, Settings2, Sliders, Tag, Users, type LucideIcon } from 'lucide-react';
 import {
   GeneralTab,
   MembersTab,
@@ -20,7 +20,6 @@ import {
   SystemTab,
   AITab,
   ProjectDeliveryTab,
-  WorkflowManager,
   AutomationsTab,
   ImportTab,
   HelpcenterTab,
@@ -53,13 +52,6 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     description: '',
     icon: Users,
     group: 'Workspace',
-  },
-  {
-    id: 'workflows',
-    label: 'Workflows',
-    description: '',
-    icon: GitBranch,
-    group: 'Project Settings',
   },
   {
     id: 'labels',
@@ -108,7 +100,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Help Center',
     description: 'Configure your public help center branding, domain, and SEO.',
     icon: Globe,
-    group: 'Docs',
+    group: 'Support & Docs',
   },
   {
     id: 'crm-pipelines',
@@ -136,14 +128,14 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Chat Widget',
     description: 'Widget installation, identity capture, and CRM integration.',
     icon: MessageSquare,
-    group: 'Support Settings',
+    group: 'Support & Docs',
   },
   {
     id: 'chat-ai',
     label: 'AI & Routing',
     description: 'AI auto-reply, handoff routing, business hours, and CSAT.',
     icon: Bot,
-    group: 'Support Settings',
+    group: 'Support & Docs',
   },
   /* {
     id: 'people',
@@ -178,12 +170,12 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
 export const isSettingsSection = (value: string): value is SettingsSection =>
   SETTINGS_SECTIONS.some((section) => section.id === value) || value === 'account';
 
-export default function Settings({ section, initialWorkflowId, initialTeamId }: { section: SettingsSection; initialWorkflowId?: string; initialTeamId?: string }) {
+export default function Settings({ section, initialTeamId }: { section: SettingsSection; initialWorkflowId?: string; initialTeamId?: string }) {
   useTitle('Settings');
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const { data: access } = useWorkspaceAccess(wsId);
-  const { canManageSettings, canManageMembers, canManageTeams, canAdminWorkflows, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
+  const { canManageSettings, canManageMembers, canManageTeams, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -251,6 +243,8 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
             workspaceId={workspaceId}
             organizationId={currentWorkspace?.organization_id}
             editable={canManageMembers}
+            teams={settings.teams}
+            userMemberships={settings.user_memberships}
           />
         );
       case 'teams':
@@ -321,12 +315,18 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
           />
         );
       case 'workflows':
+        // Workflows are now managed per-team; fall through to teams
         return (
-          <WorkflowManager
+          <TeamsTab
             workspaceId={workspaceId}
             teams={settings.teams}
-            editable={canAdminWorkflows}
-            initialWorkflowId={initialWorkflowId}
+            userMemberships={settings.user_memberships}
+            invitationPreassignments={settings.invitation_team_preassignments}
+            teamEstimateSettings={settings.team_estimate_settings}
+            teamFieldVisibility={settings.team_field_visibility}
+            teamRepoDefaults={settings.team_repo_defaults}
+            editable={canManageTeams}
+            onRefresh={load}
             initialTeamId={initialTeamId}
           />
         );
@@ -357,7 +357,7 @@ export default function Settings({ section, initialWorkflowId, initialTeamId }: 
 
   return (
     <div className="space-y-4">
-      {section !== 'teams' && (
+      {section !== 'teams' && section !== 'members' && (
         <div>
           <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
           {sectionMeta.description && (

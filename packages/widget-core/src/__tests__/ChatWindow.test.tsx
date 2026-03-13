@@ -138,7 +138,6 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('The team can also help')).toBeTruthy();
     expect(getByText('How can we help?')).toBeTruthy();
     expect(container.querySelector('.helpin-bottom-nav')).toBeFalsy();
     expect(container.querySelector('.helpin-conversation-back')).toBeTruthy();

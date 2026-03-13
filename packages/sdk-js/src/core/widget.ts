@@ -1,26 +1,9 @@
-import type { Config } from './types';
+import { mountWidget, unmountWidget } from '@helpin/widget-core';
+import type { WidgetConfig, Message, MountWidgetOptions, WidgetView } from '@helpin/widget-core';
+// @ts-ignore — Vite ?inline import returns CSS as a string
+import widgetStyles from '@helpin/widget-core/styles?inline';
 
-export interface WidgetConfig {
-  workspaceId: string;
-  workspaceName?: string;
-  branding: {
-    primaryColor: string;
-    logoUrl?: string;
-    welcomeMessage: string;
-    widgetPosition: 'bottom-right' | 'bottom-left';
-    showBranding?: boolean;
-    launcherIcon?: 'chat_bubble' | 'question_mark' | 'help';
-    colorScheme?: 'system' | 'light' | 'dark';
-    buttonColor?: string;
-    buttonIconColor?: string;
-  };
-  features: {
-    aiEnabled: boolean;
-    fileUploads: boolean;
-    preChatForm: boolean;
-    csatRating: boolean;
-  };
-}
+export { type WidgetConfig };
 
 export interface WidgetUser {
   email?: string;
@@ -52,10 +35,13 @@ export class WidgetManager {
   private wsRetryCount = 0;
   private wsRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private isShutdown = false;
-  private host = 'sdk.helpin.ai';
+  private host = 'api.helpin.ai';
 
-  // Store bound event handlers for cleanup
-  private boundHandlers: { element: Element; event: string; handler: EventListener }[] = [];
+  // Preact mount state
+  private mountContainer: HTMLElement | null = null;
+  private messages: Message[] = [];
+  private currentView: WidgetView = 'home';
+  private isTyping = false;
 
   private callbacks: Record<string, WidgetCallback[]> = {
     onShow: [],
@@ -99,6 +85,9 @@ export class WidgetManager {
     this.isOpen = false;
     this.unreadCount = 0;
     this.wsRetryCount = 0;
+    this.messages = [];
+    this.currentView = 'home';
+    this.isTyping = false;
 
     if (this.wsRetryTimer) {
       clearTimeout(this.wsRetryTimer);
@@ -106,20 +95,20 @@ export class WidgetManager {
     }
 
     this.disconnectWebSocket();
-    this.removeEventListeners();
     this.removeWidget();
   }
 
   show(): void {
     this.isOpen = true;
+    this.unreadCount = 0;
     this.ensureWidget();
-    this.updateWidgetVisibility(true);
+    this.render();
     this.triggerCallback('onShow');
   }
 
   hide(): void {
     this.isOpen = false;
-    this.updateWidgetVisibility(false);
+    this.render();
     this.triggerCallback('onHide');
   }
 
@@ -132,18 +121,22 @@ export class WidgetManager {
   }
 
   showMessages(): void {
+    this.currentView = 'messages';
     this.show();
   }
 
   showNewMessage(content?: string): void {
+    this.currentView = 'home';
     this.show();
   }
 
   showConversation(conversationId: string): void {
+    this.currentView = 'home';
     this.show();
   }
 
   showArticle(articleId: string): void {
+    this.currentView = 'help';
     this.show();
   }
 
@@ -179,6 +172,104 @@ export class WidgetManager {
   isWidgetReady(): boolean {
     return this.widgetConfig !== null;
   }
+
+  // ─── Preact Rendering ─────────────────────────────────────
+
+  private ensureWidget(): void {
+    if (this.mountContainer) return;
+
+    // Inject widget-core CSS once
+    if (!document.getElementById('helpin-widget-styles')) {
+      const style = document.createElement('style');
+      style.id = 'helpin-widget-styles';
+      style.textContent = widgetStyles;
+      document.head.appendChild(style);
+    }
+
+    const container = document.createElement('div');
+    container.id = 'helpin-widget-container';
+    document.body.appendChild(container);
+    this.mountContainer = container;
+  }
+
+  private render(): void {
+    if (!this.mountContainer || !this.widgetConfig) return;
+
+    const showPreChat = this.widgetConfig.features?.preChatForm && !this.sessionToken;
+
+    mountWidget(this.mountContainer, {
+      config: this.widgetConfig,
+      messages: this.messages,
+      isOpen: this.isOpen,
+      onClose: () => this.hide(),
+      onSendMessage: (content: string) => this.handleSendMessage(content),
+      onQuickReply: (content: string) => this.handleSendMessage(content),
+      showPreChatForm: showPreChat,
+      onPreChatSubmit: (data: { name: string; email: string }) => this.handlePreChatSubmit(data),
+      isTyping: this.isTyping,
+      initialView: this.currentView,
+      showLauncher: true,
+      onLauncherClick: () => this.toggle(),
+      unreadCount: this.unreadCount,
+    });
+  }
+
+  private removeWidget(): void {
+    if (this.mountContainer) {
+      unmountWidget(this.mountContainer);
+      this.mountContainer.remove();
+      this.mountContainer = null;
+    }
+  }
+
+  // ─── Message Handling ──────────────────────────────────────
+
+  private async handleSendMessage(content: string): Promise<void> {
+    if (!content.trim()) return;
+
+    // If no session yet, try initializing with just the message
+    if (!this.sessionToken) {
+      console.warn('No session token — message not sent. Complete pre-chat form first.');
+      return;
+    }
+
+    // Optimistic update
+    const optimisticMsg: Message = {
+      id: `temp-${Date.now()}`,
+      conversationId: '',
+      role: 'customer',
+      content,
+      isInternal: false,
+      createdAt: new Date().toISOString(),
+    };
+    this.messages = [...this.messages, optimisticMsg];
+    this.render();
+
+    try {
+      await fetch(`https://${this.host}/v1/widget/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.sessionToken}`,
+        },
+        body: JSON.stringify({ content }),
+      });
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    }
+  }
+
+  private async handlePreChatSubmit(data: { name: string; email: string }): Promise<void> {
+    this.triggerCallback('onUserEmailSupplied', data.email);
+    try {
+      await this.initializeSession({ email: data.email, name: data.name });
+      this.render(); // Re-render to hide pre-chat form
+    } catch (error) {
+      console.error('Failed to initialize session from pre-chat form:', error);
+    }
+  }
+
+  // ─── API / Session ─────────────────────────────────────────
 
   private async initializeSession(user: WidgetUser): Promise<void> {
     if (!this.config?.key) return;
@@ -226,215 +317,13 @@ export class WidgetManager {
 
       this.widgetConfig = await response.json();
       this.ensureWidget();
+      this.render();
     } catch (error) {
       console.error('Failed to fetch widget config:', error);
     }
   }
 
-  private ensureWidget(): void {
-    if (document.getElementById('helpin-widget-container')) return;
-
-    const container = document.createElement('div');
-    container.id = 'helpin-widget-container';
-    container.innerHTML = `
-      <style>
-        ${this.getWidgetStyles()}
-      </style>
-      <div class="helpin-widget">
-        <button class="helpin-launcher" aria-label="Open chat">
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="white">
-            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
-          </svg>
-        </button>
-        <div class="helpin-chat-window" style="display: none;">
-          <div class="helpin-widget-header">
-            <div class="helpin-header-content">
-              <div class="helpin-header-title">Support</div>
-            </div>
-            <button class="helpin-header-close">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="white">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-              </svg>
-            </button>
-          </div>
-          <div class="helpin-chat-content">
-            <div class="helpin-pre-chat-form">
-              <div class="helpin-pre-chat-welcome">Hi! How can we help you today?</div>
-              <form class="helpin-pre-chat-email-form">
-                <input type="email" class="helpin-input" placeholder="Enter your email" required>
-                <button type="submit" class="helpin-btn-primary">Continue</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(container);
-    this.attachEventListeners();
-  }
-
-  private getWidgetStyles(): string {
-    const brandColor = this.widgetConfig?.branding?.primaryColor || '#6366f1';
-    const buttonColor = this.widgetConfig?.branding?.buttonColor || brandColor;
-    const buttonIconColor = this.widgetConfig?.branding?.buttonIconColor || '#ffffff';
-    return `
-      .helpin-widget {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        z-index: 999999;
-        font-family: system-ui, -apple-system, sans-serif;
-      }
-      .helpin-launcher {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        border: none;
-        background-color: ${buttonColor};
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
-        transition: transform 0.2s;
-      }
-      .helpin-launcher svg { fill: ${buttonIconColor}; }
-      .helpin-launcher:hover { transform: scale(1.05); }
-      .helpin-chat-window {
-        position: absolute;
-        bottom: 80px;
-        right: 0;
-        width: 380px;
-        max-width: calc(100vw - 40px);
-        height: 680px;
-        max-height: calc(100vh - 104px);
-        background: #fff;
-        border-radius: 12px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-      }
-      .helpin-widget-header {
-        padding: 16px;
-        background: ${brandColor};
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-      .helpin-header-title { font-weight: 600; font-size: 16px; }
-      .helpin-header-close {
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        padding: 4px;
-        opacity: 0.8;
-      }
-      .helpin-header-close:hover { opacity: 1; }
-      .helpin-chat-content {
-        flex: 1;
-        overflow-y: auto;
-        padding: 16px;
-      }
-      .helpin-pre-chat-welcome {
-        font-size: 16px;
-        font-weight: 500;
-        margin-bottom: 16px;
-        text-align: center;
-      }
-      .helpin-input {
-        width: 100%;
-        padding: 12px;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        font-size: 14px;
-        margin-bottom: 12px;
-        box-sizing: border-box;
-      }
-      .helpin-input:focus { outline: none; border-color: ${brandColor}; }
-      .helpin-btn-primary {
-        width: 100%;
-        padding: 12px;
-        border: none;
-        border-radius: 8px;
-        background: ${brandColor};
-        color: white;
-        font-size: 14px;
-        font-weight: 500;
-        cursor: pointer;
-      }
-      .helpin-btn-primary:hover { opacity: 0.9; }
-      .helpin-sr-only {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border-width: 0;
-      }
-    `;
-  }
-
-  private attachEventListeners(): void {
-    const launcher = document.querySelector('.helpin-launcher');
-    const closeBtn = document.querySelector('.helpin-header-close');
-    const emailForm = document.querySelector('.helpin-pre-chat-email-form') as HTMLFormElement;
-
-    if (launcher) {
-      const handler = () => this.toggle();
-      launcher.addEventListener('click', handler);
-      this.boundHandlers.push({ element: launcher, event: 'click', handler });
-    }
-
-    if (closeBtn) {
-      const handler = () => this.hide();
-      closeBtn.addEventListener('click', handler);
-      this.boundHandlers.push({ element: closeBtn, event: 'click', handler });
-    }
-
-    if (emailForm) {
-      const handler = async (e: Event) => {
-        e.preventDefault();
-        const emailInput = emailForm.querySelector('input[type="email"]') as HTMLInputElement;
-        const email = emailInput.value;
-
-        this.triggerCallback('onUserEmailSupplied', email);
-        try {
-          await this.initializeSession({ email });
-        } catch (error) {
-          console.error('Failed to initialize session from form:', error);
-        }
-      };
-      emailForm.addEventListener('submit', handler);
-      this.boundHandlers.push({ element: emailForm, event: 'submit', handler });
-    }
-  }
-
-  private removeEventListeners(): void {
-    for (const { element, event, handler } of this.boundHandlers) {
-      element.removeEventListener(event, handler);
-    }
-    this.boundHandlers = [];
-  }
-
-  private updateWidgetVisibility(open: boolean): void {
-    const chatWindow = document.querySelector('.helpin-chat-window') as HTMLElement;
-    if (chatWindow) {
-      chatWindow.style.display = open ? 'flex' : 'none';
-    }
-  }
-
-  private removeWidget(): void {
-    const container = document.getElementById('helpin-widget-container');
-    if (container) {
-      container.remove();
-    }
-  }
+  // ─── WebSocket ──────────────────────────────────────────────
 
   private connectWebSocket(): void {
     if (!this.sessionToken || this.isShutdown) return;
@@ -448,9 +337,26 @@ export class WidgetManager {
         try {
           const data = JSON.parse(event.data);
           if (data.entity === 'support_conversation_message') {
-            this.unreadCount++;
-            this.triggerCallback('onUnreadCountChange', this.unreadCount);
+            const msg: Message = {
+              id: data.id || `ws-${Date.now()}`,
+              conversationId: data.conversation_id || '',
+              role: data.role || 'agent',
+              content: data.content || '',
+              senderId: data.sender_id,
+              isInternal: false,
+              createdAt: data.created_at || new Date().toISOString(),
+              sources: data.sources,
+              attachments: data.attachments,
+            };
+            this.messages = [...this.messages, msg];
+
+            if (!this.isOpen) {
+              this.unreadCount++;
+              this.triggerCallback('onUnreadCountChange', this.unreadCount);
+            }
+
             this.triggerCallback('onMessageReceived', data);
+            this.render();
           }
         } catch {
           console.error('Failed to parse WebSocket message');

@@ -136,6 +136,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             messages={messages}
             onSendMessage={onSendMessage}
             onQuickReply={onQuickReply}
+            onStartConversation={() => handleStartConversation('messages')}
             isTyping={isTyping}
             quickReplies={quickReplies}
             hasConversation={messages.length > 0}

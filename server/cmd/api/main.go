@@ -562,7 +562,7 @@ func main() {
 	sprintService := service.NewRewardSprintService(sprintRepo, scoringRepo)
 	goalService := service.NewRewardGoalService(goalRepo)
 	bonusService := service.NewRewardBonusService(bonusRepo, scoringRepo)
-	settingsService := service.NewSettingsService(settingsRepo, cfg.BraveSearchAPIKey)
+	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
 	auditService := service.NewRewardAuditService(bonusRepo)
 	draftService := service.NewRewardDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)

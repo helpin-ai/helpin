@@ -29,6 +29,28 @@ export function getAvatarColor(name?: string | null) {
   return AVATAR_COLORS[hashName(name) % AVATAR_COLORS.length];
 }
 
+function bumpAvatarDimensions(className?: string) {
+  if (!className) return className;
+
+  const sizeMap: Record<string, string> = {
+    'h-4': 'h-5',
+    'w-4': 'w-5',
+    'h-5': 'h-6',
+    'w-5': 'w-6',
+    'h-6': 'h-7',
+    'w-6': 'w-7',
+    'h-7': 'h-8',
+    'w-7': 'w-8',
+    'h-8': 'h-9',
+    'w-8': 'w-9',
+  };
+
+  return className
+    .split(/\s+/)
+    .map((token) => sizeMap[token] ?? token)
+    .join(' ');
+}
+
 interface UserAvatarProps {
   name?: string | null;
   avatarUrl?: string | null;
@@ -43,9 +65,10 @@ export function UserAvatar({
   fallbackClassName,
 }: UserAvatarProps) {
   const color = getAvatarColor(name);
+  const avatarClassName = bumpAvatarDimensions(className);
 
   return (
-    <Avatar className={cn('h-6 w-6 border border-border/80', className)}>
+    <Avatar className={cn('h-7 w-7 border border-border/80', avatarClassName)}>
       {avatarUrl && <AvatarImage src={avatarUrl} alt={name ?? ''} />}
       <AvatarFallback className={cn('text-[9px] font-semibold', color.bg, color.text, fallbackClassName)}>
         {getInitials(name)}

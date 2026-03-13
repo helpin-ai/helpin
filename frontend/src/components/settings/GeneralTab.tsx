@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils';
 import { Camera, ChevronRight, Globe, Loader2, Search, Trash2 } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { WorkspaceMuteNotificationsCard, WorkspaceNotificationCategoriesCard } from './NotificationPreferencesPanels';
@@ -34,6 +35,7 @@ export function GeneralTab({ workspaceId, editable }: {
 }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [name, setName] = useState(workspace?.name ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
   const [timezone, setTimezone] = useState(workspace?.timezone ?? 'UTC');
@@ -144,6 +146,7 @@ export function GeneralTab({ workspaceId, editable }: {
       return;
     }
     toast.success('Workspace deleted');
+    queryClient.invalidateQueries({ queryKey: ['workspaces'] });
     navigate({ to: '/' });
   };
 
@@ -345,7 +348,7 @@ export function GeneralTab({ workspaceId, editable }: {
             </Button>
             <Button
               variant="destructive"
-              disabled={deleteConfirmText !== workspace?.slug || deleting}
+              disabled={deleteConfirmText.trim() !== workspace?.slug || deleting}
               onClick={handleDelete}
             >
               {deleting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting...</> : 'Delete workspace'}

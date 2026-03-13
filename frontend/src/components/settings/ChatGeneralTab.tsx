@@ -8,11 +8,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Copy, Key, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, ArrowLeft } from 'lucide-react';
+import { Copy, Key, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon } from 'lucide-react';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey } from '@/hooks/queries';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { WidgetPreview } from './WidgetPreview';
 import { API_BASE } from '@/lib/api';
+import { CodeBlock } from '@/components/ui/code-block';
+import { BrandColorPicker } from '@/components/pm/ColorPicker';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 const ICON_OPTIONS = [
   { value: 'chat_bubble', label: 'Chat Bubble', icon: MessageSquare },
@@ -25,8 +28,6 @@ const COLOR_SCHEME_OPTIONS = [
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
 ];
-
-type SettingsView = 'main' | 'branding';
 
 /* ── Two-column layout shell ─────────────────────────────────────────── */
 
@@ -51,11 +52,12 @@ function PreviewLayout({ children, preview }: { children: ReactNode; preview: Re
 /* ── Main component ──────────────────────────────────────────────────── */
 
 export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data, isLoading } = useChatSettings(workspaceId);
   const updateMutation = useUpdateChatSettings(workspaceId);
   const regenerateMutation = useRegenerateWidgetKey(workspaceId);
 
-  const [view, setView] = useState<SettingsView>('main');
+  const [snippetTab, setSnippetTab] = useState<'basic' | 'advanced'>('basic');
 
   // Identity & CRM state
   const [requireEmail, setRequireEmail] = useState(true);
@@ -74,8 +76,11 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [buttonColor, setButtonColor] = useState('#000000');
   const [buttonIconColor, setButtonIconColor] = useState('#FFFFFF');
   const [logoUrl, setLogoUrl] = useState('');
+  const [widgetName, setWidgetName] = useState('');
+  const [widgetAvatarUrl, setWidgetAvatarUrl] = useState('');
 
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
@@ -95,6 +100,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setButtonColor(s.button_color || '#000000');
       setButtonIconColor(s.button_icon_color || '#FFFFFF');
       setLogoUrl(s.logo_url || '');
+      setWidgetName(s.widget_name || '');
+      setWidgetAvatarUrl(s.widget_avatar_url || '');
     }
   }, [data]);
 
@@ -106,6 +113,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       auto_create_crm_contact: autoCreateContact,
       default_lifecycle_stage: lifecycleStage,
       auto_promote_to_lead: autoPromote,
+      widget_name: widgetName,
+      widget_avatar_url: widgetAvatarUrl,
       brand_color: brandColor,
       show_branding: showBranding,
       launcher_position: launcherPosition,
@@ -175,7 +184,44 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   }
 
   const widgetKey = data?.widget_key ?? '';
-  const embedSnippet = `<script src="${API_BASE.replace('/api', '')}/widget.js" data-widget-key="${widgetKey}"></script>`;
+  const apiHost = API_BASE.replace('/api', '');
+  const embedSnippet = `<script type="text/javascript">
+  (function () {
+    window.helpin = window.helpin || (function () {
+      (window.helpinQ = window.helpinQ || []).push(arguments);
+    });
+    var t = document.createElement('script'),
+        s = document.getElementsByTagName('script')[0];
+    t.defer = true;
+    t.id = 'helpin-widget';
+    t.setAttribute('data-key', '${widgetKey}');
+    t.setAttribute('data-host', '${apiHost}');
+    t.src = '${apiHost}/widget.js';
+    s.parentNode.insertBefore(t, s);
+  })();
+</script>`;
+  const jsApiSnippet = `<script type="text/javascript">
+  (function () {
+    window.helpin = window.helpin || (function () {
+      (window.helpinQ = window.helpinQ || []).push(arguments);
+    });
+    var t = document.createElement('script'),
+        s = document.getElementsByTagName('script')[0];
+    t.defer = true;
+    t.id = 'helpin-widget';
+    t.setAttribute('data-key', '${widgetKey}');
+    t.setAttribute('data-host', '${apiHost}');
+    t.src = '${apiHost}/widget.js';
+    s.parentNode.insertBefore(t, s);
+  })();
+
+  // Identify logged-in users (optional)
+  helpin('identify', {
+    email: 'user@example.com',
+    name: 'Jane Doe',
+    userId: 'your-internal-id'
+  });
+</script>`;
 
   // Shared preview element used by both views
   const previewElement = (
@@ -185,172 +231,14 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       launcherPosition={launcherPosition}
       launcherIcon={launcherIcon}
       welcomeMessage={welcomeMessage}
+      workspaceName={widgetName || workspace?.name}
+      workspaceLogoUrl={widgetAvatarUrl || workspace?.logo_url}
       colorScheme={colorScheme}
       buttonColor={buttonColor}
       buttonIconColor={buttonIconColor}
       logoUrl={logoUrl}
     />
   );
-
-  /* ── Branding sub-page ─────────────────────────────────────────────── */
-
-  if (view === 'branding') {
-    return (
-      <PreviewLayout preview={previewElement}>
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setView('main')}
-              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Branding
-            </button>
-            <Button onClick={handleSave} disabled={updateMutation.isPending} size="sm">
-              {updateMutation.isPending ? 'Saving...' : 'Save changes'}
-            </Button>
-          </div>
-
-          {/* Logo */}
-          <div className="space-y-3">
-            <div>
-              <Label className="text-sm font-medium">Logo</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                The image that appears at the top of your widget. Recommended size: 512x512 pixels.
-              </p>
-            </div>
-            {logoUrl ? (
-              <div className="flex items-center gap-4">
-                <img
-                  src={logoUrl}
-                  alt="Widget logo"
-                  className="h-16 w-16 rounded-lg border object-cover"
-                />
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => logoInputRef.current?.click()}>
-                    Change
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setLogoUrl('')}>
-                    Remove
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div
-                className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 transition-colors cursor-pointer ${
-                  dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/50'
-                }`}
-                onClick={() => logoInputRef.current?.click()}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-              >
-                <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Drop an image or{' '}
-                    <span className="text-primary font-medium">click to browse</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">Supports PNG, JPG, SVG</p>
-                </div>
-              </div>
-            )}
-            <input
-              ref={logoInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/svg+xml"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleLogoFileSelect(file);
-                e.target.value = '';
-              }}
-            />
-          </div>
-
-          {/* Primary Color */}
-          <div className="space-y-2">
-            <div>
-              <Label className="text-sm font-medium">Primary color</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                The main color used for links and accents in your widget.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative shrink-0">
-                <div className="h-9 w-9 rounded-md border shadow-sm cursor-pointer" style={{ backgroundColor: brandColor }} />
-                <input type="color" value={brandColor} onChange={(e) => setBrandColor(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
-              </div>
-              <Input value={brandColor} onChange={(e) => setBrandColor(e.target.value)} className="w-32 font-mono text-sm" placeholder="#6366F1" />
-            </div>
-          </div>
-
-          {/* Color Scheme */}
-          <div className="space-y-2">
-            <div>
-              <Label className="text-sm font-medium">Color Scheme</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Choose the default color scheme for your widget.</p>
-            </div>
-            <div className="flex items-center gap-1 p-1 rounded-lg border bg-muted/30 w-fit">
-              {COLOR_SCHEME_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setColorScheme(opt.value)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
-                    colorScheme === opt.value
-                      ? 'bg-background shadow-sm font-medium text-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <opt.icon className="h-3.5 w-3.5" />
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Button Color */}
-          <div className="space-y-2">
-            <div>
-              <Label className="text-sm font-medium">Button color</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Background color of the floating widget button.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative shrink-0">
-                <div className="h-9 w-9 rounded-md border shadow-sm cursor-pointer" style={{ backgroundColor: buttonColor }} />
-                <input type="color" value={buttonColor} onChange={(e) => setButtonColor(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
-              </div>
-              <Input value={buttonColor} onChange={(e) => setButtonColor(e.target.value)} className="w-32 font-mono text-sm" placeholder="#000000" />
-            </div>
-          </div>
-
-          {/* Button Icon Color */}
-          <div className="space-y-2">
-            <div>
-              <Label className="text-sm font-medium">Button icon color</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Icon color of the floating widget button.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative shrink-0">
-                <div className="h-9 w-9 rounded-md border shadow-sm cursor-pointer" style={{ backgroundColor: buttonIconColor }} />
-                <input type="color" value={buttonIconColor} onChange={(e) => setButtonIconColor(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
-              </div>
-              <Input value={buttonIconColor} onChange={(e) => setButtonIconColor(e.target.value)} className="w-32 font-mono text-sm" placeholder="#FFFFFF" />
-            </div>
-          </div>
-
-          {/* Show Powered By */}
-          <div className="flex items-center justify-between pt-2">
-            <div>
-              <Label className="text-sm font-medium">Show "Powered by Helpin"</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Display branding in the widget footer.</p>
-            </div>
-            <Switch checked={showBranding} onCheckedChange={setShowBranding} />
-          </div>
-        </div>
-      </PreviewLayout>
-    );
-  }
 
   /* ── Main settings view ────────────────────────────────────────────── */
 
@@ -371,7 +259,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               <Code className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">Widget Installation</CardTitle>
             </div>
-            <CardDescription>Embed the chat widget on your website.</CardDescription>
+            <CardDescription>Embed the chat widget on your website by adding the snippet to your HTML.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -386,18 +274,38 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
             <div className="space-y-2">
               <Label className="text-sm">Embed Snippet</Label>
-              <div className="relative">
-                <pre className="rounded-md border bg-muted/50 p-3 text-xs font-mono overflow-x-auto">{embedSnippet}</pre>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute top-2 right-2 h-7 w-7"
-                  onClick={() => copyToClipboard(embedSnippet, 'Snippet')}
+              <div className="flex items-center gap-1 p-0.5 rounded-md border bg-muted/30 w-fit mb-2">
+                <button
+                  onClick={() => setSnippetTab('basic')}
+                  className={`px-2.5 py-1 rounded text-xs transition-colors ${
+                    snippetTab === 'basic'
+                      ? 'bg-background shadow-sm font-medium text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
                 >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
+                  Basic
+                </button>
+                <button
+                  onClick={() => setSnippetTab('advanced')}
+                  className={`px-2.5 py-1 rounded text-xs transition-colors ${
+                    snippetTab === 'advanced'
+                      ? 'bg-background shadow-sm font-medium text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  With User Identity
+                </button>
               </div>
+              <CodeBlock
+                code={snippetTab === 'basic' ? embedSnippet : jsApiSnippet}
+                language="markup"
+                showLineNumbers
+              />
+              <p className="text-xs text-muted-foreground">
+                {snippetTab === 'basic'
+                  ? 'Add this script tag before the closing </body> tag on every page where you want the widget.'
+                  : 'Use this to identify logged-in users. Replace the placeholder values with real user data from your app.'}
+              </p>
             </div>
 
             <AlertDialog>
@@ -467,23 +375,193 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
             <CardDescription>Customize the widget's visual appearance.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Branding sub-page link */}
-            <button
-              onClick={() => setView('branding')}
-              className="w-full flex items-center justify-between rounded-lg border p-4 hover:bg-muted/50 transition-colors text-left"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted/50">
-                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
+            {/* Widget Identity */}
+            <div className="space-y-3">
+              <div>
+                <Label className="text-sm font-medium">Widget Identity</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Customize the name and avatar your customers see in the widget.
+                </p>
+              </div>
+              <div className="flex items-start gap-4">
+                {/* Avatar */}
+                <div className="shrink-0">
+                  {widgetAvatarUrl ? (
+                    <div className="relative group">
+                      <img
+                        src={widgetAvatarUrl}
+                        alt="Widget avatar"
+                        className="h-14 w-14 rounded-full border object-cover cursor-pointer"
+                        onClick={() => avatarInputRef.current?.click()}
+                      />
+                      <button
+                        onClick={() => setWidgetAvatarUrl('')}
+                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      className="h-14 w-14 rounded-full border-2 border-dashed flex items-center justify-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
+                      onClick={() => avatarInputRef.current?.click()}
+                    >
+                      <span className="text-lg font-semibold text-muted-foreground/50">
+                        {(widgetName || workspace?.name || 'S').charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/svg+xml"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        if (!file.type.startsWith('image/')) {
+                          toast.error('Please select an image file');
+                          return;
+                        }
+                        if (file.size > 2 * 1024 * 1024) {
+                          toast.error('Image must be under 2MB');
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onload = () => setWidgetAvatarUrl(reader.result as string);
+                        reader.readAsDataURL(file);
+                      }
+                      e.target.value = '';
+                    }}
+                  />
                 </div>
-                <div>
-                  <p className="text-sm font-medium">Branding</p>
-                  <p className="text-xs text-muted-foreground">Logo, colors, color scheme</p>
+                {/* Name */}
+                <div className="flex-1 space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Display Name</Label>
+                  <Input
+                    value={widgetName}
+                    onChange={(e) => setWidgetName(e.target.value)}
+                    placeholder={workspace?.name || 'Support'}
+                    className="text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Shown in the widget header and conversations. Defaults to your workspace name.
+                  </p>
                 </div>
               </div>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
+            </div>
 
+            {/* Logo */}
+            <div className="space-y-3">
+              <div>
+                <Label className="text-sm font-medium">Logo</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  The image that appears at the top of your widget. Recommended size: 512x512 pixels.
+                </p>
+              </div>
+              {logoUrl ? (
+                <div className="flex items-center gap-4">
+                  <img
+                    src={logoUrl}
+                    alt="Widget logo"
+                    className="h-16 w-16 rounded-lg border object-cover"
+                  />
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => logoInputRef.current?.click()}>
+                      Change
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setLogoUrl('')}>
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 transition-colors cursor-pointer ${
+                    dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/50'
+                  }`}
+                  onClick={() => logoInputRef.current?.click()}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
+                  <ImageIcon className="h-6 w-6 text-muted-foreground/50" />
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground">
+                      Drop an image or{' '}
+                      <span className="text-primary font-medium">click to browse</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">Supports PNG, JPG, SVG</p>
+                  </div>
+                </div>
+              )}
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleLogoFileSelect(file);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+
+            {/* Primary Color */}
+            <div className="space-y-2">
+              <div>
+                <Label className="text-sm font-medium">Primary color</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  The main color used for links and accents in your widget.
+                </p>
+              </div>
+              <BrandColorPicker value={brandColor} onChange={setBrandColor} />
+            </div>
+
+            {/* Color Scheme */}
+            <div className="space-y-2">
+              <div>
+                <Label className="text-sm font-medium">Color Scheme</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Choose the default color scheme for your widget.</p>
+              </div>
+              <div className="flex items-center gap-1 p-1 rounded-lg border bg-muted/30 w-fit">
+                {COLOR_SCHEME_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setColorScheme(opt.value)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                      colorScheme === opt.value
+                        ? 'bg-background shadow-sm font-medium text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <opt.icon className="h-3.5 w-3.5" />
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Button Color */}
+            <div className="space-y-2">
+              <div>
+                <Label className="text-sm font-medium">Button color</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Background color of the floating widget button.</p>
+              </div>
+              <BrandColorPicker value={buttonColor} onChange={setButtonColor} />
+            </div>
+
+            {/* Button Icon Color */}
+            <div className="space-y-2">
+              <div>
+                <Label className="text-sm font-medium">Button icon color</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Icon color of the floating widget button.</p>
+              </div>
+              <BrandColorPicker value={buttonIconColor} onChange={setButtonIconColor} />
+            </div>
+
+            {/* Launcher Position */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">Launcher Position</Label>
               <Select value={launcherPosition} onValueChange={setLauncherPosition}>
@@ -497,6 +575,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               </Select>
             </div>
 
+            {/* Launcher Icon */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">Launcher Icon</Label>
               <Select value={launcherIcon} onValueChange={setLauncherIcon}>
@@ -514,6 +593,15 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Show Powered By */}
+            <div className="flex items-center justify-between pt-2">
+              <div>
+                <Label className="text-sm font-medium">Show "Powered by Helpin"</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Display branding in the widget footer.</p>
+              </div>
+              <Switch checked={showBranding} onCheckedChange={setShowBranding} />
             </div>
           </CardContent>
         </Card>
