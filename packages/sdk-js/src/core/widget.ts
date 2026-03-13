@@ -60,7 +60,10 @@ export class WidgetManager {
 
     this.isShutdown = false;
     this.config = settings;
-    this.host = settings.host || this.host;
+    if (settings.host) {
+      // Strip protocol — fetch calls prepend https://
+      this.host = settings.host.replace(/^https?:\/\//, '');
+    }
 
     if (settings.user) {
       this.initializeSession(settings.user).catch((error) => {

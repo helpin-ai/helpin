@@ -585,6 +585,9 @@ func main() {
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
 
+	// Widget WebSocket handler — authenticates via session_token, not JWT.
+	widgetWsHandler := ws.NewWidgetHandler(wsHub, supportInboxService)
+
 	// Initialize handlers.
 	handlers := router.Handlers{
 		Health:             handler.NewHealthHandler(),
@@ -738,8 +741,12 @@ func main() {
 	var topHandler http.Handler = r
 	if wsHandler != nil {
 		topHandler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if req.URL.Path == "/api/ws" || req.URL.Path == "/widget/ws" {
+			if req.URL.Path == "/api/ws" {
 				wsHandler.ServeHTTP(w, req)
+				return
+			}
+			if req.URL.Path == "/widget/ws" {
+				widgetWsHandler.ServeHTTP(w, req)
 				return
 			}
 			r.ServeHTTP(w, req)
