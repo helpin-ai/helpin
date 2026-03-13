@@ -277,6 +277,19 @@ type UpdateInstallationSettingsRequest struct {
 	CSATEnabled            *bool                       `json:"csat_enabled,omitempty"`
 }
 
+// WidgetToken is the token format expected by the events-pipeline rust-capture service.
+type WidgetToken struct {
+	ID           string   `json:"id"`
+	ClientSecret string   `json:"client_secret"`
+	ServerSecret string   `json:"server_secret"`
+	Origins      []string `json:"origins"`
+}
+
+// WidgetTokensResponse wraps the token list for the HTTP response.
+type WidgetTokensResponse struct {
+	Tokens []WidgetToken `json:"tokens"`
+}
+
 // WidgetConfigResponse is the public-facing widget config (no secrets).
 type WidgetConfigResponse struct {
 	WidgetKey              string `json:"widget_key"`

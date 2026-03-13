@@ -1,0 +1,2 @@
+# Send an event to a test server
+curl http://localhost:3000/event -X POST -H "Content-Type: application/json" -H "X-Forwaded-For: 95.10.187.240" --data '[{"token": "ferrisisbae", "event": "test", "properties": {"test": "test"}}, {"token": "ferrisisbae", "event": "test", "properties": {"azhar": "test"}}]'

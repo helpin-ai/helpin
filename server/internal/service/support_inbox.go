@@ -733,33 +733,130 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 }
 
 // RegenerateWidgetKey generates a new widget key + secret key.
-func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspaceID string) (*model.SupportWidgetInstallation, error) {
+func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspaceID string) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error) {
 	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if inst == nil {
-		return nil, fmt.Errorf("no widget installation found for this workspace")
+		return nil, nil, fmt.Errorf("no widget installation found for this workspace")
 	}
 
 	newWidgetKey, err := generateSecureToken(16)
 	if err != nil {
-		return nil, fmt.Errorf("generate widget key: %w", err)
+		return nil, nil, fmt.Errorf("generate widget key: %w", err)
 	}
 	newSecretKey, err := generateSecureToken(32)
 	if err != nil {
-		return nil, fmt.Errorf("generate secret key: %w", err)
+		return nil, nil, fmt.Errorf("generate secret key: %w", err)
 	}
 
 	if err := s.installationRepo.RegenerateKeys(ctx, inst.ID, newWidgetKey, newSecretKey); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	inst.WidgetKey = newWidgetKey
 	inst.SecretKey = newSecretKey
 
+	settings := parseSettings(inst.Settings)
 	slog.InfoContext(ctx, "regenerated support widget keys", "workspace_id", workspaceID, "installation_id", inst.ID)
-	return inst, nil
+	return inst, &settings, nil
+}
+
+// SeedWorkspaceDefaults creates a default widget installation for a new workspace.
+func (s *SupportInboxService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
+	existing, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return fmt.Errorf("check existing installation: %w", err)
+	}
+	if existing != nil {
+		return nil // already seeded
+	}
+
+	widgetKey, err := generateSecureToken(16)
+	if err != nil {
+		return fmt.Errorf("generate widget key: %w", err)
+	}
+	secretKey, err := generateSecureToken(32)
+	if err != nil {
+		return fmt.Errorf("generate secret key: %w", err)
+	}
+
+	defaults := model.DefaultSupportInboxSettings()
+	raw, err := json.Marshal(defaults)
+	if err != nil {
+		return fmt.Errorf("marshal default settings: %w", err)
+	}
+
+	inst := &model.SupportWidgetInstallation{
+		WorkspaceID: workspaceID,
+		WidgetKey:   widgetKey,
+		SecretKey:   secretKey,
+		Settings:    string(raw),
+		Active:      true,
+	}
+	if err := s.installationRepo.Create(ctx, inst); err != nil {
+		return fmt.Errorf("create widget installation: %w", err)
+	}
+
+	slog.InfoContext(ctx, "seeded support widget installation", "workspace_id", workspaceID, "installation_id", inst.ID)
+	return nil
+}
+
+// GetPublicWidgetConfigByID returns the public-facing widget config by installation ID.
+func (s *SupportInboxService) GetPublicWidgetConfigByID(ctx context.Context, id string) (*model.WidgetConfigResponse, error) {
+	inst, err := s.installationRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if inst == nil {
+		return nil, fmt.Errorf("widget not found")
+	}
+
+	settings := parseSettings(inst.Settings)
+	return &model.WidgetConfigResponse{
+		WidgetKey:              inst.WidgetKey,
+		Active:                 inst.Active,
+		IsOnline:               isOnline(settings),
+		RequireEmailBeforeChat: settings.RequireEmailBeforeChat,
+		RequireNameAfterEmail:  settings.RequireNameAfterEmail,
+		WelcomeMessage:         settings.WelcomeMessage,
+		AIEnabled:              settings.AIEnabled,
+		ShowTalkToHuman:        settings.ShowTalkToHuman,
+		BusinessHoursEnabled:   settings.BusinessHoursEnabled,
+		OutsideHoursMessage:    settings.OutsideHoursMessage,
+		WidgetName:             settings.WidgetName,
+		WidgetAvatarURL:        settings.WidgetAvatarURL,
+		BrandColor:             settings.BrandColor,
+		ShowBranding:           settings.ShowBranding,
+		ColorScheme:            settings.ColorScheme,
+		ButtonColor:            settings.ButtonColor,
+		ButtonIconColor:        settings.ButtonIconColor,
+		LogoURL:                settings.LogoURL,
+		LauncherPosition:       settings.LauncherPosition,
+		LauncherIcon:           settings.LauncherIcon,
+		CSATEnabled:            settings.CSATEnabled,
+	}, nil
+}
+
+// ListWidgetTokens returns all active widget installations formatted as tokens
+// for the events-pipeline rust-capture service.
+func (s *SupportInboxService) ListWidgetTokens(ctx context.Context) ([]model.WidgetToken, error) {
+	installations, err := s.installationRepo.ListAllActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list widget tokens: %w", err)
+	}
+
+	tokens := make([]model.WidgetToken, 0, len(installations))
+	for _, inst := range installations {
+		tokens = append(tokens, model.WidgetToken{
+			ID:           inst.ID,
+			ClientSecret: inst.WidgetKey,
+			ServerSecret: inst.SecretKey,
+			Origins:      []string{"*"},
+		})
+	}
+	return tokens, nil
 }
 
 // GetPublicWidgetConfig returns the public-facing widget config.

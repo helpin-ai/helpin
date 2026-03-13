@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-eventpipeline-kstreams
+  labels:
+    app: helpin-eventpipeline-kstreams
+  namespace: helpin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-eventpipeline-kstreams
+  template:
+    metadata:
+      labels:
+        app: helpin-eventpipeline-kstreams
+    spec:
+      imagePullSecrets:
+        - name: ghcr-json-key
+      # TLS init container commented out — using SCRAM auth for now.
+      # initContainers:
+      #   - name: secret-to-file
+      #     image: alpine
+      #     command: [...]
+      #     volumeMounts: [... cluster-secret-volume, user-secret-volume, data-volume ...]
+      # volumes:
+      #   - name: cluster-secret-volume
+      #     secret:
+      #       secretName: helpin-cluster-ca-cert
+      #   - name: user-secret-volume
+      #     secret:
+      #       secretName: helpin-eventpipeline-transform
+      #   - name: data-volume
+      #     emptyDir: {}
+      containers:
+        - name: main
+          image: ghcr.io/helpin-ai/helpin/events-pipeline-kstreams:stage-latest
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4092Mi
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+          # TLS env vars commented out — using SCRAM auth for now.
+          # env:
+          #   - name: TRUSTSTORE_PASSWORD
+          #     valueFrom:
+          #       secretKeyRef:
+          #         name: helpin-cluster-ca-cert
+          #         key: ca.password
+          #   - name: KEYSTORE_PASSWORD
+          #     valueFrom:
+          #       secretKeyRef:
+          #         name: helpin-eventpipeline-transform
+          #         key: user.password
+          # volumeMounts:
+          #   - name: data-volume
+          #     mountPath: /app/src/main/java/com/eventspipeline/resources/tls

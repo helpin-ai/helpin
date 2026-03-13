@@ -31,6 +31,12 @@ Thumbs.db
 *.dylib
 plane
 
+# Rust
+**/target/
+**/*.rs.bk
+*.pdb
+*.profraw
+
 # Claude Code
 .claude/settings.local.json
 node_modules/

@@ -35,7 +35,7 @@ export class WidgetManager {
   private wsRetryCount = 0;
   private wsRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private isShutdown = false;
-  private host = 'api.helpin.ai';
+  private host = 'client.helpin.ai';
 
   // Preact mount state
   private mountContainer: HTMLElement | null = null;
@@ -246,13 +246,12 @@ export class WidgetManager {
     this.render();
 
     try {
-      await fetch(`https://${this.host}/v1/widget/messages`, {
+      await fetch(`https://${this.host}/widget/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.sessionToken}`,
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ session_token: this.sessionToken, content }),
       });
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -275,7 +274,7 @@ export class WidgetManager {
     if (!this.config?.key) return;
 
     try {
-      const response = await fetch(`https://${this.host}/v1/widget/session`, {
+      const response = await fetch(`https://${this.host}/widget/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -308,7 +307,7 @@ export class WidgetManager {
 
     try {
       const response = await fetch(
-        `https://${this.host}/v1/widget/config?key=${encodeURIComponent(this.config.key)}`
+        `https://${this.host}/widget/config?widget_key=${encodeURIComponent(this.config.key)}`
       );
 
       if (!response.ok) {
@@ -330,7 +329,7 @@ export class WidgetManager {
 
     try {
       this.wsConnection = new WebSocket(
-        `wss://${this.host}/v1/ws?session_token=${this.sessionToken}`
+        `wss://${this.host}/widget/ws?session_token=${this.sessionToken}`
       );
 
       this.wsConnection.onmessage = (event) => {

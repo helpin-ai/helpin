@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-eventpipeline-kstreams
+  labels:
+    app: helpin-eventpipeline-kstreams
+  namespace: helpin
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: helpin-eventpipeline-kstreams
+  template:
+    metadata:
+      labels:
+        app: helpin-eventpipeline-kstreams
+    spec:
+      imagePullSecrets:
+        - name: ghcr-json-key
+      # TLS init container commented out — using SCRAM auth for now.
+      # Uncomment when migrating to mTLS.
+      # initContainers:
+      #   - name: secret-to-file
+      #     image: alpine
+      #     command:
+      #       - /bin/sh
+      #       - -c
+      #       - |
+      #         cp /cluster-secrets/cluster.p12 /data/tls/cluster.p12
+      #         cp /user-secrets/user.p12 /data/tls/user.p12
+      #     volumeMounts:
+      #       - name: cluster-secret-volume
+      #         mountPath: /cluster-secrets
+      #       - name: user-secret-volume
+      #         mountPath: /user-secrets
+      #       - name: data-volume
+      #         mountPath: /data/tls
+      # volumes:
+      #   - name: cluster-secret-volume
+      #     secret:
+      #       secretName: helpin-cluster-ca-cert
+      #       items:
+      #         - key: ca.p12
+      #           path: cluster.p12
+      #   - name: user-secret-volume
+      #     secret:
+      #       secretName: helpin-eventpipeline-transform
+      #       items:
+      #         - key: user.p12
+      #           path: user.p12
+      #   - name: data-volume
+      #     emptyDir: {}
+      containers:
+        - name: main
+          image: ghcr.io/helpin-ai/helpin/events-pipeline-kstreams:prod-latest
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            limits:
+              cpu: "3"
+              memory: 4092Mi
+            requests:
+              cpu: "2"
+              memory: 2Gi
+          # TLS env vars commented out — using SCRAM auth for now.
+          # env:
+          #   - name: TRUSTSTORE_PASSWORD
+          #     valueFrom:
+          #       secretKeyRef:
+          #         name: helpin-cluster-ca-cert
+          #         key: ca.password
+          #   - name: KEYSTORE_PASSWORD
+          #     valueFrom:
+          #       secretKeyRef:
+          #         name: helpin-eventpipeline-transform
+          #         key: user.password
+          # volumeMounts:
+          #   - name: data-volume
+          #     mountPath: /app/src/main/java/com/eventspipeline/resources/tls

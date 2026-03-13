@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
@@ -37,6 +39,37 @@ func RequireAuth(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// RequireInternalAPISecret validates the Authorization bearer token against
+// INTERNAL_API_SECRET env var for service-to-service calls.
+func RequireInternalAPISecret(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		secret := os.Getenv("INTERNAL_API_SECRET")
+		if secret == "" {
+			writeError(w, http.StatusServiceUnavailable, "internal API not configured")
+			return
+		}
+
+		header := r.Header.Get("Authorization")
+		if header == "" {
+			writeError(w, http.StatusUnauthorized, "missing authorization header")
+			return
+		}
+
+		parts := strings.SplitN(header, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+			writeError(w, http.StatusUnauthorized, "invalid authorization header format")
+			return
+		}
+
+		if subtle.ConstantTimeCompare([]byte(parts[1]), []byte(secret)) != 1 {
+			writeError(w, http.StatusUnauthorized, "invalid internal API secret")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

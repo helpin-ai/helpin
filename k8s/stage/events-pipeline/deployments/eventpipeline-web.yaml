@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-eventpipeline-web
+  labels:
+    app: helpin-eventpipeline-web
+  namespace: helpin
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: helpin-eventpipeline-web
+  template:
+    metadata:
+      labels:
+        app: helpin-eventpipeline-web
+    spec:
+      imagePullSecrets:
+        - name: ghcr-json-key
+      # TLS init container commented out — using SCRAM auth for now.
+      # initContainers:
+      #   - name: secret-to-file
+      #     image: alpine
+      #     command: [...]
+      #     env: [... helpin-cluster-ca-cert, helpin-eventpipeline-capture, helpin-eventpipeline-transform ...]
+      #     volumeMounts:
+      #       - name: secret-volume
+      #         mountPath: /data/tls
+      containers:
+        - name: main
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:stage-latest
+          command: ["./target/release/events-pipeline"]
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            limits:
+              cpu: "3"
+              memory: 4092Mi
+            requests:
+              cpu: "2"
+              memory: 2Gi
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/liveness
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health/liveness
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          volumeMounts:
+            - name: fallback-volume
+              mountPath: /app/data/fallback
+        - name: replay-worker
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:stage-latest
+          command: ["./target/release/replay-worker"]
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+            requests:
+              cpu: "200m"
+              memory: 256Mi
+          volumeMounts:
+            - name: fallback-volume
+              mountPath: /app/data/fallback
+      volumes:
+        - name: fallback-volume
+          emptyDir:
+            sizeLimit: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  namespace: helpin
+  labels:
+    app: helpin-eventpipeline-web
+  name: helpin-eventpipeline-web
+spec:
+  ports:
+    - name: helpin-eventpipeline-web-port
+      port: 80
+      protocol: TCP
+      targetPort: 3000
+    - name: helpin-eventpipeline-metrics-port
+      port: 81
+      protocol: TCP
+      targetPort: 3001
+  selector:
+    app: helpin-eventpipeline-web
+  type: ClusterIP
+status:
+  loadBalancer: {}

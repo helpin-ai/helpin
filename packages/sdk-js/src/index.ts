@@ -34,7 +34,7 @@ function initFromScript(script: HTMLScriptElement): HelpinClient {
     key: script.getAttribute('data-key') || undefined,
     trackingHost:
       script.getAttribute('data-tracking-host') ||
-      'https://events.helpin.ai',
+      'https://client.helpin.ai',
     logLevel: parseLogLevel(script.getAttribute('data-log-level')),
     autoPageview:
       script.getAttribute('data-auto-pageview') === 'false'

@@ -1,0 +1,10 @@
+version: '3'
+
+services:
+  streams: 
+    build: 
+       context: ./kafka-streams
+       dockerfile: Dockerfile
+       args:
+         DOPPLER_SECRET: "dp.st.dev_load.4A2cc69hIbHzwMOYxkaz9sHROcneQ9H50rnTS0CvhYB"
+         APP_RELEASE_VERSION: "1.0.0"

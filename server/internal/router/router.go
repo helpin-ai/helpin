@@ -150,6 +150,41 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		})
 
+		// ---- Public widget config by installation ID (no JWT, open CORS) ----
+		r.Route("/settings/website", func(r chi.Router) {
+			r.Use(cors.Handler(cors.Options{
+				AllowedOrigins:   []string{"*"},
+				AllowedMethods:   []string{"GET", "OPTIONS"},
+				AllowedHeaders:   []string{"Content-Type"},
+				AllowCredentials: false,
+				MaxAge:           3600,
+			}))
+			r.Get("/{id}", h.SupportInboxWidget.GetConfigByID)
+		})
+
+		// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
+		// SDK-facing endpoints under /widget/ prefix.
+		r.Route("/widget", func(r chi.Router) {
+			r.Use(cors.Handler(cors.Options{
+				AllowedOrigins:   []string{"*"},
+				AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+				AllowedHeaders:   []string{"Content-Type"},
+				AllowCredentials: false,
+				MaxAge:           3600,
+			}))
+			r.Get("/config", h.SupportInboxWidget.GetConfig)
+			r.Post("/session", h.SupportInboxWidget.CreateSession)
+			r.Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.Get("/messages", h.SupportInboxWidget.GetMessages)
+			r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
+		})
+
+		// ---- Internal service-to-service routes (bearer token auth) ----
+		r.Route("/internal", func(r chi.Router) {
+			r.Use(middleware.RequireInternalAPISecret)
+			r.Get("/widget-tokens", h.SupportInboxWidget.GetWidgetTokens)
+		})
+
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
