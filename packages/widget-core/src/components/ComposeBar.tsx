@@ -1,20 +1,12 @@
 import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
+import { PaperclipIcon, SmileIcon, SendIcon } from './icons';
 
 interface ComposeBarProps {
   onSend: (content: string) => void;
   disabled?: boolean;
   placeholder?: string;
 }
-
-const ICON_ATTACH =
-  'M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6h-1.5v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6z';
-
-const ICON_EMOJI =
-  'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-4-8c.79 0 1.5-.71 1.5-1.5S8.79 9 8 9s-1.5.71-1.5 1.5S7.21 12 8 12zm8 0c.79 0 1.5-.71 1.5-1.5S16.79 9 16 9s-1.5.71-1.5 1.5.71 1.5 1.5 1.5zm-4 5.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z';
-
-const ICON_SEND_ARROW =
-  'M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z';
 
 export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   onSend,
@@ -70,9 +62,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
               aria-label="Attach file"
               tabIndex={0}
             >
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <path d={ICON_ATTACH} />
-              </svg>
+              <PaperclipIcon size={20} />
             </button>
             <button
               type="button"
@@ -80,9 +70,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
               aria-label="Add emoji"
               tabIndex={0}
             >
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <path d={ICON_EMOJI} />
-              </svg>
+              <SmileIcon size={20} />
             </button>
           </div>
           <button
@@ -91,9 +79,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
             disabled={!canSend}
             aria-label="Send message"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-              <path d={ICON_SEND_ARROW} />
-            </svg>
+            <SendIcon size={16} />
           </button>
         </div>
       </form>
