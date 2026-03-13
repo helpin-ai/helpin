@@ -9,7 +9,6 @@ import {
   CheckSquare,
   ChevronRight,
   Gauge,
-  GitBranch,
   Hash,
   Hexagon,
   Layers,
@@ -19,7 +18,6 @@ import {
   Maximize2,
   MoreVertical,
   Paperclip,
-  RefreshCw,
   ShieldAlert,
   Tag,
   Target,
@@ -32,6 +30,7 @@ import {
   PriorityIcon,
   SEVERITY_CONFIG,
   SeverityIcon,
+  SprintIcon,
   StateTypeIcon,
   STORY_TYPE_CONFIG,
   StoryTypeIcon,
@@ -552,7 +551,7 @@ function StoryDetailPanelBody({
           )}
           {currentSprintName !== 'No sprint' && form.sprint_id && workspace && (
             <>
-              <RefreshCw className="h-3.5 w-3.5 shrink-0 text-green-500" />
+              <SprintIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
               <button
                 type="button"
                 className="shrink-0 max-w-[160px] truncate hover:text-foreground transition-colors cursor-pointer"
@@ -977,7 +976,7 @@ function StoryDetailPanelBody({
 
             {/* Sprint */}
             {fieldVis.sprint && (
-            <MetadataRow icon={GitBranch} label="Sprint">
+            <MetadataRow icon={SprintIcon} label="Sprint">
               <SidebarPopoverSelect
                 value={form.sprint_id || '__none__'}
                 options={[

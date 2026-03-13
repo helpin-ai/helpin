@@ -440,10 +440,11 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     }
   }, [groupBy, workflow, showEmptyColumns, activeMemberIds, loadMemberBoard]);
 
-  // Sync URL team param → store on mount / prop change; default to first team
+  // Sync URL team param → store on mount / prop change.
+  // No team in the URL means "all work", not "first team".
   useEffect(() => {
-    setTeamFilter(teamId ?? teams[0]?.id ?? null);
-  }, [teamId, teams, setTeamFilter]);
+    setTeamFilter(teamId ?? null);
+  }, [teamId, setTeamFilter]);
 
   const [refLabels, setRefLabels] = useState<Label[]>([]);
   const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
@@ -727,14 +728,15 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         {/* Team selector — only shown when no team is pre-selected via URL */}
         {!teamId && teams.length > 0 && (
           <Select
-            value={storeTeamId ?? teams[0]?.id ?? ''}
-            onValueChange={(value) => setTeamFilter(value)}
+            value={storeTeamId ?? '__all__'}
+            onValueChange={(value) => setTeamFilter(value === '__all__' ? null : value)}
           >
             <SelectTrigger className="h-7 w-auto gap-1.5 text-xs px-2.5">
               <span className="text-muted-foreground">Team:</span>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="__all__">All teams</SelectItem>
               {teams.map((t) => (
                 <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
               ))}

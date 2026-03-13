@@ -5,7 +5,6 @@ import {
   Check,
   FileText,
   Gauge,
-  GitBranch,
   Hash,
   Layers,
   LayoutGrid,
@@ -26,7 +25,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateStoryRequest,
   Label,
@@ -41,6 +40,7 @@ import { pmEpicService } from "@/lib/services/pmEpicService";
 import { pmSprintService } from "@/lib/services/pmSprintService";
 import { pmLabelService } from "@/lib/services/pmLabelService";
 import { pmStoryTemplateService } from "@/lib/services/pmStoryTemplateService";
+import { pmWorkflowService } from "@/lib/services/pmWorkflowService";
 import type { StoryTemplate } from "@/lib/pmTypes";
 import { LabelPicker } from "@/components/pm/LabelPicker";
 import { EstimatePicker } from "@/components/pm/EstimatePicker";
@@ -314,6 +314,42 @@ export function CreateStoryModal({
     return memberNameMap.get(form.requester_member_id) ?? "No requester";
   }, [form.requester_member_id, memberNameMap]);
 
+  const resolveSubmitWorkflow = useCallback(async () => {
+    if (!workflow) {
+      throw new Error('Workflow is required');
+    }
+
+    if (!form.team_id || workflow.workflow.team_id === form.team_id) {
+      return { workflowId: workflow.workflow.id, workflowStateId: stateId };
+    }
+
+    const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, form.team_id);
+    if (resolved.error || !resolved.data) {
+      throw new Error(resolved.error ?? 'Failed to resolve team workflow');
+    }
+
+    const currentState = workflow.states.find((state) => state.id === stateId);
+    const nextState =
+      resolved.data.states.find((state) => state.id === stateId) ??
+      (currentState
+        ? resolved.data.states.find((state) => state.state_type === currentState.state_type) ??
+          resolved.data.states.find((state) => state.name === currentState.name)
+        : undefined) ??
+      (resolved.data.workflow.default_state_id
+        ? resolved.data.states.find((state) => state.id === resolved.data.workflow.default_state_id)
+        : undefined) ??
+      resolved.data.states[0];
+
+    if (!nextState) {
+      throw new Error('No workflow state available for the selected team');
+    }
+
+    return {
+      workflowId: resolved.data.workflow.id,
+      workflowStateId: nextState.id,
+    };
+  }, [form.team_id, workflow, stateId, workspaceId]);
+
   const submit = useCallback(async () => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
@@ -342,13 +378,14 @@ export function CreateStoryModal({
         }
         onOpenChange(false);
       } else {
+        const { workflowId, workflowStateId } = await resolveSubmitWorkflow();
         await onCreate!({
           workspace_id: workspaceId,
           name: form.name.trim(),
           description: form.description.trim() || undefined,
           story_type: form.story_type,
-          workflow_id: workflow!.workflow.id,
-          workflow_state_id: stateId,
+          workflow_id: workflowId,
+          workflow_state_id: workflowStateId,
           priority: form.priority,
           severity: form.severity !== "none" ? form.severity : undefined,
           estimate: form.estimate ? Number(form.estimate) : undefined,
@@ -389,6 +426,7 @@ export function CreateStoryModal({
     createMore,
     workspaceId,
     workflow,
+    resolveSubmitWorkflow,
     initialStateId,
     currentMemberId,
     initialTeamId,
@@ -698,7 +736,7 @@ export function CreateStoryModal({
 
                 {/* Sprint */}
                 {fieldVis.sprint && (
-                <MetadataRow icon={GitBranch} label="Sprint">
+                <MetadataRow icon={SprintIcon} label="Sprint">
                   <SidebarPopoverSelect
                     value={form.sprint_id || "__none__"}
                     options={[
