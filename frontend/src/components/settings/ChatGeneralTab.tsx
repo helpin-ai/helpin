@@ -178,41 +178,49 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const widgetKey = data?.widget_key ?? '';
   const embedSnippet = `<script type="text/javascript">
   (function () {
-    window.helpin = window.helpin || (function () {
+    window.helpin = window.helpin || function () {
       (window.helpinQ = window.helpinQ || []).push(arguments);
-    });
+    };
     var t = document.createElement('script'),
         s = document.getElementsByTagName('script')[0];
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-key', '${widgetKey}');
+    t.setAttribute('data-tracking-host', 'https://client.prod.helpin.ai');
     t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
+
+    helpin('boot', {
+      key: '${widgetKey}',
+      host: 'https://client.prod.helpin.ai'
+    });
   })();
 </script>`;
   const jsApiSnippet = `<script type="text/javascript">
   (function () {
-    window.helpin = window.helpin || (function () {
+    window.helpin = window.helpin || function () {
       (window.helpinQ = window.helpinQ || []).push(arguments);
-    });
+    };
     var t = document.createElement('script'),
         s = document.getElementsByTagName('script')[0];
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-key', '${widgetKey}');
+    t.setAttribute('data-tracking-host', 'https://client.prod.helpin.ai');
     t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
-  })();
 
-  // Identify logged-in users (optional)
-  helpin('boot', {
-    key: '${widgetKey}',
-    user: {
-      email: 'user@example.com',
-      name: 'Jane Doe',
-      userId: 'your-internal-id'
-    }
-  });
+    // Identify logged-in users (optional)
+    helpin('boot', {
+      key: '${widgetKey}',
+      host: 'https://client.prod.helpin.ai',
+      user: {
+        email: 'user@example.com',
+        name: 'Jane Doe',
+        userId: 'your-internal-id'
+      }
+    });
+  })();
 </script>`;
 
   // Shared preview element used by both views
