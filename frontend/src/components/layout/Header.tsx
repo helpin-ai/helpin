@@ -73,6 +73,7 @@ export function Header() {
     };
 
     const pmSubMap: Record<string, string> = {
+      "my-work": "My Work",
       stories: "Stories",
       epics: "Epics",
       sprints: "Sprints",

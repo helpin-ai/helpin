@@ -26,6 +26,8 @@ var validTeamTypes = map[string]struct{}{
 	"design":      {},
 	"support":     {},
 	"marketing":   {},
+	"sales":       {},
+	"hr":          {},
 	"operations":  {},
 	"custom":      {},
 }

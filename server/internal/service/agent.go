@@ -214,6 +214,15 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		return nil, fmt.Errorf("agent_class human requires agent_kind human")
 	}
 
+	approvalMode := "class_default"
+	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
+		approvalMode = *req.ApprovalMode
+	}
+	maxConcurrentRuns := 1
+	if req.MaxConcurrentRuns != nil && *req.MaxConcurrentRuns > 0 {
+		maxConcurrentRuns = *req.MaxConcurrentRuns
+	}
+
 	agent := &model.Agent{
 		WorkspaceID:        req.WorkspaceID,
 		Name:               strings.TrimSpace(req.Name),
@@ -232,6 +241,15 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		PlanningNotes:      trimPtr(req.PlanningNotes),
 		Tools:              tools,
 		MonthlyTokenBudget: normalizeTokenBudget(req.MonthlyTokenBudget),
+		TeamID:             trimPtr(req.TeamID),
+		AllowedTools:       normalizeJSONSlice(req.AllowedTools),
+		AllowedCommands:    normalizeJSONSlice(req.AllowedCommands),
+		AllowedTargets:     normalizeJSONSlice(req.AllowedTargets),
+		Schedule:           trimPtr(req.Schedule),
+		TargetSelector:     req.TargetSelector,
+		TriggerEvents:      normalizeJSONSlice(req.TriggerEvents),
+		ApprovalMode:       approvalMode,
+		MaxConcurrentRuns:  maxConcurrentRuns,
 	}
 	normalizeAgentRecord(agent)
 	if err := s.validateModelRouting(agent); err != nil {
@@ -318,6 +336,33 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	}
 	if req.ActiveStoryID != nil {
 		agent.ActiveStoryID = req.ActiveStoryID
+	}
+	if req.TeamID != nil {
+		agent.TeamID = trimPtr(req.TeamID)
+	}
+	if req.AllowedTools != nil {
+		agent.AllowedTools = normalizeJSONSlice(req.AllowedTools)
+	}
+	if req.AllowedCommands != nil {
+		agent.AllowedCommands = normalizeJSONSlice(req.AllowedCommands)
+	}
+	if req.AllowedTargets != nil {
+		agent.AllowedTargets = normalizeJSONSlice(req.AllowedTargets)
+	}
+	if req.Schedule != nil {
+		agent.Schedule = trimPtr(req.Schedule)
+	}
+	if req.TargetSelector != nil {
+		agent.TargetSelector = req.TargetSelector
+	}
+	if req.TriggerEvents != nil {
+		agent.TriggerEvents = normalizeJSONSlice(req.TriggerEvents)
+	}
+	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
+		agent.ApprovalMode = *req.ApprovalMode
+	}
+	if req.MaxConcurrentRuns != nil && *req.MaxConcurrentRuns > 0 {
+		agent.MaxConcurrentRuns = *req.MaxConcurrentRuns
 	}
 	if classChanged && (req.Role == nil || strings.TrimSpace(*req.Role) == "") {
 		agent.Role = defaultRoleForAgentClass(agent.AgentClass)
@@ -731,11 +776,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, fmt.Errorf("an agent run is already active for this %s", params.targetType)
 	}
 
-	approvalState := "not_required"
-	if params.profile.ApprovalRequired || params.targetType == "support_conversation" {
-		approvalState = "pending"
-	}
-	taskQueue := temporalapp.QueueForProfile(params.profile.Name)
+	resolved := worker.ResolveAgentProfile(params.agent)
+	approvalState := worker.ResolveApprovalState(resolved)
+	taskQueue := resolved.Queue
 
 	run := &model.AgentRun{
 		WorkspaceID:       params.workspaceID,

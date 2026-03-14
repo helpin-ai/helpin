@@ -137,7 +137,8 @@ type resolvedRunState struct {
 	epic           *model.PMEpic
 	epicStories    []model.PMStory
 	conversation   *model.SupportConversation
-	profile        model.RuntimeProfile
+	profile        model.RuntimeProfile   // class-level profile (kept for RuntimeProfile passthrough)
+	resolved       workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
 	deliveryTarget *model.StoryDeliveryTarget
 	repository     *model.GitRepository
 	integration    *model.GitIntegration
@@ -226,7 +227,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		config = workerpkg.DefaultWorkflowConfig()
 	}
 
-	allowedTools := workerAllowedToolSet(state.profile)
+	allowedTools := resolvedAllowedToolSet(state.resolved)
 	if input := planningInput; input.Stage != model.PlanningStageDraftSpec || !input.PlanningWebSearchEnabled {
 		delete(allowedTools, "web_search")
 	}
@@ -365,10 +366,12 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		return nil, fmt.Errorf("agent not found")
 	}
 
+	resolved := workerpkg.ResolveAgentProfile(agent)
 	state := &resolvedRunState{
-		run:     run,
-		agent:   agent,
-		profile: workerpkg.GetRuntimeProfile(agent.CapabilityProfile),
+		run:      run,
+		agent:    agent,
+		profile:  workerpkg.GetRuntimeProfile(agent.CapabilityProfile),
+		resolved: resolved,
 	}
 
 	if run.TargetType == "" {
@@ -511,7 +514,7 @@ func (a *AgentRunActivities) prepareStoryDelivery(ctx context.Context, state *re
 		return fmt.Errorf("story delivery target is missing")
 	}
 	if state.repository == nil || state.integration == nil {
-		if state.profile.RequiresRepo {
+		if state.resolved.RequiresRepo {
 			return fmt.Errorf("story has no delivery target configured")
 		}
 		return nil
@@ -528,12 +531,12 @@ func (a *AgentRunActivities) prepareStoryDelivery(ctx context.Context, state *re
 		target.BaseBranch = &baseBranch
 	}
 
-	if state.profile.RequiresRepo && (target.WorkingBranch == nil || strings.TrimSpace(*target.WorkingBranch) == "") {
+	if state.resolved.RequiresRepo && (target.WorkingBranch == nil || strings.TrimSpace(*target.WorkingBranch) == "") {
 		branchName := buildWorkingBranch(state.story, state.teamDefault)
 		target.WorkingBranch = &branchName
 	}
 
-	if state.profile.RequiresRepo && state.accessToken == "" {
+	if state.resolved.RequiresRepo && state.accessToken == "" {
 		return fmt.Errorf("repository access token is not available")
 	}
 
@@ -552,7 +555,7 @@ func (a *AgentRunActivities) prepareStoryDelivery(ctx context.Context, state *re
 	state.run.WorkingBranch = target.WorkingBranch
 	state.run.DeliveryTargetID = &target.ID
 	if state.run.TaskQueue == nil || *state.run.TaskQueue == "" {
-		queue := QueueForProfile(state.profile.Name)
+		queue := state.resolved.Queue
 		state.run.TaskQueue = &queue
 		state.run.RunnerPool = &queue
 	}
@@ -2185,6 +2188,14 @@ func strPtr(value string) *string {
 func workerAllowedToolSet(profile model.RuntimeProfile) map[string]bool {
 	set := make(map[string]bool, len(profile.AllowedTools))
 	for _, toolName := range profile.AllowedTools {
+		set[toolName] = true
+	}
+	return set
+}
+
+func resolvedAllowedToolSet(resolved workerpkg.ResolvedProfile) map[string]bool {
+	set := make(map[string]bool, len(resolved.Tools))
+	for _, toolName := range resolved.Tools {
 		set[toolName] = true
 	}
 	return set
