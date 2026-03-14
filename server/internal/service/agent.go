@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -265,6 +266,13 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 
 	s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
 
+	// Start cron schedule if configured.
+	if agent.Schedule != nil && *agent.Schedule != "" {
+		if err := s.runEngine.StartSchedule(ctx, agent.ID, agent.WorkspaceID, *agent.Schedule); err != nil {
+			slog.ErrorContext(ctx, "failed to start agent schedule", "agent_id", agent.ID, "error", err)
+		}
+	}
+
 	return agent, nil
 }
 
@@ -349,8 +357,18 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if req.AllowedTargets != nil {
 		agent.AllowedTargets = normalizeJSONSlice(req.AllowedTargets)
 	}
+	scheduleChanged := false
 	if req.Schedule != nil {
+		oldSchedule := ""
+		if agent.Schedule != nil {
+			oldSchedule = *agent.Schedule
+		}
 		agent.Schedule = trimPtr(req.Schedule)
+		newSchedule := ""
+		if agent.Schedule != nil {
+			newSchedule = *agent.Schedule
+		}
+		scheduleChanged = oldSchedule != newSchedule
 	}
 	if req.TargetSelector != nil {
 		agent.TargetSelector = req.TargetSelector
@@ -392,6 +410,16 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 
 	s.publishSimpleEvent("updated", "agent", agent.ID, agent.WorkspaceID, actorID)
 
+	// Sync cron schedule if it changed.
+	if scheduleChanged {
+		_ = s.runEngine.StopSchedule(ctx, agent.ID)
+		if agent.Schedule != nil && *agent.Schedule != "" {
+			if err := s.runEngine.StartSchedule(ctx, agent.ID, agent.WorkspaceID, *agent.Schedule); err != nil {
+				slog.ErrorContext(ctx, "failed to start agent schedule", "agent_id", agent.ID, "error", err)
+			}
+		}
+	}
+
 	return agent, nil
 }
 
@@ -404,6 +432,9 @@ func (s *AgentService) DeleteAgent(ctx context.Context, workspaceID, id, actorID
 	if agent == nil {
 		return fmt.Errorf("agent not found")
 	}
+
+	// Stop any active cron schedule.
+	_ = s.runEngine.StopSchedule(ctx, id)
 
 	if err := s.agentRepo.Delete(ctx, workspaceID, id); err != nil {
 		return err

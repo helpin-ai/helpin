@@ -88,7 +88,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-type RailId = 'projects' | 'support' | 'crm' | /* 'rewards' | */ 'docs' | 'settings';
+type RailId = 'projects' | 'support' | 'crm' | /* 'rewards' | */ 'agents' | 'docs' | 'settings';
 
 type RailItem = {
   id: RailId;
@@ -473,6 +473,7 @@ export function Sidebar() {
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
 // { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
+    { id: 'agents', label: 'Agents', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agents` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
   ];
@@ -486,7 +487,6 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
           { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },
-          { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
         ],
       },
     ],
@@ -509,6 +509,14 @@ export function Sidebar() {
         label: '',
         items: [
           { link: `/w/${wsSlug}/support`, label: 'All Conversations', icon: MessageSquare },
+        ],
+      },
+    ],
+    agents: [
+      {
+        label: '',
+        items: [
+          { link: `/w/${wsSlug}/pm/agents`, label: 'All Agents', icon: Bot },
         ],
       },
     ],

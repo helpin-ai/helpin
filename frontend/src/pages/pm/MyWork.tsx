@@ -242,7 +242,7 @@ function MyWorkEmptyState({ mode, workspaceSlug }: { mode: Mode; workspaceSlug: 
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
 
   const exploreLinks = [
-    { icon: SquareKanban, label: 'Board', path: `/w/${workspaceSlug}/pm/stories` },
+    { icon: SquareKanban, label: 'Stories', path: `/w/${workspaceSlug}/pm/stories` },
     { icon: Timer, label: 'Sprints', path: `/w/${workspaceSlug}/pm/sprints` },
     { icon: Layers, label: 'Epics', path: `/w/${workspaceSlug}/pm/epics` },
     { icon: Target, label: 'Objectives', path: `/w/${workspaceSlug}/pm/objectives` },
@@ -251,8 +251,8 @@ function MyWorkEmptyState({ mode, workspaceSlug }: { mode: Mode; workspaceSlug: 
   return (
     <div className="flex flex-col items-center py-16 px-4">
       {/* Hero */}
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
-        <ClipboardCheck className="h-6 w-6 text-muted-foreground" />
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-500/10 mb-5">
+        <ClipboardCheck className="h-7 w-7 text-blue-500" />
       </div>
       <h3 className="text-base font-medium mb-1">
         {mode === 'assigned' ? 'No stories assigned to you yet' : 'No stories requested by you yet'}
@@ -277,7 +277,7 @@ function MyWorkEmptyState({ mode, workspaceSlug }: { mode: Mode; workspaceSlug: 
           onClick={() => navigate({ to: '/w/$slug/pm/stories', params: { slug: workspaceSlug } })}
         >
           <SquareKanban className="h-4 w-4 mr-1.5" />
-          Browse the Board
+          View Stories
         </Button>
       </div>
       {!canEdit && (
@@ -286,19 +286,13 @@ function MyWorkEmptyState({ mode, workspaceSlug }: { mode: Mode; workspaceSlug: 
         </p>
       )}
 
-      {/* How it works */}
-      <div className="w-full max-w-lg mt-10">
-        <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-3 text-center">
-          How it works
-        </h4>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="w-full max-w-4xl mt-10">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {WORKFLOW_STEPS.map(({ icon: Icon, title, description }) => (
-            <div key={title} className="rounded-lg border border-border/50 bg-muted/30 p-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-background border border-border/50 mb-3">
-                <Icon className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <p className="text-[13px] font-medium mb-1">{title}</p>
-              <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
+            <div key={title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
+              <Icon className="h-5 w-5 text-muted-foreground mb-3" />
+              <p className="text-sm font-medium mb-1">{title}</p>
+              <p className="text-[13px] text-muted-foreground leading-relaxed">{description}</p>
             </div>
           ))}
         </div>

@@ -13,7 +13,7 @@ import {
 import { RoadmapEpicBar } from '@/components/pm/RoadmapEpicBar';
 import type { RoadmapEpic, Objective } from '@/lib/pmTypes';
 
-type GroupBy = 'objective' | 'team';
+type GroupBy = 'objective' | 'team' | 'epic';
 type Zoom = 'month' | 'quarter';
 
 interface TimelineGroup {
@@ -43,6 +43,14 @@ function buildGroups(
   teamNameMap: Map<string, string>,
 ): TimelineGroup[] {
   const scheduled = getScheduledEpics(epics);
+
+  if (groupBy === 'epic') {
+    return scheduled.map((epic) => ({
+      id: epic.epic.id,
+      name: epic.epic.name,
+      epics: [epic],
+    }));
+  }
 
   if (groupBy === 'objective') {
     const objMap = new Map<string, RoadmapEpic[]>();
@@ -157,6 +165,7 @@ export function RoadmapTimeline({
 
   const monthWidthPx = zoom === 'month' ? 140 : 90;
   const totalWidthPx = months.length * monthWidthPx;
+  const isEpicGrouping = groupBy === 'epic';
 
   function getBarPosition(epic: RoadmapEpic) {
     const s = parseISO(epic.epic.planned_start_date!);
@@ -181,7 +190,7 @@ export function RoadmapTimeline({
         <div className="flex sticky top-0 z-20 bg-background border-b border-border">
           <div className="w-52 shrink-0 sticky left-0 z-30 bg-background border-r border-border px-3 py-2">
             <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {groupBy === 'objective' ? 'Objective' : 'Team'}
+              {groupBy === 'objective' ? 'Objective' : groupBy === 'team' ? 'Team' : 'Epic'}
             </span>
           </div>
           <div className="flex flex-1">
@@ -213,16 +222,17 @@ export function RoadmapTimeline({
         {/* Groups */}
         {groups.map((group) => (
           <div key={group.id}>
-            {/* Group header */}
-            <div className="flex border-b border-border bg-muted/30">
-              <div className="w-52 shrink-0 sticky left-0 z-10 bg-muted/30 border-r border-border px-3 py-1.5 flex items-center gap-1.5">
-                <span className="text-[13px] font-medium truncate">{group.name}</span>
-                <span className="text-[11px] text-muted-foreground/60 tabular-nums shrink-0">
-                  {group.epics.length}
-                </span>
+            {!isEpicGrouping && (
+              <div className="flex border-b border-border bg-muted/30">
+                <div className="w-52 shrink-0 sticky left-0 z-10 bg-muted/30 border-r border-border px-3 py-1.5 flex items-center gap-1.5">
+                  <span className="text-[13px] font-medium truncate">{group.name}</span>
+                  <span className="text-[11px] text-muted-foreground/60 tabular-nums shrink-0">
+                    {group.epics.length}
+                  </span>
+                </div>
+                <div className="flex-1" />
               </div>
-              <div className="flex-1" />
-            </div>
+            )}
 
             {/* Epic rows */}
             {group.epics.map((epic) => {
@@ -230,8 +240,10 @@ export function RoadmapTimeline({
               return (
                 <div key={`${group.id}-${epic.epic.id}`} className="flex border-b border-border/40">
                   <div className="w-52 shrink-0 sticky left-0 z-10 bg-background border-r border-border px-3 py-1.5 flex items-center min-w-0">
-                    <span className="text-[12px] text-muted-foreground truncate">
-                      {epic.epic.name}
+                    <span
+                      className={`truncate ${isEpicGrouping ? 'text-[13px] font-medium text-foreground' : 'text-[12px] text-muted-foreground'}`}
+                    >
+                      {isEpicGrouping ? group.name : epic.epic.name}
                     </span>
                   </div>
                   <div className="flex-1 relative h-9">

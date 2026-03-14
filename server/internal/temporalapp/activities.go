@@ -75,6 +75,11 @@ type AgentRunActivities struct {
 	docsContentRepo *repository.DocsContentRepository
 	docsVersionRepo *repository.DocsVersionRepository
 	docsLinkRepo    *repository.DocsLinkRepository
+	docsSearchRepo  *repository.DocsSearchRepository
+	crmDealRepo     *repository.CRMDealRepository
+	crmContactRepo  *repository.CRMContactRepository
+	crmSignalRepo   *repository.CRMSignalRepository
+	crmActivityRepo *repository.CRMActivityRepository
 	runtimes        *workerpkg.RuntimeRegistry
 	githubApp       *githubapp.Client
 }
@@ -101,6 +106,11 @@ func NewAgentRunActivities(
 	docsContentRepo *repository.DocsContentRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
+	docsSearchRepo *repository.DocsSearchRepository,
+	crmDealRepo *repository.CRMDealRepository,
+	crmContactRepo *repository.CRMContactRepository,
+	crmSignalRepo *repository.CRMSignalRepository,
+	crmActivityRepo *repository.CRMActivityRepository,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
 ) *AgentRunActivities {
@@ -125,6 +135,11 @@ func NewAgentRunActivities(
 		docsContentRepo: docsContentRepo,
 		docsVersionRepo: docsVersionRepo,
 		docsLinkRepo:    docsLinkRepo,
+		docsSearchRepo:  docsSearchRepo,
+		crmDealRepo:     crmDealRepo,
+		crmContactRepo:  crmContactRepo,
+		crmSignalRepo:   crmSignalRepo,
+		crmActivityRepo: crmActivityRepo,
 		runtimes:        runtimes,
 		githubApp:       githubApp,
 	}
@@ -2012,6 +2027,69 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			conversation.Status = status
 			return a.conversationRepo.Update(ctx, conversation)
+		},
+
+		// CRM
+		ListDeals: func(ctx context.Context, workspaceID string, limit int) ([]model.CRMDeal, error) {
+			deals, _, err := a.crmDealRepo.List(ctx, workspaceID, model.CRMDealListFilters{}, model.PMPagination{Page: 1, PerPage: limit})
+			return deals, err
+		},
+		GetDeal: func(ctx context.Context, id string) (*model.CRMDeal, error) {
+			return a.crmDealRepo.GetByID(ctx, id)
+		},
+		UpdateDealStage: func(ctx context.Context, dealID, stageID string) error {
+			deal, err := a.crmDealRepo.GetByID(ctx, dealID)
+			if err != nil {
+				return err
+			}
+			if deal == nil {
+				return fmt.Errorf("deal not found")
+			}
+			deal.StageID = stageID
+			return a.crmDealRepo.Update(ctx, deal)
+		},
+		AddDealNote: func(ctx context.Context, workspaceID, dealID, agentID, content string) error {
+			now := time.Now()
+			activity := &model.CRMActivity{
+				WorkspaceID:  workspaceID,
+				ActivityType: "note",
+				DealID:       &dealID,
+				Body:         &content,
+				OccurredAt:   now,
+			}
+			return a.crmActivityRepo.Create(ctx, activity)
+		},
+		ListContacts: func(ctx context.Context, workspaceID string, limit int) ([]model.CRMContact, error) {
+			contacts, _, err := a.crmContactRepo.List(ctx, workspaceID, model.CRMContactListFilters{}, model.PMPagination{Page: 1, PerPage: limit})
+			return contacts, err
+		},
+		ListBuyerSignals: func(ctx context.Context, workspaceID string, dealID *string, limit int) ([]model.CRMBuyerSignal, error) {
+			filters := model.CRMBuyerSignalListFilters{DealID: dealID}
+			signals, _, err := a.crmSignalRepo.ListSignals(ctx, workspaceID, filters, model.PMPagination{Page: 1, PerPage: limit})
+			return signals, err
+		},
+
+		// Docs
+		GetDocument: func(ctx context.Context, id string) (*model.DocsDocument, error) {
+			return a.docsDocRepo.GetByID(ctx, id)
+		},
+		ListDocuments: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error) {
+			published := "published"
+			return a.docsDocRepo.List(ctx, workspaceID, spaceID, nil, &published, nil, "", false)
+		},
+		SearchDocuments: func(ctx context.Context, workspaceID, query string, limit int) ([]workerpkg.DocsSearchHit, error) {
+			results, err := a.docsSearchRepo.Search(ctx, workspaceID, query, nil, nil, limit)
+			if err != nil {
+				return nil, err
+			}
+			hits := make([]workerpkg.DocsSearchHit, len(results))
+			for i, r := range results {
+				hits[i] = workerpkg.DocsSearchHit{
+					ID:    r.ID,
+					Title: r.Title,
+				}
+			}
+			return hits, nil
 		},
 	}
 }

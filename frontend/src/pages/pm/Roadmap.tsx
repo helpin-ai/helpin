@@ -27,7 +27,7 @@ import { pmRoadmapService } from '@/lib/services/pmRoadmapService';
 import { RoadmapTimeline } from '@/components/pm/RoadmapTimeline';
 import type { RoadmapData, RoadmapEpic } from '@/lib/pmTypes';
 
-type GroupBy = 'objective' | 'team';
+type GroupBy = 'objective' | 'team' | 'epic';
 type Zoom = 'month' | 'quarter';
 
 const HEALTH_CONFIG: Record<string, { label: string; dot: string }> = {
@@ -131,15 +131,9 @@ export function RoadmapPage() {
   if (!loading && data !== null && epics.length === 0 && !hasActiveFilters) {
     return (
       <div className="max-w-4xl mx-auto">
-        <header className="mb-6">
-          <h2 className="text-lg font-semibold">Roadmap</h2>
-          <p className="text-[13px] text-muted-foreground">
-            Visualize your team's initiatives on a timeline.
-          </p>
-        </header>
         <div className="flex flex-col items-center py-16 px-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
-            <GanttChart className="h-6 w-6 text-muted-foreground" />
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-500/10 mb-5">
+            <GanttChart className="h-7 w-7 text-teal-500" />
           </div>
           <h3 className="text-base font-medium mb-1">Plan your roadmap</h3>
           <p className="text-sm text-muted-foreground text-center max-w-md">
@@ -162,23 +156,17 @@ export function RoadmapPage() {
               Browse Epics
             </Button>
           </div>
-          {/* How it works */}
-          <div className="w-full max-w-lg mt-10">
-            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-3 text-center">
-              How roadmap works
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="w-full max-w-4xl mt-10">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
                 { icon: Layers, title: 'Create epics', description: 'Group related stories into epics — your key initiatives' },
                 { icon: Target, title: 'Link objectives', description: 'Connect epics to objectives for strategic alignment' },
                 { icon: CalendarDays, title: 'Set dates', description: 'Add start and target dates to place epics on the timeline' },
               ].map(({ icon: Icon, title, description }) => (
-                <div key={title} className="rounded-lg border border-border/50 bg-muted/30 p-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-background border border-border/50 mb-3">
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <p className="text-[13px] font-medium mb-1">{title}</p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
+                <div key={title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
+                  <Icon className="h-5 w-5 text-muted-foreground mb-3" />
+                  <p className="text-sm font-medium mb-1">{title}</p>
+                  <p className="text-[13px] text-muted-foreground leading-relaxed">{description}</p>
                 </div>
               ))}
             </div>
@@ -186,6 +174,10 @@ export function RoadmapPage() {
         </div>
       </div>
     );
+  }
+
+  if (loading) {
+    return null;
   }
 
   // ── Main view ───────────────────────────────────────────────
@@ -201,21 +193,21 @@ export function RoadmapPage() {
 
         {/* Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Group by (show only when multiple teams exist) */}
-          {teams.length > 1 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
-                Group: {groupBy === 'objective' ? 'Objective' : 'Team'}
+                Group: {groupBy === 'objective' ? 'Objective' : groupBy === 'team' ? 'Team' : 'Epic'}
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setGroupBy('epic')}>Epic</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setGroupBy('objective')}>Objective</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setGroupBy('team')}>Team</DropdownMenuItem>
+              {teams.length > 1 && (
+                <DropdownMenuItem onClick={() => setGroupBy('team')}>Team</DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
-          )}
 
           {/* Zoom */}
           <DropdownMenu>

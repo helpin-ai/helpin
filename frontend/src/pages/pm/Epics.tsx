@@ -387,16 +387,16 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             <Plus className="h-4 w-4" />
             Create Epic
           </Button>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-lg">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
             {[
               { icon: Layers, title: 'Group stories', desc: 'Organize related work items under a single initiative' },
               { icon: TrendingUp, title: 'Track health', desc: 'Monitor on-track, at-risk, and off-track status at a glance' },
               { icon: Target, title: 'Hit deadlines', desc: 'Set target dates and watch completion progress in real time' },
             ].map((item) => (
-              <div key={item.title} className="flex flex-col items-center text-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 p-4">
-                <item.icon className="h-4 w-4 text-muted-foreground mb-0.5" />
-                <span className="text-xs font-medium">{item.title}</span>
-                <span className="text-[11px] leading-snug text-muted-foreground">{item.desc}</span>
+              <div key={item.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
+                <item.icon className="h-5 w-5 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium mb-1">{item.title}</p>
+                <p className="text-[13px] text-muted-foreground leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>

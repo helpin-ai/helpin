@@ -79,6 +79,7 @@ func main() {
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
+	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
@@ -86,6 +87,7 @@ func main() {
 	crmDealRepo := repository.NewCRMDealRepository(db)
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
+	crmActivityRepo := repository.NewCRMActivityRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 
@@ -137,6 +139,11 @@ func main() {
 		docsContentRepo,
 		docsVersionRepo,
 		docsLinkRepo,
+		docsSearchRepo,
+		crmDealRepo,
+		crmContactRepo,
+		crmSignalRepo,
+		crmActivityRepo,
 		runtimes,
 		githubAppClient,
 	)
@@ -167,10 +174,14 @@ func main() {
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	dealMgmtActivities := temporalapp.NewDealManagementActivities(dealAutomationService)
 
+	_ = crmCompanyRepo // available for future enrichment activities
+
+	scheduleActivities := temporalapp.NewScheduledAgentActivities(agentRepo, runRepo)
+
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -194,7 +205,7 @@ func main() {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 	}
@@ -246,6 +257,14 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	if dealMgmtActivities != nil {
 		w.RegisterActivityWithOptions(dealMgmtActivities.EvaluateProgressionActivity, activity.RegisterOptions{
 			Name: "DealManagementActivities.EvaluateProgressionActivity",
+		})
+	}
+
+	// Register scheduled agent workflow and activities.
+	w.RegisterWorkflow(temporalapp.ScheduledAgentWorkflow)
+	if scheduleActivities != nil {
+		w.RegisterActivityWithOptions(scheduleActivities.CreateScheduledRun, activity.RegisterOptions{
+			Name: "ScheduledAgentActivities.CreateScheduledRun",
 		})
 	}
 
