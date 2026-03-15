@@ -1,12 +1,13 @@
 import { FunctionComponent } from 'preact';
 import type { Conversation, WidgetConfig } from '../types';
-import { MessageSquareIcon, ChevronRightIcon } from './icons';
+import { MessageSquareIcon, ChevronRightIcon, XIcon, SendIcon } from './icons';
 
 interface ConversationListViewProps {
   config: WidgetConfig;
   conversations: Conversation[];
   onSelectConversation: (conversationId: string) => void;
   onStartConversation: () => void;
+  onClose?: () => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -23,27 +24,27 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
-const STATUS_DOT: Record<string, string> = {
-  open: '#22c55e',
-  in_progress: '#3b82f6',
-  waiting: '#f59e0b',
-  resolved: '#9ca3af',
-  closed: '#6b7280',
-};
-
 export const ConversationListView: FunctionComponent<ConversationListViewProps> = ({
   config,
   conversations,
   onSelectConversation,
   onStartConversation,
+  onClose,
 }) => {
   const brandColor = config.branding?.primaryColor || '#6366f1';
+  const companyName = config.workspaceName || 'Support';
 
   if (conversations.length === 0) {
     return (
       <div className="helpin-conversations-view">
         <div className="helpin-conversations-header">
-          <span className="helpin-conversations-title">Conversations</span>
+          <div className="helpin-conversations-header-spacer" />
+          <span className="helpin-conversations-title">Messages</span>
+          {onClose && (
+            <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
+              <XIcon size={16} />
+            </button>
+          )}
         </div>
         <div className="helpin-conversations-empty">
           <MessageSquareIcon size={48} class="helpin-conversations-empty-icon" />
@@ -54,10 +55,10 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
           <button
             className="helpin-conversations-new-btn"
             onClick={onStartConversation}
-            style={{ backgroundColor: brandColor }}
+            style={{ borderColor: brandColor, color: brandColor }}
           >
-            <MessageSquareIcon size={16} />
-            <span>New conversation</span>
+            <span>Send us a message</span>
+            <SendIcon size={16} />
           </button>
         </div>
       </div>
@@ -67,14 +68,13 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
   return (
     <div className="helpin-conversations-view">
       <div className="helpin-conversations-header">
-        <span className="helpin-conversations-title">Conversations</span>
-        <button
-          className="helpin-conversations-new-small"
-          onClick={onStartConversation}
-          style={{ color: brandColor }}
-        >
-          + New
-        </button>
+        <div className="helpin-conversations-header-spacer" />
+        <span className="helpin-conversations-title">Messages</span>
+        {onClose && (
+          <button className="helpin-conversations-close" onClick={onClose} aria-label="Close">
+            <XIcon size={18} />
+          </button>
+        )}
       </div>
       <div className="helpin-conversations-list">
         {conversations.map((conv) => (
@@ -83,42 +83,34 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
             className="helpin-conversation-item"
             onClick={() => onSelectConversation(conv.id)}
           >
-            <div className="helpin-conversation-item-left">
-              <span
-                className="helpin-conversation-status-dot"
-                style={{ backgroundColor: STATUS_DOT[conv.status] || '#9ca3af' }}
-              />
-              <div className="helpin-conversation-item-content">
-                <span className="helpin-conversation-item-subject">
-                  {conv.subject || 'Untitled conversation'}
-                </span>
-                {conv.lastMessage && (
-                  <span className="helpin-conversation-item-preview">
-                    {conv.lastMessage.length > 60
-                      ? conv.lastMessage.slice(0, 60) + '...'
-                      : conv.lastMessage}
-                  </span>
-                )}
-              </div>
+            <div className="helpin-conversation-item-avatar" style={{ backgroundColor: brandColor }}>
+              <MessageSquareIcon size={14} />
             </div>
-            <div className="helpin-conversation-item-right">
-              {conv.lastMessageAt && (
-                <span className="helpin-conversation-item-time">
-                  {timeAgo(conv.lastMessageAt)}
-                </span>
-              )}
-              {(conv.unreadCount ?? 0) > 0 && (
-                <span
-                  className="helpin-conversation-item-badge"
-                  style={{ backgroundColor: brandColor }}
-                >
-                  {conv.unreadCount}
-                </span>
-              )}
-              <ChevronRightIcon size={14} class="helpin-conversation-item-arrow" />
+            <div className="helpin-conversation-item-content">
+              <span className="helpin-conversation-item-preview">
+                {conv.lastMessage
+                  ? (conv.lastMessage.length > 50
+                      ? conv.lastMessage.slice(0, 50) + '...'
+                      : conv.lastMessage)
+                  : (conv.subject || 'Untitled conversation')}
+              </span>
+              <span className="helpin-conversation-item-meta">
+                {companyName}
+                {conv.lastMessageAt && ` \u00B7 ${timeAgo(conv.lastMessageAt)}`}
+              </span>
             </div>
+            <ChevronRightIcon size={16} class="helpin-conversation-item-arrow" />
           </button>
         ))}
+      </div>
+      <div className="helpin-conversations-new-container">
+        <button
+          className="helpin-conversations-new-btn"
+          onClick={onStartConversation}
+        >
+          <span>Send us a message</span>
+          <SendIcon size={16} />
+        </button>
       </div>
     </div>
   );

@@ -17,6 +17,7 @@ interface ChatWindowProps {
   isOpen: boolean;
   onClose: () => void;
   onSendMessage: (content: string) => void;
+  onSendMessageFromHome?: (content: string) => void;
   onQuickReply: (content: string) => void;
   showPreChatForm: boolean;
   onPreChatSubmit: (data: { name: string; email: string }) => void;
@@ -28,6 +29,7 @@ interface ChatWindowProps {
   conversations?: Conversation[];
   onSelectConversation?: (conversationId: string) => void;
   onStartNewConversation?: () => void;
+  onViewChange?: (view: WidgetView) => void;
 }
 
 export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
@@ -36,6 +38,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   isOpen,
   onClose,
   onSendMessage,
+  onSendMessageFromHome,
   onQuickReply,
   showPreChatForm,
   onPreChatSubmit,
@@ -47,6 +50,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   conversations = [],
   onSelectConversation = () => {},
   onStartNewConversation,
+  onViewChange,
 }) => {
   const [activeView, setActiveView] = useState<WidgetView>(initialView);
   const [previousView, setPreviousView] = useState<WidgetBaseView>(
@@ -98,6 +102,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
   const handleNavigate = (view: WidgetBaseView) => {
     setActiveView(view as WidgetView);
+    onViewChange?.(view as WidgetView);
   };
 
   const handleStartConversation = (fromView: WidgetBaseView) => {
@@ -106,7 +111,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   };
 
   const handleSendFromHome = (content: string) => {
-    onSendMessage(content);
+    (onSendMessageFromHome ?? onSendMessage)(content);
     handleStartConversation('home');
   };
 
@@ -114,8 +119,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     <div
       className={`helpin-chat-window ${positionClass} ${isVisible ? 'helpin-chat-window--visible' : 'helpin-chat-window--hidden'} helpin-theme-${colorScheme}`}
     >
-      {/* Close button */}
-      {activeView !== 'conversation' && (
+      {/* Close button — hidden in conversation view (has its own) and messages view with conversation list */}
+      {activeView !== 'conversation' && !(activeView === 'messages' && conversations.length > 0) && (
         <button className="helpin-window-close" onClick={onClose} aria-label="Close">
           <XIcon size={18} />
         </button>
@@ -146,7 +151,12 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onSendMessage={handleSendFromHome}
             onNavigate={(view) => {
               if (view === 'conversation') {
-                handleStartConversation('home');
+                setPreviousView('home');
+                setActiveView('conversation');
+                // Start a fresh conversation (reset active conversation in SDK)
+                if (onStartNewConversation) {
+                  onStartNewConversation();
+                }
                 return;
               }
               handleNavigate(view);
@@ -175,6 +185,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
                 setActiveView('conversation');
               }}
               onStartConversation={onStartNewConversation || (() => handleStartConversation('messages'))}
+              onClose={onClose}
             />
           ) : (
             <MessagesView
@@ -204,7 +215,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
       </div>
 
       {/* Powered by footer */}
-      {showBranding && activeView !== 'conversation' && (
+      {showBranding && activeView !== 'conversation' && activeView !== 'messages' && (
         <div className="helpin-powered-by">
           <span>Powered by</span>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" className="helpin-powered-by-icon">
@@ -218,7 +229,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
       {activeView !== 'conversation' && (
         <BottomNav
           activeView={activeView}
-          onNavigate={setActiveView}
+          onNavigate={handleNavigate}
           brandColor={brandColor}
         />
       )}

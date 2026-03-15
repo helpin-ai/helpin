@@ -74,7 +74,11 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({ message, 
         )}
       </div>
 
-      {!isCustomer && senderName && (
+      {isCustomer ? (
+        <div className="helpin-message-attribution helpin-message-attribution--customer">
+          <span>{formatRelativeTime(message.createdAt)}</span>
+        </div>
+      ) : senderName ? (
         <div className="helpin-message-attribution">
           <span className="helpin-message-sender">{senderName}</span>
           {roleLabel && (
@@ -86,7 +90,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({ message, 
           <span className="helpin-message-attr-dot">&middot;</span>
           <span>{formatRelativeTime(message.createdAt)}</span>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

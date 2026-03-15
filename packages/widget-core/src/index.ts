@@ -44,6 +44,7 @@ export interface MountWidgetOptions {
   isOpen?: boolean;
   onClose?: () => void;
   onSendMessage?: (content: string) => void;
+  onSendMessageFromHome?: (content: string) => void;
   onQuickReply?: (content: string) => void;
   showPreChatForm?: boolean;
   onPreChatSubmit?: (data: { name: string; email: string }) => void;
@@ -57,6 +58,7 @@ export interface MountWidgetOptions {
   conversations?: Conversation[];
   onSelectConversation?: (conversationId: string) => void;
   onStartNewConversation?: () => void;
+  onViewChange?: (view: WidgetView) => void;
 }
 
 export function mountWidget(container: HTMLElement, options: MountWidgetOptions): void {
@@ -66,6 +68,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     isOpen = true,
     onClose = () => {},
     onSendMessage = () => {},
+    onSendMessageFromHome = onSendMessage,
     onQuickReply = () => {},
     showPreChatForm = false,
     onPreChatSubmit = () => {},
@@ -78,6 +81,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     conversations = [],
     onSelectConversation = () => {},
     onStartNewConversation = () => {},
+    onViewChange,
   } = options;
 
   const tree = h(
@@ -89,6 +93,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       isOpen,
       onClose,
       onSendMessage,
+      onSendMessageFromHome,
       onQuickReply,
       showPreChatForm,
       onPreChatSubmit,
@@ -98,6 +103,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       conversations,
       onSelectConversation,
       onStartNewConversation,
+      onViewChange,
     }),
     showLauncher
       ? h(WidgetLauncher, {

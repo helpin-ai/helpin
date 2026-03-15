@@ -416,9 +416,85 @@ func (s *SupportInboxService) RevokeWidgetSession(ctx context.Context, sessionTo
 	return s.sessionRepo.Update(ctx, session)
 }
 
+// ClearSessionConversation clears the conversation_id on a session so the next message creates a new conversation.
+func (s *SupportInboxService) ClearSessionConversation(ctx context.Context, sessionToken string) error {
+	session, err := s.GetWidgetSession(ctx, sessionToken)
+	if err != nil {
+		return err
+	}
+	session.ConversationID = nil
+	return s.sessionRepo.Update(ctx, session)
+}
+
+// SetSessionConversation updates the active conversation on a widget session.
+func (s *SupportInboxService) SetSessionConversation(ctx context.Context, sessionToken, conversationID string) error {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return fmt.Errorf("conversation_id is required")
+	}
+
+	session, err := s.GetWidgetSession(ctx, sessionToken)
+	if err != nil {
+		return err
+	}
+
+	conversation, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if conversation == nil || conversation.AnonymousID == nil || *conversation.AnonymousID != session.AnonymousID {
+		return fmt.Errorf("conversation not found")
+	}
+
+	session.ConversationID = &conversationID
+	return s.sessionRepo.Update(ctx, session)
+}
+
 // GetInstallationByWidgetKey returns an installation by widget key.
 func (s *SupportInboxService) GetInstallationByWidgetKey(ctx context.Context, widgetKey string) (*model.SupportWidgetInstallation, error) {
 	return s.installationRepo.GetByWidgetKey(ctx, widgetKey)
+}
+
+// WidgetCreateConversation eagerly creates a new conversation for a widget session
+// and returns the conversation with its server-assigned ID.
+func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sessionToken string) (*model.SupportConversation, error) {
+	session, err := s.GetWidgetSession(ctx, sessionToken)
+	if err != nil {
+		return nil, err
+	}
+
+	ticket := &model.SupportConversation{
+		WorkspaceID:   session.WorkspaceID,
+		Subject:       "New conversation",
+		Status:        "open",
+		Priority:      "medium",
+		CustomerName:  session.CustomerName,
+		CustomerEmail: session.CustomerEmail,
+		AnonymousID:   &session.AnonymousID,
+		Source:        "widget",
+	}
+
+	if contactID := s.matchOrCreateCRMContact(ctx, session.WorkspaceID, session.CustomerEmail, session.CustomerName); contactID != nil {
+		ticket.CRMContactID = contactID
+	}
+
+	if err := s.conversationRepo.Create(ctx, ticket); err != nil {
+		return nil, err
+	}
+
+	session.ConversationID = &ticket.ID
+	if err := s.sessionRepo.Update(ctx, session); err != nil {
+		return nil, err
+	}
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "created",
+		Entity:      "support_conversation",
+		EntityID:    ticket.ID,
+		WorkspaceID: session.WorkspaceID,
+	})
+
+	return ticket, nil
 }
 
 // WidgetCreateMessage creates a message from an external widget user.
@@ -426,6 +502,14 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	session, err := s.GetWidgetSession(ctx, sessionToken)
 	if err != nil {
 		return nil, err
+	}
+
+	// Update conversation subject from first message if it was eagerly created with placeholder.
+	if session.ConversationID != nil {
+		conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID)
+		if err == nil && conv != nil && conv.Subject == "New conversation" {
+			s.conversationRepo.UpdateSubject(ctx, conv.ID, truncate(strings.TrimSpace(content), 100))
+		}
 	}
 
 	// If no conversation yet, create one.
@@ -898,25 +982,25 @@ func (s *SupportInboxService) GetPublicWidgetConfigByID(ctx context.Context, id 
 
 	settings := parseSettings(inst.Settings)
 	return &model.WidgetConfigResponse{
-		WidgetKey:                        inst.WidgetKey,
-		Active:                           inst.Active,
-		IsOnline:                         isOnline(settings),
-		RequireEmailBeforeChat:           settings.RequireEmailBeforeChat,
-		RequireNameAfterEmail:            settings.RequireNameAfterEmail,
-		WelcomeMessage:                   settings.WelcomeMessage,
-		AIEnabled:                        settings.AIEnabled,
-		ShowTalkToHuman:                  settings.ShowTalkToHuman,
-		BusinessHoursEnabled:             settings.BusinessHoursEnabled,
-		OutsideHoursMessage:              settings.OutsideHoursMessage,
-		WidgetName:                       settings.WidgetName,
-		WidgetAvatarURL:                  settings.WidgetAvatarURL,
-		BrandColor:                       settings.BrandColor,
-		ShowBranding:                     settings.ShowBranding,
-		ColorScheme:                      settings.ColorScheme,
-		ButtonColor:                      settings.ButtonColor,
-		ButtonIconColor:                  settings.ButtonIconColor,
-		LogoURL:                          settings.LogoURL,
-		LauncherPosition:                 settings.LauncherPosition,
+		WidgetKey:              inst.WidgetKey,
+		Active:                 inst.Active,
+		IsOnline:               isOnline(settings),
+		RequireEmailBeforeChat: settings.RequireEmailBeforeChat,
+		RequireNameAfterEmail:  settings.RequireNameAfterEmail,
+		WelcomeMessage:         settings.WelcomeMessage,
+		AIEnabled:              settings.AIEnabled,
+		ShowTalkToHuman:        settings.ShowTalkToHuman,
+		BusinessHoursEnabled:   settings.BusinessHoursEnabled,
+		OutsideHoursMessage:    settings.OutsideHoursMessage,
+		WidgetName:             settings.WidgetName,
+		WidgetAvatarURL:        settings.WidgetAvatarURL,
+		BrandColor:             settings.BrandColor,
+		ShowBranding:           settings.ShowBranding,
+		ColorScheme:            settings.ColorScheme,
+		ButtonColor:            settings.ButtonColor,
+		ButtonIconColor:        settings.ButtonIconColor,
+		LogoURL:                settings.LogoURL,
+		LauncherPosition:       settings.LauncherPosition,
 		LauncherIcon:           settings.LauncherIcon,
 		CSATEnabled:            settings.CSATEnabled,
 	}, nil
@@ -954,25 +1038,25 @@ func (s *SupportInboxService) GetPublicWidgetConfig(ctx context.Context, widgetK
 
 	settings := parseSettings(inst.Settings)
 	return &model.WidgetConfigResponse{
-		WidgetKey:                        inst.WidgetKey,
-		Active:                           inst.Active,
-		IsOnline:                         isOnline(settings),
-		RequireEmailBeforeChat:           settings.RequireEmailBeforeChat,
-		RequireNameAfterEmail:            settings.RequireNameAfterEmail,
-		WelcomeMessage:                   settings.WelcomeMessage,
-		AIEnabled:                        settings.AIEnabled,
-		ShowTalkToHuman:                  settings.ShowTalkToHuman,
-		BusinessHoursEnabled:             settings.BusinessHoursEnabled,
-		OutsideHoursMessage:              settings.OutsideHoursMessage,
-		WidgetName:                       settings.WidgetName,
-		WidgetAvatarURL:                  settings.WidgetAvatarURL,
-		BrandColor:                       settings.BrandColor,
-		ShowBranding:                     settings.ShowBranding,
-		ColorScheme:                      settings.ColorScheme,
-		ButtonColor:                      settings.ButtonColor,
-		ButtonIconColor:                  settings.ButtonIconColor,
-		LogoURL:                          settings.LogoURL,
-		LauncherPosition:                 settings.LauncherPosition,
+		WidgetKey:              inst.WidgetKey,
+		Active:                 inst.Active,
+		IsOnline:               isOnline(settings),
+		RequireEmailBeforeChat: settings.RequireEmailBeforeChat,
+		RequireNameAfterEmail:  settings.RequireNameAfterEmail,
+		WelcomeMessage:         settings.WelcomeMessage,
+		AIEnabled:              settings.AIEnabled,
+		ShowTalkToHuman:        settings.ShowTalkToHuman,
+		BusinessHoursEnabled:   settings.BusinessHoursEnabled,
+		OutsideHoursMessage:    settings.OutsideHoursMessage,
+		WidgetName:             settings.WidgetName,
+		WidgetAvatarURL:        settings.WidgetAvatarURL,
+		BrandColor:             settings.BrandColor,
+		ShowBranding:           settings.ShowBranding,
+		ColorScheme:            settings.ColorScheme,
+		ButtonColor:            settings.ButtonColor,
+		ButtonIconColor:        settings.ButtonIconColor,
+		LogoURL:                settings.LogoURL,
+		LauncherPosition:       settings.LauncherPosition,
 		LauncherIcon:           settings.LauncherIcon,
 		CSATEnabled:            settings.CSATEnabled,
 	}, nil
