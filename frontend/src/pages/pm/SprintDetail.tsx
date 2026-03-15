@@ -24,7 +24,6 @@ import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
-import { pmStoryService } from '@/lib/services/pmStoryService';
 import { useWorkflows } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
