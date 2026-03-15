@@ -71,6 +71,7 @@ type Handlers struct {
 	CRMSearch          *handler.CRMSearchHandler
 	CRMDealAutomation  *handler.CRMDealAutomationHandler
 	PMRoadmap          *handler.PMRoadmapHandler
+	SDKAssets           *handler.SDKAssetsHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -122,6 +123,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
 	})
+
+	// ---- SDK asset serving (no JWT, open CORS, cache headers) ----
+	if h.SDKAssets != nil {
+		r.Route("/sdk", func(r chi.Router) {
+			r.Get("/*", h.SDKAssets.ServeSDK)
+		})
+	}
 
 	r.Route("/api", func(r chi.Router) {
 		// ---- Public routes ----

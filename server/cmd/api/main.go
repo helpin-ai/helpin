@@ -647,6 +647,13 @@ func main() {
 		CRMWritingProfile:  handler.NewCRMWritingProfileHandler(crmWritingProfileService),
 		CRMSearch:          handler.NewCRMSearchHandler(crmSearchService),
 		CRMDealAutomation:  handler.NewCRMDealAutomationHandler(dealAutomationService),
+		SDKAssets: func() *handler.SDKAssetsHandler {
+			sdkDist := os.Getenv("SDK_DIST_DIR")
+			if sdkDist == "" {
+				sdkDist = "../packages/sdk-js/dist"
+			}
+			return handler.NewSDKAssetsHandler(sdkDist)
+		}(),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,

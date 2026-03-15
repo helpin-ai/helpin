@@ -1315,11 +1315,11 @@ function migrateFromLegacyKeys(widgetKey: string): void {
 
 ---
 
-### Phase 2: Two-Phase Loader + Hashing + Preconnect (SHOULD HAVE)
+### Phase 2: Two-Phase Loader + Hashing + Preconnect (SHOULD HAVE) — COMPLETED 2026-03-15
 
 No backwards compat needed — no existing customers.
 
-#### 2A. Loader Script
+#### 2A. Loader Script — DONE
 
 **New file: `packages/sdk-js/src/loader.ts`** (~3-5KB)
 - Parse `data-widget-key`, `data-host` from script tag
@@ -1329,14 +1329,14 @@ No backwards compat needed — no existing customers.
 - Async-load main bundle: `<script src="https://{host}/sdk/helpin.{hash}.js" async>`
 - The `lib.js` path stays the same for users — it just becomes the tiny loader
 
-#### 2B. Build Changes
+#### 2B. Build Changes — DONE
 
 **Modify: `packages/sdk-js/vite.config.ts`**
 - Two entry points: `loader.ts` → `dist/lib.js`, `index.ts` → `dist/helpin.[hash].js`
 - CSS extraction: remove `?inline` import, output `dist/helpin.[hash].css`
 - Generate build manifest (`manifest.json`) mapping entry names to hashed filenames
 
-#### 2C. Backend/CDN Asset Serving
+#### 2C. Backend/CDN Asset Serving — DONE
 
 - Serve `lib.js` (loader, same path always)
 - Serve `helpin.[hash].js` and `helpin.[hash].css` (content-hashed, long cache)
