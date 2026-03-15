@@ -20,6 +20,15 @@ export interface Attachment {
   fileSize: number;
 }
 
+export interface Conversation {
+  id: string;
+  subject: string;
+  status: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  unreadCount?: number;
+}
+
 export interface WidgetAdapter {
   getMessages(conversationId: string): Message[];
   onMessagesUpdate(cb: (messages: Message[]) => void): () => void;

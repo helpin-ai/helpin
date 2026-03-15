@@ -1,11 +1,12 @@
 import { FunctionComponent } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import type { Message, WidgetConfig } from '../types';
+import type { Message, Conversation, WidgetConfig } from '../types';
 import { BottomNav, type WidgetBaseView, WidgetView } from './BottomNav';
 import { HomeView } from './HomeView';
 import { MessagesView } from './MessagesView';
 import { HelpView } from './HelpView';
 import { ConversationView } from './ConversationView';
+import { ConversationListView } from './ConversationListView';
 import { XIcon } from './icons';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
@@ -24,6 +25,9 @@ interface ChatWindowProps {
   initialView?: WidgetView;
   connectionStatus?: ConnectionStatus;
   onRetryConnection?: () => void;
+  conversations?: Conversation[];
+  onSelectConversation?: (conversationId: string) => void;
+  onStartNewConversation?: () => void;
 }
 
 export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
@@ -40,6 +44,9 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   initialView = 'home',
   connectionStatus = 'idle',
   onRetryConnection,
+  conversations = [],
+  onSelectConversation = () => {},
+  onStartNewConversation,
 }) => {
   const [activeView, setActiveView] = useState<WidgetView>(initialView);
   const [previousView, setPreviousView] = useState<WidgetBaseView>(
@@ -158,16 +165,29 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
           />
         )}
         {activeView === 'messages' && (
-          <MessagesView
-            config={config}
-            messages={messages}
-            onSendMessage={onSendMessage}
-            onQuickReply={onQuickReply}
-            onStartConversation={() => handleStartConversation('messages')}
-            isTyping={isTyping}
-            quickReplies={quickReplies}
-            hasConversation={messages.length > 0}
-          />
+          conversations.length > 0 ? (
+            <ConversationListView
+              config={config}
+              conversations={conversations}
+              onSelectConversation={(id) => {
+                onSelectConversation(id);
+                setPreviousView('messages');
+                setActiveView('conversation');
+              }}
+              onStartConversation={onStartNewConversation || (() => handleStartConversation('messages'))}
+            />
+          ) : (
+            <MessagesView
+              config={config}
+              messages={messages}
+              onSendMessage={onSendMessage}
+              onQuickReply={onQuickReply}
+              onStartConversation={() => handleStartConversation('messages')}
+              isTyping={isTyping}
+              quickReplies={quickReplies}
+              hasConversation={messages.length > 0}
+            />
+          )
         )}
         {activeView === 'help' && (
           <HelpView

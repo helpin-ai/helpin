@@ -1,5 +1,5 @@
 import { h, render } from 'preact';
-import type { Message, WidgetConfig } from './types';
+import type { Message, Conversation, WidgetConfig } from './types';
 import type { WidgetView } from './components/BottomNav';
 import { ChatWindow } from './components/ChatWindow';
 import { WidgetLauncher } from './components/WidgetLauncher';
@@ -7,6 +7,7 @@ import { WidgetLauncher } from './components/WidgetLauncher';
 export type {
   WidgetAdapter,
   Message,
+  Conversation,
   CustomerInfo,
   WidgetConfig,
   AiSource,
@@ -31,6 +32,7 @@ export { HomeView } from './components/HomeView';
 export { MessagesView } from './components/MessagesView';
 export { HelpView } from './components/HelpView';
 export { ConversationView } from './components/ConversationView';
+export { ConversationListView } from './components/ConversationListView';
 
 // ─── Mount API ───────────────────────────────────────────────
 // Consumers call mountWidget() instead of importing preact directly.
@@ -52,6 +54,9 @@ export interface MountWidgetOptions {
   onLauncherClick?: () => void;
   unreadCount?: number;
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+  conversations?: Conversation[];
+  onSelectConversation?: (conversationId: string) => void;
+  onStartNewConversation?: () => void;
 }
 
 export function mountWidget(container: HTMLElement, options: MountWidgetOptions): void {
@@ -70,6 +75,9 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     showLauncher = true,
     onLauncherClick,
     unreadCount = 0,
+    conversations = [],
+    onSelectConversation = () => {},
+    onStartNewConversation = () => {},
   } = options;
 
   const tree = h(
@@ -87,6 +95,9 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       isTyping,
       quickReplies,
       initialView,
+      conversations,
+      onSelectConversation,
+      onStartNewConversation,
     }),
     showLauncher
       ? h(WidgetLauncher, {

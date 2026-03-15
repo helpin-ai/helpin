@@ -352,7 +352,28 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			if convs == nil {
 				convs = []model.SupportConversation{}
 			}
-			SendToClient(conn, "conversations:listed", map[string]interface{}{"conversations": convs})
+			SendToClient(conn, "conversations:listed", map[string]any{"conversations": convs})
+
+		case "conversation:select":
+			convID, _ := msg.Data["conversation_id"].(string)
+			if convID == "" {
+				continue
+			}
+			// Update session and hub routing to the selected conversation
+			session.ConversationID = &convID
+			client.ConversationID = &convID
+			h.hub.SetWidgetConversation(client.UserID, convID)
+
+			// Load and send messages for the selected conversation
+			msgs, err := h.service.ListConversationMessages(ctx, session.WorkspaceID, convID, false)
+			if err != nil {
+				SendToClient(conn, "connection:error", map[string]string{"code": "load_failed", "message": err.Error()})
+				continue
+			}
+			if msgs == nil {
+				msgs = []model.SupportMessage{}
+			}
+			SendToClient(conn, "conversation:messages", map[string]any{"messages": msgs})
 		}
 	}
 }

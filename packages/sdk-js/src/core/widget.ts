@@ -1,5 +1,5 @@
 import { mountWidget, unmountWidget } from '@helpin/widget-core';
-import type { WidgetConfig, Message, MountWidgetOptions, WidgetView } from '@helpin/widget-core';
+import type { WidgetConfig, Message, Conversation, MountWidgetOptions, WidgetView } from '@helpin/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
 import widgetStyles from '@helpin/widget-core/styles?inline';
 import { isBot } from '../utils/bot-detect';
@@ -56,6 +56,8 @@ export class WidgetManager {
   private mountContainer: HTMLElement | null = null;
   private shadowRoot: ShadowRoot | null = null;
   private messages: Message[] = [];
+  private conversations: Conversation[] = [];
+  private activeConversationId: string | null = null;
   private currentView: WidgetView = 'home';
   private isTyping = false;
   private currentEmail: string | null = null;
@@ -142,6 +144,8 @@ export class WidgetManager {
     this.hasBeenOpened = false;
     this.wsRetryCount = 0;
     this.messages = [];
+    this.conversations = [];
+    this.activeConversationId = null;
     this.currentView = 'home';
     this.isTyping = false;
     this.connectionStatus = 'idle';
@@ -281,6 +285,9 @@ export class WidgetManager {
       onLauncherClick: () => this.toggle(),
       unreadCount: this.unreadCount,
       connectionStatus: this.connectionStatus,
+      conversations: this.conversations,
+      onSelectConversation: (id: string) => this.handleSelectConversation(id),
+      onStartNewConversation: () => this.handleStartNewConversation(),
     });
   }
 
@@ -346,6 +353,29 @@ export class WidgetManager {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', { email: data.email, name: data.name });
     }
+  }
+
+  // ─── Conversation Switching ─────────────────────────────────
+
+  private handleSelectConversation(conversationId: string): void {
+    this.activeConversationId = conversationId;
+
+    // Request messages for this conversation via WS
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:select', { conversation_id: conversationId });
+    }
+
+    // Clear current messages while loading
+    this.messages = [];
+    this.currentView = 'conversation';
+    this.render();
+  }
+
+  private handleStartNewConversation(): void {
+    this.activeConversationId = null;
+    this.messages = [];
+    this.currentView = 'conversation';
+    this.render();
   }
 
   // ─── API / Session ─────────────────────────────────────────
@@ -474,6 +504,17 @@ export class WidgetManager {
           persistSession(this.widgetKey, payload.session_token, payload.expires_at);
         }
 
+        // Load conversations list from server
+        if (payload.conversations && payload.conversations.length > 0) {
+          this.conversations = payload.conversations.map((c: any) => ({
+            id: c.id,
+            subject: c.subject || 'Untitled',
+            status: c.status || 'open',
+            lastMessage: c.last_message,
+            lastMessageAt: c.updated_at || c.created_at,
+          }));
+        }
+
         // Load conversation history from server
         if (payload.messages && payload.messages.length > 0) {
           this.messages = payload.messages.map((m: any) => ({
@@ -582,9 +623,36 @@ export class WidgetManager {
         this.render();
         break;
 
-      case 'conversations:listed':
-        // Future: handle conversation list display
+      case 'conversations:listed': {
+        const convs = data.data?.conversations;
+        if (Array.isArray(convs)) {
+          this.conversations = convs.map((c: any) => ({
+            id: c.id,
+            subject: c.subject || 'Untitled',
+            status: c.status || 'open',
+            lastMessage: c.last_message,
+            lastMessageAt: c.updated_at || c.created_at,
+          }));
+          this.render();
+        }
         break;
+      }
+
+      case 'conversation:messages': {
+        const msgs = data.data?.messages;
+        if (Array.isArray(msgs)) {
+          this.messages = msgs.map((m: any) => ({
+            id: m.id,
+            conversationId: m.conversation_id,
+            role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
+            content: m.content,
+            isInternal: m.is_internal || false,
+            createdAt: m.created_at,
+          }));
+          this.render();
+        }
+        break;
+      }
 
       case 'connection:error':
         console.error('Widget server error:', data.data);

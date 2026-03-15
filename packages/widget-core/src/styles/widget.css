@@ -683,6 +683,179 @@
   color: var(--helpin-fg-secondary);
 }
 
+/* ===== Conversation List View ===== */
+.helpin-conversations-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.helpin-conversations-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid var(--helpin-border);
+}
+
+.helpin-conversations-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--helpin-fg);
+}
+
+.helpin-conversations-new-small {
+  background: none;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.helpin-conversations-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.helpin-conversation-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--helpin-border);
+  background: var(--helpin-bg);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+
+.helpin-conversation-item:hover {
+  background: var(--helpin-bg-secondary);
+}
+
+.helpin-conversation-item-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.helpin-conversation-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.helpin-conversation-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.helpin-conversation-item-subject {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--helpin-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.helpin-conversation-item-preview {
+  font-size: 13px;
+  color: var(--helpin-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.helpin-conversation-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.helpin-conversation-item-time {
+  font-size: 11px;
+  color: var(--helpin-fg-muted);
+  white-space: nowrap;
+}
+
+.helpin-conversation-item-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.helpin-conversation-item-arrow {
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-conversations-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.helpin-conversations-empty-icon {
+  color: var(--helpin-fg-muted);
+  margin-bottom: 12px;
+}
+
+.helpin-conversations-empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--helpin-fg);
+  margin-bottom: 4px;
+}
+
+.helpin-conversations-empty-desc {
+  font-size: 13px;
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-conversations-new-container {
+  padding: 16px;
+}
+
+.helpin-conversations-new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: var(--helpin-radius);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.helpin-conversations-new-btn:hover {
+  opacity: 0.9;
+}
+
 /* ===== Connection Status Banner ===== */
 .helpin-connection-banner {
   padding: 8px 16px;
