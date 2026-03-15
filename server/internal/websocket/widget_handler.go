@@ -23,6 +23,8 @@ type WidgetService interface {
 	WidgetCreateMessage(ctx context.Context, sessionToken, content string) (*model.SupportMessage, error)
 	UpgradeWidgetSession(ctx context.Context, sessionToken, email, name string) error
 	RevokeWidgetSession(ctx context.Context, sessionToken string) error
+	ClearSessionConversation(ctx context.Context, sessionToken string) error
+	SetSessionConversation(ctx context.Context, sessionToken, conversationID string) error
 }
 
 // WidgetHandler upgrades HTTP connections to WebSocket for widget clients.
@@ -282,19 +284,22 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			if strings.TrimSpace(content) == "" {
 				continue
 			}
+			previousConversationID := derefStr(client.ConversationID)
 			result, err := h.service.WidgetCreateMessage(ctx, session.SessionToken, content)
 			if err != nil {
 				SendToClient(conn, "connection:error", map[string]string{"code": "send_failed", "message": err.Error()})
 				continue
 			}
-			// Update hub routing if new conversation was created
-			if client.ConversationID == nil && session.ConversationID != nil {
-				h.hub.SetWidgetConversation(client.UserID, *session.ConversationID)
-				SendToClient(conn, "conversation:created", map[string]string{"conversation_id": *session.ConversationID})
-			}
-			// Re-sync client's conversation ID from session
-			if session.ConversationID != nil {
-				client.ConversationID = session.ConversationID
+			// Re-sync routing from the persisted result instead of the stale handler session.
+			if result.ConversationID != "" {
+				convID := result.ConversationID
+				session.ConversationID = &convID
+				client.ConversationID = &convID
+				h.hub.SetWidgetConversation(client.UserID, convID)
+
+				if previousConversationID != convID {
+					SendToClient(conn, "conversation:created", map[string]string{"conversation_id": convID})
+				}
 			}
 			// Echo back to sender with server-assigned ID
 			SendToClient(conn, "message:received", model.WidgetMessageReceivedPayload{
@@ -352,7 +357,41 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			if convs == nil {
 				convs = []model.SupportConversation{}
 			}
-			SendToClient(conn, "conversations:listed", map[string]interface{}{"conversations": convs})
+			SendToClient(conn, "conversations:listed", map[string]any{"conversations": convs})
+
+		case "conversation:new":
+			// Clear the persisted active conversation before the next message creates a fresh one.
+			if err := h.service.ClearSessionConversation(ctx, session.SessionToken); err != nil {
+				SendToClient(conn, "connection:error", map[string]string{"code": "conversation_reset_failed", "message": err.Error()})
+				continue
+			}
+			session.ConversationID = nil
+			client.ConversationID = nil
+
+		case "conversation:select":
+			convID, _ := msg.Data["conversation_id"].(string)
+			if convID == "" {
+				continue
+			}
+			if err := h.service.SetSessionConversation(ctx, session.SessionToken, convID); err != nil {
+				SendToClient(conn, "connection:error", map[string]string{"code": "conversation_select_failed", "message": err.Error()})
+				continue
+			}
+			// Update session and hub routing to the selected conversation
+			session.ConversationID = &convID
+			client.ConversationID = &convID
+			h.hub.SetWidgetConversation(client.UserID, convID)
+
+			// Load and send messages for the selected conversation
+			msgs, err := h.service.ListConversationMessages(ctx, session.WorkspaceID, convID, false)
+			if err != nil {
+				SendToClient(conn, "connection:error", map[string]string{"code": "load_failed", "message": err.Error()})
+				continue
+			}
+			if msgs == nil {
+				msgs = []model.SupportMessage{}
+			}
+			SendToClient(conn, "conversation:messages", map[string]any{"messages": msgs})
 		}
 	}
 }

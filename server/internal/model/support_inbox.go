@@ -25,6 +25,9 @@ type SupportConversation struct {
 	ClosedAt        *time.Time `json:"closed_at"`
 	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt       time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	// Virtual field — populated by queries, not stored in DB.
+	LastMessage *string `json:"last_message,omitempty" gorm:"-"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }

@@ -261,6 +261,16 @@ func main() {
 	}
 	slog.Info("startup: AutoMigrate complete")
 
+	// Drop legacy ticket_id columns (renamed to conversation_id in migration 039).
+	for _, stmt := range []string{
+		"ALTER TABLE support_messages DROP COLUMN IF EXISTS ticket_id",
+		"ALTER TABLE support_widget_sessions DROP COLUMN IF EXISTS ticket_id",
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			slog.Error("failed to drop legacy ticket_id column", "error", err, "stmt", stmt)
+		}
+	}
+
 	// Post-AutoMigrate schema migrations that reference tables created above.
 	slog.Info("startup: running MigrateWorkspaceMemberSchema")
 	if err := repository.MigrateWorkspaceMemberSchema(db); err != nil {
@@ -647,6 +657,13 @@ func main() {
 		CRMWritingProfile:  handler.NewCRMWritingProfileHandler(crmWritingProfileService),
 		CRMSearch:          handler.NewCRMSearchHandler(crmSearchService),
 		CRMDealAutomation:  handler.NewCRMDealAutomationHandler(dealAutomationService),
+		SDKAssets: func() *handler.SDKAssetsHandler {
+			sdkDist := os.Getenv("SDK_DIST_DIR")
+			if sdkDist == "" {
+				sdkDist = "../packages/sdk-js/dist"
+			}
+			return handler.NewSDKAssetsHandler(sdkDist)
+		}(),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,

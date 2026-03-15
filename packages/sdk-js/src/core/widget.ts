@@ -1,5 +1,5 @@
 import { mountWidget, unmountWidget } from '@helpin/widget-core';
-import type { WidgetConfig, Message, MountWidgetOptions, WidgetView } from '@helpin/widget-core';
+import type { WidgetConfig, Message, Conversation, MountWidgetOptions, WidgetView } from '@helpin/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
 import widgetStyles from '@helpin/widget-core/styles?inline';
 import { isBot } from '../utils/bot-detect';
@@ -56,6 +56,8 @@ export class WidgetManager {
   private mountContainer: HTMLElement | null = null;
   private shadowRoot: ShadowRoot | null = null;
   private messages: Message[] = [];
+  private conversations: Conversation[] = [];
+  private activeConversationId: string | null = null;
   private currentView: WidgetView = 'home';
   private isTyping = false;
   private currentEmail: string | null = null;
@@ -142,6 +144,8 @@ export class WidgetManager {
     this.hasBeenOpened = false;
     this.wsRetryCount = 0;
     this.messages = [];
+    this.conversations = [];
+    this.activeConversationId = null;
     this.currentView = 'home';
     this.isTyping = false;
     this.connectionStatus = 'idle';
@@ -188,8 +192,20 @@ export class WidgetManager {
   }
 
   showNewMessage(content?: string): void {
-    this.currentView = 'home';
+    this.resetActiveConversation();
+    this.currentView = 'conversation';
+
+    // Tell server to clear active conversation so next message creates a new one
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:new', {});
+    }
+
     this.show();
+
+    // If content provided, send it as the first message
+    if (content?.trim()) {
+      this.handleSendMessage(content);
+    }
   }
 
   showConversation(conversationId: string): void {
@@ -272,6 +288,7 @@ export class WidgetManager {
       isOpen: this.isOpen,
       onClose: () => this.hide(),
       onSendMessage: (content: string) => this.handleSendMessage(content),
+      onSendMessageFromHome: (content: string) => this.handleSendMessage(content, { startNewConversation: true }),
       onQuickReply: (content: string) => this.handleSendMessage(content),
       showPreChatForm: showPreChat,
       onPreChatSubmit: (data: { name: string; email: string }) => this.handlePreChatSubmit(data),
@@ -281,6 +298,16 @@ export class WidgetManager {
       onLauncherClick: () => this.toggle(),
       unreadCount: this.unreadCount,
       connectionStatus: this.connectionStatus,
+      conversations: this.conversations,
+      onSelectConversation: (id: string) => this.handleSelectConversation(id),
+      onStartNewConversation: () => this.handleStartNewConversation(),
+      onViewChange: (view: WidgetView) => {
+        this.currentView = view;
+        // Refresh conversations list from server when navigating to Messages tab
+        if (view === 'messages' && this.wsConnection?.readyState === WebSocket.OPEN) {
+          this.wsSend('conversations:list', {});
+        }
+      },
     });
   }
 
@@ -301,13 +328,29 @@ export class WidgetManager {
 
   // ─── Message Handling ──────────────────────────────────────
 
-  private handleSendMessage(content: string): void {
+  private resetActiveConversation(): void {
+    this.activeConversationId = null;
+    this.messages = [];
+    this.isTyping = false;
+  }
+
+  private handleSendMessage(content: string, options: { startNewConversation?: boolean } = {}): void {
     if (!content.trim()) return;
+
+    if (options.startNewConversation) {
+      this.resetActiveConversation();
+    }
+
+    // If no active conversation, tell server to start a new one.
+    // Server responds with conversation:created (real ID) before message:send is processed.
+    if (!this.activeConversationId && this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:new', {});
+    }
 
     // Optimistic update
     const optimisticMsg: Message = {
       id: `temp-${Date.now()}`,
-      conversationId: '',
+      conversationId: this.activeConversationId || '',
       role: 'customer',
       content,
       isInternal: false,
@@ -346,6 +389,34 @@ export class WidgetManager {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', { email: data.email, name: data.name });
     }
+  }
+
+  // ─── Conversation Switching ─────────────────────────────────
+
+  private handleSelectConversation(conversationId: string): void {
+    this.activeConversationId = conversationId;
+
+    // Request messages for this conversation via WS
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:select', { conversation_id: conversationId });
+    }
+
+    // Clear current messages while loading
+    this.messages = [];
+    this.currentView = 'conversation';
+    this.render();
+  }
+
+  private handleStartNewConversation(): void {
+    this.resetActiveConversation();
+    this.currentView = 'conversation';
+
+    // Tell server to clear the session's conversation_id so next message creates a new one
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:new', {});
+    }
+
+    this.render();
   }
 
   // ─── API / Session ─────────────────────────────────────────
@@ -474,6 +545,22 @@ export class WidgetManager {
           persistSession(this.widgetKey, payload.session_token, payload.expires_at);
         }
 
+        // Load conversations list from server
+        if (payload.conversations && payload.conversations.length > 0) {
+          this.conversations = payload.conversations.map((c: any) => ({
+            id: c.id,
+            subject: c.subject || 'Untitled',
+            status: c.status || 'open',
+            lastMessage: c.last_message,
+            lastMessageAt: c.updated_at || c.created_at,
+          }));
+        }
+
+        // Set active conversation from messages (if session has one)
+        if (payload.messages && payload.messages.length > 0 && payload.messages[0].conversation_id) {
+          this.activeConversationId = payload.messages[0].conversation_id;
+        }
+
         // Load conversation history from server
         if (payload.messages && payload.messages.length > 0) {
           this.messages = payload.messages.map((m: any) => ({
@@ -559,6 +646,19 @@ export class WidgetManager {
           this.triggerCallback('onUnreadCountChange', this.unreadCount);
         }
 
+        // Update conversation in the list (lastMessage preview + move to top)
+        if (newMsg.conversationId) {
+          const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
+          if (convIdx >= 0) {
+            const updated = {
+              ...this.conversations[convIdx],
+              lastMessage: newMsg.content,
+              lastMessageAt: newMsg.createdAt,
+            };
+            this.conversations = [updated, ...this.conversations.filter((_, i) => i !== convIdx)];
+          }
+        }
+
         this.triggerCallback('onMessageReceived', msg);
         this.render();
         break;
@@ -567,7 +667,21 @@ export class WidgetManager {
       case 'conversation:created': {
         const convId = data.data?.conversation_id;
         if (convId) {
+          this.activeConversationId = convId;
+          // Add new conversation to the list with real server ID
+          if (!this.conversations.some(c => c.id === convId)) {
+            const lastCustomerMsg = [...this.messages].reverse().find(m => m.role === 'customer');
+            const preview = lastCustomerMsg?.content;
+            this.conversations = [{
+              id: convId,
+              subject: preview ? (preview.length > 100 ? preview.slice(0, 100) + '...' : preview) : 'New conversation',
+              status: 'open',
+              lastMessage: preview,
+              lastMessageAt: new Date().toISOString(),
+            }, ...this.conversations];
+          }
           this.triggerCallback('onConversationStarted', convId);
+          this.render();
         }
         break;
       }
@@ -582,9 +696,36 @@ export class WidgetManager {
         this.render();
         break;
 
-      case 'conversations:listed':
-        // Future: handle conversation list display
+      case 'conversations:listed': {
+        const convs = data.data?.conversations;
+        if (Array.isArray(convs)) {
+          this.conversations = convs.map((c: any) => ({
+            id: c.id,
+            subject: c.subject || 'Untitled',
+            status: c.status || 'open',
+            lastMessage: c.last_message,
+            lastMessageAt: c.updated_at || c.created_at,
+          }));
+          this.render();
+        }
         break;
+      }
+
+      case 'conversation:messages': {
+        const msgs = data.data?.messages;
+        if (Array.isArray(msgs)) {
+          this.messages = msgs.map((m: any) => ({
+            id: m.id,
+            conversationId: m.conversation_id,
+            role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
+            content: m.content,
+            isInternal: m.is_internal || false,
+            createdAt: m.created_at,
+          }));
+          this.render();
+        }
+        break;
+      }
 
       case 'connection:error':
         console.error('Widget server error:', data.data);

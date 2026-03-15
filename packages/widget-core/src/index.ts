@@ -1,5 +1,5 @@
 import { h, render } from 'preact';
-import type { Message, WidgetConfig } from './types';
+import type { Message, Conversation, WidgetConfig } from './types';
 import type { WidgetView } from './components/BottomNav';
 import { ChatWindow } from './components/ChatWindow';
 import { WidgetLauncher } from './components/WidgetLauncher';
@@ -7,6 +7,7 @@ import { WidgetLauncher } from './components/WidgetLauncher';
 export type {
   WidgetAdapter,
   Message,
+  Conversation,
   CustomerInfo,
   WidgetConfig,
   AiSource,
@@ -31,6 +32,7 @@ export { HomeView } from './components/HomeView';
 export { MessagesView } from './components/MessagesView';
 export { HelpView } from './components/HelpView';
 export { ConversationView } from './components/ConversationView';
+export { ConversationListView } from './components/ConversationListView';
 
 // ─── Mount API ───────────────────────────────────────────────
 // Consumers call mountWidget() instead of importing preact directly.
@@ -42,6 +44,7 @@ export interface MountWidgetOptions {
   isOpen?: boolean;
   onClose?: () => void;
   onSendMessage?: (content: string) => void;
+  onSendMessageFromHome?: (content: string) => void;
   onQuickReply?: (content: string) => void;
   showPreChatForm?: boolean;
   onPreChatSubmit?: (data: { name: string; email: string }) => void;
@@ -52,6 +55,10 @@ export interface MountWidgetOptions {
   onLauncherClick?: () => void;
   unreadCount?: number;
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+  conversations?: Conversation[];
+  onSelectConversation?: (conversationId: string) => void;
+  onStartNewConversation?: () => void;
+  onViewChange?: (view: WidgetView) => void;
 }
 
 export function mountWidget(container: HTMLElement, options: MountWidgetOptions): void {
@@ -61,6 +68,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     isOpen = true,
     onClose = () => {},
     onSendMessage = () => {},
+    onSendMessageFromHome = onSendMessage,
     onQuickReply = () => {},
     showPreChatForm = false,
     onPreChatSubmit = () => {},
@@ -70,6 +78,10 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     showLauncher = true,
     onLauncherClick,
     unreadCount = 0,
+    conversations = [],
+    onSelectConversation = () => {},
+    onStartNewConversation = () => {},
+    onViewChange,
   } = options;
 
   const tree = h(
@@ -81,12 +93,17 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       isOpen,
       onClose,
       onSendMessage,
+      onSendMessageFromHome,
       onQuickReply,
       showPreChatForm,
       onPreChatSubmit,
       isTyping,
       quickReplies,
       initialView,
+      conversations,
+      onSelectConversation,
+      onStartNewConversation,
+      onViewChange,
     }),
     showLauncher
       ? h(WidgetLauncher, {

@@ -319,8 +319,11 @@ if (isWindowAvailable()) {
   // Browser-specific initialization for script tag
   // Only initialize if loaded via script tag AND not within an AMD context
   (function (document, window) {
-    // Capture the current script
-    const currentScript = document.currentScript as HTMLScriptElement;
+    // Capture the current script — document.currentScript is null in ES modules,
+    // so fall back to finding the script by data-widget-key attribute
+    const currentScript = (document.currentScript as HTMLScriptElement)
+      || document.querySelector('script[data-widget-key]') as HTMLScriptElement
+      || document.querySelector('script[data-key]') as HTMLScriptElement;
 
     function shouldAutoInitialize() {
       // Don't auto-initialize if:
@@ -334,7 +337,8 @@ if (isWindowAvailable()) {
       if (currentScript.getAttribute('data-no-auto-init') === 'true')
         return false;
 
-      return currentScript.src.includes('lib.js');
+      // Match both direct lib.js load and loader-injected helpin.[hash].js
+      return currentScript.src.includes('lib.js') || currentScript.src.includes('helpin.');
     }
 
     function initializeWidgetBridge() {
