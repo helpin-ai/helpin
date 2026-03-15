@@ -64,7 +64,7 @@ func (h *SupportInboxWidgetHandler) GetConfigByID(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, config)
 }
 
-// CreateSession handles POST /api/widget/support/session.
+// CreateSession handles POST /api/widget/support/session (legacy HTTP endpoint).
 func (h *SupportInboxWidgetHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	var req model.WidgetSessionRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -76,7 +76,8 @@ func (h *SupportInboxWidgetHandler) CreateSession(w http.ResponseWriter, r *http
 		return
 	}
 
-	session, err := h.supportService.CreateWidgetSession(r.Context(), req.WidgetKey, req.CustomerName, req.CustomerEmail)
+	// Legacy HTTP path — anonymous_id defaults to empty, will be set by WS flow
+	session, err := h.supportService.CreateWidgetSession(r.Context(), req.WidgetKey, "", req.CustomerName, req.CustomerEmail, nil, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -86,6 +87,26 @@ func (h *SupportInboxWidgetHandler) CreateSession(w http.ResponseWriter, r *http
 		"session_token": session.SessionToken,
 		"expires_at":    session.ExpiresAt,
 	})
+}
+
+// RevokeSession handles POST /widget/session/revoke (HTTP fallback for shutdown).
+func (h *SupportInboxWidgetHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
+	var req model.WidgetSessionRevokeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.SessionToken == "" {
+		writeError(w, http.StatusBadRequest, "session_token is required")
+		return
+	}
+
+	if err := h.supportService.RevokeWidgetSession(r.Context(), req.SessionToken); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // SendMessage handles POST /api/widget/support/messages.

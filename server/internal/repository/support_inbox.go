@@ -300,6 +300,18 @@ func (r *SupportConversationRepository) ListByContact(ctx context.Context, works
 	return conversations, total, nil
 }
 
+// ListByAnonymousID returns conversations for a visitor by anonymous_id.
+func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error) {
+	var conversations []model.SupportConversation
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID).
+		Order("updated_at DESC").
+		Find(&conversations).Error; err != nil {
+		return nil, fmt.Errorf("list conversations by anonymous_id: %w", err)
+	}
+	return conversations, nil
+}
+
 // SupportCannedResponseRepository handles canned responses.
 type SupportCannedResponseRepository struct {
 	db *gorm.DB

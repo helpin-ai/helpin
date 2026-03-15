@@ -132,7 +132,7 @@ export class HelpinClient {
 
     const domains = this.config.domains.split(',').map((d) => d.trim());
     const cookieName =
-      this.config.cookieName || `__eventn_id_${this.config.key}`;
+      this.config.cookieName || `helpin_aid_${this.config.key}`;
 
     document.addEventListener('click', (event) => {
       const target = this.findClosestLink(event.target as HTMLElement);
@@ -230,7 +230,7 @@ export class HelpinClient {
     }
 
     const cookieName =
-      this.config.cookieName || `__eventn_id_${this.config.key}`;
+      this.config.cookieName || `helpin_aid_${this.config.key}`;
     let id = this.cookieManager?.get(cookieName);
 
     if (!id) {
@@ -573,7 +573,7 @@ export class HelpinClient {
 
     if (resetAnonId && this.cookieManager) {
       const cookieName =
-        this.config.cookieName || `__eventn_id_${this.config.key}`;
+        this.config.cookieName || `helpin_aid_${this.config.key}`;
       this.cookieManager.delete(cookieName);
       this.anonymousId = this.getOrCreateAnonymousId();
     }

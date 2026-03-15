@@ -683,6 +683,43 @@
   color: var(--helpin-fg-secondary);
 }
 
+/* ===== Connection Status Banner ===== */
+.helpin-connection-banner {
+  padding: 8px 16px;
+  font-size: 13px;
+  text-align: center;
+  font-family: inherit;
+}
+
+.helpin-connection-banner--connecting {
+  background: var(--helpin-bg-muted);
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-connection-banner--failed {
+  background: #fef2f2;
+  color: #991b1b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.helpin-connection-retry {
+  background: #991b1b;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.helpin-connection-retry:hover {
+  background: #7f1d1d;
+}
+
 /* ===== LEGACY — Widget Header (kept for backward compat) ===== */
 .helpin-widget-header {
   padding: 16px;

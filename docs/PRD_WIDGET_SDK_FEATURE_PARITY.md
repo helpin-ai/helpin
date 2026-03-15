@@ -943,9 +943,9 @@ private emitAnalyticsEvent(eventType: string, properties: Record<string, any>) {
 
 ## Implementation Plan
 
-### Phase 1: Core Infrastructure (MUST HAVE)
+### Phase 1: Core Infrastructure (MUST HAVE) — COMPLETED 2026-03-14
 
-#### 1A. Bot/Crawler Filtering
+#### 1A. Bot/Crawler Filtering — DONE
 
 **New file: `packages/sdk-js/src/utils/bot-detect.ts`**
 - UA blocklist: Googlebot, Bingbot, HeadlessChrome, Puppeteer, Selenium, PhantomJS, etc.
@@ -954,7 +954,7 @@ private emitAnalyticsEvent(eventType: string, properties: Record<string, any>) {
 **Modify: `packages/sdk-js/src/core/widget.ts` → `boot()`**
 - Early-return if `isBot()` is true
 
-#### 1B. Visitor Identity & Cookie Rename
+#### 1B. Visitor Identity & Cookie Rename — DONE
 
 **New file: `packages/sdk-js/src/core/identity.ts`**
 - `getOrCreateAnonymousId(widgetKey)` — reads/writes `helpin_aid_{widget_key}` cookie
@@ -972,7 +972,7 @@ private emitAnalyticsEvent(eventType: string, properties: Record<string, any>) {
 - Import and use `getOrCreateAnonymousId()` from identity module
 - Remove `getAnonymousId()` that reads `helpin_anonymous_id` (replaced by cookie-based anonymous_id)
 
-#### 1C. Anonymous Sessions + Session Persistence
+#### 1C. Anonymous Sessions + Session Persistence — DONE
 
 **Modify: `packages/sdk-js/src/core/widget.ts` — new `boot()` flow:**
 ```
@@ -1125,7 +1125,7 @@ CREATE INDEX IF NOT EXISTS idx_conversations_visitor_workspace
   WHERE anonymous_id IS NOT NULL;
 ```
 
-#### 1D. Conversation-Scoped WebSocket Routing (SECURITY FIX)
+#### 1D. Conversation-Scoped WebSocket Routing (SECURITY FIX) — DONE
 
 **Modify: `server/internal/websocket/hub.go`**
 
@@ -1184,7 +1184,7 @@ func (h *Hub) SetWidgetConversationByUserID(userID string, conversationID string
 - `UpgradeWidgetSession()` updates session fields, returns success/error
 - The service has no knowledge of WebSocket, Hub, or Client structs
 
-#### 1E. Shutdown & Token Revocation
+#### 1E. Shutdown & Token Revocation — DONE
 
 **Modify: `packages/sdk-js/src/core/widget.ts` — `shutdown()`:**
 ```typescript
@@ -1230,7 +1230,7 @@ function identify(userData: UserData) {
 }
 ```
 
-#### 1F. Connection Failure UI
+#### 1F. Connection Failure UI — DONE
 
 **Modify: `packages/widget-core/src/components/ChatWindow.tsx` (or equivalent)**
 - Accept new prop: `connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'failed'`
@@ -1245,7 +1245,7 @@ function identify(userData: UserData) {
 - Pass `connectionStatus` to widget-core component via props/callbacks
 - After max retries (10) with exponential backoff: set status to `'failed'`
 
-#### 1G. Attribute & Storage Key Migration
+#### 1G. Attribute & Storage Key Migration — DONE
 
 Since we have **no production customers**, all naming changes happen in one cut — no dual-read compatibility layer.
 
@@ -1297,7 +1297,7 @@ function migrateFromLegacyKeys(widgetKey: string): void {
 }
 ```
 
-#### 1H. CSS Isolation via Shadow DOM
+#### 1H. CSS Isolation via Shadow DOM — DONE
 
 **Modify: `packages/sdk-js/src/core/widget.ts` → `ensureWidget()`**
 - Create host `<div id="helpin-widget-container">` with `position:fixed; z-index:2147483647`
