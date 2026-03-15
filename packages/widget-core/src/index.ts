@@ -51,6 +51,7 @@ export interface MountWidgetOptions {
   showLauncher?: boolean;
   onLauncherClick?: () => void;
   unreadCount?: number;
+  connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 }
 
 export function mountWidget(container: HTMLElement, options: MountWidgetOptions): void {

@@ -31,9 +31,9 @@ function helpinClient(config: Partial<Config>): HelpinClient {
 
 function initFromScript(script: HTMLScriptElement): HelpinClient {
   const config: Partial<Config> = {
-    key: script.getAttribute('data-key') || undefined,
+    key: script.getAttribute('data-widget-key') || script.getAttribute('data-key') || undefined,
     trackingHost:
-      script.getAttribute('data-tracking-host') || undefined,
+      script.getAttribute('data-host') || script.getAttribute('data-tracking-host') || undefined,
     logLevel: parseLogLevel(script.getAttribute('data-log-level')),
     autoPageview:
       script.getAttribute('data-auto-pageview') === 'false'
@@ -183,6 +183,14 @@ function initializeNamespacedClient(
       return;
     }
 
+    // identify() guard: shutdown widget if user email changes to prevent conversation leakage
+    if (method === 'id') {
+      const userData = args[1];
+      if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
+        widgetManager.shutdown();
+      }
+    }
+
     if (typeof client[method] === 'function') {
       return client[method].apply(client, args.slice(1));
     }
@@ -322,7 +330,7 @@ if (isWindowAvailable()) {
 
       if (isInitialized) return false;
       if (!currentScript) return false;
-      if (!currentScript.hasAttribute('data-key')) return false;
+      if (!currentScript.hasAttribute('data-widget-key') && !currentScript.hasAttribute('data-key')) return false;
       if (currentScript.getAttribute('data-no-auto-init') === 'true')
         return false;
 
@@ -380,6 +388,13 @@ if (isWindowAvailable()) {
 
         // Analytics methods — forward to client if initialized
         if (analyticsClient && typeof (analyticsClient as any)[method] === 'function') {
+          // identify() guard: shutdown widget if user email changes
+          if (method === 'id') {
+            const userData = args[1];
+            if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
+              widgetManager.shutdown();
+            }
+          }
           return (analyticsClient as any)[method].apply(analyticsClient, args.slice(1));
         }
 

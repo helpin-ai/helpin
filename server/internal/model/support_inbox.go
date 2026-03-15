@@ -19,6 +19,7 @@ type SupportConversation struct {
 	AssignedAgentID *string    `json:"assigned_agent_id" gorm:"type:uuid"`
 	LinkedStoryID   *string    `json:"linked_story_id" gorm:"type:uuid"`
 	Source          string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
+	AnonymousID     *string    `json:"anonymous_id" gorm:"index"`
 	CRMContactID    *string    `json:"crm_contact_id" gorm:"type:uuid;index"`
 	ResolvedAt      *time.Time `json:"resolved_at"`
 	ClosedAt        *time.Time `json:"closed_at"`
@@ -75,16 +76,21 @@ type SupportWidgetInstallation struct {
 
 func (SupportWidgetInstallation) TableName() string { return "support_widget_installations" }
 
-// SupportWidgetSession represents a short-lived external chat session.
+// SupportWidgetSession represents an external widget chat session (30-day TTL).
 type SupportWidgetSession struct {
-	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ConversationID *string   `json:"conversation_id" gorm:"type:uuid;index"`
-	SessionToken   string    `json:"session_token" gorm:"not null;uniqueIndex"`
-	CustomerName   *string   `json:"customer_name"`
-	CustomerEmail  *string   `json:"customer_email"`
-	ExpiresAt      time.Time `json:"expires_at" gorm:"not null"`
-	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
+	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ConversationID *string    `json:"conversation_id" gorm:"type:uuid;index"`
+	SessionToken   string     `json:"-" gorm:"not null;uniqueIndex"`
+	AnonymousID    string     `json:"anonymous_id" gorm:"not null"`
+	IsAnonymous    bool       `json:"is_anonymous" gorm:"default:true"`
+	CustomerName   *string    `json:"customer_name"`
+	CustomerEmail  *string    `json:"customer_email"`
+	UserAgent      *string    `json:"-"`
+	LastPageURL    *string    `json:"last_page_url"`
+	RevokedAt      *time.Time `json:"-" gorm:"index"`
+	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
+	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (SupportWidgetSession) TableName() string { return "support_widget_sessions" }
@@ -121,7 +127,7 @@ type UpdateConversationStatusRequest struct {
 	Status string `json:"status"`
 }
 
-// WidgetSessionRequest creates a new widget session.
+// WidgetSessionRequest creates a new widget session (legacy HTTP).
 type WidgetSessionRequest struct {
 	WorkspaceSlug string  `json:"workspace_slug"`
 	WidgetKey     string  `json:"widget_key"`
@@ -129,10 +135,69 @@ type WidgetSessionRequest struct {
 	CustomerEmail *string `json:"customer_email"`
 }
 
-// WidgetMessageRequest sends a message via widget.
+// WidgetMessageRequest sends a message via widget (legacy HTTP).
 type WidgetMessageRequest struct {
 	SessionToken string `json:"session_token"`
 	Content      string `json:"content"`
+}
+
+// WidgetSessionRevokeRequest revokes a widget session (HTTP fallback for shutdown).
+type WidgetSessionRevokeRequest struct {
+	SessionToken string `json:"session_token"`
+}
+
+// ── WS Message Types ─────────────────────────────────────────────────
+
+// WidgetWSMessage is the envelope for all widget WS messages.
+type WidgetWSMessage struct {
+	Type string                 `json:"type"`
+	Data map[string]interface{} `json:"data,omitempty"`
+}
+
+// WidgetSessionCreateData is the payload for session:create.
+type WidgetSessionCreateData struct {
+	AnonymousID string `json:"anonymous_id"`
+	PageURL     string `json:"page_url"`
+	PageTitle   string `json:"page_title"`
+	UserAgent   string `json:"user_agent"`
+	Timezone    string `json:"timezone"`
+	Locale      string `json:"locale"`
+}
+
+// WidgetSessionRestoreData is the payload for session:restore.
+type WidgetSessionRestoreData struct {
+	SessionToken string `json:"session_token"`
+}
+
+// WidgetSessionUpgradeData is the payload for session:upgrade.
+type WidgetSessionUpgradeData struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+// WidgetMessageSendData is the payload for message:send.
+type WidgetMessageSendData struct {
+	Content string `json:"content"`
+}
+
+// WidgetSessionJoinedPayload is sent to the client after session:create or session:restore.
+type WidgetSessionJoinedPayload struct {
+	SessionToken  string                `json:"session_token"`
+	ExpiresAt     string                `json:"expires_at"`
+	IsAnonymous   bool                  `json:"is_anonymous"`
+	Conversations []SupportConversation `json:"conversations"`
+	Messages      []SupportMessage      `json:"messages"`
+}
+
+// WidgetMessageReceivedPayload is sent to widget clients for new messages.
+type WidgetMessageReceivedPayload struct {
+	ID             string  `json:"id"`
+	ConversationID string  `json:"conversation_id"`
+	Content        string  `json:"content"`
+	SenderType     string  `json:"sender_type"`
+	SenderName     *string `json:"sender_name"`
+	SenderAvatar   *string `json:"sender_avatar"`
+	CreatedAt      string  `json:"created_at"`
 }
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.

@@ -8,6 +8,8 @@ import { HelpView } from './HelpView';
 import { ConversationView } from './ConversationView';
 import { XIcon } from './icons';
 
+type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+
 interface ChatWindowProps {
   config: WidgetConfig;
   messages: Message[];
@@ -20,6 +22,8 @@ interface ChatWindowProps {
   isTyping?: boolean;
   quickReplies?: string[];
   initialView?: WidgetView;
+  connectionStatus?: ConnectionStatus;
+  onRetryConnection?: () => void;
 }
 
 export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
@@ -34,6 +38,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   isTyping = false,
   quickReplies = [],
   initialView = 'home',
+  connectionStatus = 'idle',
+  onRetryConnection,
 }) => {
   const [activeView, setActiveView] = useState<WidgetView>(initialView);
   const [previousView, setPreviousView] = useState<WidgetBaseView>(
@@ -106,6 +112,23 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         <button className="helpin-window-close" onClick={onClose} aria-label="Close">
           <XIcon size={18} />
         </button>
+      )}
+
+      {/* Connection status banner */}
+      {connectionStatus === 'connecting' && (
+        <div className="helpin-connection-banner helpin-connection-banner--connecting">
+          Connecting...
+        </div>
+      )}
+      {connectionStatus === 'failed' && (
+        <div className="helpin-connection-banner helpin-connection-banner--failed">
+          <span>Unable to connect. Support may be unavailable.</span>
+          {onRetryConnection && (
+            <button className="helpin-connection-retry" onClick={onRetryConnection}>
+              Retry
+            </button>
+          )}
+        </div>
       )}
 
       {/* View content */}

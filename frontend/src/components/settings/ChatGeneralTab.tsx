@@ -21,6 +21,7 @@ const ICON_OPTIONS = [
   { value: 'help', label: 'Help', icon: CircleHelp },
 ];
 
+
 const COLOR_SCHEME_OPTIONS = [
   { value: 'system', label: 'System', icon: Monitor },
   { value: 'light', label: 'Light', icon: Sun },
@@ -185,8 +186,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         s = document.getElementsByTagName('script')[0];
     t.defer = true;
     t.id = 'helpin-widget';
-    t.setAttribute('data-key', '${widgetKey}');
-    t.setAttribute('data-tracking-host', 'https://client.prod.helpin.ai');
+    t.setAttribute('data-widget-key', '${widgetKey}');
+    t.setAttribute('data-host', 'https://client.prod.helpin.ai');
     t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
   })();
@@ -200,8 +201,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         s = document.getElementsByTagName('script')[0];
     t.defer = true;
     t.id = 'helpin-widget';
-    t.setAttribute('data-key', '${widgetKey}');
-    t.setAttribute('data-tracking-host', 'https://client.prod.helpin.ai');
+    t.setAttribute('data-widget-key', '${widgetKey}');
+    t.setAttribute('data-host', 'https://client.prod.helpin.ai');
     t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
 
