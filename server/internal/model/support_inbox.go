@@ -41,7 +41,7 @@ type SupportMessage struct {
 	SenderDisplayName *string   `json:"sender_display_name"`
 	Content           string    `json:"content" gorm:"not null"`
 	IsInternal        bool      `json:"is_internal" gorm:"not null;default:false"`
-	Metadata          string    `json:"metadata" gorm:"type:jsonb"` // JSONB for CSAT ratings, AI sources, etc.
+	Metadata          string    `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
 	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -151,7 +151,7 @@ type WidgetSessionRevokeRequest struct {
 // WidgetWSMessage is the envelope for all widget WS messages.
 type WidgetWSMessage struct {
 	Type string                 `json:"type"`
-	Data map[string]interface{} `json:"data,omitempty"`
+	Data map[string]any `json:"data,omitempty"`
 }
 
 // WidgetSessionCreateData is the payload for session:create.
