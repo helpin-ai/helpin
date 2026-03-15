@@ -27,6 +27,10 @@ import {
   MessageSquare,
   Inbox,
   LayoutList,
+  UserX,
+  Circle,
+  CheckCircle2,
+  Pause,
   Moon,
   Play,
   Plus,
@@ -48,6 +52,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections, useDocsDocuments } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -374,6 +379,7 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { isAdmin, canManageSettings } = usePermissions(access);
+  const { navFilter, setNavFilter, statusFilter, setStatusFilter } = useSupportInboxStore();
 
   const { teams: allTeams } = useWorkspaceTeams(workspaceId);
   const myTeamMemberships = access?.team_memberships ?? [];
@@ -508,7 +514,7 @@ export function Sidebar() {
       {
         label: '',
         items: [
-          { link: `/w/${wsSlug}/support`, label: 'All Conversations', icon: MessageSquare },
+          { link: `/w/${wsSlug}/support`, label: 'Inbox', icon: Inbox },
         ],
       },
     ],
@@ -852,6 +858,60 @@ export function Sidebar() {
                 </SidebarGroup>
               );
             })}
+
+            {/* ── Support inbox filters (support rail only) ── */}
+            {activeRail === 'support' && (
+              <>
+                <SidebarGroup className="p-0 pb-3">
+                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+                    Views
+                  </SidebarGroupLabel>
+                  <SidebarMenu>
+                    {([
+                      { key: 'my_inbox' as const, label: 'My Inbox', icon: User },
+                      { key: 'all' as const, label: 'All Conversations', icon: Mail },
+                      { key: 'unassigned' as const, label: 'Unassigned', icon: UserX },
+                    ] as const).map((item) => (
+                      <SidebarMenuItem key={item.key}>
+                        <SidebarMenuButton
+                          isActive={navFilter === item.key}
+                          className="h-8 rounded-md px-2 text-[13px]"
+                          onClick={() => setNavFilter(item.key)}
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroup>
+                <SidebarGroup className="p-0 pb-3">
+                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+                    Status
+                  </SidebarGroupLabel>
+                  <SidebarMenu>
+                    {([
+                      { key: 'open', label: 'Open', icon: Circle },
+                      { key: 'in_progress', label: 'In Progress', icon: Clock },
+                      { key: 'waiting', label: 'Waiting', icon: Pause },
+                      { key: 'resolved', label: 'Resolved', icon: CheckCircle2 },
+                      { key: 'all', label: 'All', icon: LayoutList },
+                    ] as const).map((item) => (
+                      <SidebarMenuItem key={item.key}>
+                        <SidebarMenuButton
+                          isActive={statusFilter === item.key}
+                          className="h-8 rounded-md px-2 text-[13px]"
+                          onClick={() => setStatusFilter(item.key)}
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroup>
+              </>
+            )}
 
             {/* ── Team-scoped navigation (projects rail only) ── */}
             {activeRail === 'projects' && (
