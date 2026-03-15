@@ -7,7 +7,6 @@ import {
   Clock,
   HelpCircle,
   Plus,
-  Sparkles,
   Users,
   Wrench,
   Zap,
@@ -254,7 +253,7 @@ function showsTriggerMode(agentClass: AgentClass): boolean {
   return agentClass === 'engineer' || agentClass === 'reviewer';
 }
 
-function defaultTriggerModeForClass(agentClass: AgentClass): AgentTriggerMode {
+function defaultTriggerModeForClass(_agentClass: AgentClass): AgentTriggerMode {
   return 'manual';
 }
 

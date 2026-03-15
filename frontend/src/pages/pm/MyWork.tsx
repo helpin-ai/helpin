@@ -25,8 +25,8 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, StateTypeIcon, StoryTypeIcon, PriorityIcon } from '@/lib/pmConstants';
-import type { Priority, Story, StateType } from '@/lib/pmTypes';
+import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, StateTypeIcon, PriorityIcon } from '@/lib/pmConstants';
+import type { Story, StateType } from '@/lib/pmTypes';
 
 type Mode = 'assigned' | 'requested';
 type DeadlineStatus = 'overdue' | 'approaching' | 'normal';

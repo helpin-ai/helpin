@@ -102,11 +102,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
-  const epicStateMap = useMemo(
-    () => new Map(epicStates.map((state) => [state.id, state])),
-    [epicStates],
-  );
-
   const completionPct = (entry: EpicWithStats) => {
     if (entry.stats.story_count === 0) return 0;
     return Math.round((entry.stats.done_story_count / entry.stats.story_count) * 100);
