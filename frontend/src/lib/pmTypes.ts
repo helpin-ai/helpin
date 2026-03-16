@@ -873,6 +873,53 @@ export interface DeleteAutomationRequest {
   team_id?: string;
 }
 
+// ── Automation Rules ────────────────────────────────────────────────
+
+export interface AutomationRule {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  team_id?: string;
+  workflow_id?: string;
+  trigger_type: string;
+  trigger_config: Record<string, string>;
+  action_type: string;
+  action_config: Record<string, string>;
+  position: number;
+  stop_on_match: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAutomationRuleRequest {
+  workspace_id: string;
+  name: string;
+  description?: string;
+  team_id?: string;
+  workflow_id?: string;
+  trigger_type: string;
+  trigger_config: Record<string, string>;
+  action_type: string;
+  action_config: Record<string, string>;
+  position?: number;
+  stop_on_match?: boolean;
+}
+
+export interface UpdateAutomationRuleRequest {
+  name?: string;
+  description?: string;
+  enabled?: boolean;
+  trigger_type?: string;
+  trigger_config?: Record<string, string>;
+  action_type?: string;
+  action_config?: Record<string, string>;
+  position?: number;
+  stop_on_match?: boolean;
+}
+
 // ── Views (Spaces) ──────────────────────────────────────────────────
 
 export interface PMView {

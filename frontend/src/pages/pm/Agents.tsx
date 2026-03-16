@@ -11,7 +11,6 @@ import type {
   AgentModelProvider,
   AgentModelProviderOption,
   AgentRuntimeKind,
-  AgentTriggerMode,
   CreateAgentRequest,
   UpdateAgentRequest,
 } from '@/lib/pmTypes';
@@ -51,7 +50,6 @@ const ADVANCED_DEFAULT_RUNTIME: Record<AgentClass, AgentRuntimeKind> = {
   support: 'opencode',
   human: 'opencode',
 };
-const ENGINE_TRIGGER_MODE_OPTIONS: AgentTriggerMode[] = ['manual', 'auto_on_assignment', 'auto_on_event'];
 const AGENT_CLASS_LABELS: Record<AgentClass, string> = {
   product_planner: 'Product Planner',
   engineer: 'Engineer',
@@ -71,7 +69,6 @@ interface AgentFormData {
   name: string;
   agent_class: AgentClass;
   runtime_kind: AgentRuntimeKind;
-  trigger_mode: AgentTriggerMode;
   backing_user_id: string;
   skills: string;
   provider: AgentModelProvider;
@@ -92,7 +89,6 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
     name: '',
     agent_class: agentClass,
     runtime_kind: ADVANCED_DEFAULT_RUNTIME[agentClass],
-    trigger_mode: defaultTriggerModeForClass(agentClass),
     backing_user_id: '',
     skills: '',
     provider: 'anthropic',
@@ -105,18 +101,6 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
 
 function isLLMAgentClass(agentClass: AgentClass): boolean {
   return agentClass !== 'human';
-}
-
-function showsTriggerMode(agentClass: AgentClass): boolean {
-  return agentClass === 'engineer' || agentClass === 'reviewer';
-}
-
-function defaultTriggerModeForClass(agentClass: AgentClass): AgentTriggerMode {
-  return agentClass === 'engineer' || agentClass === 'reviewer' ? 'manual' : 'manual';
-}
-
-function allowedTriggerModesForClass(agentClass: AgentClass): AgentTriggerMode[] {
-  return showsTriggerMode(agentClass) ? ENGINE_TRIGGER_MODE_OPTIONS : ['manual'];
 }
 
 function parseSkills(skills: string): string[] {
@@ -141,16 +125,12 @@ function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentF
     ...current,
     agent_class: nextClass,
     runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
-    trigger_mode: allowedTriggerModesForClass(nextClass).includes(current.trigger_mode)
-      ? current.trigger_mode
-      : defaultTriggerModeForClass(nextClass),
   };
 
   if (nextClass === 'human') {
     return {
       ...next,
       runtime_kind: ADVANCED_DEFAULT_RUNTIME[nextClass],
-      trigger_mode: 'manual',
       provider: 'anthropic',
       model: '',
       system_prompt: '',
@@ -166,7 +146,6 @@ function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentF
       backing_user_id: '',
       provider: 'anthropic',
       system_prompt: '',
-      trigger_mode: 'manual',
     };
   }
 
@@ -198,7 +177,6 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     name: form.name.trim(),
     agent_class: form.agent_class,
     backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : undefined,
-    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : undefined,
     provider: isLLMAgentClass(form.agent_class) ? form.provider : undefined,
     model: isLLMAgentClass(form.agent_class) ? form.model.trim() : undefined,
     planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
@@ -211,7 +189,6 @@ function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean): UpdateA
     name: form.name.trim(),
     agent_class: form.agent_class,
     backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : undefined,
-    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : undefined,
     provider: isLLMAgentClass(form.agent_class) ? form.provider : undefined,
     model: isLLMAgentClass(form.agent_class) ? form.model.trim() : undefined,
     planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
@@ -268,9 +245,6 @@ function AgentCard({
           <p className="text-xs text-muted-foreground">
             Model: {[agent.provider, agent.model].filter(Boolean).join('/')}
           </p>
-        )}
-        {showsTriggerMode(agent.agent_class) && (
-          <p className="text-xs text-muted-foreground">Trigger: {agent.trigger_mode}</p>
         )}
         {budgetPct !== null && (
           <div className="space-y-1">
@@ -348,7 +322,6 @@ export function AgentsPage() {
       name: agent.name,
       agent_class: agent.agent_class,
       runtime_kind: agent.runtime_kind,
-      trigger_mode: agent.trigger_mode,
       backing_user_id: agent.backing_user_id ?? '',
       skills: agent.skills.join(', '),
       provider: agent.provider ?? 'anthropic',
@@ -521,27 +494,6 @@ export function AgentsPage() {
                   </p>
                 </div>
               </>
-            )}
-
-            {showsTriggerMode(form.agent_class) && (
-              <div className="space-y-1.5">
-                <Label>Trigger Mode</Label>
-                <Select
-                  value={form.trigger_mode}
-                  onValueChange={(value) => setForm((current) => ({ ...current, trigger_mode: value as AgentTriggerMode }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allowedTriggerModesForClass(form.agent_class).map((triggerMode) => (
-                      <SelectItem key={triggerMode} value={triggerMode}>
-                        {triggerMode}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
             )}
 
             {form.agent_class === 'product_planner' && (

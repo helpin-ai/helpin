@@ -678,6 +678,108 @@ Current UI support:
 - Project Settings > AI:
   - workspace planning methodology selector
 
+## Automation Rules Engine
+
+Teampulse includes a generic automation rules engine that enables event-driven workflow automation through a trigger → action pattern.
+
+### Data Model
+
+Rules are stored in the `automation_rules` table with:
+
+- `trigger_type` + `trigger_config`: what event fires the rule
+- `action_type` + `action_config`: what happens when the rule fires
+- `workflow_id`: optional scope to a specific workflow
+- `team_id`: optional scope to a specific team
+- `position`: execution order when multiple rules match
+- `stop_on_match`: prevents later rules from firing
+- `enabled`: toggle without deletion
+
+### Trigger Types
+
+| Trigger | Config | Fires when |
+|---|---|---|
+| `story.state_entered` | `{ state_id }` | A story moves into the specified workflow state |
+| `agent_run.approved` | `{ state_id }` | An agent run is approved while the story is in the specified state |
+
+### Action Types
+
+| Action | Config | Effect |
+|---|---|---|
+| `run_agent` | `{ agent_id }` | Assigns and runs the specified agent on the story |
+| `move_to_state` | `{ target_state_id }` | Moves the story to the target workflow state |
+| `merge_branch` | `{ target_branch }` | Merges the story's working branch into the target branch |
+
+### Pipeline Pattern
+
+The primary use case is stage-based agent pipelines. Example for a workflow with states Planning → Development → Review → Deploy → Done:
+
+| Rule | Trigger | Action | Effect |
+|---|---|---|---|
+| 1 | `story.state_entered` (Planning) | `run_agent` (planner) | Planner starts when story enters Planning |
+| 2 | `agent_run.approved` (Planning) | `move_to_state` (Development) | Auto-advance after planner approval |
+| 3 | `story.state_entered` (Development) | `run_agent` (engineer) | Engineer starts when story enters Development |
+| 4 | `agent_run.approved` (Development) | `move_to_state` (Review) | Auto-advance after engineer approval |
+| 5 | `story.state_entered` (Review) | `run_agent` (reviewer) | Reviewer starts when story enters Review |
+| 6 | `agent_run.approved` (Review) | `move_to_state` (Deploy) | Auto-advance after reviewer approval |
+| 7 | `story.state_entered` (Deploy) | `merge_branch` (develop) | Merge to staging on deploy |
+
+**Chaining flow**: User drags story to Planning → Rule 1 fires (run planner) → planner works → user approves → Rule 2 fires (move to Dev) → Rule 3 fires (run engineer) → ... cascading through the pipeline.
+
+### Loop Prevention
+
+Four layers prevent infinite loops:
+
+1. **Chain depth counter**: `RuleExecutionContext.Depth` incremented per chained event. Max 10.
+2. **Same-rule dedup**: `FiredRuleIDs` tracks rules fired in the current chain. Same rule can't fire twice.
+3. **State transition guard**: `move_to_state` is a no-op if story is already in the target state.
+4. **Active run guard**: `AgentService.RunAgent` prevents duplicate concurrent runs on the same story.
+
+### Integration Points
+
+Rules are evaluated synchronously in:
+
+- `PMStoryService.MoveToState` — emits `story.state_entered` after state change
+- `PMStoryService.Create` — emits `story.state_entered` for initial state
+- `AgentService.ApproveRun` — emits `agent_run.approved` after run approval
+
+### API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/pm/automation-rules?workspace_id=` | List rules |
+| GET | `/api/pm/automation-rules?workspace_id=&workflow_id=` | List rules for workflow |
+| POST | `/api/pm/automation-rules?workspace_id=` | Create rule |
+| GET | `/api/pm/automation-rules/{id}?workspace_id=` | Get rule |
+| PUT | `/api/pm/automation-rules/{id}?workspace_id=` | Update rule |
+| DELETE | `/api/pm/automation-rules/{id}?workspace_id=` | Delete rule |
+
+### Frontend Surfaces
+
+- **Pipeline builder**: Visual horizontal pipeline editor in Settings > Teams > Workflow dialog. Shows states left-to-right with agent assignment dropdowns, auto-advance toggles, and merge branch inputs.
+- **Kanban board**: Bot icon on column headers for states with `run_agent` rules.
+- **Story cards**: Bot badge when an agent is assigned.
+- **Story list view**: Bot icon next to story name when agent is assigned.
+- **Story detail panel**: Horizontal pipeline step indicator showing completed, current, and pending stages with automation badges.
+- **Settings > AI & Automations**: Automation rules group showing configured rules with health status.
+
+### Key Files
+
+Backend:
+
+- `server/internal/model/automation_rule.go` — model, DTOs, event types
+- `server/internal/repository/automation_rule.go` — CRUD + rule matching
+- `server/internal/service/automation_rule_engine.go` — evaluation + action executors
+- `server/internal/handler/automation_rule.go` — HTTP endpoints
+- `server/migrations/042_automation_rules.sql` — table + indexes
+
+Frontend:
+
+- `frontend/src/lib/services/automationRuleService.ts` — API client
+- `frontend/src/components/settings/PipelineBuilder.tsx` — visual pipeline editor
+- `frontend/src/components/settings/TeamsTab.tsx` — pipeline builder integration
+- `frontend/src/components/pm/KanbanBoard.tsx` — bot icons on columns
+- `frontend/src/components/pm/StoryDetailPanel.tsx` — pipeline step indicator
+
 ## What Is Not Implemented Yet
 
 - true `openclaw` execution backend

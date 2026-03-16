@@ -1484,3 +1484,25 @@ func (r *PMStoryRepository) loadAssignableMember(ctx context.Context, workspaceI
 	}
 	return &member, nil
 }
+
+// MigrateStoriesToWorkflow remaps stories belonging to a team (or with NULL
+// team_id) from old workflow states to new workflow states using the provided
+// state mapping. It also sets team_id on migrated stories.
+func (r *PMStoryRepository) MigrateStoriesToWorkflow(ctx context.Context, teamID, oldWorkflowID, newWorkflowID string, stateMap map[string]string) (int64, error) {
+	var total int64
+	for oldStateID, newStateID := range stateMap {
+		result := r.db.WithContext(ctx).
+			Model(&model.PMStory{}).
+			Where("(team_id = ? OR team_id IS NULL) AND workflow_id = ? AND workflow_state_id = ? AND archived = false", teamID, oldWorkflowID, oldStateID).
+			Updates(map[string]interface{}{
+				"workflow_id":       newWorkflowID,
+				"workflow_state_id": newStateID,
+				"team_id":           teamID,
+			})
+		if result.Error != nil {
+			return total, fmt.Errorf("migrate stories from state %s to %s: %w", oldStateID, newStateID, result.Error)
+		}
+		total += result.RowsAffected
+	}
+	return total, nil
+}

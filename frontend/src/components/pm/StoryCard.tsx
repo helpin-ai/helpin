@@ -3,6 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
   AlertTriangle,
+  Bot,
   CalendarDays,
   Check,
   Layers,
@@ -478,6 +479,16 @@ export function StoryCard({
             {formatEstimateDisplay(story.estimate, story.team_id)}
           </span>
         ) : null)}
+        {story.assigned_agent_id && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(pillBase, 'border-violet-300 bg-violet-50 text-violet-600 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-400')}>
+                <Bot className="h-3 w-3" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">Agent assigned</TooltipContent>
+          </Tooltip>
+        )}
         <span className="flex-1" />
         {/* Assignee avatar / assign button */}
         {vis.assignee && (assignableMembers && workspaceId ? (

@@ -1,0 +1,116 @@
+package model
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// Trigger type constants.
+const (
+	TriggerStoryStateEntered = "story.state_entered"
+	TriggerAgentRunApproved  = "agent_run.approved"
+)
+
+// Action type constants.
+const (
+	ActionRunAgent    = "run_agent"
+	ActionMoveToState = "move_to_state"
+	ActionMergeBranch = "merge_branch"
+)
+
+// AutomationRule represents a user-configured trigger → action mapping.
+type AutomationRule struct {
+	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name          string          `json:"name" gorm:"not null"`
+	Description   *string         `json:"description"`
+	Enabled       bool            `json:"enabled" gorm:"not null;default:true"`
+	TeamID        *string         `json:"team_id" gorm:"type:uuid;index"`
+	WorkflowID    *string         `json:"workflow_id" gorm:"type:uuid;index"`
+	TriggerType   string          `json:"trigger_type" gorm:"not null"`
+	TriggerConfig json.RawMessage `json:"trigger_config" gorm:"type:jsonb;not null;default:'{}'"`
+	ActionType    string          `json:"action_type" gorm:"not null"`
+	ActionConfig  json.RawMessage `json:"action_config" gorm:"type:jsonb;not null;default:'{}'"`
+	Position      int             `json:"position" gorm:"not null;default:0"`
+	StopOnMatch   bool            `json:"stop_on_match" gorm:"not null;default:false"`
+	CreatedBy     *string         `json:"created_by" gorm:"type:uuid"`
+	CreatedAt     time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt     time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (AutomationRule) TableName() string { return "automation_rules" }
+
+// Trigger config shapes (deserialized from JSONB).
+
+// TriggerConfigStateEntered holds config for story.state_entered triggers.
+type TriggerConfigStateEntered struct {
+	StateID string `json:"state_id"`
+}
+
+// TriggerConfigRunApproved holds config for agent_run.approved triggers.
+type TriggerConfigRunApproved struct {
+	StateID string `json:"state_id"`
+}
+
+// Action config shapes (deserialized from JSONB).
+
+// ActionConfigRunAgent holds config for run_agent actions.
+type ActionConfigRunAgent struct {
+	AgentID string `json:"agent_id"`
+}
+
+// ActionConfigMoveToState holds config for move_to_state actions.
+type ActionConfigMoveToState struct {
+	TargetStateID string `json:"target_state_id"`
+}
+
+// ActionConfigMergeBranch holds config for merge_branch actions.
+type ActionConfigMergeBranch struct {
+	TargetBranch string `json:"target_branch"`
+}
+
+// CreateAutomationRuleRequest is the payload for creating a rule.
+type CreateAutomationRuleRequest struct {
+	WorkspaceID   string          `json:"workspace_id"`
+	Name          string          `json:"name"`
+	Description   *string         `json:"description"`
+	TeamID        *string         `json:"team_id"`
+	WorkflowID    *string         `json:"workflow_id"`
+	TriggerType   string          `json:"trigger_type"`
+	TriggerConfig json.RawMessage `json:"trigger_config"`
+	ActionType    string          `json:"action_type"`
+	ActionConfig  json.RawMessage `json:"action_config"`
+	Position      *int            `json:"position"`
+	StopOnMatch   *bool           `json:"stop_on_match"`
+}
+
+// UpdateAutomationRuleRequest is the payload for updating a rule.
+type UpdateAutomationRuleRequest struct {
+	Name          *string          `json:"name"`
+	Description   *string          `json:"description"`
+	Enabled       *bool            `json:"enabled"`
+	TriggerType   *string          `json:"trigger_type"`
+	TriggerConfig *json.RawMessage `json:"trigger_config"`
+	ActionType    *string          `json:"action_type"`
+	ActionConfig  *json.RawMessage `json:"action_config"`
+	Position      *int             `json:"position"`
+	StopOnMatch   *bool            `json:"stop_on_match"`
+}
+
+// AutomationEvent is the internal event emitted to the rule engine.
+type AutomationEvent struct {
+	WorkspaceID string
+	TriggerType string
+	StoryID     string
+	StateID     string
+	AgentID     string
+	RunID       string
+}
+
+// RuleExecutionContext tracks chain depth and prevents loops.
+type RuleExecutionContext struct {
+	OriginEventID string
+	Depth         int
+	MaxDepth      int
+	FiredRuleIDs  []string
+}

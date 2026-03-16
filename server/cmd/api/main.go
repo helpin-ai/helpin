@@ -178,6 +178,7 @@ func main() {
 		&model.PMExternalLink{},
 		&model.PMView{},
 		&model.PMAutomation{},
+		&model.AutomationRule{},
 		&model.WorkspaceInvitation{},
 		&model.InvitationTeamPreassignment{},
 		&model.PMTeamEstimateSettings{},
@@ -356,6 +357,7 @@ func main() {
 	pmExternalLinkRepo := repository.NewPMExternalLinkRepository(db)
 	pmViewRepo := repository.NewPMViewRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
+	automationRuleRepo := repository.NewAutomationRuleRepository(db)
 	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
@@ -495,6 +497,24 @@ func main() {
 		wsPublisher,
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
 
+	// Automation Rule Engine — wired after agent + story services to break circular deps.
+	ruleEngine := service.NewAutomationRuleEngine(
+		automationRuleRepo,
+		pmStoryRepo,
+		pmWorkflowRepo,
+		storyDeliveryTargetRepo,
+		gitService,
+		notificationService,
+		pmActivityService,
+		wsPublisher,
+	)
+	ruleEngine.SetAgentService(agentService)
+	ruleEngine.SetStoryService(pmStoryService)
+	ruleEngine.SetHealthObserver(automationHealthService)
+	pmStoryService.SetRuleEngine(ruleEngine)
+	pmStoryService.SetAgentService(agentService)
+	agentService.SetRuleEngine(ruleEngine)
+
 	// Log orchestration availability.
 	if cfg.AnthropicAPIKey != "" {
 		slog.Info("Anthropic API configured — orchestration enabled")
@@ -572,7 +592,7 @@ func main() {
 	goalService := service.NewRewardGoalService(goalRepo)
 	bonusService := service.NewRewardBonusService(bonusRepo, scoringRepo)
 	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
-	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, agentRepo, agentRunRepo, automationHealthRepo, agentService)
+	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
 	auditService := service.NewRewardAuditService(bonusRepo)
 	draftService := service.NewRewardDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
@@ -617,6 +637,7 @@ func main() {
 		PMView:             handler.NewPMViewHandler(pmViewService),
 		Search:             handler.NewSearchHandler(searchService),
 		PMAutomation:       handler.NewPMAutomationHandler(pmAutomationService),
+		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
 		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
 		Agent:              handler.NewAgentHandler(agentService),
 		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),

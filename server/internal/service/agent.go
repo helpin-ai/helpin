@@ -50,6 +50,7 @@ type AgentService struct {
 	storyService     *PMStoryService
 	activitySvc      *PMActivityService
 	wsPublisher      *websocket.Publisher
+	ruleEngine       *AutomationRuleEngine
 	anthropicAPIKey  string
 	openAIAPIKey     string
 	openRouterAPIKey string
@@ -106,6 +107,12 @@ func (s *AgentService) SetModelProviderConfig(anthropicAPIKey, openAIAPIKey, ope
 	s.anthropicAPIKey = strings.TrimSpace(anthropicAPIKey)
 	s.openAIAPIKey = strings.TrimSpace(openAIAPIKey)
 	s.openRouterAPIKey = strings.TrimSpace(openRouterAPIKey)
+	return s
+}
+
+// SetRuleEngine sets the automation rule engine (breaks circular dependency).
+func (s *AgentService) SetRuleEngine(engine *AutomationRuleEngine) *AgentService {
+	s.ruleEngine = engine
 	return s
 }
 
@@ -401,7 +408,7 @@ func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, stor
 
 	s.publishSimpleEvent("updated", "story", storyID, workspaceID, actorID)
 
-	if agent.AgentKind == "llm" && agent.TriggerMode == "auto_on_assignment" {
+	if agent.AgentKind == "llm" {
 		if _, err := s.RunAgent(ctx, workspaceID, storyID, actorID); err != nil {
 			if errors.Is(err, ErrStoryDeliveryTargetRequired) {
 				return nil
@@ -641,6 +648,21 @@ func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actor
 	}
 	_ = s.runEngine.SignalApprove(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
 	s.publishRunEvent(run, actorID)
+
+	// Evaluate automation rules for the run approval event
+	if s.ruleEngine != nil && run.TargetType == "story" && run.StoryID != nil {
+		story, storyErr := s.storyRepo.GetRawByID(ctx, *run.StoryID)
+		if storyErr == nil && story != nil {
+			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
+				WorkspaceID: run.WorkspaceID,
+				TriggerType: model.TriggerAgentRunApproved,
+				StoryID:     story.ID,
+				StateID:     story.WorkflowStateID,
+				AgentID:     run.AgentID,
+				RunID:       run.ID,
+			}, nil)
+		}
+	}
 
 	return run, nil
 }

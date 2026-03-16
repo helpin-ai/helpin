@@ -17,22 +17,20 @@ This phase does **not** change automation runtime behavior or replace existing w
 
 ## Current taxonomy
 
-The implementation follows the approved simplified model:
+The implementation follows the two-kind model:
 
 - `built_in_automation`
   - CRM buyer signal ingestion
   - CRM contact summary refresh
   - CRM deal summary refresh
   - PM epic/sprint deterministic rules
-- `contextual_agent`
-  - PM planner
-  - PM engineer
-  - PM reviewer
-  - support agent
-- `custom_automation`
-  - represented only as a placeholder group in this phase
+- `automation_rule`
+  - User-configured trigger → action rules
+  - Stage-based agent pipelines
 
-PM rules are **not** a separate top-level kind. They are built-in automations with workspace/team governance metadata.
+PM rules are **not** automation rules. They are built-in automations with workspace/team governance metadata that operate on epic/sprint entities.
+
+Agents (`product_planner`, `engineer`, `reviewer`, `support`) are executors referenced by `run_agent` actions in automation rules, not a separate taxonomy kind. They are still configured at `/pm/agents`.
 
 ## Architecture
 
@@ -129,23 +127,22 @@ This implementation uses the following trigger shapes:
 - `manual`
 - `assignment_event`
 - `cron`
+- `story.state_entered`
+- `agent_run.approved`
 - `internal_domain_hook`
 
-The first three are standardized shared trigger shapes. `internal_domain_hook` describes current runtime reality for CRM and PM built-ins where execution is triggered by module-internal events (e.g., email sync completion, story state change). It is not a claim that a shared event contract exists yet.
+The first three are standardized shared trigger shapes for agents and built-ins. `story.state_entered` and `agent_run.approved` are event-driven triggers for automation rules. `internal_domain_hook` describes current runtime reality for CRM and PM built-ins where execution is triggered by module-internal events (e.g., email sync completion, story state change).
 
-There is still **no** generic shared event catalog in this phase.
+The automation rules engine provides purpose-built event triggers, but there is no generic cross-app event bus.
 
 ## Current UI behavior
 
-The new settings page is intentionally read-only.
-
-It shows:
+The settings page is a **read-only dashboard** that shows two primary groups:
 
 - `Built-in Automations`
-- `Contextual Agents`
-- `Custom Automations`
+- `Automation Rules`
 
-For each real workspace item it shows:
+For each item it shows:
 
 - title and kind
 - module/group
@@ -157,19 +154,31 @@ For each real workspace item it shows:
 - output surface
 - current write/run surface
 
-The page links out to the current source-of-truth write surfaces instead of trying to replace them:
+The page links out to the source-of-truth write/config surfaces:
 
 - PM agents -> `/pm/agents`
 - PM built-ins -> PM settings automations
 - CRM built-ins -> CRM settings email/accounts surfaces
+- Automation rules -> Settings > Teams > Workflow pipeline builder
 
-## What this phase explicitly does not do
+**Design decision**: The AI & Automations page intentionally does NOT provide inline CRUD for automation rules. Configuration surfaces are domain-specific — the pipeline builder for PM workflow automation, CRM settings for signal automation, etc. A generic rules management UI was evaluated and rejected because different automation domains have fundamentally different configuration needs that a single form cannot serve well. See `docs/automation-taxonomy-rfc.md` for the full rationale.
 
-- no runtime migration
-- no shared config write model
-- no generic event bus
-- no custom automation builder
-- no replacement of PM agents or PM settings as write surfaces
+### Pipeline builder
+
+The primary configuration surface for automation rules is the pipeline builder, embedded in the Settings > Teams > Workflow dialog. It shows:
+
+- workflow states laid out left-to-right
+- agent assignment dropdowns per state (creates `story.state_entered` + `run_agent` rules)
+- auto-advance toggles (creates `agent_run.approved` + `move_to_state` rules)
+- merge branch inputs (creates `story.state_entered` + `merge_branch` rules)
+
+### Kanban board indicators
+
+States with `run_agent` rules show a bot icon in column headers. Stories with assigned agents show a bot badge on cards.
+
+### Story detail pipeline indicator
+
+When a workflow has automation rules, the story detail panel shows a horizontal pipeline step indicator with completed, current, and pending stages.
 
 ## Main files
 
@@ -177,24 +186,26 @@ Backend:
 
 - `server/internal/automationcatalog/registry.go`
 - `server/internal/model/automation.go`
+- `server/internal/model/automation_rule.go`
 - `server/internal/repository/automation_health.go`
+- `server/internal/repository/automation_rule.go`
 - `server/internal/service/automation_inventory.go`
+- `server/internal/service/automation_rule_engine.go`
 - `server/internal/handler/settings.go`
+- `server/internal/handler/automation_rule.go`
+- `server/migrations/042_automation_rules.sql`
 
 Frontend:
 
 - `frontend/src/components/settings/AIAutomationsTab.tsx`
+- `frontend/src/components/settings/PipelineBuilder.tsx`
+- `frontend/src/components/settings/TeamsTab.tsx`
+- `frontend/src/components/pm/KanbanBoard.tsx`
+- `frontend/src/components/pm/StoryDetailPanel.tsx`
+- `frontend/src/components/pm/StoryCard.tsx`
+- `frontend/src/components/pm/StoryListView.tsx`
+- `frontend/src/lib/services/automationRuleService.ts`
 - `frontend/src/pages/Settings.tsx`
 - `frontend/src/components/layout/Sidebar.tsx`
 - `frontend/src/lib/services/settingsService.ts`
 - `frontend/src/hooks/queries/useSettings.ts`
-
-## Next likely phase
-
-The next implementation step after this inventory slice should be:
-
-- code-registry refinements if needed
-- adapter-backed inventory/health improvements
-- optional diagnostics deep links
-
-It should **not** jump straight to a shared write surface or a generic automation builder.

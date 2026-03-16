@@ -4,6 +4,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
   Archive,
   ArrowRightLeft,
+  Bot,
   CalendarDays,
   Check,
   CheckSquare,
@@ -72,7 +73,7 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
+import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { CommentThread } from '@/components/pm/CommentThread';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
@@ -466,6 +467,22 @@ function StoryDetailPanelBody({
   // ── Copy link ──────────────────────────────────────────────────
   const copyLink = () => copyText(window.location.href);
 
+  // ── Pipeline automation rules ──────────────────────────────────
+  const workflowId = states[0]?.workflow_id;
+  const { data: pipelineRules } = useAutomationRulesByWorkflow(workspaceId, workflowId);
+  const automatedStateIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!pipelineRules) return ids;
+    for (const rule of pipelineRules) {
+      if (rule.enabled && rule.trigger_type === 'story.state_entered' && rule.action_type === 'run_agent') {
+        const stateId = rule.trigger_config?.state_id;
+        if (stateId) ids.add(stateId);
+      }
+    }
+    return ids;
+  }, [pipelineRules]);
+  const hasPipeline = automatedStateIds.size > 0;
+
   // ── Derived data ───────────────────────────────────────────────
   const currentState = useMemo(
     () => states.find((s) => s.id === form.workflow_state_id),
@@ -624,6 +641,42 @@ function StoryDetailPanelBody({
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_280px]">
         {/* ── Left column (main content) ────────────────────────── */}
         <div className="min-h-0 overflow-y-auto px-8 py-5 pb-40">
+          {/* Pipeline step indicator */}
+          {hasPipeline && (
+            <div className="mb-4 flex items-center gap-0">
+              {states.map((state, idx) => {
+                const currentIdx = states.findIndex((s) => s.id === form.workflow_state_id);
+                const isPast = idx < currentIdx;
+                const isCurrent = idx === currentIdx;
+                const isAutomated = automatedStateIds.has(state.id);
+                return (
+                  <div key={state.id} className="flex items-center">
+                    {idx > 0 && (
+                      <div className={`h-[2px] w-4 ${isPast || isCurrent ? 'bg-primary' : 'bg-border'}`} />
+                    )}
+                    <QuickTooltip label={`${state.name}${isAutomated ? ' (automated)' : ''}`}>
+                      <div className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${
+                        isCurrent
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : isPast
+                            ? 'border-primary bg-primary/20 text-primary'
+                            : 'border-border bg-background text-muted-foreground'
+                      }`}>
+                        {isPast ? (
+                          <Check className="h-2.5 w-2.5" />
+                        ) : isAutomated ? (
+                          <Bot className="h-2.5 w-2.5" />
+                        ) : (
+                          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                        )}
+                      </div>
+                    </QuickTooltip>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* Title */}
           <input
             type="text"
@@ -741,15 +794,6 @@ function StoryDetailPanelBody({
               memberNameMap={memberNameMap}
             />
           </div>
-
-          {/* Delivery */}
-          {hasGitIntegration && fieldVis.delivery && (
-            <StoryDeliveryPanel
-              workspaceId={workspaceId}
-              storyDetail={storyDetail}
-              onStoryUpdated={onStoryUpdated}
-            />
-          )}
 
           {/* Git Links & Agent Runs */}
           {hasGitIntegration && fieldVis.dev_history && (
@@ -1028,6 +1072,17 @@ function StoryDetailPanelBody({
             workspaceId={workspaceId}
             includeStoryRelationships={false}
           />
+
+          {/* Delivery */}
+          {hasGitIntegration && fieldVis.delivery && (
+            <div className="mt-4">
+              <StoryDeliveryPanel
+                workspaceId={workspaceId}
+                storyDetail={storyDetail}
+                onStoryUpdated={onStoryUpdated}
+              />
+            </div>
+          )}
         </aside>
       </div>
 

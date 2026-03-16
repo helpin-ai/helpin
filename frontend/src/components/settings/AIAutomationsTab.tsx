@@ -48,8 +48,8 @@ function getContextInfo(item: AutomationInventoryItem): string | null {
     if (lastSuccess !== '--') return lastSuccess;
     return null;
   }
-  // Agents: show last run status + time
-  if (item.kind === 'contextual_agent') {
+  // Automation rules: show trigger/action info
+  if (item.kind === 'automation_rule') {
     const status = item.health.status !== 'unknown' ? item.health.status : null;
     const lastSeen = relativeTime(item.health.last_seen_at);
     if (status && lastSeen !== '--') return `${status} · ${lastSeen}`;
@@ -71,7 +71,7 @@ interface SubgroupDef {
 const SUBGROUPS: SubgroupDef[] = [
   { label: 'CRM system intelligence', filter: (i) => i.module === 'crm' && i.kind === 'built_in_automation' },
   { label: 'PM built-in rules', filter: (i) => i.module === 'pm' && i.kind === 'built_in_automation' },
-  { label: 'PM & Support agents', filter: (i) => i.kind === 'contextual_agent' },
+  { label: 'Automation rules', filter: (i) => i.kind === 'automation_rule' },
 ];
 
 // ── Row component ──
@@ -247,21 +247,21 @@ export function AIAutomationsTab({ workspaceId }: { workspaceId: string }) {
         </Card>
       )}
 
-      {/* Agents card */}
-      {subgroups.some((sg) => sg.items.some((i) => i.kind === 'contextual_agent')) && (
+      {/* Automation rules */}
+      {subgroups.some((sg) => sg.items.some((i) => i.kind === 'automation_rule')) && (
         <Card className={LINEAR_CARD_CLASS}>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Contextual Agents</CardTitle>
+              <CardTitle className="text-base">Automation Rules</CardTitle>
               <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {items.filter((i) => i.kind === 'contextual_agent').length}
+                {items.filter((i) => i.kind === 'automation_rule').length}
               </span>
             </div>
           </CardHeader>
           <CardContent className="px-0 pb-2">
             {subgroups
-              .filter((sg) => sg.items.some((i) => i.kind === 'contextual_agent'))
+              .filter((sg) => sg.items.some((i) => i.kind === 'automation_rule'))
               .map((sg) => (
                 <div key={sg.label}>
                   <div className="px-6 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -269,7 +269,7 @@ export function AIAutomationsTab({ workspaceId }: { workspaceId: string }) {
                   </div>
                   <div className="divide-y divide-border/50">
                     {sg.items
-                      .filter((i) => i.kind === 'contextual_agent')
+                      .filter((i) => i.kind === 'automation_rule')
                       .map((item) => (
                         <AutomationRow key={item.inventory_id} item={item} slug={slug} />
                       ))}

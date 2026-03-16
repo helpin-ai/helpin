@@ -70,6 +70,7 @@ type Handlers struct {
 	CRMWritingProfile  *handler.CRMWritingProfileHandler
 	CRMSearch          *handler.CRMSearchHandler
 	CRMDealAutomation  *handler.CRMDealAutomationHandler
+	AutomationRule     *handler.AutomationRuleHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -550,6 +551,17 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/automations", h.PMAutomation.List)
 				r.With(requirePerm(authorization.PermPMAdminAutomations)).Put("/automations", h.PMAutomation.Upsert)
 				r.With(requirePerm(authorization.PermPMAdminAutomations)).Delete("/automations", h.PMAutomation.Delete)
+
+				// Automation Rules — pm.admin.automations
+				r.Route("/automation-rules", func(r chi.Router) {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.AutomationRule.List)
+					r.With(requirePerm(authorization.PermPMAdminAutomations)).Post("/", h.AutomationRule.Create)
+					r.Route("/{ruleId}", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.AutomationRule.Get)
+						r.With(requirePerm(authorization.PermPMAdminAutomations)).Put("/", h.AutomationRule.Update)
+						r.With(requirePerm(authorization.PermPMAdminAutomations)).Delete("/", h.AutomationRule.Delete)
+					})
+				})
 
 				// Associations (PM-side) — pm.edit
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/associations", h.CRMAssociation.Create)

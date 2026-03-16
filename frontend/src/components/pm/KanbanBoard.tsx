@@ -11,7 +11,7 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { BarChart3, Columns2, LayoutList, Loader2, Maximize2, Minimize2, Plus, StickyNote, User } from 'lucide-react';
+import { BarChart3, Bot, Columns2, LayoutList, Loader2, Maximize2, Minimize2, Plus, StickyNote, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
@@ -26,7 +26,7 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useAuthStore } from '@/stores/authStore';
-import { useSession } from '@/hooks/queries';
+import { useSession, useAutomationRulesByWorkflow } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { StoryCard } from './StoryCard';
 import { CreateStoryModal } from './CreateStoryModal';
@@ -57,11 +57,12 @@ interface ColumnProps {
   onPriorityChanged: (story: Story) => void;
   onSeverityChanged: (story: Story) => void;
   onEstimateChanged: (story: Story) => void;
+  automatedStateIds?: Set<string>;
   onLoadMore: (stateId: string) => void;
   isLoadingMore: boolean;
 }
 
-function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore }: ColumnProps) {
+function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore, automatedStateIds }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -98,6 +99,9 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
         )}
         <Maximize2 className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
+        {automatedStateIds?.has(column.state.id) && (
+          <Bot className="mb-1 h-3.5 w-3.5 shrink-0 text-violet-500" />
+        )}
         <span className="text-xs font-medium text-muted-foreground">{column.story_count}</span>
         <div className="mt-3 flex flex-1 items-start">
           <span
@@ -124,12 +128,22 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
               <p className="flex items-center gap-1.5 truncate text-sm font-semibold cursor-default">
                 <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
                 {column.state.name}
+                {automatedStateIds?.has(column.state.id) && (
+                  <QuickTooltip label="Agent runs automatically on entry">
+                    <Bot className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                  </QuickTooltip>
+                )}
               </p>
             </QuickTooltip>
           ) : (
             <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
               <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
               {column.state.name}
+              {automatedStateIds?.has(column.state.id) && (
+                <QuickTooltip label="Agent runs automatically on entry">
+                  <Bot className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                </QuickTooltip>
+              )}
             </p>
           )}
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
@@ -431,6 +445,20 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const initDisplay = useBoardDisplayStore((s) => s.init);
 
   useEffect(() => { initDisplay(workspaceId); }, [workspaceId, initDisplay]);
+
+  // Fetch automation rules to show bot icons on columns with run_agent actions
+  const { data: automationRules } = useAutomationRulesByWorkflow(workspaceId, workflow?.workflow.id);
+  const automatedStateIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!automationRules) return ids;
+    for (const rule of automationRules) {
+      if (rule.enabled && rule.trigger_type === 'story.state_entered' && rule.action_type === 'run_agent') {
+        const stateId = rule.trigger_config?.state_id;
+        if (stateId) ids.add(stateId);
+      }
+    }
+    return ids;
+  }, [automationRules]);
 
   // Load member board when groupBy switches to 'members'
   const activeMemberIds = useMemo(() => assignableMembers.filter((m) => m.status === 'active').map((m) => m.id), [assignableMembers]);
@@ -859,6 +887,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                     onEstimateChanged={handleStoryPatched}
                     onLoadMore={loadMoreColumn}
                     isLoadingMore={!!columnLoading[column.state.id]}
+                    automatedStateIds={automatedStateIds}
                   />
                 ))
               )}

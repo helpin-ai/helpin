@@ -11,14 +11,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 )
-
-type staticAgentHealthProvider struct{}
-
-func (staticAgentHealthProvider) GetRunnerHealth(context.Context, string) temporalapp.RunnerHealth {
-	return temporalapp.RunnerHealth{}
-}
 
 func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	t.Parallel()
@@ -134,6 +127,24 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE automation_rules (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			enabled BOOLEAN NOT NULL DEFAULT 1,
+			team_id TEXT,
+			workflow_id TEXT,
+			trigger_type TEXT NOT NULL,
+			trigger_config TEXT NOT NULL DEFAULT '{}',
+			action_type TEXT NOT NULL,
+			action_config TEXT NOT NULL DEFAULT '{}',
+			position INTEGER NOT NULL DEFAULT 0,
+			stop_on_match BOOLEAN NOT NULL DEFAULT 0,
+			created_by TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE automation_health_snapshots (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -209,10 +220,8 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		repository.NewSettingsRepository(db),
 		repository.NewPMAutomationRepository(db),
 		repository.NewCRMEmailRepository(db),
-		repository.NewAgentRepository(db),
-		repository.NewAgentRunRepository(db),
 		repository.NewAutomationHealthRepository(db),
-		staticAgentHealthProvider{},
+		repository.NewAutomationRuleRepository(db),
 	)
 
 	result, err := svc.GetWorkspaceInventory(ctx, workspaceID)
@@ -220,8 +229,8 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		t.Fatalf("get inventory: %v", err)
 	}
 
-	if len(result.Groups) != 3 {
-		t.Fatalf("expected 3 inventory groups, got %d", len(result.Groups))
+	if len(result.Groups) != 2 {
+		t.Fatalf("expected 2 inventory groups, got %d", len(result.Groups))
 	}
 
 	itemsByCatalog := make(map[string][]model.AutomationInventoryItem)
