@@ -140,11 +140,13 @@ type CreateStoryRequest struct {
 	Position          *int       `json:"position"`
 	Blocked           *bool      `json:"blocked"`
 	Blocker           *string    `json:"blocker"`
-	TemplateID        *string    `json:"template_id"`
-	ExternalID        *string    `json:"external_id"`
-	OwnerIDs          []string   `json:"owner_ids"`
-	FollowerIDs       []string   `json:"follower_ids"`
-	LabelIDs          []string   `json:"label_ids"`
+	TemplateID        *string                      `json:"template_id"`
+	ExternalID        *string                      `json:"external_id"`
+	OwnerIDs          []string                     `json:"owner_ids"`
+	FollowerIDs       []string                     `json:"follower_ids"`
+	LabelIDs          []string                     `json:"label_ids"`
+	ChecklistItems    []CreateChecklistItemRequest  `json:"checklist_items,omitempty"`
+	ExternalLinks     []CreateExternalLinkRequest  `json:"external_links,omitempty"`
 }
 
 // UpdateStoryRequest is the payload for updating a story.

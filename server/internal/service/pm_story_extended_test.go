@@ -69,7 +69,7 @@ func newStoryTestEnv(t *testing.T) storyTestEnv {
 	activityService := NewPMActivityService(activityRepo)
 
 	// wsPublisher is nil-safe (Publish is a no-op on nil receiver).
-	svc := NewPMStoryService(storyRepo, workspaceRepo, workflowRepo, labelRepo, activityService, nil, nil, nil, nil)
+	svc := NewPMStoryService(storyRepo, workspaceRepo, workflowRepo, labelRepo, nil, nil, activityService, nil, nil, nil, nil)
 
 	return storyTestEnv{
 		svc:    svc,

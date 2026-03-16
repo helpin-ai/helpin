@@ -1240,49 +1240,35 @@ func (r *SettingsRepository) UpsertTeamFieldVisibility(ctx context.Context, team
 	}
 
 	if existing == nil {
-		s := &model.PMTeamFieldVisibility{
-			TeamID:    teamID,
-			Priority:  true,
-			StoryType: true,
-			Severity:  true,
-			Labels:    true,
-			Epic:      true,
-			Sprint:    true,
-			Estimate:  true,
-			DueDate:   true,
-			Blocked:   true,
+		boolVal := func(p *bool, fallback bool) bool {
+			if p != nil {
+				return *p
+			}
+			return fallback
 		}
-		if req.Priority != nil {
-			s.Priority = *req.Priority
+		row := map[string]interface{}{
+			"team_id":     teamID,
+			"priority":    boolVal(req.Priority, true),
+			"story_type":  boolVal(req.StoryType, true),
+			"severity":    boolVal(req.Severity, true),
+			"labels":      boolVal(req.Labels, true),
+			"epic":        boolVal(req.Epic, true),
+			"sprint":      boolVal(req.Sprint, true),
+			"estimate":    boolVal(req.Estimate, true),
+			"due_date":    boolVal(req.DueDate, true),
+			"blocked":     boolVal(req.Blocked, true),
+			"delivery":    boolVal(req.Delivery, true),
+			"dev_history": boolVal(req.DevHistory, true),
 		}
-		if req.StoryType != nil {
-			s.StoryType = *req.StoryType
-		}
-		if req.Severity != nil {
-			s.Severity = *req.Severity
-		}
-		if req.Labels != nil {
-			s.Labels = *req.Labels
-		}
-		if req.Epic != nil {
-			s.Epic = *req.Epic
-		}
-		if req.Sprint != nil {
-			s.Sprint = *req.Sprint
-		}
-		if req.Estimate != nil {
-			s.Estimate = *req.Estimate
-		}
-		if req.DueDate != nil {
-			s.DueDate = *req.DueDate
-		}
-		if req.Blocked != nil {
-			s.Blocked = *req.Blocked
-		}
-		if err := r.db.WithContext(ctx).Create(s).Error; err != nil {
+		if err := r.db.WithContext(ctx).Model(&model.PMTeamFieldVisibility{}).Create(row).Error; err != nil {
 			return nil, fmt.Errorf("create team field visibility: %w", err)
 		}
-		return s, nil
+		// Fetch the created record to return
+		created, err := r.GetTeamFieldVisibility(ctx, teamID)
+		if err != nil {
+			return nil, err
+		}
+		return created, nil
 	}
 
 	updates := map[string]interface{}{}
@@ -1312,6 +1298,12 @@ func (r *SettingsRepository) UpsertTeamFieldVisibility(ctx context.Context, team
 	}
 	if req.Blocked != nil {
 		updates["blocked"] = *req.Blocked
+	}
+	if req.Delivery != nil {
+		updates["delivery"] = *req.Delivery
+	}
+	if req.DevHistory != nil {
+		updates["dev_history"] = *req.DevHistory
 	}
 
 	if len(updates) > 0 {

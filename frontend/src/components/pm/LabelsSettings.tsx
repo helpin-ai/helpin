@@ -44,7 +44,7 @@ export function StatCell({ done, total, entity }: { done: number; total: number;
   );
 }
 
-function LabelRow({
+function LabelCard({
   entry,
   onEdit,
   onDelete,
@@ -57,45 +57,43 @@ function LabelRow({
 }) {
   const { label, stats } = entry;
   return (
-    <div className="flex items-center gap-4 rounded-lg border border-border/60 bg-muted/30 px-3.5 py-3 mb-2 last:mb-0 hover:bg-muted/50 transition-colors">
-      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+    <div className="group relative flex flex-col gap-2.5 rounded-lg border border-border/60 bg-background p-3.5 transition-colors hover:border-border hover:bg-muted/30">
+      <div className="flex items-start gap-2.5">
         <span
-          className="h-3 w-3 rounded-full shrink-0"
+          className="mt-0.5 h-3.5 w-3.5 rounded-full shrink-0 ring-2 ring-background"
           style={{ backgroundColor: label.color || '#64748b' }}
         />
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-foreground">{label.name}</span>
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              {label.team_id ? 'Team' : 'Shared'}
-            </span>
-          </div>
+        <div className="min-w-0 flex-1">
+          <span className="text-sm font-medium text-foreground">{label.name}</span>
           {label.description && (
-            <p className="text-xs text-muted-foreground truncate">{label.description}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{label.description}</p>
           )}
         </div>
+        {editable && (
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onEdit}
+            >
+              <Pencil className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
       </div>
-      <StatCell done={stats.done_story_count} total={stats.story_count} entity="Stories" />
-      <StatCell done={stats.done_epic_count} total={stats.epic_count} entity="Epics" />
-      {editable && (
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={onEdit}
-          >
-            <Pencil className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="text-muted-foreground hover:text-destructive"
-            onClick={onDelete}
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </div>
+      {stats.story_count > 0 && (
+        <span className="text-[11px] text-muted-foreground">
+          {stats.story_count} total, {stats.done_story_count} completed
+        </span>
       )}
     </div>
   );
@@ -258,6 +256,17 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
     if (error) reload();
   };
 
+  // Group labels: shared first, then by team
+  const teamMap = new Map(teams.map((t) => [t.id, t.name]));
+  const shared = labels.filter((e) => !e.label.team_id);
+  const byTeam = new Map<string, LabelWithStats[]>();
+  for (const entry of labels) {
+    if (!entry.label.team_id) continue;
+    const existing = byTeam.get(entry.label.team_id) ?? [];
+    existing.push(entry);
+    byTeam.set(entry.label.team_id, existing);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -268,22 +277,8 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Select value={scopeFilter} onValueChange={setScopeFilter}>
-          <SelectTrigger className="h-8 w-[220px] text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-              <SelectItem value="__all__">All labels</SelectItem>
-            <SelectItem value="__shared__">All teams</SelectItem>
-            {teams.map((team) => (
-              <SelectItem key={team.id} value={team.id}>
-                {team.name} labels
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {editable && (
+      {editable && (
+        <div className="flex items-center">
           <Button
             variant="outline"
             size="sm"
@@ -296,8 +291,8 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
             <Plus className="h-3.5 w-3.5" />
             Add label
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       <Dialog
         open={labelDialogOpen}
@@ -325,77 +320,98 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
         </DialogContent>
       </Dialog>
 
-      <div>
-        {labels.length === 0 && !labelDialogOpen && (
-          <div className="flex flex-col items-center gap-3 py-12 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <Tag className="h-6 w-6 text-muted-foreground/60" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-foreground">No labels yet</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Labels help you categorize and filter stories across your workspace.
-              </p>
-            </div>
-            {editable && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setLabelDialogOpen(true);
-                  setEditingId(null);
-                }}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Create your first label
-              </Button>
-            )}
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Delete label</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete{' '}
+            <span className="font-medium text-foreground">
+              {labels.find((e) => e.label.id === deleteConfirmId)?.label.name}
+            </span>
+            ? This will remove it from all stories and epics.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+            <Button variant="destructive" size="sm" onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {labels.length === 0 && !labelDialogOpen && (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+            <Tag className="h-6 w-6 text-muted-foreground/60" />
           </div>
-        )}
-        {labels.map((entry) =>
-          deleteConfirmId === entry.label.id ? (
-            <div
-              key={entry.label.id}
-              className="flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5"
+          <div>
+            <p className="text-sm font-medium text-foreground">No labels yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Labels help you categorize and filter stories across your workspace.
+            </p>
+          </div>
+          {editable && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setLabelDialogOpen(true);
+                setEditingId(null);
+              }}
             >
-              <span
-                className="h-3 w-3 rounded-full shrink-0"
-                style={{ backgroundColor: entry.label.color || '#64748b' }}
-              />
-              <span className="flex-1 text-sm text-foreground">
-                Delete <span className="font-medium">{entry.label.name}</span>?
-              </span>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="destructive"
-                  size="xs"
-                  onClick={() => handleDelete(entry.label.id)}
-                >
-                  Delete
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => setDeleteConfirmId(null)}
-                >
-                  Cancel
-                </Button>
+              <Plus className="h-3.5 w-3.5" />
+              Create your first label
+            </Button>
+          )}
+        </div>
+      )}
+
+      {labels.length > 0 && (
+        <div className="space-y-6">
+          {shared.length > 0 && (
+            <div>
+              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Shared across teams</h4>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {shared.map((entry) => (
+                  <LabelCard
+                    key={entry.label.id}
+                    entry={entry}
+                    editable={editable}
+                    onEdit={() => {
+                      setEditingId(entry.label.id);
+                      setLabelDialogOpen(true);
+                    }}
+                    onDelete={() => setDeleteConfirmId(entry.label.id)}
+                  />
+                ))}
               </div>
             </div>
-          ) : (
-            <LabelRow
-              key={entry.label.id}
-              entry={entry}
-              editable={editable}
-              onEdit={() => {
-                setEditingId(entry.label.id);
-                setLabelDialogOpen(true);
-              }}
-              onDelete={() => setDeleteConfirmId(entry.label.id)}
-            />
-          ),
-        )}
-      </div>
+          )}
+
+          {[...byTeam.entries()].map(([teamId, teamLabels]) => (
+            <div key={teamId}>
+              <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
+                {teamMap.get(teamId) ?? 'Unknown team'}
+              </h4>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {teamLabels.map((entry) => (
+                  <LabelCard
+                    key={entry.label.id}
+                    entry={entry}
+                    editable={editable}
+                    onEdit={() => {
+                      setEditingId(entry.label.id);
+                      setLabelDialogOpen(true);
+                    }}
+                    onDelete={() => setDeleteConfirmId(entry.label.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

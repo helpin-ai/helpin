@@ -3,12 +3,14 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
   ArrowLeft,
+  Bot,
   CalendarDays,
   ChevronRight,
   Hash,
   Heart,
   Layers,
   Loader2,
+  Pencil,
   User,
   Users,
 } from 'lucide-react';
@@ -24,7 +26,7 @@ import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
-import { useWorkflows, useEpicStates } from '@/hooks/queries';
+import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -188,6 +190,11 @@ export function EpicDetailPage() {
   const [pendingPatch, setPendingPatch] = useState<UpdateEpicRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [showOrchestration, setShowOrchestration] = useState(false);
+
+  const { data: access } = useWorkspaceAccess(workspaceId ?? '');
+  const { canEdit } = usePermissions(access);
 
   const { teams, getTeamMembers, findTeamName } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
@@ -404,14 +411,41 @@ export function EpicDetailPage() {
 
           {/* Description */}
           <div className="mt-4">
-            <TiptapEditor
-              content={form.description}
-              onChange={(html) => updateField('description', html, { description: html })}
-              placeholder="Add a description..."
-              className="border-transparent shadow-none"
-              teams={teams}
-              members={assignableMembers}
-            />
+            {editingDescription ? (
+              <div>
+                <TiptapEditor
+                  content={form.description}
+                  onChange={(html) => updateField('description', html, { description: html })}
+                  placeholder="Add a description..."
+                  className="border-transparent shadow-none"
+                  teams={teams}
+                  members={assignableMembers}
+                />
+                <div className="mt-2 flex justify-end">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
+                    Done
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="group/desc relative">
+                {form.description ? (
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: form.description }} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                    onClick={() => setEditingDescription(true)}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Edit description
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <Separator className="my-6" />
@@ -475,13 +509,28 @@ export function EpicDetailPage() {
             )}
           </div>
 
-          {/* Orchestration */}
-          <EpicOrchestrationPanel
-            epic={epic.epic}
-            workspaceId={workspaceId!}
-            workspaceSlug={slug}
-            onStoriesCreated={() => fetchData(false)}
-          />
+          {/* Orchestration — show panel if agent assigned or user opted in */}
+          {epic.epic.orchestrator_agent_id || showOrchestration ? (
+            <EpicOrchestrationPanel
+              epic={epic.epic}
+              workspaceId={workspaceId!}
+              workspaceSlug={slug}
+              onStoriesCreated={() => fetchData(false)}
+            />
+          ) : canEdit ? (
+            <>
+              <Separator className="my-6" />
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setShowOrchestration(true)}
+              >
+                <Bot className="h-3.5 w-3.5" />
+                Assign agent
+              </Button>
+            </>
+          ) : null}
         </div>
 
         {/* ── Right column — metadata sidebar ────────────────────── */}

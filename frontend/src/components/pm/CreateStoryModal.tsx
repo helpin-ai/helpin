@@ -3,14 +3,22 @@ import {
   AlertTriangle,
   CalendarDays,
   Check,
+  CheckSquare,
+  ExternalLink as ExternalLinkIcon,
   FileText,
   Gauge,
+  GripVertical,
   Hash,
   Layers,
   LayoutGrid,
+  Link2,
   Loader2,
+  Paperclip,
+  Plus,
   Sparkles,
   Tag,
+  Trash2,
+  Upload,
   User,
   Users,
   X,
@@ -25,7 +33,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
+import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from "@/lib/pmConstants";
 import type {
   CreateStoryRequest,
   Label,
@@ -51,6 +59,9 @@ import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MemberPickerPopover } from "@/components/pm/MemberPickerPopover";
 import { buildAssignableMemberNameMap } from "@/lib/assignableMembers";
+import { pmAttachmentService } from "@/lib/services/pmAttachmentService";
+import { uploadToS3 } from "@/lib/api";
+import { toast } from "sonner";
 
 interface CreateStoryModalProps {
   open: boolean;
@@ -60,7 +71,7 @@ interface CreateStoryModalProps {
   initialStateId?: string;
   initialTeamId?: string;
   initialOwnerMemberId?: string;
-  onCreate?: (payload: CreateStoryRequest) => Promise<void>;
+  onCreate?: (payload: CreateStoryRequest) => Promise<{ id: string } | void>;
   mode?: 'story' | 'template';
   editingTemplate?: StoryTemplate | null;
   onSaveTemplate?: (template: StoryTemplate) => void;
@@ -69,6 +80,16 @@ interface CreateStoryModalProps {
 const priorityOptions: Priority[] = ["none", "low", "medium", "high", "urgent"];
 const severityOptions: Severity[] = ["none", "minor", "major", "critical"];
 const storyTypeOptions: StoryType[] = ["feature", "bug", "chore"];
+
+interface ChecklistTemplateItem {
+  text: string;
+  position?: number;
+}
+
+interface ExternalLinkItem {
+  url: string;
+  title?: string;
+}
 
 const defaultState = {
   name: "",
@@ -84,6 +105,8 @@ const defaultState = {
   requester_member_id: "",
   deadline: "",
   label_ids: [] as string[],
+  checklist_items: [] as ChecklistTemplateItem[],
+  external_links: [] as ExternalLinkItem[],
 };
 
 // ── Metadata Row ───────────────────────────────────────────────────
@@ -114,12 +137,14 @@ function SidebarPopoverSelect<T extends string>({
   onChange,
   renderTrigger,
   renderOption,
+  optionClassName,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
   renderTrigger: () => React.ReactNode;
   renderOption?: (value: T) => React.ReactNode;
+  optionClassName?: (value: T) => string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -148,7 +173,7 @@ function SidebarPopoverSelect<T extends string>({
               }}
             >
               {renderOption ? renderOption(option.value) : null}
-              <span className="truncate">{option.label}</span>
+              <span className={`truncate ${optionClassName?.(option.value) ?? ''}`}>{option.label}</span>
               {value === option.value && <Check className="ml-auto h-3 w-3 shrink-0" />}
             </button>
           ))}
@@ -173,11 +198,16 @@ export function CreateStoryModal({
 }: CreateStoryModalProps) {
   const isTemplateMode = mode === 'template';
   const [form, setForm] = useState(defaultState);
+  const initialDescRef = useRef('');
   const [stateId, setStateId] = useState(initialStateId ?? '');
   const [createMore, setCreateMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [storyTypeDirty, setStoryTypeDirty] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [showAttachments, setShowAttachments] = useState(false);
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
@@ -208,15 +238,21 @@ export function CreateStoryModal({
         priority: (editingTemplate.priority as Priority) || 'none',
         severity: (editingTemplate.severity as Severity) || 'none',
         estimate: editingTemplate.estimate !== undefined && editingTemplate.estimate !== null ? String(editingTemplate.estimate) : '',
-        epic_id: '',
-        sprint_id: '',
+        epic_id: editingTemplate.epic_id || '',
+        sprint_id: editingTemplate.sprint_id || '',
         team_id: editingTemplate.team_id || initialTeamId || '',
-        owner_member_id: '',
+        owner_member_id: editingTemplate.owner_member_id || '',
         requester_member_id: '',
-        deadline: '',
+        deadline: editingTemplate.deadline || '',
         label_ids: editingTemplate.label_ids ? (() => { try { return JSON.parse(editingTemplate.label_ids!); } catch { return []; } })() : [],
+        checklist_items: editingTemplate.checklist_items ? (() => { try { return JSON.parse(editingTemplate.checklist_items!); } catch { return []; } })() : [],
+        external_links: editingTemplate.external_links ? (() => { try { return JSON.parse(editingTemplate.external_links!); } catch { return []; } })() : [],
       });
       setStoryTypeDirty(true);
+      initialDescRef.current = editingTemplate.description || '';
+      // Auto-open sections that have data
+      if (editingTemplate.checklist_items) { try { if (JSON.parse(editingTemplate.checklist_items).length > 0) setShowChecklist(true); } catch {} }
+      if (editingTemplate.external_links) { try { if (JSON.parse(editingTemplate.external_links).length > 0) setShowExternalLinks(true); } catch {} }
     } else {
       const initialTeam = teamsRef.current.find((team) => team.id === (initialTeamId ?? ''));
       setForm({
@@ -227,9 +263,14 @@ export function CreateStoryModal({
         owner_member_id: initialOwnerMemberId ?? '',
       });
       setStoryTypeDirty(false);
+      initialDescRef.current = '';
     }
     setStateId(initialStateId ?? '');
     setError(null);
+    setPendingFiles([]);
+    setShowChecklist(isTemplateMode);
+    setShowExternalLinks(isTemplateMode);
+    setShowAttachments(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial story type; including it causes form reset on background refetch
   }, [open, initialStateId, initialTeamId, initialOwnerMemberId, currentMemberId, isTemplateMode, editingTemplate]);
 
@@ -245,8 +286,13 @@ export function CreateStoryModal({
     if (!open) return;
     (async () => {
       if (isTemplateMode) {
-        // Template mode only needs labels
-        const labelsRes = await pmLabelService.list(workspaceId);
+        const [epicsRes, sprintsRes, labelsRes] = await Promise.all([
+          pmEpicService.list(workspaceId, { archived: false }),
+          pmSprintService.list(workspaceId, { archived: false }),
+          pmLabelService.list(workspaceId),
+        ]);
+        setEpics(epicsRes.data ?? []);
+        setSprints(sprintsRes.data ?? []);
         setLabels(labelsRes.data ?? []);
       } else {
         const [epicsRes, sprintsRes, labelsRes, templatesRes] = await Promise.all([
@@ -277,8 +323,8 @@ export function CreateStoryModal({
   }, [labels, form.team_id]);
 
   const canSubmit = useMemo(
-    () => form.name.trim().length > 0 && (isTemplateMode || stateId.trim().length > 0),
-    [form.name, stateId, isTemplateMode]
+    () => form.name.trim().length > 0 && form.team_id.trim().length > 0 && (isTemplateMode || stateId.trim().length > 0),
+    [form.name, form.team_id, stateId, isTemplateMode]
   );
 
   const currentStateName = useMemo(
@@ -300,8 +346,8 @@ export function CreateStoryModal({
   }, [form.sprint_id, sprints]);
 
   const currentTeamName = useMemo(() => {
-    if (!form.team_id) return "None";
-    return teams.find((t) => t.id === form.team_id)?.name ?? "None";
+    if (!form.team_id) return "Select team";
+    return teams.find((t) => t.id === form.team_id)?.name ?? "Select team";
   }, [form.team_id, teams]);
 
   const currentOwnerName = useMemo(() => {
@@ -358,6 +404,10 @@ export function CreateStoryModal({
     try {
       if (isTemplateMode) {
         const labelIds = form.label_ids.length > 0 ? JSON.stringify(form.label_ids) : undefined;
+        const filteredChecklist = form.checklist_items.filter((i) => i.text.trim());
+        const filteredLinks = form.external_links.filter((l) => l.url.trim());
+        const checklistJson = filteredChecklist.length > 0 ? JSON.stringify(filteredChecklist) : undefined;
+        const externalLinksJson = filteredLinks.length > 0 ? JSON.stringify(filteredLinks) : undefined;
         const templatePayload = {
           name: form.name.trim(),
           description: form.description.trim() || undefined,
@@ -367,20 +417,28 @@ export function CreateStoryModal({
           estimate: form.estimate ? Number(form.estimate) : undefined,
           team_id: form.team_id || undefined,
           label_ids: labelIds,
+          owner_member_id: form.owner_member_id || undefined,
+          epic_id: form.epic_id || undefined,
+          sprint_id: form.sprint_id || undefined,
+          deadline: form.deadline || undefined,
+          checklist_items: checklistJson,
+          external_links: externalLinksJson,
         };
         if (editingTemplate) {
           const { data, error: err } = await pmStoryTemplateService.update(workspaceId, editingTemplate.id, templatePayload);
           if (err) throw new Error(err);
           if (data && onSaveTemplate) onSaveTemplate(data);
+          toast.success('Template updated');
         } else {
           const { data, error: err } = await pmStoryTemplateService.create({ workspace_id: workspaceId, ...templatePayload });
           if (err) throw new Error(err);
           if (data && onSaveTemplate) onSaveTemplate(data);
+          toast.success('Template created');
         }
         onOpenChange(false);
       } else {
         const { workflowId, workflowStateId } = await resolveSubmitWorkflow();
-        await onCreate!({
+        const result = await onCreate!({
           workspace_id: workspaceId,
           name: form.name.trim(),
           description: form.description.trim() || undefined,
@@ -397,7 +455,31 @@ export function CreateStoryModal({
           requester_member_id: form.requester_member_id || undefined,
           deadline: form.deadline || undefined,
           label_ids: form.label_ids.length > 0 ? form.label_ids : undefined,
+          checklist_items: (() => { const f = form.checklist_items.filter((i) => i.text.trim()); return f.length > 0 ? f : undefined; })(),
+          external_links: (() => { const f = form.external_links.filter((l) => l.url.trim()); return f.length > 0 ? f : undefined; })(),
         });
+
+        // Upload pending files after story creation.
+        if (result?.id && pendingFiles.length > 0) {
+          for (const file of pendingFiles) {
+            try {
+              const { data: initData } = await pmAttachmentService.initiateUpload(workspaceId, {
+                entity_type: 'story',
+                entity_id: result.id,
+                file_name: file.name,
+                file_size: file.size,
+                content_type: file.type || 'application/octet-stream',
+              });
+              if (!initData) continue;
+              const uploadResult = await uploadToS3(initData.url, file, undefined, { 'x-amz-acl': 'public-read' });
+              if (uploadResult.ok) {
+                await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
+              }
+            } catch {
+              // Non-blocking — story already created
+            }
+          }
+        }
 
         if (createMore) {
           const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
@@ -410,6 +492,7 @@ export function CreateStoryModal({
           });
           setStoryTypeDirty(false);
           setStateId(initialStateId ?? '');
+          setPendingFiles([]);
         } else {
           onOpenChange(false);
         }
@@ -438,7 +521,8 @@ export function CreateStoryModal({
     onSaveTemplate,
   ]);
 
-  const hasUnsavedChanges = form.name.trim() !== '' || form.description.trim() !== '';
+  const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
+  const hasUnsavedChanges = form.name.trim() !== '' || stripHtml(form.description) !== stripHtml(initialDescRef.current);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && hasUnsavedChanges) {
@@ -508,6 +592,224 @@ export function CreateStoryModal({
                 </div>
               </div>
 
+              {/* ── Action bar — toggle pills ─────────────────────── */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                    showChecklist
+                      ? 'border-primary/30 bg-primary/10 text-primary'
+                      : 'border-border/60 text-muted-foreground hover:bg-accent'
+                  }`}
+                  onClick={() => setShowChecklist((v) => !v)}
+                >
+                  <CheckSquare className="h-3 w-3" />
+                  Checklist
+                  {form.checklist_items.length > 0 && (
+                    <span className="text-[10px] opacity-70">({form.checklist_items.length})</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                    showExternalLinks
+                      ? 'border-primary/30 bg-primary/10 text-primary'
+                      : 'border-border/60 text-muted-foreground hover:bg-accent'
+                  }`}
+                  onClick={() => setShowExternalLinks((v) => !v)}
+                >
+                  <Link2 className="h-3 w-3" />
+                  External Links
+                  {form.external_links.length > 0 && (
+                    <span className="text-[10px] opacity-70">({form.external_links.length})</span>
+                  )}
+                </button>
+                {!isTemplateMode && (
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      showAttachments
+                        ? 'border-primary/30 bg-primary/10 text-primary'
+                        : 'border-border/60 text-muted-foreground hover:bg-accent'
+                    }`}
+                    onClick={() => setShowAttachments((v) => !v)}
+                  >
+                    <Paperclip className="h-3 w-3" />
+                    Attach Files
+                    {pendingFiles.length > 0 && (
+                      <span className="text-[10px] opacity-70">({pendingFiles.length})</span>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Checklist */}
+              {showChecklist && (
+                <div className="shrink-0 rounded-lg border border-border/60 bg-background">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+                    <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                      <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                      Checklist
+                      {form.checklist_items.length > 0 && (
+                        <span className="text-xs text-muted-foreground font-normal">({form.checklist_items.length})</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-4 py-2 space-y-1">
+                    {form.checklist_items.map((item, idx) => (
+                      <div key={idx} className="group flex items-center gap-2">
+                        <GripVertical className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                        <input
+                          type="text"
+                          value={item.text}
+                          autoFocus={idx === form.checklist_items.length - 1 && item.text === ''}
+                          onChange={(e) => {
+                            const next = [...form.checklist_items];
+                            next[idx] = { ...next[idx], text: e.target.value };
+                            setForm((prev) => ({ ...prev, checklist_items: next }));
+                          }}
+                          placeholder="Item text"
+                          className="flex-1 bg-transparent text-sm py-1 outline-none placeholder:text-muted-foreground/50"
+                        />
+                        <button
+                          type="button"
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
+                          onClick={() => {
+                            const next = form.checklist_items.filter((_, i) => i !== idx);
+                            setForm((prev) => ({ ...prev, checklist_items: next }));
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 cursor-pointer"
+                      onClick={() => {
+                        setForm((prev) => ({
+                          ...prev,
+                          checklist_items: [...prev.checklist_items, { text: '', position: prev.checklist_items.length }],
+                        }));
+                      }}
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add item
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* External Links */}
+              {showExternalLinks && (
+                <div className="shrink-0 rounded-lg border border-border/60 bg-background">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+                    <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                      <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      External Links
+                      {form.external_links.length > 0 && (
+                        <span className="text-xs text-muted-foreground font-normal">({form.external_links.length})</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-4 py-2 space-y-1">
+                    {form.external_links.map((link, idx) => (
+                      <div key={idx} className="group flex items-center gap-2">
+                        <ExternalLinkIcon className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                        <input
+                          type="url"
+                          value={link.url}
+                          autoFocus={idx === form.external_links.length - 1 && link.url === ''}
+                          onChange={(e) => {
+                            const next = [...form.external_links];
+                            next[idx] = { ...next[idx], url: e.target.value };
+                            setForm((prev) => ({ ...prev, external_links: next }));
+                          }}
+                          placeholder="https://..."
+                          className="flex-1 bg-transparent text-sm py-1 outline-none placeholder:text-muted-foreground/50"
+                        />
+                        <button
+                          type="button"
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
+                          onClick={() => {
+                            const next = form.external_links.filter((_, i) => i !== idx);
+                            setForm((prev) => ({ ...prev, external_links: next }));
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 cursor-pointer"
+                      onClick={() => {
+                        setForm((prev) => ({
+                          ...prev,
+                          external_links: [...prev.external_links, { url: '' }],
+                        }));
+                      }}
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add link
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Attachments (story mode only) */}
+              {!isTemplateMode && showAttachments && (
+                <div className="shrink-0 rounded-lg border border-border/60 bg-background">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+                    <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                      <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+                      Attachments
+                      {pendingFiles.length > 0 && (
+                        <span className="text-xs text-muted-foreground font-normal">({pendingFiles.length})</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-4 py-2 space-y-2">
+                    {pendingFiles.length > 0 && (
+                      <div className="space-y-1">
+                        {pendingFiles.map((file, idx) => (
+                          <div key={idx} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent/50 transition-colors">
+                            <Paperclip className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                            <span className="flex-1 text-sm text-foreground truncate">{file.name}</span>
+                            <span className="text-[11px] text-muted-foreground shrink-0">
+                              {file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
+                            </span>
+                            <button
+                              type="button"
+                              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
+                              onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <label className="flex items-center justify-center gap-2 rounded-md border border-dashed border-border/60 px-3 py-2 cursor-pointer hover:border-border hover:bg-muted/30 transition-colors">
+                      <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Drop files or click to upload (max 10MB)</span>
+                      <input
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files?.length) {
+                            const newFiles = Array.from(e.target.files).filter((f) => f.size <= 10 * 1024 * 1024);
+                            setPendingFiles((prev) => [...prev, ...newFiles]);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
             </div>
 
@@ -528,15 +830,26 @@ export function CreateStoryModal({
                     onChange={(templateId) => {
                       const tmpl = templates.find((t) => t.id === templateId);
                       if (!tmpl) return;
+                      setStoryTypeDirty(false);
                       setForm((prev) => ({
                         ...prev,
+                        team_id: tmpl.team_id || prev.team_id,
                         description: tmpl.description || prev.description,
                         story_type: (tmpl.story_type as StoryType) || prev.story_type,
                         priority: (tmpl.priority as Priority) || prev.priority,
                         severity: (tmpl.severity as Severity) || prev.severity,
                         estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
                         label_ids: tmpl.label_ids ? (() => { try { return JSON.parse(tmpl.label_ids!); } catch { return prev.label_ids; } })() : prev.label_ids,
+                        owner_member_id: tmpl.owner_member_id || prev.owner_member_id,
+                        epic_id: tmpl.epic_id || prev.epic_id,
+                        sprint_id: tmpl.sprint_id || prev.sprint_id,
+                        deadline: tmpl.deadline || prev.deadline,
+                        checklist_items: tmpl.checklist_items ? (() => { try { return JSON.parse(tmpl.checklist_items!); } catch { return prev.checklist_items; } })() : prev.checklist_items,
+                        external_links: tmpl.external_links ? (() => { try { return JSON.parse(tmpl.external_links!); } catch { return prev.external_links; } })() : prev.external_links,
                       }));
+                      // Auto-open sections with template data
+                      if (tmpl.checklist_items) { try { if (JSON.parse(tmpl.checklist_items).length > 0) setShowChecklist(true); } catch {} }
+                      if (tmpl.external_links) { try { if (JSON.parse(tmpl.external_links).length > 0) setShowExternalLinks(true); } catch {} }
                     }}
                     renderTrigger={() => (
                       <>
@@ -546,6 +859,29 @@ export function CreateStoryModal({
                     )}
                   />
                 </MetadataRow>
+                )}
+
+                {/* Team */}
+                {teams.length > 0 && (
+                  <MetadataRow icon={Users} label="Team *">
+                    <SidebarPopoverSelect
+                      value={form.team_id || "__none__"}
+                      options={[
+                        ...(teams.length === 0 ? [{ value: "__none__", label: "No team" }] : []),
+                        ...teams.map((t) => ({ value: t.id, label: t.name })),
+                      ]}
+                      onChange={(value) =>
+                        {
+                          setStoryTypeDirty(false);
+                          setForm((prev) => ({
+                            ...prev,
+                            team_id: value === "__none__" ? "" : value,
+                          }));
+                        }
+                      }
+                      renderTrigger={() => <span>{currentTeamName}</span>}
+                    />
+                  </MetadataRow>
                 )}
 
                 {/* State */}
@@ -559,18 +895,58 @@ export function CreateStoryModal({
                       const st = workflow.states.find((s) => s.id === stateId);
                       return (
                         <>
-                          {st && <StateTypeIcon stateType={st.state_type} className="h-3.5 w-3.5" />}
+                          {st && <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: st.color || '#a1a1aa' }} />}
                           <span>{currentStateName}</span>
                         </>
                       );
                     }}
                     renderOption={(v) => {
                       const s = workflow.states.find((st) => st.id === v);
-                      return s ? <StateTypeIcon stateType={s.state_type} className="h-4 w-4 shrink-0" /> : null;
+                      return s ? <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color || '#a1a1aa' }} /> : null;
                     }}
                   />
                 </MetadataRow>
                 )}
+
+                {/* ── People ── */}
+                <div className="col-span-3 h-px bg-border/40 my-1" />
+
+                {/* Owner */}
+                <MetadataRow icon={User} label="Owner">
+                  <MemberPickerPopover
+                    value={form.owner_member_id || "__none__"}
+                    members={assignableMembers}
+                    noneLabel="No owner"
+                    onChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        owner_member_id: value === "__none__" ? "" : value,
+                      }))
+                    }
+                    renderTrigger={() => <span>{currentOwnerName}</span>}
+                  />
+                </MetadataRow>
+
+                {/* Requester */}
+                {!isTemplateMode && (
+                <MetadataRow icon={User} label="Requester">
+                  <MemberPickerPopover
+                    value={form.requester_member_id || "__none__"}
+                    members={assignableMembers}
+                    noneLabel="No requester"
+                    onChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        requester_member_id: value === "__none__" ? "" : value,
+                      }))
+                    }
+                    renderTrigger={() => <span>{currentRequesterName}</span>}
+                  />
+                </MetadataRow>
+                )}
+
+                {/* ── Classification ── */}
+                {(fieldVis.priority || fieldVis.story_type || fieldVis.severity || fieldVis.labels) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Priority */}
                 {fieldVis.priority && (
@@ -588,6 +964,26 @@ export function CreateStoryModal({
                       </>
                     )}
                     renderOption={(v) => <PriorityIcon priority={v as Priority} className="h-4 w-4 shrink-0" />}
+                  />
+                </MetadataRow>
+                )}
+
+                {/* Severity */}
+                {fieldVis.severity && (
+                <MetadataRow icon={AlertTriangle} label="Severity">
+                  <SidebarPopoverSelect
+                    value={form.severity}
+                    options={severityOptions.map((s) => ({ value: s, label: SEVERITY_CONFIG[s].label }))}
+                    onChange={(value) =>
+                      setForm((prev) => ({ ...prev, severity: value as Severity }))
+                    }
+                    renderTrigger={() => (
+                      <>
+                        <SeverityIcon severity={form.severity} className="h-3.5 w-3.5" />
+                        <span>{SEVERITY_CONFIG[form.severity].label}</span>
+                      </>
+                    )}
+                    renderOption={(v) => <SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" />}
                   />
                 </MetadataRow>
                 )}
@@ -613,91 +1009,6 @@ export function CreateStoryModal({
                 </MetadataRow>
                 )}
 
-                {/* ── People ── */}
-                {!isTemplateMode && <div className="col-span-3 h-px bg-border/40 my-1" />}
-
-                {/* Owner */}
-                {!isTemplateMode && (
-                <MetadataRow icon={User} label="Owner">
-                  <MemberPickerPopover
-                    value={form.owner_member_id || "__none__"}
-                    members={assignableMembers}
-                    noneLabel="No owner"
-                    onChange={(value) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        owner_member_id: value === "__none__" ? "" : value,
-                      }))
-                    }
-                    renderTrigger={() => <span>{currentOwnerName}</span>}
-                  />
-                </MetadataRow>
-                )}
-
-                {/* Requester */}
-                {!isTemplateMode && (
-                <MetadataRow icon={User} label="Requester">
-                  <MemberPickerPopover
-                    value={form.requester_member_id || "__none__"}
-                    members={assignableMembers}
-                    noneLabel="No requester"
-                    onChange={(value) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        requester_member_id: value === "__none__" ? "" : value,
-                      }))
-                    }
-                    renderTrigger={() => <span>{currentRequesterName}</span>}
-                  />
-                </MetadataRow>
-                )}
-
-                {/* Team */}
-                {teams.length > 0 && (
-                  <MetadataRow icon={Users} label="Team">
-                    <SidebarPopoverSelect
-                      value={form.team_id || "__none__"}
-                      options={[
-                        ...(teams.length === 0 ? [{ value: "__none__", label: "No team" }] : []),
-                        ...teams.map((t) => ({ value: t.id, label: t.name })),
-                      ]}
-                      onChange={(value) =>
-                        {
-                          setStoryTypeDirty(false);
-                          setForm((prev) => ({
-                            ...prev,
-                            team_id: value === "__none__" ? "" : value,
-                          }));
-                        }
-                      }
-                      renderTrigger={() => <span>{currentTeamName}</span>}
-                    />
-                  </MetadataRow>
-                )}
-
-                {/* ── Classification ── */}
-                {(fieldVis.severity || fieldVis.labels) && <div className="col-span-3 h-px bg-border/40 my-1" />}
-
-                {/* Severity */}
-                {fieldVis.severity && (
-                <MetadataRow icon={AlertTriangle} label="Severity">
-                  <SidebarPopoverSelect
-                    value={form.severity}
-                    options={severityOptions.map((s) => ({ value: s, label: SEVERITY_CONFIG[s].label }))}
-                    onChange={(value) =>
-                      setForm((prev) => ({ ...prev, severity: value as Severity }))
-                    }
-                    renderTrigger={() => (
-                      <>
-                        <SeverityIcon severity={form.severity} className="h-3.5 w-3.5" />
-                        <span>{SEVERITY_CONFIG[form.severity].label}</span>
-                      </>
-                    )}
-                    renderOption={(v) => <SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" />}
-                  />
-                </MetadataRow>
-                )}
-
                 {/* Labels */}
                 {fieldVis.labels && (
                 <MetadataRow icon={Tag} label="Labels">
@@ -713,7 +1024,7 @@ export function CreateStoryModal({
                 )}
 
                 {/* ── Planning ── */}
-                {(fieldVis.epic || fieldVis.sprint || fieldVis.estimate || fieldVis.due_date) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+                {(fieldVis.epic || fieldVis.sprint) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Epic */}
                 {fieldVis.epic && (
@@ -754,6 +1065,9 @@ export function CreateStoryModal({
                   />
                 </MetadataRow>
                 )}
+
+                {/* ── Tracking ── */}
+                {(fieldVis.estimate || fieldVis.due_date) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Estimate */}
                 {fieldVis.estimate && (

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ type PMStoryService struct {
 	workspaceRepo       *repository.WorkspaceRepository
 	workflowRepo        *repository.PMWorkflowRepository
 	labelRepo           *repository.PMLabelRepository
+	checklistRepo       *repository.PMChecklistItemRepository
+	externalLinkRepo    *repository.PMExternalLinkRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	automationService   *PMAutomationService
@@ -27,12 +30,14 @@ type PMStoryService struct {
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
 	return &PMStoryService{
 		storyRepo:           storyRepo,
 		workspaceRepo:       workspaceRepo,
 		workflowRepo:        workflowRepo,
 		labelRepo:           labelRepo,
+		checklistRepo:       checklistRepo,
+		externalLinkRepo:    externalLinkRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
 		automationService:   automationService,
@@ -259,6 +264,51 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	for _, labelID := range labelIDs {
 		if err := s.storyRepo.AddLabel(ctx, story.ID, labelID); err != nil {
 			return nil, err
+		}
+	}
+
+	// Create checklist items from template.
+	if s.checklistRepo != nil && len(req.ChecklistItems) > 0 {
+		for i, ci := range req.ChecklistItems {
+			item := &model.PMChecklistItem{
+				StoryID:    story.ID,
+				Text:       strings.TrimSpace(ci.Text),
+				Position:   i,
+				AssigneeID: ci.AssigneeID,
+			}
+			if ci.Position != nil {
+				item.Position = *ci.Position
+			}
+			if item.Text != "" {
+				if err := s.checklistRepo.Create(ctx, item); err != nil {
+					s.logger.ErrorContext(ctx, "failed to create checklist item from template", "error", err, "story_id", story.ID)
+				}
+			}
+		}
+	}
+
+	// Create external links.
+	if s.externalLinkRepo != nil && len(req.ExternalLinks) > 0 {
+		for _, el := range req.ExternalLinks {
+			linkURL := strings.TrimSpace(el.URL)
+			if linkURL == "" {
+				continue
+			}
+			title := strings.TrimSpace(el.Title)
+			if title == "" {
+				if u, parseErr := url.Parse(linkURL); parseErr == nil {
+					title = u.Hostname()
+				}
+			}
+			link := &model.PMExternalLink{
+				StoryID:     story.ID,
+				URL:         linkURL,
+				Title:       title,
+				CreatedByID: actorID,
+			}
+			if err := s.externalLinkRepo.Create(ctx, link); err != nil {
+				s.logger.ErrorContext(ctx, "failed to create external link", "error", err, "story_id", story.ID)
+			}
 		}
 	}
 

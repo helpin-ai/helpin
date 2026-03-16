@@ -77,12 +77,13 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
       initialStateId={workflow.states[0]?.id ?? ''}
       initialTeamId={initialTeamId}
       onCreate={async (payload) => {
-        const { error } = await pmStoryService.create(payload);
+        const { data, error } = await pmStoryService.create(payload);
         if (error) throw new Error(error);
         // Refresh the board if it's loaded
         const boardWs = usePMBoardStore.getState().workspaceId;
         if (boardWs) usePMBoardStore.getState().refreshBoard();
         window.dispatchEvent(new CustomEvent('story-created'));
+        return data?.story ? { id: data.story.id } : undefined;
       }}
     />
   );
@@ -95,13 +96,14 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   const { teams } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = buildAssignableMemberOptions(assignableMembers);
+  const storeTeamId = useGlobalCreateStore((s) => s.initialTeamId);
 
   const [form, setForm] = useState({
     name: '',
     description: '',
     stateId: '',
     health: 'no_health' as EpicHealth,
-    teamId: '',
+    teamId: storeTeamId ?? '',
     ownerMemberId: '',
     startDate: '',
     targetDate: '',
@@ -110,7 +112,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   const [error, setError] = useState<string | null>(null);
 
   const create = async () => {
-    if (!form.name.trim() || submitting) return;
+    if (!form.name.trim() || !form.teamId || submitting) return;
     setSubmitting(true);
     const { error: createError } = await pmEpicService.create({
       workspace_id: workspaceId,
@@ -194,13 +196,12 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
                 <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Team</span>
+                <span className="text-xs text-muted-foreground self-center">Team *</span>
                 <Select value={form.teamId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, teamId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
-                    <SelectValue placeholder="None" />
+                    <SelectValue placeholder="Select team" />
                   </SelectTrigger>
                   <SelectContent>
-                    {teams.length === 0 && <SelectItem value="__none__">None</SelectItem>}
                     {teams.map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}
@@ -276,7 +277,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
               Discard
             </Button>
-            <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting}>
+            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || submitting}>
               {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Epic'}
             </Button>
@@ -314,7 +315,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
   const [enablingAutomation, setEnablingAutomation] = useState(false);
 
   const create = async () => {
-    if (!form.name.trim() || !form.startDate || !form.endDate || submitting) return;
+    if (!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting) return;
     setSubmitting(true);
     const { error: createError } = await pmSprintService.create({
       workspace_id: workspaceId,
@@ -546,13 +547,12 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
               </p>
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
                 <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Team</span>
+                <span className="text-xs text-muted-foreground self-center">Team *</span>
                 <Select value={form.teamId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, teamId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
-                    <SelectValue placeholder="None" />
+                    <SelectValue placeholder="Select team" />
                   </SelectTrigger>
                   <SelectContent>
-                    {teams.length === 0 && <SelectItem value="__none__">None</SelectItem>}
                     {teams.map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}
@@ -585,7 +585,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
               Discard
             </Button>
-            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.startDate || !form.endDate || submitting}>
+            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting}>
               {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Sprint'}
             </Button>

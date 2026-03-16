@@ -8,6 +8,7 @@ import {
   CalendarDays,
   ChevronRight,
   Loader2,
+  Pencil,
   RefreshCw,
   Users,
 } from 'lucide-react';
@@ -24,7 +25,7 @@ import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
-import { useWorkflows } from '@/hooks/queries';
+import { useWorkflows, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -139,6 +140,10 @@ export function SprintDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
+
+  const { data: access } = useWorkspaceAccess(workspaceId ?? '');
+  const { canEdit } = usePermissions(access);
 
   const { teams, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
@@ -364,14 +369,41 @@ export function SprintDetailPage() {
 
           {/* Description */}
           <div className="mt-4">
-            <TiptapEditor
-              content={form.description}
-              onChange={(html) => updateField('description', html, { description: html })}
-              placeholder="Add a description..."
-              className="border-transparent shadow-none"
-              teams={teams}
-              members={assignableMembers}
-            />
+            {editingDescription ? (
+              <div>
+                <TiptapEditor
+                  content={form.description}
+                  onChange={(html) => updateField('description', html, { description: html })}
+                  placeholder="Add a description..."
+                  className="border-transparent shadow-none"
+                  teams={teams}
+                  members={assignableMembers}
+                />
+                <div className="mt-2 flex justify-end">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
+                    Done
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="group/desc relative">
+                {form.description ? (
+                  <div className="prose prose-sm dark:prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: form.description }} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                    onClick={() => setEditingDescription(true)}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Edit description
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <Separator className="my-6" />
