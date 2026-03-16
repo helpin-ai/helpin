@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { API_BASE } from '@/lib/api'
 
 export interface WSEvent {
-  action: 'created' | 'updated' | 'deleted' | 'moved' | 'typing_started' | 'typing_stopped'
+  action: 'created' | 'updated' | 'deleted' | 'moved' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped'
   entity: string
   entity_id: string
   workspace_id: string

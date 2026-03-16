@@ -418,6 +418,26 @@ func (h *SupportInboxHandler) TypingIndicator(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	h.supportService.PublishTypingIndicator(r.Context(), workspaceID, conversationID, actorID, req.IsTyping)
+	h.supportService.PublishTypingIndicator(r.Context(), workspaceID, conversationID, actorID, req.IsTyping, req.Content)
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+// ViewingPresence handles POST /api/support/inbox/conversations/{id}/viewing.
+func (h *SupportInboxHandler) ViewingPresence(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.ViewingPresenceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	h.supportService.PublishViewingPresence(r.Context(), workspaceID, conversationID, actorID, req.Viewing)
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }

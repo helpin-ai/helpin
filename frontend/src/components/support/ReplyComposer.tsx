@@ -21,20 +21,34 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
   const isTypingRef = useRef(false);
   const isNote = replyMode === 'note';
 
-  // Send typing indicator with debounce (fire once per 3s, auto-stop after 5s of inactivity)
-  const sendTyping = useCallback((typing: boolean) => {
-    if (isNote) return; // don't send typing for internal notes
-    if (typing === isTypingRef.current) return;
-    isTypingRef.current = typing;
+  const lastTypingSentRef = useRef(0);
+
+  // Send typing indicator — supports content for live preview
+  const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
+    if (isNote) return;
     if (!typing && typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
     }
-    supportService.sendTypingIndicator(workspaceId, conversationId, typing).catch(() => {});
+    if (!typing) {
+      isTypingRef.current = false;
+      supportService.sendTypingIndicator(workspaceId, conversationId, false).catch((e) => {
+        if (import.meta.env.DEV) console.warn('[typing] stop failed:', e);
+      });
+      return;
+    }
+    // Throttle content updates to every 300ms
+    const now = Date.now();
+    if (isTypingRef.current && now - lastTypingSentRef.current < 300) return;
+    isTypingRef.current = true;
+    lastTypingSentRef.current = now;
+    supportService.sendTypingIndicator(workspaceId, conversationId, true, typingContent).catch((e) => {
+      if (import.meta.env.DEV) console.warn('[typing] send failed:', e);
+    });
   }, [workspaceId, conversationId, isNote]);
 
-  const handleTyping = useCallback(() => {
-    sendTyping(true);
+  const handleTyping = useCallback((typingContent: string) => {
+    sendTyping(true, typingContent);
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => sendTyping(false), 5000);
   }, [sendTyping]);
@@ -118,7 +132,7 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
           )}
           placeholder={isNote ? 'Add an internal note...' : 'Write a reply...'}
           value={content}
-          onChange={(e) => { const val = e.target.value; setContent(val); val.trim() ? handleTyping() : sendTyping(false); }}
+          onChange={(e) => { const val = e.target.value; setContent(val); val.trim() ? handleTyping(val) : sendTyping(false); }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();

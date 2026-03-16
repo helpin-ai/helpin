@@ -424,6 +424,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Typing indicators
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/typing", h.SupportInbox.TypingIndicator)
+
+				// Viewing presence
+				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/viewing", h.SupportInbox.ViewingPresence)
 			})
 
 			// PM module

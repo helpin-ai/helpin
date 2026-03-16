@@ -143,7 +143,7 @@ func (h *Hub) Broadcast(event Event) {
 }
 
 // shouldReceive determines if a client should receive an event.
-// Internal clients receive all workspace events except agent-origin typing.
+// Internal clients receive all workspace typing events except their own.
 // Widget clients only receive their own conversation's events, and only
 // agent-origin typing indicators.
 func (h *Hub) shouldReceive(client *Client, event Event) bool {
@@ -153,7 +153,8 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 				*client.ConversationID == event.EntityID &&
 				!isWidgetActor(event.ActorID)
 		}
-		return isWidgetActor(event.ActorID)
+		// Internal clients receive all typing except their own
+		return event.ActorID != client.UserID
 	}
 
 	if !client.IsWidget {

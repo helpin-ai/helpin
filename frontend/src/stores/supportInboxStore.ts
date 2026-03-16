@@ -44,6 +44,10 @@ interface SupportInboxState {
   activePanel: ActivePanel;
   // Typing indicators: conversationId → content string when typing, false when not
   typingIndicators: Record<string, string | false>;
+  // Agent typing: conversationId → { actorId, content } when another agent is typing
+  agentTyping: Record<string, { actorId: string; content: string } | null>;
+  // Viewing presence: conversationId → set of agent userIds currently viewing
+  viewingAgents: Record<string, string[]>;
 
   // Actions
   setNavFilter: (filter: NavFilter) => void;
@@ -56,6 +60,8 @@ interface SupportInboxState {
   setCreateDialogOpen: (open: boolean) => void;
   setActivePanel: (panel: ActivePanel) => void;
   setTyping: (conversationId: string, isTyping: boolean, content?: string) => void;
+  setAgentTyping: (conversationId: string, actorId: string | null, content?: string) => void;
+  setViewingAgent: (conversationId: string, actorId: string, viewing: boolean) => void;
 }
 
 export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
@@ -72,6 +78,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     createDialogOpen: false,
     activePanel: 'list',
     typingIndicators: {},
+    agentTyping: {},
+    viewingAgents: {},
 
     setNavFilter: (filter) => set({ navFilter: filter }),
     toggleNavCollapsed: () => {
@@ -94,5 +102,20 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       set((state) => ({
         typingIndicators: { ...state.typingIndicators, [conversationId]: isTyping ? (content ?? '') : false },
       })),
+    setAgentTyping: (conversationId, actorId, content) =>
+      set((state) => ({
+        agentTyping: {
+          ...state.agentTyping,
+          [conversationId]: actorId ? { actorId, content: content ?? '' } : null,
+        },
+      })),
+    setViewingAgent: (conversationId, actorId, viewing) =>
+      set((state) => {
+        const current = state.viewingAgents[conversationId] ?? [];
+        if (viewing && current.includes(actorId)) return state;
+        if (!viewing && !current.includes(actorId)) return state;
+        const next = viewing ? [...current, actorId] : current.filter((id) => id !== actorId);
+        return { viewingAgents: { ...state.viewingAgents, [conversationId]: next } };
+      }),
   };
 });

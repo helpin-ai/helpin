@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useWebSocket, type WSEvent } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
+import { useAuthStore } from '@/stores/authStore'
 import { pmStoryService } from '@/lib/services/pmStoryService'
 import { queryKeys } from '@/lib/queryKeys'
 
@@ -88,26 +89,65 @@ export function useRealtimeSync(workspaceId: string) {
         if (import.meta.env.DEV) {
           console.debug('[ws] typing event received:', event.action, 'conversation:', event.entity_id, 'actor:', event.actor_id)
         }
-        const { setTyping } = useSupportInboxStore.getState()
+        const store = useSupportInboxStore.getState()
         const convId = event.entity_id
         const content = (event.data?.content as string) || ''
+        const isWidget = event.actor_id?.startsWith('widget:')
+        const timerKey = `${convId}:${isWidget ? 'customer' : 'agent'}`
 
-        // Clear any existing auto-clear timer for this conversation
-        const prevTimer = typingTimers.current.get(convId)
+        // Clear any existing auto-clear timer for this conversation+actor type
+        const prevTimer = typingTimers.current.get(timerKey)
         if (prevTimer) {
           clearTimeout(prevTimer)
-          typingTimers.current.delete(convId)
+          typingTimers.current.delete(timerKey)
         }
 
-        setTyping(convId, event.action === 'typing_started', content)
+        if (isWidget) {
+          // Customer typing
+          store.setTyping(convId, event.action === 'typing_started', content)
+        } else {
+          // Agent typing
+          store.setAgentTyping(
+            convId,
+            event.action === 'typing_started' ? event.actor_id : null,
+            content,
+          )
+        }
 
         // Auto-clear after timeout in case typing:stop is never received
         if (event.action === 'typing_started') {
           const timer = setTimeout(() => {
-            typingTimers.current.delete(convId)
-            useSupportInboxStore.getState().setTyping(convId, false)
+            typingTimers.current.delete(timerKey)
+            const s = useSupportInboxStore.getState()
+            if (isWidget) {
+              s.setTyping(convId, false)
+            } else {
+              s.setAgentTyping(convId, null)
+            }
           }, TYPING_TIMEOUT_MS)
-          typingTimers.current.set(convId, timer)
+          typingTimers.current.set(timerKey, timer)
+        }
+      } else if (event.action === 'viewing_started' || event.action === 'viewing_stopped') {
+        if (!event.entity_id || !event.actor_id) return
+        // Ignore own viewing events to prevent render loops
+        const currentUserId = useAuthStore.getState().user?.id
+        if (import.meta.env.DEV) {
+          console.debug('[ws] viewing event:', event.action, 'conv:', event.entity_id, 'actor:', event.actor_id, 'self:', currentUserId, event.actor_id === currentUserId ? '(skipped)' : '(applied)')
+        }
+        if (event.actor_id === currentUserId) return
+        const store = useSupportInboxStore.getState()
+        store.setViewingAgent(event.entity_id, event.actor_id, event.action === 'viewing_started')
+
+        // Auto-clear viewing after 90s in case viewing_stopped is never received
+        if (event.action === 'viewing_started') {
+          const timerKey = `${event.entity_id}:viewing:${event.actor_id}`
+          const prev = typingTimers.current.get(timerKey)
+          if (prev) clearTimeout(prev)
+          const timer = setTimeout(() => {
+            typingTimers.current.delete(timerKey)
+            useSupportInboxStore.getState().setViewingAgent(event.entity_id, event.actor_id, false)
+          }, 90_000)
+          typingTimers.current.set(timerKey, timer)
         }
       } else {
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })

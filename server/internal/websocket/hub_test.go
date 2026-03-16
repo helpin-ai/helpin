@@ -84,7 +84,7 @@ func TestShouldReceive_WidgetClient_NonSupportEvents(t *testing.T) {
 	}
 }
 
-func TestShouldReceive_InternalClient_TypingOnlyFromWidget(t *testing.T) {
+func TestShouldReceive_InternalClient_TypingFromAllExceptSelf(t *testing.T) {
 	hub := NewHub()
 	client := &Client{UserID: "user-1", WorkspaceID: "ws-1", IsWidget: false}
 
@@ -99,15 +99,26 @@ func TestShouldReceive_InternalClient_TypingOnlyFromWidget(t *testing.T) {
 		t.Error("internal client should receive customer typing events")
 	}
 
-	agentTyping := Event{
+	otherAgentTyping := Event{
 		Action:      "typing_started",
 		Entity:      "support_conversation",
 		EntityID:    "conv-1",
 		WorkspaceID: "ws-1",
 		ActorID:     "user-2",
 	}
-	if hub.shouldReceive(client, agentTyping) {
-		t.Error("internal client should NOT receive agent typing events")
+	if !hub.shouldReceive(client, otherAgentTyping) {
+		t.Error("internal client should receive other agent typing events")
+	}
+
+	ownTyping := Event{
+		Action:      "typing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-1",
+	}
+	if hub.shouldReceive(client, ownTyping) {
+		t.Error("internal client should NOT receive own typing events")
 	}
 }
 

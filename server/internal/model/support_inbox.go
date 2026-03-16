@@ -218,7 +218,13 @@ type CannedResponseRequest struct {
 
 // TypingIndicatorRequest represents a typing indicator event.
 type TypingIndicatorRequest struct {
-	IsTyping bool `json:"is_typing"`
+	IsTyping bool   `json:"is_typing"`
+	Content  string `json:"content,omitempty"`
+}
+
+// ViewingPresenceRequest represents a viewing presence event.
+type ViewingPresenceRequest struct {
+	Viewing bool `json:"viewing"`
 }
 
 // CsatSurveyRequest represents a CSAT rating submission.

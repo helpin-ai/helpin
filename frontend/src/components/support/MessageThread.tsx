@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle, User } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,9 @@ import {
   useUpdateConversationStatus,
   useRunConversationAgent,
 } from '@/hooks/queries/useSupport';
+import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
+import { supportService } from '@/lib/services/supportService';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
 import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS } from './constants';
@@ -59,6 +61,49 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
   );
 }
 
+function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: string | null; workspaceId: string }) {
+  const agentState = useSupportInboxStore(
+    (s) => (conversationId ? s.agentTyping[conversationId] : null)
+  );
+  const { data: members = [] } = useWorkspaceMembers(workspaceId);
+
+  if (!agentState) return null;
+
+  const member = members.find((m) => m.user_id === agentState.actorId);
+  const name = member?.full_name || member?.email || 'Agent';
+
+  return (
+    <div className="flex justify-end mt-2 animate-in fade-in duration-200">
+      <div className="max-w-[70%]">
+        {/* Agent name */}
+        <div className="mb-1 pr-1 text-right">
+          <span className="text-[11px] font-medium text-muted-foreground">{name}</span>
+        </div>
+        <div className="rounded-2xl rounded-br-sm bg-primary/40 px-3.5 py-2 text-sm leading-relaxed text-primary-foreground">
+          {agentState.content ? (
+            <p className="whitespace-pre-wrap italic opacity-70">{agentState.content}</p>
+          ) : (
+            <span className="flex items-center gap-1.5 italic opacity-50">
+              <span className="flex gap-0.5">
+                <span className="animate-bounce [animation-delay:0ms]">·</span>
+                <span className="animate-bounce [animation-delay:150ms]">·</span>
+                <span className="animate-bounce [animation-delay:300ms]">·</span>
+              </span>
+              typing…
+            </span>
+          )}
+        </div>
+      </div>
+      {/* Agent avatar */}
+      <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <User className="h-3.5 w-3.5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DaySeparator({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-3 py-4">
@@ -95,6 +140,33 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   useEffect(() => {
     loadAgentRuns();
   }, [loadAgentRuns]);
+
+  // Broadcast viewing presence to other agents
+  const viewingRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!conversationId) return;
+    // Prevent re-sending if already viewing this conversation
+    if (viewingRef.current === conversationId) return;
+    const prevConvId = viewingRef.current;
+    viewingRef.current = conversationId;
+    // Stop viewing previous conversation
+    if (prevConvId) {
+      supportService.sendViewingPresence(workspaceId, prevConvId, false).catch(() => {});
+    }
+    // Start viewing new conversation
+    supportService.sendViewingPresence(workspaceId, conversationId, true).then((res) => {
+      if (import.meta.env.DEV) console.debug('[viewing] sent viewing:true', conversationId, res.error ? `ERROR: ${res.error}` : 'ok');
+    });
+    // Heartbeat every 60s
+    const interval = setInterval(() => {
+      supportService.sendViewingPresence(workspaceId, conversationId, true).catch(() => {});
+    }, 60_000);
+    return () => {
+      clearInterval(interval);
+      viewingRef.current = null;
+      supportService.sendViewingPresence(workspaceId, conversationId, false).catch(() => {});
+    };
+  }, [workspaceId, conversationId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -257,6 +329,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
             );
           })}
           <TypingIndicatorBar conversationId={conversationId} />
+          <AgentTypingBubble conversationId={conversationId} workspaceId={workspaceId} />
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
