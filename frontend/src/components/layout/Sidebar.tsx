@@ -56,6 +56,7 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { isModuleEnabled } from '@/lib/featureFlags';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -671,7 +672,7 @@ export function Sidebar() {
         <div className="flex min-h-0 flex-1">
           <div className="flex w-16 shrink-0 flex-col border-r border-border/70 dark:border-sidebar-border py-2">
             <div className="flex flex-1 flex-col items-center gap-1.5">
-              {railItems.map((item) => (
+              {railItems.filter((item) => isModuleEnabled(item.id, user?.email)).map((item) => (
                   <button
                     key={item.id}
                     type="button"
