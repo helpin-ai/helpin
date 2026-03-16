@@ -221,7 +221,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   }
 
   return (
-    <div className="flex flex-1 flex-col min-w-0">
+    <div className="flex flex-1 flex-col min-w-0 min-h-0">
       {/* Action header bar */}
       {conversation && (
         <div className="flex items-center justify-between border-b px-4 py-2.5">
@@ -301,7 +301,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
       )}
 
       {/* Messages with day separators */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="px-4 pb-4">
           {isLoading && (
             <div className="flex items-center justify-center py-8">
