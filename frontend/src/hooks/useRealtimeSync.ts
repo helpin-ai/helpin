@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useWebSocket, type WSEvent } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
-import { useAuthStore } from '@/stores/authStore'
 import { pmStoryService } from '@/lib/services/pmStoryService'
 import { queryKeys } from '@/lib/queryKeys'
 
@@ -129,12 +128,10 @@ export function useRealtimeSync(workspaceId: string) {
         }
       } else if (event.action === 'viewing_started' || event.action === 'viewing_stopped') {
         if (!event.entity_id || !event.actor_id) return
-        // Ignore own viewing events to prevent render loops
-        const currentUserId = useAuthStore.getState().user?.id
         if (import.meta.env.DEV) {
-          console.debug('[ws] viewing event:', event.action, 'conv:', event.entity_id, 'actor:', event.actor_id, 'self:', currentUserId, event.actor_id === currentUserId ? '(skipped)' : '(applied)')
+          console.debug('[ws] viewing event:', event.action, 'conv:', event.entity_id, 'actor:', event.actor_id)
         }
-        if (event.actor_id === currentUserId) return
+        // Hub already filters out self-viewing events server-side
         const store = useSupportInboxStore.getState()
         store.setViewingAgent(event.entity_id, event.actor_id, event.action === 'viewing_started')
 

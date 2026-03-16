@@ -197,7 +197,9 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	offset := (page - 1) * perPage
 
 	var conversations []model.SupportConversation
-	if err := query.Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
+	if err := query.
+		Select("support_conversations.*, (SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.is_internal = false ORDER BY created_at DESC LIMIT 1) AS last_message").
+		Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
 	return conversations, total, nil

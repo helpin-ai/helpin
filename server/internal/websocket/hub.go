@@ -147,13 +147,17 @@ func (h *Hub) Broadcast(event Event) {
 // Widget clients only receive their own conversation's events, and only
 // agent-origin typing indicators.
 func (h *Hub) shouldReceive(client *Client, event Event) bool {
-	if event.Entity == "support_conversation" && isTypingEvent(event.Action) {
+	if event.Entity == "support_conversation" && (isTypingEvent(event.Action) || isViewingEvent(event.Action)) {
 		if client.IsWidget {
+			// Widget clients only get agent-origin typing for their conversation
+			if !isTypingEvent(event.Action) {
+				return false // widgets don't need viewing events
+			}
 			return client.ConversationID != nil &&
 				*client.ConversationID == event.EntityID &&
 				!isWidgetActor(event.ActorID)
 		}
-		// Internal clients receive all typing except their own
+		// Internal clients receive all typing/viewing except their own
 		return event.ActorID != client.UserID
 	}
 
@@ -180,6 +184,10 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 
 func isTypingEvent(action string) bool {
 	return action == "typing_started" || action == "typing_stopped"
+}
+
+func isViewingEvent(action string) bool {
+	return action == "viewing_started" || action == "viewing_stopped"
 }
 
 func isWidgetActor(actorID string) bool {

@@ -1235,6 +1235,7 @@ export interface SupportConversation {
   linked_story_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
+  last_message?: string;
   created_at: string;
   updated_at: string;
 }

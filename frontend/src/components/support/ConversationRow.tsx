@@ -53,7 +53,8 @@ interface ConversationRowProps {
 export function ConversationRow({ conversation, isSelected, onSelect }: ConversationRowProps) {
   const displayName = conversation.customer_name || conversation.customer_email || 'Anonymous';
   const typingState = useSupportInboxStore((s) => s.typingIndicators[conversation.id]);
-  const isCustomerTyping = typingState !== false && typingState !== undefined;
+  // typing state is string (including empty '') when typing, false/undefined when not
+  const isCustomerTyping = typeof typingState === 'string';
   const agentState = useSupportInboxStore((s) => s.agentTyping[conversation.id]);
   const remoteViewingIds = useSupportInboxStore((s) => s.viewingAgents[conversation.id] || EMPTY_ARRAY);
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -81,12 +82,12 @@ export function ConversationRow({ conversation, isSelected, onSelect }: Conversa
             <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(conversation.updated_at)}</span>
           </div>
           <p className="mt-0.5 truncate text-sm text-foreground/80">
-            {isCustomerTyping && typingState ? (
-              <span className="italic text-muted-foreground">{typingState}</span>
+            {isCustomerTyping ? (
+              <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
             ) : agentState?.content ? (
               <span className="italic text-primary/60">{agentState.content}</span>
             ) : (
-              conversation.subject
+              conversation.last_message || conversation.subject
             )}
           </p>
           {/* Bottom row: badges left, typing + avatars right */}
