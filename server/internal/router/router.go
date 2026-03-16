@@ -120,6 +120,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/session", h.SupportInboxWidget.CreateSession)
 		r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 		r.Post("/messages", h.SupportInboxWidget.SendMessage)
+		r.Post("/typing", h.SupportInboxWidget.TypingIndicator)
 		r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
 	})
@@ -176,6 +177,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
 			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.Post("/typing", h.SupportInboxWidget.TypingIndicator)
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		})
 
@@ -205,6 +207,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
 			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.Post("/typing", h.SupportInboxWidget.TypingIndicator)
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 			r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
 		})

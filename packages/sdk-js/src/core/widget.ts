@@ -136,6 +136,7 @@ export class WidgetManager {
   }
 
   private cleanup(): void {
+    this.stopTyping();
     this.config = null;
     this.widgetConfig = null;
     this.sessionToken = null;
@@ -290,6 +291,7 @@ export class WidgetManager {
       onSendMessage: (content: string) => this.handleSendMessage(content),
       onSendMessageFromHome: (content: string) => this.handleSendMessage(content, { startNewConversation: true }),
       onQuickReply: (content: string) => this.handleSendMessage(content),
+      onTyping: () => this.handleTyping(),
       showPreChatForm: showPreChat,
       onPreChatSubmit: (data: { name: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
@@ -359,12 +361,67 @@ export class WidgetManager {
     this.messages = [...this.messages, optimisticMsg];
     this.render();
 
+    // Stop typing indicator before sending
+    this.stopTyping();
+
     // Send via WS
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('message:send', { content });
     } else {
       // Fallback to HTTP if WS not available
       this.sendMessageHTTP(content);
+    }
+  }
+
+  private typingTimer: ReturnType<typeof setTimeout> | null = null;
+  private isSendingTyping = false;
+
+  private handleTyping(): void {
+    if (!this.sessionToken) return;
+    if (!this.isSendingTyping) {
+      this.isSendingTyping = true;
+      if (this.wsConnection?.readyState === WebSocket.OPEN) {
+        this.wsSend('typing:start', {});
+      } else {
+        void this.sendTypingHTTP(true);
+      }
+    }
+    if (this.typingTimer) clearTimeout(this.typingTimer);
+    this.typingTimer = setTimeout(() => {
+      this.isSendingTyping = false;
+      if (this.wsConnection?.readyState === WebSocket.OPEN) {
+        this.wsSend('typing:stop', {});
+      } else {
+        void this.sendTypingHTTP(false);
+      }
+    }, 5000);
+  }
+
+  private stopTyping(): void {
+    if (this.isSendingTyping) {
+      if (this.wsConnection?.readyState === WebSocket.OPEN) {
+        this.wsSend('typing:stop', {});
+      } else {
+        void this.sendTypingHTTP(false);
+      }
+    }
+    this.isSendingTyping = false;
+    if (this.typingTimer) {
+      clearTimeout(this.typingTimer);
+      this.typingTimer = null;
+    }
+  }
+
+  private async sendTypingHTTP(isTyping: boolean): Promise<void> {
+    if (!this.sessionToken) return;
+    try {
+      await fetch(`https://${this.host}/widget/typing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_token: this.sessionToken, is_typing: isTyping }),
+      });
+    } catch (error) {
+      console.error('Failed to send typing indicator:', error);
     }
   }
 
@@ -641,6 +698,10 @@ export class WidgetManager {
           this.messages = [...this.messages, newMsg];
         }
 
+        if (msg.sender_type !== 'customer') {
+          this.isTyping = false;
+        }
+
         if (!this.isOpen) {
           this.unreadCount++;
           this.triggerCallback('onUnreadCountChange', this.unreadCount);
@@ -687,13 +748,18 @@ export class WidgetManager {
       }
 
       case 'typing:start':
-        this.isTyping = true;
-        this.render();
+        // Ignore own typing events echoed back by the Hub
+        if (!this.isSendingTyping) {
+          this.isTyping = true;
+          this.render();
+        }
         break;
 
       case 'typing:stop':
-        this.isTyping = false;
-        this.render();
+        if (!this.isSendingTyping) {
+          this.isTyping = false;
+          this.render();
+        }
         break;
 
       case 'conversations:listed': {

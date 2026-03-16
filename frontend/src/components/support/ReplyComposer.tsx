@@ -1,9 +1,10 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Send, Smile, Paperclip, StickyNote, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSendMessage } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { supportService } from '@/lib/services/supportService';
 import { cn } from '@/lib/utils';
 
 interface ReplyComposerProps {
@@ -16,7 +17,34 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
   const { replyMode, setReplyMode } = useSupportInboxStore();
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
   const isNote = replyMode === 'note';
+
+  // Send typing indicator with debounce (fire once per 3s, auto-stop after 5s of inactivity)
+  const sendTyping = useCallback((typing: boolean) => {
+    if (isNote) return; // don't send typing for internal notes
+    if (typing === isTypingRef.current) return;
+    isTypingRef.current = typing;
+    supportService.sendTypingIndicator(workspaceId, conversationId, typing).catch(() => {});
+  }, [workspaceId, conversationId, isNote]);
+
+  const handleTyping = useCallback(() => {
+    sendTyping(true);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => sendTyping(false), 5000);
+  }, [sendTyping]);
+
+  // Clean up typing indicator on unmount or conversation change
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        supportService.sendTypingIndicator(workspaceId, conversationId, false).catch(() => {});
+      }
+    };
+  }, [workspaceId, conversationId]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -28,6 +56,9 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
 
   const handleSend = async () => {
     if (!content.trim() || sendMutation.isPending) return;
+    // Stop typing indicator before sending
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    sendTyping(false);
     await sendMutation.mutateAsync({
       content: content.trim(),
       is_internal: isNote,
@@ -83,7 +114,7 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
           )}
           placeholder={isNote ? 'Add an internal note...' : 'Write a reply...'}
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={(e) => { setContent(e.target.value); handleTyping(); }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();

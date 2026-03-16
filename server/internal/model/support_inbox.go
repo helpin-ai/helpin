@@ -144,6 +144,12 @@ type WidgetMessageRequest struct {
 	Content      string `json:"content"`
 }
 
+// WidgetTypingRequest sends a typing indicator via widget HTTP fallback.
+type WidgetTypingRequest struct {
+	SessionToken string `json:"session_token"`
+	IsTyping     bool   `json:"is_typing"`
+}
+
 // WidgetSessionRevokeRequest revokes a widget session (HTTP fallback for shutdown).
 type WidgetSessionRevokeRequest struct {
 	SessionToken string `json:"session_token"`

@@ -4,12 +4,14 @@ import { PaperclipIcon, SmileIcon, SendIcon } from './icons';
 
 interface ComposeBarProps {
   onSend: (content: string) => void;
+  onTyping?: () => void;
   disabled?: boolean;
   placeholder?: string;
 }
 
 export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   onSend,
+  onTyping,
   disabled = false,
   placeholder = 'Ask a question...',
 }) => {
@@ -47,7 +49,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
           ref={textareaRef}
           className="helpin-compose-input"
           value={message}
-          onInput={(e) => setMessage((e.target as HTMLTextAreaElement).value)}
+          onInput={(e) => { setMessage((e.target as HTMLTextAreaElement).value); onTyping?.(); }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}

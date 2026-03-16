@@ -16,6 +16,7 @@ import {
   useRunConversationAgent,
 } from '@/hooks/queries/useSupport';
 import { agentService } from '@/lib/services/agentService';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
 import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS } from './constants';
 import { getDayLabel, isSameDay, getInitial } from './helpers';
@@ -26,6 +27,23 @@ import { AgentRunsCard } from './AgentRunsCard';
 interface MessageThreadProps {
   workspaceId: string;
   conversationId: string | null;
+}
+
+function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
+  const isTyping = useSupportInboxStore(
+    (s) => (conversationId ? s.typingIndicators[conversationId] : false)
+  );
+  if (!isTyping) return null;
+  return (
+    <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground animate-in fade-in duration-200">
+      <span className="flex gap-0.5 text-base leading-none">
+        <span className="animate-bounce [animation-delay:0ms]">·</span>
+        <span className="animate-bounce [animation-delay:150ms]">·</span>
+        <span className="animate-bounce [animation-delay:300ms]">·</span>
+      </span>
+      Customer is typing…
+    </div>
+  );
 }
 
 function DaySeparator({ label }: { label: string }) {
@@ -225,6 +243,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               />
             );
           })}
+          <TypingIndicatorBar conversationId={conversationId} />
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>

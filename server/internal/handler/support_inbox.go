@@ -410,6 +410,7 @@ func (h *SupportInboxHandler) TypingIndicator(w http.ResponseWriter, r *http.Req
 		return
 	}
 	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
 
 	var req model.TypingIndicatorRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -417,6 +418,6 @@ func (h *SupportInboxHandler) TypingIndicator(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	h.supportService.PublishTypingIndicator(r.Context(), workspaceID, conversationID, req.IsTyping)
+	h.supportService.PublishTypingIndicator(r.Context(), workspaceID, conversationID, actorID, req.IsTyping)
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }

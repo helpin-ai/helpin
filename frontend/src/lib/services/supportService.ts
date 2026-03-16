@@ -34,4 +34,6 @@ export const supportService = {
     api.patch<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`, settings),
   regenerateWidgetKey: (workspaceId: string) =>
     api.post<SupportInstallationResponse>(`/support/inbox/installations/regenerate-key${qs(workspaceId)}`, {}),
+  sendTypingIndicator: (workspaceId: string, conversationId: string, isTyping: boolean) =>
+    api.post(`/support/inbox/conversations/${conversationId}/typing${qs(workspaceId)}`, { is_typing: isTyping }),
 };

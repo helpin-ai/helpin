@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useWebSocket, type WSEvent } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
+import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { pmStoryService } from '@/lib/services/pmStoryService'
 import { queryKeys } from '@/lib/queryKeys'
 
@@ -10,6 +11,8 @@ const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'exte
 
 /** Debounce window (ms) for batching rapid websocket events into a single board refresh. */
 const DEBOUNCE_MS = 200
+/** Auto-clear typing indicator after this many ms without a refresh. */
+const TYPING_TIMEOUT_MS = 10_000
 
 export function useRealtimeSync(workspaceId: string) {
   const queryClient = useQueryClient()
@@ -39,7 +42,7 @@ export function useRealtimeSync(workspaceId: string) {
             if (story.owner_member_id && !story.owner_name && res.data.owner_member) {
               story.owner_name = res.data.owner_member.display_name || res.data.owner_member.email
             }
-            const patched = store.patchStory(event.action, event.entity_id, story)
+            const patched = store.patchStory(event.action as 'created' | 'updated' | 'moved', event.entity_id, story)
             if (!patched) scheduleRefresh()
           } else {
             // Story might have been archived/deleted by the time we fetch.
@@ -78,10 +81,24 @@ export function useRealtimeSync(workspaceId: string) {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.parent_id) })
       }
     } else if (event.entity === 'support_conversation') {
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
+      if (event.action === 'typing_started' || event.action === 'typing_stopped') {
+        if (!event.entity_id) return
+
+        const { setTyping } = useSupportInboxStore.getState()
+        setTyping(event.entity_id, event.action === 'typing_started')
+        // Auto-clear after timeout in case typing:stop is never received
+        if (event.action === 'typing_started') {
+          setTimeout(() => {
+            useSupportInboxStore.getState().setTyping(event.entity_id, false)
+          }, TYPING_TIMEOUT_MS)
+        }
+      } else {
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
+      }
     } else if (event.entity === 'support_conversation_message') {
       if (event.parent_id) {
+        useSupportInboxStore.getState().setTyping(event.parent_id, false)
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
       }
     }

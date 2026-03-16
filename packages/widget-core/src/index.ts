@@ -46,6 +46,7 @@ export interface MountWidgetOptions {
   onSendMessage?: (content: string) => void;
   onSendMessageFromHome?: (content: string) => void;
   onQuickReply?: (content: string) => void;
+  onTyping?: () => void;
   showPreChatForm?: boolean;
   onPreChatSubmit?: (data: { name: string; email: string }) => void;
   isTyping?: boolean;
@@ -70,6 +71,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     onSendMessage = () => {},
     onSendMessageFromHome = onSendMessage,
     onQuickReply = () => {},
+    onTyping,
     showPreChatForm = false,
     onPreChatSubmit = () => {},
     isTyping = false,
@@ -95,6 +97,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       onSendMessage,
       onSendMessageFromHome,
       onQuickReply,
+      onTyping,
       showPreChatForm,
       onPreChatSubmit,
       isTyping,

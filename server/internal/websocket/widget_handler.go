@@ -312,19 +312,29 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			})
 
 		case "typing:start":
+			conversationID := derefStr(client.ConversationID)
+			if conversationID == "" {
+				continue
+			}
 			h.hub.Broadcast(Event{
 				Action:      "typing_started",
 				Entity:      "support_conversation",
-				EntityID:    derefStr(session.ConversationID),
+				EntityID:    conversationID,
 				WorkspaceID: session.WorkspaceID,
+				ActorID:     client.UserID,
 			})
 
 		case "typing:stop":
+			conversationID := derefStr(client.ConversationID)
+			if conversationID == "" {
+				continue
+			}
 			h.hub.Broadcast(Event{
 				Action:      "typing_stopped",
 				Entity:      "support_conversation",
-				EntityID:    derefStr(session.ConversationID),
+				EntityID:    conversationID,
 				WorkspaceID: session.WorkspaceID,
+				ActorID:     client.UserID,
 			})
 
 		case "session:upgrade":

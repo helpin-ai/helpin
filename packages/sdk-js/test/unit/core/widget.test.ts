@@ -241,4 +241,49 @@ describe('WidgetManager', () => {
       expect(postSendOptions.messages[0].content).toBe('Fresh question');
     });
   });
+
+  describe('typing fallback', () => {
+    it('should send typing indicators over HTTP when websocket is unavailable', async () => {
+      vi.useFakeTimers();
+
+      const fetchMock = vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            workspaceId: 'ws_test',
+            branding: { primaryColor: '#6366f1' },
+            features: {}
+          }),
+        })
+      );
+      vi.stubGlobal('fetch', fetchMock);
+
+      (widget as any).host = 'client.prod.helpin.ai';
+      (widget as any).sessionToken = 'session-123';
+      (widget as any).wsConnection = { readyState: 3, close: vi.fn(), onclose: null };
+
+      (widget as any).handleTyping();
+      await Promise.resolve();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://client.prod.helpin.ai/widget/typing',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ session_token: 'session-123', is_typing: true }),
+        }),
+      );
+
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://client.prod.helpin.ai/widget/typing',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ session_token: 'session-123', is_typing: false }),
+        }),
+      );
+
+      vi.useRealTimers();
+    });
+  });
 });

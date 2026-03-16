@@ -19,6 +19,7 @@ interface ChatWindowProps {
   onSendMessage: (content: string) => void;
   onSendMessageFromHome?: (content: string) => void;
   onQuickReply: (content: string) => void;
+  onTyping?: () => void;
   showPreChatForm: boolean;
   onPreChatSubmit: (data: { name: string; email: string }) => void;
   isTyping?: boolean;
@@ -40,6 +41,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   onSendMessage,
   onSendMessageFromHome,
   onQuickReply,
+  onTyping,
   showPreChatForm,
   onPreChatSubmit,
   isTyping = false,
@@ -170,6 +172,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             config={config}
             messages={messages}
             onSendMessage={onSendMessage}
+            onTyping={onTyping}
+            isTyping={isTyping}
             onBack={() => setActiveView(previousView)}
             onClose={onClose}
           />

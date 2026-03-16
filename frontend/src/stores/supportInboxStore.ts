@@ -42,6 +42,8 @@ interface SupportInboxState {
   createDialogOpen: boolean;
   // Mobile
   activePanel: ActivePanel;
+  // Typing indicators: conversationId → true when customer is typing
+  typingIndicators: Record<string, boolean>;
 
   // Actions
   setNavFilter: (filter: NavFilter) => void;
@@ -53,6 +55,7 @@ interface SupportInboxState {
   toggleDetailSidebar: () => void;
   setCreateDialogOpen: (open: boolean) => void;
   setActivePanel: (panel: ActivePanel) => void;
+  setTyping: (conversationId: string, isTyping: boolean) => void;
 }
 
 export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
@@ -68,6 +71,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
     createDialogOpen: false,
     activePanel: 'list',
+    typingIndicators: {},
 
     setNavFilter: (filter) => set({ navFilter: filter }),
     toggleNavCollapsed: () => {
@@ -86,5 +90,9 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     },
     setCreateDialogOpen: (open) => set({ createDialogOpen: open }),
     setActivePanel: (panel) => set({ activePanel: panel }),
+    setTyping: (conversationId, isTyping) =>
+      set((state) => ({
+        typingIndicators: { ...state.typingIndicators, [conversationId]: isTyping },
+      })),
   };
 });
