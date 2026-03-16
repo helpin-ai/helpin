@@ -34,8 +34,16 @@ export const supportService = {
     api.patch<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`, settings),
   regenerateWidgetKey: (workspaceId: string) =>
     api.post<SupportInstallationResponse>(`/support/inbox/installations/regenerate-key${qs(workspaceId)}`, {}),
+  /**
+   * @deprecated Use WebSocket `support:typing:start` / `support:typing:stop` messages instead.
+   * Kept as HTTP fallback for clients without an active WebSocket connection.
+   */
   sendTypingIndicator: (workspaceId: string, conversationId: string, isTyping: boolean, content?: string) =>
     api.post(`/support/inbox/conversations/${conversationId}/typing${qs(workspaceId)}`, { is_typing: isTyping, ...(content && { content }) }),
+  /**
+   * @deprecated Use WebSocket `support:viewing:start` / `support:viewing:stop` messages instead.
+   * Kept as HTTP fallback for clients without an active WebSocket connection.
+   */
   sendViewingPresence: (workspaceId: string, conversationId: string, viewing: boolean) =>
     api.post(`/support/inbox/conversations/${conversationId}/viewing${qs(workspaceId)}`, { viewing }),
 };

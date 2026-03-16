@@ -147,10 +147,27 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 	}
 }
 
+func unmarshalWidgetData[T any](data map[string]any) (T, error) {
+	var result T
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return result, err
+	}
+	err = json.Unmarshal(dataBytes, &result)
+	return result, err
+}
+
 func (h *WidgetHandler) handleSessionCreate(ctx context.Context, widgetKey string, msg model.WidgetWSMessage, conn *websocket.Conn) (*model.SupportWidgetSession, error) {
-	anonymousID, _ := msg.Data["anonymous_id"].(string)
-	pageURL, _ := msg.Data["page_url"].(string)
-	userAgent, _ := msg.Data["user_agent"].(string)
+	typed, err := unmarshalWidgetData[model.WidgetSessionCreateData](msg.Data)
+	if err != nil {
+		slog.Warn("widget ws: invalid session:create data", "error", err)
+		SendToClient(conn, "session:error", map[string]string{"code": "invalid_data", "message": "malformed session:create payload"})
+		conn.Close(websocket.StatusPolicyViolation, "invalid data")
+		return nil, err
+	}
+	anonymousID := typed.AnonymousID
+	pageURL := typed.PageURL
+	userAgent := typed.UserAgent
 
 	var pageURLPtr, uaPtr *string
 	if pageURL != "" {
@@ -178,7 +195,14 @@ func (h *WidgetHandler) handleSessionCreate(ctx context.Context, widgetKey strin
 }
 
 func (h *WidgetHandler) handleSessionRestore(ctx context.Context, widgetKey string, msg model.WidgetWSMessage, conn *websocket.Conn) (*model.SupportWidgetSession, error) {
-	token, _ := msg.Data["session_token"].(string)
+	typed, err := unmarshalWidgetData[model.WidgetSessionRestoreData](msg.Data)
+	if err != nil {
+		slog.Warn("widget ws: invalid session:restore data", "error", err)
+		SendToClient(conn, "session:error", map[string]string{"code": "invalid_data", "message": "malformed session:restore payload"})
+		conn.Close(websocket.StatusPolicyViolation, "invalid data")
+		return nil, err
+	}
+	token := typed.SessionToken
 	if token == "" {
 		SendToClient(conn, "session:error", map[string]string{"code": "invalid_token", "message": "missing session_token"})
 		conn.Close(websocket.StatusPolicyViolation, "missing token")
@@ -280,7 +304,13 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 
 		switch msg.Type {
 		case "message:send":
-			content, _ := msg.Data["content"].(string)
+			typed, err := unmarshalWidgetData[model.WidgetMessageSendData](msg.Data)
+			if err != nil {
+				slog.Warn("widget ws: invalid message:send data", "error", err)
+				SendToClient(conn, "connection:error", map[string]string{"code": "invalid_data", "message": "malformed message:send payload"})
+				continue
+			}
+			content := typed.Content
 			if strings.TrimSpace(content) == "" {
 				continue
 			}
@@ -320,9 +350,10 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 			slog.Debug("widget ws: broadcasting typing_started",
 				"conversation_id", conversationID, "workspace_id", session.WorkspaceID, "actor", client.UserID)
+			typed, _ := unmarshalWidgetData[model.WidgetTypingData](msg.Data)
 			var eventData json.RawMessage
-			if content, _ := msg.Data["content"].(string); content != "" {
-				eventData, _ = json.Marshal(map[string]string{"content": content})
+			if typed.Content != "" {
+				eventData, _ = json.Marshal(map[string]string{"content": typed.Content})
 			}
 			go h.hub.Broadcast(Event{
 				Action:      "typing_started",
@@ -349,13 +380,19 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			})
 
 		case "session:upgrade":
-			email, _ := msg.Data["email"].(string)
-			name, _ := msg.Data["name"].(string)
-			if email == "" {
+			typed, err := unmarshalWidgetData[model.WidgetSessionUpgradeData](msg.Data)
+			if err != nil {
+				slog.Warn("widget ws: invalid session:upgrade data", "error", err)
+				SendToClient(conn, "connection:error", map[string]string{"code": "invalid_data", "message": "malformed session:upgrade payload"})
+				continue
+			}
+			if typed.Email == "" {
 				SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": "email is required"})
 				continue
 			}
-			err := h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name)
+			email := typed.Email
+			name := typed.Name
+			err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name)
 			if err != nil {
 				SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": err.Error()})
 				continue
@@ -390,7 +427,13 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			client.ConversationID = nil
 
 		case "conversation:select":
-			convID, _ := msg.Data["conversation_id"].(string)
+			typed, err := unmarshalWidgetData[model.WidgetConversationSelectData](msg.Data)
+			if err != nil {
+				slog.Warn("widget ws: invalid conversation:select data", "error", err)
+				SendToClient(conn, "connection:error", map[string]string{"code": "invalid_data", "message": "malformed conversation:select payload"})
+				continue
+			}
+			convID := typed.ConversationID
 			if convID == "" {
 				continue
 			}

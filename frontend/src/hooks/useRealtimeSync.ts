@@ -164,9 +164,20 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         } else if (event.actor_id) {
           s.clearOneAgentTyping(event.parent_id, event.actor_id)
         }
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.parent_id) })
+        // Batch-invalidate all support conversation queries in a single call:
+        // matches conversations list, conversation detail, and messages
+        const parentId = event.parent_id
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey
+            return key[0] === 'support' && key[1] === workspaceId && (
+              // conversations list: ['support', wsId, 'conversations']
+              key.length === 3 ||
+              // conversation detail or messages: ['support', wsId, 'conversations', parentId, ...]
+              key[3] === parentId
+            )
+          },
+        })
       }
     }
 

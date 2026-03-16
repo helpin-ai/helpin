@@ -189,6 +189,16 @@ type WidgetMessageSendData struct {
 	Content string `json:"content"`
 }
 
+// WidgetTypingData is the payload for typing:start / typing:stop.
+type WidgetTypingData struct {
+	Content string `json:"content,omitempty"`
+}
+
+// WidgetConversationSelectData is the payload for conversation:select.
+type WidgetConversationSelectData struct {
+	ConversationID string `json:"conversation_id"`
+}
+
 // WidgetSessionJoinedPayload is sent to the client after session:create or session:restore.
 type WidgetSessionJoinedPayload struct {
 	SessionToken  string                `json:"session_token"`

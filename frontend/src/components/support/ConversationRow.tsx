@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -8,7 +9,7 @@ import { timeAgo, getInitial, getAvatarColor } from './helpers';
 
 const EMPTY_ARRAY: string[] = [];
 
-function TypingDotsPill() {
+const TypingDotsPill = memo(function TypingDotsPill() {
   return (
     <span className="inline-flex items-center gap-0.5 rounded-full bg-foreground/10 px-2 py-0.5">
       <span className="h-1 w-1 rounded-full bg-foreground/50 animate-bounce [animation-delay:0ms]" />
@@ -16,9 +17,9 @@ function TypingDotsPill() {
       <span className="h-1 w-1 rounded-full bg-foreground/50 animate-bounce [animation-delay:300ms]" />
     </span>
   );
-}
+});
 
-function AgentAvatar({ userId, tooltip }: { userId: string; tooltip?: string }) {
+const AgentAvatar = memo(function AgentAvatar({ userId, tooltip }: { userId: string; tooltip?: string }) {
   const wsId = useWorkspaceStore((s) => s.currentWorkspace?.id ?? '');
   const { data: members = [] } = useWorkspaceMembers(wsId);
   const member = members.find((m) => m.user_id === userId);
@@ -40,7 +41,7 @@ function AgentAvatar({ userId, tooltip }: { userId: string; tooltip?: string }) 
       </TooltipContent>
     </Tooltip>
   );
-}
+});
 
 interface ConversationRowProps {
   conversation: SupportConversation;
@@ -48,7 +49,7 @@ interface ConversationRowProps {
   onSelect: () => void;
 }
 
-export function ConversationRow({ conversation, isSelected, onSelect }: ConversationRowProps) {
+export const ConversationRow = memo(function ConversationRow({ conversation, isSelected, onSelect }: ConversationRowProps) {
   const displayName = conversation.customer_name || conversation.customer_email || 'Anonymous';
   const typingState = useSupportInboxStore((s) => s.typingIndicators[conversation.id]);
   // typing state is string (including empty '') when typing, false/undefined when not
@@ -128,4 +129,4 @@ export function ConversationRow({ conversation, isSelected, onSelect }: Conversa
       </div>
     </button>
   );
-}
+});
