@@ -763,18 +763,14 @@ export class WidgetManager {
       }
 
       case 'typing:start':
-        // Ignore own typing events echoed back by the Hub
-        if (!this.isSendingTyping) {
-          this.isTyping = true;
-          this.render();
-        }
+        // Hub already filters out widget's own typing — this is always agent-origin
+        this.isTyping = true;
+        this.render();
         break;
 
       case 'typing:stop':
-        if (!this.isSendingTyping) {
-          this.isTyping = false;
-          this.render();
-        }
+        this.isTyping = false;
+        this.render();
         break;
 
       case 'conversations:listed': {
