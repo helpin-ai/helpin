@@ -71,6 +71,8 @@ type Handlers struct {
 	CRMSearch          *handler.CRMSearchHandler
 	CRMDealAutomation  *handler.CRMDealAutomationHandler
 	AutomationRule     *handler.AutomationRuleHandler
+	PMRoadmap          *handler.PMRoadmapHandler
+	SDKAssets           *handler.SDKAssetsHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -117,10 +119,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}))
 		r.Get("/config", h.SupportInboxWidget.GetConfig)
 		r.Post("/session", h.SupportInboxWidget.CreateSession)
+		r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 		r.Post("/messages", h.SupportInboxWidget.SendMessage)
 		r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
 	})
+
+	// ---- SDK asset serving (no JWT, open CORS, cache headers) ----
+	if h.SDKAssets != nil {
+		r.Route("/sdk", func(r chi.Router) {
+			r.Get("/*", h.SDKAssets.ServeSDK)
+		})
+	}
 
 	r.Route("/api", func(r chi.Router) {
 		// ---- Public routes ----
@@ -165,6 +175,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			}))
 			r.Get("/config", h.SupportInboxWidget.GetConfig)
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
+			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		})
@@ -193,6 +204,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			}))
 			r.Get("/config", h.SupportInboxWidget.GetConfig)
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
+			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 			r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
@@ -450,6 +462,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/story-templates", h.PMStoryTemplate.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/story-templates/{id}", h.PMStoryTemplate.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/story-templates/{id}", h.PMStoryTemplate.Delete)
+
+				// Roadmap — pm.read
+				r.With(requirePerm(authorization.PermPMRead)).Get("/roadmap", h.PMRoadmap.Get)
 
 				// Epics — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics", h.PMEpic.List)

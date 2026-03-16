@@ -63,12 +63,16 @@ func (r *PMEpicRepository) GetWithStats(ctx context.Context, id string) (*model.
 	if err != nil {
 		return nil, err
 	}
+	objectives, err := r.listObjectives(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 	stats, err := r.ComputeStats(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	return &model.EpicWithStats{Epic: epic, Labels: labels, Stats: stats}, nil
+	return &model.EpicWithStats{Epic: epic, Labels: labels, Objectives: objectives, Stats: stats}, nil
 }
 
 // Create inserts an epic.
@@ -192,6 +196,52 @@ func (r *PMEpicRepository) ListStories(ctx context.Context, epicID string) ([]mo
 		return nil, fmt.Errorf("list epic stories: %w", err)
 	}
 	return stories, nil
+}
+
+func (r *PMEpicRepository) listObjectives(ctx context.Context, epicID string) ([]model.RoadmapObjectiveRef, error) {
+	var refs []model.RoadmapObjectiveRef
+	if err := r.db.WithContext(ctx).
+		Table("pm_objectives o").
+		Select("o.id, o.name").
+		Joins("JOIN pm_epic_objectives peo ON peo.objective_id = o.id").
+		Where("peo.epic_id = ?", epicID).
+		Order("o.name ASC").
+		Find(&refs).Error; err != nil {
+		return nil, fmt.Errorf("list epic objectives: %w", err)
+	}
+	return refs, nil
+}
+
+// ListObjectivesBatch returns a map of epic_id → objective references for multiple epics.
+func (r *PMEpicRepository) ListObjectivesBatch(ctx context.Context, epicIDs []string) (map[string][]model.RoadmapObjectiveRef, error) {
+	if len(epicIDs) == 0 {
+		return map[string][]model.RoadmapObjectiveRef{}, nil
+	}
+
+	type row struct {
+		EpicID        string `gorm:"column:epic_id"`
+		ObjectiveID   string `gorm:"column:objective_id"`
+		ObjectiveName string `gorm:"column:objective_name"`
+	}
+
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Table("pm_epic_objectives peo").
+		Select("peo.epic_id, peo.objective_id, o.name AS objective_name").
+		Joins("JOIN pm_objectives o ON o.id = peo.objective_id").
+		Where("peo.epic_id IN ?", epicIDs).
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("batch list epic objectives: %w", err)
+	}
+
+	result := make(map[string][]model.RoadmapObjectiveRef, len(epicIDs))
+	for _, r := range rows {
+		result[r.EpicID] = append(result[r.EpicID], model.RoadmapObjectiveRef{
+			ID:   r.ObjectiveID,
+			Name: r.ObjectiveName,
+		})
+	}
+	return result, nil
 }
 
 func (r *PMEpicRepository) listLabels(ctx context.Context, epicID string) ([]model.PMLabel, error) {

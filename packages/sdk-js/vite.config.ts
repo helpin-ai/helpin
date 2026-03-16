@@ -1,9 +1,39 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import { readFileSync } from 'fs';
+import { globSync } from 'glob';
 import dts from 'vite-plugin-dts';
 
-export default defineConfig(({ command, mode }) => {
-  // Determine if we are in build mode
+/**
+ * Vite plugin that injects the hashed SDK filename into the loader (lib.js).
+ * Replaces __SDK_FILENAME__ with the actual content-hashed filename after build.
+ */
+function injectSDKFilename() {
+  return {
+    name: 'inject-sdk-filename',
+    writeBundle(options: any, bundle: Record<string, any>) {
+      // Find the hashed SDK bundle filename
+      const sdkChunk = Object.values(bundle).find(
+        (chunk: any) => chunk.type === 'chunk' && chunk.facadeModuleId?.endsWith('index.ts')
+      );
+      if (!sdkChunk) return;
+
+      const sdkFilename = (sdkChunk as any).fileName;
+      const outDir = options.dir || 'dist';
+      const loaderPath = resolve(outDir, 'lib.js');
+
+      try {
+        let loaderCode = readFileSync(loaderPath, 'utf-8');
+        loaderCode = loaderCode.replace(/__SDK_FILENAME__/g, sdkFilename);
+        require('fs').writeFileSync(loaderPath, loaderCode);
+      } catch {
+        // loader might not exist yet in watch mode
+      }
+    },
+  };
+}
+
+export default defineConfig(({ command }) => {
   const isBuild = command === 'build';
 
   return {
@@ -15,36 +45,36 @@ export default defineConfig(({ command, mode }) => {
       ],
     },
     build: {
-      lib: {
-        entry: resolve(__dirname, 'src/index.ts'),
-        name: 'Helpin',
-        formats: ['es', 'cjs', 'umd'],
-        fileName: (format) => {
-          if (format === 'umd') {
-            return 'lib.js';
-          }
-          return `helpin.${format}.js`;
-        },
-      },
       cssCodeSplit: false,
       rollupOptions: {
-        external: [], // Everything bundled inline (including widget-core + preact)
+        input: {
+          loader: resolve(__dirname, 'src/loader.ts'),
+          index: resolve(__dirname, 'src/index.ts'),
+        },
+        external: [],
         output: {
-          globals: {
-            module: 'module',
+          entryFileNames: (chunkInfo) => {
+            if (chunkInfo.name === 'loader') return 'lib.js';
+            return 'helpin.[hash].js';
           },
+          chunkFileNames: 'chunks/[name].[hash].js',
+          assetFileNames: (assetInfo) => {
+            if (assetInfo.names?.[0]?.endsWith('.css')) return 'helpin.[hash].css';
+            return 'assets/[name].[hash][extname]';
+          },
+          format: 'es',
         },
       },
     },
     plugins: [
-      // Conditionally include the dts plugin only during build
       isBuild &&
         dts({
           insertTypesEntry: true,
           include: ['src/**/*.ts'],
-          exclude: ['test', 'node_modules'],
+          exclude: ['test', 'node_modules', 'src/loader.ts'],
           outDir: 'dist',
         }),
+      isBuild && injectSDKFilename(),
     ].filter(Boolean),
     server: {
       open: '/examples/index.html',

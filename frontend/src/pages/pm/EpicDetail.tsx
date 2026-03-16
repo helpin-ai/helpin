@@ -20,11 +20,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { StoryListView } from '@/components/pm/StoryListView';
-import { StoryDetailPanel } from '@/components/pm/StoryDetailPanel';
+import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
-import { pmStoryService } from '@/lib/services/pmStoryService';
 import { useWorkflows, useEpicStates } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -39,8 +38,9 @@ import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
-const healthOptions: EpicHealth[] = ['on_track', 'at_risk', 'off_track'];
+const healthOptions: EpicHealth[] = ['no_health', 'on_track', 'at_risk', 'off_track'];
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
+  no_health: { label: 'No health', color: 'text-muted-foreground' },
   on_track: { label: 'On track', color: 'text-green-600' },
   at_risk: { label: 'At risk', color: 'text-yellow-600' },
   off_track: { label: 'Off track', color: 'text-red-600' },
@@ -137,6 +137,35 @@ const buildForm = (epic: EpicWithStats): EpicFormState => ({
   deadline: epic.epic.deadline ? epic.epic.deadline.slice(0, 10) : '',
 });
 
+function startOfDayUTC(value: string | Date): Date | null {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function getNoHealthSuggestionMessage(epic: EpicWithStats | null): string | null {
+  if (!epic || epic.suggested_health !== 'no_health') return null;
+
+  const start = epic.epic.planned_start_date ? startOfDayUTC(epic.epic.planned_start_date) : null;
+  const end = epic.epic.deadline ? startOfDayUTC(epic.epic.deadline) : null;
+  const today = startOfDayUTC(new Date());
+
+  if (!start || !end) {
+    return 'No suggestion yet: set a start date and deadline.';
+  }
+  if (end < start) {
+    return 'No suggestion yet: fix the schedule dates.';
+  }
+  if (epic.stats.story_count === 0) {
+    return 'No suggestion yet: add stories with workflow states to this epic.';
+  }
+  if (today && today < start) {
+    return 'No suggestion yet: this epic has not started yet.';
+  }
+
+  return 'No suggestion yet: more planning data is needed.';
+}
+
 export function EpicDetailPage() {
   const { epicId, slug } = routeApi.useParams();
   const navigate = useNavigate();
@@ -171,10 +200,7 @@ export function EpicDetailPage() {
     [assignableMembers],
   );
 
-  // Story detail panel
-  const [selectedStory, setSelectedStory] = useState<Awaited<ReturnType<typeof pmStoryService.get>>['data'] | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const openStoryPanel = useStoryPanelStore((s) => s.openStory);
 
   useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 
@@ -255,6 +281,7 @@ export function EpicDetailPage() {
     () => (form?.team_id ? findTeamName(form.team_id) ?? 'No team' : 'No team'),
     [form?.team_id, findTeamName],
   );
+  const noHealthSuggestionMessage = useMemo(() => getNoHealthSuggestionMessage(epic), [epic]);
   const currentOwnerName = useMemo(() => {
     if (!form?.owner_member_id) return 'Nobody';
     return assignableMemberNames.get(form.owner_member_id) ?? 'Unknown';
@@ -265,11 +292,6 @@ export function EpicDetailPage() {
   }, [form?.planning_repository_id, repositories]);
 
   const workflow = workflows[0] ?? null;
-  const selectedStoryStates = useMemo(() => {
-    const storyWorkflowID = selectedStory?.story.workflow_id;
-    if (!storyWorkflowID) return workflow?.states ?? [];
-    return workflows.find((candidate) => candidate.workflow.id === storyWorkflowID)?.states ?? workflow?.states ?? [];
-  }, [selectedStory?.story.workflow_id, workflow?.states, workflows]);
 
   // Resources: unique people from story owners + epic team members
   const resources = useMemo(() => {
@@ -301,17 +323,25 @@ export function EpicDetailPage() {
   }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
-    async (story: Story) => {
-      if (!workspaceId) return;
-      setSelectedStory(null);
-      setDetailLoading(true);
-      setDetailOpen(true);
-      const detail = await pmStoryService.get(workspaceId, story.id);
-      setDetailLoading(false);
-      if (detail.data) setSelectedStory(detail.data);
-    },
-    [workspaceId],
+    (story: Story) => openStoryPanel(story.id),
+    [openStoryPanel],
   );
+
+  // Refresh stories when global panel updates/archives a story
+  useEffect(() => {
+    const refresh = () => {
+      if (!workspaceId) return;
+      pmEpicService.listStories(workspaceId, epicId).then((res) => {
+        if (res.data) setStories(res.data);
+      });
+    };
+    window.addEventListener('story-panel-updated', refresh);
+    window.addEventListener('story-panel-archived', refresh);
+    return () => {
+      window.removeEventListener('story-panel-updated', refresh);
+      window.removeEventListener('story-panel-archived', refresh);
+    };
+  }, [workspaceId, epicId]);
 
   const goBack = () => navigate({ to: '/w/$slug/pm/epics', params: { slug } });
 
@@ -336,7 +366,7 @@ export function EpicDetailPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col max-w-7xl mx-auto">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
@@ -480,7 +510,11 @@ export function EpicDetailPage() {
                     <span className={healthConfig[form.health]?.color}>{healthConfig[form.health]?.label}</span>
                   )}
                 />
-                {epic?.suggested_health && epic.suggested_health !== form.health && (
+                {noHealthSuggestionMessage ? (
+                  <p className="text-[10px] text-muted-foreground">
+                    {noHealthSuggestionMessage}
+                  </p>
+                ) : epic?.suggested_health && epic.suggested_health !== form.health && (
                   <button
                     type="button"
                     className="text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left"
@@ -581,28 +615,6 @@ export function EpicDetailPage() {
         </aside>
       </div>
 
-      {/* Story Detail Panel */}
-      {workspaceId && workflow && (
-        <StoryDetailPanel
-          workspaceId={workspaceId}
-          storyDetail={selectedStory}
-          open={detailOpen}
-          loading={detailLoading}
-          onOpenChange={setDetailOpen}
-          states={selectedStoryStates}
-          onStoryUpdated={async (updated) => {
-            setSelectedStory(updated);
-            const res = await pmEpicService.listStories(workspaceId, epicId);
-            if (res.data) setStories(res.data);
-          }}
-          onStoryArchived={() => {
-            setDetailOpen(false);
-            pmEpicService.listStories(workspaceId!, epicId).then((res) => {
-              if (res.data) setStories(res.data);
-            });
-          }}
-        />
-      )}
     </div>
   );
 }

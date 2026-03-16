@@ -67,11 +67,34 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 
 // ServiceBridge provides access to Helpin services from within tool execution.
 type ServiceBridge struct {
+	// PM / Stories
 	AddComment         func(ctx context.Context, workspaceID, storyID, agentID, content string) error
 	UpdateStoryState   func(ctx context.Context, workspaceID, storyID, stateID string) error
 	ListChecklist      func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error)
+
+	// Support
 	ListConversationMessages func(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error)
 	UpdateConversationStatus func(ctx context.Context, workspaceID, conversationID, status string) error
+
+	// CRM
+	ListDeals          func(ctx context.Context, workspaceID string, limit int) ([]model.CRMDeal, error)
+	GetDeal            func(ctx context.Context, id string) (*model.CRMDeal, error)
+	UpdateDealStage    func(ctx context.Context, dealID, stageID string) error
+	AddDealNote        func(ctx context.Context, workspaceID, dealID, agentID, content string) error
+	ListContacts       func(ctx context.Context, workspaceID string, limit int) ([]model.CRMContact, error)
+	ListBuyerSignals   func(ctx context.Context, workspaceID string, dealID *string, limit int) ([]model.CRMBuyerSignal, error)
+
+	// Docs
+	GetDocument        func(ctx context.Context, id string) (*model.DocsDocument, error)
+	ListDocuments      func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
+	SearchDocuments    func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
+}
+
+// DocsSearchHit is a simplified search result for tool responses.
+type DocsSearchHit struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Excerpt string `json:"excerpt"`
 }
 
 // ChecklistItem is a simplified checklist item for tool responses.

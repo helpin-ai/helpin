@@ -12,20 +12,23 @@ import (
 
 // Event is the lightweight notification sent to clients.
 type Event struct {
-	Action      string `json:"action"`
-	Entity      string `json:"entity"`
-	EntityID    string `json:"entity_id"`
-	WorkspaceID string `json:"workspace_id"`
-	ActorID     string `json:"actor_id"`
-	ParentType  string `json:"parent_type,omitempty"`
-	ParentID    string `json:"parent_id,omitempty"`
+	Action      string          `json:"action"`
+	Entity      string          `json:"entity"`
+	EntityID    string          `json:"entity_id"`
+	WorkspaceID string          `json:"workspace_id"`
+	ActorID     string          `json:"actor_id"`
+	ParentType  string          `json:"parent_type,omitempty"`
+	ParentID    string          `json:"parent_id,omitempty"`
+	Data        json.RawMessage `json:"data,omitempty"` // hydrated payload for widget clients
 }
 
 // Client represents a single WebSocket connection.
 type Client struct {
-	Conn        *websocket.Conn
-	UserID      string
-	WorkspaceID string
+	Conn           *websocket.Conn
+	UserID         string
+	WorkspaceID    string
+	IsWidget       bool    // true for widget clients, false for internal (agent) clients
+	ConversationID *string // set for widget clients, scopes which events they receive
 }
 
 // Hub manages all active WebSocket clients grouped by workspace.
@@ -49,7 +52,7 @@ func (h *Hub) Register(c *Client) {
 		h.clients[c.WorkspaceID] = make(map[*Client]struct{})
 	}
 	h.clients[c.WorkspaceID][c] = struct{}{}
-	log.Printf("[ws] client registered: user=%s workspace=%s", c.UserID, c.WorkspaceID)
+	log.Printf("[ws] client registered: user=%s workspace=%s widget=%v", c.UserID, c.WorkspaceID, c.IsWidget)
 }
 
 // Unregister removes a client from the hub.
@@ -65,7 +68,8 @@ func (h *Hub) Unregister(c *Client) {
 	log.Printf("[ws] client unregistered: user=%s workspace=%s", c.UserID, c.WorkspaceID)
 }
 
-// Broadcast sends an event to all clients in the event's workspace.
+// Broadcast sends an event to all eligible clients in the event's workspace.
+// Widget clients are filtered by conversation scope via shouldReceive().
 func (h *Hub) Broadcast(event Event) {
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -82,6 +86,9 @@ func (h *Hub) Broadcast(event Event) {
 	h.mu.RUnlock()
 
 	for _, c := range targets {
+		if !h.shouldReceive(c, event) {
+			continue
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		err := c.Conn.Write(ctx, websocket.MessageText, data)
 		cancel()
@@ -91,4 +98,52 @@ func (h *Hub) Broadcast(event Event) {
 			c.Conn.Close(websocket.StatusGoingAway, "write failed")
 		}
 	}
+}
+
+// shouldReceive determines if a client should receive an event.
+// Internal clients (agents) receive everything in their workspace.
+// Widget clients only receive their own conversation's events.
+func (h *Hub) shouldReceive(client *Client, event Event) bool {
+	if !client.IsWidget {
+		return true // internal clients see everything in their workspace
+	}
+
+	switch event.Entity {
+	case "support_conversation_message":
+		return client.ConversationID != nil && *client.ConversationID == event.ParentID
+	case "support_conversation":
+		return client.ConversationID != nil && *client.ConversationID == event.EntityID
+	default:
+		return false // widget doesn't need PM/CRM/other events
+	}
+}
+
+// SetWidgetConversation updates a widget client's conversation_id by UserID.
+func (h *Hub) SetWidgetConversation(userID string, conversationID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, clients := range h.clients {
+		for client := range clients {
+			if client.UserID == userID {
+				client.ConversationID = &conversationID
+			}
+		}
+	}
+}
+
+// SendToClient sends a typed WS message directly to a specific connection.
+func SendToClient(conn *websocket.Conn, msgType string, data interface{}) error {
+	payload := map[string]interface{}{
+		"type": msgType,
+	}
+	if data != nil {
+		payload["data"] = data
+	}
+	msg, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return conn.Write(ctx, websocket.MessageText, msg)
 }

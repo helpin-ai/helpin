@@ -4,7 +4,7 @@ export type StoryType = 'feature' | 'bug' | 'chore';
 export type StateType = 'backlog' | 'unstarted' | 'started' | 'done';
 export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 export type Severity = 'none' | 'minor' | 'major' | 'critical';
-export type EpicHealth = 'on_track' | 'at_risk' | 'off_track';
+export type EpicHealth = 'no_health' | 'on_track' | 'at_risk' | 'off_track';
 export type SprintStatus = 'unstarted' | 'started' | 'done';
 
 export interface Workflow {
@@ -112,11 +112,24 @@ export interface EpicStats {
   unstarted_count: number;
 }
 
+export interface RoadmapObjectiveRef {
+  id: string;
+  name: string;
+}
+
 export interface EpicWithStats {
   epic: Epic;
   labels: Label[];
+  objectives: RoadmapObjectiveRef[];
   stats: EpicStats;
   suggested_health: EpicHealth;
+}
+
+export type RoadmapEpic = EpicWithStats;
+
+export interface RoadmapData {
+  epics: EpicWithStats[];
+  objectives: Objective[];
 }
 
 export interface PMSprint {
@@ -958,8 +971,9 @@ export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'native_claude' | 'claude_code' | 'openclaw' | 'zeroclaw';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
-export type AgentTargetType = 'story' | 'support_conversation' | 'epic' | 'document';
+export type AgentTargetType = 'story' | 'support_conversation' | 'epic' | 'document' | 'crm_deal';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
+export type AgentApprovalMode = 'class_default' | 'never' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 
 export interface Agent {
@@ -983,6 +997,15 @@ export interface Agent {
   monthly_token_budget?: number;
   tokens_used_this_month: number;
   active_story_id?: string;
+  team_id?: string;
+  allowed_tools: string[];
+  allowed_commands: string[];
+  allowed_targets: string[];
+  schedule?: string;
+  target_selector?: Record<string, unknown>;
+  trigger_events: string[];
+  approval_mode: AgentApprovalMode;
+  max_concurrent_runs: number;
   created_at: string;
   updated_at: string;
 }
@@ -1107,6 +1130,15 @@ export interface CreateAgentRequest {
   planning_notes?: string;
   tools?: unknown[];
   monthly_token_budget?: number;
+  team_id?: string | null;
+  allowed_tools?: string[];
+  allowed_commands?: string[];
+  allowed_targets?: string[];
+  schedule?: string;
+  target_selector?: Record<string, unknown>;
+  trigger_events?: string[];
+  approval_mode?: AgentApprovalMode;
+  max_concurrent_runs?: number;
 }
 
 export interface UpdateAgentRequest {
@@ -1126,6 +1158,15 @@ export interface UpdateAgentRequest {
   tools?: unknown[];
   monthly_token_budget?: number;
   active_story_id?: string;
+  team_id?: string | null;
+  allowed_tools?: string[];
+  allowed_commands?: string[];
+  allowed_targets?: string[];
+  schedule?: string;
+  target_selector?: Record<string, unknown>;
+  trigger_events?: string[];
+  approval_mode?: AgentApprovalMode;
+  max_concurrent_runs?: number;
 }
 
 export interface AssignAgentRequest {

@@ -19,12 +19,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { StoryListView } from '@/components/pm/StoryListView';
-import { StoryDetailPanel } from '@/components/pm/StoryDetailPanel';
+import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
-import { pmStoryService } from '@/lib/services/pmStoryService';
 import { useWorkflows } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -148,10 +147,7 @@ export function SprintDetailPage() {
     [assignableMembers],
   );
 
-  // Story detail panel
-  const [selectedStory, setSelectedStory] = useState<Awaited<ReturnType<typeof pmStoryService.get>>['data'] | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const openStoryPanel = useStoryPanelStore((s) => s.openStory);
 
   useTitle(form?.name ? `${form.name} — Sprint` : 'Sprint');
 
@@ -222,11 +218,6 @@ export function SprintDetailPage() {
   );
 
   const workflow = workflows[0] ?? null;
-  const selectedStoryStates = useMemo(() => {
-    const storyWorkflowID = selectedStory?.story.workflow_id;
-    if (!storyWorkflowID) return workflow?.states ?? [];
-    return workflows.find((candidate) => candidate.workflow.id === storyWorkflowID)?.states ?? workflow?.states ?? [];
-  }, [selectedStory?.story.workflow_id, workflow?.states, workflows]);
 
   // Resources: unique people from story owners + sprint team members
   const resources = useMemo(() => {
@@ -258,17 +249,25 @@ export function SprintDetailPage() {
   }, [stories, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
 
   const openStory = useCallback(
-    async (story: Story) => {
-      if (!workspaceId) return;
-      setSelectedStory(null);
-      setDetailLoading(true);
-      setDetailOpen(true);
-      const detail = await pmStoryService.get(workspaceId, story.id);
-      setDetailLoading(false);
-      if (detail.data) setSelectedStory(detail.data);
-    },
-    [workspaceId],
+    (story: Story) => openStoryPanel(story.id),
+    [openStoryPanel],
   );
+
+  // Refresh stories when global panel updates/archives a story
+  useEffect(() => {
+    const refresh = () => {
+      if (!workspaceId) return;
+      pmSprintService.listStories(workspaceId, sprintId).then((res) => {
+        if (res.data) setStories(res.data);
+      });
+    };
+    window.addEventListener('story-panel-updated', refresh);
+    window.addEventListener('story-panel-archived', refresh);
+    return () => {
+      window.removeEventListener('story-panel-updated', refresh);
+      window.removeEventListener('story-panel-archived', refresh);
+    };
+  }, [workspaceId, sprintId]);
 
   const goBack = () => navigate({ to: '/w/$slug/pm/sprints', params: { slug } });
 
@@ -293,7 +292,7 @@ export function SprintDetailPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col max-w-7xl mx-auto">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
@@ -529,28 +528,6 @@ export function SprintDetailPage() {
         </aside>
       </div>
 
-      {/* Story Detail Panel */}
-      {workspaceId && workflow && (
-        <StoryDetailPanel
-          workspaceId={workspaceId}
-          storyDetail={selectedStory}
-          open={detailOpen}
-          loading={detailLoading}
-          onOpenChange={setDetailOpen}
-          states={selectedStoryStates}
-          onStoryUpdated={async (updated) => {
-            setSelectedStory(updated);
-            const res = await pmSprintService.listStories(workspaceId, sprintId);
-            if (res.data) setStories(res.data);
-          }}
-          onStoryArchived={() => {
-            setDetailOpen(false);
-            pmSprintService.listStories(workspaceId!, sprintId).then((res) => {
-              if (res.data) setStories(res.data);
-            });
-          }}
-        />
-      )}
 
       <ConfirmDialog
         open={archiveConfirmOpen}

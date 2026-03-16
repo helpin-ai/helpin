@@ -728,8 +728,12 @@ func isValidKeyResultType(v string) bool {
 	return v == model.PMKeyResultTypeBoolean || v == model.PMKeyResultTypePercent || v == model.PMKeyResultTypeNumeric
 }
 
-// computeSuggestedHealth calculates health based on KR progress vs time elapsed.
+// computeSuggestedHealth calculates health based on KR progress vs the planned schedule.
 func computeSuggestedHealth(obj *model.ObjectiveWithDetails) string {
+	return computeSuggestedHealthAt(obj, time.Now())
+}
+
+func computeSuggestedHealthAt(obj *model.ObjectiveWithDetails, now time.Time) string {
 	// Need both dates and at least one KR to compute
 	if obj.Objective.PlannedStartDate == nil || obj.Objective.Deadline == nil {
 		return model.PMObjectiveHealthOnTrack
@@ -738,26 +742,37 @@ func computeSuggestedHealth(obj *model.ObjectiveWithDetails) string {
 		return model.PMObjectiveHealthOnTrack
 	}
 
-	now := time.Now()
-	start := *obj.Objective.PlannedStartDate
-	end := *obj.Objective.Deadline
-	totalDays := end.Sub(start).Hours() / 24
+	start := startOfDayUTC(*obj.Objective.PlannedStartDate)
+	end := startOfDayUTC(*obj.Objective.Deadline)
+	today := startOfDayUTC(now)
+	if end.Before(start) {
+		return model.PMObjectiveHealthOnTrack
+	}
+	if today.Before(start) {
+		return model.PMObjectiveHealthOnTrack
+	}
+
+	totalDays := int(end.Sub(start).Hours()/24) + 1
 	if totalDays <= 0 {
 		return model.PMObjectiveHealthOnTrack
 	}
 
 	// Past deadline with incomplete work
-	if now.After(end) && obj.Stats.KeyResultAvgPct < 100 {
+	if today.After(end) && obj.Stats.KeyResultAvgPct < 100 {
 		return model.PMObjectiveHealthOffTrack
 	}
 
-	elapsedDays := now.Sub(start).Hours() / 24
+	// Compare actual progress against completed schedule days so date-only plans
+	// don't become late at midnight on their start or deadline date.
+	elapsedDays := int(today.Sub(start).Hours() / 24)
 	if elapsedDays < 0 {
-		// Not started yet (before planned start)
-		return model.PMObjectiveHealthOnTrack
+		elapsedDays = 0
+	}
+	if elapsedDays > totalDays {
+		elapsedDays = totalDays
 	}
 
-	expectedPct := (elapsedDays / totalDays) * 100
+	expectedPct := (float64(elapsedDays) / float64(totalDays)) * 100
 	if expectedPct > 100 {
 		expectedPct = 100
 	}

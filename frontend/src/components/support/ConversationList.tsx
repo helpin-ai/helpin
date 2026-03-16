@@ -1,0 +1,91 @@
+import { useMemo } from 'react';
+import { MessageSquare, Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useConversations } from '@/hooks/queries/useSupport';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { ConversationRow } from './ConversationRow';
+import type { SupportConversation } from '@/lib/pmTypes';
+
+interface ConversationListProps {
+  workspaceId: string;
+  userId?: string;
+}
+
+export function ConversationList({ workspaceId, userId }: ConversationListProps) {
+  const {
+    statusFilter,
+    searchQuery, setSearchQuery,
+    selectedConversationId, selectConversation,
+    navFilter,
+  } = useSupportInboxStore();
+
+  const filters = statusFilter !== 'all' ? { status: statusFilter } : undefined;
+  const { data: conversations = [], isLoading, error } = useConversations(workspaceId, filters);
+
+  const filteredConversations = useMemo(() => {
+    let result: SupportConversation[] = conversations;
+
+    // Apply nav filter
+    if (navFilter === 'my_inbox' && userId) {
+      result = result.filter((c) => c.opened_by_user_id === userId);
+    } else if (navFilter === 'unassigned') {
+      result = result.filter((c) => !c.assigned_agent_id);
+    }
+
+    // Apply search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (c) =>
+          c.subject.toLowerCase().includes(q) ||
+          c.customer_name?.toLowerCase().includes(q) ||
+          c.customer_email?.toLowerCase().includes(q) ||
+          String(c.display_id).includes(q)
+      );
+    }
+
+    return result;
+  }, [conversations, navFilter, userId, searchQuery]);
+
+  return (
+    <div className="flex w-[300px] flex-col border-r overflow-hidden">
+      {/* Search */}
+      <div className="border-b px-3 py-2">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-8 pl-8 text-sm"
+            placeholder="Search conversations..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Conversation list */}
+      <ScrollArea className="flex-1">
+        {isLoading && (
+          <p className="p-4 text-sm text-muted-foreground">Loading...</p>
+        )}
+        {error && (
+          <p className="p-4 text-sm text-destructive">{String(error)}</p>
+        )}
+        {!isLoading && filteredConversations.length === 0 && !error && (
+          <div className="flex flex-col items-center justify-center gap-3 py-16">
+            <MessageSquare className="h-10 w-10 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">No conversations found.</p>
+          </div>
+        )}
+        {filteredConversations.map((conversation) => (
+          <ConversationRow
+            key={conversation.id}
+            conversation={conversation}
+            isSelected={selectedConversationId === conversation.id}
+            onSelect={() => selectConversation(conversation.id)}
+          />
+        ))}
+      </ScrollArea>
+    </div>
+  );
+}

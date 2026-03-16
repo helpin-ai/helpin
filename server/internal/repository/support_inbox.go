@@ -241,6 +241,14 @@ func (r *SupportConversationRepository) Update(ctx context.Context, conversation
 	return nil
 }
 
+// UpdateSubject updates only the subject of a conversation.
+func (r *SupportConversationRepository) UpdateSubject(ctx context.Context, id, subject string) error {
+	if err := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("id = ?", id).Update("subject", subject).Error; err != nil {
+		return fmt.Errorf("update conversation subject: %w", err)
+	}
+	return nil
+}
+
 // ListByIDs returns conversations by ID for a workspace.
 func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.SupportConversation, error) {
 	if len(ids) == 0 {
@@ -298,6 +306,19 @@ func (r *SupportConversationRepository) ListByContact(ctx context.Context, works
 		return nil, 0, fmt.Errorf("list contact conversations: %w", err)
 	}
 	return conversations, total, nil
+}
+
+// ListByAnonymousID returns conversations for a visitor by anonymous_id.
+func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error) {
+	var conversations []model.SupportConversation
+	if err := r.db.WithContext(ctx).
+		Select("support_conversations.*, (SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.is_internal = false ORDER BY created_at DESC LIMIT 1) AS last_message").
+		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID).
+		Order("updated_at DESC").
+		Find(&conversations).Error; err != nil {
+		return nil, fmt.Errorf("list conversations by anonymous_id: %w", err)
+	}
+	return conversations, nil
 }
 
 // SupportCannedResponseRepository handles canned responses.

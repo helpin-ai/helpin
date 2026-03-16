@@ -1,7 +1,17 @@
 import { mountWidget, unmountWidget } from '@helpin/widget-core';
-import type { WidgetConfig, Message, MountWidgetOptions, WidgetView } from '@helpin/widget-core';
+import type { WidgetConfig, Message, Conversation, MountWidgetOptions, WidgetView } from '@helpin/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
 import widgetStyles from '@helpin/widget-core/styles?inline';
+import { isBot } from '../utils/bot-detect';
+import {
+  getOrCreateAnonymousId,
+  getStoredSession,
+  persistSession,
+  clearSession,
+  clearConfigCache,
+  getCachedConfig,
+  cacheConfig,
+} from './identity';
 
 export { type WidgetConfig };
 
@@ -20,6 +30,7 @@ export interface WidgetSettings {
 }
 
 type WidgetCallback = (...args: any[]) => void;
+type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 
 const MAX_WS_RETRIES = 10;
 const WS_BASE_DELAY_MS = 1000;
@@ -37,12 +48,19 @@ export class WidgetManager {
   private isShutdown = false;
   private hasBeenOpened = false;
   private host = 'client.prod.helpin.ai';
+  private widgetKey: string | null = null;
+  private anonymousId: string | null = null;
+  private connectionStatus: ConnectionStatus = 'idle';
 
   // Preact mount state
   private mountContainer: HTMLElement | null = null;
+  private shadowRoot: ShadowRoot | null = null;
   private messages: Message[] = [];
+  private conversations: Conversation[] = [];
+  private activeConversationId: string | null = null;
   private currentView: WidgetView = 'home';
   private isTyping = false;
+  private currentEmail: string | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
     onShow: [],
@@ -54,6 +72,9 @@ export class WidgetManager {
   };
 
   boot(settings: WidgetSettings): void {
+    // Bot/crawler filtering
+    if (isBot()) return;
+
     // Clean up previous boot if any
     if (this.config) {
       this.cleanup();
@@ -61,25 +82,57 @@ export class WidgetManager {
 
     this.isShutdown = false;
     this.config = settings;
+    this.widgetKey = settings.key;
+
     if (settings.host) {
-      // Strip protocol — fetch calls prepend https://
       this.host = settings.host.replace(/^https?:\/\//, '');
     }
 
-    if (settings.user) {
-      this.initializeSession(settings.user).catch((error) => {
-        console.error('Failed to initialize session during boot:', error);
-      });
-    } else {
-      this.fetchWidgetConfig().catch((error) => {
-        console.error('Failed to fetch widget config during boot:', error);
-      });
-    }
+    // Get or create anonymous ID from cookie
+    this.anonymousId = getOrCreateAnonymousId(settings.key);
+
+    // Fetch widget config (with localStorage caching), then connect WS
+    this.fetchWidgetConfig().then(() => {
+      this.connectWebSocket();
+    }).catch((error) => {
+      console.error('Failed to fetch widget config during boot:', error);
+    });
   }
 
   shutdown(): void {
     this.isShutdown = true;
+
+    // 1. Revoke session — prefer WS, fall back to HTTP
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('session:revoke', {});
+      this.disconnectWebSocket();
+    } else {
+      if (this.sessionToken && this.host) {
+        const url = this.host.startsWith('http') ? this.host : `https://${this.host}`;
+        fetch(`${url}/widget/session/revoke`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_token: this.sessionToken }),
+        }).catch(() => {}); // best-effort
+      }
+    }
+
+    // 2. Clear persisted session (but NOT anonymous_id cookie)
+    if (this.widgetKey) {
+      clearSession(this.widgetKey);
+      clearConfigCache(this.widgetKey);
+    }
+
+    // 3. Reset in-memory state + unmount widget
     this.cleanup();
+  }
+
+  isActive(): boolean {
+    return this.sessionToken !== null && !this.isShutdown;
+  }
+
+  getCurrentEmail(): string | null {
+    return this.currentEmail;
   }
 
   private cleanup(): void {
@@ -91,8 +144,12 @@ export class WidgetManager {
     this.hasBeenOpened = false;
     this.wsRetryCount = 0;
     this.messages = [];
+    this.conversations = [];
+    this.activeConversationId = null;
     this.currentView = 'home';
     this.isTyping = false;
+    this.connectionStatus = 'idle';
+    this.currentEmail = null;
 
     if (this.wsRetryTimer) {
       clearTimeout(this.wsRetryTimer);
@@ -106,7 +163,6 @@ export class WidgetManager {
   show(): void {
     this.isOpen = true;
     this.unreadCount = 0;
-    // First open goes straight to conversation so users can ask a question
     if (!this.hasBeenOpened) {
       this.hasBeenOpened = true;
       this.currentView = 'conversation';
@@ -136,8 +192,20 @@ export class WidgetManager {
   }
 
   showNewMessage(content?: string): void {
-    this.currentView = 'home';
+    this.resetActiveConversation();
+    this.currentView = 'conversation';
+
+    // Tell server to clear active conversation so next message creates a new one
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:new', {});
+    }
+
     this.show();
+
+    // If content provided, send it as the first message
+    if (content?.trim()) {
+      this.handleSendMessage(content);
+    }
   }
 
   showConversation(conversationId: string): void {
@@ -176,7 +244,7 @@ export class WidgetManager {
   }
 
   getVisitorId(): string {
-    return localStorage.getItem('helpin_visitor_id') || '';
+    return this.anonymousId || '';
   }
 
   isWidgetReady(): boolean {
@@ -188,17 +256,24 @@ export class WidgetManager {
   private ensureWidget(): void {
     if (this.mountContainer) return;
 
-    // Inject widget-core CSS once
-    if (!document.getElementById('helpin-widget-styles')) {
-      const style = document.createElement('style');
-      style.id = 'helpin-widget-styles';
-      style.textContent = widgetStyles;
-      document.head.appendChild(style);
-    }
+    // Create host element
+    const host = document.createElement('div');
+    host.id = 'helpin-widget-container';
+    host.style.cssText = 'position:fixed;z-index:2147483647;all:initial;';
+    document.body.appendChild(host);
 
+    // Shadow DOM for CSS isolation
+    this.shadowRoot = host.attachShadow({ mode: 'open' });
+
+    // Inject styles into shadow root
+    const style = document.createElement('style');
+    style.textContent = `:host { all: initial; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }\n*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n${widgetStyles}`;
+    this.shadowRoot.appendChild(style);
+
+    // Create mount container inside shadow root
     const container = document.createElement('div');
-    container.id = 'helpin-widget-container';
-    document.body.appendChild(container);
+    container.id = 'helpin-widget-mount';
+    this.shadowRoot.appendChild(container);
     this.mountContainer = container;
   }
 
@@ -213,6 +288,7 @@ export class WidgetManager {
       isOpen: this.isOpen,
       onClose: () => this.hide(),
       onSendMessage: (content: string) => this.handleSendMessage(content),
+      onSendMessageFromHome: (content: string) => this.handleSendMessage(content, { startNewConversation: true }),
       onQuickReply: (content: string) => this.handleSendMessage(content),
       showPreChatForm: showPreChat,
       onPreChatSubmit: (data: { name: string; email: string }) => this.handlePreChatSubmit(data),
@@ -221,32 +297,60 @@ export class WidgetManager {
       showLauncher: true,
       onLauncherClick: () => this.toggle(),
       unreadCount: this.unreadCount,
+      connectionStatus: this.connectionStatus,
+      conversations: this.conversations,
+      onSelectConversation: (id: string) => this.handleSelectConversation(id),
+      onStartNewConversation: () => this.handleStartNewConversation(),
+      onViewChange: (view: WidgetView) => {
+        this.currentView = view;
+        // Refresh conversations list from server when navigating to Messages tab
+        if (view === 'messages' && this.wsConnection?.readyState === WebSocket.OPEN) {
+          this.wsSend('conversations:list', {});
+        }
+      },
     });
   }
 
   private removeWidget(): void {
     if (this.mountContainer) {
       unmountWidget(this.mountContainer);
-      this.mountContainer.remove();
+      // Remove the host element (parent of shadow root)
+      const host = this.mountContainer.getRootNode();
+      if (host instanceof ShadowRoot && host.host) {
+        host.host.remove();
+      } else if (this.mountContainer.parentElement) {
+        this.mountContainer.parentElement.remove();
+      }
       this.mountContainer = null;
+      this.shadowRoot = null;
     }
   }
 
   // ─── Message Handling ──────────────────────────────────────
 
-  private async handleSendMessage(content: string): Promise<void> {
+  private resetActiveConversation(): void {
+    this.activeConversationId = null;
+    this.messages = [];
+    this.isTyping = false;
+  }
+
+  private handleSendMessage(content: string, options: { startNewConversation?: boolean } = {}): void {
     if (!content.trim()) return;
 
-    // If no session yet, try initializing with just the message
-    if (!this.sessionToken) {
-      console.warn('No session token — message not sent. Complete pre-chat form first.');
-      return;
+    if (options.startNewConversation) {
+      this.resetActiveConversation();
+    }
+
+    // If no active conversation, tell server to start a new one.
+    // Server responds with conversation:created (real ID) before message:send is processed.
+    if (!this.activeConversationId && this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:new', {});
     }
 
     // Optimistic update
     const optimisticMsg: Message = {
       id: `temp-${Date.now()}`,
-      conversationId: '',
+      conversationId: this.activeConversationId || '',
       role: 'customer',
       content,
       isInternal: false,
@@ -255,12 +359,21 @@ export class WidgetManager {
     this.messages = [...this.messages, optimisticMsg];
     this.render();
 
+    // Send via WS
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('message:send', { content });
+    } else {
+      // Fallback to HTTP if WS not available
+      this.sendMessageHTTP(content);
+    }
+  }
+
+  private async sendMessageHTTP(content: string): Promise<void> {
+    if (!this.sessionToken) return;
     try {
       await fetch(`https://${this.host}/widget/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_token: this.sessionToken, content }),
       });
     } catch (error) {
@@ -268,52 +381,57 @@ export class WidgetManager {
     }
   }
 
-  private async handlePreChatSubmit(data: { name: string; email: string }): Promise<void> {
+  private handlePreChatSubmit(data: { name: string; email: string }): void {
     this.triggerCallback('onUserEmailSupplied', data.email);
-    try {
-      await this.initializeSession({ email: data.email, name: data.name });
-      this.render(); // Re-render to hide pre-chat form
-    } catch (error) {
-      console.error('Failed to initialize session from pre-chat form:', error);
+    this.currentEmail = data.email;
+
+    // Upgrade session via WS
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('session:upgrade', { email: data.email, name: data.name });
     }
+  }
+
+  // ─── Conversation Switching ─────────────────────────────────
+
+  private handleSelectConversation(conversationId: string): void {
+    this.activeConversationId = conversationId;
+
+    // Request messages for this conversation via WS
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:select', { conversation_id: conversationId });
+    }
+
+    // Clear current messages while loading
+    this.messages = [];
+    this.currentView = 'conversation';
+    this.render();
+  }
+
+  private handleStartNewConversation(): void {
+    this.resetActiveConversation();
+    this.currentView = 'conversation';
+
+    // Tell server to clear the session's conversation_id so next message creates a new one
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:new', {});
+    }
+
+    this.render();
   }
 
   // ─── API / Session ─────────────────────────────────────────
 
-  private async initializeSession(user: WidgetUser): Promise<void> {
-    if (!this.config?.key) return;
-
-    try {
-      const response = await fetch(`https://${this.host}/widget/session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          widget_key: this.config.key,
-          ...user,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Session init failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      this.sessionToken = data.session_token;
-
-      if (user.email) {
-        this.triggerCallback('onUserEmailSupplied', user.email);
-      }
-
-      await this.fetchWidgetConfig();
-      this.connectWebSocket();
-      this.triggerCallback('onConversationStarted', data.conversation_id);
-    } catch (error) {
-      console.error('Failed to initialize session:', error);
-    }
-  }
-
   private async fetchWidgetConfig(): Promise<void> {
     if (!this.config?.key) return;
+
+    // Try localStorage cache first
+    const cached = getCachedConfig(this.config.key);
+    if (cached) {
+      this.widgetConfig = cached;
+      this.ensureWidget();
+      this.render();
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -325,6 +443,12 @@ export class WidgetManager {
       }
 
       this.widgetConfig = await response.json();
+
+      // Cache in localStorage
+      if (this.widgetConfig && this.config.key) {
+        cacheConfig(this.config.key, this.widgetConfig);
+      }
+
       this.ensureWidget();
       this.render();
     } catch (error) {
@@ -332,55 +456,59 @@ export class WidgetManager {
     }
   }
 
-  // ─── WebSocket ──────────────────────────────────────────────
+  // ─── WebSocket (WS-first) ─────────────────────────────────
 
   private connectWebSocket(): void {
-    if (!this.sessionToken || this.isShutdown) return;
+    if (this.isShutdown || !this.widgetKey) return;
+
+    this.connectionStatus = 'connecting';
+    this.render();
 
     try {
+      // Connect with just widget_key (unauthenticated)
       this.wsConnection = new WebSocket(
-        `wss://${this.host}/widget/ws?session_token=${this.sessionToken}`
+        `wss://${this.host}/widget/ws?key=${encodeURIComponent(this.widgetKey)}`
       );
+
+      this.wsConnection.onopen = () => {
+        this.wsRetryCount = 0;
+        this.connectionStatus = 'connected';
+
+        // Send session:create or session:restore
+        const storedSession = this.widgetKey ? getStoredSession(this.widgetKey) : null;
+        if (storedSession) {
+          this.wsSend('session:restore', { session_token: storedSession.session_token });
+        } else {
+          this.wsSend('session:create', {
+            anonymous_id: this.anonymousId || '',
+            page_url: typeof window !== 'undefined' ? window.location.href : '',
+            page_title: typeof document !== 'undefined' ? document.title : '',
+            user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+            timezone: Intl?.DateTimeFormat?.()?.resolvedOptions?.()?.timeZone || '',
+            locale: typeof navigator !== 'undefined' ? navigator.language : '',
+          });
+        }
+      };
 
       this.wsConnection.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.entity === 'support_conversation_message') {
-            const msg: Message = {
-              id: data.id || `ws-${Date.now()}`,
-              conversationId: data.conversation_id || '',
-              role: data.role || 'agent',
-              content: data.content || '',
-              senderId: data.sender_id,
-              isInternal: false,
-              createdAt: data.created_at || new Date().toISOString(),
-              sources: data.sources,
-              attachments: data.attachments,
-            };
-            this.messages = [...this.messages, msg];
-
-            if (!this.isOpen) {
-              this.unreadCount++;
-              this.triggerCallback('onUnreadCountChange', this.unreadCount);
-            }
-
-            this.triggerCallback('onMessageReceived', data);
-            this.render();
-          }
+          this.handleWSMessage(data);
         } catch {
           console.error('Failed to parse WebSocket message');
         }
       };
 
-      this.wsConnection.onopen = () => {
-        this.wsRetryCount = 0;
-      };
-
       this.wsConnection.onclose = () => {
         if (this.isShutdown) return;
 
+        this.connectionStatus = 'disconnected';
+        this.render();
+
         if (this.wsRetryCount >= MAX_WS_RETRIES) {
           console.error(`WebSocket: gave up after ${MAX_WS_RETRIES} retries`);
+          this.connectionStatus = 'failed';
+          this.render();
           return;
         }
 
@@ -401,12 +529,226 @@ export class WidgetManager {
       };
     } catch (error) {
       console.error('WebSocket connection failed:', error);
+      this.connectionStatus = 'failed';
+      this.render();
+    }
+  }
+
+  private handleWSMessage(data: { type: string; data?: any }): void {
+    switch (data.type) {
+      case 'session:joined': {
+        const payload = data.data;
+        this.sessionToken = payload.session_token;
+
+        // Persist session to localStorage
+        if (this.widgetKey && payload.session_token && payload.expires_at) {
+          persistSession(this.widgetKey, payload.session_token, payload.expires_at);
+        }
+
+        // Load conversations list from server
+        if (payload.conversations && payload.conversations.length > 0) {
+          this.conversations = payload.conversations.map((c: any) => ({
+            id: c.id,
+            subject: c.subject || 'Untitled',
+            status: c.status || 'open',
+            lastMessage: c.last_message,
+            lastMessageAt: c.updated_at || c.created_at,
+          }));
+        }
+
+        // Set active conversation from messages (if session has one)
+        if (payload.messages && payload.messages.length > 0 && payload.messages[0].conversation_id) {
+          this.activeConversationId = payload.messages[0].conversation_id;
+        }
+
+        // Load conversation history from server
+        if (payload.messages && payload.messages.length > 0) {
+          this.messages = payload.messages.map((m: any) => ({
+            id: m.id,
+            conversationId: m.conversation_id,
+            role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
+            content: m.content,
+            isInternal: m.is_internal || false,
+            createdAt: m.created_at,
+          }));
+        }
+
+        this.connectionStatus = 'connected';
+
+        // If user data was provided at boot, upgrade the session
+        if (this.config?.user?.email && payload.is_anonymous) {
+          this.wsSend('session:upgrade', {
+            email: this.config.user.email,
+            name: this.config.user.name || '',
+          });
+          this.currentEmail = this.config.user.email;
+        }
+
+        this.render();
+        break;
+      }
+
+      case 'session:error': {
+        // Token invalid — clear and retry with session:create
+        if (this.widgetKey) {
+          clearSession(this.widgetKey);
+        }
+        this.sessionToken = null;
+
+        // Send session:create as retry on same connection
+        this.wsSend('session:create', {
+          anonymous_id: this.anonymousId || '',
+          page_url: typeof window !== 'undefined' ? window.location.href : '',
+          page_title: typeof document !== 'undefined' ? document.title : '',
+          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+          timezone: Intl?.DateTimeFormat?.()?.resolvedOptions?.()?.timeZone || '',
+          locale: typeof navigator !== 'undefined' ? navigator.language : '',
+        });
+        break;
+      }
+
+      case 'session:upgraded':
+        this.render();
+        break;
+
+      case 'session:revoked':
+        // Server confirmed revoke — cleanup handled by shutdown()
+        break;
+
+      case 'message:received': {
+        const msg = data.data;
+        const newMsg: Message = {
+          id: msg.id || `ws-${Date.now()}`,
+          conversationId: msg.conversation_id || '',
+          role: msg.sender_type === 'customer' ? 'customer' : msg.sender_type === 'ai' ? 'ai' : 'agent',
+          content: msg.content || '',
+          isInternal: false,
+          createdAt: msg.created_at || new Date().toISOString(),
+        };
+
+        // Replace optimistic message if this is an echo
+        if (msg.sender_type === 'customer') {
+          const tempIdx = this.messages.findIndex(
+            (m) => m.id.startsWith('temp-') && m.content === msg.content
+          );
+          if (tempIdx >= 0) {
+            this.messages[tempIdx] = newMsg;
+            this.messages = [...this.messages];
+          } else {
+            this.messages = [...this.messages, newMsg];
+          }
+        } else {
+          this.messages = [...this.messages, newMsg];
+        }
+
+        if (!this.isOpen) {
+          this.unreadCount++;
+          this.triggerCallback('onUnreadCountChange', this.unreadCount);
+        }
+
+        // Update conversation in the list (lastMessage preview + move to top)
+        if (newMsg.conversationId) {
+          const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
+          if (convIdx >= 0) {
+            const updated = {
+              ...this.conversations[convIdx],
+              lastMessage: newMsg.content,
+              lastMessageAt: newMsg.createdAt,
+            };
+            this.conversations = [updated, ...this.conversations.filter((_, i) => i !== convIdx)];
+          }
+        }
+
+        this.triggerCallback('onMessageReceived', msg);
+        this.render();
+        break;
+      }
+
+      case 'conversation:created': {
+        const convId = data.data?.conversation_id;
+        if (convId) {
+          this.activeConversationId = convId;
+          // Add new conversation to the list with real server ID
+          if (!this.conversations.some(c => c.id === convId)) {
+            const lastCustomerMsg = [...this.messages].reverse().find(m => m.role === 'customer');
+            const preview = lastCustomerMsg?.content;
+            this.conversations = [{
+              id: convId,
+              subject: preview ? (preview.length > 100 ? preview.slice(0, 100) + '...' : preview) : 'New conversation',
+              status: 'open',
+              lastMessage: preview,
+              lastMessageAt: new Date().toISOString(),
+            }, ...this.conversations];
+          }
+          this.triggerCallback('onConversationStarted', convId);
+          this.render();
+        }
+        break;
+      }
+
+      case 'typing:start':
+        this.isTyping = true;
+        this.render();
+        break;
+
+      case 'typing:stop':
+        this.isTyping = false;
+        this.render();
+        break;
+
+      case 'conversations:listed': {
+        const convs = data.data?.conversations;
+        if (Array.isArray(convs)) {
+          this.conversations = convs.map((c: any) => ({
+            id: c.id,
+            subject: c.subject || 'Untitled',
+            status: c.status || 'open',
+            lastMessage: c.last_message,
+            lastMessageAt: c.updated_at || c.created_at,
+          }));
+          this.render();
+        }
+        break;
+      }
+
+      case 'conversation:messages': {
+        const msgs = data.data?.messages;
+        if (Array.isArray(msgs)) {
+          this.messages = msgs.map((m: any) => ({
+            id: m.id,
+            conversationId: m.conversation_id,
+            role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
+            content: m.content,
+            isInternal: m.is_internal || false,
+            createdAt: m.created_at,
+          }));
+          this.render();
+        }
+        break;
+      }
+
+      case 'connection:error':
+        console.error('Widget server error:', data.data);
+        break;
+    }
+  }
+
+  reconnectWebSocket(): void {
+    this.wsRetryCount = 0;
+    this.connectionStatus = 'idle';
+    this.disconnectWebSocket();
+    this.connectWebSocket();
+  }
+
+  private wsSend(type: string, data: Record<string, any>): void {
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsConnection.send(JSON.stringify({ type, data }));
     }
   }
 
   private disconnectWebSocket(): void {
     if (this.wsConnection) {
-      this.wsConnection.onclose = null; // Prevent reconnection on intentional close
+      this.wsConnection.onclose = null;
       this.wsConnection.close();
       this.wsConnection = null;
     }

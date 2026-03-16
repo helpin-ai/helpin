@@ -105,6 +105,14 @@ func validateAgentClass(agentClass string) error {
 	}
 }
 
+// normalizeJSONSlice returns the input if non-nil, or an empty JSON array.
+func normalizeJSONSlice(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" {
+		return json.RawMessage("[]")
+	}
+	return raw
+}
+
 func normalizeTokenBudget(value *int) *int {
 	if value == nil {
 		return nil
@@ -153,7 +161,9 @@ func normalizeAgentRecord(agent *model.Agent) {
 	if strings.TrimSpace(agent.Role) == "" {
 		agent.Role = defaultRoleForAgentClass(agent.AgentClass)
 	}
-	agent.CapabilityProfile = capabilityProfileForAgentClass(agent.AgentClass)
+	if strings.TrimSpace(agent.CapabilityProfile) == "" {
+		agent.CapabilityProfile = capabilityProfileForAgentClass(agent.AgentClass)
+	}
 	if strings.TrimSpace(agent.RuntimeKind) == "" {
 		agent.RuntimeKind = defaultRuntimeKindForAgentClass(agent.AgentClass)
 	}
@@ -216,12 +226,12 @@ func validateAgentTarget(agent *model.Agent, targetType string) error {
 	if agent.AgentKind != "llm" {
 		return fmt.Errorf("only LLM agents can be assigned to %s targets", targetType)
 	}
-	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
-	if len(profile.AllowedTargetTypes) == 0 {
+	resolved := worker.ResolveAgentProfile(agent)
+	if len(resolved.TargetTypes) == 0 {
 		return fmt.Errorf("%s agents are not runnable", agent.AgentClass)
 	}
-	if !slices.Contains(profile.AllowedTargetTypes, targetType) {
-		return fmt.Errorf("%s agents can only be assigned to %s", agent.AgentClass, strings.Join(profile.AllowedTargetTypes, ", "))
+	if !slices.Contains(resolved.TargetTypes, targetType) {
+		return fmt.Errorf("%s agents can only be assigned to %s", agent.AgentClass, strings.Join(resolved.TargetTypes, ", "))
 	}
 	return nil
 }

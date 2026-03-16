@@ -12,6 +12,7 @@ import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
+import { GlobalStoryPanel } from '@/components/pm/GlobalStoryPanel'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -112,6 +113,7 @@ function WorkspaceLayout() {
               <Outlet />
             </main>
             <GlobalCreateModals workspaceId={currentWorkspace.id} />
+            <GlobalStoryPanel workspaceId={currentWorkspace.id} />
           </SidebarInset>
         </SidebarProvider>
       </div>

@@ -87,11 +87,11 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           {onClose && (
             <button
               type="button"
-              className="helpin-conversation-header-btn"
+              className="helpin-window-close-inline"
               onClick={onClose}
               aria-label="Close"
             >
-              <XIcon size={20} />
+              <XIcon size={16} />
             </button>
           )}
         </div>

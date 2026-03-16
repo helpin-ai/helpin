@@ -1,11 +1,14 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
+  Plus,
   Search,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { SearchCommandPalette } from "@/components/search/SearchCommandPalette";
+import { useSupportInboxStore } from "@/stores/supportInboxStore";
 
 type Crumb = {
   label: string;
@@ -17,6 +20,8 @@ export function Header() {
   const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
   const [searchOpen, setSearchOpen] = useState(false);
+  const setCreateDialogOpen = useSupportInboxStore((s) => s.setCreateDialogOpen);
+  const isSupport = location.pathname.includes("/support");
 
   // Cmd+K / Ctrl+K shortcut
   useEffect(() => {
@@ -73,6 +78,7 @@ export function Header() {
     };
 
     const pmSubMap: Record<string, string> = {
+      "my-work": "My Work",
       stories: "Stories",
       epics: "Epics",
       sprints: "Sprints",
@@ -94,7 +100,7 @@ export function Header() {
     };
 
     if (section === "pm") {
-      crumbs.push({ label: "Projects", to: `/w/${slug}/pm/stories` });
+      crumbs.push({ label: "Projects", to: `/w/${slug}/pm/my-work` });
       if (subRoute[1]) {
         const pmSub = subRoute[1];
         const pmLabel = pmSubMap[pmSub] ?? pmSub.replace(/-/g, " ");
@@ -187,6 +193,15 @@ export function Header() {
           </kbd>
         </button>
       </div>
+
+      {isSupport && (
+        <div className="ml-auto flex items-center z-10">
+          <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            <span className="hidden sm:inline">New Conversation</span>
+          </Button>
+        </div>
+      )}
 
       <SearchCommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </header>

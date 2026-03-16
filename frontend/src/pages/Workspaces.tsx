@@ -260,7 +260,7 @@ export default function Workspaces() {
 
     // Auto-navigate to the new workspace
     if (workspace) {
-      void navigate({ to: `/w/${workspace.slug}/pm/stories` });
+      void navigate({ to: `/w/${workspace.slug}/pm/my-work` });
     }
   };
 

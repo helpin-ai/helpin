@@ -27,6 +27,10 @@ import {
   MessageSquare,
   Inbox,
   LayoutList,
+  UserX,
+  Circle,
+  CheckCircle2,
+  Pause,
   Moon,
   Play,
   Plus,
@@ -48,9 +52,11 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections, useDocsDocuments } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { isModuleEnabled } from '@/lib/featureFlags';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -88,7 +94,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-type RailId = 'projects' | 'support' | 'crm' | /* 'rewards' | */ 'docs' | 'settings';
+type RailId = 'projects' | 'support' | 'crm' | /* 'rewards' | */ 'agents' | 'docs' | 'settings';
 
 type RailItem = {
   id: RailId;
@@ -374,6 +380,7 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { isAdmin, canManageSettings } = usePermissions(access);
+  const { navFilter, setNavFilter, statusFilter, setStatusFilter } = useSupportInboxStore();
 
   const { teams: allTeams } = useWorkspaceTeams(workspaceId);
   const myTeamMemberships = access?.team_memberships ?? [];
@@ -473,6 +480,7 @@ export function Sidebar() {
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
 // { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
+    { id: 'agents', label: 'Agents', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agents` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
   ];
@@ -483,10 +491,9 @@ export function Sidebar() {
         label: '',
         items: [
           { link: `/w/${wsSlug}/pm/my-work`, label: 'My Work', icon: ClipboardCheck },
-          { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
           { link: `/w/${wsSlug}/pm/objectives`, label: 'Objectives', icon: Target },
+          { link: `/w/${wsSlug}/pm/roadmap`, label: 'Roadmap', icon: GanttChart },
           { link: `/w/${wsSlug}/pm/reports`, label: 'Reports', icon: BarChart3 },
-          { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
         ],
       },
     ],
@@ -508,7 +515,15 @@ export function Sidebar() {
       {
         label: '',
         items: [
-          { link: `/w/${wsSlug}/support`, label: 'All Conversations', icon: MessageSquare },
+          { link: `/w/${wsSlug}/support`, label: 'Inbox', icon: Inbox },
+        ],
+      },
+    ],
+    agents: [
+      {
+        label: '',
+        items: [
+          { link: `/w/${wsSlug}/pm/agents`, label: 'All Agents', icon: Bot },
         ],
       },
     ],
@@ -637,9 +652,6 @@ export function Sidebar() {
     return location.pathname.startsWith(`${linkPath}/`);
   };
 
-  const isAllWorkSubActive = (subPath: string) => {
-    return isActive(`/w/${wsSlug}/pm/${subPath}`) && !activeTeamParam;
-  };
 
   const isTeamSubActive = (teamId: string, subPath: string) => {
     return isActive(`/w/${wsSlug}/pm/${subPath}`) && activeTeamParam === teamId;
@@ -660,7 +672,7 @@ export function Sidebar() {
         <div className="flex min-h-0 flex-1">
           <div className="flex w-16 shrink-0 flex-col border-r border-border/70 dark:border-sidebar-border py-2">
             <div className="flex flex-1 flex-col items-center gap-1.5">
-              {railItems.map((item) => (
+              {railItems.filter((item) => isModuleEnabled(item.id, user?.email)).map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -848,6 +860,60 @@ export function Sidebar() {
               );
             })}
 
+            {/* ── Support inbox filters (support rail only) ── */}
+            {activeRail === 'support' && (
+              <>
+                <SidebarGroup className="p-0 pb-3">
+                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+                    Views
+                  </SidebarGroupLabel>
+                  <SidebarMenu>
+                    {([
+                      { key: 'my_inbox' as const, label: 'My Inbox', icon: User },
+                      { key: 'all' as const, label: 'All Conversations', icon: Mail },
+                      { key: 'unassigned' as const, label: 'Unassigned', icon: UserX },
+                    ] as const).map((item) => (
+                      <SidebarMenuItem key={item.key}>
+                        <SidebarMenuButton
+                          isActive={navFilter === item.key}
+                          className="h-8 rounded-md px-2 text-[13px]"
+                          onClick={() => setNavFilter(item.key)}
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroup>
+                <SidebarGroup className="p-0 pb-3">
+                  <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+                    Status
+                  </SidebarGroupLabel>
+                  <SidebarMenu>
+                    {([
+                      { key: 'open', label: 'Open', icon: Circle },
+                      { key: 'in_progress', label: 'In Progress', icon: Clock },
+                      { key: 'waiting', label: 'Waiting', icon: Pause },
+                      { key: 'resolved', label: 'Resolved', icon: CheckCircle2 },
+                      { key: 'all', label: 'All', icon: LayoutList },
+                    ] as const).map((item) => (
+                      <SidebarMenuItem key={item.key}>
+                        <SidebarMenuButton
+                          isActive={statusFilter === item.key}
+                          className="h-8 rounded-md px-2 text-[13px]"
+                          onClick={() => setStatusFilter(item.key)}
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroup>
+              </>
+            )}
+
             {/* ── Team-scoped navigation (projects rail only) ── */}
             {activeRail === 'projects' && (
               <SidebarGroup className="p-0 pb-3">
@@ -855,54 +921,6 @@ export function Sidebar() {
                   Your Teams
                 </SidebarGroupLabel>
                 <SidebarMenu>
-                  {/* ── All Work (workspace-level, no team filter — admins only) ── */}
-                  {isAdmin && (
-                  <Collapsible.Root
-                    asChild
-                    open={expandedTeams.has('__all_work__')}
-                    onOpenChange={() => toggleTeam('__all_work__')}
-                  >
-                    <SidebarMenuItem>
-                      <Collapsible.Trigger asChild>
-                        <SidebarMenuButton className="h-8 rounded-md px-2">
-                          <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${expandedTeams.has('__all_work__') ? 'rotate-90' : ''}`} />
-                          <span className="truncate">All Work</span>
-                        </SidebarMenuButton>
-                      </Collapsible.Trigger>
-                      <Collapsible.Content>
-                        <SidebarMenuSub>
-                          {teamSubItems.map((sub) => {
-                            const link = `/w/${wsSlug}/pm/${sub.path}`;
-                            const active = isAllWorkSubActive(sub.path);
-                            return (
-                              <SidebarMenuSubItem key={sub.key}>
-                                <SidebarMenuSubButton
-                                  asChild
-                                  size="sm"
-                                  isActive={active}
-                                >
-                                  <a
-                                    href={link}
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      navigate({
-                                        to: `/w/$slug/pm/${sub.path}` as string,
-                                        params: { slug: wsSlug },
-                                      });
-                                    }}
-                                  >
-                                    <sub.icon className="h-3.5 w-3.5" />
-                                    <span>{sub.label}</span>
-                                  </a>
-                                </SidebarMenuSubButton>
-                              </SidebarMenuSubItem>
-                            );
-                          })}
-                        </SidebarMenuSub>
-                      </Collapsible.Content>
-                    </SidebarMenuItem>
-                  </Collapsible.Root>
-                  )}
 
                   {teams.map((team) => {
                     const isExpanded = expandedTeams.has(team.id);

@@ -43,7 +43,7 @@ export default function Login() {
         ? workspaces.find((w) => w.id === user.default_workspace_id)
         : null;
       const targetSlug = defaultWs ? defaultWs.slug : workspaces[0].slug;
-      navigate({ to: '/w/$slug/pm/stories', params: { slug: targetSlug } });
+      navigate({ to: '/w/$slug/pm/my-work', params: { slug: targetSlug } });
     } else {
       navigate({ to: '/workspaces' });
     }

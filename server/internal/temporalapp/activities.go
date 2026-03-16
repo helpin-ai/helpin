@@ -75,6 +75,11 @@ type AgentRunActivities struct {
 	docsContentRepo *repository.DocsContentRepository
 	docsVersionRepo *repository.DocsVersionRepository
 	docsLinkRepo    *repository.DocsLinkRepository
+	docsSearchRepo  *repository.DocsSearchRepository
+	crmDealRepo     *repository.CRMDealRepository
+	crmContactRepo  *repository.CRMContactRepository
+	crmSignalRepo   *repository.CRMSignalRepository
+	crmActivityRepo *repository.CRMActivityRepository
 	runtimes        *workerpkg.RuntimeRegistry
 	githubApp       *githubapp.Client
 }
@@ -101,6 +106,11 @@ func NewAgentRunActivities(
 	docsContentRepo *repository.DocsContentRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
+	docsSearchRepo *repository.DocsSearchRepository,
+	crmDealRepo *repository.CRMDealRepository,
+	crmContactRepo *repository.CRMContactRepository,
+	crmSignalRepo *repository.CRMSignalRepository,
+	crmActivityRepo *repository.CRMActivityRepository,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
 ) *AgentRunActivities {
@@ -125,6 +135,11 @@ func NewAgentRunActivities(
 		docsContentRepo: docsContentRepo,
 		docsVersionRepo: docsVersionRepo,
 		docsLinkRepo:    docsLinkRepo,
+		docsSearchRepo:  docsSearchRepo,
+		crmDealRepo:     crmDealRepo,
+		crmContactRepo:  crmContactRepo,
+		crmSignalRepo:   crmSignalRepo,
+		crmActivityRepo: crmActivityRepo,
 		runtimes:        runtimes,
 		githubApp:       githubApp,
 	}
@@ -137,7 +152,8 @@ type resolvedRunState struct {
 	epic           *model.PMEpic
 	epicStories    []model.PMStory
 	conversation   *model.SupportConversation
-	profile        model.RuntimeProfile
+	profile        model.RuntimeProfile   // class-level profile (kept for RuntimeProfile passthrough)
+	resolved       workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
 	deliveryTarget *model.StoryDeliveryTarget
 	repository     *model.GitRepository
 	integration    *model.GitIntegration
@@ -226,7 +242,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		config = workerpkg.DefaultWorkflowConfig()
 	}
 
-	allowedTools := workerAllowedToolSet(state.profile)
+	allowedTools := resolvedAllowedToolSet(state.resolved)
 	if input := planningInput; input.Stage != model.PlanningStageDraftSpec || !input.PlanningWebSearchEnabled {
 		delete(allowedTools, "web_search")
 	}
@@ -365,10 +381,12 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		return nil, fmt.Errorf("agent not found")
 	}
 
+	resolved := workerpkg.ResolveAgentProfile(agent)
 	state := &resolvedRunState{
-		run:     run,
-		agent:   agent,
-		profile: workerpkg.GetRuntimeProfile(agent.CapabilityProfile),
+		run:      run,
+		agent:    agent,
+		profile:  workerpkg.GetRuntimeProfile(agent.CapabilityProfile),
+		resolved: resolved,
 	}
 
 	if run.TargetType == "" {
@@ -511,7 +529,7 @@ func (a *AgentRunActivities) prepareStoryDelivery(ctx context.Context, state *re
 		return fmt.Errorf("story delivery target is missing")
 	}
 	if state.repository == nil || state.integration == nil {
-		if state.profile.RequiresRepo {
+		if state.resolved.RequiresRepo {
 			return fmt.Errorf("story has no delivery target configured")
 		}
 		return nil
@@ -528,12 +546,12 @@ func (a *AgentRunActivities) prepareStoryDelivery(ctx context.Context, state *re
 		target.BaseBranch = &baseBranch
 	}
 
-	if state.profile.RequiresRepo && (target.WorkingBranch == nil || strings.TrimSpace(*target.WorkingBranch) == "") {
+	if state.resolved.RequiresRepo && (target.WorkingBranch == nil || strings.TrimSpace(*target.WorkingBranch) == "") {
 		branchName := buildWorkingBranch(state.story, state.teamDefault)
 		target.WorkingBranch = &branchName
 	}
 
-	if state.profile.RequiresRepo && state.accessToken == "" {
+	if state.resolved.RequiresRepo && state.accessToken == "" {
 		return fmt.Errorf("repository access token is not available")
 	}
 
@@ -552,7 +570,7 @@ func (a *AgentRunActivities) prepareStoryDelivery(ctx context.Context, state *re
 	state.run.WorkingBranch = target.WorkingBranch
 	state.run.DeliveryTargetID = &target.ID
 	if state.run.TaskQueue == nil || *state.run.TaskQueue == "" {
-		queue := QueueForProfile(state.profile.Name)
+		queue := state.resolved.Queue
 		state.run.TaskQueue = &queue
 		state.run.RunnerPool = &queue
 	}
@@ -2010,6 +2028,69 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			conversation.Status = status
 			return a.conversationRepo.Update(ctx, conversation)
 		},
+
+		// CRM
+		ListDeals: func(ctx context.Context, workspaceID string, limit int) ([]model.CRMDeal, error) {
+			deals, _, err := a.crmDealRepo.List(ctx, workspaceID, model.CRMDealListFilters{}, model.PMPagination{Page: 1, PerPage: limit})
+			return deals, err
+		},
+		GetDeal: func(ctx context.Context, id string) (*model.CRMDeal, error) {
+			return a.crmDealRepo.GetByID(ctx, id)
+		},
+		UpdateDealStage: func(ctx context.Context, dealID, stageID string) error {
+			deal, err := a.crmDealRepo.GetByID(ctx, dealID)
+			if err != nil {
+				return err
+			}
+			if deal == nil {
+				return fmt.Errorf("deal not found")
+			}
+			deal.StageID = stageID
+			return a.crmDealRepo.Update(ctx, deal)
+		},
+		AddDealNote: func(ctx context.Context, workspaceID, dealID, agentID, content string) error {
+			now := time.Now()
+			activity := &model.CRMActivity{
+				WorkspaceID:  workspaceID,
+				ActivityType: "note",
+				DealID:       &dealID,
+				Body:         &content,
+				OccurredAt:   now,
+			}
+			return a.crmActivityRepo.Create(ctx, activity)
+		},
+		ListContacts: func(ctx context.Context, workspaceID string, limit int) ([]model.CRMContact, error) {
+			contacts, _, err := a.crmContactRepo.List(ctx, workspaceID, model.CRMContactListFilters{}, model.PMPagination{Page: 1, PerPage: limit})
+			return contacts, err
+		},
+		ListBuyerSignals: func(ctx context.Context, workspaceID string, dealID *string, limit int) ([]model.CRMBuyerSignal, error) {
+			filters := model.CRMBuyerSignalListFilters{DealID: dealID}
+			signals, _, err := a.crmSignalRepo.ListSignals(ctx, workspaceID, filters, model.PMPagination{Page: 1, PerPage: limit})
+			return signals, err
+		},
+
+		// Docs
+		GetDocument: func(ctx context.Context, id string) (*model.DocsDocument, error) {
+			return a.docsDocRepo.GetByID(ctx, id)
+		},
+		ListDocuments: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error) {
+			published := "published"
+			return a.docsDocRepo.List(ctx, workspaceID, spaceID, nil, &published, nil, "", false)
+		},
+		SearchDocuments: func(ctx context.Context, workspaceID, query string, limit int) ([]workerpkg.DocsSearchHit, error) {
+			results, err := a.docsSearchRepo.Search(ctx, workspaceID, query, nil, nil, limit)
+			if err != nil {
+				return nil, err
+			}
+			hits := make([]workerpkg.DocsSearchHit, len(results))
+			for i, r := range results {
+				hits[i] = workerpkg.DocsSearchHit{
+					ID:    r.ID,
+					Title: r.Title,
+				}
+			}
+			return hits, nil
+		},
 	}
 }
 
@@ -2185,6 +2266,14 @@ func strPtr(value string) *string {
 func workerAllowedToolSet(profile model.RuntimeProfile) map[string]bool {
 	set := make(map[string]bool, len(profile.AllowedTools))
 	for _, toolName := range profile.AllowedTools {
+		set[toolName] = true
+	}
+	return set
+}
+
+func resolvedAllowedToolSet(resolved workerpkg.ResolvedProfile) map[string]bool {
+	set := make(map[string]bool, len(resolved.Tools))
+	for _, toolName := range resolved.Tools {
 		set[toolName] = true
 	}
 	return set

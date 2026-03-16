@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
+import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { UserAvatar } from './UserAvatar';
 import type { Priority, Severity, Story } from '@/lib/pmTypes';
@@ -28,13 +28,6 @@ import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 
 const pillBase = 'flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium';
 
-const PRIORITY_BORDER_COLOR: Record<Priority, string> = {
-  urgent: 'border-red-400 dark:border-red-600',
-  high: 'border-orange-400 dark:border-orange-600',
-  medium: 'border-amber-400 dark:border-amber-600',
-  low: 'border-sky-400 dark:border-sky-600',
-  none: 'border-border',
-};
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];

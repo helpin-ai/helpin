@@ -176,4 +176,69 @@ describe('WidgetManager', () => {
       expect(() => widget.showArticle('article-123')).not.toThrow();
     });
   });
+
+  describe('conversation routing', () => {
+    it('should start a fresh conversation when home sends a new message', async () => {
+      const sockets: MockWebSocket[] = [];
+
+      class MockWebSocket {
+        static OPEN = 1;
+        static CLOSED = 3;
+
+        readyState = MockWebSocket.OPEN;
+        sent: string[] = [];
+        onopen: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onclose: ((event: CloseEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+
+        constructor(_url: string) {
+          sockets.push(this);
+          setTimeout(() => this.onopen?.(new Event('open')), 0);
+        }
+
+        send(payload: string): void {
+          this.sent.push(payload);
+        }
+
+        close(): void {
+          this.readyState = MockWebSocket.CLOSED;
+          this.onclose?.(new CloseEvent('close'));
+        }
+      }
+
+      vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
+
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const ws = sockets[0];
+      expect(ws).toBeTruthy();
+
+      (widget as any).activeConversationId = 'conv-old';
+      (widget as any).messages = [{
+        id: 'msg-old',
+        conversationId: 'conv-old',
+        role: 'agent',
+        content: 'Older thread',
+        isInternal: false,
+        createdAt: new Date().toISOString(),
+      }];
+      (widget as any).render();
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      const latestOptions = mockMount.mock.calls[mockMount.mock.calls.length - 1][1];
+      latestOptions.onSendMessageFromHome('Fresh question');
+
+      const outgoingFrames = ws.sent.slice(-2).map((frame) => JSON.parse(frame));
+      expect(outgoingFrames).toEqual([
+        { type: 'conversation:new', data: {} },
+        { type: 'message:send', data: { content: 'Fresh question' } },
+      ]);
+
+      const postSendOptions = mockMount.mock.calls[mockMount.mock.calls.length - 1][1];
+      expect(postSendOptions.messages).toHaveLength(1);
+      expect(postSendOptions.messages[0].content).toBe('Fresh question');
+    });
+  });
 });

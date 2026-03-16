@@ -7,18 +7,18 @@ frontend:
     cd frontend && pnpm dev
 
 backend:
-    cd server && go run ./cmd/api
+    cd server && air
 
 dev:
     # Run frontend and backend together; stop both if either exits.
     bash -c 'set -euo pipefail; \
       (cd frontend && pnpm dev) & frontend_pid=$!; \
-      (cd server && go run ./cmd/api) & backend_pid=$!; \
+      (cd server && air) & backend_pid=$!; \
       trap "kill $frontend_pid $backend_pid 2>/dev/null || true" EXIT INT TERM; \
       wait -n $frontend_pid $backend_pid'
 
 dev-tmux:
-    tmux new-session -d -s helpin -n dev 'cd server && go run ./cmd/api'
+    tmux new-session -d -s helpin -n dev 'cd server && air'
     tmux split-window -h -t helpin:dev 'cd frontend && pnpm dev'
     tmux attach -t helpin
 
@@ -39,6 +39,7 @@ build-help-center:
 
 kill-dev:
     -pkill -f 'pnpm dev' 2>/dev/null
+    -pkill -f 'air' 2>/dev/null
     -pkill -f 'go run ./cmd/api' 2>/dev/null
     -pkill -f 'vite' 2>/dev/null
     @echo "✅ dev processes killed"

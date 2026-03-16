@@ -1,0 +1,238 @@
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  useConversation,
+  useConversationMessages,
+  useUpdateConversationStatus,
+  useRunConversationAgent,
+} from '@/hooks/queries/useSupport';
+import { agentService } from '@/lib/services/agentService';
+import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
+import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS } from './constants';
+import { getDayLabel, isSameDay, getInitial } from './helpers';
+import { MessageBubble } from './MessageBubble';
+import { ReplyComposer } from './ReplyComposer';
+import { AgentRunsCard } from './AgentRunsCard';
+
+interface MessageThreadProps {
+  workspaceId: string;
+  conversationId: string | null;
+}
+
+function DaySeparator({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 py-4">
+      <div className="h-px flex-1 bg-border" />
+      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+      <div className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+export function MessageThread({ workspaceId, conversationId }: MessageThreadProps) {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
+  const updateStatus = useUpdateConversationStatus(workspaceId);
+  const runAgent = useRunConversationAgent(workspaceId);
+
+  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+
+  const loadAgentRuns = useCallback(async () => {
+    if (!conversationId || !conversation?.assigned_agent_id) {
+      setAgentRuns([]);
+      return;
+    }
+    const res = await agentService.listRuns(workspaceId, conversation.assigned_agent_id);
+    if (res.error) return;
+    setAgentRuns(
+      (res.data?.data ?? []).filter(
+        (run) => run.target_type === 'support_conversation' && run.target_id === conversationId
+      )
+    );
+  }, [workspaceId, conversationId, conversation?.assigned_agent_id]);
+
+  useEffect(() => {
+    loadAgentRuns();
+  }, [loadAgentRuns]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleApproveRun = async (runId: string) => {
+    await agentService.approveRun(workspaceId, runId, { send_message: true });
+    await loadAgentRuns();
+  };
+
+  // Group messages with day separators and consecutive sender detection
+  const groupedMessages = useMemo(() => {
+    const items: Array<{ type: 'separator'; label: string } | { type: 'message'; message: SupportMessage; isConsecutive: boolean; isLastInGroup: boolean }> = [];
+    let lastDate: string | null = null;
+
+    messages.forEach((msg, idx) => {
+      // Insert day separator if new day
+      if (!lastDate || !isSameDay(lastDate, msg.created_at)) {
+        items.push({ type: 'separator', label: getDayLabel(msg.created_at) });
+        lastDate = msg.created_at;
+      }
+
+      // Check if consecutive (same sender within 2 minutes, same type)
+      const prev = idx > 0 ? messages[idx - 1] : null;
+      const isConsecutive = prev !== null
+        && prev.sender_type === msg.sender_type
+        && prev.is_internal === msg.is_internal
+        && isSameDay(prev.created_at, msg.created_at)
+        && (new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime()) < 120000;
+
+      // Check if this is the last message in a consecutive group
+      const next = idx < messages.length - 1 ? messages[idx + 1] : null;
+      const isLastInGroup = next === null
+        || next.sender_type !== msg.sender_type
+        || next.is_internal !== msg.is_internal
+        || !isSameDay(msg.created_at, next.created_at)
+        || (new Date(next.created_at).getTime() - new Date(msg.created_at).getTime()) >= 120000;
+
+      items.push({ type: 'message', message: msg, isConsecutive, isLastInGroup });
+    });
+
+    return items;
+  }, [messages]);
+
+  if (!conversationId) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+        <MessageSquare className="h-12 w-12 opacity-20" />
+        <p className="text-sm">Select a conversation to view</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-1 flex-col min-w-0">
+      {/* Action header bar */}
+      {conversation && (
+        <div className="flex items-center justify-between border-b px-4 py-2.5">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Customer avatar */}
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+              {getInitial(conversation.customer_name)}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-sm font-semibold">{conversation.subject}</h2>
+                <span className="shrink-0 text-[10px] text-muted-foreground">#{conversation.display_id}</span>
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {conversation.customer_name || 'Anonymous'}
+                {conversation.customer_email && ` · ${conversation.customer_email}`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Badge variant="secondary" className={`text-[10px] ${STATUS_COLORS[conversation.status]}`}>
+              {STATUS_LABELS[conversation.status]}
+            </Badge>
+            <Badge variant="secondary" className={`text-[10px] ${PRIORITY_COLORS[conversation.priority]}`}>
+              {PRIORITY_LABELS[conversation.priority]}
+            </Badge>
+
+            {/* Quick actions */}
+            {conversation.assigned_agent_id && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 text-xs ml-1"
+                disabled={runAgent.isPending}
+                onClick={() => runAgent.mutate(conversation.id)}
+              >
+                {runAgent.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bot className="h-3 w-3" />}
+                Run
+              </Button>
+            )}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus })}>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Resolve
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'waiting' as ConversationStatus })}>
+                  <Clock className="h-4 w-4" />
+                  Set Waiting
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'closed' as ConversationStatus })}>
+                  <XCircle className="h-4 w-4" />
+                  Close
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      )}
+
+      {/* Agent runs (if any) */}
+      {agentRuns.length > 0 && (
+        <div className="border-b px-4 py-2">
+          <AgentRunsCard
+            workspaceId={workspaceId}
+            agentRuns={agentRuns}
+            onApprove={handleApproveRun}
+          />
+        </div>
+      )}
+
+      {/* Messages with day separators */}
+      <ScrollArea className="flex-1">
+        <div className="px-4 pb-4">
+          {isLoading && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          {!isLoading && messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+              <MessageSquare className="h-8 w-8 opacity-30" />
+              <p className="text-sm">No messages yet. Start the conversation below.</p>
+            </div>
+          )}
+          {groupedMessages.map((item, idx) => {
+            if (item.type === 'separator') {
+              return <DaySeparator key={`sep-${idx}`} label={item.label} />;
+            }
+            return (
+              <MessageBubble
+                key={item.message.id}
+                message={item.message}
+                isConsecutive={item.isConsecutive}
+                isLastInGroup={item.isLastInGroup}
+                source={conversation?.source}
+              />
+            );
+          })}
+          <div ref={messagesEndRef} />
+        </div>
+      </ScrollArea>
+
+      {/* Reply composer */}
+      {conversationId && (
+        <ReplyComposer workspaceId={workspaceId} conversationId={conversationId} />
+      )}
+    </div>
+  );
+}

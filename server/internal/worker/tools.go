@@ -321,6 +321,108 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"status"},
 	}, toolUpdateConversationStatus)
 
+	// CRM tools
+	r.register("list_deals", "List CRM deals in the workspace. Returns deal name, stage, and amount.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of deals to return (default 20, max 50)",
+			},
+		},
+	}, toolListDeals)
+
+	r.register("update_deal_stage", "Move a CRM deal to a different pipeline stage.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"deal_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The deal ID to update",
+			},
+			"stage_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The target pipeline stage ID",
+			},
+		},
+		"required": []string{"deal_id", "stage_id"},
+	}, toolUpdateDealStage)
+
+	r.register("add_deal_note", "Add a note or comment to a CRM deal.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"deal_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The deal ID to add a note to",
+			},
+			"content": map[string]interface{}{
+				"type":        "string",
+				"description": "The note content",
+			},
+		},
+		"required": []string{"deal_id", "content"},
+	}, toolAddDealNote)
+
+	r.register("list_contacts", "List CRM contacts in the workspace. Returns name, email, and job title.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of contacts to return (default 20, max 50)",
+			},
+		},
+	}, toolListContacts)
+
+	r.register("list_buyer_signals", "List detected buyer signals from emails, meetings, and support conversations.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"deal_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional deal ID to filter signals for a specific deal",
+			},
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of signals to return (default 20, max 50)",
+			},
+		},
+	}, toolListBuyerSignals)
+
+	// Docs tools
+	r.register("list_documents", "List documents in the workspace, optionally filtered by space.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"space_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional space ID to filter documents",
+			},
+		},
+	}, toolListDocuments)
+
+	r.register("read_document", "Read the metadata of a specific document by ID.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID to read",
+			},
+		},
+		"required": []string{"document_id"},
+	}, toolReadDocument)
+
+	r.register("search_documents", "Search documents by keyword across the workspace.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"query": map[string]interface{}{
+				"type":        "string",
+				"description": "Search query",
+			},
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum results to return (default 10, max 20)",
+			},
+		},
+		"required": []string{"query"},
+	}, toolSearchDocuments)
+
 	return r
 }
 

@@ -188,16 +188,16 @@ export function ObjectivesPage() {
             Create Objective
           </Button>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-lg">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
           {[
             { icon: Crosshair, title: 'Set goals', desc: 'Define clear objectives with measurable key results' },
             { icon: TrendingUp, title: 'Measure progress', desc: 'Track completion across key results and linked epics' },
             { icon: ListChecks, title: 'Align teams', desc: 'Connect objectives to team work for shared accountability' },
           ].map((item) => (
-            <div key={item.title} className="flex flex-col items-center text-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 p-4">
-              <item.icon className="h-4 w-4 text-muted-foreground mb-0.5" />
-              <span className="text-xs font-medium">{item.title}</span>
-              <span className="text-[11px] leading-snug text-muted-foreground">{item.desc}</span>
+            <div key={item.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
+              <item.icon className="h-5 w-5 text-muted-foreground mb-3" />
+              <p className="text-sm font-medium mb-1">{item.title}</p>
+              <p className="text-[13px] text-muted-foreground leading-relaxed">{item.desc}</p>
             </div>
           ))}
         </div>
@@ -206,7 +206,7 @@ export function ObjectivesPage() {
   }
 
   return (
-    <div>
+    <div className="max-w-7xl mx-auto">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-semibold">Objectives</h1>
         {canEdit && (
@@ -303,7 +303,7 @@ function ObjectiveCard({
 
   return (
     <article
-      className="group flex flex-col rounded-lg border border-border/60 bg-card transition-all hover:shadow-sm hover:border-border cursor-pointer"
+      className="group flex flex-col rounded-lg border border-border/60 bg-card transition-all hover:shadow-md hover:border-border cursor-pointer"
       onClick={onClick}
     >
       {/* Header */}

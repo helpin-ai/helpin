@@ -262,6 +262,16 @@ func main() {
 	}
 	slog.Info("startup: AutoMigrate complete")
 
+	// Drop legacy ticket_id columns (renamed to conversation_id in migration 039).
+	for _, stmt := range []string{
+		"ALTER TABLE support_messages DROP COLUMN IF EXISTS ticket_id",
+		"ALTER TABLE support_widget_sessions DROP COLUMN IF EXISTS ticket_id",
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			slog.Error("failed to drop legacy ticket_id column", "error", err, "stmt", stmt)
+		}
+	}
+
 	// Post-AutoMigrate schema migrations that reference tables created above.
 	slog.Info("startup: running MigrateWorkspaceMemberSchema")
 	if err := repository.MigrateWorkspaceMemberSchema(db); err != nil {
@@ -429,7 +439,9 @@ func main() {
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
 	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
+	pmRoadmapRepo := repository.NewPMRoadmapRepository(db)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmRoadmapService := service.NewPMRoadmapService(pmEpicService, pmRoadmapRepo)
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher, notificationService)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
@@ -627,6 +639,7 @@ func main() {
 		PMImport:           handler.NewPMImportHandler(pmImportService),
 		PMLabel:            handler.NewPMLabelHandler(pmLabelService),
 		PMEpic:             handler.NewPMEpicHandler(pmEpicService),
+		PMRoadmap:          handler.NewPMRoadmapHandler(pmRoadmapService),
 		PMSprint:           handler.NewPMSprintHandler(pmSprintService),
 		PMStory:            handler.NewPMStoryHandler(pmStoryService),
 		PMComment:          handler.NewPMCommentHandler(pmCommentService),
@@ -665,6 +678,13 @@ func main() {
 		CRMWritingProfile:  handler.NewCRMWritingProfileHandler(crmWritingProfileService),
 		CRMSearch:          handler.NewCRMSearchHandler(crmSearchService),
 		CRMDealAutomation:  handler.NewCRMDealAutomationHandler(dealAutomationService),
+		SDKAssets: func() *handler.SDKAssetsHandler {
+			sdkDist := os.Getenv("SDK_DIST_DIR")
+			if sdkDist == "" {
+				sdkDist = "../packages/sdk-js/dist"
+			}
+			return handler.NewSDKAssetsHandler(sdkDist)
+		}(),
 		Docs: handler.NewDocsHandler(
 			docsSpaceService,
 			docsCollectionService,

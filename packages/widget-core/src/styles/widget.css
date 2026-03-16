@@ -19,7 +19,7 @@
 
   /* Border colors */
   --helpin-border: #e5e7eb;
-  --helpin-border-focus: #6366f1;
+  --helpin-border-focus: var(--helpin-primary);
 
   /* Semantic colors */
   --helpin-success: #10b981;
@@ -199,6 +199,27 @@
 
 .helpin-window-close:hover {
   background: rgba(0, 0, 0, 0.2);
+  color: var(--helpin-fg);
+}
+
+/* Inline variant — same circle style, but flows in layout (not absolute) */
+.helpin-window-close-inline {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--helpin-fg-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+
+.helpin-window-close-inline:hover {
+  background: rgba(0, 0, 0, 0.15);
   color: var(--helpin-fg);
 }
 
@@ -629,22 +650,28 @@
   display: flex;
   align-items: center;
   justify-content: space-around;
-  border-top: 1px solid var(--helpin-border);
-  background: var(--helpin-bg);
-  padding: 6px 0 8px;
+  margin: 0 24px 10px;
+  padding: 8px 12px;
+  border-radius: 60px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0px 0px 1px 1px rgba(0, 0, 0, 0.05),
+    0px 0px 20px rgba(0, 0, 0, 0.06);
   flex-shrink: 0;
+  gap: 4px;
 }
 
 .helpin-bottom-nav-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px 16px;
-  border-radius: var(--helpin-radius);
+  padding: 4px 8px;
+  border-radius: 0;
   color: var(--helpin-fg-muted);
   transition: color 0.15s;
   font-family: inherit;
@@ -659,8 +686,12 @@
 }
 
 .helpin-bottom-nav-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
+}
+
+.helpin-bottom-nav-item--active .helpin-bottom-nav-label {
+  font-weight: 600;
 }
 
 /* ===== POWERED BY FOOTER ===== */
@@ -669,7 +700,7 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 8px 16px 4px;
+  padding: 4px 16px 8px;
   font-size: 11px;
   color: var(--helpin-fg-muted);
 }
@@ -681,6 +712,199 @@
 .helpin-powered-by-name {
   font-weight: 600;
   color: var(--helpin-fg-secondary);
+}
+
+/* ===== Conversation List View ===== */
+.helpin-conversations-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.helpin-conversations-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--helpin-border);
+}
+
+.helpin-conversations-header-spacer {
+  width: 28px;
+}
+
+.helpin-conversations-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--helpin-fg);
+  text-align: center;
+  flex: 1;
+}
+
+.helpin-conversations-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.helpin-conversation-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid var(--helpin-border);
+  background: var(--helpin-bg);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.helpin-conversation-item:hover {
+  background: var(--helpin-bg-secondary);
+}
+
+.helpin-conversation-item-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.helpin-conversation-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.helpin-conversation-item-preview {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--helpin-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.helpin-conversation-item-meta {
+  font-size: 13px;
+  color: var(--helpin-fg-muted);
+  white-space: nowrap;
+}
+
+.helpin-conversation-item-arrow {
+  color: var(--helpin-fg-muted);
+  flex-shrink: 0;
+}
+
+.helpin-conversations-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.helpin-conversations-empty-icon {
+  color: var(--helpin-fg-muted);
+  margin-bottom: 12px;
+}
+
+.helpin-conversations-empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--helpin-fg);
+  margin-bottom: 4px;
+}
+
+.helpin-conversations-empty-desc {
+  font-size: 13px;
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-conversations-new-container {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+.helpin-conversations-new-container::before {
+  content: '';
+  position: absolute;
+  top: -20px;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: linear-gradient(to bottom, transparent, var(--helpin-bg));
+  pointer-events: none;
+}
+
+.helpin-conversations-new-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-width: 1.5px;
+  border-style: solid;
+  border-radius: 999px;
+  background-color: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.15s;
+}
+
+.helpin-conversations-new-btn:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* ===== Connection Status Banner ===== */
+.helpin-connection-banner {
+  padding: 8px 16px;
+  font-size: 13px;
+  text-align: center;
+  font-family: inherit;
+}
+
+.helpin-connection-banner--connecting {
+  background: var(--helpin-bg-muted);
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-connection-banner--failed {
+  background: #fef2f2;
+  color: #991b1b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.helpin-connection-retry {
+  background: #991b1b;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.helpin-connection-retry:hover {
+  background: #7f1d1d;
 }
 
 /* ===== LEGACY — Widget Header (kept for backward compat) ===== */
@@ -839,6 +1063,11 @@
   padding: 4px 4px 0;
   font-size: 12px;
   color: var(--helpin-fg-muted);
+}
+
+.helpin-message-attribution--customer {
+  justify-content: flex-end;
+  font-size: 11px;
 }
 
 .helpin-message-sender {

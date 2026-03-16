@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	PMEpicHealthNone     = "no_health"
 	PMEpicHealthOnTrack  = "on_track"
 	PMEpicHealthAtRisk   = "at_risk"
 	PMEpicHealthOffTrack = "off_track"
@@ -30,7 +31,7 @@ type PMEpic struct {
 	CompletedAt           *time.Time      `json:"completed_at"`
 	Position              int             `json:"position" gorm:"not null;default:0"`
 	Color                 *string         `json:"color"`
-	Health                string          `json:"health" gorm:"not null;default:'on_track'"`
+	Health                string          `json:"health" gorm:"not null;default:'no_health'"`
 	HealthComment         *string         `json:"health_comment"`
 	Archived              bool            `json:"archived" gorm:"not null;default:false"`
 	OrchestratorAgentID   *string         `json:"orchestrator_agent_id" gorm:"type:uuid;index"`
@@ -131,8 +132,9 @@ type PMEpicStats struct {
 
 // EpicWithStats is an epic with computed progress metrics.
 type EpicWithStats struct {
-	Epic            PMEpic      `json:"epic"`
-	Labels          []PMLabel   `json:"labels"`
-	Stats           PMEpicStats `json:"stats"`
-	SuggestedHealth string      `json:"suggested_health"`
+	Epic            PMEpic                `json:"epic"`
+	Labels          []PMLabel             `json:"labels"`
+	Objectives      []RoadmapObjectiveRef `json:"objectives"`
+	Stats           PMEpicStats           `json:"stats"`
+	SuggestedHealth string                `json:"suggested_health"`
 }

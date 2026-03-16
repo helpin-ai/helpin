@@ -62,7 +62,7 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
               className={`group relative cursor-pointer transition-all duration-150 hover:border-primary/50 hover:shadow-sm ${
                 isDefault ? 'border-primary/30 bg-primary/[0.02]' : ''
               }`}
-              onClick={() => navigate({ to: `/w/${ws.slug}/pm/stories` })}
+              onClick={() => navigate({ to: `/w/${ws.slug}/pm/my-work` })}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">

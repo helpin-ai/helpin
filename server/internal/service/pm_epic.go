@@ -81,6 +81,7 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 	}
 
 	result := make([]model.EpicWithStats, 0, len(epics))
+	epicIDs := make([]string, 0, len(epics))
 	for _, epic := range epics {
 		withStats, err := s.epicRepo.GetWithStats(ctx, epic.ID)
 		if err != nil {
@@ -89,8 +90,21 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 		if withStats != nil {
 			enrichEpicSuggestedHealth(withStats)
 			result = append(result, *withStats)
+			epicIDs = append(epicIDs, epic.ID)
 		}
 	}
+
+	// Batch-load objectives for all epics
+	objMap, err := s.epicRepo.ListObjectivesBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range result {
+		if objs, ok := objMap[result[i].Epic.ID]; ok {
+			result[i].Objectives = objs
+		}
+	}
+
 	return result, nil
 }
 
@@ -115,7 +129,7 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
 		return nil, err
 	}
-	health := model.PMEpicHealthOnTrack
+	health := model.PMEpicHealthNone
 	if req.Health != nil && *req.Health != "" {
 		health = *req.Health
 	}
@@ -493,7 +507,7 @@ func (s *PMEpicService) syncProgress(ctx context.Context, epicID string) error {
 
 func isValidEpicHealth(value string) bool {
 	switch value {
-	case model.PMEpicHealthOnTrack, model.PMEpicHealthAtRisk, model.PMEpicHealthOffTrack:
+	case model.PMEpicHealthNone, model.PMEpicHealthOnTrack, model.PMEpicHealthAtRisk, model.PMEpicHealthOffTrack:
 		return true
 	default:
 		return false
@@ -509,34 +523,50 @@ func optionalActor(actorID string) *string {
 
 func stringPtr(value string) *string { return &value }
 
-// computeEpicSuggestedHealth calculates health based on story progress vs time elapsed.
+// computeEpicSuggestedHealth calculates health based on story progress vs the planned schedule.
 func computeEpicSuggestedHealth(epic *model.EpicWithStats) string {
+	return computeEpicSuggestedHealthAt(epic, time.Now())
+}
+
+func computeEpicSuggestedHealthAt(epic *model.EpicWithStats, now time.Time) string {
 	if epic.Epic.PlannedStartDate == nil || epic.Epic.Deadline == nil {
-		return model.PMEpicHealthOnTrack
+		return model.PMEpicHealthNone
 	}
 	if epic.Stats.StoryCount == 0 {
-		return model.PMEpicHealthOnTrack
+		return model.PMEpicHealthNone
 	}
 
-	now := time.Now()
-	start := *epic.Epic.PlannedStartDate
-	end := *epic.Epic.Deadline
-	totalDays := end.Sub(start).Hours() / 24
+	start := startOfDayUTC(*epic.Epic.PlannedStartDate)
+	end := startOfDayUTC(*epic.Epic.Deadline)
+	today := startOfDayUTC(now)
+	if end.Before(start) {
+		return model.PMEpicHealthNone
+	}
+	if today.Before(start) {
+		return model.PMEpicHealthNone
+	}
+
+	totalDays := int(end.Sub(start).Hours()/24) + 1
 	if totalDays <= 0 {
-		return model.PMEpicHealthOnTrack
+		return model.PMEpicHealthNone
 	}
 
 	// Past deadline with incomplete work
-	if now.After(end) && epic.Stats.DoneStoryCount < epic.Stats.StoryCount {
+	if today.After(end) && epic.Stats.DoneStoryCount < epic.Stats.StoryCount {
 		return model.PMEpicHealthOffTrack
 	}
 
-	elapsedDays := now.Sub(start).Hours() / 24
+	// Compare actual progress against completed schedule days. This keeps date-only
+	// plans from looking overdue at midnight on the start or deadline date.
+	elapsedDays := int(today.Sub(start).Hours() / 24)
 	if elapsedDays < 0 {
-		return model.PMEpicHealthOnTrack
+		elapsedDays = 0
+	}
+	if elapsedDays > totalDays {
+		elapsedDays = totalDays
 	}
 
-	expectedPct := (elapsedDays / totalDays) * 100
+	expectedPct := (float64(elapsedDays) / float64(totalDays)) * 100
 	if expectedPct > 100 {
 		expectedPct = 100
 	}
@@ -556,4 +586,9 @@ func computeEpicSuggestedHealth(epic *model.EpicWithStats) string {
 
 func enrichEpicSuggestedHealth(epic *model.EpicWithStats) {
 	epic.SuggestedHealth = computeEpicSuggestedHealth(epic)
+}
+
+func startOfDayUTC(value time.Time) time.Time {
+	utc := value.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
 }
