@@ -26,6 +26,10 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
     if (isNote) return; // don't send typing for internal notes
     if (typing === isTypingRef.current) return;
     isTypingRef.current = typing;
+    if (!typing && typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
     supportService.sendTypingIndicator(workspaceId, conversationId, typing).catch(() => {});
   }, [workspaceId, conversationId, isNote]);
 
@@ -114,7 +118,7 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
           )}
           placeholder={isNote ? 'Add an internal note...' : 'Write a reply...'}
           value={content}
-          onChange={(e) => { setContent(e.target.value); handleTyping(); }}
+          onChange={(e) => { const val = e.target.value; setContent(val); val.trim() ? handleTyping() : sendTyping(false); }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
