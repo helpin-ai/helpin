@@ -35,17 +35,26 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
   );
   if (typingState === false || typingState === undefined) return null;
   return (
-    <div className="flex items-start gap-2 px-2 py-2 text-xs text-muted-foreground animate-in fade-in duration-200">
-      <span className="flex gap-0.5 text-base leading-none shrink-0 pt-px">
-        <span className="animate-bounce [animation-delay:0ms]">·</span>
-        <span className="animate-bounce [animation-delay:150ms]">·</span>
-        <span className="animate-bounce [animation-delay:300ms]">·</span>
-      </span>
-      {typingState ? (
-        <span className="italic text-muted-foreground/70 line-clamp-2 break-all">{typingState}</span>
-      ) : (
-        <span>Customer is typing…</span>
-      )}
+    <div className="flex justify-start mt-2 animate-in fade-in duration-200">
+      {/* Avatar placeholder matching customer bubble layout */}
+      <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
+          <span className="flex gap-0.5 text-sm leading-none text-muted-foreground">
+            <span className="animate-bounce [animation-delay:0ms]">·</span>
+            <span className="animate-bounce [animation-delay:150ms]">·</span>
+            <span className="animate-bounce [animation-delay:300ms]">·</span>
+          </span>
+        </div>
+      </div>
+      <div className="max-w-[70%]">
+        <div className="rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2 text-sm leading-relaxed text-foreground">
+          {typingState ? (
+            <p className="whitespace-pre-wrap italic opacity-60">{typingState}</p>
+          ) : (
+            <p className="italic opacity-50">typing…</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
