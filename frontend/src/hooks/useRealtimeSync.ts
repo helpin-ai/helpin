@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useWebSocket, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
-import { useSupportInboxStore } from '@/stores/supportInboxStore'
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useAuthStore } from '@/stores/authStore'
 import { pmStoryService } from '@/lib/services/pmStoryService'
 import { queryKeys } from '@/lib/queryKeys'
@@ -93,7 +93,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         if (import.meta.env.DEV) {
           console.debug('[ws] typing event received:', event.action, 'conversation:', event.entity_id, 'actor:', event.actor_id)
         }
-        const store = useSupportInboxStore.getState()
+        const store = useSupportPresenceStore.getState()
         const convId = event.entity_id
         const content = (event.data?.content as string) || ''
         const isWidget = event.actor_id?.startsWith('widget:')
@@ -122,7 +122,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         if (event.action === 'typing_started') {
           const timer = setTimeout(() => {
             typingTimers.current.delete(timerKey)
-            const s = useSupportInboxStore.getState()
+            const s = useSupportPresenceStore.getState()
             if (isWidget) {
               s.setTyping(convId, false)
             } else {
@@ -137,7 +137,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           console.debug('[ws] viewing event:', event.action, 'conv:', event.entity_id, 'actor:', event.actor_id)
         }
         // Hub already filters out self-viewing events server-side
-        const store = useSupportInboxStore.getState()
+        const store = useSupportPresenceStore.getState()
         store.setViewingAgent(event.entity_id, event.actor_id, event.action === 'viewing_started')
 
         // Auto-clear viewing after 30s in case viewing_stopped is never received
@@ -147,7 +147,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           if (prev) clearTimeout(prev)
           const timer = setTimeout(() => {
             typingTimers.current.delete(timerKey)
-            useSupportInboxStore.getState().setViewingAgent(event.entity_id, event.actor_id, false)
+            useSupportPresenceStore.getState().setViewingAgent(event.entity_id, event.actor_id, false)
           }, 30_000)
           typingTimers.current.set(timerKey, timer)
         }
@@ -157,7 +157,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       }
     } else if (event.entity === 'support_conversation_message') {
       if (event.parent_id) {
-        const s = useSupportInboxStore.getState()
+        const s = useSupportPresenceStore.getState()
         // Clear typing state for whoever sent this message
         if (event.actor_id?.startsWith('widget:')) {
           s.setTyping(event.parent_id, false)
@@ -216,7 +216,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const onPresenceSnapshot = useCallback((_convId: string, snapshot: PresenceSnapshot) => {
     const convId = pendingSnapshotConvRef.current
     if (!convId) return
-    const store = useSupportInboxStore.getState()
+    const store = useSupportPresenceStore.getState()
     const selfId = selfIdRef.current
     // Apply viewers (excluding self — self avatar is handled locally via isSelected)
     for (const uid of snapshot.viewers) {
@@ -248,12 +248,12 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
 
   // Expose wsSend and connection state to components via the store
   useEffect(() => {
-    useSupportInboxStore.getState().setWsSend(wsSendWithSnapshot)
-    return () => { useSupportInboxStore.getState().setWsSend(null) }
+    useSupportPresenceStore.getState().setWsSend(wsSendWithSnapshot)
+    return () => { useSupportPresenceStore.getState().setWsSend(null) }
   }, [wsSendWithSnapshot])
 
   useEffect(() => {
-    useSupportInboxStore.getState().setWsConnected(isConnected)
+    useSupportPresenceStore.getState().setWsConnected(isConnected)
   }, [isConnected])
 
   return { wsSend: wsSendWithSnapshot }

@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
@@ -51,16 +52,16 @@ interface ConversationRowProps {
 
 export const ConversationRow = memo(function ConversationRow({ conversation, isSelected, onSelect }: ConversationRowProps) {
   const displayName = conversation.customer_name || conversation.customer_email || 'Anonymous';
-  const typingState = useSupportInboxStore((s) => s.typingIndicators[conversation.id]);
+  const typingState = useSupportPresenceStore((s) => s.typingIndicators[conversation.id]);
   // typing state is string (including empty '') when typing, false/undefined when not
   const isCustomerTyping = typeof typingState === 'string';
-  const agentTypingMap = useSupportInboxStore((s) => s.agentTyping[conversation.id]);
+  const agentTypingMap = useSupportPresenceStore((s) => s.agentTyping[conversation.id]);
   const agentTypingEntries = agentTypingMap ? Object.entries(agentTypingMap) : [];
   const isAgentTyping = agentTypingEntries.length > 0;
   const draftContent = useSupportInboxStore((s) => s.drafts[conversation.id]);
   // Only show draft label when NOT actively viewing this conversation
   const hasDraft = !!draftContent && !isSelected;
-  const remoteViewingIds = useSupportInboxStore((s) => s.viewingAgents[conversation.id] || EMPTY_ARRAY);
+  const remoteViewingIds = useSupportPresenceStore((s) => s.viewingAgents[conversation.id] || EMPTY_ARRAY);
   const currentUserId = useAuthStore((s) => s.user?.id);
   // Merge self into viewing list for the selected conversation (self events are filtered from WS)
   const viewingAgentIds = isSelected && currentUserId && !remoteViewingIds.includes(currentUserId)
