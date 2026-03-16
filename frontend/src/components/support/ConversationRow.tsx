@@ -1,14 +1,34 @@
-import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
-import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS } from './constants';
 import { timeAgo, getInitial } from './helpers';
 
 const EMPTY_ARRAY: string[] = [];
+
+// Generate a consistent color from a string (name, email, or anonymous ID)
+const AVATAR_COLORS = [
+  'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+  'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+  'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+  'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
+  'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400',
+];
+
+function getAvatarColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
 
 function TypingDotsPill() {
   return (
@@ -75,7 +95,7 @@ export function ConversationRow({ conversation, isSelected, onSelect }: Conversa
       }`}
     >
       <div className="flex items-start gap-2.5">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
           {getInitial(displayName)}
         </div>
         <div className="min-w-0 flex-1">
@@ -83,30 +103,18 @@ export function ConversationRow({ conversation, isSelected, onSelect }: Conversa
             <span className="truncate text-sm font-medium">{displayName}</span>
             <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(conversation.updated_at)}</span>
           </div>
-          <p className="mt-0.5 truncate text-sm text-foreground/80">
-            {isCustomerTyping ? (
-              <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
-            ) : isAgentTyping ? (
-              <span className="italic text-primary/60">{agentTypingEntries[0][1] || 'typing…'}</span>
-            ) : (
-              conversation.last_message || conversation.subject
-            )}
-          </p>
-          {/* Bottom row: badges left, typing + avatars right */}
-          <div className="mt-1 flex items-center justify-between gap-1.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-muted-foreground">#{conversation.display_id}</span>
-              <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 leading-tight ${STATUS_COLORS[conversation.status]}`}>
-                {STATUS_LABELS[conversation.status]}
-              </Badge>
-              <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 leading-tight ${PRIORITY_COLORS[conversation.priority]}`}>
-                {conversation.priority}
-              </Badge>
-            </div>
-
-            {/* Right: typing indicator + agent avatars */}
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <p className="min-w-0 flex-1 truncate text-sm text-foreground/80">
+              {isCustomerTyping ? (
+                <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
+              ) : isAgentTyping ? (
+                <span className="italic text-primary/60">{agentTypingEntries[0][1] || 'typing…'}</span>
+              ) : (
+                conversation.last_message || conversation.subject
+              )}
+            </p>
             {hasActivity && (
-              <div className="flex items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1">
                 {(isCustomerTyping || isAgentTyping) && <TypingDotsPill />}
                 {agentTypingEntries
                   .filter(([uid]) => !viewingAgentIds.includes(uid))
