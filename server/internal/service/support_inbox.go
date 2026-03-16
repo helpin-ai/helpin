@@ -210,7 +210,8 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, err
 	}
 
-	// Hydrate event payload so widget clients can render messages without an extra HTTP round-trip.
+	// IMPORTANT: Publish WS event only AFTER the DB write has succeeded.
+	// Publishing before persist can cause phantom messages on other clients.
 	hydratedJSON, _ := json.Marshal(model.WidgetMessageReceivedPayload{
 		ID:             msg.ID,
 		ConversationID: msg.ConversationID,
@@ -576,6 +577,8 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		return nil, err
 	}
 
+	// IMPORTANT: Publish WS event only AFTER the DB write has succeeded.
+	// Publishing before persist can cause phantom messages on other clients.
 	hydratedJSON, _ := json.Marshal(model.WidgetMessageReceivedPayload{
 		ID:             msg.ID,
 		ConversationID: msg.ConversationID,

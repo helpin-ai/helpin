@@ -147,13 +147,14 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
   // Broadcast viewing presence via WebSocket (server tracks state, cleans up on disconnect)
   const wsSend = useSupportInboxStore((s) => s.wsSend);
+  const wsConnected = useSupportInboxStore((s) => s.wsConnected);
   useEffect(() => {
-    if (!conversationId || !wsSend) return;
+    if (!conversationId || !wsSend || !wsConnected) return;
     wsSend('support:viewing:start', { conversation_id: conversationId });
     return () => {
       wsSend('support:viewing:stop', { conversation_id: conversationId });
     };
-  }, [conversationId, wsSend]);
+  }, [conversationId, wsSend, wsConnected]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

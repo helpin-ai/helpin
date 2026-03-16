@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { API_BASE } from '@/lib/api'
 
 export interface WSEvent {
@@ -43,6 +43,7 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
   onEventRef.current = onEvent
   const onSnapshotRef = useRef(onPresenceSnapshot)
   onSnapshotRef.current = onPresenceSnapshot
+  const [isConnected, setIsConnected] = useState(false)
 
   const send: WSSend = useCallback((type, data) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -60,6 +61,7 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
     ws.onopen = () => {
       console.log('[ws] connected')
       retriesRef.current = 0
+      setIsConnected(true)
     }
 
     ws.onmessage = (e) => {
@@ -85,6 +87,7 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
     ws.onclose = () => {
       console.log('[ws] disconnected')
       wsRef.current = null
+      setIsConnected(false)
       // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s cap
       const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000)
       retriesRef.current++
@@ -108,8 +111,9 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
         wsRef.current.close()
         wsRef.current = null
       }
+      setIsConnected(false)
     }
   }, [connect])
 
-  return { send }
+  return { send, isConnected }
 }

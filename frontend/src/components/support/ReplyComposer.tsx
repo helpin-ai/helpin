@@ -37,10 +37,11 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
 
   const lastTypingSentRef = useRef(0);
   const wsSend = useSupportInboxStore((s) => s.wsSend);
+  const wsConnected = useSupportInboxStore((s) => s.wsConnected);
 
   // Send typing indicator via WebSocket — supports content for live preview
   const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
-    if (isNote || !wsSend) return;
+    if (isNote || !wsSend || !wsConnected) return;
     if (!typing && typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
@@ -59,7 +60,7 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
       conversation_id: conversationId,
       content: typingContent ?? '',
     });
-  }, [conversationId, isNote, wsSend]);
+  }, [conversationId, isNote, wsSend, wsConnected]);
 
   const handleTyping = useCallback((typingContent: string) => {
     sendTyping(true, typingContent);

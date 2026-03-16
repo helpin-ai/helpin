@@ -225,7 +225,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     }
   }, [])
 
-  const { send: wsSend } = useWebSocket({ workspaceId, onEvent, onPresenceSnapshot })
+  const { send: wsSend, isConnected } = useWebSocket({ workspaceId, onEvent, onPresenceSnapshot })
 
   // Wrap send to track pending snapshot conversation
   const wsSendWithSnapshot: WSSend = useCallback((type, data) => {
@@ -235,11 +235,15 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     wsSend(type, data)
   }, [wsSend])
 
-  // Expose wsSend to components via the store
+  // Expose wsSend and connection state to components via the store
   useEffect(() => {
     useSupportInboxStore.getState().setWsSend(wsSendWithSnapshot)
     return () => { useSupportInboxStore.getState().setWsSend(null) }
   }, [wsSendWithSnapshot])
+
+  useEffect(() => {
+    useSupportInboxStore.getState().setWsConnected(isConnected)
+  }, [isConnected])
 
   return { wsSend: wsSendWithSnapshot }
 }
