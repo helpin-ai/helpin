@@ -50,6 +50,8 @@ interface SupportInboxState {
   agentTyping: Record<string, Record<string, string>>;
   // Viewing presence: conversationId → set of agent userIds currently viewing
   viewingAgents: Record<string, string[]>;
+  // Drafts: conversationId → unsent textarea content
+  drafts: Record<string, string>;
 
   // Actions
   setNavFilter: (filter: NavFilter) => void;
@@ -65,6 +67,8 @@ interface SupportInboxState {
   setAgentTyping: (conversationId: string, actorId: string | null, content?: string) => void;
   clearOneAgentTyping: (conversationId: string, actorId: string) => void;
   setViewingAgent: (conversationId: string, actorId: string, viewing: boolean) => void;
+  setDraft: (conversationId: string, content: string) => void;
+  clearDraft: (conversationId: string) => void;
   // WS send function — set by useRealtimeSync when connection is established
   wsSend: WSSendFn | null;
   setWsSend: (fn: WSSendFn | null) => void;
@@ -86,6 +90,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     typingIndicators: {},
     agentTyping: {},
     viewingAgents: {},
+    drafts: {},
     wsSend: null,
     setWsSend: (fn) => set({ wsSend: fn }),
 
@@ -139,6 +144,20 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         if (!viewing && !current.includes(actorId)) return state;
         const next = viewing ? [...current, actorId] : current.filter((id) => id !== actorId);
         return { viewingAgents: { ...state.viewingAgents, [conversationId]: next } };
+      }),
+    setDraft: (conversationId, content) =>
+      set((state) => {
+        if (!content) {
+          const { [conversationId]: _, ...rest } = state.drafts;
+          return { drafts: rest };
+        }
+        return { drafts: { ...state.drafts, [conversationId]: content } };
+      }),
+    clearDraft: (conversationId) =>
+      set((state) => {
+        if (!(conversationId in state.drafts)) return state;
+        const { [conversationId]: _, ...rest } = state.drafts;
+        return { drafts: rest };
       }),
   };
 });

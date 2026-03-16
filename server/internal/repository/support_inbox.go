@@ -215,7 +215,12 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 
 	var conversations []model.SupportConversation
 	if err := fetch.
-		Select("support_conversations.*, (SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.is_internal = false ORDER BY created_at DESC LIMIT 1) AS last_message").
+		Select(`support_conversations.*, (
+			SELECT CASE WHEN m.is_internal THEN 'Note: ' || LEFT(m.content, 100) ELSE LEFT(m.content, 100) END
+			FROM support_messages m
+			WHERE m.conversation_id = support_conversations.id
+			ORDER BY m.created_at DESC LIMIT 1
+		) AS last_message`).
 		Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
