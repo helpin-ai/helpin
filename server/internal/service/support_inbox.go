@@ -210,6 +210,16 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, err
 	}
 
+	// Hydrate event payload so widget clients can render messages without an extra HTTP round-trip.
+	hydratedJSON, _ := json.Marshal(model.WidgetMessageReceivedPayload{
+		ID:             msg.ID,
+		ConversationID: msg.ConversationID,
+		Content:        msg.Content,
+		SenderType:     msg.SenderType,
+		SenderName:     msg.SenderDisplayName,
+		CreatedAt:      msg.CreatedAt.Format(time.RFC3339),
+	})
+
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",
 		Entity:      "support_conversation_message",
@@ -217,6 +227,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		WorkspaceID: workspaceID,
 		ParentType:  "support_conversation",
 		ParentID:    ticketID,
+		Data:        hydratedJSON,
 	})
 
 	return msg, nil
@@ -565,16 +576,41 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		return nil, err
 	}
 
+	hydratedJSON, _ := json.Marshal(model.WidgetMessageReceivedPayload{
+		ID:             msg.ID,
+		ConversationID: msg.ConversationID,
+		Content:        msg.Content,
+		SenderType:     msg.SenderType,
+		SenderName:     msg.SenderDisplayName,
+		CreatedAt:      msg.CreatedAt.Format(time.RFC3339),
+	})
+
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",
 		Entity:      "support_conversation_message",
 		EntityID:    msg.ID,
 		WorkspaceID: session.WorkspaceID,
+		ActorID:     "widget:" + session.ID, // exclude sender from Hub broadcast (handler echoes directly)
 		ParentType:  "support_conversation",
 		ParentID:    *session.ConversationID,
+		Data:        hydratedJSON,
 	})
 
 	return msg, nil
+}
+
+// PublishWidgetTypingIndicator publishes a widget visitor typing event using session context.
+func (s *SupportInboxService) PublishWidgetTypingIndicator(ctx context.Context, sessionToken string, isTyping bool) error {
+	session, err := s.GetWidgetSession(ctx, sessionToken)
+	if err != nil {
+		return err
+	}
+	if session.ConversationID == nil || *session.ConversationID == "" {
+		return nil
+	}
+
+	s.PublishTypingIndicator(ctx, session.WorkspaceID, *session.ConversationID, "widget:"+session.ID, isTyping, "")
+	return nil
 }
 
 // GetWidgetConfig returns widget config by widget key (public).
@@ -1117,15 +1153,37 @@ func (s *SupportInboxService) DeleteCannedResponse(ctx context.Context, workspac
 }
 
 // PublishTypingIndicator publishes a typing indicator event via WebSocket.
-func (s *SupportInboxService) PublishTypingIndicator(ctx context.Context, workspaceID, conversationID string, isTyping bool) {
+// actorID identifies whether the sender is a widget visitor or an internal agent.
+func (s *SupportInboxService) PublishTypingIndicator(ctx context.Context, workspaceID, conversationID, actorID string, isTyping bool, content string) {
 	action := "typing_stopped"
 	if isTyping {
 		action = "typing_started"
+	}
+	var eventData json.RawMessage
+	if content != "" {
+		eventData, _ = json.Marshal(map[string]string{"content": content})
 	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      action,
 		Entity:      "support_conversation",
 		EntityID:    conversationID,
 		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		Data:        eventData,
+	})
+}
+
+// PublishViewingPresence broadcasts a viewing_started or viewing_stopped event.
+func (s *SupportInboxService) PublishViewingPresence(ctx context.Context, workspaceID, conversationID, actorID string, viewing bool) {
+	action := "viewing_stopped"
+	if viewing {
+		action = "viewing_started"
+	}
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      action,
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
 	})
 }

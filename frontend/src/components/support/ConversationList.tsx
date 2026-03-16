@@ -49,7 +49,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   }, [conversations, navFilter, userId, searchQuery]);
 
   return (
-    <div className="flex w-[300px] flex-col border-r overflow-hidden">
+    <div className="flex h-full w-[300px] flex-col border-r">
       {/* Search */}
       <div className="border-b px-3 py-2">
         <div className="relative">
@@ -64,7 +64,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
       </div>
 
       {/* Conversation list */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         {isLoading && (
           <p className="p-4 text-sm text-muted-foreground">Loading...</p>
         )}

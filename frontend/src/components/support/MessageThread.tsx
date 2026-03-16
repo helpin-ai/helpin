@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle, User } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,10 @@ import {
   useUpdateConversationStatus,
   useRunConversationAgent,
 } from '@/hooks/queries/useSupport';
+import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
+// supportService import kept for non-presence HTTP calls
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
 import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS } from './constants';
 import { getDayLabel, isSameDay, getInitial } from './helpers';
@@ -26,6 +29,83 @@ import { AgentRunsCard } from './AgentRunsCard';
 interface MessageThreadProps {
   workspaceId: string;
   conversationId: string | null;
+}
+
+function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
+  const typingState = useSupportInboxStore(
+    (s) => (conversationId ? s.typingIndicators[conversationId] : false)
+  );
+  if (typingState === false || typingState === undefined) return null;
+  return (
+    <div className="flex justify-start mt-2 animate-in fade-in duration-200">
+      {/* Avatar placeholder matching customer bubble layout */}
+      <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
+          <span className="flex gap-0.5 text-sm leading-none text-muted-foreground">
+            <span className="animate-bounce [animation-delay:0ms]">·</span>
+            <span className="animate-bounce [animation-delay:150ms]">·</span>
+            <span className="animate-bounce [animation-delay:300ms]">·</span>
+          </span>
+        </div>
+      </div>
+      <div className="max-w-[70%]">
+        <div className="rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2 text-sm leading-relaxed text-foreground">
+          {typingState ? (
+            <p className="whitespace-pre-wrap italic opacity-60">{typingState}</p>
+          ) : (
+            <p className="italic opacity-50">typing…</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: string | null; workspaceId: string }) {
+  const agentTypingMap = useSupportInboxStore(
+    (s) => (conversationId ? s.agentTyping[conversationId] : undefined)
+  );
+  const { data: members = [] } = useWorkspaceMembers(workspaceId);
+
+  const entries = agentTypingMap ? Object.entries(agentTypingMap) : [];
+  if (entries.length === 0) return null;
+
+  return (
+    <>
+      {entries.map(([actorId, content]) => {
+        const member = members.find((m) => m.user_id === actorId);
+        const name = member?.full_name || member?.email || 'Agent';
+        return (
+          <div key={actorId} className="flex justify-end mt-2 animate-in fade-in duration-200">
+            <div className="max-w-[70%]">
+              <div className="mb-1 pr-1 text-right">
+                <span className="text-[11px] font-medium text-muted-foreground">{name}</span>
+              </div>
+              <div className="rounded-2xl rounded-br-sm bg-primary/40 px-3.5 py-2 text-sm leading-relaxed text-primary-foreground">
+                {content ? (
+                  <p className="whitespace-pre-wrap italic opacity-70">{content}</p>
+                ) : (
+                  <span className="flex items-center gap-1.5 italic opacity-50">
+                    <span className="flex gap-0.5">
+                      <span className="animate-bounce [animation-delay:0ms]">·</span>
+                      <span className="animate-bounce [animation-delay:150ms]">·</span>
+                      <span className="animate-bounce [animation-delay:300ms]">·</span>
+                    </span>
+                    typing…
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <User className="h-3.5 w-3.5" />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 function DaySeparator({ label }: { label: string }) {
@@ -64,6 +144,16 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   useEffect(() => {
     loadAgentRuns();
   }, [loadAgentRuns]);
+
+  // Broadcast viewing presence via WebSocket (server tracks state, cleans up on disconnect)
+  const wsSend = useSupportInboxStore((s) => s.wsSend);
+  useEffect(() => {
+    if (!conversationId || !wsSend) return;
+    wsSend('support:viewing:start', { conversation_id: conversationId });
+    return () => {
+      wsSend('support:viewing:stop', { conversation_id: conversationId });
+    };
+  }, [conversationId, wsSend]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -118,7 +208,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   }
 
   return (
-    <div className="flex flex-1 flex-col min-w-0">
+    <div className="flex flex-1 flex-col min-w-0 min-h-0">
       {/* Action header bar */}
       {conversation && (
         <div className="flex items-center justify-between border-b px-4 py-2.5">
@@ -198,7 +288,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
       )}
 
       {/* Messages with day separators */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="px-4 pb-4">
           {isLoading && (
             <div className="flex items-center justify-center py-8">
@@ -225,6 +315,8 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               />
             );
           })}
+          <TypingIndicatorBar conversationId={conversationId} />
+          <AgentTypingBubble conversationId={conversationId} workspaceId={workspaceId} />
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>

@@ -43,14 +43,14 @@ export function SupportInboxLayout() {
         {/* Panel 1: Conversation list */}
         <div className={`${
           selectedConversationId ? 'hidden md:flex' : 'flex'
-        } w-full md:w-auto`}>
+        } w-full md:w-auto min-h-0`}>
           <ConversationList workspaceId={workspaceId} userId={user?.id} />
         </div>
 
         {/* Panel 2: Message thread */}
         <div className={`${
           !selectedConversationId ? 'hidden md:flex' : 'flex'
-        } min-w-0 flex-1`}>
+        } min-w-0 min-h-0 flex-1`}>
           <MessageThread workspaceId={workspaceId} conversationId={selectedConversationId} />
         </div>
 

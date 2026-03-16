@@ -3,12 +3,15 @@ import { useState } from 'preact/hooks';
 import type { Message, WidgetConfig } from '../types';
 import { MessageList } from './MessageList';
 import { ComposeBar } from './ComposeBar';
+import { TypingIndicator } from './TypingIndicator';
 import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 interface ConversationViewProps {
   config: WidgetConfig;
   messages: Message[];
   onSendMessage: (content: string) => void;
+  onTyping?: (content: string) => void;
+  isTyping?: boolean;
   onBack: () => void;
   onClose?: () => void;
 }
@@ -17,6 +20,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   config,
   messages,
   onSendMessage,
+  onTyping,
+  isTyping = false,
   onBack,
   onClose,
 }) => {
@@ -105,7 +110,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         />
       </div>
 
-      <ComposeBar onSend={onSendMessage} />
+      {isTyping && <TypingIndicator />}
+      <ComposeBar onSend={onSendMessage} onTyping={onTyping} />
     </div>
   );
 };

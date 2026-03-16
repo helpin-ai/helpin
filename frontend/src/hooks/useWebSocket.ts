@@ -2,19 +2,29 @@ import { useEffect, useRef, useCallback } from 'react'
 import { API_BASE } from '@/lib/api'
 
 export interface WSEvent {
-  action: 'created' | 'updated' | 'deleted' | 'moved'
+  action: 'created' | 'updated' | 'deleted' | 'moved' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped'
   entity: string
   entity_id: string
   workspace_id: string
   actor_id: string
   parent_type?: string
   parent_id?: string
+  data?: Record<string, unknown>
+}
+
+// Snapshot sent by server when agent starts viewing a conversation
+export interface PresenceSnapshot {
+  viewers: string[]
+  typers: Record<string, string>
 }
 
 interface UseWebSocketOptions {
   workspaceId: string
   onEvent: (event: WSEvent) => void
+  onPresenceSnapshot?: (conversationId: string, snapshot: PresenceSnapshot) => void
 }
+
+export type WSSend = (type: string, data: Record<string, unknown>) => void
 
 function getWSUrl(workspaceId: string): string {
   const token = localStorage.getItem('access_token')
@@ -25,12 +35,20 @@ function getWSUrl(workspaceId: string): string {
   return `${base}/ws?token=${encodeURIComponent(token)}&workspace_id=${encodeURIComponent(workspaceId)}`
 }
 
-export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
+export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null)
   const retriesRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
+  const onSnapshotRef = useRef(onPresenceSnapshot)
+  onSnapshotRef.current = onPresenceSnapshot
+
+  const send: WSSend = useCallback((type, data) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type, data }))
+    }
+  }, [])
 
   const connect = useCallback(() => {
     const url = getWSUrl(workspaceId)
@@ -46,8 +64,19 @@ export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
 
     ws.onmessage = (e) => {
       try {
-        const event: WSEvent = JSON.parse(e.data)
-        onEventRef.current(event)
+        const msg = JSON.parse(e.data)
+        // Handle presence snapshot (sent as {type, data} envelope)
+        if (msg.type === 'support:presence_snapshot' && msg.data) {
+          const snapshot = msg.data as PresenceSnapshot & { conversation_id?: string }
+          // The snapshot is sent in response to viewing:start — the conversation_id
+          // is not in the snapshot itself; the client tracks which conversation it asked about.
+          onSnapshotRef.current?.('', snapshot)
+          return
+        }
+        // Standard event (has action/entity fields)
+        if (msg.action && msg.entity) {
+          onEventRef.current(msg as WSEvent)
+        }
       } catch {
         // ignore malformed messages
       }
@@ -81,4 +110,6 @@ export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
       }
     }
   }, [connect])
+
+  return { send }
 }

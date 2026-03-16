@@ -129,6 +129,26 @@ func (h *SupportInboxWidgetHandler) SendMessage(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusCreated, msg)
 }
 
+// TypingIndicator handles POST /widget/typing as an HTTP fallback when widget WS is unavailable.
+func (h *SupportInboxWidgetHandler) TypingIndicator(w http.ResponseWriter, r *http.Request) {
+	var req model.WidgetTypingRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.SessionToken == "" {
+		writeError(w, http.StatusBadRequest, "session_token is required")
+		return
+	}
+
+	if err := h.supportService.PublishWidgetTypingIndicator(r.Context(), req.SessionToken, req.IsTyping); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
 // GetMessages handles GET /api/widget/support/messages?session_token=...
 func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	sessionToken := r.URL.Query().Get("session_token")
