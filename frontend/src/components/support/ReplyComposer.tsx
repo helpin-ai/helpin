@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSendMessage } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
-import { supportService } from '@/lib/services/supportService';
 import { cn } from '@/lib/utils';
 
 interface ReplyComposerProps {
@@ -22,19 +21,18 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
   const isNote = replyMode === 'note';
 
   const lastTypingSentRef = useRef(0);
+  const wsSend = useSupportInboxStore((s) => s.wsSend);
 
-  // Send typing indicator — supports content for live preview
+  // Send typing indicator via WebSocket — supports content for live preview
   const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
-    if (isNote) return;
+    if (isNote || !wsSend) return;
     if (!typing && typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
     }
     if (!typing) {
       isTypingRef.current = false;
-      supportService.sendTypingIndicator(workspaceId, conversationId, false).catch((e) => {
-        if (import.meta.env.DEV) console.warn('[typing] stop failed:', e);
-      });
+      wsSend('support:typing:stop', { conversation_id: conversationId });
       return;
     }
     // Throttle content updates to every 300ms
@@ -42,10 +40,11 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
     if (isTypingRef.current && now - lastTypingSentRef.current < 300) return;
     isTypingRef.current = true;
     lastTypingSentRef.current = now;
-    supportService.sendTypingIndicator(workspaceId, conversationId, true, typingContent).catch((e) => {
-      if (import.meta.env.DEV) console.warn('[typing] send failed:', e);
+    wsSend(isTypingRef.current ? 'support:typing:update' : 'support:typing:start', {
+      conversation_id: conversationId,
+      content: typingContent ?? '',
     });
-  }, [workspaceId, conversationId, isNote]);
+  }, [conversationId, isNote, wsSend]);
 
   const handleTyping = useCallback((typingContent: string) => {
     sendTyping(true, typingContent);
@@ -57,12 +56,12 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
   useEffect(() => {
     return () => {
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-      if (isTypingRef.current) {
+      if (isTypingRef.current && wsSend) {
         isTypingRef.current = false;
-        supportService.sendTypingIndicator(workspaceId, conversationId, false).catch(() => {});
+        wsSend('support:typing:stop', { conversation_id: conversationId });
       }
     };
-  }, [workspaceId, conversationId]);
+  }, [conversationId, wsSend]);
 
   // Auto-resize textarea
   useEffect(() => {

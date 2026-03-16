@@ -17,7 +17,7 @@ import {
 } from '@/hooks/queries/useSupport';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
-import { supportService } from '@/lib/services/supportService';
+// supportService import kept for non-presence HTTP calls
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
 import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS } from './constants';
@@ -145,32 +145,15 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     loadAgentRuns();
   }, [loadAgentRuns]);
 
-  // Broadcast viewing presence to other agents
-  const viewingRef = useRef<string | null>(null);
+  // Broadcast viewing presence via WebSocket (server tracks state, cleans up on disconnect)
+  const wsSend = useSupportInboxStore((s) => s.wsSend);
   useEffect(() => {
-    if (!conversationId) return;
-    // Prevent re-sending if already viewing this conversation
-    if (viewingRef.current === conversationId) return;
-    const prevConvId = viewingRef.current;
-    viewingRef.current = conversationId;
-    // Stop viewing previous conversation
-    if (prevConvId) {
-      supportService.sendViewingPresence(workspaceId, prevConvId, false).catch(() => {});
-    }
-    // Start viewing new conversation
-    supportService.sendViewingPresence(workspaceId, conversationId, true).then((res) => {
-      if (import.meta.env.DEV) console.debug('[viewing] sent viewing:true', conversationId, res.error ? `ERROR: ${res.error}` : 'ok');
-    });
-    // Heartbeat every 15s so other agents discover presence quickly
-    const interval = setInterval(() => {
-      supportService.sendViewingPresence(workspaceId, conversationId, true).catch(() => {});
-    }, 15_000);
+    if (!conversationId || !wsSend) return;
+    wsSend('support:viewing:start', { conversation_id: conversationId });
     return () => {
-      clearInterval(interval);
-      viewingRef.current = null;
-      supportService.sendViewingPresence(workspaceId, conversationId, false).catch(() => {});
+      wsSend('support:viewing:stop', { conversation_id: conversationId });
     };
-  }, [workspaceId, conversationId]);
+  }, [conversationId, wsSend]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

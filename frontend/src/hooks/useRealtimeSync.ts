@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useWebSocket, type WSEvent } from './useWebSocket'
+import { useWebSocket, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
+import { useAuthStore } from '@/stores/authStore'
 import { pmStoryService } from '@/lib/services/pmStoryService'
 import { queryKeys } from '@/lib/queryKeys'
 
@@ -14,10 +15,14 @@ const DEBOUNCE_MS = 200
 /** Auto-clear typing indicator after this many ms without a refresh. */
 const TYPING_TIMEOUT_MS = 10_000
 
-export function useRealtimeSync(workspaceId: string) {
+export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const queryClient = useQueryClient()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // Track which conversation the snapshot is for (set before sending viewing:start)
+  const pendingSnapshotConvRef = useRef<string | null>(null)
+  const selfIdRef = useRef<string | undefined>(useAuthStore.getState().user?.id)
+  selfIdRef.current = useAuthStore.getState().user?.id
   const scheduleRefresh = useCallback(() => {
     clearTimeout(debounceTimer.current ?? undefined)
     debounceTimer.current = setTimeout(() => {
@@ -197,6 +202,21 @@ export function useRealtimeSync(workspaceId: string) {
     }
   }, [scheduleRefresh, workspaceId, queryClient])
 
+  const onPresenceSnapshot = useCallback((_convId: string, snapshot: PresenceSnapshot) => {
+    const convId = pendingSnapshotConvRef.current
+    if (!convId) return
+    const store = useSupportInboxStore.getState()
+    const selfId = selfIdRef.current
+    // Apply viewers (excluding self — self avatar is handled locally via isSelected)
+    for (const uid of snapshot.viewers) {
+      if (uid !== selfId) store.setViewingAgent(convId, uid, true)
+    }
+    // Apply typers (excluding self)
+    for (const [uid, content] of Object.entries(snapshot.typers)) {
+      if (uid !== selfId) store.setAgentTyping(convId, uid, content)
+    }
+  }, [])
+
   useEffect(() => {
     return () => {
       clearTimeout(debounceTimer.current ?? undefined)
@@ -205,5 +225,21 @@ export function useRealtimeSync(workspaceId: string) {
     }
   }, [])
 
-  useWebSocket({ workspaceId, onEvent })
+  const { send: wsSend } = useWebSocket({ workspaceId, onEvent, onPresenceSnapshot })
+
+  // Wrap send to track pending snapshot conversation
+  const wsSendWithSnapshot: WSSend = useCallback((type, data) => {
+    if (type === 'support:viewing:start' && data.conversation_id) {
+      pendingSnapshotConvRef.current = data.conversation_id as string
+    }
+    wsSend(type, data)
+  }, [wsSend])
+
+  // Expose wsSend to components via the store
+  useEffect(() => {
+    useSupportInboxStore.getState().setWsSend(wsSendWithSnapshot)
+    return () => { useSupportInboxStore.getState().setWsSend(null) }
+  }, [wsSendWithSnapshot])
+
+  return { wsSend: wsSendWithSnapshot }
 }

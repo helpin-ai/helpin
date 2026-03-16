@@ -35,14 +35,16 @@ type Client struct {
 
 // Hub manages all active WebSocket clients grouped by workspace.
 type Hub struct {
-	mu      sync.RWMutex
-	clients map[string]map[*Client]struct{} // workspaceID -> set of clients
+	mu       sync.RWMutex
+	clients  map[string]map[*Client]struct{} // workspaceID -> set of clients
+	Presence *PresenceState
 }
 
 // NewHub creates an empty hub.
 func NewHub() *Hub {
 	return &Hub{
-		clients: make(map[string]map[*Client]struct{}),
+		clients:  make(map[string]map[*Client]struct{}),
+		Presence: NewPresenceState(),
 	}
 }
 
@@ -57,7 +59,7 @@ func (h *Hub) Register(c *Client) {
 	log.Printf("[ws] client registered: user=%s workspace=%s widget=%v", c.UserID, c.WorkspaceID, c.IsWidget)
 }
 
-// Unregister removes a client from the hub.
+// Unregister removes a client from the hub and cleans up presence.
 func (h *Hub) Unregister(c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -68,6 +70,29 @@ func (h *Hub) Unregister(c *Client) {
 		}
 	}
 	log.Printf("[ws] client unregistered: user=%s workspace=%s", c.UserID, c.WorkspaceID)
+
+	// Clean up presence and broadcast stop events for internal (agent) clients
+	if !c.IsWidget {
+		viewingCleared, typingCleared := h.Presence.ClearAllForUser(c.WorkspaceID, c.UserID)
+		for _, convID := range viewingCleared {
+			go h.Broadcast(Event{
+				Action:      "viewing_stopped",
+				Entity:      "support_conversation",
+				EntityID:    convID,
+				WorkspaceID: c.WorkspaceID,
+				ActorID:     c.UserID,
+			})
+		}
+		for _, convID := range typingCleared {
+			go h.Broadcast(Event{
+				Action:      "typing_stopped",
+				Entity:      "support_conversation",
+				EntityID:    convID,
+				WorkspaceID: c.WorkspaceID,
+				ActorID:     c.UserID,
+			})
+		}
+	}
 }
 
 // widgetMessage is the wire format widget clients expect: {type, data}.

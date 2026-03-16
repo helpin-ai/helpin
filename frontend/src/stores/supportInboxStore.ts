@@ -25,6 +25,8 @@ function savePersisted(state: PersistedState) {
   } catch {}
 }
 
+export type WSSendFn = (type: string, data: Record<string, unknown>) => void;
+
 interface SupportInboxState {
   // Navigation
   navFilter: NavFilter;
@@ -63,6 +65,9 @@ interface SupportInboxState {
   setAgentTyping: (conversationId: string, actorId: string | null, content?: string) => void;
   clearOneAgentTyping: (conversationId: string, actorId: string) => void;
   setViewingAgent: (conversationId: string, actorId: string, viewing: boolean) => void;
+  // WS send function — set by useRealtimeSync when connection is established
+  wsSend: WSSendFn | null;
+  setWsSend: (fn: WSSendFn | null) => void;
 }
 
 export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
@@ -81,6 +86,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     typingIndicators: {},
     agentTyping: {},
     viewingAgents: {},
+    wsSend: null,
+    setWsSend: (fn) => set({ wsSend: fn }),
 
     setNavFilter: (filter) => set({ navFilter: filter }),
     toggleNavCollapsed: () => {
