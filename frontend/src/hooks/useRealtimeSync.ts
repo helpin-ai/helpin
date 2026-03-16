@@ -17,6 +17,7 @@ const TYPING_TIMEOUT_MS = 10_000
 export function useRealtimeSync(workspaceId: string) {
   const queryClient = useQueryClient()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const scheduleRefresh = useCallback(() => {
     clearTimeout(debounceTimer.current ?? undefined)
     debounceTimer.current = setTimeout(() => {
@@ -88,12 +89,24 @@ export function useRealtimeSync(workspaceId: string) {
           console.debug('[ws] typing event received:', event.action, 'conversation:', event.entity_id, 'actor:', event.actor_id)
         }
         const { setTyping } = useSupportInboxStore.getState()
-        setTyping(event.entity_id, event.action === 'typing_started')
+        const convId = event.entity_id
+
+        // Clear any existing auto-clear timer for this conversation
+        const prevTimer = typingTimers.current.get(convId)
+        if (prevTimer) {
+          clearTimeout(prevTimer)
+          typingTimers.current.delete(convId)
+        }
+
+        setTyping(convId, event.action === 'typing_started')
+
         // Auto-clear after timeout in case typing:stop is never received
         if (event.action === 'typing_started') {
-          setTimeout(() => {
-            useSupportInboxStore.getState().setTyping(event.entity_id, false)
+          const timer = setTimeout(() => {
+            typingTimers.current.delete(convId)
+            useSupportInboxStore.getState().setTyping(convId, false)
           }, TYPING_TIMEOUT_MS)
+          typingTimers.current.set(convId, timer)
         }
       } else {
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
@@ -139,7 +152,11 @@ export function useRealtimeSync(workspaceId: string) {
   }, [scheduleRefresh, workspaceId, queryClient])
 
   useEffect(() => {
-    return () => { clearTimeout(debounceTimer.current ?? undefined) }
+    return () => {
+      clearTimeout(debounceTimer.current ?? undefined)
+      typingTimers.current.forEach((t) => clearTimeout(t))
+      typingTimers.current.clear()
+    }
   }, [])
 
   useWebSocket({ workspaceId, onEvent })
