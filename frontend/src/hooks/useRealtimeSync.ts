@@ -84,6 +84,9 @@ export function useRealtimeSync(workspaceId: string) {
       if (event.action === 'typing_started' || event.action === 'typing_stopped') {
         if (!event.entity_id) return
 
+        if (import.meta.env.DEV) {
+          console.debug('[ws] typing event received:', event.action, 'conversation:', event.entity_id, 'actor:', event.actor_id)
+        }
         const { setTyping } = useSupportInboxStore.getState()
         setTyping(event.entity_id, event.action === 'typing_started')
         // Auto-clear after timeout in case typing:stop is never received

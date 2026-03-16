@@ -314,9 +314,13 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 		case "typing:start":
 			conversationID := derefStr(client.ConversationID)
 			if conversationID == "" {
+				slog.Debug("widget ws: typing:start dropped — no conversation_id",
+					"session_id", session.ID, "workspace_id", session.WorkspaceID)
 				continue
 			}
-			h.hub.Broadcast(Event{
+			slog.Debug("widget ws: broadcasting typing_started",
+				"conversation_id", conversationID, "workspace_id", session.WorkspaceID, "actor", client.UserID)
+			go h.hub.Broadcast(Event{
 				Action:      "typing_started",
 				Entity:      "support_conversation",
 				EntityID:    conversationID,
@@ -329,7 +333,9 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			if conversationID == "" {
 				continue
 			}
-			h.hub.Broadcast(Event{
+			slog.Debug("widget ws: broadcasting typing_stopped",
+				"conversation_id", conversationID, "workspace_id", session.WorkspaceID)
+			go h.hub.Broadcast(Event{
 				Action:      "typing_stopped",
 				Entity:      "support_conversation",
 				EntityID:    conversationID,

@@ -377,12 +377,17 @@ export class WidgetManager {
   private isSendingTyping = false;
 
   private handleTyping(): void {
-    if (!this.sessionToken) return;
+    if (!this.sessionToken) {
+      console.debug('[helpin] typing skipped — no session token');
+      return;
+    }
     if (!this.isSendingTyping) {
       this.isSendingTyping = true;
       if (this.wsConnection?.readyState === WebSocket.OPEN) {
+        console.debug('[helpin] sending typing:start via WS, conversationId:', this.activeConversationId);
         this.wsSend('typing:start', {});
       } else {
+        console.debug('[helpin] sending typing:start via HTTP fallback');
         void this.sendTypingHTTP(true);
       }
     }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -106,13 +107,29 @@ func (h *Hub) Broadcast(event Event) {
 	}
 	h.mu.RUnlock()
 
+	isTyping := event.Entity == "support_conversation" && isTypingEvent(event.Action)
+	if isTyping {
+		slog.Debug("[ws] broadcasting typing event",
+			"action", event.Action, "conversation_id", event.EntityID,
+			"workspace_id", event.WorkspaceID, "actor_id", event.ActorID,
+			"target_count", len(targets))
+	}
+
 	for _, c := range targets {
 		if !h.shouldReceive(c, event) {
+			if isTyping {
+				slog.Debug("[ws] typing event filtered out",
+					"client_user", c.UserID, "is_widget", c.IsWidget)
+			}
 			continue
 		}
 		payload := agentData
 		if c.IsWidget && widgetData != nil {
 			payload = widgetData
+		}
+		if isTyping {
+			slog.Debug("[ws] delivering typing event to client",
+				"client_user", c.UserID, "is_widget", c.IsWidget)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		err := c.Conn.Write(ctx, websocket.MessageText, payload)
