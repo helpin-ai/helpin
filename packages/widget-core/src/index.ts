@@ -46,7 +46,7 @@ export interface MountWidgetOptions {
   onSendMessage?: (content: string) => void;
   onSendMessageFromHome?: (content: string) => void;
   onQuickReply?: (content: string) => void;
-  onTyping?: () => void;
+  onTyping?: (content: string) => void;
   showPreChatForm?: boolean;
   onPreChatSubmit?: (data: { name: string; email: string }) => void;
   isTyping?: boolean;

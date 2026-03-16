@@ -10,7 +10,7 @@ interface ConversationViewProps {
   config: WidgetConfig;
   messages: Message[];
   onSendMessage: (content: string) => void;
-  onTyping?: () => void;
+  onTyping?: (content: string) => void;
   isTyping?: boolean;
   onBack: () => void;
   onClose?: () => void;

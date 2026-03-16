@@ -30,18 +30,22 @@ interface MessageThreadProps {
 }
 
 function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
-  const isTyping = useSupportInboxStore(
+  const typingState = useSupportInboxStore(
     (s) => (conversationId ? s.typingIndicators[conversationId] : false)
   );
-  if (!isTyping) return null;
+  if (typingState === false || typingState === undefined) return null;
   return (
-    <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground animate-in fade-in duration-200">
-      <span className="flex gap-0.5 text-base leading-none">
+    <div className="flex items-start gap-2 px-2 py-2 text-xs text-muted-foreground animate-in fade-in duration-200">
+      <span className="flex gap-0.5 text-base leading-none shrink-0 pt-px">
         <span className="animate-bounce [animation-delay:0ms]">·</span>
         <span className="animate-bounce [animation-delay:150ms]">·</span>
         <span className="animate-bounce [animation-delay:300ms]">·</span>
       </span>
-      Customer is typing…
+      {typingState ? (
+        <span className="italic text-muted-foreground/70 line-clamp-2 break-all">{typingState}</span>
+      ) : (
+        <span>Customer is typing…</span>
+      )}
     </div>
   );
 }

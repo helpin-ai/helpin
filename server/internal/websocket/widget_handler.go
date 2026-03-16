@@ -320,12 +320,17 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 			slog.Debug("widget ws: broadcasting typing_started",
 				"conversation_id", conversationID, "workspace_id", session.WorkspaceID, "actor", client.UserID)
+			var eventData json.RawMessage
+			if content, _ := msg.Data["content"].(string); content != "" {
+				eventData, _ = json.Marshal(map[string]string{"content": content})
+			}
 			go h.hub.Broadcast(Event{
 				Action:      "typing_started",
 				Entity:      "support_conversation",
 				EntityID:    conversationID,
 				WorkspaceID: session.WorkspaceID,
 				ActorID:     client.UserID,
+				Data:        eventData,
 			})
 
 		case "typing:stop":

@@ -90,6 +90,7 @@ export function useRealtimeSync(workspaceId: string) {
         }
         const { setTyping } = useSupportInboxStore.getState()
         const convId = event.entity_id
+        const content = (event.data?.content as string) || ''
 
         // Clear any existing auto-clear timer for this conversation
         const prevTimer = typingTimers.current.get(convId)
@@ -98,7 +99,7 @@ export function useRealtimeSync(workspaceId: string) {
           typingTimers.current.delete(convId)
         }
 
-        setTyping(convId, event.action === 'typing_started')
+        setTyping(convId, event.action === 'typing_started', content)
 
         // Auto-clear after timeout in case typing:stop is never received
         if (event.action === 'typing_started') {

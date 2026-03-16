@@ -9,6 +9,7 @@ export interface WSEvent {
   actor_id: string
   parent_type?: string
   parent_id?: string
+  data?: Record<string, unknown>
 }
 
 interface UseWebSocketOptions {

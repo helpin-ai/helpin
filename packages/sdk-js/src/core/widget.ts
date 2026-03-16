@@ -291,7 +291,7 @@ export class WidgetManager {
       onSendMessage: (content: string) => this.handleSendMessage(content),
       onSendMessageFromHome: (content: string) => this.handleSendMessage(content, { startNewConversation: true }),
       onQuickReply: (content: string) => this.handleSendMessage(content),
-      onTyping: () => this.handleTyping(),
+      onTyping: (content: string) => this.handleTyping(content),
       showPreChatForm: showPreChat,
       onPreChatSubmit: (data: { name: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
@@ -375,25 +375,35 @@ export class WidgetManager {
 
   private typingTimer: ReturnType<typeof setTimeout> | null = null;
   private isSendingTyping = false;
+  private lastTypingSentAt = 0;
 
-  private handleTyping(): void {
+  private handleTyping(content: string): void {
     if (!this.sessionToken) {
       console.debug('[helpin] typing skipped — no session token');
       return;
     }
-    if (!this.isSendingTyping) {
+
+    const now = Date.now();
+    const wasTyping = this.isSendingTyping;
+    const shouldSendContent = now - this.lastTypingSentAt >= 300;
+
+    if (!wasTyping || shouldSendContent) {
       this.isSendingTyping = true;
+      this.lastTypingSentAt = now;
       if (this.wsConnection?.readyState === WebSocket.OPEN) {
         console.debug('[helpin] sending typing:start via WS, conversationId:', this.activeConversationId);
-        this.wsSend('typing:start', {});
-      } else {
+        this.wsSend('typing:start', { content });
+      } else if (!wasTyping) {
+        // Only send HTTP fallback on the initial typing:start (no content preview over HTTP)
         console.debug('[helpin] sending typing:start via HTTP fallback');
         void this.sendTypingHTTP(true);
       }
     }
+
     if (this.typingTimer) clearTimeout(this.typingTimer);
     this.typingTimer = setTimeout(() => {
       this.isSendingTyping = false;
+      this.lastTypingSentAt = 0;
       if (this.wsConnection?.readyState === WebSocket.OPEN) {
         this.wsSend('typing:stop', {});
       } else {

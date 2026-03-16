@@ -262,7 +262,7 @@ describe('WidgetManager', () => {
       (widget as any).sessionToken = 'session-123';
       (widget as any).wsConnection = { readyState: 3, close: vi.fn(), onclose: null };
 
-      (widget as any).handleTyping();
+      (widget as any).handleTyping('hello');
       await Promise.resolve();
 
       expect(fetchMock).toHaveBeenCalledWith(
