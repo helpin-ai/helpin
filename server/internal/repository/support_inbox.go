@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -37,6 +38,13 @@ func (r *SupportMessageRepository) ListByConversation(ctx context.Context, works
 func (r *SupportMessageRepository) Create(ctx context.Context, message *model.SupportMessage) error {
 	if err := r.db.WithContext(ctx).Create(message).Error; err != nil {
 		return fmt.Errorf("create message: %w", err)
+	}
+	// Bump parent conversation's updated_at so it moves to top of inbox list
+	if message.ConversationID != "" {
+		r.db.WithContext(ctx).
+			Model(&model.SupportConversation{}).
+			Where("id = ?", message.ConversationID).
+			Update("updated_at", time.Now())
 	}
 	return nil
 }

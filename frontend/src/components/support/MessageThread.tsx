@@ -62,45 +62,49 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
 }
 
 function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: string | null; workspaceId: string }) {
-  const agentState = useSupportInboxStore(
-    (s) => (conversationId ? s.agentTyping[conversationId] : null)
+  const agentTypingMap = useSupportInboxStore(
+    (s) => (conversationId ? s.agentTyping[conversationId] : undefined)
   );
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
 
-  if (!agentState) return null;
-
-  const member = members.find((m) => m.user_id === agentState.actorId);
-  const name = member?.full_name || member?.email || 'Agent';
+  const entries = agentTypingMap ? Object.entries(agentTypingMap) : [];
+  if (entries.length === 0) return null;
 
   return (
-    <div className="flex justify-end mt-2 animate-in fade-in duration-200">
-      <div className="max-w-[70%]">
-        {/* Agent name */}
-        <div className="mb-1 pr-1 text-right">
-          <span className="text-[11px] font-medium text-muted-foreground">{name}</span>
-        </div>
-        <div className="rounded-2xl rounded-br-sm bg-primary/40 px-3.5 py-2 text-sm leading-relaxed text-primary-foreground">
-          {agentState.content ? (
-            <p className="whitespace-pre-wrap italic opacity-70">{agentState.content}</p>
-          ) : (
-            <span className="flex items-center gap-1.5 italic opacity-50">
-              <span className="flex gap-0.5">
-                <span className="animate-bounce [animation-delay:0ms]">·</span>
-                <span className="animate-bounce [animation-delay:150ms]">·</span>
-                <span className="animate-bounce [animation-delay:300ms]">·</span>
-              </span>
-              typing…
-            </span>
-          )}
-        </div>
-      </div>
-      {/* Agent avatar */}
-      <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <User className="h-3.5 w-3.5" />
-        </div>
-      </div>
-    </div>
+    <>
+      {entries.map(([actorId, content]) => {
+        const member = members.find((m) => m.user_id === actorId);
+        const name = member?.full_name || member?.email || 'Agent';
+        return (
+          <div key={actorId} className="flex justify-end mt-2 animate-in fade-in duration-200">
+            <div className="max-w-[70%]">
+              <div className="mb-1 pr-1 text-right">
+                <span className="text-[11px] font-medium text-muted-foreground">{name}</span>
+              </div>
+              <div className="rounded-2xl rounded-br-sm bg-primary/40 px-3.5 py-2 text-sm leading-relaxed text-primary-foreground">
+                {content ? (
+                  <p className="whitespace-pre-wrap italic opacity-70">{content}</p>
+                ) : (
+                  <span className="flex items-center gap-1.5 italic opacity-50">
+                    <span className="flex gap-0.5">
+                      <span className="animate-bounce [animation-delay:0ms]">·</span>
+                      <span className="animate-bounce [animation-delay:150ms]">·</span>
+                      <span className="animate-bounce [animation-delay:300ms]">·</span>
+                    </span>
+                    typing…
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <User className="h-3.5 w-3.5" />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -157,10 +161,10 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     supportService.sendViewingPresence(workspaceId, conversationId, true).then((res) => {
       if (import.meta.env.DEV) console.debug('[viewing] sent viewing:true', conversationId, res.error ? `ERROR: ${res.error}` : 'ok');
     });
-    // Heartbeat every 60s
+    // Heartbeat every 15s so other agents discover presence quickly
     const interval = setInterval(() => {
       supportService.sendViewingPresence(workspaceId, conversationId, true).catch(() => {});
-    }, 60_000);
+    }, 15_000);
     return () => {
       clearInterval(interval);
       viewingRef.current = null;

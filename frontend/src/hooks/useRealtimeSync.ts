@@ -105,12 +105,12 @@ export function useRealtimeSync(workspaceId: string) {
           // Customer typing
           store.setTyping(convId, event.action === 'typing_started', content)
         } else {
-          // Agent typing
-          store.setAgentTyping(
-            convId,
-            event.action === 'typing_started' ? event.actor_id : null,
-            content,
-          )
+          // Agent typing — supports multiple agents per conversation
+          if (event.action === 'typing_started') {
+            store.setAgentTyping(convId, event.actor_id, content)
+          } else {
+            store.clearOneAgentTyping(convId, event.actor_id)
+          }
         }
 
         // Auto-clear after timeout in case typing:stop is never received
@@ -121,7 +121,7 @@ export function useRealtimeSync(workspaceId: string) {
             if (isWidget) {
               s.setTyping(convId, false)
             } else {
-              s.setAgentTyping(convId, null)
+              s.clearOneAgentTyping(convId, event.actor_id)
             }
           }, TYPING_TIMEOUT_MS)
           typingTimers.current.set(timerKey, timer)
@@ -135,7 +135,7 @@ export function useRealtimeSync(workspaceId: string) {
         const store = useSupportInboxStore.getState()
         store.setViewingAgent(event.entity_id, event.actor_id, event.action === 'viewing_started')
 
-        // Auto-clear viewing after 90s in case viewing_stopped is never received
+        // Auto-clear viewing after 30s in case viewing_stopped is never received
         if (event.action === 'viewing_started') {
           const timerKey = `${event.entity_id}:viewing:${event.actor_id}`
           const prev = typingTimers.current.get(timerKey)
@@ -143,7 +143,7 @@ export function useRealtimeSync(workspaceId: string) {
           const timer = setTimeout(() => {
             typingTimers.current.delete(timerKey)
             useSupportInboxStore.getState().setViewingAgent(event.entity_id, event.actor_id, false)
-          }, 90_000)
+          }, 30_000)
           typingTimers.current.set(timerKey, timer)
         }
       } else {
@@ -152,8 +152,16 @@ export function useRealtimeSync(workspaceId: string) {
       }
     } else if (event.entity === 'support_conversation_message') {
       if (event.parent_id) {
-        useSupportInboxStore.getState().setTyping(event.parent_id, false)
+        const s = useSupportInboxStore.getState()
+        // Clear typing state for whoever sent this message
+        if (event.actor_id?.startsWith('widget:')) {
+          s.setTyping(event.parent_id, false)
+        } else if (event.actor_id) {
+          s.clearOneAgentTyping(event.parent_id, event.actor_id)
+        }
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.parent_id) })
       }
     }
 

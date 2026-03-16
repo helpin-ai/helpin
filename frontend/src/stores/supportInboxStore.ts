@@ -44,8 +44,8 @@ interface SupportInboxState {
   activePanel: ActivePanel;
   // Typing indicators: conversationId → content string when typing, false when not
   typingIndicators: Record<string, string | false>;
-  // Agent typing: conversationId → { actorId, content } when another agent is typing
-  agentTyping: Record<string, { actorId: string; content: string } | null>;
+  // Agent typing: conversationId → map of actorId → content (supports multiple agents)
+  agentTyping: Record<string, Record<string, string>>;
   // Viewing presence: conversationId → set of agent userIds currently viewing
   viewingAgents: Record<string, string[]>;
 
@@ -61,6 +61,7 @@ interface SupportInboxState {
   setActivePanel: (panel: ActivePanel) => void;
   setTyping: (conversationId: string, isTyping: boolean, content?: string) => void;
   setAgentTyping: (conversationId: string, actorId: string | null, content?: string) => void;
+  clearOneAgentTyping: (conversationId: string, actorId: string) => void;
   setViewingAgent: (conversationId: string, actorId: string, viewing: boolean) => void;
 }
 
@@ -103,12 +104,27 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         typingIndicators: { ...state.typingIndicators, [conversationId]: isTyping ? (content ?? '') : false },
       })),
     setAgentTyping: (conversationId, actorId, content) =>
-      set((state) => ({
-        agentTyping: {
-          ...state.agentTyping,
-          [conversationId]: actorId ? { actorId, content: content ?? '' } : null,
-        },
-      })),
+      set((state) => {
+        const current = state.agentTyping[conversationId] ?? {};
+        if (!actorId) {
+          // Clear all agent typing for this conversation
+          if (Object.keys(current).length === 0) return state;
+          return { agentTyping: { ...state.agentTyping, [conversationId]: {} } };
+        }
+        return {
+          agentTyping: {
+            ...state.agentTyping,
+            [conversationId]: { ...current, [actorId]: content ?? '' },
+          },
+        };
+      }),
+    clearOneAgentTyping: (conversationId, actorId) =>
+      set((state) => {
+        const current = state.agentTyping[conversationId];
+        if (!current || !(actorId in current)) return state;
+        const { [actorId]: _, ...rest } = current;
+        return { agentTyping: { ...state.agentTyping, [conversationId]: rest } };
+      }),
     setViewingAgent: (conversationId, actorId, viewing) =>
       set((state) => {
         const current = state.viewingAgents[conversationId] ?? [];

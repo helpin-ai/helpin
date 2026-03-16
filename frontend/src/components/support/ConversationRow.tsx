@@ -55,14 +55,16 @@ export function ConversationRow({ conversation, isSelected, onSelect }: Conversa
   const typingState = useSupportInboxStore((s) => s.typingIndicators[conversation.id]);
   // typing state is string (including empty '') when typing, false/undefined when not
   const isCustomerTyping = typeof typingState === 'string';
-  const agentState = useSupportInboxStore((s) => s.agentTyping[conversation.id]);
+  const agentTypingMap = useSupportInboxStore((s) => s.agentTyping[conversation.id]);
+  const agentTypingEntries = agentTypingMap ? Object.entries(agentTypingMap) : [];
+  const isAgentTyping = agentTypingEntries.length > 0;
   const remoteViewingIds = useSupportInboxStore((s) => s.viewingAgents[conversation.id] || EMPTY_ARRAY);
   const currentUserId = useAuthStore((s) => s.user?.id);
   // Merge self into viewing list for the selected conversation (self events are filtered from WS)
   const viewingAgentIds = isSelected && currentUserId && !remoteViewingIds.includes(currentUserId)
     ? [...remoteViewingIds, currentUserId]
     : remoteViewingIds;
-  const hasActivity = isCustomerTyping || !!agentState || viewingAgentIds.length > 0;
+  const hasActivity = isCustomerTyping || isAgentTyping || viewingAgentIds.length > 0;
 
   return (
     <button
@@ -84,8 +86,8 @@ export function ConversationRow({ conversation, isSelected, onSelect }: Conversa
           <p className="mt-0.5 truncate text-sm text-foreground/80">
             {isCustomerTyping ? (
               <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
-            ) : agentState?.content ? (
-              <span className="italic text-primary/60">{agentState.content}</span>
+            ) : isAgentTyping ? (
+              <span className="italic text-primary/60">{agentTypingEntries[0][1] || 'typing…'}</span>
             ) : (
               conversation.last_message || conversation.subject
             )}
@@ -105,15 +107,17 @@ export function ConversationRow({ conversation, isSelected, onSelect }: Conversa
             {/* Right: typing indicator + agent avatars */}
             {hasActivity && (
               <div className="flex items-center gap-1">
-                {(isCustomerTyping || agentState) && <TypingDotsPill />}
-                {agentState && !viewingAgentIds.includes(agentState.actorId) && (
-                  <AgentAvatar userId={agentState.actorId} tooltip="responding" />
-                )}
+                {(isCustomerTyping || isAgentTyping) && <TypingDotsPill />}
+                {agentTypingEntries
+                  .filter(([uid]) => !viewingAgentIds.includes(uid))
+                  .map(([uid]) => (
+                    <AgentAvatar key={uid} userId={uid} tooltip="responding" />
+                  ))}
                 {viewingAgentIds.map((uid) => (
                   <AgentAvatar
                     key={uid}
                     userId={uid}
-                    tooltip={agentState?.actorId === uid ? 'responding' : 'viewing'}
+                    tooltip={agentTypingMap?.[uid] !== undefined ? 'responding' : 'viewing'}
                   />
                 ))}
               </div>
