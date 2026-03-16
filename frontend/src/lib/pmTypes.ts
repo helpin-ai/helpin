@@ -1083,7 +1083,7 @@ export interface CreateAgentRequest {
   planning_notes?: string;
   tools?: unknown[];
   monthly_token_budget?: number;
-  team_id?: string;
+  team_id?: string | null;
   allowed_tools?: string[];
   allowed_commands?: string[];
   allowed_targets?: string[];
@@ -1111,7 +1111,7 @@ export interface UpdateAgentRequest {
   tools?: unknown[];
   monthly_token_budget?: number;
   active_story_id?: string;
-  team_id?: string;
+  team_id?: string | null;
   allowed_tools?: string[];
   allowed_commands?: string[];
   allowed_targets?: string[];

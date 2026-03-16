@@ -1,19 +1,30 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Collapsible } from 'radix-ui';
+import { formatDistanceToNow } from 'date-fns';
 import {
+  Activity,
   Bot,
   ChevronDown,
   ChevronRight,
   Clock,
   HelpCircle,
+  LayoutGrid,
+  LayoutList,
+  Pencil,
+  Play,
+  X,
   Plus,
   Users,
   Wrench,
   Zap,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { AgentRunTable } from '@/components/pm/AgentRunTable';
+import { AgentRunDetail, AgentRunDetailEmpty } from '@/components/pm/AgentRunDetail';
+import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { agentService } from '@/lib/services/agentService';
 import type {
@@ -22,6 +33,8 @@ import type {
   AgentApprovalMode,
   AgentModelProvider,
   AgentModelProviderOption,
+  AgentRun,
+  AgentRunArtifact,
   AgentRuntimeKind,
   AgentTriggerMode,
   CreateAgentRequest,
@@ -54,6 +67,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -337,11 +356,11 @@ function buildAdvancedFields(form: AgentFormData, advancedOpen: boolean): Partia
 function buildAutomationFields(form: AgentFormData): Partial<CreateAgentRequest> {
   if (form.agent_class === 'human') return {};
   return {
-    team_id: form.team_id || undefined,
-    schedule: form.schedule.trim() || undefined,
+    team_id: form.team_id,
+    schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
-    allowed_tools: form.allowed_tools.length > 0 ? form.allowed_tools : undefined,
+    allowed_tools: form.allowed_tools,
   };
 }
 
@@ -364,11 +383,11 @@ function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean): UpdateA
   return {
     name: form.name.trim(),
     agent_class: form.agent_class,
-    backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : undefined,
-    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : undefined,
-    provider: isLLMAgentClass(form.agent_class) ? form.provider : undefined,
-    model: isLLMAgentClass(form.agent_class) ? form.model.trim() : undefined,
-    planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
+    backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : '',
+    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : 'manual',
+    provider: isLLMAgentClass(form.agent_class) ? form.provider : '',
+    model: isLLMAgentClass(form.agent_class) ? form.model.trim() : '',
+    planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : '',
     ...buildAdvancedFields(form, advancedOpen),
     ...buildAutomationFields(form),
   };
@@ -397,17 +416,49 @@ function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children
 }
 
 // ---------------------------------------------------------------------------
+// Run stats helper
+// ---------------------------------------------------------------------------
+
+interface AgentRunStats {
+  total: number;
+  lastRun?: AgentRun;
+}
+
+function formatLastRun(run?: AgentRun): string {
+  if (!run) return 'Never';
+  const date = run.completed_at || run.started_at || run.created_at;
+  return formatDistanceToNow(new Date(date), { addSuffix: true });
+}
+
+function lastRunStatusColor(run?: AgentRun): string {
+  if (!run) return '';
+  switch (run.status) {
+    case 'completed': return 'text-green-600';
+    case 'failed': return 'text-red-500';
+    case 'running': return 'text-amber-500';
+    case 'cancelled': return 'text-muted-foreground';
+    default: return 'text-muted-foreground';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // AgentCard
 // ---------------------------------------------------------------------------
 
 function AgentCard({
   agent,
   teamName,
+  stats,
   onEdit,
+  onClick,
+  canEdit,
 }: {
   agent: Agent;
   teamName?: string;
+  stats?: AgentRunStats;
   onEdit: (agent: Agent) => void;
+  onClick: (agent: Agent) => void;
+  canEdit: boolean;
 }) {
   const budgetPct =
     agent.agent_kind === 'llm' && agent.monthly_token_budget
@@ -419,17 +470,31 @@ function AgentCard({
 
   return (
     <Card
-      className="cursor-pointer transition-shadow hover:shadow-md"
-      onClick={() => onEdit(agent)}
+      className="group cursor-pointer transition-shadow hover:shadow-md relative"
+      onClick={() => onClick(agent)}
     >
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <span className="truncate font-semibold text-sm">{agent.name}</span>
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[11px] text-muted-foreground">{STATUS_LABEL[agent.status] ?? agent.status}</span>
+            <span className="text-[11px] text-muted-foreground group-hover:hidden">{STATUS_LABEL[agent.status] ?? agent.status}</span>
             <span
-              className={`h-2 w-2 rounded-full ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
+              className={`h-2 w-2 rounded-full group-hover:hidden ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
             />
+            {canEdit && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="hidden group-hover:flex p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                    onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="left" className="text-xs">Edit agent</TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -450,16 +515,27 @@ function AgentCard({
             {[agent.provider, agent.model].filter(Boolean).join(' / ')}
           </p>
         )}
-        {agent.schedule && (
-          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            Scheduled
-          </p>
-        )}
-        {(agent.allowed_tools?.length ?? 0) > 0 && (
-          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Wrench className="h-3 w-3" />
-            {agent.allowed_tools!.length} capabilities
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {agent.schedule && (
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              Scheduled
+            </span>
+          )}
+          {stats && (
+            <span className="flex items-center gap-1">
+              <Play className="h-3 w-3" />
+              {stats.total > 0 ? `${stats.total} ${stats.total === 1 ? 'run' : 'runs'}` : 'No runs'}
+            </span>
+          )}
+        </div>
+        {stats?.lastRun && (
+          <p className="text-[11px] text-muted-foreground">
+            Last run{' '}
+            <span className={lastRunStatusColor(stats.lastRun)}>
+              {stats.lastRun.status}
+            </span>{' '}
+            {formatLastRun(stats.lastRun)}
           </p>
         )}
         {budgetPct !== null && (
@@ -477,6 +553,96 @@ function AgentCard({
 }
 
 // ---------------------------------------------------------------------------
+// AgentRow (list view)
+// ---------------------------------------------------------------------------
+
+function AgentRow({
+  agent,
+  teamName,
+  stats,
+  onEdit,
+  onClick,
+  canEdit,
+}: {
+  agent: Agent;
+  teamName?: string;
+  stats?: AgentRunStats;
+  onEdit: (agent: Agent) => void;
+  onClick: (agent: Agent) => void;
+  canEdit: boolean;
+}) {
+  return (
+    <div
+      className="group flex items-center gap-3 px-4 py-3 border-b border-border/50 last:border-b-0 cursor-pointer hover:bg-muted/40 transition-colors"
+      onClick={() => onClick(agent)}
+    >
+      {/* Status dot + Name */}
+      <div className="flex items-center gap-2.5 flex-1 min-w-[120px]">
+        <span
+          className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
+        />
+        <span className="text-sm font-medium truncate">{agent.name}</span>
+      </div>
+
+      {/* Class */}
+      <span className="text-xs text-muted-foreground w-20 shrink-0 truncate">
+        {AGENT_CLASS_LABELS[agent.agent_class] ?? agent.agent_class}
+      </span>
+
+      {/* Team */}
+      <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden md:block">
+        {teamName ?? 'All teams'}
+      </span>
+
+      {/* Trigger */}
+      <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden lg:block">
+        {agent.schedule ? (
+          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />Scheduled</span>
+        ) : (
+          TRIGGER_MODE_LABELS[agent.trigger_mode] ?? 'Manual'
+        )}
+      </span>
+
+      {/* Runs */}
+      <span className="text-xs text-muted-foreground w-12 shrink-0 hidden sm:block">
+        {stats ? (stats.total > 0 ? stats.total : '0') : '—'}
+      </span>
+
+      {/* Last run */}
+      <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden sm:block">
+        {stats?.lastRun ? (
+          <span>
+            <span className={lastRunStatusColor(stats.lastRun)}>{stats.lastRun.status}</span>
+            {' '}
+            {formatLastRun(stats.lastRun)}
+          </span>
+        ) : (
+          'Never'
+        )}
+      </span>
+
+      {/* Edit button on hover */}
+      <div className="w-8 shrink-0 flex justify-center">
+        {canEdit && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-all text-muted-foreground hover:text-foreground"
+                onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="text-xs">Edit agent</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // AgentsPage
 // ---------------------------------------------------------------------------
 
@@ -484,6 +650,8 @@ export function AgentsPage() {
   useTitle('Agents');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
+  const { data: access } = useWorkspaceAccess(workspaceId ?? '');
+  const { canEdit } = usePermissions(access);
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [providerOptions, setProviderOptions] = useState<AgentModelProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
@@ -494,6 +662,9 @@ export function AgentsPage() {
   const teams = settings?.teams ?? [];
   const teamMap = new Map(teams.map((t) => [t.id, t.name]));
 
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
+  const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [form, setForm] = useState<AgentFormData>(createEmptyForm());
@@ -502,6 +673,15 @@ export function AgentsPage() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  // Runs dialog state
+  const [runsAgent, setRunsAgent] = useState<Agent | null>(null);
+  const [runsDialogOpen, setRunsDialogOpen] = useState(false);
+  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [selectedRun, setSelectedRun] = useState<AgentRun | null>(null);
+  const [runArtifacts, setRunArtifacts] = useState<AgentRunArtifact[]>([]);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [actingOnRun, setActingOnRun] = useState<string | null>(null);
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
@@ -528,6 +708,31 @@ export function AgentsPage() {
     loadAgents();
     loadProviderOptions();
   }, [loadAgents, loadProviderOptions]);
+
+  // Fetch run stats for all agents
+  useEffect(() => {
+    if (!workspaceId || agents.length === 0) return;
+    const fetchStats = async () => {
+      const results: Record<string, AgentRunStats> = {};
+      await Promise.all(
+        agents.map(async (agent) => {
+          const res = await agentService.listRuns(workspaceId, agent.id);
+          if (!res.error && res.data) {
+            // Handle both paginated { data, total } and plain array responses
+            const paginated = res.data;
+            const runs = Array.isArray(paginated) ? paginated : (paginated.data ?? []);
+            const total = Array.isArray(paginated) ? paginated.length : (paginated.total ?? 0);
+            results[agent.id] = {
+              total,
+              lastRun: runs[0],
+            };
+          }
+        })
+      );
+      setRunStats(results);
+    };
+    fetchStats();
+  }, [workspaceId, agents]);
 
   const openCreateDialog = () => {
     setEditingAgent(null);
@@ -573,14 +778,14 @@ export function AgentsPage() {
       const res = await agentService.update(workspaceId, editingAgent.id, payload);
       if (!res.error) {
         setDialogOpen(false);
-        loadAgents();
+        await loadAgents();
       }
     } else {
       const payload = buildCreatePayload(workspaceId, form, advancedOpen);
       const res = await agentService.create(workspaceId, payload);
       if (!res.error) {
         setDialogOpen(false);
-        loadAgents();
+        await loadAgents();
       }
     }
     setSaving(false);
@@ -592,10 +797,118 @@ export function AgentsPage() {
     const res = await agentService.delete(workspaceId, editingAgent.id);
     if (!res.error) {
       setDialogOpen(false);
-      loadAgents();
+      await loadAgents();
     }
     setSaving(false);
   };
+
+  // -- Runs dialog helpers --------------------------------------------------
+
+  const fetchAgentRuns = useCallback(async (agentId: string) => {
+    if (!workspaceId) return;
+    setRunsLoading(true);
+    const res = await agentService.listRuns(workspaceId, agentId);
+    if (!res.error && res.data) {
+      const paginated = res.data;
+      const runs: AgentRun[] = Array.isArray(paginated) ? paginated : (paginated.data ?? []);
+      setAgentRuns(runs);
+    }
+    setRunsLoading(false);
+  }, [workspaceId]);
+
+  const loadRunArtifacts = useCallback(async (runId: string) => {
+    if (!workspaceId) return;
+    const res = await agentService.listRunArtifacts(workspaceId, runId);
+    setRunArtifacts(res.data ?? []);
+  }, [workspaceId]);
+
+  // Merge stdout/stderr chunks for display
+  const displayArtifacts = useMemo(() => {
+    const display = runArtifacts.filter(
+      (a) => a.artifact_type !== 'opencode_stdout_chunk' && a.artifact_type !== 'opencode_stderr_chunk',
+    );
+    if (!display.find((a) => a.artifact_type === 'opencode_stdout')) {
+      const content = runArtifacts
+        .filter((a) => a.artifact_type === 'opencode_stdout_chunk')
+        .map((a) => a.inline_content ?? '')
+        .join('');
+      if (content && runArtifacts[0]) {
+        display.unshift({
+          id: 'live-stdout', workspace_id: runArtifacts[0].workspace_id, run_id: runArtifacts[0].run_id,
+          artifact_type: 'opencode_stdout', format: 'text', storage_mode: 'inline',
+          inline_content: content, metadata: {}, sequence_no: -2, created_at: runArtifacts[0].created_at,
+        });
+      }
+    }
+    if (!display.find((a) => a.artifact_type === 'opencode_stderr')) {
+      const content = runArtifacts
+        .filter((a) => a.artifact_type === 'opencode_stderr_chunk')
+        .map((a) => a.inline_content ?? '')
+        .join('');
+      if (content && runArtifacts[0]) {
+        display.unshift({
+          id: 'live-stderr', workspace_id: runArtifacts[0].workspace_id, run_id: runArtifacts[0].run_id,
+          artifact_type: 'opencode_stderr', format: 'text', storage_mode: 'inline',
+          inline_content: content, metadata: {}, sequence_no: -1, created_at: runArtifacts[0].created_at,
+        });
+      }
+    }
+    return display;
+  }, [runArtifacts]);
+
+  const openRunsDialog = useCallback((agent: Agent) => {
+    setRunsAgent(agent);
+    setSelectedRun(null);
+    setRunArtifacts([]);
+    setAgentRuns([]);
+    setRunsDialogOpen(true);
+    fetchAgentRuns(agent.id);
+  }, [fetchAgentRuns]);
+
+  const handleSelectRun = async (run: AgentRun) => {
+    setSelectedRun(run);
+    await loadRunArtifacts(run.id);
+  };
+
+  const handleCancelRun = async (runId: string) => {
+    if (!workspaceId) return;
+    setActingOnRun(runId);
+    try {
+      await agentService.cancelRun(workspaceId, runId);
+      if (runsAgent) await fetchAgentRuns(runsAgent.id);
+    } finally {
+      setActingOnRun(null);
+    }
+  };
+
+  const handleApproveRun = async (runId: string) => {
+    if (!workspaceId) return;
+    setActingOnRun(runId);
+    try {
+      await agentService.approveRun(workspaceId, runId, { send_message: true });
+      if (runsAgent) await fetchAgentRuns(runsAgent.id);
+      if (selectedRun?.id === runId) await loadRunArtifacts(runId);
+    } finally {
+      setActingOnRun(null);
+    }
+  };
+
+  // Auto-poll active runs
+  useEffect(() => {
+    if (!selectedRun || !ACTIVE_RUN_STATUSES.has(selectedRun.status) || !runsAgent) return;
+    const interval = window.setInterval(() => {
+      void fetchAgentRuns(runsAgent.id);
+      void loadRunArtifacts(selectedRun.id);
+    }, 2000);
+    return () => window.clearInterval(interval);
+  }, [fetchAgentRuns, loadRunArtifacts, selectedRun, runsAgent]);
+
+  // Keep selectedRun in sync after refetch
+  useEffect(() => {
+    if (!selectedRun) return;
+    const updated = agentRuns.find((r) => r.id === selectedRun.id);
+    if (updated && updated.status !== selectedRun.status) setSelectedRun(updated);
+  }, [agentRuns, selectedRun]);
 
   if (!workspace) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
@@ -604,14 +917,34 @@ export function AgentsPage() {
   const advancedConfigured = hasConfiguredAdvancedFields(editingAgent);
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Agents</h1>
         {agents.length > 0 && (
-          <Button size="sm" onClick={openCreateDialog}>
-            <Plus className="mr-1.5 h-4 w-4" />
-            New Agent
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-md border border-border">
+              <button
+                type="button"
+                className={`p-1.5 ${viewMode === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setViewMode('list')}
+              >
+                <LayoutList className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className={`p-1.5 ${viewMode === 'cards' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setViewMode('cards')}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
+            {canEdit && (
+              <Button size="sm" onClick={openCreateDialog}>
+                <Plus className="mr-1.5 h-4 w-4" />
+                New Agent
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
@@ -628,10 +961,12 @@ export function AgentsPage() {
           <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
             AI-powered teammates that plan features, write code, review work, update docs, reply to customers, and manage deals — automatically or on demand.
           </p>
-          <Button className="gap-2 mb-8" onClick={openCreateDialog}>
-            <Plus className="h-4 w-4" />
-            New Agent
-          </Button>
+          {canEdit && (
+            <Button className="gap-2 mb-8" onClick={openCreateDialog}>
+              <Plus className="h-4 w-4" />
+              New Agent
+            </Button>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
             {EMPTY_STATE_CARDS.map((card) => (
               <div key={card.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
@@ -644,19 +979,112 @@ export function AgentsPage() {
         </div>
       )}
 
-      {/* ---- Agent grid ---- */}
-      {agents.length > 0 && (
+      {/* ---- Agent list / grid ---- */}
+      {agents.length > 0 && viewMode === 'list' && (
+        <div className="rounded-lg border border-border overflow-hidden">
+          {/* List header */}
+          <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+            <div className="flex-1 min-w-[120px]">Name</div>
+            <div className="w-20 shrink-0">Role</div>
+            <div className="w-28 shrink-0 hidden md:block">Team</div>
+            <div className="w-28 shrink-0 hidden lg:block">Trigger</div>
+            <div className="w-12 shrink-0 hidden sm:block">Runs</div>
+            <div className="w-28 shrink-0 hidden sm:block">Last run</div>
+            <div className="w-8 shrink-0" />
+          </div>
+          {agents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
+              stats={runStats[agent.id]}
+              onEdit={openEditDialog}
+              onClick={openRunsDialog}
+              canEdit={canEdit}
+            />
+          ))}
+        </div>
+      )}
+
+      {agents.length > 0 && viewMode === 'cards' && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {agents.map((agent) => (
             <AgentCard
               key={agent.id}
               agent={agent}
               teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
+              stats={runStats[agent.id]}
               onEdit={openEditDialog}
+              onClick={openRunsDialog}
+              canEdit={canEdit}
             />
           ))}
         </div>
       )}
+
+      {/* ---- Runs sidebar sheet ---- */}
+      <Sheet open={runsDialogOpen} onOpenChange={setRunsDialogOpen}>
+        <SheetContent side="right" className="sm:max-w-xl w-full flex flex-col gap-0 p-0" showCloseButton={false}>
+          <SheetHeader className="px-5 py-4 border-b border-border/60">
+            <div className="flex items-center gap-2">
+              <SheetTitle className="flex items-center gap-2 text-base flex-1 min-w-0">
+                <Bot className="h-4 w-4 shrink-0" />
+                <span className="truncate">{runsAgent?.name} — Logs</span>
+              </SheetTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0"
+                onClick={() => setRunsDialogOpen(false)}
+              >
+                <span className="sr-only">Close</span>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            {runsAgent && (
+              <div className="flex items-center gap-2 mt-1">
+                <Badge variant="secondary" className="text-[11px]">
+                  {AGENT_CLASS_LABELS[runsAgent.agent_class] ?? runsAgent.agent_class}
+                </Badge>
+                <span className="flex items-center gap-1">
+                  <span className={`h-2 w-2 rounded-full ${STATUS_DOT[runsAgent.status] ?? STATUS_DOT.paused}`} />
+                  <span className="text-[11px] text-muted-foreground">{STATUS_LABEL[runsAgent.status] ?? runsAgent.status}</span>
+                </span>
+                {runsAgent.provider && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {[runsAgent.provider, runsAgent.model].filter(Boolean).join(' / ')}
+                  </span>
+                )}
+              </div>
+            )}
+          </SheetHeader>
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {/* Run table */}
+            <div className="max-h-[280px] overflow-auto border-b border-border/60">
+              <AgentRunTable
+                runs={agentRuns}
+                selectedRunId={selectedRun?.id ?? null}
+                onSelectRun={handleSelectRun}
+                loading={runsLoading}
+              />
+            </div>
+            {/* Run detail */}
+            <div className="flex-1 overflow-auto">
+              {selectedRun ? (
+                <AgentRunDetail
+                  run={selectedRun}
+                  artifacts={displayArtifacts}
+                  actingOnRun={actingOnRun}
+                  onCancel={handleCancelRun}
+                  onApprove={handleApproveRun}
+                />
+              ) : (
+                <AgentRunDetailEmpty />
+              )}
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* ---- Create / Edit dialog ---- */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
