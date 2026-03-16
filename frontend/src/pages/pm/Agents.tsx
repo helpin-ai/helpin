@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
 import {
-  Activity,
   Bot,
   ChevronDown,
   ChevronRight,
@@ -385,7 +384,7 @@ function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean): UpdateA
     agent_class: form.agent_class,
     backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : '',
     trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : 'manual',
-    provider: isLLMAgentClass(form.agent_class) ? form.provider : '',
+    provider: isLLMAgentClass(form.agent_class) ? (form.provider || undefined) : undefined,
     model: isLLMAgentClass(form.agent_class) ? form.model.trim() : '',
     planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : '',
     ...buildAdvancedFields(form, advancedOpen),

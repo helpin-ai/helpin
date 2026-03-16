@@ -25,7 +25,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn, getInitials } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Check, ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, ListChecks, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
+import { Check, ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {

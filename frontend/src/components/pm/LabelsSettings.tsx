@@ -188,7 +188,7 @@ export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [labelDialogOpen, setLabelDialogOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [scopeFilter, setScopeFilter] = useState<string>(initialTeamId || '__all__');
+  const [scopeFilter, _setScopeFilter] = useState<string>(initialTeamId || '__all__');
 
   const getCreateInitialForm = (): LabelFormState => ({
     ...emptyForm,
