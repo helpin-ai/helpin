@@ -78,6 +78,9 @@ export function ConversationRow({ conversation, isSelected, onSelect }: Conversa
   const agentTypingMap = useSupportInboxStore((s) => s.agentTyping[conversation.id]);
   const agentTypingEntries = agentTypingMap ? Object.entries(agentTypingMap) : [];
   const isAgentTyping = agentTypingEntries.length > 0;
+  const draftContent = useSupportInboxStore((s) => s.drafts[conversation.id]);
+  // Only show draft label when NOT actively viewing this conversation
+  const hasDraft = !!draftContent && !isSelected;
   const remoteViewingIds = useSupportInboxStore((s) => s.viewingAgents[conversation.id] || EMPTY_ARRAY);
   const currentUserId = useAuthStore((s) => s.user?.id);
   // Merge self into viewing list for the selected conversation (self events are filtered from WS)
@@ -109,6 +112,18 @@ export function ConversationRow({ conversation, isSelected, onSelect }: Conversa
                 <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
               ) : isAgentTyping ? (
                 <span className="italic text-primary/60">{agentTypingEntries[0][1] || 'typing…'}</span>
+              ) : hasDraft ? (
+                <>
+                  <span className="inline-block w-0.5 h-3 align-middle rounded-full bg-blue-500 mr-1" />
+                  <span className="text-blue-600 dark:text-blue-400 font-medium">Draft: </span>
+                  <span className="text-muted-foreground">{draftContent}</span>
+                </>
+              ) : conversation.last_message?.startsWith('Note: ') ? (
+                <>
+                  <span className="inline-block w-0.5 h-3 align-middle rounded-full bg-amber-500 mr-1" />
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">Note: </span>
+                  <span className="text-muted-foreground">{conversation.last_message.slice(6)}</span>
+                </>
               ) : (
                 conversation.last_message || conversation.subject
               )}
