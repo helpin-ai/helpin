@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, ChevronDown, ChevronUp, ExternalLink, Loader2, MessageSquare, Play } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ExternalLink, Loader2, MessageSquare, Play, Zap } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,8 @@ interface Props {
   onDraftSpec: () => void;
   onOpenSpecDoc: () => void;
   triggeringDraft: boolean;
+  onStartSession?: () => void;
+  startingSession?: boolean;
 }
 
 export function DraftSpecStep({
@@ -48,6 +50,8 @@ export function DraftSpecStep({
   onDraftSpec,
   onOpenSpecDoc,
   triggeringDraft,
+  onStartSession,
+  startingSession,
 }: Props) {
   const [expanded, setExpanded] = useState(status === 'current');
   const [showNotes, setShowNotes] = useState(false);
@@ -102,10 +106,16 @@ export function DraftSpecStep({
       </p>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" onClick={onDraftSpec} disabled={!epic.planning_repository_id || triggeringDraft || !!isRunning}>
-          {triggeringDraft || isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          {latestDraftRun ? 'Redraft spec' : 'Draft spec'}
+        <Button size="sm" variant="outline" onClick={onDraftSpec} disabled={!epic.planning_repository_id || triggeringDraft || !!isRunning}>
+          {triggeringDraft || isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+          {latestDraftRun ? 'Redraft spec' : 'Auto-Draft'}
         </Button>
+        {onStartSession && (
+          <Button size="sm" onClick={onStartSession} disabled={!epic.planning_repository_id || startingSession || !!isRunning}>
+            {startingSession ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageSquare className="h-3.5 w-3.5" />}
+            Interactive Session
+          </Button>
+        )}
         {epic.spec_document_id && (
           <Button size="sm" variant="outline" onClick={onOpenSpecDoc}>
             <ExternalLink className="h-3.5 w-3.5" />

@@ -449,7 +449,7 @@ export interface RewardAuditEntry {
   performed_at: string;
 }
 
-export type AutomationKind = 'built_in_automation' | 'contextual_agent' | 'custom_automation';
+export type AutomationKind = 'built_in_automation' | 'automation_rule';
 export type AutomationHealthStatus = 'healthy' | 'warning' | 'error' | 'inactive' | 'unknown';
 
 export interface AutomationHealthSummary {

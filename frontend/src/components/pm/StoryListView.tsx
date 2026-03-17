@@ -14,7 +14,7 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Archive, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, EllipsisVertical, ExternalLink, Link2, Loader2, StickyNote, UserPlus } from 'lucide-react';
+import { Archive, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Bot, CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, EllipsisVertical, ExternalLink, Link2, Loader2, StickyNote, UserPlus } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -456,13 +456,16 @@ export function StoryListView({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="max-w-full cursor-pointer truncate text-left text-sm hover:text-primary"
+            className="flex max-w-full cursor-pointer items-center gap-1.5 truncate text-left text-sm hover:text-primary"
             onClick={(e) => {
               e.stopPropagation();
               onOpenStory(info.row.original);
             }}
           >
-            {info.getValue()}
+            <span className="truncate">{info.getValue()}</span>
+            {info.row.original.assigned_agent_id && (
+              <Bot className="h-3 w-3 shrink-0 text-violet-500" />
+            )}
           </button>
         ),
       }),

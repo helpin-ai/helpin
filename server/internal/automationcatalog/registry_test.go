@@ -16,7 +16,7 @@ func TestAllSeededEntriesUseApprovedKinds(t *testing.T) {
 
 	for _, entry := range entries {
 		switch entry.Kind {
-		case model.AutomationKindBuiltIn, model.AutomationKindContextual, model.AutomationKindCustom:
+		case model.AutomationKindBuiltIn, model.AutomationKindRule:
 		default:
 			t.Fatalf("entry %s has unexpected kind %q", entry.ID, entry.Kind)
 		}

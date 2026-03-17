@@ -1,0 +1,581 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
+)
+
+const defaultMaxChainDepth = 10
+
+// Context key for passing RuleExecutionContext through MoveToState calls.
+type ruleExecCtxKeyType struct{}
+
+var ruleExecCtxKey = ruleExecCtxKeyType{}
+
+func withRuleExecCtx(ctx context.Context, execCtx *model.RuleExecutionContext) context.Context {
+	return context.WithValue(ctx, ruleExecCtxKey, execCtx)
+}
+
+func ruleExecCtxFromContext(ctx context.Context) *model.RuleExecutionContext {
+	if v, ok := ctx.Value(ruleExecCtxKey).(*model.RuleExecutionContext); ok {
+		return v
+	}
+	return nil
+}
+
+// AutomationRuleEngine evaluates automation rules against events and executes actions.
+type AutomationRuleEngine struct {
+	ruleRepo        *repository.AutomationRuleRepository
+	storyRepo       *repository.PMStoryRepository
+	workflowRepo    *repository.PMWorkflowRepository
+	deliveryRepo    *repository.StoryDeliveryTargetRepository
+	agentService    *AgentService
+	storyService    *PMStoryService
+	gitService      *GitService
+	notificationSvc *NotificationService
+	activitySvc     *PMActivityService
+	wsPublisher     *websocket.Publisher
+	healthObserver  AutomationHealthObserver
+	logger          *slog.Logger
+}
+
+// NewAutomationRuleEngine creates a new AutomationRuleEngine.
+func NewAutomationRuleEngine(
+	ruleRepo *repository.AutomationRuleRepository,
+	storyRepo *repository.PMStoryRepository,
+	workflowRepo *repository.PMWorkflowRepository,
+	deliveryRepo *repository.StoryDeliveryTargetRepository,
+	gitService *GitService,
+	notificationSvc *NotificationService,
+	activitySvc *PMActivityService,
+	wsPublisher *websocket.Publisher,
+) *AutomationRuleEngine {
+	return &AutomationRuleEngine{
+		ruleRepo:        ruleRepo,
+		storyRepo:       storyRepo,
+		workflowRepo:    workflowRepo,
+		deliveryRepo:    deliveryRepo,
+		gitService:      gitService,
+		notificationSvc: notificationSvc,
+		activitySvc:     activitySvc,
+		wsPublisher:     wsPublisher,
+		logger:          slog.Default().With("service", "automation_rule_engine"),
+	}
+}
+
+// SetAgentService sets the agent service (breaks circular dependency).
+func (e *AutomationRuleEngine) SetAgentService(svc *AgentService) *AutomationRuleEngine {
+	e.agentService = svc
+	return e
+}
+
+// SetStoryService sets the story service (breaks circular dependency).
+func (e *AutomationRuleEngine) SetStoryService(svc *PMStoryService) *AutomationRuleEngine {
+	e.storyService = svc
+	return e
+}
+
+// SetHealthObserver sets the health observer for recording rule execution results.
+func (e *AutomationRuleEngine) SetHealthObserver(obs AutomationHealthObserver) *AutomationRuleEngine {
+	e.healthObserver = obs
+	return e
+}
+
+// EvaluateEvent finds matching rules for an event and executes their actions.
+func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.AutomationEvent, execCtx *model.RuleExecutionContext) {
+	if e == nil {
+		return
+	}
+
+	if execCtx == nil {
+		execCtx = &model.RuleExecutionContext{
+			Depth:    0,
+			MaxDepth: defaultMaxChainDepth,
+		}
+	}
+
+	if execCtx.Depth >= execCtx.MaxDepth {
+		e.logger.ErrorContext(ctx, "automation rule chain depth exceeded",
+			"max_depth", execCtx.MaxDepth,
+			"workspace_id", event.WorkspaceID,
+			"story_id", event.StoryID,
+			"trigger_type", event.TriggerType,
+		)
+		return
+	}
+
+	rules, err := e.ruleRepo.ListMatchingRules(ctx, event.WorkspaceID, event.TriggerType)
+	if err != nil {
+		e.logger.ErrorContext(ctx, "failed to list matching rules",
+			"error", err,
+			"workspace_id", event.WorkspaceID,
+			"trigger_type", event.TriggerType,
+		)
+		return
+	}
+
+	story, err := e.storyRepo.GetRawByID(ctx, event.StoryID)
+	if err != nil || story == nil {
+		e.logger.ErrorContext(ctx, "failed to load story for rule evaluation",
+			"error", err,
+			"story_id", event.StoryID,
+		)
+		return
+	}
+
+	for _, rule := range rules {
+		if containsString(execCtx.FiredRuleIDs, rule.ID) {
+			continue
+		}
+
+		if !e.matchesTriggerConfig(rule, event) {
+			continue
+		}
+
+		if !e.matchesScope(rule, story) {
+			continue
+		}
+
+		e.logger.InfoContext(ctx, "executing automation rule",
+			"rule_id", rule.ID,
+			"rule_name", rule.Name,
+			"trigger_type", rule.TriggerType,
+			"action_type", rule.ActionType,
+			"story_id", event.StoryID,
+			"depth", execCtx.Depth,
+		)
+
+		if err := e.executeAction(ctx, &rule, event, story, execCtx); err != nil {
+			e.logger.ErrorContext(ctx, "automation rule action failed",
+				"error", err,
+				"rule_id", rule.ID,
+				"rule_name", rule.Name,
+				"action_type", rule.ActionType,
+				"story_id", event.StoryID,
+			)
+			e.observeFailure(ctx, event.WorkspaceID, rule.ID, err)
+		} else {
+			e.observeSuccess(ctx, event.WorkspaceID, rule.ID)
+		}
+
+		if rule.StopOnMatch {
+			break
+		}
+	}
+}
+
+func (e *AutomationRuleEngine) matchesTriggerConfig(rule model.AutomationRule, event model.AutomationEvent) bool {
+	switch rule.TriggerType {
+	case model.TriggerStoryStateEntered:
+		var cfg model.TriggerConfigStateEntered
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return cfg.StateID != "" && cfg.StateID == event.StateID
+
+	case model.TriggerAgentRunApproved:
+		var cfg model.TriggerConfigRunApproved
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return cfg.StateID != "" && cfg.StateID == event.StateID
+
+	default:
+		return false
+	}
+}
+
+func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *model.PMStory) bool {
+	if rule.WorkflowID != nil && *rule.WorkflowID != "" && *rule.WorkflowID != story.WorkflowID {
+		return false
+	}
+	if rule.TeamID != nil && *rule.TeamID != "" {
+		if story.TeamID == nil || *story.TeamID != *rule.TeamID {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, execCtx *model.RuleExecutionContext) error {
+	switch rule.ActionType {
+	case model.ActionRunAgent:
+		var cfg model.ActionConfigRunAgent
+		if err := json.Unmarshal(rule.ActionConfig, &cfg); err != nil {
+			return fmt.Errorf("parse run_agent config: %w", err)
+		}
+		return e.executeRunAgent(ctx, rule, event, story, cfg)
+
+	case model.ActionMoveToState:
+		var cfg model.ActionConfigMoveToState
+		if err := json.Unmarshal(rule.ActionConfig, &cfg); err != nil {
+			return fmt.Errorf("parse move_to_state config: %w", err)
+		}
+		return e.executeMoveToState(ctx, rule, event, story, cfg, execCtx)
+
+	case model.ActionMergeBranch:
+		var cfg model.ActionConfigMergeBranch
+		if err := json.Unmarshal(rule.ActionConfig, &cfg); err != nil {
+			return fmt.Errorf("parse merge_branch config: %w", err)
+		}
+		return e.executeMergeBranch(ctx, rule, event, story, cfg)
+
+	default:
+		return fmt.Errorf("unknown action type: %s", rule.ActionType)
+	}
+}
+
+func (e *AutomationRuleEngine) executeRunAgent(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigRunAgent) error {
+	if e.agentService == nil {
+		return fmt.Errorf("agent service not configured")
+	}
+	if cfg.AgentID == "" {
+		return fmt.Errorf("agent_id is required in run_agent config")
+	}
+
+	// Assign the agent to the story
+	story.AssignedAgentID = &cfg.AgentID
+	if err := e.storyRepo.Update(ctx, story); err != nil {
+		return fmt.Errorf("assign agent to story: %w", err)
+	}
+
+	// Ensure delivery target exists (inherits from team defaults if needed).
+	// Without this, RunAgent fails with ErrStoryDeliveryTargetRequired when
+	// the story was just created and hasn't been opened in the UI yet.
+	if e.gitService != nil {
+		if _, err := e.gitService.GetStoryDeliveryTarget(ctx, event.WorkspaceID, event.StoryID); err != nil {
+			e.logger.WarnContext(ctx, "failed to resolve delivery target for automated run",
+				"error", err,
+				"rule_id", rule.ID,
+				"story_id", event.StoryID,
+			)
+		}
+	}
+
+	// Start the agent run
+	_, err := e.agentService.RunAgent(ctx, event.WorkspaceID, event.StoryID, "system")
+	if err != nil {
+		if errors.Is(err, ErrStoryDeliveryTargetRequired) {
+			e.logger.WarnContext(ctx, "skipping run_agent: no delivery target configured",
+				"rule_id", rule.ID,
+				"story_id", event.StoryID,
+			)
+			return fmt.Errorf("story has no delivery target configured — configure a repository first")
+		}
+		return fmt.Errorf("start agent run: %w", err)
+	}
+
+	_ = e.activitySvc.Log(ctx, event.WorkspaceID, "story", event.StoryID, nil,
+		fmt.Sprintf("automation rule '%s' assigned agent and started run", rule.Name),
+		nil, nil, nil, nil)
+
+	e.wsPublisher.Publish(websocket.Event{
+		Action:    "updated",
+		Entity:    "story",
+		EntityID:  event.StoryID,
+		WorkspaceID: event.WorkspaceID,
+	})
+
+	return nil
+}
+
+func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigMoveToState, execCtx *model.RuleExecutionContext) error {
+	if e.storyService == nil {
+		return fmt.Errorf("story service not configured")
+	}
+	if cfg.TargetStateID == "" {
+		return fmt.Errorf("target_state_id is required in move_to_state config")
+	}
+
+	// Guard: if story is already in the target state, no-op (prevents loops)
+	if story.WorkflowStateID == cfg.TargetStateID {
+		e.logger.InfoContext(ctx, "skipping move_to_state: story already in target state",
+			"rule_id", rule.ID,
+			"story_id", event.StoryID,
+			"state_id", cfg.TargetStateID,
+		)
+		return nil
+	}
+
+	// Build the chain context for the resulting state_entered event.
+	// We pass it via ctx so MoveToState's EvaluateEvent call uses it
+	// (preserving chain depth and fired-rule dedup).
+	newExecCtx := &model.RuleExecutionContext{
+		OriginEventID: execCtx.OriginEventID,
+		Depth:         execCtx.Depth + 1,
+		MaxDepth:      execCtx.MaxDepth,
+		FiredRuleIDs:  append(append([]string{}, execCtx.FiredRuleIDs...), rule.ID),
+	}
+	chainCtx := withRuleExecCtx(ctx, newExecCtx)
+
+	// Move the story. MoveToState triggers OnStoryStateChange (epic automations)
+	// and EvaluateEvent (with chain context from chainCtx) — no separate call needed here.
+	_, err := e.storyService.MoveToState(chainCtx, event.StoryID, model.MoveStoryRequest{
+		StateID: cfg.TargetStateID,
+	}, "system")
+	if err != nil {
+		return fmt.Errorf("move story to state: %w", err)
+	}
+
+	_ = e.activitySvc.Log(ctx, event.WorkspaceID, "story", event.StoryID, nil,
+		fmt.Sprintf("automation rule '%s' advanced story to next stage", rule.Name),
+		nil, nil, nil, nil)
+
+	return nil
+}
+
+func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigMergeBranch) error {
+	if e.gitService == nil {
+		return fmt.Errorf("git service not configured")
+	}
+	if strings.TrimSpace(cfg.TargetBranch) == "" {
+		return fmt.Errorf("target_branch is required in merge_branch config")
+	}
+
+	// Load delivery target to get working branch
+	target, err := e.deliveryRepo.GetByStory(ctx, event.WorkspaceID, event.StoryID)
+	if err != nil {
+		return fmt.Errorf("load delivery target: %w", err)
+	}
+	if target == nil || target.WorkingBranch == nil || *target.WorkingBranch == "" {
+		e.logger.WarnContext(ctx, "skipping merge_branch: no working branch",
+			"rule_id", rule.ID,
+			"story_id", event.StoryID,
+		)
+		return nil
+	}
+	if target.RepoFullName == nil || *target.RepoFullName == "" {
+		e.logger.WarnContext(ctx, "skipping merge_branch: no repository configured",
+			"rule_id", rule.ID,
+			"story_id", event.StoryID,
+		)
+		return nil
+	}
+
+	// Resolve {base_branch} variable
+	resolvedBranch := cfg.TargetBranch
+	if strings.Contains(resolvedBranch, "{base_branch}") {
+		if target.BaseBranch != nil && *target.BaseBranch != "" {
+			resolvedBranch = strings.ReplaceAll(resolvedBranch, "{base_branch}", *target.BaseBranch)
+		} else {
+			e.logger.WarnContext(ctx, "skipping merge_branch: {base_branch} used but story has no base branch",
+				"rule_id", rule.ID,
+				"story_id", event.StoryID,
+			)
+			return nil
+		}
+	}
+
+	if err := e.gitService.MergeBranch(ctx, event.WorkspaceID, event.StoryID, resolvedBranch); err != nil {
+		e.logger.ErrorContext(ctx, "merge_branch failed",
+			"error", err,
+			"rule_id", rule.ID,
+			"story_id", event.StoryID,
+			"working_branch", *target.WorkingBranch,
+			"target_branch", resolvedBranch,
+		)
+		// Don't halt the pipeline for merge failures — log and continue
+		return nil
+	}
+
+	_ = e.activitySvc.Log(ctx, event.WorkspaceID, "story", event.StoryID, nil,
+		fmt.Sprintf("automation rule '%s' merged %s into %s", rule.Name, *target.WorkingBranch, resolvedBranch),
+		nil, nil, nil, nil)
+
+	return nil
+}
+
+// --- CRUD methods ---
+
+// CreateRule creates a new automation rule with validation.
+func (e *AutomationRuleEngine) CreateRule(ctx context.Context, workspaceID string, req model.CreateAutomationRuleRequest) (*model.AutomationRule, error) {
+	if err := e.validateRuleRequest(req.TriggerType, req.TriggerConfig, req.ActionType, req.ActionConfig); err != nil {
+		return nil, err
+	}
+
+	rule := &model.AutomationRule{
+		WorkspaceID:   workspaceID,
+		Name:          req.Name,
+		Description:   req.Description,
+		Enabled:       true,
+		TeamID:        req.TeamID,
+		WorkflowID:    req.WorkflowID,
+		TriggerType:   req.TriggerType,
+		TriggerConfig: req.TriggerConfig,
+		ActionType:    req.ActionType,
+		ActionConfig:  req.ActionConfig,
+	}
+	if req.Position != nil {
+		rule.Position = *req.Position
+	}
+	if req.StopOnMatch != nil {
+		rule.StopOnMatch = *req.StopOnMatch
+	}
+
+	if err := e.ruleRepo.Create(ctx, rule); err != nil {
+		return nil, err
+	}
+
+	e.logger.InfoContext(ctx, "automation rule created",
+		"rule_id", rule.ID,
+		"name", rule.Name,
+		"trigger_type", rule.TriggerType,
+		"action_type", rule.ActionType,
+		"workspace_id", workspaceID,
+	)
+	return rule, nil
+}
+
+// UpdateRule updates an existing automation rule.
+func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, ruleID string, req model.UpdateAutomationRuleRequest) (*model.AutomationRule, error) {
+	rule, err := e.ruleRepo.GetByID(ctx, workspaceID, ruleID)
+	if err != nil {
+		return nil, err
+	}
+	if rule == nil {
+		return nil, fmt.Errorf("automation rule not found")
+	}
+
+	if req.Name != nil {
+		rule.Name = *req.Name
+	}
+	if req.Description != nil {
+		rule.Description = req.Description
+	}
+	if req.Enabled != nil {
+		rule.Enabled = *req.Enabled
+	}
+	if req.TriggerType != nil {
+		rule.TriggerType = *req.TriggerType
+	}
+	if req.TriggerConfig != nil {
+		rule.TriggerConfig = *req.TriggerConfig
+	}
+	if req.ActionType != nil {
+		rule.ActionType = *req.ActionType
+	}
+	if req.ActionConfig != nil {
+		rule.ActionConfig = *req.ActionConfig
+	}
+	if req.Position != nil {
+		rule.Position = *req.Position
+	}
+	if req.StopOnMatch != nil {
+		rule.StopOnMatch = *req.StopOnMatch
+	}
+
+	if err := e.validateRuleRequest(rule.TriggerType, rule.TriggerConfig, rule.ActionType, rule.ActionConfig); err != nil {
+		return nil, err
+	}
+
+	if err := e.ruleRepo.Update(ctx, rule); err != nil {
+		return nil, err
+	}
+	return rule, nil
+}
+
+// DeleteRule deletes an automation rule.
+func (e *AutomationRuleEngine) DeleteRule(ctx context.Context, workspaceID, ruleID string) error {
+	return e.ruleRepo.Delete(ctx, workspaceID, ruleID)
+}
+
+// GetRule returns a single automation rule.
+func (e *AutomationRuleEngine) GetRule(ctx context.Context, workspaceID, ruleID string) (*model.AutomationRule, error) {
+	return e.ruleRepo.GetByID(ctx, workspaceID, ruleID)
+}
+
+// ListRules returns all automation rules for a workspace.
+func (e *AutomationRuleEngine) ListRules(ctx context.Context, workspaceID string) ([]model.AutomationRule, error) {
+	return e.ruleRepo.ListByWorkspace(ctx, workspaceID)
+}
+
+// ListRulesByWorkflow returns automation rules for a specific workflow.
+func (e *AutomationRuleEngine) ListRulesByWorkflow(ctx context.Context, workspaceID, workflowID string) ([]model.AutomationRule, error) {
+	return e.ruleRepo.ListByWorkflow(ctx, workspaceID, workflowID)
+}
+
+// --- Validation ---
+
+func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerConfig json.RawMessage, actionType string, actionConfig json.RawMessage) error {
+	switch triggerType {
+	case model.TriggerStoryStateEntered:
+		var cfg model.TriggerConfigStateEntered
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if cfg.StateID == "" {
+			return fmt.Errorf("state_id is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerAgentRunApproved:
+		var cfg model.TriggerConfigRunApproved
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if cfg.StateID == "" {
+			return fmt.Errorf("state_id is required in trigger_config for %s", triggerType)
+		}
+	default:
+		return fmt.Errorf("unsupported trigger_type: %s", triggerType)
+	}
+
+	switch actionType {
+	case model.ActionRunAgent:
+		var cfg model.ActionConfigRunAgent
+		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid action_config for %s: %w", actionType, err)
+		}
+		if cfg.AgentID == "" {
+			return fmt.Errorf("agent_id is required in action_config for %s", actionType)
+		}
+	case model.ActionMoveToState:
+		var cfg model.ActionConfigMoveToState
+		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid action_config for %s: %w", actionType, err)
+		}
+		if cfg.TargetStateID == "" {
+			return fmt.Errorf("target_state_id is required in action_config for %s", actionType)
+		}
+	case model.ActionMergeBranch:
+		var cfg model.ActionConfigMergeBranch
+		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid action_config for %s: %w", actionType, err)
+		}
+		if strings.TrimSpace(cfg.TargetBranch) == "" {
+			return fmt.Errorf("target_branch is required in action_config for %s", actionType)
+		}
+	default:
+		return fmt.Errorf("unsupported action_type: %s", actionType)
+	}
+
+	return nil
+}
+
+// --- Health observation ---
+
+func (e *AutomationRuleEngine) observeSuccess(ctx context.Context, workspaceID, ruleID string) {
+	if e.healthObserver == nil {
+		return
+	}
+	_ = e.healthObserver.ObserveSuccess(ctx, workspaceID, "automation_rule", model.AutomationScopeWorkspace, workspaceID, model.JSONB{
+		"rule_id": ruleID,
+	})
+}
+
+func (e *AutomationRuleEngine) observeFailure(ctx context.Context, workspaceID, ruleID string, cause error) {
+	if e.healthObserver == nil || cause == nil {
+		return
+	}
+	_ = e.healthObserver.ObserveFailure(ctx, workspaceID, "automation_rule", model.AutomationScopeWorkspace, workspaceID, cause.Error(), model.JSONB{
+		"rule_id": ruleID,
+	})
+}
+
+// containsString is defined in pm_import.go — reused here.

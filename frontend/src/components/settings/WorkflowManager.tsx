@@ -1,16 +1,20 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
+import { automationRuleService } from '@/lib/services/automationRuleService';
+import { agentService } from '@/lib/services/agentService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import type { WorkspaceTeam } from '@/lib/types';
-import type { StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { Agent, AutomationRule, StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { ArrowDown, ArrowUp, Check, Copy, EllipsisVertical, GitBranch, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bot, Check, Copy, EllipsisVertical, GitBranch, Loader2, Pencil, Play, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ColorPicker } from '@/components/pm/ColorPicker';
 import { PRESET_COLORS } from '@/components/pm/ColorPicker';
@@ -25,6 +29,215 @@ const STATE_TYPE_LABEL: Record<StateType, string> = {
   started: 'Started',
   done: 'Done',
 };
+
+// ── Pipeline Rules Section (state edit dialog) ──
+
+const ACTION_LABELS: Record<string, string> = {
+  run_agent: 'Run agent',
+  move_to_state: 'Move to state',
+  merge_branch: 'Merge branch',
+};
+
+const TRIGGER_LABELS: Record<string, string> = {
+  'story.state_entered': 'On state entry',
+  'agent_run.approved': 'On run approved',
+};
+
+function PipelineRulesSection({
+  workspaceId,
+  workflowId,
+  stateId,
+  stateName,
+  rules,
+  agents,
+  states,
+  onChanged,
+}: {
+  workspaceId: string;
+  workflowId: string;
+  stateId: string;
+  stateName: string;
+  rules: AutomationRule[];
+  agents: Agent[];
+  states: WorkflowState[];
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [newTrigger, setNewTrigger] = useState<string>('story.state_entered');
+  const [newAction, setNewAction] = useState<string>('run_agent');
+  const [newAgentId, setNewAgentId] = useState<string>('');
+  const [newTargetStateId, setNewTargetStateId] = useState<string>('');
+  const [newTargetBranch, setNewTargetBranch] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+
+  const handleAdd = async () => {
+    if (!newAction) return;
+    setSaving(true);
+
+    let actionConfig: Record<string, string> = {};
+    if (newAction === 'run_agent') {
+      if (!newAgentId) { toast.error('Select an agent'); setSaving(false); return; }
+      actionConfig = { agent_id: newAgentId };
+    } else if (newAction === 'move_to_state') {
+      if (!newTargetStateId) { toast.error('Select a target state'); setSaving(false); return; }
+      actionConfig = { target_state_id: newTargetStateId };
+    } else if (newAction === 'merge_branch') {
+      if (!newTargetBranch.trim()) { toast.error('Enter a target branch'); setSaving(false); return; }
+      actionConfig = { target_branch: newTargetBranch.trim() };
+    }
+
+    const res = await automationRuleService.create(workspaceId, {
+      workspace_id: workspaceId,
+      name: `${ACTION_LABELS[newAction] ?? newAction} on ${stateName}`,
+      workflow_id: workflowId,
+      trigger_type: newTrigger,
+      trigger_config: { state_id: stateId },
+      action_type: newAction,
+      action_config: actionConfig,
+      position: rules.length,
+    });
+    setSaving(false);
+    if (res.error) { toast.error(res.error); return; }
+    toast.success('Automation rule added');
+    setAdding(false);
+    setNewAgentId('');
+    setNewTargetStateId('');
+    setNewTargetBranch('');
+    onChanged();
+  };
+
+  const handleDelete = async (ruleId: string) => {
+    const res = await automationRuleService.remove(workspaceId, ruleId);
+    if (res.error) { toast.error(res.error); return; }
+    toast.success('Rule removed');
+    onChanged();
+  };
+
+  const handleToggle = async (rule: AutomationRule) => {
+    const res = await automationRuleService.update(workspaceId, rule.id, { enabled: !rule.enabled });
+    if (res.error) { toast.error(res.error); return; }
+    onChanged();
+  };
+
+  const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? 'Unknown agent';
+  const stateFn = (id: string) => states.find((s) => s.id === id)?.name ?? 'Unknown state';
+
+  const ruleDescription = (rule: AutomationRule) => {
+    const trigger = TRIGGER_LABELS[rule.trigger_type] ?? rule.trigger_type;
+    if (rule.action_type === 'run_agent') return `${trigger} → Run ${agentName(rule.action_config?.agent_id)}`;
+    if (rule.action_type === 'move_to_state') return `${trigger} → Move to ${stateFn(rule.action_config?.target_state_id)}`;
+    if (rule.action_type === 'merge_branch') return `${trigger} → Merge to ${rule.action_config?.target_branch}`;
+    return `${trigger} → ${rule.action_type}`;
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label className="flex items-center gap-1.5">
+        <Bot className="h-3.5 w-3.5 text-violet-500" />
+        Pipeline Rules
+      </Label>
+      <p className="text-xs text-muted-foreground">Automation rules triggered when stories enter or are approved in this state.</p>
+
+      {rules.length > 0 && (
+        <div className="space-y-1">
+          {rules.map((rule) => (
+            <div key={rule.id} className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs">
+              <Play className="h-3 w-3 shrink-0 text-violet-500" />
+              <span className={cn('flex-1 truncate', !rule.enabled && 'opacity-50 line-through')}>
+                {ruleDescription(rule)}
+              </span>
+              <button type="button" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleToggle(rule)}>
+                {rule.enabled ? 'On' : 'Off'}
+              </button>
+              <button type="button" className="shrink-0 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(rule.id)}>
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {adding ? (
+        <div className="space-y-2 rounded-md border border-border p-3">
+          <div className="flex gap-2">
+            <Select value={newTrigger} onValueChange={setNewTrigger}>
+              <SelectTrigger className="h-7 flex-1 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="story.state_entered">On state entry</SelectItem>
+                <SelectItem value="agent_run.approved">On run approved</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={newAction} onValueChange={setNewAction}>
+              <SelectTrigger className="h-7 flex-1 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="run_agent">Run agent</SelectItem>
+                <SelectItem value="move_to_state">Move to state</SelectItem>
+                <SelectItem value="merge_branch">Merge branch</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {newAction === 'run_agent' && (
+            <Select value={newAgentId} onValueChange={setNewAgentId}>
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="Select agent..." />
+              </SelectTrigger>
+              <SelectContent>
+                {agents.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {newAction === 'move_to_state' && (
+            <Select value={newTargetStateId} onValueChange={setNewTargetStateId}>
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="Select target state..." />
+              </SelectTrigger>
+              <SelectContent>
+                {states.filter((s) => s.id !== stateId).map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {newAction === 'merge_branch' && (
+            <Input
+              className="h-7 text-xs"
+              value={newTargetBranch}
+              onChange={(e) => setNewTargetBranch(e.target.value)}
+              placeholder="e.g. develop"
+            />
+          )}
+
+          <div className="flex gap-2">
+            <Button type="button" size="sm" className="h-7 text-xs" onClick={handleAdd} disabled={saving}>
+              {saving ? 'Adding...' : 'Add rule'}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setAdding(true)}>
+          <Plus className="h-3 w-3" /> Add rule
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// PipelineBuilder is in its own file
+import { PipelineBuilder } from './PipelineBuilder';
+
+// ── Main component ──
 
 interface WorkflowManagerProps {
   workspaceId: string;
@@ -60,6 +273,10 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
   const [deleteStateConfirm, setDeleteStateConfirm] = useState(false);
   const [stateSaving, setStateSaving] = useState(false);
 
+  // Automation rules state
+  const [automationRules, setAutomationRules] = useState<AutomationRule[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+
   // --- Data loading ---
 
   const loadWorkflows = async () => {
@@ -86,6 +303,33 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
   };
 
   useEffect(() => { loadWorkflows(); }, [workspaceId, initialWorkflowId, initialTeamId]);
+
+  // Load automation rules + agents for the selected workflow
+  const loadAutomationRules = useCallback(async () => {
+    if (!selectedId) { setAutomationRules([]); return; }
+    const res = await automationRuleService.listByWorkflow(workspaceId, selectedId);
+    if (res.data) setAutomationRules(res.data);
+  }, [workspaceId, selectedId]);
+
+  useEffect(() => { loadAutomationRules(); }, [loadAutomationRules]);
+  useEffect(() => {
+    agentService.list(workspaceId).then((res) => { if (res.data) setAgents(res.data); });
+  }, [workspaceId]);
+
+  const llmAgents = useMemo(() => agents.filter((a) => a.agent_kind === 'llm'), [agents]);
+
+  // Rules grouped by state_id for quick lookup
+  const rulesByStateId = useMemo(() => {
+    const map = new Map<string, AutomationRule[]>();
+    for (const rule of automationRules) {
+      const stateId = rule.trigger_config?.state_id;
+      if (!stateId) continue;
+      const list = map.get(stateId) ?? [];
+      list.push(rule);
+      map.set(stateId, list);
+    }
+    return map;
+  }, [automationRules]);
 
   // --- Derived data ---
 
@@ -428,6 +672,19 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Pipeline builder */}
+            <PipelineBuilder
+              workspaceId={workspaceId}
+              workflowId={selected.workflow.id}
+              states={sortedStates}
+              agents={llmAgents}
+              rules={automationRules}
+              editable={editable}
+              onChanged={loadAutomationRules}
+            />
+
+            <Separator />
+
             {/* Breadcrumb header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-sm min-w-0">
@@ -475,6 +732,13 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                               <QuickTooltip label="New stories are created in this state">
                                 <Badge variant="secondary" className="text-xs gap-1 shrink-0 cursor-default">
                                   <Check className="h-3 w-3" /> Default
+                                </Badge>
+                              </QuickTooltip>
+                            )}
+                            {(rulesByStateId.get(state.id)?.length ?? 0) > 0 && (
+                              <QuickTooltip label={`${rulesByStateId.get(state.id)!.length} automation rule(s)`}>
+                                <Badge variant="outline" className="text-xs gap-1 shrink-0 cursor-default border-violet-300 bg-violet-50 text-violet-600 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-400">
+                                  <Bot className="h-3 w-3" /> {rulesByStateId.get(state.id)!.length}
                                 </Badge>
                               </QuickTooltip>
                             )}
@@ -634,6 +898,20 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
                 <Label>Color <span className="text-muted-foreground font-normal">(optional)</span></Label>
                 <ColorPicker value={stateColor || PRESET_COLORS[0]} onChange={setStateColor} />
               </div>
+
+              {/* Pipeline Automation Rules */}
+              {editState && editable && (
+                <PipelineRulesSection
+                  workspaceId={workspaceId}
+                  workflowId={selected?.workflow.id ?? ''}
+                  stateId={editState.id}
+                  stateName={editState.name}
+                  rules={rulesByStateId.get(editState.id) ?? []}
+                  agents={llmAgents}
+                  states={sortedStates}
+                  onChanged={loadAutomationRules}
+                />
+              )}
             </div>
             <DialogFooter className="justify-between">
               <div>

@@ -92,11 +92,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.hub.Register(client)
 	defer func() {
+		h.hub.UnsubscribeAllSessions(client)
 		h.hub.Unregister(client) // also cleans up presence + broadcasts stop events
 		conn.Close(websocket.StatusNormalClosure, "closed")
 	}()
 
-	// Read loop: process client messages for support presence/typing.
+	// Read loop: process client messages for session subscriptions and support presence/typing.
 	for {
 		_, data, err := conn.Read(r.Context())
 		if err != nil {
@@ -109,6 +110,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch msg.Type {
+		case "subscribe_session":
+			var sessionMsg struct {
+				SessionID string `json:"session_id"`
+			}
+			if json.Unmarshal(data, &sessionMsg) == nil && sessionMsg.SessionID != "" {
+				h.hub.SubscribeSession(client, sessionMsg.SessionID)
+			}
+		case "unsubscribe_session":
+			var sessionMsg struct {
+				SessionID string `json:"session_id"`
+			}
+			if json.Unmarshal(data, &sessionMsg) == nil && sessionMsg.SessionID != "" {
+				h.hub.UnsubscribeSession(client, sessionMsg.SessionID)
+			}
+
 		case "support:viewing:start":
 			var d agentViewingData
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {

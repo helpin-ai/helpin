@@ -23,21 +23,29 @@ Teampulse already has three real automation systems:
 
 The shared control plane should stay close to those realities instead of introducing extra conceptual layers.
 
-The canonical top-level taxonomy for Phase 1c is:
+The canonical top-level taxonomy is now:
 
 - `built_in_automation`
-- `contextual_agent`
-- `custom_automation`
+- `automation_rule`
+
+### Taxonomy evolution (Phase 1c → Phase 2)
+
+The original Phase 1c taxonomy had three kinds: `built_in_automation`, `contextual_agent`, and `custom_automation`. With the introduction of the automation rules engine, this was simplified to two kinds:
+
+- `contextual_agent` was **dropped as an automation kind**. Agents remain as executors — the "action" side of a rule — but are no longer a separate taxonomy kind. They are still configured at `/pm/agents`.
+- `custom_automation` was **replaced by `automation_rule`**. User-configured rules with trigger → action semantics. The stage-based agent pipeline is the first real implementation.
 
 Important simplifications:
 
-- PM built-in rules are a subtype of `built_in_automation`, not a separate top-level kind
-- `Settings > AI & Automations` is a future read/governance home first
-- the only standardized trigger shapes in this phase are:
+- PM built-in rules (epic auto-start/complete, sprint scheduling) remain `built_in_automation` — they operate on different entity/state systems
+- Agents are executors referenced by `run_agent` actions, not a taxonomy kind
+- `Settings > AI & Automations` shows both built-in automations and automation rules
+- standardized trigger types now include:
+  - `story.state_entered`
+  - `agent_run.approved`
   - `manual`
   - `assignment_event`
   - `cron`
-- the next implementation phase after 1c is an adapter-backed inventory/health read model only
 
 ## Problem Statement
 
@@ -130,7 +138,6 @@ Required metadata for built-ins:
   - `background_workflow`
   - `deterministic_rule`
   - `scheduled_rule`
-  - `interactive_agent`
 - `user_governed`
   - `true`
   - `false`
@@ -140,63 +147,60 @@ Interpretation:
 - CRM signals and summaries are **system-governed built-ins**
 - PM epic/sprint rules are **workspace-governed built-ins**
 
-### 2. `contextual_agent`
+### 2. `automation_rule`
 
-This is the category for explicit runnable agents.
-
-Properties:
-
-- user-visible
-- contextual
-- approvals, handoffs, and artifacts
-- launched from a target-specific surface or a dedicated agent surface
-
-Examples:
-
-- PM product planner
-- PM engineer
-- PM reviewer
-- support agent
-
-### 3. `custom_automation`
-
-This is the reserved future category for user-created automation.
-
-It is intentionally not implemented in Phase 1c.
+This is the category for user-configured event-driven automation rules.
 
 Properties:
 
-- configurable
-- future-facing
-- should eventually use the same catalog and diagnostics model
+- user-created and user-managed
+- trigger → action pattern
+- stored in `automation_rules` table
+- evaluated by the automation rules engine
+- supports chaining with loop prevention
+
+Current trigger types:
+
+- `story.state_entered` — fires when a story enters a workflow state
+- `agent_run.approved` — fires when an agent run is approved
+
+Current action types:
+
+- `run_agent` — assigns and runs an agent on the story
+- `move_to_state` — moves the story to a target workflow state
+- `merge_branch` — merges the story's working branch into a target branch
+
+The primary implementation is the **stage-based agent pipeline**: agents are assigned to workflow states and automatically triggered as stories move through the pipeline.
+
+### Agents as executors, not a taxonomy kind
+
+Agents (`product_planner`, `engineer`, `reviewer`, `support`) remain first-class entities configured at `/pm/agents`. They are the **executors** referenced by `run_agent` actions in automation rules. They retain their full run lifecycle (runs, approvals, handoffs, artifacts) but are no longer classified as a separate automation taxonomy kind.
 
 ## Why PM Rules Stay Inside Built-ins
 
-PM epic/sprint automations should not become agents because they do not have:
+PM epic/sprint automations should not become automation rules because:
 
-- personas
-- handoffs
-- approvals
-- explicit run artifacts
-- open-ended prompt-driven behavior
-
-They also should not be a separate top-level category in the product because that teaches users an extra distinction they do not need.
+- they operate on different entities (epics, sprints) not story workflow states
+- they are aggregation rules ("are ALL stories done?") not event-driven trigger → action rules
+- they do not have the same extensibility needs as user-configured pipeline rules
 
 The simpler product story is:
 
-- some automation is built in
-- some automation is explicit agent work
-- some automation will later be user-created
+- some automation is built in (CRM intelligence, PM epic/sprint rules)
+- some automation is user-configured (automation rules, stage-based pipelines)
+- agents are executors that both kinds can leverage
 
 Within built-ins, PM rules and CRM background intelligence are separated by metadata and presentation subgrouping, not by a separate foundational kind.
 
 ## Trigger Model
 
-Phase 1c should standardize only the trigger shapes that are real today:
+The current standardized trigger shapes are:
 
 - `manual`
 - `assignment_event`
 - `cron`
+- `story.state_entered`
+- `agent_run.approved`
 
 ### `manual`
 
@@ -212,11 +216,6 @@ Examples:
 
 Used for the currently implemented auto-run behavior behind agent assignment.
 
-Current truth:
-
-- assignment-triggered auto-run exists today
-- it is the only event-shaped trigger that should be standardized in Phase 1c
-
 ### `cron`
 
 Used for scheduled reconciliation or periodic sweeps.
@@ -227,25 +226,35 @@ Examples:
 - PM sprint auto-create sweep
 - PM sprint move-unfinished sweep
 
-## What Phase 1c Does Not Claim
+### `story.state_entered`
 
-Phase 1c does **not** define a mature generic event framework.
+Used by automation rules to trigger actions when a story enters a specific workflow state.
+
+This is the primary trigger for the stage-based agent pipeline. Config shape: `{ state_id: string }`.
+
+### `agent_run.approved`
+
+Used by automation rules to trigger actions when an agent run is approved while the story is in a specific state.
+
+This enables auto-advance behavior in pipelines. Config shape: `{ state_id: string }`.
+
+## Event Framework Maturity
+
+The automation rules engine introduces real event-driven triggers (`story.state_entered`, `agent_run.approved`), but these are purpose-built for the rules engine, not a generic cross-app event bus.
 
 Important constraints:
 
-- CRM built-ins may still run from internal domain hooks today
+- CRM built-ins still run from internal domain hooks
 - those hooks are not yet a shared cross-app event catalog
-- agent `auto_on_event` remains legacy and should be treated as future deprecation/replacement
-
-Later phases can broaden `assignment_event` into a real event catalog. Phase 1c should stay honest about current maturity.
+- future trigger types (e.g., `story.created`, `pr.merged`, `label.changed`) can be added without restructuring
 
 ## Shared Catalog Shape
 
-The first shared catalog abstraction should be:
+The shared catalog abstraction is:
 
 - `automation_catalog_entry`
 
-It should be code-defined only.
+It is code-defined in `server/internal/automationcatalog/registry.go`.
 
 It owns:
 
@@ -259,154 +268,74 @@ It owns:
   - `execution_style`
   - `user_governed`
 
-## Adapter-Backed Read Models
+## Read Models
 
-The first implementation phase after this RFC should add two shared read models:
+Two shared read models aggregate across all systems:
 
-- `automation_inventory_view`
-- `automation_health_view`
+- `automation_inventory_view` — aggregates built-in automations and automation rules
+- `automation_health_view` — aggregates health from CRM diagnostics, rule execution, and PM built-ins
 
-Those views should be built through adapters over the current systems:
+These are projection layers over current systems, not new sources of truth.
 
-- CRM built-ins
-- PM built-in deterministic automations
-- contextual agents
+## Settings and Write Surfaces
 
-They are intentionally read models first:
+`Settings > AI & Automations` provides inventory, governance, and diagnostics.
 
-- no runtime migration
-- no generic write abstraction
-- no DB registry as the built-in source of truth
+Write surfaces remain distributed:
 
-The first implementation milestone after this RFC is therefore:
+- `/pm/agents` — agent management
+- Settings > Teams > Workflow pipeline builder — automation rules
+- PM settings automations — PM built-in rules
+- CRM domain settings — CRM built-ins
 
-- code-defined catalog entries
-- inventory adapters
-- health adapters
+## Product Organization
 
-and not:
-
-- a broad event framework
-- a generic `automation_config` layer
-- a new write surface in shared Settings
-
-## Future Settings Role
-
-`Settings > AI & Automations` should be introduced later as:
-
-- inventory
-- governance
-- diagnostics
-
-It should not be the initial write source of truth.
-
-Near-term write surfaces remain:
-
-- `/pm/agents` for contextual agents
-- existing PM automation settings for PM built-in rules
-- existing CRM domain settings where applicable for CRM built-ins
-
-Future shared settings can later:
-
-1. expose read-only inventory and health
-2. link out to current write surfaces
-3. add selective write overlays later
-
-That sequencing is part of the architecture, not a UX afterthought.
-
-It should not own runtime state or workspace-specific configuration.
-
-## Read Models, Not Config Unification
-
-The first implementation phase after Phase 1c should add two adapter-backed read models:
-
-- `automation_inventory_view`
-- `automation_health_view`
-
-### `automation_inventory_view`
-
-This read model should aggregate:
-
-- built-in CRM automations
-- built-in PM deterministic automations
-- current contextual agents
-
-### `automation_health_view`
-
-This read model should aggregate:
-
-- CRM diagnostics and freshness state
-- contextual agent run health
-- minimal PM built-in automation health
-
-Important boundary:
-
-- there is no generic shared config abstraction in that first implementation phase
-- there is no DB registry as the source of truth
-- existing write/config surfaces remain where they are
-
-## Current Write Surfaces vs Future Read Surface
-
-### Current write surfaces remain
-
-- `/pm/agents` stays the write and execution surface for contextual agents
-- PM automation settings stay the write surface for PM deterministic built-ins
-- CRM domain settings stay the write surface for CRM built-ins where applicable
-
-### Future shared home
-
-The future shared home is:
-
-- `Settings > AI & Automations`
-
-But it should begin as:
-
-- inventory
-- governance
-- diagnostics
-
-It should not be described as the first canonical write source of truth.
-
-## Future Product Organization
-
-The future `Settings > AI & Automations` home should be organized into:
+`Settings > AI & Automations` is organized into:
 
 - `Built-in Automations`
-- `Contextual Agents`
-- `Custom Automations`
+  - CRM system intelligence
+  - PM built-in rules
+- `Automation Rules`
+  - User-configured trigger → action rules
+  - Pipeline rules per workflow
 
-Inside `Built-in Automations`, subgrouping can be used for clarity:
-
-- CRM system intelligence
-- PM built-in rules
-
-That gives product clarity without creating another top-level platform category.
-
-## Next Implementation Milestone
-
-The first implementation phase after this RFC should be limited to:
-
-- code-defined built-in catalog
-- adapters over current systems
-- adapter-backed inventory read model
-- adapter-backed health read model
-
-Explicit non-goals of that phase:
-
-- no runtime migration
-- no generic config abstraction
-- no registry-driven write path
-- no broad event bus
+This two-group model is simpler than the original three-group proposal and reflects the actual system boundaries.
 
 ## Decision Locks
 
 The following are locked by this RFC:
 
-- the top-level taxonomy has three kinds, not four
-- PM built-in rules remain built-ins, not agents
-- the Phase 1c trigger model is limited to `manual`, `assignment_event`, and `cron`
-- `Settings > AI & Automations` is read/governance first
-- the next implementation step is inventory/health adapters, not config unification
+- the top-level taxonomy has two kinds: `built_in_automation` and `automation_rule`
+- PM built-in rules remain built-ins, not automation rules (they operate on epic/sprint entities, not story workflow states)
+- agents are executors (the action side of rules), not a taxonomy kind
+- the trigger model includes `story.state_entered` and `agent_run.approved` for automation rules, plus `manual`, `assignment_event`, and `cron` for other purposes
+- `Settings > AI & Automations` shows inventory, governance, and diagnostics for both kinds
+- the pipeline builder in Settings > Teams > Workflow is the primary configuration surface for automation rules
+- configuration UIs are domain-specific, not generic (see below)
+
+## UI Architecture: Domain-Specific Over Generic
+
+The `automation_rules` backend is deliberately generic — it supports arbitrary trigger → action pairs via JSONB config. But the frontend does NOT expose a generic rules management UI.
+
+**Rationale**: Different automation domains have fundamentally different configuration needs:
+
+| Domain | Trigger | Action | Config Complexity |
+|---|---|---|---|
+| PM pipeline | story state change | run agent, move state, merge branch | workflow + state + agent pickers |
+| CRM signals | external signal + LLM confidence | create/progress deal | threshold sliders, pipeline selectors |
+| CRM sequences | manual enrollment | multi-step email/delay/task | step editor with sequencing |
+| Cross-entity | story completed | create new story elsewhere | target team, template, repo selectors |
+
+A single generic form cannot meaningfully configure all of these. Each domain gets its own focused UI:
+
+- **PM pipelines** → pipeline builder in Settings > Teams > Workflow dialog
+- **CRM signals** → CRM autonomy settings (threshold sliders)
+- **CRM sequences** → sequence editor
+- **Future domains** → purpose-built UIs informed by actual config requirements
+
+`Settings > AI & Automations` serves as the **unified dashboard** — see all automations, their health, and follow links to the right domain-specific config surface.
+
+The backend `automation_rules` table and rule engine remain the shared foundation. New trigger/action types are added to the backend model + engine, and each gets a purpose-built UI at the appropriate settings surface.
 
 ## Review Questions
 
@@ -417,8 +346,8 @@ This RFC is complete only if future implementers can answer these directly:
 - Where does PM epic auto-complete belong?
   - `built_in_automation`, workspace-governed deterministic subtype
 - Where do PM/support explicit agents belong?
-  - `contextual_agent`
-- Does Phase 1c define a general event bus contract?
-  - no
-- What is the next implementation step?
-  - code registry + inventory/health adapters
+  - agents are executors referenced by `automation_rule` actions, configured at `/pm/agents`
+- Where does a stage-based agent pipeline belong?
+  - `automation_rule`, configured in Settings > Teams > Workflow pipeline builder
+- What trigger types exist?
+  - `story.state_entered`, `agent_run.approved`, `manual`, `assignment_event`, `cron`
