@@ -1,1 +1,0 @@
-export { rewardSprintsService } from './sprintsService';

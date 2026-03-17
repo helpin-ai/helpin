@@ -1,6 +1,6 @@
 # Helpin
 
-Internal performance-based quarterly bonus system with integrated project management, CRM with self-driving deal automation, and support ticketing.
+Unified platform for product development, marketing task management, sales (CRM), customer support, and internal/external knowledge — powered by AI agents that work autonomously or with human approval. Helpin eliminates silos between teams and helps them operate at 10X speed by offloading work to AI agents.
 
 ## Architecture
 
@@ -221,7 +221,7 @@ func (Workspace) TableName() string { return "workspaces" }
 ### RBAC Authorization
 Package: `server/internal/authorization/`
 
-**Role hierarchy** (additive): `viewer → member → manager → admin → owner`
+**Role hierarchy** (additive): `viewer → member → admin → owner`
 
 **Middleware chain**:
 1. `RequireAuth` — validates JWT, injects UserID into context

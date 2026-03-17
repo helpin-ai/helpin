@@ -132,8 +132,8 @@ func TestAuthzService_CanAny(t *testing.T) {
 	if !svc.CanAny(actor, PermPMRead, PermPMEdit) {
 		t.Error("viewer should have pm.read via CanAny")
 	}
-	if svc.CanAny(actor, PermPMEdit, PermRewardsManage) {
-		t.Error("viewer should NOT have pm.edit or rewards.manage")
+	if svc.CanAny(actor, PermPMEdit, PermSettingsManage) {
+		t.Error("viewer should NOT have pm.edit or settings.manage")
 	}
 }
 

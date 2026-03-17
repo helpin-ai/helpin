@@ -144,6 +144,18 @@ func (r *OrganizationRepository) UpdateMemberRole(ctx context.Context, orgID, us
 	return nil
 }
 
+// CountMembersByRole returns the number of members with a given role in an organization.
+func (r *OrganizationRepository) CountMembersByRole(ctx context.Context, orgID, role string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.OrganizationMember{}).
+		Where("organization_id = ? AND role = ?", orgID, role).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count members by role: %w", err)
+	}
+	return count, nil
+}
+
 // RemoveMember removes a member from an organization.
 func (r *OrganizationRepository) RemoveMember(ctx context.Context, orgID, userID string) error {
 	result := r.db.WithContext(ctx).

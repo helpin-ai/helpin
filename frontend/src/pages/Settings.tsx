@@ -14,10 +14,6 @@ import {
   GeneralTab,
   MembersTab,
   TeamsTab,
-  PeopleTab,
-  JobRolesTab,
-  BonusTiersTab,
-  SystemTab,
   AITab,
   ProjectDeliveryTab,
   AutomationsTab,
@@ -30,7 +26,7 @@ import {
   ChatAITab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'people' | 'jobroles' | 'tiers' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'system' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -145,34 +141,6 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     icon: Bot,
     group: 'Support & Docs',
   },
-  /* {
-    id: 'people',
-    label: 'People',
-    description: '',
-    icon: UserPlus,
-    group: 'Reward Settings',
-  },
-  {
-    id: 'jobroles',
-    label: 'Job Roles',
-    description: '',
-    icon: Briefcase,
-    group: 'Reward Settings',
-  },
-  {
-    id: 'tiers',
-    label: 'Bonus Tiers',
-    description: '',
-    icon: Award,
-    group: 'Reward Settings',
-  },
-  {
-    id: 'system',
-    label: 'Reward Defaults',
-    description: '',
-    icon: Settings2,
-    group: 'Reward Settings',
-  }, */
 ];
 
 export const isSettingsSection = (value: string): value is SettingsSection =>
@@ -268,42 +236,7 @@ export default function Settings({ section, initialTeamId }: { section: Settings
             editable={canManageTeams}
             onRefresh={load}
             initialTeamId={initialTeamId}
-          />
-        );
-      case 'people':
-        return (
-          <PeopleTab
-            workspaceId={workspaceId}
-            people={settings.people}
-            editable={canManageMembers}
-            onRefresh={load}
-          />
-        );
-      case 'jobroles':
-        return (
-          <JobRolesTab
-            workspaceId={workspaceId}
-            criteria={settings.job_role_criteria}
-            editable={canManageSettings}
-            onRefresh={load}
-          />
-        );
-      case 'tiers':
-        return (
-          <BonusTiersTab
-            workspaceId={workspaceId}
-            tiers={settings.bonus_tiers}
-            editable={canManageSettings}
-            onRefresh={load}
-          />
-        );
-      case 'system':
-        return (
-          <SystemTab
-            workspaceId={workspaceId}
-            config={settings.settings}
-            editable={canManageSettings}
-            onRefresh={load}
+            access={access}
           />
         );
       case 'delivery':
@@ -335,6 +268,7 @@ export default function Settings({ section, initialTeamId }: { section: Settings
             teamRepoDefaults={settings.team_repo_defaults}
             editable={canManageTeams}
             onRefresh={load}
+            access={access}
             initialTeamId={initialTeamId}
           />
         );

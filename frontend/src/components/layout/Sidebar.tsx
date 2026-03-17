@@ -94,7 +94,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-type RailId = 'projects' | 'support' | 'crm' | /* 'rewards' | */ 'agents' | 'docs' | 'settings';
+type RailId = 'projects' | 'support' | 'crm' | 'agents' | 'docs' | 'settings';
 
 type RailItem = {
   id: RailId;
@@ -479,7 +479,6 @@ export function Sidebar() {
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
-// { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
     { id: 'agents', label: 'Agents', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agents` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
@@ -527,24 +526,6 @@ export function Sidebar() {
         ],
       },
     ],
-    /* rewards: [
-      {
-        label: 'Workspace',
-        items: [
-          { link: `/w/${wsSlug}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
-          { link: `/w/${wsSlug}/goals`, label: 'Company Goals', icon: Target },
-          { link: `/w/${wsSlug}/team-goals`, label: 'Team Goals', icon: Users },
-          { link: `/w/${wsSlug}/sprints`, label: 'Sprints', icon: Calendar },
-        ],
-      },
-      {
-        label: 'Performance',
-        items: [
-          { link: `/w/${wsSlug}/bonus`, label: 'Bonus Dashboard', icon: DollarSign },
-          { link: `/w/${wsSlug}/my-quarter`, label: 'My Quarter', icon: User },
-        ],
-      },
-    ], */
     docs: [
       {
         label: '',
@@ -610,24 +591,10 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/import`, label: 'Import / Export', icon: Import },
         ],
       },
-      /* {
-        label: 'Reward Settings',
-        items: [
-          { link: `/w/${wsSlug}/settings/system`, label: 'Reward Defaults', icon: Settings2 },
-          { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
-          { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
-          { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },
-        ],
-      }, */
     ],
   };
 
   const currentNavGroups = panelNavGroups[activeRail];
-  const showProjects = false; // activeRail === 'rewards';
-
-  const projectNames = useMemo(() => {
-    return currentWorkspace?.name ? [currentWorkspace.name] : [];
-  }, [currentWorkspace?.name]);
 
   const isActive = (link: string) => {
     const [linkPath, linkQuery] = link.split('?');
@@ -736,7 +703,7 @@ export function Sidebar() {
             </div>
           </div>
 
-          <div className="min-w-0 flex-1 overflow-y-auto p-2">
+          <div className="min-w-0 flex-1 overflow-y-auto p-2 pb-16">
             {activeRail === 'projects' && (
               <div className="mb-2 flex w-full">
                 <Button
@@ -992,27 +959,6 @@ export function Sidebar() {
                       </Collapsible.Root>
                     );
                   })}
-                </SidebarMenu>
-              </SidebarGroup>
-            )}
-
-            {showProjects && (
-              <SidebarGroup className="p-0">
-                <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                  Projects
-                </SidebarGroupLabel>
-                <SidebarMenu>
-                  {projectNames.map((name) => (
-                    <SidebarMenuItem key={name}>
-                      <SidebarMenuButton
-                        isActive={name === currentWorkspace?.name}
-                        className="h-8 rounded-md px-2"
-                      >
-                        <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
-                        <span className="truncate">{name}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
                 </SidebarMenu>
               </SidebarGroup>
             )}

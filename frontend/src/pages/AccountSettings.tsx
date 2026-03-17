@@ -36,7 +36,9 @@ export default function AccountSettings() {
   const [loadingMembers, setLoadingMembers] = useState(true);
 
   const orgId = currentOrganization?.id;
-  const isAdminOrOwner = currentOrganization?.role === 'owner' || currentOrganization?.role === 'admin';
+  const myRole = currentOrganization?.role;
+  const isOwner = myRole === 'owner';
+  const isAdminOrOwner = isOwner || myRole === 'admin';
 
   useEffect(() => {
     if (currentOrganization) {
@@ -212,51 +214,63 @@ export default function AccountSettings() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.map((member) => (
-                  <TableRow key={member.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <UserAvatar name={member.full_name} className="h-7 w-7" />
-                        <span className="text-sm font-medium">{member.full_name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{member.email}</TableCell>
-                    <TableCell>
-                      {isAdminOrOwner && member.role !== 'owner' ? (
-                        <Select
-                          value={member.role}
-                          onValueChange={(val) => handleRoleChange(member.user_id, val)}
-                        >
-                          <SelectTrigger className="h-7 w-24 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="member">Member</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Badge variant="secondary" className={cn('text-xs', ROLE_COLORS[member.role])}>
-                          {member.role}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    {isAdminOrOwner && (
+                {members.map((member) => {
+                  const isSelf = member.user_id === user?.id;
+                  // Owners can edit anyone except themselves; admins can only edit members/viewers
+                  const canEditRole = !isSelf && isAdminOrOwner && (
+                    isOwner || (member.role !== 'owner' && member.role !== 'admin')
+                  );
+                  const canRemove = canEditRole && member.role !== 'owner';
+
+                  return (
+                    <TableRow key={member.id}>
                       <TableCell>
-                        {member.role !== 'owner' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                            onClick={() => setRemoveMemberConfirm({ userId: member.user_id, name: member.full_name })}
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={member.full_name} className="h-7 w-7" />
+                          <span className="text-sm font-medium">{member.full_name}</span>
+                          {isSelf && <Badge variant="outline" className="text-[10px]">You</Badge>}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{member.email}</TableCell>
+                      <TableCell>
+                        {canEditRole ? (
+                          <Select
+                            value={member.role}
+                            onValueChange={(val) => handleRoleChange(member.user_id, val)}
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                            <SelectTrigger className="h-7 w-24 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {isOwner && <SelectItem value="owner">Owner</SelectItem>}
+                              <SelectItem value="admin">Admin</SelectItem>
+                              <SelectItem value="member">Member</SelectItem>
+                              <SelectItem value="viewer">Viewer</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant="secondary" className={cn('text-xs', ROLE_COLORS[member.role])}>
+                            {member.role}
+                          </Badge>
                         )}
                       </TableCell>
-                    )}
-                  </TableRow>
-                ))}
+                      {isAdminOrOwner && (
+                        <TableCell>
+                          {canRemove && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => setRemoveMemberConfirm({ userId: member.user_id, name: member.full_name })}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

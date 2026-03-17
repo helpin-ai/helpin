@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -147,6 +148,7 @@ func (h *SettingsHandler) AddTeamMember(w http.ResponseWriter, r *http.Request) 
 func (h *SettingsHandler) UpdateTeamMember(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	userID := chi.URLParam(r, "userId")
+	actor := authorization.GetActor(r.Context())
 
 	var req model.UpdateTeamMemberRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -154,9 +156,9 @@ func (h *SettingsHandler) UpdateTeamMember(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	membership, err := h.settingsService.UpdateTeamMember(r.Context(), id, userID, req)
+	membership, err := h.settingsService.UpdateTeamMember(r.Context(), id, userID, actor, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -167,8 +169,9 @@ func (h *SettingsHandler) UpdateTeamMember(w http.ResponseWriter, r *http.Reques
 func (h *SettingsHandler) DeleteTeamMember(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	userID := chi.URLParam(r, "userId")
-	if err := h.settingsService.RemoveTeamMember(r.Context(), id, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	actor := authorization.GetActor(r.Context())
+	if err := h.settingsService.RemoveTeamMember(r.Context(), id, userID, actor); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 

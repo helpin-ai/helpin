@@ -26,11 +26,8 @@ import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authe
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
 import { Route as AuthenticatedWSlugSupportRouteImport } from './routes/_authenticated/w/$slug/support'
 import { Route as AuthenticatedWSlugNotificationsRouteImport } from './routes/_authenticated/w/$slug/notifications'
-import { Route as AuthenticatedWSlugMyQuarterRouteImport } from './routes/_authenticated/w/$slug/my-quarter'
-import { Route as AuthenticatedWSlugGoalsRouteImport } from './routes/_authenticated/w/$slug/goals'
 import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authenticated/w/$slug/docs'
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
-import { Route as AuthenticatedWSlugBonusRouteImport } from './routes/_authenticated/w/$slug/bonus'
 import { Route as AuthenticatedWSlugSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/sprints/index'
 import { Route as AuthenticatedWSlugSettingsIndexRouteImport } from './routes/_authenticated/w/$slug/settings/index'
 import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authenticated/w/$slug/pm/index'
@@ -156,17 +153,6 @@ const AuthenticatedWSlugNotificationsRoute =
     path: '/notifications',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
-const AuthenticatedWSlugMyQuarterRoute =
-  AuthenticatedWSlugMyQuarterRouteImport.update({
-    id: '/my-quarter',
-    path: '/my-quarter',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
-const AuthenticatedWSlugGoalsRoute = AuthenticatedWSlugGoalsRouteImport.update({
-  id: '/goals',
-  path: '/goals',
-  getParentRoute: () => AuthenticatedWSlugRoute,
-} as any)
 const AuthenticatedWSlugDocsRoute = AuthenticatedWSlugDocsRouteImport.update({
   id: '/docs',
   path: '/docs',
@@ -178,11 +164,6 @@ const AuthenticatedWSlugDashboardRoute =
     path: '/dashboard',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
-const AuthenticatedWSlugBonusRoute = AuthenticatedWSlugBonusRouteImport.update({
-  id: '/bonus',
-  path: '/bonus',
-  getParentRoute: () => AuthenticatedWSlugRoute,
-} as any)
 const AuthenticatedWSlugSprintsIndexRoute =
   AuthenticatedWSlugSprintsIndexRouteImport.update({
     id: '/sprints/',
@@ -418,11 +399,8 @@ export interface FileRoutesByFullPath {
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
-  '/w/$slug/bonus': typeof AuthenticatedWSlugBonusRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
-  '/w/$slug/goals': typeof AuthenticatedWSlugGoalsRoute
-  '/w/$slug/my-quarter': typeof AuthenticatedWSlugMyQuarterRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/support': typeof AuthenticatedWSlugSupportRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
@@ -477,10 +455,7 @@ export interface FileRoutesByTo {
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
-  '/w/$slug/bonus': typeof AuthenticatedWSlugBonusRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
-  '/w/$slug/goals': typeof AuthenticatedWSlugGoalsRoute
-  '/w/$slug/my-quarter': typeof AuthenticatedWSlugMyQuarterRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/support': typeof AuthenticatedWSlugSupportRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
@@ -538,11 +513,8 @@ export interface FileRoutesById {
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
-  '/_authenticated/w/$slug/bonus': typeof AuthenticatedWSlugBonusRoute
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/_authenticated/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
-  '/_authenticated/w/$slug/goals': typeof AuthenticatedWSlugGoalsRoute
-  '/_authenticated/w/$slug/my-quarter': typeof AuthenticatedWSlugMyQuarterRoute
   '/_authenticated/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/_authenticated/w/$slug/support': typeof AuthenticatedWSlugSupportRoute
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
@@ -600,11 +572,8 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/share/$shareToken'
     | '/w/$slug'
-    | '/w/$slug/bonus'
     | '/w/$slug/dashboard'
     | '/w/$slug/docs'
-    | '/w/$slug/goals'
-    | '/w/$slug/my-quarter'
     | '/w/$slug/notifications'
     | '/w/$slug/support'
     | '/w/$slug/tasks'
@@ -659,10 +628,7 @@ export interface FileRouteTypes {
     | '/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
-    | '/w/$slug/bonus'
     | '/w/$slug/dashboard'
-    | '/w/$slug/goals'
-    | '/w/$slug/my-quarter'
     | '/w/$slug/notifications'
     | '/w/$slug/support'
     | '/w/$slug/tasks'
@@ -719,11 +685,8 @@ export interface FileRouteTypes {
     | '/join/$token'
     | '/share/$shareToken'
     | '/_authenticated/w/$slug'
-    | '/_authenticated/w/$slug/bonus'
     | '/_authenticated/w/$slug/dashboard'
     | '/_authenticated/w/$slug/docs'
-    | '/_authenticated/w/$slug/goals'
-    | '/_authenticated/w/$slug/my-quarter'
     | '/_authenticated/w/$slug/notifications'
     | '/_authenticated/w/$slug/support'
     | '/_authenticated/w/$slug/tasks'
@@ -901,20 +864,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugNotificationsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
-    '/_authenticated/w/$slug/my-quarter': {
-      id: '/_authenticated/w/$slug/my-quarter'
-      path: '/my-quarter'
-      fullPath: '/w/$slug/my-quarter'
-      preLoaderRoute: typeof AuthenticatedWSlugMyQuarterRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
-    '/_authenticated/w/$slug/goals': {
-      id: '/_authenticated/w/$slug/goals'
-      path: '/goals'
-      fullPath: '/w/$slug/goals'
-      preLoaderRoute: typeof AuthenticatedWSlugGoalsRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
     '/_authenticated/w/$slug/docs': {
       id: '/_authenticated/w/$slug/docs'
       path: '/docs'
@@ -927,13 +876,6 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/w/$slug/dashboard'
       preLoaderRoute: typeof AuthenticatedWSlugDashboardRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
-    '/_authenticated/w/$slug/bonus': {
-      id: '/_authenticated/w/$slug/bonus'
-      path: '/bonus'
-      fullPath: '/w/$slug/bonus'
-      preLoaderRoute: typeof AuthenticatedWSlugBonusRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/sprints/': {
@@ -1225,11 +1167,8 @@ const AuthenticatedWSlugDocsRouteWithChildren =
   )
 
 interface AuthenticatedWSlugRouteChildren {
-  AuthenticatedWSlugBonusRoute: typeof AuthenticatedWSlugBonusRoute
   AuthenticatedWSlugDashboardRoute: typeof AuthenticatedWSlugDashboardRoute
   AuthenticatedWSlugDocsRoute: typeof AuthenticatedWSlugDocsRouteWithChildren
-  AuthenticatedWSlugGoalsRoute: typeof AuthenticatedWSlugGoalsRoute
-  AuthenticatedWSlugMyQuarterRoute: typeof AuthenticatedWSlugMyQuarterRoute
   AuthenticatedWSlugNotificationsRoute: typeof AuthenticatedWSlugNotificationsRoute
   AuthenticatedWSlugSupportRoute: typeof AuthenticatedWSlugSupportRoute
   AuthenticatedWSlugTasksRoute: typeof AuthenticatedWSlugTasksRoute
@@ -1269,11 +1208,8 @@ interface AuthenticatedWSlugRouteChildren {
 }
 
 const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
-  AuthenticatedWSlugBonusRoute: AuthenticatedWSlugBonusRoute,
   AuthenticatedWSlugDashboardRoute: AuthenticatedWSlugDashboardRoute,
   AuthenticatedWSlugDocsRoute: AuthenticatedWSlugDocsRouteWithChildren,
-  AuthenticatedWSlugGoalsRoute: AuthenticatedWSlugGoalsRoute,
-  AuthenticatedWSlugMyQuarterRoute: AuthenticatedWSlugMyQuarterRoute,
   AuthenticatedWSlugNotificationsRoute: AuthenticatedWSlugNotificationsRoute,
   AuthenticatedWSlugSupportRoute: AuthenticatedWSlugSupportRoute,
   AuthenticatedWSlugTasksRoute: AuthenticatedWSlugTasksRoute,

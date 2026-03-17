@@ -7,13 +7,13 @@ import (
 func TestRBACEngine_RolePermissionMatrix(t *testing.T) {
 	e := NewRBACEngine()
 
-	// §8.2: Every role gets these permissions.
+	// Every role gets these permissions.
 	universalPerms := []Permission{
 		PermWorkspaceRead, PermSettingsRead, PermWorkspaceMembersRead,
 		PermTeamRead, PermTeamMembersRead, PermPMRead, PermSearchRead, PermWSConnect,
 	}
 
-	for _, role := range []string{"viewer", "member", "manager", "admin", "owner"} {
+	for _, role := range []string{"viewer", "member", "admin", "owner"} {
 		for _, perm := range universalPerms {
 			if !e.Can(role, perm) {
 				t.Errorf("role %q should have permission %q", role, perm)
@@ -26,7 +26,7 @@ func TestRBACEngine_ViewerRestrictions(t *testing.T) {
 	e := NewRBACEngine()
 
 	denied := []Permission{
-		PermPMEdit, PermRewardsRead, PermRewardsManage,
+		PermPMEdit,
 		PermTeamManage, PermTeamMembersManage,
 		PermSettingsManage, PermWorkspaceUpdate, PermWorkspaceDelete,
 		PermWorkspaceMembersManage, PermWorkspaceInvitesManage, PermWorkspaceRolesManage,
@@ -42,44 +42,23 @@ func TestRBACEngine_ViewerRestrictions(t *testing.T) {
 func TestRBACEngine_MemberPermissions(t *testing.T) {
 	e := NewRBACEngine()
 
-	// Member gets pm.edit and rewards.read on top of viewer.
+	// Member gets pm.edit and docs.publish on top of viewer.
 	if !e.Can("member", PermPMEdit) {
 		t.Error("member should have pm.edit")
 	}
-	if !e.Can("member", PermRewardsRead) {
-		t.Error("member should have rewards.read")
+	if !e.Can("member", PermDocsPublish) {
+		t.Error("member should have docs.publish")
 	}
 
-	// Member does NOT get rewards.manage or admin perms.
+	// Member does NOT get admin perms.
 	denied := []Permission{
-		PermRewardsManage, PermTeamManage, PermSettingsManage,
+		PermTeamManage, PermSettingsManage,
 		PermWorkspaceUpdate, PermWorkspaceDelete,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
 	}
 	for _, perm := range denied {
 		if e.Can("member", perm) {
 			t.Errorf("member should NOT have permission %q", perm)
-		}
-	}
-}
-
-func TestRBACEngine_ManagerPermissions(t *testing.T) {
-	e := NewRBACEngine()
-
-	// Manager gets rewards.manage.
-	if !e.Can("manager", PermRewardsManage) {
-		t.Error("manager should have rewards.manage")
-	}
-
-	// Manager does NOT get team.manage, settings.manage, or admin perms.
-	denied := []Permission{
-		PermTeamManage, PermTeamMembersManage, PermSettingsManage,
-		PermWorkspaceUpdate, PermWorkspaceDelete,
-		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
-	}
-	for _, perm := range denied {
-		if e.Can("manager", perm) {
-			t.Errorf("manager should NOT have permission %q", perm)
 		}
 	}
 }
@@ -92,7 +71,7 @@ func TestRBACEngine_AdminPermissions(t *testing.T) {
 		PermWorkspaceUpdate, PermWorkspaceMembersManage,
 		PermWorkspaceInvitesManage, PermWorkspaceRolesManage,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
-		PermRewardsManage, PermPMEdit, PermRewardsRead,
+		PermPMEdit, PermDocsPublish,
 	}
 	for _, perm := range adminPerms {
 		if !e.Can("admin", perm) {
@@ -143,8 +122,8 @@ func TestRBACEngine_CanAny(t *testing.T) {
 		t.Error("viewer should have at least pm.read")
 	}
 
-	if e.CanAny("viewer", PermPMEdit, PermRewardsManage) {
-		t.Error("viewer should NOT have pm.edit or rewards.manage")
+	if e.CanAny("viewer", PermPMEdit, PermSettingsManage) {
+		t.Error("viewer should NOT have pm.edit or settings.manage")
 	}
 }
 
@@ -163,8 +142,8 @@ func TestRBACEngine_PermissionsForRole(t *testing.T) {
 	e := NewRBACEngine()
 
 	viewerPerms := e.PermissionsForRole("viewer")
-	if len(viewerPerms) != 8 {
-		t.Errorf("viewer should have 8 permissions, got %d", len(viewerPerms))
+	if len(viewerPerms) != 13 {
+		t.Errorf("viewer should have 13 permissions, got %d", len(viewerPerms))
 	}
 
 	ownerPerms := e.PermissionsForRole("owner")
@@ -182,7 +161,7 @@ func TestRBACEngine_PermissionsForRole(t *testing.T) {
 func TestRBACEngine_RoleHierarchyIsAdditive(t *testing.T) {
 	e := NewRBACEngine()
 
-	roles := []string{"viewer", "member", "manager", "admin", "owner"}
+	roles := []string{"viewer", "member", "admin", "owner"}
 	for i := 1; i < len(roles); i++ {
 		lower := roles[i-1]
 		higher := roles[i]

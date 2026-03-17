@@ -90,12 +90,6 @@ func main() {
 	slog.Info("startup: enabling pgcrypto extension")
 	db.Exec(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
 
-	slog.Info("startup: running MigrateLegacyRewardSchema")
-	if err := repository.MigrateLegacyRewardSchema(db); err != nil {
-		slog.Error("failed to migrate legacy reward schema", "error", err)
-		os.Exit(1)
-	}
-
 	slog.Info("startup: running MigrateAgentRunTargets")
 	if err := repository.MigrateAgentRunTargets(db); err != nil {
 		slog.Error("failed to migrate agent run targets", "error", err)
@@ -140,19 +134,6 @@ func main() {
 		&model.WorkspaceTeam{},
 		&model.TeamWorkspaceMembership{},
 		&model.WorkspaceManager{},
-		&model.RewardProfile{},
-		&model.JobRoleCriteria{},
-		&model.BonusTier{},
-		&model.RewardQuarter{},
-		&model.RewardSprint{},
-		&model.RewardCompanyGoal{},
-		&model.RewardGoalTeamContribution{},
-		&model.RewardSprintGoal{},
-		&model.RewardGoalDraft{},
-		&model.RewardIndividualCheck{},
-		&model.RewardBonusCalculation{},
-		&model.RewardFinanceSettings{},
-		&model.RewardAuditLog{},
 		&model.PMWorkflow{},
 		&model.PMWorkflowState{},
 		&model.PMEpicWorkflowState{},
@@ -385,14 +366,8 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
-	quarterRepo := repository.NewRewardQuarterRepository(db)
-	sprintRepo := repository.NewRewardSprintRepository(db)
-	goalRepo := repository.NewRewardGoalRepository(db)
-	scoringRepo := repository.NewRewardScoringRepository(db)
-	bonusRepo := repository.NewRewardBonusRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
-	draftRepo := repository.NewRewardDraftRepository(db)
 	pmWorkflowRepo := repository.NewPMWorkflowRepository(db)
 	pmLabelRepo := repository.NewPMLabelRepository(db)
 	pmEpicRepo := repository.NewPMEpicRepository(db)
@@ -664,14 +639,8 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, crmDealService, supportInboxService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
-	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
-	sprintService := service.NewRewardSprintService(sprintRepo, scoringRepo)
-	goalService := service.NewRewardGoalService(goalRepo)
-	bonusService := service.NewRewardBonusService(bonusRepo, scoringRepo)
 	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
-	auditService := service.NewRewardAuditService(bonusRepo)
-	draftService := service.NewRewardDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
 	orchestrationService := service.NewOrchestrationService(pmEpicRepo, agentRepo, pmActivityService, wsPublisher)
 
@@ -691,14 +660,7 @@ func main() {
 		Auth:               handler.NewAuthHandler(authService),
 		Organization:       handler.NewOrganizationHandler(orgService),
 		Workspace:          handler.NewWorkspaceHandler(workspaceService),
-		RewardQuarter:      handler.NewRewardQuarterHandler(quarterService),
-		RewardSprint:       handler.NewRewardSprintHandler(sprintService),
-		RewardGoal:         handler.NewRewardGoalHandler(goalService),
-		RewardBonus:        handler.NewRewardBonusHandler(bonusService),
-		RewardFinance:      handler.NewRewardFinanceHandler(bonusService),
 		Settings:           handler.NewSettingsHandler(settingsService, automationInventoryService),
-		RewardAudit:        handler.NewRewardAuditHandler(auditService),
-		RewardDraft:        handler.NewRewardDraftHandler(draftService),
 		Invite:             handler.NewInviteHandler(inviteService),
 		PMWorkflow:         handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMImport:           handler.NewPMImportHandler(pmImportService),

@@ -541,6 +541,19 @@ func (r *SettingsRepository) UpdateTeamUserMembership(ctx context.Context, teamI
 	return r.GetTeamUserMembership(ctx, teamID, userID)
 }
 
+// CountTeamMembersByRole counts team members with a given role.
+func (r *SettingsRepository) CountTeamMembersByRole(ctx context.Context, teamID, role string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("team_workspace_memberships").
+		Where("team_id = ? AND role = ?", teamID, role).
+		Count(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("count team members by role: %w", err)
+	}
+	return count, nil
+}
+
 // GetTeamUserMembership loads a specific team membership.
 func (r *SettingsRepository) GetTeamUserMembership(ctx context.Context, teamID, userID string) (*model.TeamUserMembership, error) {
 	return r.getTeamUserMembershipTx(r.db.WithContext(ctx), teamID, userID)
