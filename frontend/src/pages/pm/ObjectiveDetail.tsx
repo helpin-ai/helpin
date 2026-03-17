@@ -437,7 +437,7 @@ export function ObjectiveDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const { teams } = useAccessibleTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = useMemo(
     () => buildAssignableMemberOptions(assignableMembers),

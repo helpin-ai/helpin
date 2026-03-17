@@ -74,7 +74,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
   }, [VIEW_MODE_KEY]);
 
-  const { findTeamName } = useAccessibleTeams(workspaceId);
+  const { findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const navigate = useNavigate();

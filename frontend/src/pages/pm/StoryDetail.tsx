@@ -286,7 +286,7 @@ export function StoryDetailPage() {
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
 
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId!, storyDetail?.story.team_id);
-  const { teams } = useAccessibleTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId ?? '');
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),

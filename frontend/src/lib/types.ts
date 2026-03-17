@@ -97,6 +97,7 @@ export interface WorkspaceAccess {
   workspace_id: string;
   membership: {
     id: string;
+    user_id: string;
     role: 'owner' | 'admin' | 'member' | 'viewer';
     status: string;
   };

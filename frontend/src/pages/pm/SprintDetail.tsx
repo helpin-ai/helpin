@@ -145,7 +145,7 @@ export function SprintDetailPage() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
 
-  const { teams, findTeamName, getTeamMembers } = useAccessibleTeams(workspaceId);
+  const { teams, findTeamName, getTeamMembers } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const assignableMemberNames = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),

@@ -196,7 +196,7 @@ export function EpicDetailPage() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
 
-  const { teams, getTeamMembers, findTeamName } = useAccessibleTeams(workspaceId);
+  const { teams, getTeamMembers, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = useMemo(
     () => buildAssignableMemberOptions(assignableMembers),

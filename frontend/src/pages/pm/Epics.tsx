@@ -94,7 +94,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const slug = workspace?.slug;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
-  const { teams, findTeamName } = useAccessibleTeams(workspaceId);
+  const { teams, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const isSingleTeam = teams.length <= 1;
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE);

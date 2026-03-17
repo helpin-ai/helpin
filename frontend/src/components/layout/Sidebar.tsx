@@ -52,6 +52,7 @@ import { useTheme } from 'next-themes';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections, useDocsDocuments, useDeleteDocsSpace } from '@/hooks/queries';
+import type { DocsSpace } from '@/lib/docsTypes';
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { SpaceDialog } from '@/components/docs/SpaceDialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -264,8 +265,8 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
 }) {
   const { data: spaces } = useDocsSpaces(wsId);
   const deleteSpace = useDeleteDocsSpace(wsId);
-  const [editingSpace, setEditingSpace] = useState<typeof spaces[number] | null>(null);
-  const [deletingSpace, setDeletingSpace] = useState<typeof spaces[number] | null>(null);
+  const [editingSpace, setEditingSpace] = useState<DocsSpace | null>(null);
+  const [deletingSpace, setDeletingSpace] = useState<DocsSpace | null>(null);
   const { checkRef: checkSpaceTruncation, isTruncated: isSpaceTruncated } = useTruncationDetection();
 
   const toggleDocSpace = (spaceKey: string) => {

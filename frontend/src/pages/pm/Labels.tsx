@@ -136,7 +136,7 @@ const columnHelper = createColumnHelper<LabelWithStats>();
 export function LabelsPage() {
   useTitle('Labels');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
-  const { teams } = useAccessibleTeams(workspace?.id);
+  const { teams } = useAccessibleTeams(workspace?.id ?? '');
 
   const [labels, setLabels] = useState<LabelWithStats[]>([]);
   const [loading, setLoading] = useState(false);

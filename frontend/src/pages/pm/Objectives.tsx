@@ -122,7 +122,7 @@ export function ObjectivesPage() {
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit, isAdmin } = usePermissions(access);
-  const { teams } = useAccessibleTeams(workspaceId || undefined);
+  const { teams } = useAccessibleTeams(workspaceId || '');
 
   // Filters
   const [filterState, setFilterState] = useState('');
