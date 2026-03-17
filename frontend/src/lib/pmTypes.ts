@@ -1230,6 +1230,7 @@ export interface SupportConversation {
   priority: ConversationPriority;
   customer_name?: string;
   customer_email?: string;
+  anonymous_id?: string;
   opened_by_user_id?: string;
   assigned_agent_id?: string;
   linked_story_id?: string;

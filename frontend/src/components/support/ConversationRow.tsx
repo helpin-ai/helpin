@@ -58,6 +58,9 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
   const agentTypingMap = useSupportPresenceStore((s) => s.agentTyping[conversation.id]);
   const agentTypingEntries = agentTypingMap ? Object.entries(agentTypingMap) : [];
   const isAgentTyping = agentTypingEntries.length > 0;
+  const isVisitorOnline = useSupportPresenceStore((s) =>
+    conversation.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false
+  );
   const draftContent = useSupportInboxStore((s) => s.drafts[conversation.id]);
   // Only show draft label when NOT actively viewing this conversation
   const hasDraft = !!draftContent && !isSelected;
@@ -78,8 +81,16 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
       }`}
     >
       <div className="flex items-start gap-2.5">
-        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
-          {getInitial(displayName)}
+        <div className="relative mt-0.5 shrink-0">
+          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
+            {getInitial(displayName)}
+          </div>
+          {isVisitorOnline && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
+            </span>
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">

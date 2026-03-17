@@ -155,6 +155,13 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
       }
+    } else if (event.entity === 'support_visitor') {
+      const store = useSupportPresenceStore.getState()
+      if (event.action === 'visitor_online') {
+        store.setVisitorOnline(event.entity_id)
+      } else if (event.action === 'visitor_offline') {
+        store.setVisitorOffline(event.entity_id)
+      }
     } else if (event.entity === 'support_conversation_message') {
       if (event.parent_id) {
         const s = useSupportPresenceStore.getState()

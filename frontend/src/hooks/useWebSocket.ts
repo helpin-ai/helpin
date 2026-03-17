@@ -1,8 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { API_BASE } from '@/lib/api'
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 
 export interface WSEvent {
-  action: 'created' | 'updated' | 'deleted' | 'moved' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped'
+  action: 'created' | 'updated' | 'deleted' | 'moved' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped' | 'visitor_online' | 'visitor_offline'
   entity: string
   entity_id: string
   workspace_id: string
@@ -67,6 +68,11 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data)
+        // Handle online visitors snapshot (sent on agent connect)
+        if (msg.type === 'support:online_visitors' && msg.data?.visitors) {
+          useSupportPresenceStore.getState().setOnlineVisitors(msg.data.visitors as string[])
+          return
+        }
         // Handle presence snapshot (sent as {type, data} envelope)
         if (msg.type === 'support:presence_snapshot' && msg.data) {
           const snapshot = msg.data as PresenceSnapshot & { conversation_id?: string }

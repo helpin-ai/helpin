@@ -9,6 +9,8 @@ interface SupportPresenceState {
   agentTyping: Record<string, Record<string, string>>;
   // Viewing presence: conversationId → set of agent userIds currently viewing
   viewingAgents: Record<string, string[]>;
+  // Online visitors: anonymousId → true (set-like record for Zustand compatibility)
+  onlineVisitors: Record<string, true>;
   // WS send function — set by useRealtimeSync when connection is established
   wsSend: WSSendFn | null;
   // WebSocket connection state — guards presence/typing sends
@@ -19,6 +21,9 @@ interface SupportPresenceState {
   setAgentTyping: (conversationId: string, actorId: string | null, content?: string) => void;
   clearOneAgentTyping: (conversationId: string, actorId: string) => void;
   setViewingAgent: (conversationId: string, actorId: string, viewing: boolean) => void;
+  setVisitorOnline: (anonymousId: string) => void;
+  setVisitorOffline: (anonymousId: string) => void;
+  setOnlineVisitors: (visitors: string[]) => void;
   setWsSend: (fn: WSSendFn | null) => void;
   setWsConnected: (connected: boolean) => void;
 }
@@ -27,11 +32,27 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
   typingIndicators: {},
   agentTyping: {},
   viewingAgents: {},
+  onlineVisitors: {},
   wsSend: null,
   wsConnected: false,
 
   setWsSend: (fn) => set({ wsSend: fn }),
   setWsConnected: (connected) => set({ wsConnected: connected }),
+
+  setVisitorOnline: (anonymousId) =>
+    set((state) => ({
+      onlineVisitors: { ...state.onlineVisitors, [anonymousId]: true as const },
+    })),
+  setVisitorOffline: (anonymousId) =>
+    set((state) => {
+      if (!(anonymousId in state.onlineVisitors)) return state;
+      const { [anonymousId]: _, ...rest } = state.onlineVisitors;
+      return { onlineVisitors: rest };
+    }),
+  setOnlineVisitors: (visitors) =>
+    set({
+      onlineVisitors: Object.fromEntries(visitors.map((id) => [id, true as const])),
+    }),
 
   setTyping: (conversationId, isTyping, content) =>
     set((state) => ({

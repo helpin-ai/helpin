@@ -130,11 +130,32 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 		WorkspaceID:    session.WorkspaceID,
 		IsWidget:       true,
 		ConversationID: session.ConversationID,
+		AnonymousID:    session.AnonymousID,
 	}
 
 	h.hub.Register(client)
+	if session.AnonymousID != "" {
+		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
+		go h.hub.Broadcast(Event{
+			Action:      "visitor_online",
+			Entity:      "support_visitor",
+			EntityID:    session.AnonymousID,
+			WorkspaceID: session.WorkspaceID,
+		})
+	}
 	defer func() {
 		h.hub.Unregister(client)
+		if session.AnonymousID != "" {
+			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
+			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) {
+				go h.hub.Broadcast(Event{
+					Action:      "visitor_offline",
+					Entity:      "support_visitor",
+					EntityID:    session.AnonymousID,
+					WorkspaceID: session.WorkspaceID,
+				})
+			}
+		}
 		conn.Close(websocket.StatusNormalClosure, "closed")
 	}()
 
@@ -283,11 +304,32 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 		WorkspaceID:    session.WorkspaceID,
 		IsWidget:       true,
 		ConversationID: session.ConversationID,
+		AnonymousID:    session.AnonymousID,
 	}
 
 	h.hub.Register(client)
+	if session.AnonymousID != "" {
+		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
+		go h.hub.Broadcast(Event{
+			Action:      "visitor_online",
+			Entity:      "support_visitor",
+			EntityID:    session.AnonymousID,
+			WorkspaceID: session.WorkspaceID,
+		})
+	}
 	defer func() {
 		h.hub.Unregister(client)
+		if session.AnonymousID != "" {
+			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
+			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) {
+				go h.hub.Broadcast(Event{
+					Action:      "visitor_offline",
+					Entity:      "support_visitor",
+					EntityID:    session.AnonymousID,
+					WorkspaceID: session.WorkspaceID,
+				})
+			}
+		}
 		conn.Close(websocket.StatusNormalClosure, "closed")
 	}()
 
