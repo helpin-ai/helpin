@@ -60,6 +60,8 @@ export class WidgetManager {
   private activeConversationId: string | null = null;
   private currentView: WidgetView = 'home';
   private isTyping = false;
+  private typingAgentName: string | undefined;
+  private typingAgentAvatar: string | undefined;
   private currentEmail: string | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
@@ -171,6 +173,11 @@ export class WidgetManager {
     this.unreadCount = 0;
     if (!this.hasBeenOpened) {
       this.hasBeenOpened = true;
+      // If there's an active conversation (restored session), resume it;
+      // otherwise start fresh in conversation view.
+      this.currentView = 'conversation';
+    } else if (this.activeConversationId && this.currentView === 'home') {
+      // User had an active conversation — resume it instead of showing home
       this.currentView = 'conversation';
     }
     this.ensureWidget();
@@ -319,6 +326,8 @@ export class WidgetManager {
       showPreChatForm: showPreChat,
       onPreChatSubmit: (data: { name: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
+      typingAgentName: this.typingAgentName,
+      typingAgentAvatar: this.typingAgentAvatar,
       initialView: this.currentView,
       showLauncher: true,
       onLauncherClick: () => this.toggle(),
@@ -656,6 +665,8 @@ export class WidgetManager {
         // Set active conversation from messages (if session has one)
         if (payload.messages && payload.messages.length > 0 && payload.messages[0].conversation_id) {
           this.activeConversationId = payload.messages[0].conversation_id;
+          // Auto-navigate to the active conversation so the user resumes where they left off
+          this.currentView = 'conversation';
         }
 
         // Load conversation history from server
@@ -665,6 +676,8 @@ export class WidgetManager {
             conversationId: m.conversation_id,
             role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
             content: m.content,
+            senderName: m.sender_display_name || undefined,
+            senderAvatar: m.sender_avatar_url || undefined,
             isInternal: m.is_internal || false,
             createdAt: m.created_at,
           }));
@@ -729,6 +742,8 @@ export class WidgetManager {
           conversationId: msg.conversation_id || '',
           role: msg.sender_type === 'customer' ? 'customer' : msg.sender_type === 'ai' ? 'ai' : 'agent',
           content: msg.content || '',
+          senderName: msg.sender_name || undefined,
+          senderAvatar: msg.sender_avatar || undefined,
           isInternal: false,
           createdAt: msg.created_at || new Date().toISOString(),
         };
@@ -797,14 +812,22 @@ export class WidgetManager {
         break;
       }
 
-      case 'typing:start':
+      case 'typing:start': {
         // Hub already filters out widget's own typing — this is always agent-origin
         this.isTyping = true;
+        const typingData = data.data;
+        if (typingData) {
+          this.typingAgentName = typingData.agent_name || undefined;
+          this.typingAgentAvatar = typingData.agent_avatar || undefined;
+        }
         this.render();
         break;
+      }
 
       case 'typing:stop':
         this.isTyping = false;
+        this.typingAgentName = undefined;
+        this.typingAgentAvatar = undefined;
         this.render();
         break;
 
@@ -831,6 +854,8 @@ export class WidgetManager {
             conversationId: m.conversation_id,
             role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
             content: m.content,
+            senderName: m.sender_display_name || undefined,
+            senderAvatar: m.sender_avatar_url || undefined,
             isInternal: m.is_internal || false,
             createdAt: m.created_at,
           }));

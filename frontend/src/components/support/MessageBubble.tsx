@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Bot, StickyNote, User } from 'lucide-react';
+import { Bot, StickyNote } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { SupportMessage, TicketSource } from '@/lib/pmTypes';
@@ -53,11 +53,6 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
     return (
       <div className={`flex justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
         <div className="max-w-[75%]">
-          {!isConsecutive && (
-            <div className="mb-1 pr-1 text-right">
-              <span className="text-[11px] font-medium text-muted-foreground">{senderName}</span>
-            </div>
-          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 dark:bg-amber-950/20">
@@ -79,14 +74,42 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   }
 
   // ── Chat bubble ──
+  const avatarUrl = message.sender_avatar_url;
+
   const avatarEl = isCustomer ? (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
-      {getInitial(senderName)}
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+          {getInitial(senderName)}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="left"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+    </Tooltip>
+  ) : avatarUrl ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <img src={avatarUrl} alt={senderName} className="h-7 w-7 shrink-0 rounded-full object-cover" />
+      </TooltipTrigger>
+      <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+    </Tooltip>
+  ) : isAgent ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Bot className="h-3.5 w-3.5" />
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+    </Tooltip>
   ) : (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-      {isAgent ? <Bot className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white">
+          {getInitial(senderName)}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+    </Tooltip>
   );
 
   return (
@@ -99,13 +122,6 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
       )}
 
       <div className="max-w-[70%]">
-        {/* Sender name — only on first message in a group */}
-        {!isConsecutive && (
-          <div className={`mb-1 ${isCustomer ? 'pl-1' : 'pr-1 text-right'}`}>
-            <span className="text-[11px] font-medium text-muted-foreground">{senderName}</span>
-          </div>
-        )}
-
         {/* Bubble with hover tooltip */}
         <Tooltip>
           <TooltipTrigger asChild>

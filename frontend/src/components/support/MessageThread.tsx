@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle, User } from 'lucide-react';
+import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -104,9 +104,13 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
               </div>
             </div>
             <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <User className="h-3.5 w-3.5" />
-              </div>
+              {member?.avatar_url ? (
+                <img src={member.avatar_url} alt={name} title={name} className="h-7 w-7 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white" title={name}>
+                  {getInitial(name)}
+                </div>
+              )}
             </div>
           </div>
         );

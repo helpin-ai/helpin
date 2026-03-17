@@ -55,6 +55,12 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
     <div className="helpin-message-list" ref={listRef} role="list" aria-label="Messages">
       {messages.map((message, idx) => {
         const dateSeparator = getDateSeparator(message.createdAt, idx);
+        // Consecutive = same role + same sender (like Crisp — no time limit)
+        const prev = idx > 0 ? messages[idx - 1] : null;
+        const isFirstInGroup = !prev
+          || prev.role !== message.role
+          || prev.senderName !== message.senderName
+          || !!dateSeparator;
         return (
           <div key={message.id}>
             {dateSeparator && (
@@ -62,7 +68,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
                 <span>{dateSeparator}</span>
               </div>
             )}
-            <MessageBubble message={message} config={config} />
+            <MessageBubble message={message} config={config} isFirstInGroup={isFirstInGroup} />
           </div>
         );
       })}

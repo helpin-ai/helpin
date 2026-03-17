@@ -23,6 +23,8 @@ interface ChatWindowProps {
   showPreChatForm: boolean;
   onPreChatSubmit: (data: { name: string; email: string }) => void;
   isTyping?: boolean;
+  typingAgentName?: string;
+  typingAgentAvatar?: string;
   quickReplies?: string[];
   initialView?: WidgetView;
   connectionStatus?: ConnectionStatus;
@@ -45,6 +47,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   showPreChatForm,
   onPreChatSubmit,
   isTyping = false,
+  typingAgentName,
+  typingAgentAvatar,
   quickReplies = [],
   initialView = 'home',
   connectionStatus = 'idle',
@@ -174,6 +178,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onSendMessage={onSendMessage}
             onTyping={onTyping}
             isTyping={isTyping}
+            typingAgentName={typingAgentName}
+            typingAgentAvatar={typingAgentAvatar}
             onBack={() => setActiveView(previousView)}
             onClose={onClose}
           />

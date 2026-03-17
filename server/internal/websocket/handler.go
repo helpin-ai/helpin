@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -38,11 +39,15 @@ type agentTypingData struct {
 	Content        string `json:"content,omitempty"`
 }
 
+// UserLookupFunc resolves user display info (name, avatar URL) by user ID.
+type UserLookupFunc func(ctx context.Context, userID string) (name string, avatar *string)
+
 // Handler upgrades HTTP connections to WebSocket.
 type Handler struct {
 	hub          *Hub
 	jwtManager   *auth.JWTManager
 	authzService *authorization.AuthzService
+	userLookup   UserLookupFunc
 }
 
 // NewHandler creates a WebSocket handler.
@@ -53,6 +58,11 @@ func NewHandler(hub *Hub, jwtManager *auth.JWTManager) *Handler {
 // SetAuthzService injects the authorization service for workspace access checks.
 func (h *Handler) SetAuthzService(authz *authorization.AuthzService) {
 	h.authzService = authz
+}
+
+// SetUserLookup injects the function used to resolve user display info for typing events.
+func (h *Handler) SetUserLookup(fn UserLookupFunc) {
+	h.userLookup = fn
 }
 
 // ServeHTTP handles the WebSocket upgrade and connection lifecycle.
@@ -201,9 +211,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err := h.hub.Presence.SetTyping(r.Context(), workspaceID, d.ConversationID, client.UserID, client.ConnID, d.Content); err != nil {
 				slog.Error("presence SetTyping", "error", err)
 			}
-			var eventData json.RawMessage
+			// Include agent identity so the widget can show who is typing.
+			typingPayload := map[string]string{}
 			if d.Content != "" {
-				eventData, _ = json.Marshal(map[string]string{"content": d.Content})
+				typingPayload["content"] = d.Content
+			}
+			if h.userLookup != nil {
+				name, avatar := h.userLookup(r.Context(), client.UserID)
+				if name != "" {
+					typingPayload["agent_name"] = name
+				}
+				if avatar != nil {
+					typingPayload["agent_avatar"] = *avatar
+				}
+			}
+			var eventData json.RawMessage
+			if len(typingPayload) > 0 {
+				eventData, _ = json.Marshal(typingPayload)
 			}
 			h.hub.BroadcastAll(Event{
 				Action:      "typing_started",

@@ -997,25 +997,30 @@
   animation: helpin-bubble-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.helpin-message-row--consecutive {
+  margin-top: -4px;
+}
+
 .helpin-message-row--customer {
   align-items: flex-end;
 }
 
 .helpin-message-row--agent {
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 /* Message Bubble */
 .helpin-message-bubble {
-  max-width: 80%;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-radius: 18px;
-  word-wrap: break-word;
+  overflow-wrap: anywhere;
   font-size: 14px;
   line-height: 1.5;
+  width: fit-content;
 }
 
 .helpin-message--customer {
+  max-width: 80%;
   background: var(--helpin-primary);
   color: var(--helpin-primary-foreground);
   border-bottom-right-radius: 4px;
@@ -1055,29 +1060,9 @@
   margin-top: 4px;
 }
 
-/* Message Attribution (below bubble) */
-.helpin-message-attribution {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 4px 0;
-  font-size: 12px;
-  color: var(--helpin-fg-muted);
-}
-
-.helpin-message-attribution--customer {
-  justify-content: flex-end;
-  font-size: 11px;
-}
-
-.helpin-message-sender {
-  font-weight: 500;
-  color: var(--helpin-fg-secondary);
-}
-
-.helpin-message-attr-dot {
-  font-size: 10px;
-  opacity: 0.7;
+/* Message bubble tooltip cursor */
+.helpin-message-bubble[title] {
+  cursor: default;
 }
 
 /* Compose Wrapper */
@@ -1385,6 +1370,56 @@
   background: var(--helpin-bg-muted);
 }
 
+/* Agent Message: avatar left, name right, bubbles indented below (Crisp-style) */
+.helpin-message-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.helpin-message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.helpin-message-avatar-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--helpin-bg-muted);
+  color: var(--helpin-fg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.helpin-message-agent-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--helpin-fg-secondary);
+}
+
+/* Bubble wrapper — indented to align with name (avatar width + gap) */
+.helpin-message-agent-bubble-wrap {
+  padding-left: 40px; /* 32px avatar + 8px gap */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+
+/* Agent avatar in conversation header — round */
+.helpin-agent-avatar {
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 /* Typing Indicator */
 .helpin-typing-indicator {
   display: flex;
@@ -1393,6 +1428,28 @@
   padding: 8px 16px;
   color: var(--helpin-fg-secondary);
   font-size: 13px;
+}
+
+.helpin-typing-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.helpin-typing-avatar-placeholder {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--helpin-bg-muted);
+  color: var(--helpin-fg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .helpin-typing-dots {

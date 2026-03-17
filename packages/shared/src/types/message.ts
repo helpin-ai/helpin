@@ -4,6 +4,8 @@ export interface Message {
   role: 'customer' | 'agent' | 'ai' | 'system';
   content: string;
   senderId?: string;
+  senderName?: string;
+  senderAvatar?: string;
   sources?: AiSource[];
   aiConfidence?: number;
   attachments?: Attachment[];

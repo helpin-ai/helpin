@@ -469,7 +469,7 @@ func main() {
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
-	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo)
+	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -650,6 +650,15 @@ func main() {
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
+
+	// Inject user lookup for agent identity in typing events.
+	wsHandler.SetUserLookup(func(ctx context.Context, userID string) (string, *string) {
+		user, err := userRepo.GetByID(ctx, userID)
+		if err != nil || user == nil {
+			return "", nil
+		}
+		return user.FullName, user.AvatarURL
+	})
 
 	// Widget WebSocket handler — authenticates via session_token, not JWT.
 	widgetWsHandler := ws.NewWidgetHandler(wsHub, supportInboxService)

@@ -1,5 +1,5 @@
 import { FunctionComponent } from 'preact';
-import { useState } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
 import type { Message, WidgetConfig } from '../types';
 import { MessageList } from './MessageList';
 import { ComposeBar } from './ComposeBar';
@@ -12,6 +12,8 @@ interface ConversationViewProps {
   onSendMessage: (content: string) => void;
   onTyping?: (content: string) => void;
   isTyping?: boolean;
+  typingAgentName?: string;
+  typingAgentAvatar?: string;
   onBack: () => void;
   onClose?: () => void;
 }
@@ -22,6 +24,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   onSendMessage,
   onTyping,
   isTyping = false,
+  typingAgentName,
+  typingAgentAvatar,
   onBack,
   onClose,
 }) => {
@@ -31,6 +35,17 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const logoUrl = config.branding?.logoUrl;
   const welcomeMessage = config.branding?.welcomeMessage || 'Hi there. How can we help?';
   const hasTeamReply = messages.some((message) => message.role !== 'customer');
+
+  // Derive the most recent responding agent from messages.
+  const activeAgent = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if ((m.role === 'agent' || m.role === 'ai') && m.senderName) {
+        return { name: m.senderName, avatar: m.senderAvatar };
+      }
+    }
+    return null;
+  }, [messages]);
 
   const displayMessages = hasTeamReply || messages.length === 0
     ? messages.length === 0
@@ -65,7 +80,13 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         </button>
 
         <div className="helpin-conversation-brand">
-          {logoUrl ? (
+          {activeAgent?.avatar ? (
+            <img src={activeAgent.avatar} alt={activeAgent.name} className="helpin-conversation-logo helpin-agent-avatar" />
+          ) : activeAgent?.name ? (
+            <div className="helpin-conversation-logo-placeholder">
+              <span>{activeAgent.name.charAt(0).toUpperCase()}</span>
+            </div>
+          ) : logoUrl ? (
             <img src={logoUrl} alt={workspaceName} className="helpin-conversation-logo" />
           ) : (
             <div className="helpin-conversation-logo-placeholder">
@@ -74,9 +95,18 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           )}
 
           <div className="helpin-conversation-brand-copy">
-            <span className="helpin-conversation-title">{workspaceName}</span>
-            {config.features?.aiEnabled && (
-              <span className="helpin-conversation-subtitle">The team can also help</span>
+            {activeAgent?.name ? (
+              <>
+                <span className="helpin-conversation-title">{activeAgent.name}</span>
+                <span className="helpin-conversation-subtitle">from {workspaceName}</span>
+              </>
+            ) : (
+              <>
+                <span className="helpin-conversation-title">{workspaceName}</span>
+                {config.features?.aiEnabled && (
+                  <span className="helpin-conversation-subtitle">The team can also help</span>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -110,7 +140,12 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         />
       </div>
 
-      {isTyping && <TypingIndicator />}
+      {isTyping && (
+        <TypingIndicator
+          agentName={typingAgentName}
+          agentAvatar={typingAgentAvatar}
+        />
+      )}
       <ComposeBar onSend={onSendMessage} onTyping={onTyping} />
     </div>
   );

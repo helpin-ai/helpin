@@ -42,6 +42,7 @@ type SupportMessage struct {
 	SenderUserID      *string   `json:"sender_user_id" gorm:"type:uuid"`
 	SenderAgentID     *string   `json:"sender_agent_id" gorm:"type:uuid"`
 	SenderDisplayName *string   `json:"sender_display_name"`
+	SenderAvatarURL   *string   `json:"sender_avatar_url"`
 	Content           string    `json:"content" gorm:"not null"`
 	IsInternal        bool      `json:"is_internal" gorm:"not null;default:false"`
 	Metadata          string    `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.

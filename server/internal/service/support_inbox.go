@@ -27,6 +27,7 @@ type SupportInboxService struct {
 	activitySvc        *PMActivityService
 	wsPublisher        *websocket.Publisher
 	contactRepo        *repository.CRMContactRepository
+	userRepo           *repository.UserRepository
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -41,6 +42,7 @@ func NewSupportInboxService(
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 	contactRepo *repository.CRMContactRepository,
+	userRepo *repository.UserRepository,
 ) *SupportInboxService {
 	return &SupportInboxService{
 		conversationRepo:   conversationRepo,
@@ -53,6 +55,7 @@ func NewSupportInboxService(
 		activitySvc:        activitySvc,
 		wsPublisher:        wsPublisher,
 		contactRepo:        contactRepo,
+		userRepo:           userRepo,
 	}
 }
 
@@ -193,6 +196,18 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		messageType = "reply"
 	}
 
+	// Auto-resolve sender display name and avatar from user record.
+	var senderAvatarURL *string
+	if senderUserID != nil && s.userRepo != nil {
+		user, _ := s.userRepo.GetByID(ctx, *senderUserID)
+		if user != nil {
+			if senderDisplayName == nil {
+				senderDisplayName = &user.FullName
+			}
+			senderAvatarURL = user.AvatarURL
+		}
+	}
+
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,
 		ConversationID:    ticketID,
@@ -200,6 +215,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		SenderUserID:      senderUserID,
 		SenderAgentID:     senderAgentID,
 		SenderDisplayName: senderDisplayName,
+		SenderAvatarURL:   senderAvatarURL,
 		Content:           strings.TrimSpace(req.Content),
 		IsInternal:        req.IsInternal,
 		MessageType:       messageType,
@@ -217,6 +233,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		Content:        msg.Content,
 		SenderType:     msg.SenderType,
 		SenderName:     msg.SenderDisplayName,
+		SenderAvatar:   msg.SenderAvatarURL,
 		CreatedAt:      msg.CreatedAt.Format(time.RFC3339),
 	})
 
