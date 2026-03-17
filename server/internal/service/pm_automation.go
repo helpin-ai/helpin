@@ -51,6 +51,64 @@ func (s *PMAutomationService) SetHealthObserver(observer AutomationHealthObserve
 	return s
 }
 
+// SeedWorkspaceDefaults enables the default workspace-level epic automations for
+// newly created workspaces, targeting the seeded started/done epic states.
+func (s *PMAutomationService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
+	if workspaceID == "" {
+		return fmt.Errorf("workspace_id is required")
+	}
+	if s.automationRepo == nil || s.workflowRepo == nil {
+		return fmt.Errorf("pm automation defaults require automation and workflow repositories")
+	}
+
+	epicStates, err := s.workflowRepo.ListEpicStates(ctx, workspaceID)
+	if err != nil {
+		return fmt.Errorf("list epic workflow states: %w", err)
+	}
+
+	var startedStateID string
+	var doneStateID string
+	for _, state := range epicStates {
+		if startedStateID == "" && state.StateType == model.PMStateTypeStarted {
+			startedStateID = state.ID
+		}
+		if doneStateID == "" && state.StateType == model.PMStateTypeDone {
+			doneStateID = state.ID
+		}
+	}
+
+	if startedStateID == "" {
+		return fmt.Errorf("started epic workflow state is required")
+	}
+	if doneStateID == "" {
+		return fmt.Errorf("done epic workflow state is required")
+	}
+
+	defaults := []*model.PMAutomation{
+		{
+			WorkspaceID:    workspaceID,
+			AutomationType: model.PMAutomationTypeEpicAutoStart,
+			Enabled:        true,
+			ConfigStateID:  &startedStateID,
+		},
+		{
+			WorkspaceID:    workspaceID,
+			AutomationType: model.PMAutomationTypeEpicAutoComplete,
+			Enabled:        true,
+			ConfigStateID:  &doneStateID,
+		},
+	}
+
+	for _, automation := range defaults {
+		if err := s.automationRepo.Upsert(ctx, automation); err != nil {
+			return fmt.Errorf("seed %s: %w", automation.AutomationType, err)
+		}
+	}
+
+	s.logger.InfoContext(ctx, "seeded default epic automations", "workspace_id", workspaceID)
+	return nil
+}
+
 // List returns all automations for a workspace.
 func (s *PMAutomationService) List(ctx context.Context, workspaceID string) ([]model.PMAutomation, error) {
 	if workspaceID == "" {
