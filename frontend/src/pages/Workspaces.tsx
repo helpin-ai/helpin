@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useOrganizationStore } from '@/stores/organizationStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useOrganizations, useCreateOrganization, useWorkspaces } from '@/hooks/queries';
 import { useQueryClient } from '@tanstack/react-query';
 import { workspacesService } from '@/lib/services/workspacesService';
@@ -72,8 +73,9 @@ export default function Workspaces() {
   useTitle('Workspaces');
   const { data: organizations = [], isLoading: orgsLoading } = useOrganizations();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const { currentOrganization, setCurrentOrganization } = useOrganizationStore();
-  const { data: workspaces = [], isLoading: wsLoading } = useWorkspaces(currentOrganization?.id);
+  const { data: allWorkspaces = [], isLoading: wsLoading } = useWorkspaces();
   const createOrgMutation = useCreateOrganization();
   const queryClient = useQueryClient();
   const { create } = useSearch({ from: '/_authenticated/workspaces' });
@@ -86,9 +88,23 @@ export default function Workspaces() {
   const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams'>('details');
   const [teamDrafts, setTeamDrafts] = useState<TeamDraft[]>(createInitialTeamDrafts);
 
-  // Org creation state
-  const [orgName, setOrgName] = useState('');
-  const [orgSlug, setOrgSlug] = useState('');
+  // Org creation state — pre-fill from user's first name for first-time users
+  const firstName = user?.full_name?.split(' ')[0] ?? '';
+  const defaultOrgName = firstName ? `${firstName}'s Organization` : '';
+  const [orgName, setOrgName] = useState(defaultOrgName);
+  const [orgSlug, setOrgSlug] = useState(defaultOrgName ? generateWorkspaceSlug(defaultOrgName) : '');
+
+  // Pre-fill org name from user's name when it becomes available
+  useEffect(() => {
+    if (user?.full_name && !orgName && organizations.length === 0) {
+      const first = user.full_name.split(' ')[0];
+      if (first) {
+        const name = `${first}'s Organization`;
+        setOrgName(name);
+        setOrgSlug(generateWorkspaceSlug(name));
+      }
+    }
+  }, [user?.full_name, orgName, organizations.length]);
 
   // Auto-select first org when organizations load and none is selected
   useEffect(() => {
@@ -268,6 +284,23 @@ export default function Workspaces() {
     setCurrentOrganization(org);
   };
 
+  // Group workspaces by organization for display
+  const workspacesByOrg = useMemo(() => {
+    const groups: { org: OrganizationWithRole; workspaces: typeof allWorkspaces }[] = [];
+    for (const org of organizations) {
+      const orgWorkspaces = allWorkspaces.filter((ws) => ws.organization_id === org.id);
+      if (orgWorkspaces.length > 0) {
+        groups.push({ org, workspaces: orgWorkspaces });
+      }
+    }
+    // Include workspaces with no matching org (edge case)
+    const ungrouped = allWorkspaces.filter((ws) => !organizations.some((o) => o.id === ws.organization_id));
+    if (ungrouped.length > 0) {
+      groups.push({ org: { id: '', name: 'Other', slug: '', owner_id: '', created_at: '', updated_at: '', role: 'member' as const }, workspaces: ungrouped });
+    }
+    return groups;
+  }, [allWorkspaces, organizations]);
+
   const isLoading = wsLoading || orgsLoading;
   const selectedTeamCount = useMemo(
     () => teamDrafts.filter((team) => team.selected && team.name.trim()).length,
@@ -275,34 +308,16 @@ export default function Workspaces() {
   );
   const hasSelectedTeamWithoutName = teamDrafts.some((team) => team.selected && !team.name.trim());
 
-  // Show create org screen if user has no organizations
-  if (!orgsLoading && organizations.length === 0) {
-    return (
-      <div className="min-h-screen bg-background">
-        <div className="max-w-md mx-auto px-4 py-24">
-          <div className="text-center mb-8">
-            <div className="mx-auto mb-4">
-              <UserAvatar name="Organization" className="h-14 w-14 rounded-full" fallbackClassName="text-xl rounded-full" />
-            </div>
-            <h1 className="text-2xl font-bold">Create your Organization</h1>
-            <p className="text-muted-foreground mt-2">
-              Organizations group your workspaces and team members together.
-            </p>
-          </div>
-          <form onSubmit={handleCreateOrg} className="space-y-4">
-            <OrgFormFields
-              name={orgName} slug={orgSlug}
-              onNameChange={handleOrgNameChange} onSlugChange={setOrgSlug}
-              nameId="org-name" slugId="org-slug"
-            />
-            <Button type="submit" className="w-full" disabled={createOrgMutation.isPending}>
-              {createOrgMutation.isPending ? 'Creating...' : 'Create Organization'}
-            </Button>
-          </form>
-        </div>
-      </div>
-    );
-  }
+  // Auto-create org if user has none (edge case — signup normally handles this).
+  useEffect(() => {
+    if (!orgsLoading && organizations.length === 0 && !createOrgMutation.isPending && user) {
+      const first = user.full_name?.split(' ')[0] || 'My';
+      const name = `${first}'s Organization`;
+      createOrgMutation.mutateAsync({ name, slug: generateWorkspaceSlug(name) }).then((org) => {
+        setCurrentOrganization(org);
+      }).catch(() => {});
+    }
+  }, [orgsLoading, organizations.length, createOrgMutation.isPending, user]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -482,16 +497,28 @@ export default function Workspaces() {
               <Skeleton key={i} className="h-24 rounded-lg" />
             ))}
           </div>
-        ) : workspaces.length === 0 ? (
+        ) : allWorkspaces.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-muted-foreground mb-4">No workspaces in this organization yet.</p>
+            <p className="text-muted-foreground mb-4">No workspaces yet.</p>
             <Button onClick={openWorkspaceDialog} disabled={!currentOrganization}>
               <Plus className="h-4 w-4 mr-2" />
               Create your first workspace
             </Button>
           </div>
+        ) : organizations.length <= 1 ? (
+          <WorkspaceSelector workspaces={allWorkspaces} />
         ) : (
-          <WorkspaceSelector workspaces={workspaces} />
+          <div className="space-y-8">
+            {workspacesByOrg.map(({ org, workspaces: orgWs }) => (
+              <div key={org.id}>
+                <div className="flex items-center gap-2 mb-4">
+                  <UserAvatar name={org.name} avatarUrl={org.logo_url} className="h-5 w-5 rounded" fallbackClassName="text-[8px] rounded" />
+                  <h2 className="text-sm font-medium text-muted-foreground">{org.name} Organization</h2>
+                </div>
+                <WorkspaceSelector workspaces={orgWs} />
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

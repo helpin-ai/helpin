@@ -147,7 +147,7 @@ export function GeneralTab({ workspaceId, editable }: {
     }
     toast.success('Workspace deleted');
     queryClient.invalidateQueries({ queryKey: ['workspaces'] });
-    navigate({ to: '/' });
+    navigate({ to: '/workspaces' });
   };
 
   return (

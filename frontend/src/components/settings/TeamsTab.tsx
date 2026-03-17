@@ -784,10 +784,21 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             title: 'Workflow states',
             description: 'Manage workflow states for this team',
             meta: workflowMeta,
-            action: () => {
+            action: async () => {
+              // If team is using the shared workspace default, resolve a team-specific copy first.
+              if (!teamOwnWorkflow && selectedTeam) {
+                const { data: resolved } = await pmWorkflowService.resolveTeamWorkflow(workspaceId, selectedTeam.id);
+                if (resolved) {
+                  setWorkflows((prev) => {
+                    const exists = prev.some((w) => w.workflow.id === resolved.workflow.id);
+                    return exists ? prev.map((w) => w.workflow.id === resolved.workflow.id ? resolved : w) : [...prev, resolved];
+                  });
+                }
+              }
               setWorkflowDialogOpen(true);
-              if (activeTeamWorkflow) {
-                automationRuleService.listByWorkflow(workspaceId, activeTeamWorkflow.workflow.id).then((res) => {
+              const wf = teamOwnWorkflow ?? workflows.find((w) => !w.workflow.team_id);
+              if (wf) {
+                automationRuleService.listByWorkflow(workspaceId, wf.workflow.id).then((res) => {
                   if (res.data) setPipelineRules(res.data);
                 });
               }
@@ -1533,12 +1544,20 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                         })()}
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-muted-foreground">
-                          {(() => {
-                            const wf = workflows.find((w) => w.workflow.team_id === team.id);
-                            return wf ? `${wf.states.length} states` : '\u2014';
-                          })()}
-                        </span>
+                        {(() => {
+                          const wf = workflows.find((w) => w.workflow.team_id === team.id);
+                          if (!wf) return <span className="text-sm text-muted-foreground/50">&mdash;</span>;
+                          return (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-sm text-muted-foreground cursor-default">{wf.states.length} states</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {wf.states.map((s) => s.name).join(' → ')}
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         {(() => {

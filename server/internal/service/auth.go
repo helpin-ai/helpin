@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
+	"unicode"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -12,17 +14,19 @@ import (
 
 // AuthService handles authentication business logic.
 type AuthService struct {
-	userRepo   *repository.UserRepository
-	jwtManager *auth.JWTManager
-	logger     *slog.Logger
+	userRepo         *repository.UserRepository
+	organizationRepo *repository.OrganizationRepository
+	jwtManager       *auth.JWTManager
+	logger           *slog.Logger
 }
 
 // NewAuthService creates a new AuthService.
-func NewAuthService(userRepo *repository.UserRepository, jwtManager *auth.JWTManager) *AuthService {
+func NewAuthService(userRepo *repository.UserRepository, organizationRepo *repository.OrganizationRepository, jwtManager *auth.JWTManager) *AuthService {
 	return &AuthService{
-		userRepo:   userRepo,
-		jwtManager: jwtManager,
-		logger:     slog.Default().With("service", "auth"),
+		userRepo:         userRepo,
+		organizationRepo: organizationRepo,
+		jwtManager:       jwtManager,
+		logger:           slog.Default().With("service", "auth"),
 	}
 }
 
@@ -62,11 +66,53 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 
 	s.logger.InfoContext(ctx, "user signed up", "user_id", user.ID, "email", user.Email)
 
+	// Auto-create a default organization for the new user.
+	s.autoCreateOrganization(ctx, user)
+
 	return &model.AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		User:         toUserProfile(user),
 	}, nil
+}
+
+// autoCreateOrganization creates a default organization for a newly registered user.
+func (s *AuthService) autoCreateOrganization(ctx context.Context, user *model.User) {
+	if s.organizationRepo == nil {
+		return
+	}
+	firstName := strings.SplitN(strings.TrimSpace(user.FullName), " ", 2)[0]
+	if firstName == "" {
+		firstName = "My"
+	}
+	orgName := firstName + "'s Organization"
+	orgSlug := slugifyOrg(orgName)
+
+	org, err := s.organizationRepo.Create(ctx, orgName, orgSlug, user.ID, nil)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to auto-create organization", "error", err, "user_id", user.ID)
+		return
+	}
+	if _, err := s.organizationRepo.AddMember(ctx, org.ID, user.ID, "owner"); err != nil {
+		s.logger.ErrorContext(ctx, "failed to add user as org owner", "error", err, "org_id", org.ID, "user_id", user.ID)
+	}
+	s.logger.InfoContext(ctx, "auto-created organization", "org_id", org.ID, "org_name", orgName, "user_id", user.ID)
+}
+
+// slugifyOrg converts a name to a URL-friendly slug.
+func slugifyOrg(name string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			lastDash = false
+		} else if !lastDash && b.Len() > 0 {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // Signin authenticates a user and returns auth tokens.
