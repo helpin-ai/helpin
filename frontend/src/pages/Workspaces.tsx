@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { Plus, X } from 'lucide-react';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import {
@@ -424,7 +425,7 @@ export default function Workspaces() {
                       : 'Invite your team to collaborate. You can always do this later.'}
                   </DialogDescription>
                 </DialogHeader>
-                {workspaceStep === 'details' ? (
+                {workspaceStep === 'details' && (
                   <div className="space-y-4 py-4">
                     {organizations.length > 0 && (
                       <div className="space-y-2">
@@ -468,7 +469,8 @@ export default function Workspaces() {
                       <Textarea id="ws-desc" placeholder="A brief description of this workspace" value={description} onChange={e => setDescription(e.target.value)} />
                     </div>
                   </div>
-                ) : (
+                )}
+                {workspaceStep === 'teams' && (
                   <div className="space-y-4 py-4">
                     <ScrollArea className="max-h-[min(380px,50vh)] pr-4">
                       <div className="space-y-2">
@@ -538,7 +540,8 @@ export default function Workspaces() {
                       Add custom team
                     </button>
                   </div>
-                ) : workspaceStep === 'invite' ? (
+                )}
+                {workspaceStep === 'invite' && (
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
                       <Label>Emails</Label>
@@ -578,14 +581,15 @@ export default function Workspaces() {
                       </div>
                     </div>
                   </div>
-                ) : null}
+                )}
                 <DialogFooter>
-                  {workspaceStep === 'details' ? (
+                  {workspaceStep === 'details' && (
                     <>
                       <Button type="button" variant="outline" onClick={() => handleWorkspaceDialogChange(false)}>Cancel</Button>
                       <Button type="submit">Continue</Button>
                     </>
-                  ) : workspaceStep === 'teams' ? (
+                  )}
+                  {workspaceStep === 'teams' && (
                     <>
                       <Button type="button" variant="outline" onClick={() => setWorkspaceStep('details')} disabled={creating}>Back</Button>
                       <div className="flex-1" />
@@ -601,7 +605,8 @@ export default function Workspaces() {
                         {creating ? 'Creating...' : `Create${selectedTeamCount > 0 ? ` with ${selectedTeamCount} team${selectedTeamCount === 1 ? '' : 's'}` : ''}`}
                       </Button>
                     </>
-                  ) : (
+                  )}
+                  {workspaceStep === 'invite' && (
                     <>
                       <div className="flex-1" />
                       <Button type="button" variant="ghost" onClick={finishWorkspaceSetup} disabled={sendingInvites}>
