@@ -16,12 +16,9 @@ func NewRBACEngine() *RBACEngine {
 	)
 
 	memberPerms := copyPerms(viewerPerms)
-	addPerms(memberPerms, PermPMEdit, PermDocsEdit, PermCRMEdit, PermSupportEdit, PermRewardsRead)
+	addPerms(memberPerms, PermPMEdit, PermDocsEdit, PermCRMEdit, PermSupportEdit, PermDocsPublish)
 
-	managerPerms := copyPerms(memberPerms)
-	addPerms(managerPerms, PermRewardsManage, PermDocsPublish)
-
-	adminPerms := copyPerms(managerPerms)
+	adminPerms := copyPerms(memberPerms)
 	addPerms(adminPerms,
 		PermTeamManage, PermTeamMembersManage,
 		PermSettingsManage, PermWorkspaceUpdate,
@@ -36,11 +33,10 @@ func NewRBACEngine() *RBACEngine {
 
 	return &RBACEngine{
 		rolePerms: map[string]map[Permission]struct{}{
-			"viewer":  viewerPerms,
-			"member":  memberPerms,
-			"manager": managerPerms,
-			"admin":   adminPerms,
-			"owner":   ownerPerms,
+			"viewer": viewerPerms,
+			"member": memberPerms,
+			"admin":  adminPerms,
+			"owner":  ownerPerms,
 		},
 	}
 }

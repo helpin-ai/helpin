@@ -23,11 +23,10 @@ type PaginatedResponse struct {
 
 // Role constants shared across organizations and workspaces.
 const (
-	RoleOwner   = "owner"
-	RoleAdmin   = "admin"
-	RoleManager = "manager"
-	RoleMember  = "member"
-	RoleViewer  = "viewer"
+	RoleOwner  = "owner"
+	RoleAdmin  = "admin"
+	RoleMember = "member"
+	RoleViewer = "viewer"
 )
 
 // ErrForbidden is returned when a user lacks permission for an action.

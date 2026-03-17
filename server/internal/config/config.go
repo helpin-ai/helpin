@@ -56,6 +56,9 @@ type Config struct {
 	CRMLLMAPIKey   string
 	CRMLLMBaseURL  string
 	CRMLLMModel    string
+
+	// Redis (optional — empty = local-only mode, no cross-pod broadcasting)
+	RedisURL string
 }
 
 // Load reads configuration from environment variables.
@@ -136,6 +139,7 @@ func Load() (*Config, error) {
 		CRMLLMAPIKey:          os.Getenv("CRM_LLM_API_KEY"),
 		CRMLLMBaseURL:         os.Getenv("CRM_LLM_BASE_URL"),
 		CRMLLMModel:           os.Getenv("CRM_LLM_MODEL"),
+		RedisURL:              os.Getenv("REDIS_URL"),
 	}, nil
 }
 

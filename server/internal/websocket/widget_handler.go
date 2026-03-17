@@ -25,6 +25,7 @@ type WidgetService interface {
 	RevokeWidgetSession(ctx context.Context, sessionToken string) error
 	ClearSessionConversation(ctx context.Context, sessionToken string) error
 	SetSessionConversation(ctx context.Context, sessionToken, conversationID string) error
+	MarkConversationReadByVisitor(ctx context.Context, workspaceID, conversationID, anonymousID string) error
 }
 
 // WidgetHandler upgrades HTTP connections to WebSocket for widget clients.
@@ -126,15 +127,44 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 
 	client := &Client{
 		Conn:           conn,
+		ConnID:         generateConnID(),
 		UserID:         "widget:" + session.ID,
 		WorkspaceID:    session.WorkspaceID,
 		IsWidget:       true,
 		ConversationID: session.ConversationID,
+		AnonymousID:    session.AnonymousID,
 	}
 
 	h.hub.Register(client)
+	if session.AnonymousID != "" {
+		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
+		if err := h.hub.Presence.SetVisitorOnline(r.Context(), session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
+			slog.Error("presence SetVisitorOnline (legacy)", "error", err)
+		}
+		h.hub.BroadcastAll(Event{
+			Action:      "visitor_online",
+			Entity:      "support_visitor",
+			EntityID:    session.AnonymousID,
+			WorkspaceID: session.WorkspaceID,
+		})
+	}
 	defer func() {
 		h.hub.Unregister(client)
+		if session.AnonymousID != "" {
+			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
+			lastConn, err := h.hub.Presence.SetVisitorOffline(r.Context(), session.WorkspaceID, session.AnonymousID, client.ConnID)
+			if err != nil {
+				slog.Error("presence SetVisitorOffline (legacy)", "error", err)
+			}
+			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) || lastConn {
+				h.hub.BroadcastAll(Event{
+					Action:      "visitor_offline",
+					Entity:      "support_visitor",
+					EntityID:    session.AnonymousID,
+					WorkspaceID: session.WorkspaceID,
+				})
+			}
+		}
 		conn.Close(websocket.StatusNormalClosure, "closed")
 	}()
 
@@ -147,10 +177,27 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 	}
 }
 
+func unmarshalWidgetData[T any](data map[string]any) (T, error) {
+	var result T
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return result, err
+	}
+	err = json.Unmarshal(dataBytes, &result)
+	return result, err
+}
+
 func (h *WidgetHandler) handleSessionCreate(ctx context.Context, widgetKey string, msg model.WidgetWSMessage, conn *websocket.Conn) (*model.SupportWidgetSession, error) {
-	anonymousID, _ := msg.Data["anonymous_id"].(string)
-	pageURL, _ := msg.Data["page_url"].(string)
-	userAgent, _ := msg.Data["user_agent"].(string)
+	typed, err := unmarshalWidgetData[model.WidgetSessionCreateData](msg.Data)
+	if err != nil {
+		slog.Warn("widget ws: invalid session:create data", "error", err)
+		SendToClient(conn, "session:error", map[string]string{"code": "invalid_data", "message": "malformed session:create payload"})
+		conn.Close(websocket.StatusPolicyViolation, "invalid data")
+		return nil, err
+	}
+	anonymousID := typed.AnonymousID
+	pageURL := typed.PageURL
+	userAgent := typed.UserAgent
 
 	var pageURLPtr, uaPtr *string
 	if pageURL != "" {
@@ -178,7 +225,14 @@ func (h *WidgetHandler) handleSessionCreate(ctx context.Context, widgetKey strin
 }
 
 func (h *WidgetHandler) handleSessionRestore(ctx context.Context, widgetKey string, msg model.WidgetWSMessage, conn *websocket.Conn) (*model.SupportWidgetSession, error) {
-	token, _ := msg.Data["session_token"].(string)
+	typed, err := unmarshalWidgetData[model.WidgetSessionRestoreData](msg.Data)
+	if err != nil {
+		slog.Warn("widget ws: invalid session:restore data", "error", err)
+		SendToClient(conn, "session:error", map[string]string{"code": "invalid_data", "message": "malformed session:restore payload"})
+		conn.Close(websocket.StatusPolicyViolation, "invalid data")
+		return nil, err
+	}
+	token := typed.SessionToken
 	if token == "" {
 		SendToClient(conn, "session:error", map[string]string{"code": "invalid_token", "message": "missing session_token"})
 		conn.Close(websocket.StatusPolicyViolation, "missing token")
@@ -255,15 +309,44 @@ func (h *WidgetHandler) sendSessionJoined(ctx context.Context, conn *websocket.C
 func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Conn, session *model.SupportWidgetSession, widgetKey string) {
 	client := &Client{
 		Conn:           conn,
+		ConnID:         generateConnID(),
 		UserID:         "widget:" + session.ID,
 		WorkspaceID:    session.WorkspaceID,
 		IsWidget:       true,
 		ConversationID: session.ConversationID,
+		AnonymousID:    session.AnonymousID,
 	}
 
 	h.hub.Register(client)
+	if session.AnonymousID != "" {
+		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
+		if err := h.hub.Presence.SetVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
+			slog.Error("presence SetVisitorOnline", "error", err)
+		}
+		h.hub.BroadcastAll(Event{
+			Action:      "visitor_online",
+			Entity:      "support_visitor",
+			EntityID:    session.AnonymousID,
+			WorkspaceID: session.WorkspaceID,
+		})
+	}
 	defer func() {
 		h.hub.Unregister(client)
+		if session.AnonymousID != "" {
+			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
+			lastConn, err := h.hub.Presence.SetVisitorOffline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID)
+			if err != nil {
+				slog.Error("presence SetVisitorOffline", "error", err)
+			}
+			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) || lastConn {
+				h.hub.BroadcastAll(Event{
+					Action:      "visitor_offline",
+					Entity:      "support_visitor",
+					EntityID:    session.AnonymousID,
+					WorkspaceID: session.WorkspaceID,
+				})
+			}
+		}
 		conn.Close(websocket.StatusNormalClosure, "closed")
 	}()
 
@@ -280,7 +363,13 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 
 		switch msg.Type {
 		case "message:send":
-			content, _ := msg.Data["content"].(string)
+			typed, err := unmarshalWidgetData[model.WidgetMessageSendData](msg.Data)
+			if err != nil {
+				slog.Warn("widget ws: invalid message:send data", "error", err)
+				SendToClient(conn, "connection:error", map[string]string{"code": "invalid_data", "message": "malformed message:send payload"})
+				continue
+			}
+			content := typed.Content
 			if strings.TrimSpace(content) == "" {
 				continue
 			}
@@ -308,6 +397,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				Content:        result.Content,
 				SenderType:     result.SenderType,
 				SenderName:     result.SenderDisplayName,
+				SenderAvatar:   result.SenderAvatarURL,
 				CreatedAt:      result.CreatedAt.Format(time.RFC3339),
 			})
 
@@ -320,11 +410,12 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 			slog.Debug("widget ws: broadcasting typing_started",
 				"conversation_id", conversationID, "workspace_id", session.WorkspaceID, "actor", client.UserID)
+			typed, _ := unmarshalWidgetData[model.WidgetTypingData](msg.Data)
 			var eventData json.RawMessage
-			if content, _ := msg.Data["content"].(string); content != "" {
-				eventData, _ = json.Marshal(map[string]string{"content": content})
+			if typed.Content != "" {
+				eventData, _ = json.Marshal(map[string]string{"content": typed.Content})
 			}
-			go h.hub.Broadcast(Event{
+			h.hub.BroadcastAll(Event{
 				Action:      "typing_started",
 				Entity:      "support_conversation",
 				EntityID:    conversationID,
@@ -340,7 +431,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 			slog.Debug("widget ws: broadcasting typing_stopped",
 				"conversation_id", conversationID, "workspace_id", session.WorkspaceID)
-			go h.hub.Broadcast(Event{
+			h.hub.BroadcastAll(Event{
 				Action:      "typing_stopped",
 				Entity:      "support_conversation",
 				EntityID:    conversationID,
@@ -349,13 +440,19 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			})
 
 		case "session:upgrade":
-			email, _ := msg.Data["email"].(string)
-			name, _ := msg.Data["name"].(string)
-			if email == "" {
+			typed, err := unmarshalWidgetData[model.WidgetSessionUpgradeData](msg.Data)
+			if err != nil {
+				slog.Warn("widget ws: invalid session:upgrade data", "error", err)
+				SendToClient(conn, "connection:error", map[string]string{"code": "invalid_data", "message": "malformed session:upgrade payload"})
+				continue
+			}
+			if typed.Email == "" {
 				SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": "email is required"})
 				continue
 			}
-			err := h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name)
+			email := typed.Email
+			name := typed.Name
+			err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name)
 			if err != nil {
 				SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": err.Error()})
 				continue
@@ -389,8 +486,34 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			session.ConversationID = nil
 			client.ConversationID = nil
 
+		case "ping":
+			// Refresh visitor online key TTL (keepalive from widget SDK).
+			if session.AnonymousID != "" {
+				if err := h.hub.Presence.RefreshVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
+					slog.Error("presence RefreshVisitorOnline", "error", err)
+				}
+			}
+			SendToClient(conn, "pong", nil)
+
+		case "conversation:read":
+			typed, err := unmarshalWidgetData[model.WidgetConversationSelectData](msg.Data)
+			if err != nil || typed.ConversationID == "" {
+				continue
+			}
+			if session.AnonymousID != "" {
+				if err := h.service.MarkConversationReadByVisitor(ctx, session.WorkspaceID, typed.ConversationID, session.AnonymousID); err != nil {
+					slog.Error("widget ws: mark read failed", "error", err, "conversation_id", typed.ConversationID)
+				}
+			}
+
 		case "conversation:select":
-			convID, _ := msg.Data["conversation_id"].(string)
+			typed, err := unmarshalWidgetData[model.WidgetConversationSelectData](msg.Data)
+			if err != nil {
+				slog.Warn("widget ws: invalid conversation:select data", "error", err)
+				SendToClient(conn, "connection:error", map[string]string{"code": "invalid_data", "message": "malformed conversation:select payload"})
+				continue
+			}
+			convID := typed.ConversationID
 			if convID == "" {
 				continue
 			}
@@ -402,6 +525,13 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			session.ConversationID = &convID
 			client.ConversationID = &convID
 			h.hub.SetWidgetConversation(client.UserID, convID)
+
+			// Mark selected conversation as read for the visitor
+			if session.AnonymousID != "" {
+				if err := h.service.MarkConversationReadByVisitor(ctx, session.WorkspaceID, convID, session.AnonymousID); err != nil {
+					slog.Error("widget ws: mark read on select failed", "error", err, "conversation_id", convID)
+				}
+			}
 
 			// Load and send messages for the selected conversation
 			msgs, err := h.service.ListConversationMessages(ctx, session.WorkspaceID, convID, false)

@@ -1271,7 +1271,7 @@ export interface RunnerActiveRun {
 export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TicketSource = 'widget' | 'internal' | 'email' | 'api';
-export type MessageSenderType = 'customer' | 'user' | 'agent';
+export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
 
 export interface SupportConversation {
   id: string;
@@ -1282,14 +1282,37 @@ export interface SupportConversation {
   priority: ConversationPriority;
   customer_name?: string;
   customer_email?: string;
+  anonymous_id?: string;
   opened_by_user_id?: string;
   assigned_agent_id?: string;
   linked_story_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
   last_message?: string;
+  unread_count?: number;
+  team_last_seen_at?: string;
+  contact_last_seen_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface UnreadStats {
+  total: number;
+  my_inbox: number;
+  unassigned: number;
+}
+
+export interface ConversationListMeta {
+  unread: UnreadStats;
+}
+
+export interface ConversationListResponse {
+  data: SupportConversation[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+  meta: ConversationListMeta;
 }
 
 export interface SupportMessage {
@@ -1300,6 +1323,7 @@ export interface SupportMessage {
   sender_user_id?: string;
   sender_agent_id?: string;
   sender_display_name?: string;
+  sender_avatar_url?: string;
   content: string;
   is_internal: boolean;
   created_at: string;

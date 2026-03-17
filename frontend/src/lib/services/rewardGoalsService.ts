@@ -1,1 +1,0 @@
-export { rewardGoalsService } from './goalsService';

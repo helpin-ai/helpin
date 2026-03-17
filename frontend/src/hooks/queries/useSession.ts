@@ -55,11 +55,13 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
       role,
       /** Team memberships from the /me response */
       teamMemberships: access?.team_memberships ?? [],
+      /** Check if user is a team manager (team owner) for a specific team */
+      isTeamManager: (teamId: string): boolean =>
+        (access?.team_memberships ?? []).some(tm => tm.team_id === teamId && tm.role === 'owner'),
 
       // ── Convenience booleans (backward-compatible with useSessionRole) ──
       isOwner: role === 'owner',
       isAdmin: role === 'owner' || role === 'admin',
-      isManager: role === 'owner' || role === 'admin' || role === 'manager',
       /** Can edit PM content (member+) */
       canEdit: has('pm.edit'),
       /** Can manage settings (admin+) */
@@ -72,10 +74,6 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
       canManageTeams: has('team.manage'),
       /** Can manage team members (admin+) */
       canManageTeamMembers: has('team.members.manage'),
-      /** Can read rewards (member+) */
-      canReadRewards: has('rewards.read'),
-      /** Can manage rewards (manager+) */
-      canManageRewards: has('rewards.manage'),
       /** Can admin PM workflows (admin+) */
       canAdminWorkflows: has('pm.admin.workflows'),
       /** Can admin PM labels (admin+) */
@@ -90,7 +88,7 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
       canReadDocs: has('docs.read'),
       /** Can edit docs (member+) */
       canEditDocs: has('docs.edit'),
-      /** Can publish docs (manager+) */
+      /** Can publish docs (member+) */
       canPublishDocs: has('docs.publish'),
       /** Can admin docs (admin+) */
       canAdminDocs: has('docs.admin'),
@@ -107,7 +105,6 @@ export function useSessionRole(membership: WorkspaceMember | null | undefined) {
   return {
     isOwner: role === 'owner',
     isAdmin: ['owner', 'admin'].includes(role),
-    isManager: ['owner', 'admin', 'manager'].includes(role),
-    canEdit: ['owner', 'admin', 'manager', 'member'].includes(role),
+    canEdit: ['owner', 'admin', 'member'].includes(role),
   }
 }

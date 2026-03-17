@@ -21,16 +21,41 @@ type SupportConversation struct {
 	Source          string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
 	AnonymousID     *string    `json:"anonymous_id" gorm:"index"`
 	CRMContactID    *string    `json:"crm_contact_id" gorm:"type:uuid;index"`
-	ResolvedAt      *time.Time `json:"resolved_at"`
-	ClosedAt        *time.Time `json:"closed_at"`
-	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt       time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ResolvedAt        *time.Time `json:"resolved_at"`
+	ClosedAt          *time.Time `json:"closed_at"`
+	TeamLastSeenAt    *time.Time `json:"team_last_seen_at" gorm:"type:timestamptz"`
+	ContactLastSeenAt *time.Time `json:"contact_last_seen_at" gorm:"type:timestamptz"`
+	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 
-	// Virtual field — populated by SELECT subquery, not stored as a column.
+	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage *string `json:"last_message,omitempty" gorm:"->"`
+	UnreadCount int     `json:"unread_count" gorm:"->"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }
+
+// UnreadStats holds aggregate unread conversation counts for sidebar badges.
+type UnreadStats struct {
+	Total      int `json:"total"`
+	MyInbox    int `json:"my_inbox"`
+	Unassigned int `json:"unassigned"`
+}
+
+// ConversationListMeta holds metadata returned alongside paginated conversation lists.
+type ConversationListMeta struct {
+	Unread UnreadStats `json:"unread"`
+}
+
+// ConversationListResponse is the paginated conversation list with unread metadata.
+type ConversationListResponse struct {
+	Data       []SupportConversation `json:"data"`
+	Total      int                   `json:"total"`
+	Page       int                   `json:"page"`
+	PerPage    int                   `json:"per_page"`
+	TotalPages int                   `json:"total_pages"`
+	Meta       ConversationListMeta  `json:"meta"`
+}
 
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
@@ -42,6 +67,7 @@ type SupportMessage struct {
 	SenderUserID      *string   `json:"sender_user_id" gorm:"type:uuid"`
 	SenderAgentID     *string   `json:"sender_agent_id" gorm:"type:uuid"`
 	SenderDisplayName *string   `json:"sender_display_name"`
+	SenderAvatarURL   *string   `json:"sender_avatar_url"`
 	Content           string    `json:"content" gorm:"not null"`
 	IsInternal        bool      `json:"is_internal" gorm:"not null;default:false"`
 	Metadata          string    `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
@@ -187,6 +213,16 @@ type WidgetSessionUpgradeData struct {
 // WidgetMessageSendData is the payload for message:send.
 type WidgetMessageSendData struct {
 	Content string `json:"content"`
+}
+
+// WidgetTypingData is the payload for typing:start / typing:stop.
+type WidgetTypingData struct {
+	Content string `json:"content,omitempty"`
+}
+
+// WidgetConversationSelectData is the payload for conversation:select.
+type WidgetConversationSelectData struct {
+	ConversationID string `json:"conversation_id"`
 }
 
 // WidgetSessionJoinedPayload is sent to the client after session:create or session:restore.
@@ -370,29 +406,34 @@ type WidgetTokensResponse struct {
 	Tokens []WidgetToken `json:"tokens"`
 }
 
-// WidgetConfigResponse is the public-facing widget config (no secrets).
+// WidgetConfigBranding matches the widget-core WidgetConfig.branding shape.
+type WidgetConfigBranding struct {
+	PrimaryColor   string `json:"primaryColor"`
+	LogoURL        string `json:"logoUrl,omitempty"`
+	WelcomeMessage string `json:"welcomeMessage"`
+	WidgetPosition string `json:"widgetPosition"`
+	ShowBranding   bool   `json:"showBranding"`
+	LauncherIcon   string `json:"launcherIcon,omitempty"`
+	ColorScheme    string `json:"colorScheme,omitempty"`
+	ButtonColor    string `json:"buttonColor,omitempty"`
+	ButtonIconColor string `json:"buttonIconColor,omitempty"`
+}
+
+// WidgetConfigFeatures matches the widget-core WidgetConfig.features shape.
+type WidgetConfigFeatures struct {
+	AIEnabled   bool `json:"aiEnabled"`
+	FileUploads bool `json:"fileUploads"`
+	PreChatForm bool `json:"preChatForm"`
+	CSATRating  bool `json:"csatRating"`
+}
+
+// WidgetConfigResponse is the public-facing widget config matching the
+// TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
-	WidgetKey              string `json:"widget_key"`
-	Active                 bool   `json:"active"`
-	IsOnline               bool   `json:"is_online"`
-	RequireEmailBeforeChat bool   `json:"require_email_before_chat"`
-	RequireNameAfterEmail  bool   `json:"require_name_after_email"`
-	WelcomeMessage         string `json:"welcome_message"`
-	AIEnabled              bool   `json:"ai_enabled"`
-	ShowTalkToHuman        bool   `json:"show_talk_to_human"`
-	BusinessHoursEnabled   bool   `json:"business_hours_enabled"`
-	OutsideHoursMessage    string `json:"outside_hours_message"`
-	WidgetName             string `json:"widget_name"`
-	WidgetAvatarURL        string `json:"widget_avatar_url"`
-	BrandColor             string `json:"brand_color"`
-	ShowBranding           bool   `json:"show_branding"`
-	ColorScheme            string `json:"color_scheme"`
-	ButtonColor            string `json:"button_color"`
-	ButtonIconColor        string `json:"button_icon_color"`
-	LogoURL                string `json:"logo_url"`
-	LauncherPosition       string `json:"launcher_position"`
-	LauncherIcon           string `json:"launcher_icon"`
-	CSATEnabled            bool   `json:"csat_enabled"`
+	WorkspaceID   string               `json:"workspaceId"`
+	WorkspaceName string               `json:"workspaceName,omitempty"`
+	Branding      WidgetConfigBranding  `json:"branding"`
+	Features      WidgetConfigFeatures  `json:"features"`
 }
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.

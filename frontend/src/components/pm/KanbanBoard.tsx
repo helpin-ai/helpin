@@ -23,7 +23,7 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useAuthStore } from '@/stores/authStore';
 import { useSession, useAutomationRulesByWorkflow } from '@/hooks/queries';
@@ -433,7 +433,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const currentUser = useAuthStore((s) => s.user);
   const { data: sessionMembership } = useSession(workspaceId);
   const currentMemberId = sessionMembership?.id;
-  const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
+  const { teams, findTeamName } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),

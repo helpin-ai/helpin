@@ -1,4 +1,5 @@
-import { Bot, StickyNote, User } from 'lucide-react';
+import { memo } from 'react';
+import { Bot, StickyNote } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { SupportMessage, TicketSource } from '@/lib/pmTypes';
@@ -24,7 +25,7 @@ interface MessageBubbleProps {
   source?: TicketSource;
 }
 
-export function MessageBubble({ message, isConsecutive, isLastInGroup = true, source }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const isCustomer = message.sender_type === 'customer';
   const isAgent = message.sender_type === 'agent';
@@ -52,11 +53,6 @@ export function MessageBubble({ message, isConsecutive, isLastInGroup = true, so
     return (
       <div className={`flex justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
         <div className="max-w-[75%]">
-          {!isConsecutive && (
-            <div className="mb-1 pr-1 text-right">
-              <span className="text-[11px] font-medium text-muted-foreground">{senderName}</span>
-            </div>
-          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 dark:bg-amber-950/20">
@@ -78,14 +74,42 @@ export function MessageBubble({ message, isConsecutive, isLastInGroup = true, so
   }
 
   // ── Chat bubble ──
+  const avatarUrl = message.sender_avatar_url;
+
   const avatarEl = isCustomer ? (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
-      {getInitial(senderName)}
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+          {getInitial(senderName)}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="left"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+    </Tooltip>
+  ) : avatarUrl ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <img src={avatarUrl} alt={senderName} className="h-7 w-7 shrink-0 rounded-full object-cover" />
+      </TooltipTrigger>
+      <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+    </Tooltip>
+  ) : isAgent ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Bot className="h-3.5 w-3.5" />
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+    </Tooltip>
   ) : (
-    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-      {isAgent ? <Bot className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white">
+          {getInitial(senderName)}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+    </Tooltip>
   );
 
   return (
@@ -98,13 +122,6 @@ export function MessageBubble({ message, isConsecutive, isLastInGroup = true, so
       )}
 
       <div className="max-w-[70%]">
-        {/* Sender name — only on first message in a group */}
-        {!isConsecutive && (
-          <div className={`mb-1 ${isCustomer ? 'pl-1' : 'pr-1 text-right'}`}>
-            <span className="text-[11px] font-medium text-muted-foreground">{senderName}</span>
-          </div>
-        )}
-
         {/* Bubble with hover tooltip */}
         <Tooltip>
           <TooltipTrigger asChild>
@@ -112,7 +129,7 @@ export function MessageBubble({ message, isConsecutive, isLastInGroup = true, so
               className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
                 isCustomer
                   ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
-                  : `bg-primary text-primary-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
+                  : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
               }`}
             >
               <p className="whitespace-pre-wrap">{message.content}</p>
@@ -132,4 +149,4 @@ export function MessageBubble({ message, isConsecutive, isLastInGroup = true, so
       )}
     </div>
   );
-}
+});

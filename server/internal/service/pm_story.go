@@ -61,7 +61,7 @@ func (s *PMStoryService) SetAgentService(svc *AgentService) {
 	s.agentService = svc
 }
 
-// requireCanEdit checks that the actor has owner, admin, or manager role.
+// requireCanEdit checks that the actor has at least member role (owner, admin, or member).
 func (s *PMStoryService) requireCanEdit(ctx context.Context, workspaceID, actorID string) error {
 	if workspaceID == "" || actorID == "" {
 		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
@@ -70,8 +70,8 @@ func (s *PMStoryService) requireCanEdit(ctx context.Context, workspaceID, actorI
 	if err != nil {
 		return err
 	}
-	if role != model.RoleOwner && role != model.RoleAdmin && role != model.RoleManager {
-		return &model.ErrForbidden{Message: "manager access or above required"}
+	if role == model.RoleViewer {
+		return &model.ErrForbidden{Message: "edit access required"}
 	}
 	return nil
 }
@@ -96,6 +96,7 @@ func (s *PMStoryService) List(ctx context.Context, workspaceID string, filters m
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	return s.storyRepo.List(ctx, workspaceID, filters, pagination)
 }
 
@@ -106,6 +107,9 @@ func (s *PMStoryService) GetByID(ctx context.Context, id string) (*model.StoryDe
 		return nil, err
 	}
 	if story == nil {
+		return nil, fmt.Errorf("story not found")
+	}
+	if err := requireTeamAccess(ctx, story.Story.TeamID); err != nil {
 		return nil, fmt.Errorf("story not found")
 	}
 	return story, nil
@@ -120,6 +124,9 @@ func (s *PMStoryService) GetByDisplayID(ctx context.Context, workspaceID string,
 	if story == nil {
 		return nil, fmt.Errorf("story not found")
 	}
+	if err := requireTeamAccess(ctx, story.Story.TeamID); err != nil {
+		return nil, fmt.Errorf("story not found")
+	}
 	return story, nil
 }
 
@@ -129,6 +136,9 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
 	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
+		return nil, err
+	}
+	if err := requireTeamMembershipForCreate(ctx, req.TeamID); err != nil {
 		return nil, err
 	}
 
@@ -427,6 +437,9 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		return nil, err
 	}
 	if current == nil {
+		return nil, fmt.Errorf("story not found")
+	}
+	if err := requireTeamAccess(ctx, current.TeamID); err != nil {
 		return nil, fmt.Errorf("story not found")
 	}
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
@@ -1066,6 +1079,7 @@ func (s *PMStoryService) ListByWorkflowState(ctx context.Context, workflowID str
 	if workflowID == "" {
 		return nil, fmt.Errorf("workflow_id is required")
 	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	return s.storyRepo.ListByWorkflowState(ctx, workflowID, filters, perStateLimit)
 }
 
@@ -1074,6 +1088,7 @@ func (s *PMStoryService) ListColumnStories(ctx context.Context, stateID string, 
 	if stateID == "" {
 		return nil, nil, 0, fmt.Errorf("state_id is required")
 	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	if limit <= 0 {
 		limit = 50
 	}
@@ -1085,6 +1100,7 @@ func (s *PMStoryService) ListByMember(ctx context.Context, workspaceID, workflow
 	if workspaceID == "" || workflowID == "" {
 		return nil, fmt.Errorf("workspace_id and workflow_id are required")
 	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	return s.storyRepo.ListByMember(ctx, workspaceID, workflowID, filters, perMemberLimit, includeEmpty, memberIDs)
 }
 
@@ -1093,6 +1109,7 @@ func (s *PMStoryService) ListMemberColumnStories(ctx context.Context, workspaceI
 	if workspaceID == "" || workflowID == "" {
 		return nil, 0, fmt.Errorf("workspace_id and workflow_id are required")
 	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	if limit <= 0 {
 		limit = 50
 	}

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSendMessage } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { cn } from '@/lib/utils';
 
 interface ReplyComposerProps {
@@ -36,11 +37,12 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
   const isNote = replyMode === 'note';
 
   const lastTypingSentRef = useRef(0);
-  const wsSend = useSupportInboxStore((s) => s.wsSend);
+  const wsSend = useSupportPresenceStore((s) => s.wsSend);
+  const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
 
   // Send typing indicator via WebSocket — supports content for live preview
   const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
-    if (isNote || !wsSend) return;
+    if (isNote || !wsSend || !wsConnected) return;
     if (!typing && typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
@@ -59,7 +61,7 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
       conversation_id: conversationId,
       content: typingContent ?? '',
     });
-  }, [conversationId, isNote, wsSend]);
+  }, [conversationId, isNote, wsSend, wsConnected]);
 
   const handleTyping = useCallback((typingContent: string) => {
     sendTyping(true, typingContent);

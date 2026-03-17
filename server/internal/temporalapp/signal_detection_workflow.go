@@ -16,6 +16,7 @@ import (
 type SignalDetectionResult struct {
 	SignalsDetected int
 	SignalIDs       []string
+	WorkspaceID     string // propagated from payloads for downstream event publishing
 }
 
 // SignalDetectionWorkflow analyzes source data for buyer signals.
@@ -102,6 +103,7 @@ func (a *SignalDetectionActivities) ExtractSignalsActivity(ctx context.Context, 
 	return &SignalDetectionResult{
 		SignalsDetected: len(signals),
 		SignalIDs:       ids,
+		WorkspaceID:     workspaceID,
 	}, nil
 }
 
@@ -109,12 +111,13 @@ func (a *SignalDetectionActivities) ExtractSignalsActivity(ctx context.Context, 
 func (a *SignalDetectionActivities) NotifySignalsActivity(_ context.Context, result SignalDetectionResult) error {
 	for _, id := range result.SignalIDs {
 		a.wsPublisher.Publish(ws.Event{
-			Action:   "created",
-			Entity:   "crm_buyer_signal",
-			EntityID: id,
+			Action:      "created",
+			Entity:      "crm_buyer_signal",
+			EntityID:    id,
+			WorkspaceID: result.WorkspaceID,
 		})
 	}
-	slog.Info("signal notifications sent", "count", result.SignalsDetected)
+	slog.Info("signal notifications sent", "count", result.SignalsDetected, "workspace_id", result.WorkspaceID)
 	return nil
 }
 

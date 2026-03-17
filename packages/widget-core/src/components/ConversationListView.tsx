@@ -71,8 +71,8 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
         <div className="helpin-conversations-header-spacer" />
         <span className="helpin-conversations-title">Messages</span>
         {onClose && (
-          <button className="helpin-conversations-close" onClick={onClose} aria-label="Close">
-            <XIcon size={18} />
+          <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
+            <XIcon size={16} />
           </button>
         )}
       </div>
@@ -87,7 +87,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
               <MessageSquareIcon size={14} />
             </div>
             <div className="helpin-conversation-item-content">
-              <span className="helpin-conversation-item-preview">
+              <span className={`helpin-conversation-item-preview${conv.unreadCount ? ' helpin-conversation-item-preview--unread' : ''}`}>
                 {conv.lastMessage
                   ? (conv.lastMessage.length > 50
                       ? conv.lastMessage.slice(0, 50) + '...'
@@ -99,7 +99,13 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
                 {conv.lastMessageAt && ` \u00B7 ${timeAgo(conv.lastMessageAt)}`}
               </span>
             </div>
-            <ChevronRightIcon size={16} class="helpin-conversation-item-arrow" />
+            {conv.unreadCount ? (
+              <span className="helpin-conversation-item-badge">
+                {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
+              </span>
+            ) : (
+              <ChevronRightIcon size={16} class="helpin-conversation-item-arrow" />
+            )}
           </button>
         ))}
       </div>

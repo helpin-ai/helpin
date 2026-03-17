@@ -25,7 +25,7 @@ import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useEpicStates } from '@/hooks/queries/useWorkflows';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
@@ -93,7 +93,7 @@ function GlobalCreateStory({ workspaceId, onClose }: { workspaceId: string; onCl
 
 function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const { data: epicStates = [] } = useEpicStates(workspaceId);
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = buildAssignableMemberOptions(assignableMembers);
   const storeTeamId = useGlobalCreateStore((s) => s.initialTeamId);
@@ -291,7 +291,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 // ── Sprint dialog ─────────────────────────────────────────────────
 
 function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const storeTeamId = useGlobalCreateStore((s) => s.initialTeamId);
 
@@ -662,7 +662,7 @@ function MultiSelectPopover({
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit } = usePermissions(access);
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = buildAssignableMemberOptions(assignableMembers);
 

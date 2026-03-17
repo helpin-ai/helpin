@@ -27,7 +27,7 @@ import { StatCell, emptyForm, type LabelFormState } from '@/components/pm/Labels
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { LabelWithStats } from '@/lib/pmTypes';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 
 // ── Label dialog ────────────────────────────────────────────────────
 
@@ -136,7 +136,7 @@ const columnHelper = createColumnHelper<LabelWithStats>();
 export function LabelsPage() {
   useTitle('Labels');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
-  const { teams } = useWorkspaceTeams(workspace?.id);
+  const { teams } = useAccessibleTeams(workspace?.id ?? '');
 
   const [labels, setLabels] = useState<LabelWithStats[]>([]);
   const [loading, setLoading] = useState(false);

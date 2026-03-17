@@ -27,10 +27,12 @@ type Event struct {
 // Client represents a single WebSocket connection.
 type Client struct {
 	Conn           *websocket.Conn
+	ConnID         string  // unique per connection, generated at accept time
 	UserID         string
 	WorkspaceID    string
 	IsWidget       bool    // true for widget clients, false for internal (agent) clients
 	ConversationID *string // set for widget clients, scopes which events they receive
+	AnonymousID    string  // set for widget clients, used for visitor online tracking
 }
 
 // Hub manages all active WebSocket clients grouped by workspace.
@@ -39,19 +41,97 @@ type Hub struct {
 	clients          map[string]map[*Client]struct{} // workspaceID -> set of clients
 	sessionSubsMu    sync.RWMutex
 	sessionSubs      map[string]map[*Client]struct{} // sessionID -> set of clients subscribed to stream
-	Presence         *PresenceState
+	Presence         PresenceProvider
+	onlineVisitors   map[string]map[string]int // workspaceID → anonymousID → connection count
+	relay            *RedisRelay               // nil in local-only mode (no Redis)
 }
 
-// NewHub creates an empty hub.
+// NewHub creates an empty hub with an in-memory PresenceProvider as default.
 func NewHub() *Hub {
 	return &Hub{
-		clients:     make(map[string]map[*Client]struct{}),
-		sessionSubs: make(map[string]map[*Client]struct{}),
-		Presence:    NewPresenceState(),
+		clients:        make(map[string]map[*Client]struct{}),
+		sessionSubs:    make(map[string]map[*Client]struct{}),
+		Presence:       NewPresenceState(),
+		onlineVisitors: make(map[string]map[string]int),
 	}
 }
 
-// Register adds a client to the hub.
+// SetPresenceProvider replaces the default in-memory presence with an
+// alternative implementation (e.g. RedisPresence for multi-pod).
+// Called during DI wiring in main.go.
+func (h *Hub) SetPresenceProvider(p PresenceProvider) {
+	h.Presence = p
+}
+
+// SetRelay configures the Redis relay for cross-pod event broadcasting.
+// When set, BroadcastAll will publish events to both the local Hub and Redis.
+// Called during DI wiring in main.go. relay may be nil for local-only mode.
+func (h *Hub) SetRelay(relay *RedisRelay) {
+	h.relay = relay
+}
+
+// BroadcastAll sends an event to local clients via Broadcast and, if a Redis
+// relay is configured, publishes to Redis for delivery to other pods.
+// Use this instead of Broadcast when the event must reach all pods.
+func (h *Hub) BroadcastAll(event Event) {
+	go h.Broadcast(event)
+	if h.relay != nil {
+		go h.relay.Publish(context.Background(), event)
+	}
+}
+
+// SetVisitorOnline increments the connection count for a visitor.
+func (h *Hub) SetVisitorOnline(workspaceID, anonymousID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.onlineVisitors[workspaceID] == nil {
+		h.onlineVisitors[workspaceID] = make(map[string]int)
+	}
+	h.onlineVisitors[workspaceID][anonymousID]++
+}
+
+// SetVisitorOffline decrements the connection count for a visitor. Removes entry at 0.
+func (h *Hub) SetVisitorOffline(workspaceID, anonymousID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if ws, ok := h.onlineVisitors[workspaceID]; ok {
+		ws[anonymousID]--
+		if ws[anonymousID] <= 0 {
+			delete(ws, anonymousID)
+		}
+		if len(ws) == 0 {
+			delete(h.onlineVisitors, workspaceID)
+		}
+	}
+}
+
+// IsVisitorOnline returns true if the visitor has at least one active connection.
+func (h *Hub) IsVisitorOnline(workspaceID, anonymousID string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if ws, ok := h.onlineVisitors[workspaceID]; ok {
+		return ws[anonymousID] > 0
+	}
+	return false
+}
+
+// GetOnlineVisitors returns the list of online anonymous_ids for a workspace.
+func (h *Hub) GetOnlineVisitors(workspaceID string) []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ws, ok := h.onlineVisitors[workspaceID]
+	if !ok {
+		return nil
+	}
+	visitors := make([]string, 0, len(ws))
+	for id := range ws {
+		visitors = append(visitors, id)
+	}
+	return visitors
+}
+
+// Register adds a client to the hub. If a Redis relay is configured,
+// ensures the pod is subscribed to the client's workspace channel.
 func (h *Hub) Register(c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -60,9 +140,15 @@ func (h *Hub) Register(c *Client) {
 	}
 	h.clients[c.WorkspaceID][c] = struct{}{}
 	log.Printf("[ws] client registered: user=%s workspace=%s widget=%v", c.UserID, c.WorkspaceID, c.IsWidget)
+
+	if h.relay != nil {
+		h.relay.EnsureWorkspaceSubscription(c.WorkspaceID)
+	}
 }
 
 // Unregister removes a client from the hub and cleans up presence.
+// If a Redis relay is configured, releases the workspace subscription
+// and broadcasts disconnect events to all pods via BroadcastAll.
 func (h *Hub) Unregister(c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -74,11 +160,21 @@ func (h *Hub) Unregister(c *Client) {
 	}
 	log.Printf("[ws] client unregistered: user=%s workspace=%s", c.UserID, c.WorkspaceID)
 
-	// Clean up presence and broadcast stop events for internal (agent) clients
+	if h.relay != nil {
+		h.relay.ReleaseWorkspaceSubscription(c.WorkspaceID)
+	}
+
+	// Clean up presence and broadcast stop events for internal (agent) clients.
+	// Use BroadcastAll so disconnect events reach other pods too.
 	if !c.IsWidget {
-		viewingCleared, typingCleared := h.Presence.ClearAllForUser(c.WorkspaceID, c.UserID)
+		ctx := context.Background()
+		viewingCleared, typingCleared, err := h.Presence.ClearAllForConn(ctx, c.WorkspaceID, c.UserID, c.ConnID)
+		if err != nil {
+			slog.Error("presence cleanup on disconnect", "error", err,
+				"user_id", c.UserID, "workspace_id", c.WorkspaceID, "conn_id", c.ConnID)
+		}
 		for _, convID := range viewingCleared {
-			go h.Broadcast(Event{
+			h.BroadcastAll(Event{
 				Action:      "viewing_stopped",
 				Entity:      "support_conversation",
 				EntityID:    convID,
@@ -87,7 +183,7 @@ func (h *Hub) Unregister(c *Client) {
 			})
 		}
 		for _, convID := range typingCleared {
-			go h.Broadcast(Event{
+			h.BroadcastAll(Event{
 				Action:      "typing_stopped",
 				Entity:      "support_conversation",
 				EntityID:    convID,
@@ -122,9 +218,13 @@ func (h *Hub) Broadcast(event Event) {
 		wm := widgetMessage{Type: "message:received", Data: event.Data}
 		widgetData, _ = json.Marshal(wm)
 	case event.Entity == "support_conversation" && event.Action == "typing_started":
-		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start"})
+		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start", Data: event.Data})
 	case event.Entity == "support_conversation" && event.Action == "typing_stopped":
 		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:stop"})
+	case event.Entity == "support_widget" && event.Action == "config_updated" && len(event.Data) > 0:
+		widgetData, _ = json.Marshal(widgetMessage{Type: "config:updated", Data: event.Data})
+	case event.Entity == "support_visitor_conversations" && event.Action == "updated" && len(event.Data) > 0:
+		widgetData, _ = json.Marshal(widgetMessage{Type: "conversations:listed", Data: event.Data})
 	}
 
 	// Copy targets under read lock.
@@ -175,6 +275,21 @@ func (h *Hub) Broadcast(event Event) {
 // Widget clients only receive their own conversation's events, and only
 // agent-origin typing indicators.
 func (h *Hub) shouldReceive(client *Client, event Event) bool {
+	// Visitor online/offline events go to internal (agent) clients only
+	if event.Entity == "support_visitor" {
+		return !client.IsWidget
+	}
+
+	// Visitor-scoped conversation list refresh: deliver to all widget clients matching the visitor's AnonymousID
+	if event.Entity == "support_visitor_conversations" {
+		return client.IsWidget && client.AnonymousID == event.EntityID
+	}
+
+	// Widget config updates go to all widget clients in the workspace
+	if event.Entity == "support_widget" && event.Action == "config_updated" {
+		return client.IsWidget
+	}
+
 	if event.Entity == "support_conversation" && (isTypingEvent(event.Action) || isViewingEvent(event.Action)) {
 		if client.IsWidget {
 			// Widget clients only get agent-origin typing for their conversation

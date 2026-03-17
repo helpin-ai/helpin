@@ -16,7 +16,6 @@ export const queryKeys = {
     settings: (wsId: string) => ['workspaces', wsId, 'settings'] as const,
     aiAutomations: (wsId: string) => ['workspaces', wsId, 'ai-automations'] as const,
     teams: (wsId: string) => ['workspaces', wsId, 'teams'] as const,
-    quarters: (wsId: string) => ['workspaces', wsId, 'quarters'] as const,
     session: (wsId: string) => ['workspaces', wsId, 'session'] as const,
     access: (wsId: string) => ['workspaces', wsId, 'access'] as const,
   },
@@ -78,14 +77,6 @@ export const queryKeys = {
     search: (wsId: string, query: string) => ['pm', wsId, 'search', query] as const,
   },
 
-  rewards: {
-    quarters: (wsId: string) => ['rewards', wsId, 'quarters'] as const,
-    sprints: (wsId: string) => ['rewards', wsId, 'sprints'] as const,
-    goals: (wsId: string) => ['rewards', wsId, 'goals'] as const,
-    bonus: (wsId: string) => ['rewards', wsId, 'bonus'] as const,
-    drafts: (wsId: string) => ['rewards', wsId, 'drafts'] as const,
-  },
-
   agents: {
     all: (wsId: string) => ['agents', wsId] as const,
     detail: (wsId: string, id: string) => ['agents', wsId, id] as const,
@@ -104,6 +95,7 @@ export const queryKeys = {
     conversationAssociations: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'associations'] as const,
     messages: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'messages'] as const,
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
+    unreadStats: (wsId: string) => ['support', wsId, 'unread-stats'] as const,
   },
 
   docs: {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -89,12 +90,6 @@ func main() {
 	slog.Info("startup: enabling pgcrypto extension")
 	db.Exec(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
 
-	slog.Info("startup: running MigrateLegacyRewardSchema")
-	if err := repository.MigrateLegacyRewardSchema(db); err != nil {
-		slog.Error("failed to migrate legacy reward schema", "error", err)
-		os.Exit(1)
-	}
-
 	slog.Info("startup: running MigrateAgentRunTargets")
 	if err := repository.MigrateAgentRunTargets(db); err != nil {
 		slog.Error("failed to migrate agent run targets", "error", err)
@@ -139,19 +134,6 @@ func main() {
 		&model.WorkspaceTeam{},
 		&model.TeamWorkspaceMembership{},
 		&model.WorkspaceManager{},
-		&model.RewardProfile{},
-		&model.JobRoleCriteria{},
-		&model.BonusTier{},
-		&model.RewardQuarter{},
-		&model.RewardSprint{},
-		&model.RewardCompanyGoal{},
-		&model.RewardGoalTeamContribution{},
-		&model.RewardSprintGoal{},
-		&model.RewardGoalDraft{},
-		&model.RewardIndividualCheck{},
-		&model.RewardBonusCalculation{},
-		&model.RewardFinanceSettings{},
-		&model.RewardAuditLog{},
 		&model.PMWorkflow{},
 		&model.PMWorkflowState{},
 		&model.PMEpicWorkflowState{},
@@ -338,26 +320,57 @@ func main() {
 
 	// Initialize WebSocket hub and publisher.
 	wsHub := ws.NewHub()
-	wsPublisher := ws.NewPublisher(wsHub)
-	wsHandler := ws.NewHandler(wsHub, jwtManager)
 
-	// Start PG LISTEN → WS bridge for cross-process events (e.g. Temporal worker).
-	pgListenerCtx, pgListenerCancel := context.WithCancel(context.Background())
-	pgListener := ws.NewPGListener(cfg.DatabaseURL, wsHub)
-	go pgListener.Start(pgListenerCtx)
+	// Initialize Redis relay for cross-pod event broadcasting (optional).
+	var redisRelay *ws.RedisRelay
+	if cfg.RedisURL != "" {
+		redisOpts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			slog.Error("invalid REDIS_URL", "error", err)
+			os.Exit(1)
+		}
+		redisClient := redis.NewClient(redisOpts)
+		if err := redisClient.Ping(context.Background()).Err(); err != nil {
+			slog.Error("Redis unreachable at startup — cannot run multi-pod", "error", err)
+			os.Exit(1)
+		}
+		podID := os.Getenv("HOSTNAME") // K8s sets this to pod name
+		if podID == "" {
+			podID = fmt.Sprintf("pod-%d", time.Now().UnixNano()%10000)
+		}
+		redisRelay = ws.NewRedisRelay(redisClient, wsHub, podID)
+		redisRelayCtx, redisRelayCancel := context.WithCancel(context.Background())
+		go redisRelay.Start(redisRelayCtx)
+		_ = redisRelayCancel // stored for shutdown
+		slog.Info("Redis connected for WebSocket scaling", "url", cfg.RedisURL, "pod", podID)
+	} else {
+		slog.Info("REDIS_URL not set — running in local-only mode (single pod)")
+	}
+
+	wsHub.SetRelay(redisRelay) // nil in local-only mode
+
+	// When Redis is available, use RedisPresence for shared state across pods.
+	// Otherwise, the default in-memory PresenceState set in NewHub() is used.
+	if cfg.RedisURL != "" {
+		redisOpts2, _ := redis.ParseURL(cfg.RedisURL)
+		presenceRedis := redis.NewClient(redisOpts2)
+		podID := os.Getenv("HOSTNAME")
+		if podID == "" {
+			podID = fmt.Sprintf("pod-%d", time.Now().UnixNano()%10000)
+		}
+		wsHub.SetPresenceProvider(ws.NewRedisPresence(presenceRedis, podID))
+		slog.Info("Redis presence provider enabled")
+	}
+
+	wsPublisher := ws.NewPublisher(wsHub, redisRelay)
+	wsHandler := ws.NewHandler(wsHub, jwtManager)
 
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
-	quarterRepo := repository.NewRewardQuarterRepository(db)
-	sprintRepo := repository.NewRewardSprintRepository(db)
-	goalRepo := repository.NewRewardGoalRepository(db)
-	scoringRepo := repository.NewRewardScoringRepository(db)
-	bonusRepo := repository.NewRewardBonusRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
-	draftRepo := repository.NewRewardDraftRepository(db)
 	pmWorkflowRepo := repository.NewPMWorkflowRepository(db)
 	pmLabelRepo := repository.NewPMLabelRepository(db)
 	pmEpicRepo := repository.NewPMEpicRepository(db)
@@ -381,6 +394,7 @@ func main() {
 	wsHandler.SetPlanningSessionRepository(planningSessionRepo)
 	agentRepo := repository.NewAgentRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
+	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
@@ -460,7 +474,7 @@ func main() {
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
-	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo)
+	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -641,14 +655,8 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, crmDealService, supportInboxService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
-	quarterService := service.NewRewardQuarterService(quarterRepo, sprintRepo)
-	sprintService := service.NewRewardSprintService(sprintRepo, scoringRepo)
-	goalService := service.NewRewardGoalService(goalRepo)
-	bonusService := service.NewRewardBonusService(bonusRepo, scoringRepo)
 	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
-	auditService := service.NewRewardAuditService(bonusRepo)
-	draftService := service.NewRewardDraftService(draftRepo)
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
 	orchestrationService := service.NewOrchestrationService(pmEpicRepo, agentRepo, pmActivityService, wsPublisher)
 
@@ -659,6 +667,20 @@ func main() {
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
 
+	// Inject user lookup for agent identity in typing events.
+	wsHandler.SetUserLookup(func(ctx context.Context, userID string) (string, *string) {
+		user, err := userRepo.GetByID(ctx, userID)
+		if err != nil || user == nil {
+			return "", nil
+		}
+		return user.FullName, user.AvatarURL
+	})
+
+	// Inject mark-read for support:conversation:read WS messages.
+	wsHandler.SetMarkRead(func(ctx context.Context, workspaceID, conversationID, userID string) error {
+		return supportInboxService.MarkConversationRead(ctx, workspaceID, conversationID, userID)
+	})
+
 	// Widget WebSocket handler — authenticates via session_token, not JWT.
 	widgetWsHandler := ws.NewWidgetHandler(wsHub, supportInboxService)
 
@@ -668,14 +690,7 @@ func main() {
 		Auth:               handler.NewAuthHandler(authService),
 		Organization:       handler.NewOrganizationHandler(orgService),
 		Workspace:          handler.NewWorkspaceHandler(workspaceService),
-		RewardQuarter:      handler.NewRewardQuarterHandler(quarterService),
-		RewardSprint:       handler.NewRewardSprintHandler(sprintService),
-		RewardGoal:         handler.NewRewardGoalHandler(goalService),
-		RewardBonus:        handler.NewRewardBonusHandler(bonusService),
-		RewardFinance:      handler.NewRewardFinanceHandler(bonusService),
 		Settings:           handler.NewSettingsHandler(settingsService, automationInventoryService),
-		RewardAudit:        handler.NewRewardAuditHandler(auditService),
-		RewardDraft:        handler.NewRewardDraftHandler(draftService),
 		Invite:             handler.NewInviteHandler(inviteService),
 		PMWorkflow:         handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMImport:           handler.NewPMImportHandler(pmImportService),
@@ -864,7 +879,6 @@ func main() {
 
 	<-done
 	slog.Info("server shutting down")
-	pgListenerCancel()
 	close(automationDone)
 	close(digestDone)
 	close(cleanupDone)

@@ -179,9 +179,6 @@ func TestGetAll_WithSeededSettings(t *testing.T) {
 	if len(cfg.Teams) != 0 {
 		t.Fatalf("expected 0 teams, got %d", len(cfg.Teams))
 	}
-	if len(cfg.BonusTiers) != 0 {
-		t.Fatalf("expected 0 bonus tiers, got %d", len(cfg.BonusTiers))
-	}
 }
 
 func TestGetAll_AutoInitializesWhenNoSettings(t *testing.T) {
@@ -747,7 +744,7 @@ func TestUpdateTeamMember_InvalidRoleFails(t *testing.T) {
 	ctx := context.Background()
 
 	badRole := "superadmin"
-	_, err := svc.UpdateTeamMember(ctx, "t1", "u1", model.UpdateTeamMemberRequest{
+	_, err := svc.UpdateTeamMember(ctx, "t1", "u1", nil, model.UpdateTeamMemberRequest{
 		Role: &badRole,
 	})
 	if err == nil {
@@ -760,7 +757,7 @@ func TestUpdateTeamMember_EmptyUserIDFails(t *testing.T) {
 	ctx := context.Background()
 
 	role := "member"
-	_, err := svc.UpdateTeamMember(ctx, "t1", "", model.UpdateTeamMemberRequest{
+	_, err := svc.UpdateTeamMember(ctx, "t1", "", nil, model.UpdateTeamMemberRequest{
 		Role: &role,
 	})
 	if err == nil {
@@ -772,7 +769,7 @@ func TestRemoveTeamMember_EmptyUserIDFails(t *testing.T) {
 	svc, _ := newSettingsService(t)
 	ctx := context.Background()
 
-	err := svc.RemoveTeamMember(ctx, "t1", "")
+	err := svc.RemoveTeamMember(ctx, "t1", "", nil)
 	if err == nil {
 		t.Fatal("expected error for empty user_id")
 	}

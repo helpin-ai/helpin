@@ -20,7 +20,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
@@ -54,7 +54,7 @@ export function MyWorkPage() {
   const { data: access } = useWorkspaceAccess(workspaceId);
   const memberId = access?.membership?.id;
 
-  const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
+  const { teams, hasTeams, isAdmin, findTeamName } = useAccessibleTeams(workspaceId);
   const showTeam = teams.length > 1;
 
   const [mode, setMode] = useState<Mode>('assigned');
@@ -172,8 +172,8 @@ export function MyWorkPage() {
           <h2 className="text-lg font-semibold">My Work</h2>
           <p className="text-[13px] text-muted-foreground">
             {mode === 'assigned'
-              ? 'Stories assigned to you across all teams.'
-              : 'Stories you requested across all teams.'}
+              ? `Stories assigned to you across ${isAdmin ? 'all' : 'your'} teams.`
+              : `Stories you requested across ${isAdmin ? 'all' : 'your'} teams.`}
           </p>
         </div>
 
@@ -207,7 +207,9 @@ export function MyWorkPage() {
       )}
 
       {/* Content */}
-      {loading ? null : stories.length === 0 ? (
+      {loading ? null : !hasTeams && !isAdmin ? (
+        <NoTeamEmptyState />
+      ) : stories.length === 0 ? (
         <MyWorkEmptyState mode={mode} workspaceSlug={workspace.slug} />
       ) : (
         <div className="space-y-10">
@@ -222,6 +224,22 @@ export function MyWorkPage() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── No team empty state ──────────────────────────────────────────
+
+function NoTeamEmptyState() {
+  return (
+    <div className="flex flex-col items-center py-16 px-4">
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/50 mb-5">
+        <Users className="h-7 w-7 text-muted-foreground" />
+      </div>
+      <h3 className="text-base font-medium mb-1">No team assigned</h3>
+      <p className="text-sm text-muted-foreground text-center max-w-md">
+        You need to be added to a team to see work items. Ask a workspace admin to add you to a team.
+      </p>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import SprintDetail from '@/pages/SprintDetail'
+import { SprintDetailPage as SprintDetail } from '@/pages/pm/SprintDetail'
 
 export const Route = createFileRoute(
   '/_authenticated/w/$slug/sprints/$sprintId',

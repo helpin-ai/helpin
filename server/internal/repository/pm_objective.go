@@ -39,6 +39,16 @@ func (r *PMObjectiveRepository) List(ctx context.Context, workspaceID string, fi
 	if filters.LabelID != nil && *filters.LabelID != "" {
 		query = query.Joins("JOIN pm_objective_labels pol ON pol.objective_id = pm_objectives.id").Where("pol.label_id = ?", *filters.LabelID)
 	}
+	if filters.AccessibleTeamIDs != nil {
+		if len(filters.AccessibleTeamIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where(
+				"id IN (SELECT objective_id FROM pm_objective_teams WHERE team_id IN ?)",
+				filters.AccessibleTeamIDs,
+			)
+		}
+	}
 
 	var objectives []model.PMObjective
 	if err := query.Order("position ASC, created_at DESC").Find(&objectives).Error; err != nil {

@@ -286,4 +286,41 @@ describe('WidgetManager', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('widget unread counts', () => {
+    it('keeps conversation badges and launcher unread totals in sync for support replies', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      (widget as any).conversations = [{
+        id: 'conv-1',
+        subject: 'Question',
+        status: 'open',
+        lastMessage: 'Customer message',
+        lastMessageAt: new Date().toISOString(),
+        unreadCount: 0,
+      }];
+
+      const unreadSpy = vi.fn();
+      widget.onUnreadCountChange(unreadSpy);
+      widget.show();
+
+      (widget as any).activeConversationId = 'conv-2';
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-1',
+          conversation_id: 'conv-1',
+          sender_type: 'user',
+          content: 'Agent follow-up',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.conversations?.[0]?.unreadCount).toBe(1);
+      expect(latestOptions?.unreadCount).toBe(1);
+      expect(unreadSpy).toHaveBeenLastCalledWith(1);
+    });
+  });
 });

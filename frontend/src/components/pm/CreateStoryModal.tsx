@@ -52,7 +52,7 @@ import { pmWorkflowService } from "@/lib/services/pmWorkflowService";
 import type { StoryTemplate } from "@/lib/pmTypes";
 import { LabelPicker } from "@/components/pm/LabelPicker";
 import { EstimatePicker } from "@/components/pm/EstimatePicker";
-import { useWorkspaceTeams } from "@/hooks/useWorkspaceTeams";
+import { useAccessibleTeams } from "@/hooks/useAccessibleTeams";
 import { useAssignableWorkspaceMembers } from "@/hooks/useAssignableWorkspaceMembers";
 import { useTeamFieldVisibilityForTeam } from "@/hooks/queries/useSettings";
 import { useSession } from "@/hooks/queries/useSession";
@@ -212,7 +212,7 @@ export function CreateStoryModal({
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<StoryTemplate[]>([]);
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId);
   const teamsRef = useRef(teams);
   teamsRef.current = teams;
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);

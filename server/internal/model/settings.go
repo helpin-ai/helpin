@@ -151,22 +151,6 @@ type JobRoleCriteria struct {
 
 func (JobRoleCriteria) TableName() string { return "job_role_criteria" }
 
-// BonusTier represents a row in the bonus_tiers table.
-type BonusTier struct {
-	ID               string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_bonus_tier_ws_tier"`
-	Tier             string    `json:"tier" gorm:"not null;uniqueIndex:idx_bonus_tier_ws_tier"`
-	MinScore         int       `json:"min_score" gorm:"not null;default:0"`
-	MaxScore         int       `json:"max_score" gorm:"not null;default:100"`
-	SalaryMultiplier float64   `json:"salary_multiplier" gorm:"not null;default:0"`
-	Description      *string   `json:"description"`
-	Editable         bool      `json:"editable" gorm:"not null;default:true"`
-	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime"`
-}
-
-func (BonusTier) TableName() string { return "bonus_tiers" }
-
 // PMTeamEstimateSettings stores per-team estimate configuration.
 type PMTeamEstimateSettings struct {
 	ID                    string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -266,7 +250,6 @@ type FullWorkspaceConfig struct {
 	WorkspaceMemberships         []TeamWorkspaceMembership     `json:"workspace_memberships"`
 	Managers                     []WorkspaceManager            `json:"managers"`
 	JobRoles                     []JobRoleCriteria             `json:"job_roles"`
-	BonusTiers                   []BonusTier                   `json:"bonus_tiers"`
 	InvitationTeamPreassignments []InvitationTeamPreassignment `json:"invitation_team_preassignments"`
 	TeamEstimateSettings         []PMTeamEstimateSettings      `json:"team_estimate_settings"`
 	TeamFieldVisibility          []PMTeamFieldVisibility       `json:"team_field_visibility"`
@@ -346,21 +329,6 @@ type UpdatePersonRequest struct {
 	ActiveForEvaluation *bool    `json:"active_for_evaluation"`
 	IsAccountOwner      *bool    `json:"is_account_owner"`
 	TeamIDs             []string `json:"team_ids"`
-}
-
-// UpdateBonusTiersRequest is the payload for updating bonus tiers.
-type UpdateBonusTiersRequest struct {
-	WorkspaceID string          `json:"workspace_id"`
-	Tiers       []BonusTierItem `json:"tiers"`
-}
-
-// BonusTierItem is a single tier in the update request.
-type BonusTierItem struct {
-	Tier             string  `json:"tier"`
-	MinScore         int     `json:"min_score"`
-	MaxScore         int     `json:"max_score"`
-	SalaryMultiplier float64 `json:"salary_multiplier"`
-	Description      *string `json:"description"`
 }
 
 // UpdateJobRoleCriteriaRequest is the payload for upserting job role criteria.

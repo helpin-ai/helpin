@@ -10,7 +10,6 @@ import {
   LayoutGrid,
   LayoutList,
   Pencil,
-  Play,
   X,
   Plus,
   Users,
@@ -30,6 +29,7 @@ import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import type {
   Agent,
   AgentClass,
+  AgentTriggerMode,
   AgentApprovalMode,
   AgentModelProvider,
   AgentModelProviderOption,
@@ -229,6 +229,7 @@ interface AgentFormData {
   model: string;
   system_prompt: string;
   planning_notes: string;
+  trigger_mode: AgentTriggerMode;
   monthly_token_budget: string;
   team_id: string;
   schedule: string;
@@ -255,6 +256,7 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
     model: '',
     system_prompt: '',
     planning_notes: '',
+    trigger_mode: 'manual',
     monthly_token_budget: '',
     team_id: '',
     schedule: '',
@@ -516,7 +518,7 @@ function AgentCard({
           )}
           {stats && (
             <span className="flex items-center gap-1">
-              <Play className="h-3 w-3" />
+              <Zap className="h-3 w-3" />
               {stats.total > 0 ? `${stats.total} ${stats.total === 1 ? 'run' : 'runs'}` : 'No runs'}
             </span>
           )}
@@ -756,6 +758,7 @@ export function AgentsPage() {
       schedule: agent.schedule ?? '',
       approval_mode: agent.approval_mode ?? 'class_default',
       max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
+      trigger_mode: agent.trigger_mode ?? 'manual',
       allowed_tools: agent.allowed_tools ?? [],
     });
     setDialogOpen(true);

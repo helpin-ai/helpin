@@ -106,14 +106,15 @@ describe('identity', () => {
 
     it('getCachedConfig returns config within TTL', () => {
       const now = Date.now();
+      const mockConfig = { branding: { primaryColor: '#000' }, features: {} };
       (localStorage.getItem as any).mockImplementation((key: string) => {
         if (key === 'helpin_wc_key1') {
-          return JSON.stringify({ config: { color: 'red' }, cached_at: now - 1000 }); // 1s ago
+          return JSON.stringify({ config: mockConfig, cached_at: now - 1000 }); // 1s ago
         }
         return null;
       });
       const config = getCachedConfig('key1');
-      expect(config).toEqual({ color: 'red' });
+      expect(config).toEqual(mockConfig);
     });
 
     it('getCachedConfig returns null for expired cache', () => {

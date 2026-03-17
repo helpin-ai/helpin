@@ -64,10 +64,8 @@ const (
 
 // Other workspace-scoped permissions.
 const (
-	PermRewardsRead    Permission = "rewards.read"
-	PermRewardsManage  Permission = "rewards.manage"
-	PermSearchRead     Permission = "search.read"
-	PermWSConnect      Permission = "ws.connect"
+	PermSearchRead Permission = "search.read"
+	PermWSConnect  Permission = "ws.connect"
 )
 
 // AllPermissions returns every defined permission for test and introspection use.
@@ -84,7 +82,6 @@ func AllPermissions() []Permission {
 		PermCRMRead, PermCRMEdit, PermCRMAdmin,
 		PermSupportRead, PermSupportEdit, PermSupportAdmin,
 		PermNotificationsRead, PermNotificationsManage,
-		PermRewardsRead, PermRewardsManage,
 		PermSearchRead, PermWSConnect,
 	}
 }

@@ -54,7 +54,6 @@ export function Header() {
       goals: "Company Goals",
       "team-goals": "Team Goals",
       sprints: "Sprints",
-      bonus: "Bonus Dashboard",
       "my-quarter": "My Quarter",
       settings: "Settings",
       tasks: "Tasks",
@@ -95,7 +94,6 @@ export function Header() {
       jobroles: "Job Roles",
       workflows: "Workflows",
       ai: "AI",
-      tiers: "Bonus Tiers",
       import: "Import / Export",
     };
 

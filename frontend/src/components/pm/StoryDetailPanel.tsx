@@ -67,7 +67,7 @@ import { pmLabelService } from '@/lib/services/pmLabelService';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
@@ -345,7 +345,7 @@ function StoryDetailPanelBody({
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),

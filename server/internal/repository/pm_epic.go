@@ -36,6 +36,13 @@ func (r *PMEpicRepository) List(ctx context.Context, workspaceID string, filters
 	if filters.LabelID != nil && *filters.LabelID != "" {
 		query = query.Joins("JOIN pm_epic_labels pel ON pel.epic_id = pm_epics.id").Where("pel.label_id = ?", *filters.LabelID)
 	}
+	if filters.AccessibleTeamIDs != nil {
+		if len(filters.AccessibleTeamIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("team_id IN ?", filters.AccessibleTeamIDs)
+		}
+	}
 
 	var epics []model.PMEpic
 	if err := query.Order("position ASC, created_at DESC").Find(&epics).Error; err != nil {

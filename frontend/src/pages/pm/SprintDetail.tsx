@@ -27,7 +27,7 @@ import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { useWorkflows, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type { SprintWithStats, SprintStatus, Story, EpicWithStats, UpdateSprintRequest } from '@/lib/pmTypes';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
@@ -145,7 +145,7 @@ export function SprintDetailPage() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
 
-  const { teams, findTeamName, getTeamMembers } = useWorkspaceTeams(workspaceId);
+  const { teams, findTeamName, getTeamMembers } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const assignableMemberNames = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),

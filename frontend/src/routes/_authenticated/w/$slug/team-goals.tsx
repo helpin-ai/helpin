@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import TeamGoals from '@/pages/TeamGoals'
+import { ObjectivesPage as TeamGoals } from '@/pages/pm/Objectives'
 
 export const Route = createFileRoute('/_authenticated/w/$slug/team-goals')({
   component: () => (

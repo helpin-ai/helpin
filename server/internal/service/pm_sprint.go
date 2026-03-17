@@ -32,6 +32,7 @@ func (s *PMSprintService) List(ctx context.Context, workspaceID string, filters 
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	sprints, err := s.sprintRepo.List(ctx, workspaceID, filters)
 	if err != nil {
 		return nil, err
@@ -58,6 +59,9 @@ func (s *PMSprintService) GetByID(ctx context.Context, id string) (*model.Sprint
 	if sprint == nil {
 		return nil, fmt.Errorf("sprint not found")
 	}
+	if err := requireTeamAccess(ctx, sprint.Sprint.TeamID); err != nil {
+		return nil, fmt.Errorf("sprint not found")
+	}
 	return sprint, nil
 }
 
@@ -65,6 +69,9 @@ func (s *PMSprintService) GetByID(ctx context.Context, id string) (*model.Sprint
 func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequest, actorID string) (*model.SprintWithStats, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
+	}
+	if err := requireCanManage(ctx, req.TeamID); err != nil {
+		return nil, err
 	}
 	if !req.EndDate.After(req.StartDate) {
 		return nil, fmt.Errorf("end_date must be after start_date")
@@ -137,6 +144,9 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 		return nil, err
 	}
 	if current == nil {
+		return nil, fmt.Errorf("sprint not found")
+	}
+	if err := requireCanManage(ctx, current.Sprint.TeamID); err != nil {
 		return nil, fmt.Errorf("sprint not found")
 	}
 	sprint := current.Sprint
@@ -227,6 +237,9 @@ func (s *PMSprintService) Delete(ctx context.Context, id string, actorID string)
 		return err
 	}
 	if current == nil {
+		return fmt.Errorf("sprint not found")
+	}
+	if err := requireCanManage(ctx, current.Sprint.TeamID); err != nil {
 		return fmt.Errorf("sprint not found")
 	}
 	if err := s.sprintRepo.Delete(ctx, id); err != nil {
