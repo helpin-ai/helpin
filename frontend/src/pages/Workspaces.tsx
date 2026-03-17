@@ -562,20 +562,33 @@ export default function Workspaces() {
                     </div>
                     <div className="space-y-2">
                       <Label>Role</Label>
-                      <div className="flex gap-2">
-                        {(['admin', 'member', 'viewer'] as const).map((role) => (
+                      <div className="space-y-2">
+                        {([
+                          { value: 'admin', label: 'Admin', description: 'Full access across all teams. Can manage settings, workflows, labels, and members.' },
+                          { value: 'member', label: 'Member', description: 'Can create and edit stories in their teams. Can be promoted to team manager.' },
+                          { value: 'viewer', label: 'Viewer', description: 'Read-only access to stories, epics, and sprints in their assigned teams only.' },
+                        ] as const).map((role) => (
                           <button
-                            key={role}
+                            key={role.value}
                             type="button"
-                            onClick={() => setInviteRole(role)}
+                            onClick={() => setInviteRole(role.value)}
                             className={cn(
-                              'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                              inviteRole === role
-                                ? 'border-primary bg-primary/5 text-primary'
-                                : 'border-border text-muted-foreground hover:bg-muted/50'
+                              'flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors',
+                              inviteRole === role.value
+                                ? 'border-primary bg-primary/5'
+                                : 'border-border hover:bg-muted/50'
                             )}
                           >
-                            {role.charAt(0).toUpperCase() + role.slice(1)}
+                            <div className={cn(
+                              'mt-0.5 h-4 w-4 shrink-0 rounded-full border-2',
+                              inviteRole === role.value
+                                ? 'border-primary bg-primary'
+                                : 'border-muted-foreground/40'
+                            )} />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{role.label}</p>
+                              <p className="text-xs text-muted-foreground">{role.description}</p>
+                            </div>
                           </button>
                         ))}
                       </div>
