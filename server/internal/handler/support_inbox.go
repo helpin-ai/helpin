@@ -28,30 +28,17 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
+	userID := middleware.GetUserID(r.Context())
 	status := r.URL.Query().Get("status")
 	priority := r.URL.Query().Get("priority")
 	pagination := queryPagination(r)
 
-	conversations, total, err := h.supportService.ListConversations(r.Context(), workspaceID, status, priority, pagination)
+	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if conversations == nil {
-		conversations = []model.SupportConversation{}
-	}
-
-	totalPages := 0
-	if pagination.PerPage > 0 {
-		totalPages = int((total + int64(pagination.PerPage) - 1) / int64(pagination.PerPage))
-	}
-	writeJSON(w, http.StatusOK, model.PaginatedResponse{
-		Data:       conversations,
-		Total:      int(total),
-		Page:       pagination.Page,
-		PerPage:    pagination.PerPage,
-		TotalPages: totalPages,
-	})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // GetConversation handles GET /api/support/tickets/{id}.
@@ -179,6 +166,36 @@ func (h *SupportInboxHandler) AssignConversationAgent(w http.ResponseWriter, r *
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
+}
+
+// MarkConversationRead handles POST /api/support/inbox/conversations/{id}/read.
+func (h *SupportInboxHandler) MarkConversationRead(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	if err := h.supportService.MarkConversationRead(r.Context(), workspaceID, conversationID, userID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetUnreadStats handles GET /api/support/inbox/unread-stats.
+func (h *SupportInboxHandler) GetUnreadStats(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+
+	stats, err := h.supportService.GetUnreadStats(r.Context(), workspaceID, userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // ListContactConversations handles GET /api/crm/contacts/{id}/support-tickets.

@@ -39,6 +39,9 @@ type agentTypingData struct {
 	Content        string `json:"content,omitempty"`
 }
 
+// MarkReadFunc marks a conversation as read for the given user.
+type MarkReadFunc func(ctx context.Context, workspaceID, conversationID, userID string) error
+
 // UserLookupFunc resolves user display info (name, avatar URL) by user ID.
 type UserLookupFunc func(ctx context.Context, userID string) (name string, avatar *string)
 
@@ -48,6 +51,7 @@ type Handler struct {
 	jwtManager   *auth.JWTManager
 	authzService *authorization.AuthzService
 	userLookup   UserLookupFunc
+	markRead     MarkReadFunc
 }
 
 // NewHandler creates a WebSocket handler.
@@ -63,6 +67,11 @@ func (h *Handler) SetAuthzService(authz *authorization.AuthzService) {
 // SetUserLookup injects the function used to resolve user display info for typing events.
 func (h *Handler) SetUserLookup(fn UserLookupFunc) {
 	h.userLookup = fn
+}
+
+// SetMarkRead injects the function used to mark conversations as read.
+func (h *Handler) SetMarkRead(fn MarkReadFunc) {
+	h.markRead = fn
 }
 
 // ServeHTTP handles the WebSocket upgrade and connection lifecycle.
@@ -255,6 +264,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					WorkspaceID: workspaceID,
 					ActorID:     client.UserID,
 				})
+			}
+
+		case "support:conversation:read":
+			var d agentViewingData // reuse struct: has ConversationID field
+			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {
+				continue
+			}
+			if h.markRead != nil {
+				if err := h.markRead(r.Context(), workspaceID, d.ConversationID, client.UserID); err != nil {
+					slog.Error("mark conversation read via ws", "error", err,
+						"conversation_id", d.ConversationID, "user_id", client.UserID)
+				}
 			}
 
 		case "support:ping":

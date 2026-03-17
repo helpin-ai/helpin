@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, PaginatedResponse, AgentRun, ConversationStatus, SupportInstallationResponse, SupportInboxSettings } from '../pmTypes';
+import type { SupportConversation, SupportMessage, CreateConversationRequest, CreateMessageRequest, LinkStoryRequest, AssignConversationAgentRequest, AgentRun, ConversationStatus, SupportInstallationResponse, SupportInboxSettings, ConversationListResponse, UnreadStats } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
@@ -8,7 +8,7 @@ export const supportService = {
     let path = `/support/inbox/conversations${qs(workspaceId)}`;
     if (filters?.status) path += `&status=${filters.status}`;
     if (filters?.priority) path += `&priority=${filters.priority}`;
-    return api.get<PaginatedResponse<SupportConversation[]>>(path);
+    return api.get<ConversationListResponse>(path);
   },
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
@@ -26,6 +26,12 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
   runAgent: (workspaceId: string, conversationId: string) =>
     api.post<AgentRun>(`/support/inbox/conversations/${conversationId}/run-agent${qs(workspaceId)}`, {}),
+
+  // Unread
+  getUnreadStats: (workspaceId: string) =>
+    api.get<UnreadStats>(`/support/inbox/unread-stats${qs(workspaceId)}`),
+  markConversationRead: (workspaceId: string, conversationId: string) =>
+    api.post(`/support/inbox/conversations/${conversationId}/read${qs(workspaceId)}`, {}),
 
   // Installation settings
   getInstallation: (workspaceId: string) =>

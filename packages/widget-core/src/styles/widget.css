@@ -793,6 +793,10 @@
   text-overflow: ellipsis;
 }
 
+.helpin-conversation-item-preview--unread {
+  font-weight: 600;
+}
+
 .helpin-conversation-item-meta {
   font-size: 13px;
   color: var(--helpin-fg-muted);
@@ -802,6 +806,22 @@
 .helpin-conversation-item-arrow {
   color: var(--helpin-fg-muted);
   flex-shrink: 0;
+}
+
+.helpin-conversation-item-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #ef4444;
+  color: #fff;
+  line-height: 1;
 }
 
 .helpin-conversations-empty {

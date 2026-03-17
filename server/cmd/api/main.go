@@ -660,6 +660,11 @@ func main() {
 		return user.FullName, user.AvatarURL
 	})
 
+	// Inject mark-read for support:conversation:read WS messages.
+	wsHandler.SetMarkRead(func(ctx context.Context, workspaceID, conversationID, userID string) error {
+		return supportInboxService.MarkConversationRead(ctx, workspaceID, conversationID, userID)
+	})
+
 	// Widget WebSocket handler — authenticates via session_token, not JWT.
 	widgetWsHandler := ws.NewWidgetHandler(wsHub, supportInboxService)
 

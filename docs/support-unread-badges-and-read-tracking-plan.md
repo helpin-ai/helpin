@@ -16,8 +16,7 @@ This plan adds persistent unread tracking for both:
 
 The design uses conversation-level read cursors stored directly on `support_conversations`, following the same shared-team-cursor pattern used by Crisp, Intercom, and Chatwoot:
 
-- `agent_last_seen_at` — when any human support agent last read the conversation
-- `assignee_last_seen_at` — when the currently assigned human agent last read it
+- `agent_last_seen_at` — when any human teammate last read the conversation
 - `contact_last_seen_at` — when the widget visitor last read it
 
 Unread counts are computed on read via correlated subqueries, not denormalized into a separate counter column.
@@ -25,6 +24,8 @@ Unread counts are computed on read via correlated subqueries, not denormalized i
 Realtime behavior is provided by WebSocket fanout, but the database remains the durable source of truth. WebSocket is used for immediate sync, not as the storage layer.
 
 This plan is aligned to the product roadmap where AI handles support conversations first and only escalates some conversations into a human support queue. Internal unread badges apply to the human support queue; widget unread still reflects customer-visible replies from AI or humans.
+
+Human ownership is modeled directly on support conversations via `assigned_user_id`. AI execution is handled by Eino and does not use the generic `agents` system as the source of truth for inbox ownership.
 
 ---
 
@@ -45,6 +46,8 @@ This plan is aligned to the product roadmap where AI handles support conversatio
 - Building a generic notification framework for all modules.
 - Replacing all support HTTP reads with WebSocket reads.
 - Solving support presence/typing snapshot issues in the same change set.
+- Reusing the generic `agent.go` model as the ownership model for support inbox routing.
+- Making Eino runtime state the source of truth for inbox unread, assignment, or sidebar counts.
 
 ---
 
@@ -80,7 +83,7 @@ Support already uses WebSocket for:
 - typing indicators (`support:typing:start/stop/update`)
 - viewing presence (`support:viewing:start/stop`)
 
-These are handled in `handler.go` (internal agents) and `widget_handler.go` (widget visitors).
+These are handled in `handler.go` (internal support users) and `widget_handler.go` (widget visitors).
 
 Unread must integrate into the same event pipeline, but should not depend on WebSocket as the only source of truth.
 
@@ -137,15 +140,14 @@ The `WidgetAdapter` interface includes `markAsRead(messageId: string): void` —
 
 Unread state is determined from timestamps stored directly on `support_conversations`:
 
-- `agent_last_seen_at` — shared human-team cursor, updated when any human support agent reads the conversation
-- `assignee_last_seen_at` — updated when the currently assigned human agent reads the conversation
+- `agent_last_seen_at` — shared human-team cursor, updated when any human teammate reads the conversation
 - `contact_last_seen_at` — updated when the widget visitor reads the conversation
 
-This is a **shared human-team cursor** model (same as Crisp, Intercom, Chatwoot). When any human support agent reads a conversation, it is marked as read for the human support team. This reflects the collaborative nature of a support inbox — the question is "has this conversation been attended to by a person," not "have I personally read it."
+This is a **shared human-team cursor** model (same as Crisp, Intercom, Chatwoot). When any human teammate reads a conversation, it is marked as read for the human support team. This reflects the collaborative nature of a support inbox — the question is "has this conversation been attended to by a person," not "have I personally read it."
 
-**v1 tradeoff:** Human Agent A reading a conversation clears unread for Human Agent B. This is intentional — in a shared human support inbox, one person triaging means the team has seen it. Per-agent read cursors can be added in v2 if needed (via a `support_conversation_reads` join table).
+**v1 tradeoff:** Human Teammate A reading a conversation clears unread for Human Teammate B. This is intentional — in a shared human support inbox, one person triaging means the team has seen it. Per-user read cursors can be added in v2 if needed (via a `support_conversation_reads` join table).
 
-AI agents do **not** advance `agent_last_seen_at` or `assignee_last_seen_at`. Those cursors are reserved for human support read state.
+The field name `agent_last_seen_at` is retained for compatibility with the current support schema direction, but it refers to the human support team cursor, not the generic `Agent` system in `agent.go`.
 
 ### 5.2 Realtime Transport
 
@@ -168,11 +170,11 @@ For v1:
 
 - internal inbox unread is driven by `agent_last_seen_at`, but only for conversations that need human attention
 - widget/customer unread is driven by `contact_last_seen_at`
-- `assignee_last_seen_at` is maintained only for human assignees
+- human ownership is driven by `assigned_user_id`
 
-The initial UI still exposes only the shared human-team unread state. `assignee_last_seen_at` is maintained now so assignee-specific unread can be added later without a schema rewrite.
+The initial UI still exposes only the shared human-team unread state. Assignee-specific unread is intentionally deferred; if needed later, add `assigned_user_last_seen_at` or a join table rather than depending on the generic `Agent` model.
 
-### 5.5 AI-First Routing Model
+### 5.5 AI Runtime Boundary
 
 This plan should align with the future routing model:
 
@@ -180,36 +182,68 @@ This plan should align with the future routing model:
 - only conversations escalated for human attention contribute to internal support unread
 - widget unread still counts public replies from AI, users, and humans because those are customer-visible
 
-To make unread semantics explicit, add minimal human-queue state to `support_conversations`:
+Use Eino as the AI execution/runtime layer:
 
+- generate replies
+- ask clarifying questions
+- call tools / knowledge workflows
+- decide when to escalate
+
+Do **not** use Eino runtime state as the durable record for support routing. The support domain remains authoritative for:
+
+- whether AI was involved
+- whether the conversation needs a human
+- the current AI outcome / resolution state
+- the human owner
+- unread / read cursors
+
+### 5.6 Human Ownership Model
+
+To make inbox semantics explicit, add human-ownership and routing state to `support_conversations`:
+
+- `assigned_user_id` — the human owner for `my_inbox`
 - `needs_human` — whether the conversation currently belongs in the human support queue
 - `escalated_at` — when the conversation most recently entered the human support queue
 
 Recommended behavior:
 
-- AI support agents can own first-response handling (`agent_kind = 'llm'`, `agent_class = 'support'`)
 - when AI escalates to human support, set `needs_human = true` and `escalated_at = now()`
-- if a human is not chosen in the same operation, clear `assigned_agent_id` so the conversation lands in the human `unassigned` bucket
-- if a human is chosen immediately, write that human agent's `agents.id` into `assigned_agent_id`
+- if a human is not chosen in the same operation, clear `assigned_user_id` so the conversation lands in the human `unassigned` bucket
+- if a human is chosen immediately, write that user's `users.id` into `assigned_user_id`
 
-### 5.6 Agent Identity Model
+This keeps support ownership aligned with auth and removes any `user -> agent` indirection.
 
-`assigned_agent_id` on `support_conversations` refers to `agents.id`, not `users.id`.
+### 5.7 AI Conversation State Model
 
-For this roadmap, the relevant agent identities are:
+If we want Intercom-style AI folders later, support should store AI outcome state directly on the conversation instead of inferring it from logs:
 
-- AI support agents: `agent_kind = 'llm'`, `agent_class = 'support'`
-- human support reps: `agent_kind = 'human'`, `agent_class = 'human'`, `backing_user_id = users.id`
+- `ai_involved` — whether AI participated in the conversation
+- `ai_resolution_state` — current AI outcome / routing state
 
-Any logic that compares the authenticated user to `assigned_agent_id` must first resolve:
+Recommended `ai_resolution_state` values:
 
-`current userID -> current human agent.ID`
+- `unknown`
+- `waiting_for_customer`
+- `negative_feedback`
+- `confirmed_resolution`
+- `assumed_resolution`
+- `escalated`
+- `procedure_handoff`
+
+Suggested future folder mapping:
+
+- `All AI conversations` = `ai_involved = true`
+- `Resolved` = `ai_resolution_state IN ('confirmed_resolution', 'assumed_resolution')`
+- `Escalated & Handoff` = `ai_resolution_state IN ('escalated', 'procedure_handoff')`
+- `Pending` = `ai_resolution_state IN ('unknown', 'waiting_for_customer', 'negative_feedback')`
+
+These AI states do **not** drive human unread directly. Human unread is driven only by `needs_human = true`.
 
 ---
 
 ## 6. Unread Semantics
 
-### 6.1 Internal Agent Unread
+### 6.1 Internal Team Unread
 
 Definition:
 
@@ -246,6 +280,7 @@ When AI escalates a conversation into the human support queue:
 
 - set `needs_human = true`
 - set `escalated_at`
+- optionally set `ai_resolution_state = 'escalated'` or `ai_resolution_state = 'procedure_handoff'`
 - do not advance `agent_last_seen_at` during AI handling
 
 This means the first human handoff naturally appears as unread to the human support team without requiring a separate unread table.
@@ -263,6 +298,18 @@ If `contact_last_seen_at` is `NULL`, all qualifying messages are unread for the 
 Closed conversations are **excluded** from aggregate unread counters (`meta.unread.total`, `meta.unread.my_inbox`, `meta.unread.unassigned`).
 
 Per-conversation `unread_count` is still computed and returned for closed conversations if they appear in a list response, but they do not contribute to sidebar/rail badges.
+
+### 6.6 Per-Conversation Count vs Aggregate Count
+
+The PRD uses two different unread measurements:
+
+- `conversation.unread_count` = number of unread qualifying messages in that conversation
+- `meta.unread.total`, `meta.unread.my_inbox`, `meta.unread.unassigned` = number of conversations with `unread_count > 0`
+
+Example:
+
+- if one escalated conversation has 3 unread customer replies, that row shows `unread_count = 3`
+- the sidebar `total` still increases by `1`, not `3`
 
 ---
 
@@ -366,15 +413,16 @@ Add an HTTP fallback endpoint:
 
 The frontend should prefer the WebSocket path but fall back to HTTP if the socket is disconnected.
 
-### 7.6 AI Escalation Must Not Leave an AI Assignee in the Human Queue
+### 7.6 AI Escalation Must Not Leave Human Ownership Ambiguous
 
-Because `assigned_agent_id` refers to a generic `agents.id`, it may point to either an AI support agent or a human agent.
+Human inbox ownership should use `assigned_user_id`, not `assigned_agent_id`.
 
 For human unread buckets to remain correct:
 
-- a conversation in the human queue must either be assigned to a human agent or be unassigned
-- when AI escalates a conversation without immediately choosing a human, clear `assigned_agent_id`
-- do not treat an AI support agent assignment as satisfying `my_inbox` or `unassigned` semantics for the human support UI
+- a conversation in the human queue must either be assigned to a human user or be unassigned
+- when AI escalates a conversation without immediately choosing a human, clear `assigned_user_id`
+- only `needs_human = true` conversations participate in `my_inbox` / `unassigned`
+- AI outcome tracking should live in `ai_involved` / `ai_resolution_state`, not in the ownership field
 
 ---
 
@@ -385,11 +433,13 @@ For human unread buckets to remain correct:
 Add fields to the `SupportConversation` GORM struct in `server/internal/model/support_inbox.go`. GORM AutoMigrate runs on startup and will add the columns automatically:
 
 ```go
-NeedsHuman          bool       `json:"needs_human" gorm:"not null;default:false;index"`
-EscalatedAt         *time.Time `json:"escalated_at" gorm:"type:timestamptz"`
-AgentLastSeenAt    *time.Time `json:"agent_last_seen_at" gorm:"type:timestamptz"`
-AssigneeLastSeenAt *time.Time `json:"assignee_last_seen_at" gorm:"type:timestamptz"`
-ContactLastSeenAt  *time.Time `json:"contact_last_seen_at" gorm:"type:timestamptz"`
+AssignedUserID    *string    `json:"assigned_user_id" gorm:"type:uuid;index"`
+NeedsHuman        bool       `json:"needs_human" gorm:"not null;default:false;index"`
+EscalatedAt       *time.Time `json:"escalated_at" gorm:"type:timestamptz"`
+AIInvolved        bool       `json:"ai_involved" gorm:"not null;default:false;index"`
+AIResolutionState string     `json:"ai_resolution_state" gorm:"not null;default:'unknown';index"`
+AgentLastSeenAt   *time.Time `json:"agent_last_seen_at" gorm:"type:timestamptz"`
+ContactLastSeenAt *time.Time `json:"contact_last_seen_at" gorm:"type:timestamptz"`
 ```
 
 No SQL migration file needed for column additions — GORM handles this.
@@ -411,13 +461,12 @@ CREATE INDEX IF NOT EXISTS idx_support_messages_conversation_public_replies
 
 -- Human queue unread / badge aggregation
 CREATE INDEX IF NOT EXISTS idx_support_conversations_workspace_human_queue
-  ON support_conversations(workspace_id, status, assigned_agent_id)
+  ON support_conversations(workspace_id, status, assigned_user_id)
   WHERE needs_human = true;
 
--- Resolve current user -> current human agent
-CREATE INDEX IF NOT EXISTS idx_agents_workspace_human_user
-  ON agents(workspace_id, user_id)
-  WHERE agent_kind = 'human' AND agent_class = 'human' AND user_id IS NOT NULL;
+-- Future AI folders / reporting
+CREATE INDEX IF NOT EXISTS idx_support_conversations_workspace_ai_state
+  ON support_conversations(workspace_id, ai_involved, ai_resolution_state);
 ```
 
 Note: The partial index `idx_support_messages_conversation_public_replies` covers both agent and widget unread queries since both filter on `is_internal = false` and `message_type = 'reply'`.
@@ -430,14 +479,16 @@ Note: The partial index `idx_support_messages_conversation_public_replies` cover
 
 Update `SupportConversation` with:
 
+- `AssignedUserID *string` — human owner for `my_inbox`
 - `NeedsHuman bool` — whether the conversation currently belongs in the human support queue
 - `EscalatedAt *time.Time` — when the conversation most recently entered the human support queue
+- `AIInvolved bool` — whether AI participated in the conversation
+- `AIResolutionState string` — current AI outcome / routing state
 - `AgentLastSeenAt *time.Time` — shared team read cursor
-- `AssigneeLastSeenAt *time.Time` — human-assignee-specific read cursor
 - `ContactLastSeenAt *time.Time` — widget visitor read cursor
 - `UnreadCount int 'json:"unread_count" gorm:"-"'` — virtual field, computed via subquery
 
-Keep `AssignedAgentID` as `agents.id`. In the AI-first model it may point to either an AI support agent or a human agent, but human unread logic only treats it as a human assignment when the conversation is in the human queue.
+Support unread logic should move to `AssignedUserID`. If the legacy `AssignedAgentID` field still exists temporarily for backward compatibility, it should not be used by unread stats, `my_inbox`, or human assignment going forward.
 
 ### 9.2 Widget Payload
 
@@ -461,23 +512,23 @@ Files:
 
 Add:
 
-- `MarkAgentRead(ctx, conversationID string, readerHumanAgentID *string) error`
+- `MarkInternalRead(ctx, conversationID, userID string) error`
 - `MarkContactRead(ctx, conversationID, anonymousID string) error`
 
 Behavior:
 
-- `MarkAgentRead`: sets `agent_last_seen_at = NOW()`. Also sets `assignee_last_seen_at = NOW()` if the reading human agent is the current `assigned_agent_id`.
+- `MarkInternalRead`: sets `agent_last_seen_at = NOW()`
 - `MarkContactRead`: sets `contact_last_seen_at = NOW()`
 - Write immediately when unread exists beyond the stored cursor
 - Skip or debounce repeated no-op updates when the cursor does not need to advance
 
-This method is only used by the human support read path. AI agents must not update the human read cursors.
+This method is only used by the human support read path. AI runtime code must not update the human read cursor directly.
 
 ### 10.2 Extend Conversation List Query
 
 `List()` already computes `last_message` via a correlated subquery (with "Note: " prefix for internal messages). Add `unread_count` to the existing SELECT:
 
-Agent unread count subquery:
+Internal unread count subquery:
 
 ```sql
 CASE
@@ -496,22 +547,7 @@ END AS unread_count
 
 This is added alongside the existing `last_message` subquery in the `Select()` call.
 
-### 10.3 Resolve Current User to Current Human Agent
-
-Add to `server/internal/repository/agent.go`:
-
-- `GetHumanByBackingUserID(ctx, workspaceID, userID string) (*model.Agent, error)`
-
-Query requirements:
-
-- `workspace_id = ?`
-- `user_id = ?`
-- `agent_kind = 'human'`
-- `agent_class = 'human'`
-
-This lookup is used by support unread stats and by assignee-specific cursor updates. It is the required bridge between authenticated users and `assigned_agent_id`.
-
-### 10.4 Extend Widget Visitor Query
+### 10.3 Extend Widget Visitor Query
 
 Update `ListByAnonymousID()` to populate widget-side `unread_count` using `contact_last_seen_at`.
 
@@ -528,13 +564,11 @@ Widget unread count subquery:
 ) AS unread_count
 ```
 
-### 10.5 Aggregate Stats
+### 10.4 Aggregate Stats
 
 Add a repository method:
 
 - `GetUnreadStats(ctx, workspaceID string, userID string) (UnreadStats, error)`
-
-The `userID` is used to resolve the current human support agent.
 
 Returns:
 
@@ -548,25 +582,23 @@ type UnreadStats struct {
 
 **Important: "My Inbox" semantic.** For the AI-first roadmap, `my_inbox` should mean:
 
-`needs_human = true AND assigned_agent_id = currentHumanAgentID`
+`needs_human = true AND assigned_user_id = currentUserID`
 
 It should not mean `opened_by_user_id = currentUserID`.
-
-The service should resolve `currentHumanAgentID` by looking up the current workspace's human agent row whose `backing_user_id = current userID`.
 
 Query logic:
 
 - `total`: count of non-closed human-queue conversations in the workspace with unread customer replies after `agent_last_seen_at`
-- `my_inbox`: same, filtered to `assigned_agent_id = currentHumanAgentID`
-- `unassigned`: same, filtered to `assigned_agent_id IS NULL`
+- `my_inbox`: same, filtered to `assigned_user_id = currentUserID`
+- `unassigned`: same, filtered to `assigned_user_id IS NULL`
 
 This can be a single query with conditional aggregation:
 
 ```sql
 SELECT
   COUNT(*) FILTER (WHERE unread > 0) AS total,
-  COUNT(*) FILTER (WHERE unread > 0 AND sc.assigned_agent_id = ?) AS my_inbox,
-  COUNT(*) FILTER (WHERE unread > 0 AND sc.assigned_agent_id IS NULL) AS unassigned
+  COUNT(*) FILTER (WHERE unread > 0 AND sc.assigned_user_id = ?) AS my_inbox,
+  COUNT(*) FILTER (WHERE unread > 0 AND sc.assigned_user_id IS NULL) AS unassigned
 FROM support_conversations sc
 CROSS JOIN LATERAL (
   SELECT COUNT(*) AS unread
@@ -582,15 +614,13 @@ WHERE sc.workspace_id = ?
   AND sc.status != 'closed'
 ```
 
-If the current user does not have a human agent record in the workspace, return `my_inbox = 0`.
-
 ---
 
 ## 11. Service Layer Plan
 
 Files:
 
-- `server/internal/service/support_inbox.go` — agent read methods (conversation-level)
+- `server/internal/service/support_inbox.go` — internal read methods (conversation-level)
 - `server/internal/service/support_inbox_widget.go` — widget/contact read methods
 
 ### 11.1 Add Read APIs
@@ -603,14 +633,23 @@ Add:
 Behavior:
 
 - validate workspace ownership/access
-- resolve `current userID -> current human agent.ID` for assignee-specific cursor updates
 - check if unread messages exist beyond the current cursor (skip write if already up to date)
 - call the repository mark-read methods
 - publish websocket fanout after durable cursor updates
-- internal agent flow emits the existing raw workspace event shape used by `useRealtimeSync`
+- internal human-team flow emits the existing raw workspace event shape used by `useRealtimeSync`
 - widget flow emits widget-native payload refreshes for the visitor conversation list
 
-### 11.2 Agent Reply Fanout for Widget Unread
+### 11.2 AI / Human Reply Fanout for Widget Unread
+
+Eino-generated AI replies should be persisted through the support service as normal support messages:
+
+- `sender_type = 'ai'`
+- `message_type = 'reply'`
+- `is_internal = false` for customer-visible AI responses
+- update `ai_involved = true`
+- update `ai_resolution_state` when AI resolves, waits, or escalates
+
+The unread and widget refresh logic should not care whether the reply came from a human or Eino, only whether it is a qualifying public reply.
 
 The existing `CreateConversationMessage()` in `support_inbox.go` publishes a single `support_conversation_message` event with a hydrated `WidgetMessageReceivedPayload`. The Hub translates this to `message:received` for widget clients, but only for the **active conversation** (due to `shouldReceive()` filtering).
 
@@ -637,21 +676,24 @@ if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply"
 }
 ```
 
-This ensures that when an agent replies, all of the visitor's widget tabs get an updated conversation list with correct `unread_count` values — even for conversations the visitor is not currently viewing.
+This ensures that when a human or AI reply is sent, all of the visitor's widget tabs get an updated conversation list with correct `unread_count` values — even for conversations the visitor is not currently viewing.
 
-### 11.3 Reassignment Rule
+### 11.3 Human Assignment Rule
 
-When assigned agent changes (in existing `AssignConversationAgent()`):
+Support ownership should move to a support-specific human assignment method such as `AssignConversationUser()` instead of the existing generic `AssignConversationAgent()` path.
 
-- clear `assignee_last_seen_at` — the new human assignee must not inherit the previous assignee's read state
-- `agent_last_seen_at` is NOT cleared — the team has still seen the conversation
+When human ownership changes:
 
-When a conversation is escalated from AI to the human queue without an immediate human assignee:
+- update `assigned_user_id`
+- `agent_last_seen_at` is NOT cleared — the human team has still seen the conversation
+
+When a conversation is escalated from AI to the human queue without an immediate human owner:
 
 - set `needs_human = true`
 - set `escalated_at = NOW()`
-- clear `assigned_agent_id`
-- clear `assignee_last_seen_at`
+- clear `assigned_user_id`
+- set `ai_involved = true`
+- set `ai_resolution_state = 'escalated'` or `ai_resolution_state = 'procedure_handoff'`
 
 ### 11.4 Conversation List Serialization
 
@@ -661,7 +703,7 @@ Update `ListConversations` to:
 
 Ensure list responses include:
 
-- conversations with `unread_count`, `last_message`, and `needs_human` / `escalated_at` if the frontend needs them for filter styling
+- conversations with `unread_count`, `last_message`, `assigned_user_id`, `needs_human`, `escalated_at`, `ai_involved`, and `ai_resolution_state` if the frontend needs them for filter styling or future AI folders
 - existing `PaginatedResponse` fields (`total`, `page`, `per_page`, `total_pages`)
 - `meta.unread` aggregate totals
 
@@ -711,6 +753,19 @@ r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/unread-stats", h.
 r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{conversationId}/read", h.SupportInbox.MarkConversationRead)
 ```
 
+### 12.4 Human Ownership Endpoint
+
+If the support ownership refactor ships in the same change set, add a support-specific human assignment endpoint such as:
+
+- `POST /support/inbox/conversations/{conversationId}/assign-user`
+
+This endpoint should:
+
+- accept `user_id`
+- validate the target user can own support conversations in the workspace
+- write `assigned_user_id`
+- avoid the generic `AssignConversationAgent` flow for support going forward
+
 ---
 
 ## 13. WebSocket Handler Plan
@@ -721,7 +776,7 @@ Files:
 - `server/internal/websocket/widget_handler.go`
 - `server/internal/websocket/hub.go`
 
-### 13.1 Agent Read Message
+### 13.1 Internal Read Message
 
 Add to `handler.go` message switch:
 
@@ -758,7 +813,7 @@ This enables the server to push `conversations:listed` payloads to all of a visi
 
 ### 13.4 Permissions and Ownership
 
-For internal agents: use `PermSupportRead` (not edit). Reading a conversation should be enough to mark it read.
+For internal human users: use `PermSupportRead` (not edit). Reading a conversation should be enough to mark it read.
 
 For widget traffic: validate through the current session token and `anonymous_id` ownership checks (same pattern used by `conversation:select`) rather than workspace auth middleware.
 
@@ -832,7 +887,7 @@ The `conversations:listed` refresh sends the full visitor conversation list. For
 
 ---
 
-## 15. Agent Frontend Plan
+## 15. Internal Frontend Plan
 
 Files:
 
@@ -851,8 +906,11 @@ Files:
 Extend `SupportConversation` in `pmTypes.ts` with:
 
 - `unread_count?: number`
+- `assigned_user_id?: string`
 - `needs_human?: boolean`
 - `escalated_at?: string`
+- `ai_involved?: boolean`
+- `ai_resolution_state?: string`
 
 Add `'ai'` to `MessageSenderType`:
 
@@ -860,7 +918,7 @@ Add `'ai'` to `MessageSenderType`:
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
 ```
 
-Optionally add `agent_last_seen_at?: string` and `assignee_last_seen_at?: string` for display purposes (e.g., "last seen by agent 2h ago"), but `unread_count` is the primary field for badge rendering.
+Optionally add `agent_last_seen_at?: string` for display purposes (e.g., "last seen by a teammate 2h ago"), but `unread_count` is the primary field for badge rendering.
 
 Add response types:
 
@@ -894,21 +952,15 @@ markConversationRead: (wsId: string, convId: string) => api.post(`/support/inbox
 
 Update `listConversations` return type to `ConversationListResponse`.
 
-### 15.3 Current Human Agent Resolution
+### 15.3 Current User Ownership
 
 The frontend currently defines `my_inbox` by comparing `opened_by_user_id` to the current user in `ConversationList.tsx`. That must change.
 
-Use the existing `agentService.list(workspaceId)` data to derive:
+Use the authenticated user ID directly:
 
-- AI support agents: `agent_kind === 'llm' && agent_class === 'support'`
-- human support agents: `agent_kind === 'human' && agent_class === 'human'`
-- `currentHumanAgentId`: the human agent whose `backing_user_id === currentUserId`
+- `my_inbox` = `assigned_user_id === currentUserId`
 
-The current `useSupportAgents()` hook filters to only LLM support agents. Replace or extend it so the support UI can:
-
-- assign escalated conversations to human agents
-- compute `my_inbox` locally as `assigned_agent_id === currentHumanAgentId`
-- keep the assignment UI aligned with the backend unread stats semantics
+For human assignment UI, source people from workspace members / support-capable users, not from the generic `agents` list.
 
 ### 15.4 Query Hooks
 
@@ -956,7 +1008,7 @@ If the selected conversation is already open and a new message arrives while the
 Update the `my_inbox` filter to use:
 
 - `conversation.needs_human === true`
-- `conversation.assigned_agent_id === currentHumanAgentId`
+- `conversation.assigned_user_id === currentUserId`
 
 Do not keep using `opened_by_user_id` for this filter.
 
@@ -981,7 +1033,16 @@ Note: The support inbox filters (My Inbox, Unassigned, status filters) are rende
 
 Do not derive these counts from the currently loaded page of conversations.
 
-### 15.9 Realtime Sync
+### 15.9 Future AI Folders
+
+If the product adds Intercom-style AI folders later, the frontend should use:
+
+- `ai_involved`
+- `ai_resolution_state`
+
+This is separate from unread. A conversation can appear in an AI folder without contributing to human unread unless `needs_human = true`.
+
+### 15.10 Realtime Sync
 
 In `useRealtimeSync.ts`, the existing handling already covers:
 
@@ -1073,7 +1134,7 @@ This is a **breaking change** to the adapter interface. All adapter implementati
 
 ## 17. API and Event Examples
 
-### 17.1 Agent List Response
+### 17.1 Internal List Response
 
 ```json
 {
@@ -1083,6 +1144,10 @@ This is a **breaking change** to the adapter interface. All adapter implementati
       "subject": "Billing issue",
       "status": "open",
       "priority": "high",
+      "assigned_user_id": "user_456",
+      "needs_human": true,
+      "ai_involved": true,
+      "ai_resolution_state": "escalated",
       "last_message": "Can someone help me with this charge?",
       "updated_at": "2026-03-16T21:00:00Z",
       "unread_count": 2
@@ -1102,7 +1167,7 @@ This is a **breaking change** to the adapter interface. All adapter implementati
 }
 ```
 
-### 17.2 Agent Read WebSocket Message
+### 17.2 Internal Read WebSocket Message
 
 ```json
 {
@@ -1113,7 +1178,7 @@ This is a **breaking change** to the adapter interface. All adapter implementati
 }
 ```
 
-### 17.3 Agent Read HTTP Fallback
+### 17.3 Internal Read HTTP Fallback
 
 ```
 POST /api/support/inbox/conversations/{convId}/read?workspace_id={workspaceId}
@@ -1219,16 +1284,16 @@ Response: 200
 
 ### 18.1 Page Refresh
 
-- agent unread survives because it is DB-backed (`agent_last_seen_at` on the conversation)
+- internal unread survives because it is DB-backed (`agent_last_seen_at` on the conversation)
 - widget unread survives because `session:joined` / `conversations:listed` rehydrates from server state
 
-### 18.2 Multiple Agent Tabs
+### 18.2 Multiple Internal Tabs
 
 - one tab marks conversation read
-- server updates `agent_last_seen_at` (and `assignee_last_seen_at` if applicable)
-- WS event (`support_conversation updated, reason=read`) broadcasts to all agents in the workspace
+- server updates `agent_last_seen_at`
+- WS event (`support_conversation updated, reason=read`) broadcasts to all support users in the workspace
 - other tabs refetch and sync immediately
-- since this is a shared human-team cursor, all agents see the conversation as read
+- since this is a shared human-team cursor, all support users see the conversation as read
 
 ### 18.3 Multiple Widget Tabs
 
@@ -1252,7 +1317,7 @@ If the user is actively viewing the conversation:
 
 ### 18.6 CSAT and System Messages
 
-- `message_type = 'csat_survey'` and `message_type = 'system'` are excluded from unread counts for both agents and widget visitors
+- `message_type = 'csat_survey'` and `message_type = 'system'` are excluded from unread counts for both internal users and widget visitors
 - only `message_type = 'reply'` counts toward unread
 
 ### 18.7 Closed Conversations
@@ -1271,13 +1336,13 @@ When a widget visitor selects a conversation:
 
 This ordering ensures the conversation is fully loaded before unread state is cleared.
 
-### 18.9 Reassignment
+### 18.9 Human Reassignment
 
-When a conversation is reassigned to a different agent:
+When a conversation is reassigned to a different human user:
 
-- `assignee_last_seen_at` is cleared (set to `NULL`)
+- `assigned_user_id` changes
 - `agent_last_seen_at` is NOT cleared — the team has still seen the conversation
-- The new assignee sees the conversation as attended-to (shared cursor) but their assignee-specific cursor is fresh
+- the new owner sees the conversation as attended-to from the shared team perspective
 
 ### 18.10 AI -> Human Escalation
 
@@ -1285,7 +1350,9 @@ When AI escalates a conversation into the human support queue:
 
 - `needs_human` becomes `true`
 - `escalated_at` is set
-- if a human is not assigned in the same operation, `assigned_agent_id` is cleared
+- if a human is not assigned in the same operation, `assigned_user_id` is cleared
+- `ai_involved` is `true`
+- `ai_resolution_state` becomes `escalated` or `procedure_handoff`
 - the conversation starts contributing to internal support unread aggregates
 - widget unread behavior does not change; customer-visible AI/human replies still count the same way
 
@@ -1297,16 +1364,16 @@ When AI escalates a conversation into the human support queue:
 
 Add coverage for:
 
-- unread count queries for internal human agents (shared team cursor via `agent_last_seen_at`)
+- unread count queries for internal human users (shared team cursor via `agent_last_seen_at`)
 - unread count queries for widget contacts (via `contact_last_seen_at`)
-- `MarkAgentRead` updating `agent_last_seen_at` and conditionally `assignee_last_seen_at`
+- `MarkInternalRead` updating `agent_last_seen_at`
 - `MarkContactRead` updating `contact_last_seen_at`
 - throttled no-op reads (cursor already up to date)
 - list endpoint populating `last_message` and `unread_count`
 - list endpoint metadata totals (`meta.unread`)
 - unread-stats endpoint
 - `POST .../read` HTTP endpoint
-- agent `support:conversation:read` websocket handling
+- internal `support:conversation:read` websocket handling
 - widget `conversation:read` websocket handling
 - widget `conversation:select` auto-marking read
 - widget visitor-scoped `conversations:listed` fanout after unread changes
@@ -1314,9 +1381,10 @@ Add coverage for:
 - CSAT and system messages excluded from unread
 - closed conversations excluded from aggregates
 - AI-only conversations excluded from internal human unread aggregates
-- `GetHumanByBackingUserID()` resolution by `agents.user_id`
-- AI escalation clearing or replacing the AI assignee before the conversation enters the human queue
-- reassignment clearing `assignee_last_seen_at`
+- `assigned_user_id`-based `my_inbox` and `unassigned` aggregation
+- `ai_involved` / `ai_resolution_state` persistence
+- AI escalation clearing or replacing human ownership correctly before the conversation enters the human queue
+- human reassignment preserving the shared team read cursor
 
 Primary files:
 
@@ -1338,8 +1406,8 @@ Internal frontend:
 - mark-read debounce on new message while viewing
 - HTTP fallback when WS disconnected
 - realtime invalidation of unread-stats on message events
-- `my_inbox` filtering by `currentHumanAgentId`, not `opened_by_user_id`
-- support agent hooks exposing both AI support agents and human agents where needed
+- `my_inbox` filtering by `assigned_user_id === currentUserId`, not `opened_by_user_id`
+- future AI folder filters based on `ai_involved` / `ai_resolution_state`
 
 Widget tests:
 
@@ -1362,28 +1430,28 @@ Primary files:
 ### Phase 1: Data Layer
 
 - migration `046_conversation_read_tracking_indexes.sql` — message query indexes
-- `NeedsHuman`, `EscalatedAt`, `AgentLastSeenAt`, `AssigneeLastSeenAt`, `ContactLastSeenAt` fields on `SupportConversation` (GORM AutoMigrate)
-- repository: `MarkAgentRead`, `MarkContactRead`
+- `AssignedUserID`, `NeedsHuman`, `EscalatedAt`, `AIInvolved`, `AIResolutionState`, `AgentLastSeenAt`, `ContactLastSeenAt` fields on `SupportConversation` (GORM AutoMigrate)
+- repository: `MarkInternalRead`, `MarkContactRead`
 - repository: update `List()` to compute `last_message` + `unread_count`
 - repository: update `ListByAnonymousID()` to compute widget `unread_count`
 - repository: `GetUnreadStats()`
-- agent repository: `GetHumanByBackingUserID()`
 
 ### Phase 2: Service + HTTP Endpoints
 
 - service: `MarkConversationRead`, `MarkConversationReadByVisitor`, `GetUnreadStats`
 - service: update `ListConversations` to attach `meta.unread`
-- service: update `AssignConversationAgent` to clear `assignee_last_seen_at` on reassignment
+- service: move support ownership to `AssignConversationUser`
+- handler/router: add support-specific `assign-user` endpoint if ownership refactor lands in the same rollout
 - handler: `POST .../conversations/{id}/read`, `GET .../unread-stats`
 - router: register new endpoints
 
-### Phase 3: Internal Agent Realtime + UI
+### Phase 3: Internal Realtime + UI
 
 - websocket handler: `support:conversation:read` in `handler.go`
 - websocket hub: add `support_visitor_conversations` to `shouldReceive()`
 - frontend types: extend `SupportConversation`, add `UnreadStats`, `ConversationListResponse`
 - frontend service + hooks: `useUnreadStats`, update `useConversations` response shape
-- frontend agent data: resolve `currentHumanAgentId`, expose human agents for escalated assignment, keep AI support agents available for first-response tooling
+- frontend people data: use current user ID for `my_inbox` and workspace users for human assignment
 - frontend UI: `ConversationRow` unread styling + badge, `Sidebar` badge, `Sidebar` filter counts
 - frontend realtime: invalidate unread-stats on message/read events
 - frontend mark-read: send `support:conversation:read` on select + new message while viewing
@@ -1412,16 +1480,17 @@ Each phase is independently deployable.
 ## 21. Acceptance Criteria
 
 - Internal support conversations show unread badges and blue unread styling.
-- Unread reflects a shared human-team cursor — any human support agent reading clears unread for the team.
+- Unread reflects a shared human-team cursor — any human teammate reading clears unread for the team.
+- Conversation row badges reflect unread message count; sidebar/filter badges reflect unread conversation count.
 - Support rail badge reflects total unread from server metadata.
 - Inbox filter counters (my inbox, unassigned) reflect server totals, not only the visible page.
-- `My Inbox` reflects conversations in the human queue assigned to the current user's human agent record.
+- `My Inbox` reflects conversations in the human queue assigned to the current user via `assigned_user_id`.
 - AI-only conversations do not contribute to internal human unread badges.
-- Clicking or opening a conversation clears unread and syncs across all agent tabs.
+- Clicking or opening a conversation clears unread and syncs across all internal tabs.
 - Widget launcher badge persists across refresh.
 - Widget conversation list shows per-conversation unread badges.
 - Opening a widget conversation clears only that conversation's unread.
-- New support messages update unread state in near real time for both agents and widget users.
+- New support messages update unread state in near real time for both internal users and widget users.
 - CSAT survey and system messages do not count as unread.
 - Closed conversations do not contribute to aggregate badge counts.
 
@@ -1441,9 +1510,11 @@ This section lists interface and response shape changes that require coordinated
 
 5. **Hub `shouldReceive()`** — gains a new entity type `support_visitor_conversations`. No external impact but requires hub code change.
 
-6. **`My Inbox` semantic** — changes from the current `opened_by_user_id` behavior to `needs_human = true AND assigned_agent_id = currentHumanAgentId`.
+6. **Support ownership model** — moves from generic `assigned_agent_id` semantics to support-specific `assigned_user_id`.
 
-7. **Support agent hooks / assignment UI** — cannot stay LLM-only. Any support-agent selector or helper that currently filters to `agent_kind = 'llm' && agent_class = 'support'` must be widened to include human agents where assignment and `my_inbox` semantics require it.
+7. **`My Inbox` semantic** — changes from the current `opened_by_user_id` behavior to `needs_human = true AND assigned_user_id = currentUserId`.
+
+8. **AI folder groundwork** — `ai_involved` and `ai_resolution_state` become first-class support fields for future Intercom-style AI inbox views.
 
 ---
 
@@ -1458,8 +1529,8 @@ The following presence improvements were already completed in the live-chat-even
 
 Remaining follow-up after unread is landed:
 
-- Per-agent read cursors via `support_conversation_reads` join table (v2, if shared team cursor proves insufficient)
-- Assignee-specific unread counters in the UI (data already stored via `assignee_last_seen_at`)
+- Per-user read cursors via `support_conversation_reads` join table (v2, if shared team cursor proves insufficient)
+- Assignee-specific unread counters in the UI if support later adds `assigned_user_last_seen_at`
 - Unread state in push notifications / email digests
 - Per-conversation sort ordering (unread-first option in inbox)
 - Lightweight `conversation:updated` delta event for widget (v2 optimization for `conversations:listed` scalability)
