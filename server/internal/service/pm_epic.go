@@ -40,21 +40,6 @@ func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *reposito
 	}
 }
 
-// requireCanEdit checks that the actor has owner, admin, or manager role.
-func (s *PMEpicService) requireCanEdit(ctx context.Context, workspaceID, actorID string) error {
-	if workspaceID == "" || actorID == "" {
-		return &model.ErrForbidden{Message: "workspace_id and user_id are required"}
-	}
-	role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, actorID)
-	if err != nil {
-		return err
-	}
-	if role != model.RoleOwner && role != model.RoleAdmin && role != model.RoleManager {
-		return &model.ErrForbidden{Message: "manager access or above required"}
-	}
-	return nil
-}
-
 // requireAdmin checks that the actor has owner or admin role.
 func (s *PMEpicService) requireAdmin(ctx context.Context, workspaceID, actorID string) error {
 	if workspaceID == "" || actorID == "" {
@@ -75,6 +60,7 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
 	epics, err := s.epicRepo.List(ctx, workspaceID, filters)
 	if err != nil {
 		return nil, err
@@ -117,6 +103,9 @@ func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWith
 	if epic == nil {
 		return nil, fmt.Errorf("epic not found")
 	}
+	if err := requireTeamAccess(ctx, epic.Epic.TeamID); err != nil {
+		return nil, fmt.Errorf("epic not found")
+	}
 	enrichEpicSuggestedHealth(epic)
 	return epic, nil
 }
@@ -126,7 +115,7 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
-	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
+	if err := requireCanManage(ctx, req.TeamID); err != nil {
 		return nil, err
 	}
 	health := model.PMEpicHealthNone
@@ -218,8 +207,8 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if current == nil {
 		return nil, fmt.Errorf("epic not found")
 	}
-	if err := s.requireCanEdit(ctx, current.Epic.WorkspaceID, actorID); err != nil {
-		return nil, err
+	if err := requireCanManage(ctx, current.Epic.TeamID); err != nil {
+		return nil, fmt.Errorf("epic not found")
 	}
 	epic := current.Epic
 
@@ -396,7 +385,7 @@ func (s *PMEpicService) UpdateHealth(ctx context.Context, id string, req model.U
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := s.requireCanEdit(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+	if err := requireCanManage(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := s.epicRepo.UpdateHealth(ctx, id, req.Health, req.Comment); err != nil {
@@ -418,7 +407,7 @@ func (s *PMEpicService) AddLabel(ctx context.Context, epicID, labelID, actorID s
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := s.requireCanEdit(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+	if err := requireCanManage(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := validateLabelScope(ctx, s.labelRepo, epic.Epic.WorkspaceID, []string{labelID}, allowedTeamIDs(epic.Epic.TeamID)); err != nil {
@@ -442,7 +431,7 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := s.requireCanEdit(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+	if err := requireCanManage(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := s.epicRepo.RemoveLabel(ctx, epicID, labelID); err != nil {

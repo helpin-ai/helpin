@@ -97,6 +97,9 @@ type PMObjectiveListFilters struct {
 	ObjectiveType *string
 	State         *string
 	Archived      *bool
+	// AccessibleTeamIDs enforces team-based access boundaries.
+	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
+	AccessibleTeamIDs []string
 }
 
 type CreateObjectiveRequest struct {

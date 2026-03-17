@@ -4,10 +4,8 @@ import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
 import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
 import { useOrganizations } from '@/hooks/queries/useOrganizations'
-import { useQuarters } from '@/hooks/queries/useQuarters'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useOrganizationStore } from '@/stores/organizationStore'
-import { useRewardQuarterStore } from '@/stores/quarterStore'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
@@ -27,7 +25,6 @@ function WorkspaceLayout() {
   const { data: workspace, isLoading: wsLoading } = useWorkspaceBySlug(slug)
   const wsId = workspace?.id ?? ''
   const { data: orgs, isLoading: orgsLoading } = useOrganizations()
-  const { data: quarters, isLoading: quartersLoading } = useQuarters(wsId)
   const { isLoading: sessionLoading } = useSession(wsId)
   const { isLoading: accessLoading } = useWorkspaceAccess(wsId)
   const { isLoading: settingsLoading } = useWorkspaceSettings(wsId)
@@ -49,18 +46,8 @@ function WorkspaceLayout() {
     if (org) useOrganizationStore.getState().setCurrentOrganization(org)
   }, [orgs, workspace?.organization_id])
 
-  // Sync quarter selection (initial only — don't override user choice)
-  useEffect(() => {
-    if (!quarters?.length) return
-    const current = useRewardQuarterStore.getState().currentQuarter
-    if (!current || !quarters.find(q => q.id === current.id)) {
-      const active = quarters.find(q => q.status === 'active')
-      useRewardQuarterStore.getState().setCurrentQuarter(active ?? quarters[0])
-    }
-  }, [quarters])
-
   const loading = wsLoading || orgsLoading
-    || (!!wsId && (sessionLoading || accessLoading || settingsLoading || quartersLoading))
+    || (!!wsId && (sessionLoading || accessLoading || settingsLoading))
     || (!!workspace && currentWorkspace?.id !== workspace.id)
 
   if (loading) {

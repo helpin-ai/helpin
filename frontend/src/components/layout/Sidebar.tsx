@@ -43,6 +43,7 @@ import {
   Sun,
   Tag,
   Target,
+  Trash2,
   User,
   Users,
   type LucideIcon,
@@ -50,7 +51,11 @@ import {
 import { useTheme } from 'next-themes';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections, useDocsDocuments } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions, useDocsSpaces, useDocsCollections, useDocsDocuments, useDeleteDocsSpace } from '@/hooks/queries';
+import type { DocsSpace } from '@/lib/docsTypes';
+import { useTruncationDetection } from '@/hooks/useTruncationDetection';
+import { SpaceDialog } from '@/components/docs/SpaceDialog';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -94,7 +99,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-type RailId = 'projects' | 'support' | 'crm' | /* 'rewards' | */ 'agents' | 'docs' | 'settings';
+type RailId = 'projects' | 'support' | 'crm' | 'agents' | 'docs' | 'settings';
 
 type RailItem = {
   id: RailId;
@@ -169,13 +174,16 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
   const uncollectedCount = (documents ?? []).filter((d) => !d.collection_id).length;
   const uncollectedLink = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=__uncollected__`;
 
+  const { checkRef: checkColTruncation, isTruncated: isColTruncated } = useTruncationDetection();
+
   return (
     <SidebarMenuSub>
       {(collections ?? []).map((col) => {
         const link = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=${col.id}`;
+        const showTooltip = isColTruncated(col.id);
         return (
           <SidebarMenuSubItem key={col.id}>
-            <Tooltip>
+            <Tooltip open={showTooltip ? undefined : false}>
               <TooltipTrigger asChild>
                 <SidebarMenuSubButton
                   asChild
@@ -194,7 +202,7 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
                     }}
                   >
                     <SidebarCollectionIcon name={col.icon} />
-                    <span className="truncate">{col.name}</span>
+                    <span className="truncate" ref={(el) => checkColTruncation(col.id, el)}>{col.name}</span>
                   </a>
                 </SidebarMenuSubButton>
               </TooltipTrigger>
@@ -207,33 +215,26 @@ function DocsSpaceCollections({ wsId, spaceId, wsSlug, navigate, isActive, openC
       })}
       {uncollectedCount > 0 && (
         <SidebarMenuSubItem>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <SidebarMenuSubButton
-                asChild
-                size="sm"
-                isActive={isActive(uncollectedLink)}
-              >
-                <a
-                  href={uncollectedLink}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    navigate({
-                      to: '/w/$slug/docs/spaces/$spaceId' as string,
-                      params: { slug: wsSlug, spaceId },
-                      search: { collection: '__uncollected__' } as Record<string, string>,
-                    });
-                  }}
-                >
-                  <Inbox className="h-3.5 w-3.5" />
-                  <span className="truncate">Uncategorized</span>
-                </a>
-              </SidebarMenuSubButton>
-            </TooltipTrigger>
-            <TooltipContent side="right" align="center">
-              Uncategorized ({uncollectedCount})
-            </TooltipContent>
-          </Tooltip>
+          <SidebarMenuSubButton
+            asChild
+            size="sm"
+            isActive={isActive(uncollectedLink)}
+          >
+            <a
+              href={uncollectedLink}
+              onClick={(event) => {
+                event.preventDefault();
+                navigate({
+                  to: '/w/$slug/docs/spaces/$spaceId' as string,
+                  params: { slug: wsSlug, spaceId },
+                  search: { collection: '__uncollected__' } as Record<string, string>,
+                });
+              }}
+            >
+              <Inbox className="h-3.5 w-3.5" />
+              <span className="truncate">Uncategorized</span>
+            </a>
+          </SidebarMenuSubButton>
         </SidebarMenuSubItem>
       )}
       <SidebarMenuSubItem>
@@ -263,6 +264,10 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
   openCreate: (modal: 'docs_collection', options?: { spaceId?: string }) => void;
 }) {
   const { data: spaces } = useDocsSpaces(wsId);
+  const deleteSpace = useDeleteDocsSpace(wsId);
+  const [editingSpace, setEditingSpace] = useState<DocsSpace | null>(null);
+  const [deletingSpace, setDeletingSpace] = useState<DocsSpace | null>(null);
+  const { checkRef: checkSpaceTruncation, isTruncated: isSpaceTruncated } = useTruncationDetection();
 
   const toggleDocSpace = (spaceKey: string) => {
     setExpandedTeams((prev) => {
@@ -289,6 +294,7 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
     const spaceKey = `docs_space_${space.id}`;
     const isExpanded = expandedTeams.has(spaceKey);
     const spaceLink = `/w/${wsSlug}/docs/spaces/${space.id}`;
+    const showTooltip = isSpaceTruncated(space.id);
 
     return (
       <Collapsible.Root
@@ -298,7 +304,7 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
       >
         <SidebarMenuItem>
           <div className="group/space relative flex items-center">
-            <Tooltip>
+            <Tooltip open={showTooltip ? undefined : false}>
               <TooltipTrigger asChild>
                 <SidebarMenuButton
                   className="h-8 rounded-md px-2 flex-1"
@@ -309,13 +315,36 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
                   }}
                 >
                   <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                  <span className="truncate">{space.name}</span>
+                  <span className="truncate" ref={(el) => checkSpaceTruncation(space.id, el)}>{space.name}</span>
                 </SidebarMenuButton>
               </TooltipTrigger>
               <TooltipContent side="right" align="center">
                 {space.name}
               </TooltipContent>
             </Tooltip>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/space:opacity-100 data-[state=open]:opacity-100"
+                >
+                  <EllipsisVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="right" align="start">
+                <DropdownMenuItem onClick={() => setEditingSpace(space)}>
+                  <Settings className="h-4 w-4" />
+                  Edit space
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setDeletingSpace(space)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete space
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <Collapsible.Content>
             <DocsSpaceCollections
@@ -354,6 +383,31 @@ function DocsSpacesNav({ wsId, wsSlug, navigate, isActive, expandedTeams, toggle
           </SidebarMenu>
         </SidebarGroup>
       )}
+
+      <SpaceDialog
+        wsId={wsId}
+        open={editingSpace !== null}
+        onOpenChange={(open) => { if (!open) setTimeout(() => setEditingSpace(null), 150) }}
+        space={editingSpace}
+      />
+
+      <ConfirmDialog
+        open={deletingSpace !== null}
+        onOpenChange={(open) => { if (!open) setTimeout(() => setDeletingSpace(null), 150) }}
+        title="Delete space"
+        description="This will permanently delete this space and all its documents. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          if (!deletingSpace) return;
+          deleteSpace.mutate(deletingSpace.id, {
+            onSuccess: () => {
+              setDeletingSpace(null);
+              navigate({ to: '/w/$slug/docs' as string, params: { slug: wsSlug } });
+            },
+          });
+        }}
+      />
     </>
   );
 }
@@ -479,7 +533,6 @@ export function Sidebar() {
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
-// { id: 'rewards', label: 'Rewards', icon: Award, defaultLink: `/w/${wsSlug}/dashboard` },
     { id: 'agents', label: 'Agents', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agents` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
@@ -527,24 +580,6 @@ export function Sidebar() {
         ],
       },
     ],
-    /* rewards: [
-      {
-        label: 'Workspace',
-        items: [
-          { link: `/w/${wsSlug}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
-          { link: `/w/${wsSlug}/goals`, label: 'Company Goals', icon: Target },
-          { link: `/w/${wsSlug}/team-goals`, label: 'Team Goals', icon: Users },
-          { link: `/w/${wsSlug}/sprints`, label: 'Sprints', icon: Calendar },
-        ],
-      },
-      {
-        label: 'Performance',
-        items: [
-          { link: `/w/${wsSlug}/bonus`, label: 'Bonus Dashboard', icon: DollarSign },
-          { link: `/w/${wsSlug}/my-quarter`, label: 'My Quarter', icon: User },
-        ],
-      },
-    ], */
     docs: [
       {
         label: '',
@@ -610,24 +645,10 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/import`, label: 'Import / Export', icon: Import },
         ],
       },
-      /* {
-        label: 'Reward Settings',
-        items: [
-          { link: `/w/${wsSlug}/settings/system`, label: 'Reward Defaults', icon: Settings2 },
-          { link: `/w/${wsSlug}/settings/people`, label: 'People', icon: UserPlus },
-          { link: `/w/${wsSlug}/settings/jobroles`, label: 'Job Roles', icon: Briefcase },
-          { link: `/w/${wsSlug}/settings/tiers`, label: 'Bonus Tiers', icon: Award },
-        ],
-      }, */
     ],
   };
 
   const currentNavGroups = panelNavGroups[activeRail];
-  const showProjects = false; // activeRail === 'rewards';
-
-  const projectNames = useMemo(() => {
-    return currentWorkspace?.name ? [currentWorkspace.name] : [];
-  }, [currentWorkspace?.name]);
 
   const isActive = (link: string) => {
     const [linkPath, linkQuery] = link.split('?');
@@ -736,7 +757,7 @@ export function Sidebar() {
             </div>
           </div>
 
-          <div className="min-w-0 flex-1 overflow-y-auto p-2">
+          <div className="min-w-0 flex-1 overflow-y-auto p-2 pb-16">
             {activeRail === 'projects' && (
               <div className="mb-2 flex w-full">
                 <Button
@@ -992,27 +1013,6 @@ export function Sidebar() {
                       </Collapsible.Root>
                     );
                   })}
-                </SidebarMenu>
-              </SidebarGroup>
-            )}
-
-            {showProjects && (
-              <SidebarGroup className="p-0">
-                <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-                  Projects
-                </SidebarGroupLabel>
-                <SidebarMenu>
-                  {projectNames.map((name) => (
-                    <SidebarMenuItem key={name}>
-                      <SidebarMenuButton
-                        isActive={name === currentWorkspace?.name}
-                        className="h-8 rounded-md px-2"
-                      >
-                        <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
-                        <span className="truncate">{name}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
                 </SidebarMenu>
               </SidebarGroup>
             )}

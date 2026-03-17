@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -192,9 +193,12 @@ func (s *SettingsService) AddTeamMember(ctx context.Context, teamID string, req 
 }
 
 // UpdateTeamMember updates a user's role within a team.
-func (s *SettingsService) UpdateTeamMember(ctx context.Context, teamID, userID string, req model.UpdateTeamMemberRequest) (*model.TeamUserMembership, error) {
+func (s *SettingsService) UpdateTeamMember(ctx context.Context, teamID, userID string, actor *authorization.Actor, req model.UpdateTeamMemberRequest) (*model.TeamUserMembership, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, fmt.Errorf("user_id is required")
+	}
+	if actor != nil && actor.UserID == userID {
+		return nil, fmt.Errorf("cannot change your own team role")
 	}
 	if req.Role != nil {
 		role := strings.TrimSpace(*req.Role)
@@ -203,13 +207,58 @@ func (s *SettingsService) UpdateTeamMember(ctx context.Context, teamID, userID s
 		}
 		req.Role = &role
 	}
+	// Check if target is a team owner — only workspace admin/owner can change team owners
+	if actor != nil {
+		isWsAdmin := actor.Role == model.RoleOwner || actor.Role == model.RoleAdmin
+		target, err := s.settingsRepo.GetTeamUserMembership(ctx, teamID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if target != nil && target.Role == "owner" && !isWsAdmin {
+			return nil, fmt.Errorf("only workspace admins can change a team owner's role")
+		}
+		// Prevent demoting the last team owner
+		if target != nil && target.Role == "owner" && req.Role != nil && *req.Role != "owner" {
+			count, err := s.settingsRepo.CountTeamMembersByRole(ctx, teamID, "owner")
+			if err != nil {
+				return nil, err
+			}
+			if count <= 1 {
+				return nil, fmt.Errorf("cannot demote the last team owner")
+			}
+		}
+	}
 	return s.settingsRepo.UpdateTeamUserMembership(ctx, teamID, userID, req)
 }
 
 // RemoveTeamMember removes a user from a team.
-func (s *SettingsService) RemoveTeamMember(ctx context.Context, teamID, userID string) error {
+func (s *SettingsService) RemoveTeamMember(ctx context.Context, teamID, userID string, actor *authorization.Actor) error {
 	if strings.TrimSpace(userID) == "" {
 		return fmt.Errorf("user_id is required")
+	}
+	if actor != nil && actor.UserID == userID {
+		return fmt.Errorf("cannot remove yourself from the team")
+	}
+	// Check if target is a team owner — only workspace admin/owner can remove team owners
+	if actor != nil {
+		isWsAdmin := actor.Role == model.RoleOwner || actor.Role == model.RoleAdmin
+		target, err := s.settingsRepo.GetTeamUserMembership(ctx, teamID, userID)
+		if err != nil {
+			return err
+		}
+		if target != nil && target.Role == "owner" && !isWsAdmin {
+			return fmt.Errorf("only workspace admins can remove a team owner")
+		}
+		// Prevent removing the last team owner
+		if target != nil && target.Role == "owner" {
+			count, err := s.settingsRepo.CountTeamMembersByRole(ctx, teamID, "owner")
+			if err != nil {
+				return err
+			}
+			if count <= 1 {
+				return fmt.Errorf("cannot remove the last team owner")
+			}
+		}
 	}
 	return s.settingsRepo.RemoveTeamUserMembership(ctx, teamID, userID)
 }
@@ -227,11 +276,6 @@ func (s *SettingsService) UpdatePerson(ctx context.Context, id string, req model
 // DeletePerson removes a person.
 func (s *SettingsService) DeletePerson(ctx context.Context, id string) error {
 	return s.settingsRepo.DeletePerson(ctx, id)
-}
-
-// UpdateBonusTiers replaces bonus tiers for a workspace.
-func (s *SettingsService) UpdateBonusTiers(ctx context.Context, workspaceID string, tiers []model.BonusTierItem) ([]model.BonusTier, error) {
-	return s.settingsRepo.UpdateBonusTiers(ctx, workspaceID, tiers)
 }
 
 // UpdateJobRoleCriteria replaces criteria for a job role.

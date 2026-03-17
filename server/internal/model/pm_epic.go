@@ -75,6 +75,9 @@ type PMEpicListFilters struct {
 	StateID  *string
 	LabelID  *string
 	Archived *bool
+	// AccessibleTeamIDs enforces team-based access boundaries.
+	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
+	AccessibleTeamIDs []string
 }
 
 // CreateEpicRequest is the payload for creating an epic.

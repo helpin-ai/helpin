@@ -19,14 +19,7 @@ type Handlers struct {
 	Auth               *handler.AuthHandler
 	Organization       *handler.OrganizationHandler
 	Workspace          *handler.WorkspaceHandler
-	RewardQuarter      *handler.RewardQuarterHandler
-	RewardSprint       *handler.RewardSprintHandler
-	RewardGoal         *handler.RewardGoalHandler
-	RewardBonus        *handler.RewardBonusHandler
-	RewardFinance      *handler.RewardFinanceHandler
 	Settings           *handler.SettingsHandler
-	RewardAudit        *handler.RewardAuditHandler
-	RewardDraft        *handler.RewardDraftHandler
 	Invite             *handler.InviteHandler
 	PMWorkflow         *handler.PMWorkflowHandler
 	PMImport           *handler.PMImportHandler
@@ -272,43 +265,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status/{importId}", h.PMImport.ShortcutStatus)
 			})
 
-			// Rewards module — all routes require workspace access
-			r.Route("/rewards", func(r chi.Router) {
-				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
-
-				// Read routes — rewards.read
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/quarters", h.RewardQuarter.List)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/quarters/{id}", h.RewardQuarter.Get)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/sprints", h.RewardSprint.List)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/sprints/{id}", h.RewardSprint.Get)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/sprints/{id}/checks", h.RewardSprint.GetIndividualChecks)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/goals", h.RewardGoal.List)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/goals/sprint", h.RewardGoal.ListSprintGoals)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/bonus/calculations", h.RewardBonus.GetCalculations)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/bonus/team-sprint-data", h.RewardBonus.GetTeamSprintData)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/finance", h.RewardFinance.Get)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/audit", h.RewardAudit.List)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/drafts", h.RewardDraft.List)
-				r.With(requirePerm(authorization.PermRewardsRead)).Get("/drafts/{id}", h.RewardDraft.Get)
-
-				// Write routes — rewards.manage
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/quarters", h.RewardQuarter.Create)
-				r.With(requirePerm(authorization.PermRewardsManage)).Patch("/quarters/{id}/status", h.RewardQuarter.UpdateStatus)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/sprints/{id}/checks", h.RewardSprint.UpsertIndividualCheck)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/sprints/{id}/lock", h.RewardSprint.Lock)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/sprints/{id}/unlock", h.RewardSprint.Unlock)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/goals", h.RewardGoal.Create)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/goals/sprint", h.RewardGoal.UpsertSprintGoal)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/bonus/calculations", h.RewardBonus.SaveCalculations)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/bonus/lock", h.RewardBonus.Lock)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/bonus/unlock", h.RewardBonus.Unlock)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/finance", h.RewardFinance.Upsert)
-				r.With(requirePerm(authorization.PermRewardsManage)).Post("/drafts", h.RewardDraft.Create)
-				r.With(requirePerm(authorization.PermRewardsManage)).Put("/drafts/{id}", h.RewardDraft.Update)
-				r.With(requirePerm(authorization.PermRewardsManage)).Delete("/drafts/{id}", h.RewardDraft.Delete)
-			})
-
 			// Settings — all routes require workspace access
 			r.Route("/settings", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
@@ -320,8 +276,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Settings management (admin+)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/initialize", h.Settings.Initialize)
-				r.With(requirePerm(authorization.PermSettingsManage)).Put("/bonus-tiers", h.Settings.UpdateBonusTiers)
-				r.With(requirePerm(authorization.PermSettingsManage)).Put("/job-roles", h.Settings.UpdateJobRoleCriteria)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/job-roles", h.Settings.UpdateJobRoleCriteria)
 				r.With(requirePerm(authorization.PermSettingsManage)).Delete("/job-roles", h.Settings.DeleteJobRole)
 				r.With(requirePerm(authorization.PermSettingsManage)).Put("/system", h.Settings.UpdateSystem)
 

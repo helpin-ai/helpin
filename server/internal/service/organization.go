@@ -121,18 +121,42 @@ func (s *OrganizationService) AddMember(ctx context.Context, orgID, actorID stri
 
 // UpdateMember updates a member's role. Only owner or admin can update.
 func (s *OrganizationService) UpdateMember(ctx context.Context, orgID, actorID, targetUserID string, req model.UpdateOrgMemberRequest) error {
-	role, err := s.orgRepo.GetMemberRole(ctx, orgID, actorID)
+	if actorID == targetUserID {
+		return fmt.Errorf("cannot change your own role")
+	}
+	actorRole, err := s.orgRepo.GetMemberRole(ctx, orgID, actorID)
 	if err != nil {
 		return err
 	}
-	if role != model.RoleOwner && role != model.RoleAdmin {
+	if actorRole != model.RoleOwner && actorRole != model.RoleAdmin {
 		return fmt.Errorf("only owner or admin can update members")
 	}
-	if req.Role != model.RoleAdmin && req.Role != model.RoleMember && req.Role != model.RoleOwner {
+	if req.Role != model.RoleAdmin && req.Role != model.RoleMember && req.Role != model.RoleOwner && req.Role != model.RoleViewer {
 		return fmt.Errorf("invalid role")
 	}
-	if req.Role == model.RoleOwner && role != model.RoleOwner {
-		return fmt.Errorf("only the owner can transfer ownership")
+	targetRole, err := s.orgRepo.GetMemberRole(ctx, orgID, targetUserID)
+	if err != nil {
+		return err
+	}
+	// Only owners can manage owners and admins
+	if targetRole == model.RoleOwner && actorRole != model.RoleOwner {
+		return fmt.Errorf("only owners can change an owner's role")
+	}
+	if targetRole == model.RoleAdmin && actorRole != model.RoleOwner {
+		return fmt.Errorf("only owners can change an admin's role")
+	}
+	if req.Role == model.RoleOwner && actorRole != model.RoleOwner {
+		return fmt.Errorf("only owners can grant ownership")
+	}
+	// Prevent demoting the last owner
+	if targetRole == model.RoleOwner && req.Role != model.RoleOwner {
+		count, err := s.orgRepo.CountMembersByRole(ctx, orgID, model.RoleOwner)
+		if err != nil {
+			return err
+		}
+		if count <= 1 {
+			return fmt.Errorf("cannot demote the last owner")
+		}
 	}
 	return s.orgRepo.UpdateMemberRole(ctx, orgID, targetUserID, req.Role)
 }
@@ -142,15 +166,23 @@ func (s *OrganizationService) RemoveMember(ctx context.Context, orgID, actorID, 
 	if actorID == targetUserID {
 		return fmt.Errorf("cannot remove yourself")
 	}
-	if err := s.requireAdminOrOwner(ctx, orgID, actorID); err != nil {
+	actorRole, err := s.orgRepo.GetMemberRole(ctx, orgID, actorID)
+	if err != nil {
 		return err
+	}
+	if actorRole != model.RoleOwner && actorRole != model.RoleAdmin {
+		return fmt.Errorf("only owner or admin can remove members")
 	}
 	targetRole, err := s.orgRepo.GetMemberRole(ctx, orgID, targetUserID)
 	if err != nil {
 		return err
 	}
+	// Only owners can remove owners and admins
 	if targetRole == model.RoleOwner {
-		return fmt.Errorf("cannot remove the organization owner")
+		return fmt.Errorf("cannot remove an owner")
+	}
+	if targetRole == model.RoleAdmin && actorRole != model.RoleOwner {
+		return fmt.Errorf("only owners can remove admins")
 	}
 	return s.orgRepo.RemoveMember(ctx, orgID, targetUserID)
 }

@@ -68,7 +68,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useWorkflows } from '@/hooks/queries/useWorkflows';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type {
   ActivityLogEntry,
@@ -286,7 +286,7 @@ export function StoryDetailPage() {
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
 
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId!, storyDetail?.story.team_id);
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId ?? '');
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),

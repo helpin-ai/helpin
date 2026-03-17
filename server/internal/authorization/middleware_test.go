@@ -277,7 +277,7 @@ func TestRequireAnyPermission_Denied(t *testing.T) {
 	authz, _ := setupAuthzService()
 
 	actor := &Actor{Role: "viewer"}
-	handler := RequireAnyPermission(authz, PermPMEdit, PermRewardsManage)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := RequireAnyPermission(authz, PermPMEdit, PermSettingsManage)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called")
 	}))
 

@@ -30,6 +30,13 @@ func (r *PMSprintRepository) List(ctx context.Context, workspaceID string, filte
 	if filters.Archived != nil {
 		query = query.Where("archived = ?", *filters.Archived)
 	}
+	if filters.AccessibleTeamIDs != nil {
+		if len(filters.AccessibleTeamIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("team_id IN ?", filters.AccessibleTeamIDs)
+		}
+	}
 
 	var sprints []model.PMSprint
 	if err := query.Order("COALESCE(start_date, created_at) DESC").Find(&sprints).Error; err != nil {

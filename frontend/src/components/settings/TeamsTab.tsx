@@ -28,7 +28,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn, getInitials } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Check, ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
+import { Check, ChevronRight, Eye, FileText, GitBranch, GitPullRequest, LayoutGrid, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
+import { useDocsSpaces, useUpdateDocsSpace } from '@/hooks/queries';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
@@ -409,7 +410,7 @@ function TeamRepoDefaultForm({
 
 /* ── Teams Tab ── */
 
-export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, teamFieldVisibility, teamRepoDefaults, editable, onRefresh, initialTeamId }: {
+export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreassignments, teamEstimateSettings, teamFieldVisibility, teamRepoDefaults, editable, onRefresh, initialTeamId, access }: {
   workspaceId: string;
   teams: WorkspaceTeam[];
   userMemberships: TeamUserMembership[];
@@ -420,9 +421,12 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   editable: boolean;
   onRefresh: (silent?: boolean) => void | Promise<void>;
   initialTeamId?: string;
+  access?: import('@/lib/types').WorkspaceAccess | null;
 }) {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
+  const myUserId = access?.membership?.user_id;
+  const isWsAdmin = access?.membership?.role === 'owner' || access?.membership?.role === 'admin';
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTeam, setEditTeam] = useState<WorkspaceTeam | null>(null);
   const [name, setName] = useState('');
@@ -433,6 +437,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [storyTypeTouched, setStoryTypeTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(initialTeamId ?? null);
+  const isSelectedTeamManager = selectedTeamId
+    ? (access?.team_memberships ?? []).some(tm => tm.team_id === selectedTeamId && tm.role === 'owner')
+    : false;
+  const teamEditable = editable || isSelectedTeamManager;
 
   useEffect(() => {
     setSelectedTeamId(initialTeamId ?? null);
@@ -460,6 +468,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [savingMember, setSavingMember] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const [deleteTeamConfirm, setDeleteTeamConfirm] = useState<string | null>(null);
+  const [spacesDialogOpen, setSpacesDialogOpen] = useState(false);
+  const [spaceSaving, setSpaceSaving] = useState<string | null>(null);
+  const { data: allSpaces } = useDocsSpaces(workspaceId);
+  const updateSpace = useUpdateDocsSpace(workspaceId);
 
   useEffect(() => {
     let mounted = true;
@@ -468,11 +480,11 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
       try {
         const [membersRes, invitesRes] = await Promise.all([
           workspacesService.listMembers(workspaceId),
-          editable ? inviteService.list(workspaceId) : Promise.resolve({ data: null, error: null }),
+          (editable || isSelectedTeamManager) ? inviteService.list(workspaceId) : Promise.resolve({ data: null, error: null }),
         ]);
         if (!mounted) return;
         if (membersRes.error) {
-          if (editable) toast.error(membersRes.error);
+          if (editable || isSelectedTeamManager) toast.error(membersRes.error);
           setWorkspaceMembers([]);
         } else {
           setWorkspaceMembers(
@@ -488,7 +500,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     };
     loadMembers();
     return () => { mounted = false; };
-  }, [workspaceId, editable]);
+  }, [workspaceId, editable, isSelectedTeamManager]);
 
   useEffect(() => {
     let mounted = true;
@@ -732,16 +744,34 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               .filter(Boolean)
               .join(' · '),
             action: () => openEdit(selectedTeam),
-            disabled: !editable,
+            disabled: !teamEditable,
           },
           {
             key: 'members',
             icon: Users,
             title: 'Members',
             description: 'Manage team members',
-            meta: `${memberCount} member${memberCount === 1 ? '' : 's'}`,
+            meta: (() => {
+              const managers = teamMembers.filter(({ membership }) => membership.role === 'owner');
+              return (
+                <span className="flex items-center gap-1">
+                  {memberCount} member{memberCount === 1 ? '' : 's'}
+                  {managers.length > 0 && (
+                    <>
+                      <span className="text-muted-foreground/50">·</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-default">{managers.map(({ user }) => user?.full_name || user?.email || 'Unknown').join(', ')}</span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Team Manager</TooltipContent>
+                      </Tooltip>
+                    </>
+                  )}
+                </span>
+              );
+            })(),
             action: () => openMembers(selectedTeam),
-            disabled: !editable,
+            disabled: !teamEditable,
           },
         ],
       },
@@ -785,7 +815,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             description: 'Configure which fields and panels appear on stories',
             meta: fieldVisMeta,
             action: () => setFieldVisDialogOpen(true),
-            disabled: !editable,
+            disabled: !teamEditable,
           },
           {
             key: 'labels',
@@ -803,7 +833,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             description: 'Configure estimate scale and options',
             meta: estimateMeta,
             action: () => setEstimateDialogOpen(true),
-            disabled: !editable,
+            disabled: !teamEditable,
           },
         ],
       },
@@ -825,7 +855,25 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 openSettingsSection('delivery');
               }
             },
-            disabled: !editable,
+            disabled: !teamEditable,
+          },
+        ],
+      },
+      {
+        label: 'Docs',
+        rows: [
+          {
+            key: 'spaces',
+            icon: FileText,
+            title: 'Spaces',
+            description: 'Docs spaces this team has access to',
+            meta: (() => {
+              const teamSpaces = (allSpaces ?? []).filter(sp => sp.visibility === 'workspace_wide' || sp.team_ids?.includes(selectedTeam.id));
+              if (teamSpaces.length === 0) return 'None';
+              return `${teamSpaces.length} space${teamSpaces.length === 1 ? '' : 's'}`;
+            })(),
+            action: () => setSpacesDialogOpen(true),
+            disabled: !teamEditable,
           },
         ],
       },
@@ -863,16 +911,18 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             })()}
             <div className="flex min-w-0 flex-1 items-center justify-between">
               <h2 className="text-xl font-semibold tracking-tight">{selectedTeam.name}</h2>
-              {editable && (
+              {teamEditable && (
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => openMembers(selectedTeam)}>
                     <Users className="h-4 w-4 mr-1" />
                     Add member
                   </Button>
-                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTeamConfirm(selectedTeam.id)}>
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete
-                  </Button>
+                  {editable && (
+                    <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTeamConfirm(selectedTeam.id)}>
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -967,161 +1017,205 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         </Dialog>
 
         <Dialog open={memberDialogOpen} onOpenChange={setMemberDialogOpen}>
-          <DialogContent className="max-w-xl gap-0 p-0">
+          <DialogContent className="sm:max-w-3xl gap-0 p-0">
             <DialogHeader className="border-b px-5 py-4">
               <DialogTitle className="text-base">{selectedTeam ? `${selectedTeam.name} members` : 'Team Members'}</DialogTitle>
-              <p className="text-sm text-muted-foreground">Add or remove members who belong to this team.</p>
+              <p className="text-sm text-muted-foreground">Manage who belongs to this team.</p>
             </DialogHeader>
 
-            {editable && (availableMembers.length > 0 || (selectedTeam && invitations.filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id)).length > 0)) && (
-              <div className="border-b">
-                <div className="px-5 py-3">
-                  <Input
-                    placeholder="Search members to add..."
-                    value={memberSearch}
-                    onChange={(e) => setMemberSearch(e.target.value)}
-                    className="h-8 text-sm"
-                  />
+            <div className="grid grid-cols-1 sm:grid-cols-2 min-h-[300px]">
+              {/* Left column — Current members */}
+              <div className="flex flex-col border-r border-border/40">
+                <div className="px-4 pt-3 pb-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                    Members ({teamMembers.length}{selectedTeam && invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length > 0 ? ` + ${invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length} pending` : ''})
+                  </p>
                 </div>
-                <div className="max-h-[160px] overflow-y-auto border-t border-border/40">
-                  {(() => {
-                    const query = memberSearch.toLowerCase();
-                    const filteredMembers = availableMembers.filter((m) =>
-                      (m.full_name || '').toLowerCase().includes(query) || m.email.toLowerCase().includes(query)
-                    );
-                    const filteredInvitations = selectedTeam
-                      ? invitations
-                          .filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id))
-                          .filter((inv) => inv.email.toLowerCase().includes(query))
-                      : [];
+                <div className="flex-1 overflow-y-auto max-h-[360px]">
+                  {selectedTeam && (teamMembers.length > 0 || invitationPreassignments.some((pa) => pa.team_id === selectedTeam.id)) ? (
+                    <div className="divide-y divide-border/40">
+                      {[...teamMembers].sort((a, b) => {
+                        if (a.membership.role === 'owner' && b.membership.role !== 'owner') return -1;
+                        if (a.membership.role !== 'owner' && b.membership.role === 'owner') return 1;
+                        return 0;
+                      }).map(({ membership, user }) => {
+                        const isSelf = membership.user_id === myUserId;
+                        const isTeamManager = membership.role === 'owner';
+                        const canEditMember = teamEditable && !isSelf && (isWsAdmin || !isTeamManager);
 
-                    if (filteredMembers.length === 0 && filteredInvitations.length === 0) {
-                      return <p className="px-5 py-3 text-xs text-muted-foreground text-center">No members to add</p>;
-                    }
-
-                    return (
-                      <>
-                        {filteredMembers.map((member) => (
-                          <button
-                            key={member.user_id}
-                            type="button"
-                            disabled={savingMember}
-                            className="flex w-full items-center gap-3 px-5 py-2 text-left transition-colors hover:bg-accent cursor-pointer disabled:opacity-50"
-                            onClick={async () => {
-                              if (!selectedTeam) return;
-                              setSavingMember(true);
-                              const { error } = await settingsService.addTeamMember(workspaceId, selectedTeam.id, { user_id: member.user_id, role: 'member' });
-                              setSavingMember(false);
-                              if (error) { toast.error(error); return; }
-                              toast.success(`${member.full_name || member.email} added`);
-                              await onRefresh(true);
-                            }}
-                          >
-                            <UserAvatar name={member.full_name || member.email} className="h-6 w-6" fallbackClassName="text-[9px]" />
+                        return (
+                          <div key={membership.id} className="group/member flex items-center gap-2.5 px-4 py-2.5">
+                            <UserAvatar name={user?.full_name || user?.email || membership.user_id} className="h-7 w-7" fallbackClassName="text-[10px]" />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm">{member.full_name || member.email}</p>
-                              {member.full_name && <p className="truncate text-xs text-muted-foreground">{member.email}</p>}
+                              <div className="flex items-center gap-1.5">
+                                <p className="truncate text-sm font-medium">{user?.full_name || 'Unknown user'}</p>
+                                {isSelf && <Badge variant="outline" className="text-[10px] px-1 py-0">You</Badge>}
+                              </div>
+                              <p className="truncate text-xs text-muted-foreground">{user?.email || membership.user_id}</p>
                             </div>
-                            <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          </button>
-                        ))}
-                        {filteredInvitations.length > 0 && (
-                          <>
-                            {filteredMembers.length > 0 && (
-                              <div className="px-5 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Pending invitations</div>
-                            )}
-                            {filteredInvitations.map((inv) => (
+                            <div className="relative flex items-center shrink-0">
+                              {canEditMember ? (
+                                <>
+                                  {isTeamManager && (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 group-hover/member:invisible">Team Manager</Badge>
+                                  )}
+                                  <div className="absolute right-0 flex items-center gap-0.5 opacity-0 group-hover/member:opacity-100 transition-opacity">
+                                    <button
+                                      type="button"
+                                      className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer whitespace-nowrap"
+                                      onClick={() => handleRoleChange(membership.team_id, membership.user_id, isTeamManager ? 'member' : 'owner')}
+                                    >
+                                      {isTeamManager ? 'Remove as manager' : 'Make manager'}
+                                    </button>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => handleRemoveMember(membership.team_id, membership.user_id)}>
+                                          <X className="h-3 w-3" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">Remove from team</TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                </>
+                              ) : isTeamManager ? (
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Team Manager</Badge>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {invitationPreassignments
+                        .filter((pa) => pa.team_id === selectedTeam.id)
+                        .map((pa) => {
+                          const inv = invitations.find((i) => i.id === pa.invitation_id);
+                          return (
+                            <div key={pa.id} className="group/member flex items-center gap-2.5 px-4 py-2.5 opacity-60">
+                              <UserAvatar name={inv?.email || pa.invitation_id} className="h-7 w-7" fallbackClassName="text-[10px]" />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">{inv?.email || 'Pending'}</p>
+                              </div>
+                              <div className="relative flex items-center shrink-0 gap-1.5">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 group-hover/member:invisible">Pending</Badge>
+                                {teamEditable && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button size="icon" variant="ghost" className="absolute right-0 h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover/member:opacity-100 transition-opacity" onClick={() => handleRemoveInvitation(selectedTeam.id, pa.invitation_id)}>
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">Remove from team</TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-full px-4">
+                      <p className="text-sm text-muted-foreground">No members yet</p>
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-border/40 px-4 py-2">
+                  <p className="text-[10px] text-muted-foreground">Team managers can manage team settings and members.</p>
+                </div>
+              </div>
+
+              {/* Right column — Add members */}
+              <div className="flex flex-col">
+                <div className="px-4 pt-3 pb-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Add members</p>
+                </div>
+                {teamEditable ? (
+                  <>
+                    <div className="px-4 pb-2">
+                      <Input
+                        placeholder="Search members..."
+                        value={memberSearch}
+                        onChange={(e) => setMemberSearch(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div className="flex-1 overflow-y-auto max-h-[320px]">
+                      {(() => {
+                        const query = memberSearch.toLowerCase();
+                        const filteredMembers = availableMembers.filter((m) =>
+                          (m.full_name || '').toLowerCase().includes(query) || m.email.toLowerCase().includes(query)
+                        );
+                        const filteredInvitations = selectedTeam
+                          ? invitations
+                              .filter((inv) => !invitationPreassignments.some((pa) => pa.invitation_id === inv.id && pa.team_id === selectedTeam.id))
+                              .filter((inv) => inv.email.toLowerCase().includes(query))
+                          : [];
+
+                        if (filteredMembers.length === 0 && filteredInvitations.length === 0) {
+                          return <p className="px-4 py-6 text-xs text-muted-foreground text-center">No members to add</p>;
+                        }
+
+                        return (
+                          <div className="divide-y divide-border/40">
+                            {filteredMembers.map((member) => (
                               <button
-                                key={inv.id}
+                                key={member.user_id}
                                 type="button"
                                 disabled={savingMember}
-                                className="flex w-full items-center gap-3 px-5 py-2 text-left transition-colors hover:bg-accent cursor-pointer disabled:opacity-50"
+                                className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-accent cursor-pointer disabled:opacity-50"
                                 onClick={async () => {
                                   if (!selectedTeam) return;
-                                  await handleAddInvitation(selectedTeam.id, inv.id);
+                                  setSavingMember(true);
+                                  const { error } = await settingsService.addTeamMember(workspaceId, selectedTeam.id, { user_id: member.user_id, role: 'member' });
+                                  setSavingMember(false);
+                                  if (error) { toast.error(error); return; }
+                                  toast.success(`${member.full_name || member.email} added`);
+                                  await onRefresh(true);
                                 }}
                               >
-                                <UserAvatar name={inv.email} className="h-6 w-6" fallbackClassName="text-[9px]" />
+                                <UserAvatar name={member.full_name || member.email} className="h-6 w-6" fallbackClassName="text-[9px]" />
                                 <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm">{inv.email}</p>
+                                  <p className="truncate text-sm">{member.full_name || member.email}</p>
+                                  {member.full_name && <p className="truncate text-xs text-muted-foreground">{member.email}</p>}
                                 </div>
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Invited</Badge>
                                 <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                               </button>
                             ))}
-                          </>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
-
-            <div className="max-h-[400px] overflow-y-auto">
-              {selectedTeam && (teamMembers.length > 0 || invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length > 0) && (
-                <div className="px-5 pt-3 pb-1">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Current members</p>
-                </div>
-              )}
-              {selectedTeam && (teamMembers.length > 0 || invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length > 0) ? (
-                <div className="divide-y">
-                  {teamMembers.map(({ membership, user }) => (
-                    <div key={membership.id} className="flex items-center gap-3 px-5 py-3">
-                      <UserAvatar name={user?.full_name || user?.email || membership.user_id} className="h-8 w-8" fallbackClassName="text-xs" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{user?.full_name || 'Unknown user'}</p>
-                        <p className="truncate text-xs text-muted-foreground">{user?.email || membership.user_id}</p>
-                      </div>
-                      {editable ? (
-                        <div className="flex items-center gap-1.5">
-                          <Select
-                            value={membership.role}
-                            onValueChange={(value) => handleRoleChange(membership.team_id, membership.user_id, value as 'owner' | 'member')}
-                          >
-                            <SelectTrigger className="h-7 w-[100px] text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="member">Member</SelectItem>
-                              <SelectItem value="owner">Owner</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleRemoveMember(membership.team_id, membership.user_id)}>
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <Badge variant="outline" className="text-xs capitalize">{membership.role}</Badge>
-                      )}
-                    </div>
-                  ))}
-                  {invitationPreassignments
-                    .filter((pa) => pa.team_id === selectedTeam.id)
-                    .map((pa) => {
-                      const inv = invitations.find((i) => i.id === pa.invitation_id);
-                      return (
-                        <div key={pa.id} className="flex items-center gap-3 px-5 py-3 bg-muted/30">
-                          <UserAvatar name={inv?.email || pa.invitation_id} className="h-8 w-8" fallbackClassName="text-xs" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">{inv?.email || 'Pending invitation'}</p>
-                            <p className="truncate text-xs text-muted-foreground">Will join as member when accepted</p>
+                            {filteredInvitations.length > 0 && (
+                              <>
+                                {filteredMembers.length > 0 && (
+                                  <div className="px-4 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Pending invitations</div>
+                                )}
+                                {filteredInvitations.map((inv) => (
+                                  <button
+                                    key={inv.id}
+                                    type="button"
+                                    disabled={savingMember}
+                                    className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-accent cursor-pointer disabled:opacity-50"
+                                    onClick={async () => {
+                                      if (!selectedTeam) return;
+                                      await handleAddInvitation(selectedTeam.id, inv.id);
+                                    }}
+                                  >
+                                    <UserAvatar name={inv.email} className="h-6 w-6" fallbackClassName="text-[9px]" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm">{inv.email}</p>
+                                    </div>
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Invited</Badge>
+                                    <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  </button>
+                                ))}
+                              </>
+                            )}
                           </div>
-                          <Badge variant="secondary" className="text-xs">Invited</Badge>
-                          {editable && (
-                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleRemoveInvitation(selectedTeam.id, pa.invitation_id)}>
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-              ) : (
-                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
-                  No team members yet. Add members above.
-                </div>
-              )}
+                        );
+                      })()}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-center flex-1 px-4">
+                    <p className="text-sm text-muted-foreground">You don't have permission to add members.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -1225,7 +1319,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   states={activeTeamWorkflow.states.slice().sort((a, b) => a.position - b.position)}
                   agents={pipelineAgents}
                   rules={pipelineRules}
-                  editable={editable}
+                  editable={teamEditable}
                   onChanged={() => {
                     automationRuleService.listByWorkflow(workspaceId, activeTeamWorkflow.workflow.id).then((res) => {
                       if (res.data) setPipelineRules(res.data);
@@ -1235,7 +1329,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 <TeamWorkflowStateEditor
                   workspaceId={workspaceId}
                   workflow={activeTeamWorkflow}
-                  editable={editable}
+                  editable={teamEditable}
                   onUpdate={(updated) => {
                     setWorkflows((prev) => prev.map((w) => w.workflow.id === updated.workflow.id ? updated : w));
                   }}
@@ -1249,6 +1343,63 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+      <Dialog open={spacesDialogOpen} onOpenChange={setSpacesDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Docs spaces</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Toggle which docs spaces this team can access.
+            </p>
+            {!allSpaces || allSpaces.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">No docs spaces created yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {allSpaces.map((space) => {
+                  const isWorkspaceWide = space.visibility === 'workspace_wide';
+                  const selected = isWorkspaceWide || (space.team_ids?.includes(selectedTeamId ?? '') ?? false);
+                  const isSaving = spaceSaving === space.id;
+                  return (
+                    <button
+                      key={space.id}
+                      type="button"
+                      disabled={isSaving || isWorkspaceWide}
+                      onClick={async () => {
+                        if (!selectedTeamId || isWorkspaceWide) return;
+                        setSpaceSaving(space.id);
+                        const currentTeamIds = space.team_ids ?? [];
+                        const newTeamIds = selected
+                          ? currentTeamIds.filter(id => id !== selectedTeamId)
+                          : [...currentTeamIds, selectedTeamId];
+                        try {
+                          await updateSpace.mutateAsync({ id: space.id, team_ids: newTeamIds, set_team_ids: true });
+                        } catch {
+                          toast.error('Failed to update space');
+                        } finally {
+                          setSpaceSaving(null);
+                        }
+                      }}
+                      className={cn(
+                        'rounded-md border px-2.5 py-1 text-xs transition-colors',
+                        selected
+                          ? 'border-primary bg-primary/10 text-primary font-medium'
+                          : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground',
+                        isWorkspaceWide && 'opacity-60 cursor-default',
+                        isSaving && 'opacity-50 cursor-wait',
+                      )}
+                    >
+                      {space.icon ? `${space.icon} ` : ''}{space.name}{isWorkspaceWide ? ' (all teams)' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={deleteTeamConfirm !== null}
         onOpenChange={(open) => { if (!open) setDeleteTeamConfirm(null); }}
@@ -1306,9 +1457,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
                   <TableHead className="w-[280px]">Name</TableHead>
                   <TableHead className="w-[140px]">Handle</TableHead>
-                  <TableHead className="w-[100px]">Members</TableHead>
+                  <TableHead className="w-[120px]">Members</TableHead>
+                  <TableHead className="w-[180px]">Team Manager</TableHead>
                   <TableHead className="w-[100px]">Workflow</TableHead>
-                  <TableHead>Description</TableHead>
+                  <TableHead>Docs Spaces</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1370,6 +1522,17 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                         </div>
                       </TableCell>
                       <TableCell>
+                        {(() => {
+                          const managers = teamMembers.filter(({ membership }) => membership.role === 'owner');
+                          if (managers.length === 0) return <span className="text-xs text-muted-foreground/50">&mdash;</span>;
+                          return (
+                            <span className="text-sm text-muted-foreground truncate">
+                              {managers.map(({ user }) => user?.full_name || user?.email || 'Unknown').join(', ')}
+                            </span>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
                         <span className="text-sm text-muted-foreground">
                           {(() => {
                             const wf = workflows.find((w) => w.workflow.team_id === team.id);
@@ -1378,9 +1541,19 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className="line-clamp-1 text-sm text-muted-foreground">
-                          {team.description || '\u2014'}
-                        </span>
+                        {(() => {
+                          const teamSpaces = (allSpaces ?? []).filter(sp => sp.visibility === 'workspace_wide' || sp.team_ids?.includes(team.id));
+                          if (teamSpaces.length === 0) return <span className="text-sm text-muted-foreground/50">&mdash;</span>;
+                          if (teamSpaces.length === 1) return <span className="text-sm text-muted-foreground">{teamSpaces[0].name}</span>;
+                          return (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-sm text-muted-foreground cursor-default">{teamSpaces.length} spaces</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">{teamSpaces.map(sp => sp.name).join(', ')}</TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
                       </TableCell>
                     </TableRow>
                   );

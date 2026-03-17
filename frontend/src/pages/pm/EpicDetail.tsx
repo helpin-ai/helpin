@@ -28,7 +28,7 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type { EpicWithStats, EpicHealth, GitRepository, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
@@ -196,7 +196,7 @@ export function EpicDetailPage() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
 
-  const { teams, getTeamMembers, findTeamName } = useWorkspaceTeams(workspaceId);
+  const { teams, getTeamMembers, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = useMemo(
     () => buildAssignableMemberOptions(assignableMembers),

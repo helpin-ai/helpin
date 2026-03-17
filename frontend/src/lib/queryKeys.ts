@@ -16,7 +16,6 @@ export const queryKeys = {
     settings: (wsId: string) => ['workspaces', wsId, 'settings'] as const,
     aiAutomations: (wsId: string) => ['workspaces', wsId, 'ai-automations'] as const,
     teams: (wsId: string) => ['workspaces', wsId, 'teams'] as const,
-    quarters: (wsId: string) => ['workspaces', wsId, 'quarters'] as const,
     session: (wsId: string) => ['workspaces', wsId, 'session'] as const,
     access: (wsId: string) => ['workspaces', wsId, 'access'] as const,
   },
@@ -73,14 +72,6 @@ export const queryKeys = {
     externalLinks: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'externalLinks'] as const,
 
     search: (wsId: string, query: string) => ['pm', wsId, 'search', query] as const,
-  },
-
-  rewards: {
-    quarters: (wsId: string) => ['rewards', wsId, 'quarters'] as const,
-    sprints: (wsId: string) => ['rewards', wsId, 'sprints'] as const,
-    goals: (wsId: string) => ['rewards', wsId, 'goals'] as const,
-    bonus: (wsId: string) => ['rewards', wsId, 'bonus'] as const,
-    drafts: (wsId: string) => ['rewards', wsId, 'drafts'] as const,
   },
 
   agents: {

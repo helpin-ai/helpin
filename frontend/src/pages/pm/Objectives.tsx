@@ -27,7 +27,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useObjectives, useDeleteObjective } from '@/hooks/queries/useObjectives';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
@@ -122,7 +122,7 @@ export function ObjectivesPage() {
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit, isAdmin } = usePermissions(access);
-  const { teams } = useWorkspaceTeams(workspaceId || undefined);
+  const { teams } = useAccessibleTeams(workspaceId || '');
 
   // Filters
   const [filterState, setFilterState] = useState('');

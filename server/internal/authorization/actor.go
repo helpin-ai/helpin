@@ -30,6 +30,25 @@ func (a *Actor) IsTeamOwner(teamID string) bool {
 	return false
 }
 
+// TeamIDs returns the IDs of all teams the actor belongs to.
+func (a *Actor) TeamIDs() []string {
+	ids := make([]string, len(a.TeamMemberships))
+	for i, tm := range a.TeamMemberships {
+		ids[i] = tm.TeamID
+	}
+	return ids
+}
+
+// IsMemberOfTeam returns true if the actor belongs to the given team (any role).
+func (a *Actor) IsMemberOfTeam(teamID string) bool {
+	for _, tm := range a.TeamMemberships {
+		if tm.TeamID == teamID {
+			return true
+		}
+	}
+	return false
+}
+
 // WithActor stores the Actor in the request context.
 func WithActor(ctx context.Context, actor *Actor) context.Context {
 	return context.WithValue(ctx, actorContextKey{}, actor)

@@ -29,5 +29,6 @@
       "@helpin/widget-core": ["../packages/widget-core/dist/index.d.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/__tests__/**"]
 }
