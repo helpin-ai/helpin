@@ -138,7 +138,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if h.hub.Presence.SetViewing(workspaceID, d.ConversationID, client.UserID) {
-				go h.hub.Broadcast(Event{
+				h.hub.BroadcastAll(Event{
 					Action:      "viewing_started",
 					Entity:      "support_conversation",
 					EntityID:    d.ConversationID,
@@ -156,7 +156,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if h.hub.Presence.ClearViewing(workspaceID, d.ConversationID, client.UserID) {
-				go h.hub.Broadcast(Event{
+				h.hub.BroadcastAll(Event{
 					Action:      "viewing_stopped",
 					Entity:      "support_conversation",
 					EntityID:    d.ConversationID,
@@ -175,7 +175,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if d.Content != "" {
 					eventData, _ = json.Marshal(map[string]string{"content": d.Content})
 				}
-				go h.hub.Broadcast(Event{
+				h.hub.BroadcastAll(Event{
 					Action:      "typing_started",
 					Entity:      "support_conversation",
 					EntityID:    d.ConversationID,
@@ -191,7 +191,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if h.hub.Presence.ClearTyping(workspaceID, d.ConversationID, client.UserID) {
-				go h.hub.Broadcast(Event{
+				h.hub.BroadcastAll(Event{
 					Action:      "typing_stopped",
 					Entity:      "support_conversation",
 					EntityID:    d.ConversationID,

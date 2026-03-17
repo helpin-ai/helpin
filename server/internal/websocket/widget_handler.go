@@ -136,7 +136,7 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 	h.hub.Register(client)
 	if session.AnonymousID != "" {
 		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
-		go h.hub.Broadcast(Event{
+		h.hub.BroadcastAll(Event{
 			Action:      "visitor_online",
 			Entity:      "support_visitor",
 			EntityID:    session.AnonymousID,
@@ -148,7 +148,7 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 		if session.AnonymousID != "" {
 			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
 			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) {
-				go h.hub.Broadcast(Event{
+				h.hub.BroadcastAll(Event{
 					Action:      "visitor_offline",
 					Entity:      "support_visitor",
 					EntityID:    session.AnonymousID,
@@ -310,7 +310,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 	h.hub.Register(client)
 	if session.AnonymousID != "" {
 		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
-		go h.hub.Broadcast(Event{
+		h.hub.BroadcastAll(Event{
 			Action:      "visitor_online",
 			Entity:      "support_visitor",
 			EntityID:    session.AnonymousID,
@@ -322,7 +322,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 		if session.AnonymousID != "" {
 			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
 			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) {
-				go h.hub.Broadcast(Event{
+				h.hub.BroadcastAll(Event{
 					Action:      "visitor_offline",
 					Entity:      "support_visitor",
 					EntityID:    session.AnonymousID,
@@ -397,7 +397,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			if typed.Content != "" {
 				eventData, _ = json.Marshal(map[string]string{"content": typed.Content})
 			}
-			go h.hub.Broadcast(Event{
+			h.hub.BroadcastAll(Event{
 				Action:      "typing_started",
 				Entity:      "support_conversation",
 				EntityID:    conversationID,
@@ -413,7 +413,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 			slog.Debug("widget ws: broadcasting typing_stopped",
 				"conversation_id", conversationID, "workspace_id", session.WorkspaceID)
-			go h.hub.Broadcast(Event{
+			h.hub.BroadcastAll(Event{
 				Action:      "typing_stopped",
 				Entity:      "support_conversation",
 				EntityID:    conversationID,

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -335,7 +336,35 @@ func main() {
 
 	// Initialize WebSocket hub and publisher.
 	wsHub := ws.NewHub()
-	wsPublisher := ws.NewPublisher(wsHub)
+
+	// Initialize Redis relay for cross-pod event broadcasting (optional).
+	var redisRelay *ws.RedisRelay
+	if cfg.RedisURL != "" {
+		redisOpts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			slog.Error("invalid REDIS_URL", "error", err)
+			os.Exit(1)
+		}
+		redisClient := redis.NewClient(redisOpts)
+		if err := redisClient.Ping(context.Background()).Err(); err != nil {
+			slog.Error("Redis unreachable at startup — cannot run multi-pod", "error", err)
+			os.Exit(1)
+		}
+		podID := os.Getenv("HOSTNAME") // K8s sets this to pod name
+		if podID == "" {
+			podID = fmt.Sprintf("pod-%d", time.Now().UnixNano()%10000)
+		}
+		redisRelay = ws.NewRedisRelay(redisClient, wsHub, podID)
+		redisRelayCtx, redisRelayCancel := context.WithCancel(context.Background())
+		go redisRelay.Start(redisRelayCtx)
+		_ = redisRelayCancel // stored for shutdown
+		slog.Info("Redis connected for WebSocket scaling", "url", cfg.RedisURL, "pod", podID)
+	} else {
+		slog.Info("REDIS_URL not set — running in local-only mode (single pod)")
+	}
+
+	wsHub.SetRelay(redisRelay) // nil in local-only mode
+	wsPublisher := ws.NewPublisher(wsHub, redisRelay)
 	wsHandler := ws.NewHandler(wsHub, jwtManager)
 
 	// Start PG LISTEN → WS bridge for cross-process events (e.g. Temporal worker).

@@ -163,7 +163,7 @@ func main() {
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	wsHub := ws.NewHub()
-	wsPublisher := ws.NewPublisher(wsHub)
+	wsPublisher := ws.NewPublisher(wsHub, nil) // no Redis relay in temporal-worker (Phase 4 will migrate)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
