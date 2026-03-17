@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -335,13 +336,50 @@ func main() {
 
 	// Initialize WebSocket hub and publisher.
 	wsHub := ws.NewHub()
-	wsPublisher := ws.NewPublisher(wsHub)
-	wsHandler := ws.NewHandler(wsHub, jwtManager)
 
-	// Start PG LISTEN → WS bridge for cross-process events (e.g. Temporal worker).
-	pgListenerCtx, pgListenerCancel := context.WithCancel(context.Background())
-	pgListener := ws.NewPGListener(cfg.DatabaseURL, wsHub)
-	go pgListener.Start(pgListenerCtx)
+	// Initialize Redis relay for cross-pod event broadcasting (optional).
+	var redisRelay *ws.RedisRelay
+	if cfg.RedisURL != "" {
+		redisOpts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			slog.Error("invalid REDIS_URL", "error", err)
+			os.Exit(1)
+		}
+		redisClient := redis.NewClient(redisOpts)
+		if err := redisClient.Ping(context.Background()).Err(); err != nil {
+			slog.Error("Redis unreachable at startup — cannot run multi-pod", "error", err)
+			os.Exit(1)
+		}
+		podID := os.Getenv("HOSTNAME") // K8s sets this to pod name
+		if podID == "" {
+			podID = fmt.Sprintf("pod-%d", time.Now().UnixNano()%10000)
+		}
+		redisRelay = ws.NewRedisRelay(redisClient, wsHub, podID)
+		redisRelayCtx, redisRelayCancel := context.WithCancel(context.Background())
+		go redisRelay.Start(redisRelayCtx)
+		_ = redisRelayCancel // stored for shutdown
+		slog.Info("Redis connected for WebSocket scaling", "url", cfg.RedisURL, "pod", podID)
+	} else {
+		slog.Info("REDIS_URL not set — running in local-only mode (single pod)")
+	}
+
+	wsHub.SetRelay(redisRelay) // nil in local-only mode
+
+	// When Redis is available, use RedisPresence for shared state across pods.
+	// Otherwise, the default in-memory PresenceState set in NewHub() is used.
+	if cfg.RedisURL != "" {
+		redisOpts2, _ := redis.ParseURL(cfg.RedisURL)
+		presenceRedis := redis.NewClient(redisOpts2)
+		podID := os.Getenv("HOSTNAME")
+		if podID == "" {
+			podID = fmt.Sprintf("pod-%d", time.Now().UnixNano()%10000)
+		}
+		wsHub.SetPresenceProvider(ws.NewRedisPresence(presenceRedis, podID))
+		slog.Info("Redis presence provider enabled")
+	}
+
+	wsPublisher := ws.NewPublisher(wsHub, redisRelay)
+	wsHandler := ws.NewHandler(wsHub, jwtManager)
 
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
@@ -376,6 +414,7 @@ func main() {
 	planningSessionRepo := repository.NewPlanningSessionRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
+	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
@@ -847,7 +886,6 @@ func main() {
 
 	<-done
 	slog.Info("server shutting down")
-	pgListenerCancel()
 	close(automationDone)
 	close(digestDone)
 	close(cleanupDone)

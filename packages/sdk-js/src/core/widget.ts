@@ -152,6 +152,11 @@ export class WidgetManager {
     this.connectionStatus = 'idle';
     this.currentEmail = null;
 
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
+
     if (this.wsRetryTimer) {
       clearTimeout(this.wsRetryTimer);
       this.wsRetryTimer = null;
@@ -373,6 +378,7 @@ export class WidgetManager {
     }
   }
 
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private typingTimer: ReturnType<typeof setTimeout> | null = null;
   private isSendingTyping = false;
   private lastTypingSentAt = 0;
@@ -647,6 +653,16 @@ export class WidgetManager {
 
         this.connectionStatus = 'connected';
 
+        // Start keepalive ping every 60s to refresh server-side visitor online keys.
+        if (this.keepaliveTimer) {
+          clearInterval(this.keepaliveTimer);
+        }
+        this.keepaliveTimer = setInterval(() => {
+          if (this.wsConnection?.readyState === WebSocket.OPEN) {
+            this.wsSend('ping', {});
+          }
+        }, 60_000);
+
         // If user data was provided at boot, upgrade the session
         if (this.config?.user?.email && payload.is_anonymous) {
           this.wsSend('session:upgrade', {
@@ -804,6 +820,10 @@ export class WidgetManager {
         break;
       }
 
+      case 'pong':
+        // Server acknowledged keepalive ping — no action needed.
+        break;
+
       case 'connection:error':
         console.error('Widget server error:', data.data);
         break;
@@ -824,6 +844,10 @@ export class WidgetManager {
   }
 
   private disconnectWebSocket(): void {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
     if (this.wsConnection) {
       this.wsConnection.onclose = null;
       this.wsConnection.close();

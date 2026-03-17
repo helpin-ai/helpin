@@ -106,7 +106,15 @@ func NewRedisRelay(rdb *redis.Client, hub *Hub, podID string) *RedisRelay
 
 // Start subscribes to the global channel and begins the receive loop.
 // Called as a goroutine on startup. Blocks until ctx is cancelled.
+// Only needed on API server pods (not Temporal workers).
 func (r *RedisRelay) Start(ctx context.Context)
+
+// NewRedisEventPublisher creates a publish-only relay for processes that
+// need to emit events but have no local Hub (e.g. Temporal worker).
+// hub is nil, Start() must NOT be called. Only Publish() is used.
+func NewRedisEventPublisher(rdb *redis.Client, podID string) *RedisRelay {
+    return &RedisRelay{rdb: rdb, podID: podID} // hub=nil, no subscription
+}
 
 // Publish sends an event to the appropriate Redis channel.
 func (r *RedisRelay) Publish(ctx context.Context, event Event) error {
@@ -202,9 +210,24 @@ Type:   Set
 Member: {userID}
 ```
 
-On `SetViewing`: add to set + create conn key. On `ClearViewing`: delete conn key, then check if any other conn keys exist for that user — if not, remove from set. On TTL expiry: a background cleanup goroutine or lazy check removes stale users from the set.
+**Conn-to-active-conversation reverse index** (one agent connection views one conversation at a time):
+```
+Key:    support:viewing:active:{workspaceID}:{userID}:{connID}
+Value:  {conversationID}
+TTL:    60s (same as conn key, refreshed together)
+```
 
-This ensures **one tab cannot clear another tab's viewing state** — each connection owns its own key.
+This key answers "what is this connection viewing?" — needed by `GetActiveViewing` and `RefreshAllForConn` without scanning Redis.
+
+**Constraint**: One connection views one conversation. `SetViewing` for a new conversation from the same connID implicitly clears the previous one.
+
+**Operations**:
+- `SetViewing`: set active key → add to aggregate set → create conn key
+- `ClearViewing`: delete conn key → delete active key → if no other conn keys for this user, remove from aggregate set
+- `GetActiveViewing`: `GET support:viewing:active:{ws}:{user}:{conn}`
+- `RefreshViewing`: `EXPIRE` on both conn key and active key
+
+This ensures **one tab cannot clear another tab's viewing state** — each connection owns its own conn key and active key.
 
 **Typing state** — Per-user key (NOT per-connection):
 ```
@@ -253,20 +276,22 @@ Member: {anonymousID}
 
 Same pattern as viewing — add to set on connect, remove from set only when the **last** connection key for that visitor expires or is deleted. This handles multiple widget tabs correctly.
 
-**Methods**:
+**Methods** (implements `PresenceProvider` — see Section 4.4 for full interface):
+
+All methods match the interface exactly. Key implementation details:
+
 ```go
-// Viewing
-func (p *RedisPresence) SetViewing(ctx, workspaceID, conversationID, userID string) (changed bool, err error)
-func (p *RedisPresence) ClearViewing(ctx, workspaceID, conversationID, userID string) (changed bool, err error)
-func (p *RedisPresence) GetViewers(ctx, workspaceID, conversationID string) ([]string, error)
+// SetViewing: SET conn key + SET active key + SADD aggregate — all with TTL
+// ClearViewing: DEL conn key + DEL active key + conditional SREM aggregate
+// GetActiveViewing: GET active key → returns conversationID
+// ClearTyping: GET key, check connID prefix, conditional DEL
+// ClearAllForConn: GET active key → ClearViewing + ClearTyping for that conversation
+// SetVisitorOnline: SET conn key + SADD aggregate
+// SetVisitorOffline: DEL conn key + SCAN for other conn keys → conditional SREM aggregate
+// RefreshAllForConn: GET active key → EXPIRE conn key + active key + typing key
+```
 
-// Typing
-func (p *RedisPresence) SetTyping(ctx, workspaceID, conversationID, userID, content string) error
-func (p *RedisPresence) ClearTyping(ctx, workspaceID, conversationID, userID string) error
-func (p *RedisPresence) GetTypers(ctx, workspaceID, conversationID string) (map[string]string, error)
-
-// Online visitors
-func (p *RedisPresence) SetVisitorOnline(ctx, workspaceID, anonymousID, connID string) error
+Omitting full signatures here — they match `PresenceProvider` in Section 4.4 one-to-one. No extra methods.
 func (p *RedisPresence) SetVisitorOffline(ctx, workspaceID, anonymousID, connID string) error
 func (p *RedisPresence) IsVisitorOnline(ctx, workspaceID, anonymousID string) (bool, error)
 func (p *RedisPresence) GetOnlineVisitors(ctx, workspaceID string) ([]string, error)
@@ -330,20 +355,38 @@ Hub's `Presence` field changes from in-memory `*PresenceState` to an interface:
 
 ```go
 type PresenceProvider interface {
-    SetViewing(ctx context.Context, workspaceID, conversationID, userID string) (bool, error)
-    ClearViewing(ctx context.Context, workspaceID, conversationID, userID string) (bool, error)
-    SetTyping(ctx context.Context, workspaceID, conversationID, userID, content string) error
-    ClearTyping(ctx context.Context, workspaceID, conversationID, userID string) error
-    ClearAllForUser(ctx context.Context, workspaceID, userID string) (viewingCleared, typingCleared []string)
+    // Viewing — conn-scoped (one agent can view from multiple tabs)
+    SetViewing(ctx context.Context, workspaceID, conversationID, userID, connID string) (changed bool, err error)
+    ClearViewing(ctx context.Context, workspaceID, conversationID, userID, connID string) (changed bool, err error)
+    GetViewers(ctx context.Context, workspaceID, conversationID string) ([]string, error)
+    // Returns the conversationID this connection is currently viewing (empty if none)
+    GetActiveViewing(ctx context.Context, workspaceID, userID, connID string) (string, error)
+    RefreshViewing(ctx context.Context, workspaceID, conversationID, userID, connID string) error
+
+    // Typing — per-user with connID ownership tag (last-writer-wins, see Section 4.2)
+    SetTyping(ctx context.Context, workspaceID, conversationID, userID, connID, content string) error
+    ClearTyping(ctx context.Context, workspaceID, conversationID, userID, connID string) (changed bool, err error)
+    GetTypers(ctx context.Context, workspaceID, conversationID string) (map[string]string, error)
+
+    // Disconnect cleanup — clears all state for a user+conn, returns affected conversations
+    ClearAllForConn(ctx context.Context, workspaceID, userID, connID string) (viewingCleared, typingCleared []string, err error)
+
+    // Snapshot — returns viewers + typers for a conversation
     GetSnapshot(ctx context.Context, workspaceID, conversationID string) (PresenceSnapshot, error)
+
+    // Online visitors — conn-scoped (one visitor can have multiple widget tabs)
     SetVisitorOnline(ctx context.Context, workspaceID, anonymousID, connID string) error
-    SetVisitorOffline(ctx context.Context, workspaceID, anonymousID, connID string) error
+    SetVisitorOffline(ctx context.Context, workspaceID, anonymousID, connID string) (lastConn bool, err error)
     IsVisitorOnline(ctx context.Context, workspaceID, anonymousID string) (bool, error)
     GetOnlineVisitors(ctx context.Context, workspaceID string) ([]string, error)
+    RefreshVisitorOnline(ctx context.Context, workspaceID, anonymousID, connID string) error
+
+    // Keepalive — refresh all active keys for a user+conn (called on support:ping)
+    RefreshAllForConn(ctx context.Context, workspaceID, userID, connID string) error
 }
 ```
 
-Both `PresenceState` (in-memory, for tests/dev) and `RedisPresence` (production) implement this interface.
+Both `PresenceState` (in-memory, for tests/dev) and `RedisPresence` (production) implement this interface. The in-memory implementation ignores TTL/refresh (keys never expire) but still tracks connID for correctness.
 
 ### 4.4.1 Connection Identity
 
@@ -481,11 +524,13 @@ go get github.com/redis/go-redis/v9
 ```go
 podID := os.Getenv("HOSTNAME") // K8s sets this to pod name
 
+var presenceProvider ws.PresenceProvider
+var redisRelay *ws.RedisRelay   // declared outside branch — used after
+
 if cfg.RedisURL == "" {
     // Development mode — single-process, no Redis
     slog.Info("REDIS_URL not set — running in local-only mode (single pod)")
     presenceProvider = ws.NewPresenceState() // in-memory
-    wsPublisher = ws.NewPublisher(wsHub, nil)
 } else {
     // Production mode — Redis required, fail fast if unavailable
     opts, err := redis.ParseURL(cfg.RedisURL)
@@ -499,16 +544,16 @@ if cfg.RedisURL == "" {
         os.Exit(1) // crash loop until Redis is available
     }
 
-    redisRelay := ws.NewRedisRelay(redisClient, wsHub, podID)
+    redisRelay = ws.NewRedisRelay(redisClient, wsHub, podID)
     go redisRelay.Start(ctx)
 
     presenceProvider = ws.NewRedisPresence(redisClient, podID)
-    wsPublisher = ws.NewPublisher(wsHub, redisRelay)
     slog.Info("Redis connected for WebSocket scaling", "url", cfg.RedisURL, "pod", podID)
 }
 
 wsHub.SetPresenceProvider(presenceProvider)
 wsHub.SetRelay(redisRelay) // nil in dev mode — BroadcastAll becomes local-only
+wsPublisher = ws.NewPublisher(wsHub, redisRelay) // relay can be nil
 ```
 
 **No ambiguity**: `REDIS_URL` empty = dev mode (in-memory, local-only). `REDIS_URL` set = production mode (fail-to-start if Redis unreachable).
@@ -541,17 +586,22 @@ wsHub.SetRelay(redisRelay) // nil in dev mode — BroadcastAll becomes local-onl
 - **Temporal worker** (`cmd/temporal-worker/main.go` line 165): currently creates a local `wsPublisher` that cannot reach any Hub. Migrate to publish via Redis directly using a `RedisRelay.Publish()` call (no local Hub needed).
 - **Agent run repository** (`service/agent.go` line 237): currently uses `pg_notify('ws_events', ...)` for agent run updates. Replace with `wsPublisher.Publish()` which now goes through Redis.
 - **API server** (`cmd/api/main.go` line 338): stop starting `pgListener` goroutine.
-- Remove `pglistener.go` entirely.
-- Remove PostgreSQL LISTEN/NOTIFY dependency for WS events.
+- Delete `pglistener.go` (PG LISTEN → Hub bridge).
+- Delete `pg_publisher.go` (PGPublisher wrapping pg_notify for ws_events).
+- Delete `pg_session_streamer.go` (PGSessionStreamer wrapping pg_notify for planning_stream).
+- Remove all `pg_notify()` calls from the codebase (`repository/agent.go:237`).
+- Remove PostgreSQL LISTEN/NOTIFY dependency for WS events entirely.
 
 **Files to modify for PGListener retirement:**
-| File | Change |
-|------|--------|
-| `cmd/temporal-worker/main.go` | Initialize `RedisRelay`, publish events via Redis instead of local Publisher |
-| `internal/service/agent.go` | Replace `pg_notify()` calls with `wsPublisher.Publish()` |
-| `internal/repository/*` | Remove any `pg_notify()` helper calls |
-| `cmd/api/main.go` | Remove PGListener init + goroutine |
-| `internal/websocket/pglistener.go` | Delete file |
+| File | Current pg_notify usage | Change |
+|------|------------------------|--------|
+| `internal/repository/agent.go:237` | `pg_notify('ws_events', ...)` for agent run updates | Replace with `wsPublisher.Publish()` — requires injecting publisher into AgentRepository |
+| `internal/websocket/pg_publisher.go` | `PGPublisher.Publish` wraps `pg_notify('ws_events', ...)` | Delete — replaced by RedisRelay publish-only mode (see below) |
+| `internal/websocket/pg_session_streamer.go` | `pg_notify('planning_stream', ...)` for planning stream events | Replace with Redis Pub/Sub on a `planning_stream` channel, or fold into the main relay |
+| `cmd/temporal-worker/main.go` | Creates local `PGPublisher` for cross-process events | Replace with `RedisEventPublisher` (publish-only, no Hub needed — see below) |
+| `cmd/api/main.go:338` | Starts `pgListener` goroutine | Remove PGListener init + goroutine |
+| `internal/websocket/pglistener.go` | Listens on PG channels, forwards to Hub | Delete file |
+| `internal/websocket/interfaces.go` | References PGPublisher/PGSessionStreamer | Update interface comments |
 
 ---
 
@@ -631,11 +681,12 @@ The `origin_pod` field lets the receiver skip rebroadcasting to the pod that ori
 
 On graceful disconnect, the current code already sends immediate cleanup events. This MUST be preserved with Redis:
 
-1. **Agent WS disconnect** (`hub.go` Unregister):
-   - Delete conn-level Redis keys for viewing: `DEL support:viewing:conn:{ws}:{conv}:{user}:{conn}`
-   - Check if user has other connections — if not, remove from aggregate set + broadcast `viewing_stopped`
-   - Delete typing key: `DEL support:typing:{ws}:{conv}:{user}` + broadcast `typing_stopped`
-   - All via `hub.BroadcastAll()` so other pods see it immediately
+1. **Agent WS disconnect** (`hub.go` Unregister) — calls `ClearAllForConn(ws, user, conn)`:
+   - Look up active conversation from `GET support:viewing:active:{ws}:{user}:{conn}`
+   - Delete viewing conn key + active key for that conversation
+   - If no other conn keys remain for this user+conversation → remove from aggregate set + broadcast `viewing_stopped`
+   - For typing: `GET support:typing:{ws}:{conv}:{user}` → only `DEL` if stored value starts with `{connID}|` (this connection owns the key). If another tab has overwritten it, skip — no broadcast.
+   - All broadcasts via `hub.BroadcastAll()` so other pods see it immediately
 
 2. **Widget WS disconnect** (`widget_handler.go` defer):
    - Delete conn-level visitor key: `DEL support:visitors:conn:{ws}:{anon}:{pod}:{conn}`
@@ -703,7 +754,7 @@ Add a `support:ping` case:
 ```go
 case "support:ping":
     // Refresh all active presence keys for this agent
-    h.hub.Presence.RefreshAllForUser(ctx, workspaceID, client.UserID, client.ConnID)
+    h.hub.Presence.RefreshAllForConn(ctx, workspaceID, client.UserID, client.ConnID)
 ```
 
 Frontend sends `support:ping` every 45s from `useWebSocket`:
@@ -719,11 +770,9 @@ const pingInterval = setInterval(() => {
 clearInterval(pingInterval);
 ```
 
-**PresenceProvider additions**:
-```go
-RefreshVisitorOnline(ctx, workspaceID, anonymousID, connID string) error  // EXPIRE the conn key
-RefreshAllForUser(ctx, workspaceID, userID, connID string) error          // EXPIRE all viewing/typing keys
-```
+**PresenceProvider methods used** (all defined in the main interface in Section 4.4):
+- `RefreshVisitorOnline` — EXPIRE the visitor conn key
+- `RefreshAllForConn` — EXPIRE all viewing conn key + active key + typing key for this connection
 
 **Files to modify**:
 | File | Change |
@@ -732,7 +781,7 @@ RefreshAllForUser(ctx, workspaceID, userID, connID string) error          // EXP
 | `server/internal/websocket/widget_handler.go` | Handle `ping` message, refresh visitor key |
 | `server/internal/websocket/handler.go` | Handle `support:ping`, refresh presence keys |
 | `frontend/src/hooks/useWebSocket.ts` | Add 45s ping interval |
-| `server/internal/websocket/redis_presence.go` | Add `RefreshVisitorOnline`, `RefreshAllForUser` |
+| `server/internal/websocket/redis_presence.go` | Add `RefreshVisitorOnline`, `RefreshAllForConn` |
 
 ---
 
@@ -782,17 +831,35 @@ Each phase is independently deployable and reversible.
 | `k8s/prod/redis.yaml` | Redis K8s deployment |
 | `k8s/stage/redis.yaml` | Redis K8s deployment (staging) |
 
-### Modified Files
-| File | Change |
-|------|--------|
-| `server/internal/config/config.go` | Add `RedisURL` field |
-| `server/internal/websocket/publisher.go` | Add relay reference, dual publish |
-| `server/internal/websocket/hub.go` | Presence as interface, remove in-memory presence |
-| `server/internal/websocket/handler.go` | Use presence interface for snapshot |
-| `server/internal/websocket/widget_handler.go` | Use presence interface for visitor tracking |
-| `server/cmd/api/main.go` | Redis client init, DI wiring |
-| `server/go.mod` | Add `github.com/redis/go-redis/v9` |
-| `.env.example` | Add `REDIS_URL` |
+### Modified Files — Server
+| File | Change | Phase |
+|------|--------|-------|
+| `server/internal/config/config.go` | Add `RedisURL` field | 1 |
+| `server/go.mod` | Add `github.com/redis/go-redis/v9` | 1 |
+| `server/cmd/api/main.go` | Redis client init, DI wiring, remove PGListener | 1, 4 |
+| `server/internal/websocket/hub.go` | Add `ConnID` to Client, `relay` field, `BroadcastAll`, PresenceProvider interface, replace direct `Broadcast` in Unregister with `BroadcastAll` | 2, 3 |
+| `server/internal/websocket/publisher.go` | Add relay reference, dual publish, WorkspaceID warning | 2 |
+| `server/internal/websocket/handler.go` | Generate ConnID, use PresenceProvider, add `support:ping` handler, pass connID to presence methods | 3 |
+| `server/internal/websocket/widget_handler.go` | Generate ConnID, use PresenceProvider, add `ping` handler, replace direct `Broadcast` with `BroadcastAll` | 3 |
+| `server/internal/websocket/presence.go` | Update in-memory impl to match PresenceProvider interface (add connID params) | 3 |
+| `server/internal/service/agent.go` | Replace `pg_notify()` calls with `wsPublisher.Publish()` | 4 |
+| `server/cmd/temporal-worker/main.go` | Initialize RedisRelay, publish events via Redis | 4 |
+| `.env.example` | Add `REDIS_URL` | 1 |
+
+### Modified Files — Frontend & Widget
+| File | Change | Phase |
+|------|--------|-------|
+| `frontend/src/hooks/useWebSocket.ts` | Add 45s `support:ping` keepalive interval | 3 |
+| `packages/sdk-js/src/core/widget.ts` | Add 60s `ping` keepalive interval, cleanup on disconnect | 3 |
+
+### Deleted Files (Phase 4)
+| File | Purpose being replaced |
+|------|----------------------|
+| `server/internal/websocket/pglistener.go` | PG LISTEN → Hub bridge — replaced by RedisRelay.Start() |
+| `server/internal/websocket/pg_publisher.go` | PGPublisher wrapping `pg_notify('ws_events', ...)` — replaced by RedisRelay.Publish() / RedisEventPublisher |
+| `server/internal/websocket/pg_session_streamer.go` | PGSessionStreamer wrapping `pg_notify('planning_stream', ...)` — replaced by RedisRelay.Publish() on a `planning_stream` channel |
+
+All three files are pg_notify-based cross-process bridges. Redis Pub/Sub replaces them entirely. No pg_notify calls should remain in the codebase after Phase 4.
 
 ---
 

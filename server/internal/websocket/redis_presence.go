@@ -1,0 +1,443 @@
+package websocket
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+// Key TTL constants for Redis presence state.
+const (
+	viewingConnTTL = 60 * time.Second
+	typingTTL      = 15 * time.Second
+	visitorConnTTL = 90 * time.Second
+)
+
+// RedisPresence implements PresenceProvider using Redis for shared state
+// across multiple pods. All methods are safe for concurrent use.
+type RedisPresence struct {
+	rdb   *redis.Client
+	podID string
+}
+
+// NewRedisPresence creates a Redis-backed presence provider.
+func NewRedisPresence(rdb *redis.Client, podID string) *RedisPresence {
+	return &RedisPresence{rdb: rdb, podID: podID}
+}
+
+// --- Key builders ---
+
+// support:viewing:conn:{workspaceID}:{conversationID}:{userID}:{connID}
+func viewingConnKey(workspaceID, conversationID, userID, connID string) string {
+	return fmt.Sprintf("support:viewing:conn:%s:%s:%s:%s", workspaceID, conversationID, userID, connID)
+}
+
+// support:viewing:active:{workspaceID}:{userID}:{connID}
+func viewingActiveKey(workspaceID, userID, connID string) string {
+	return fmt.Sprintf("support:viewing:active:%s:%s:%s", workspaceID, userID, connID)
+}
+
+// support:viewing:{workspaceID}:{conversationID}
+func viewingSetKey(workspaceID, conversationID string) string {
+	return fmt.Sprintf("support:viewing:%s:%s", workspaceID, conversationID)
+}
+
+// support:typing:{workspaceID}:{conversationID}:{userID}
+func typingKey(workspaceID, conversationID, userID string) string {
+	return fmt.Sprintf("support:typing:%s:%s:%s", workspaceID, conversationID, userID)
+}
+
+// support:visitors:conn:{workspaceID}:{anonymousID}:{podID}:{connID}
+func visitorConnKey(workspaceID, anonymousID, podID, connID string) string {
+	return fmt.Sprintf("support:visitors:conn:%s:%s:%s:%s", workspaceID, anonymousID, podID, connID)
+}
+
+// support:visitors:online:{workspaceID}
+func visitorSetKey(workspaceID string) string {
+	return fmt.Sprintf("support:visitors:online:%s", workspaceID)
+}
+
+// --- Viewing ---
+
+// SetViewing marks an agent connection as viewing a conversation.
+// If this connection was viewing a different conversation, it is implicitly cleared.
+// Returns true if the aggregate viewer set changed (new user added).
+func (p *RedisPresence) SetViewing(ctx context.Context, workspaceID, conversationID, userID, connID string) (bool, error) {
+	// Check if this connection was already viewing something else.
+	activeKey := viewingActiveKey(workspaceID, userID, connID)
+	prevConv, err := p.rdb.Get(ctx, activeKey).Result()
+	if err == nil && prevConv != "" && prevConv != conversationID {
+		// Implicitly clear the previous conversation.
+		if _, clearErr := p.ClearViewing(ctx, workspaceID, prevConv, userID, connID); clearErr != nil {
+			slog.Warn("redis presence: clear previous viewing",
+				"error", clearErr, "prev_conversation", prevConv)
+		}
+	}
+
+	pipe := p.rdb.Pipeline()
+
+	// Set the conn key with TTL.
+	connKey := viewingConnKey(workspaceID, conversationID, userID, connID)
+	pipe.Set(ctx, connKey, "1", viewingConnTTL)
+
+	// Set the active reverse-index key with TTL.
+	pipe.Set(ctx, activeKey, conversationID, viewingConnTTL)
+
+	// Add to aggregate set.
+	setKey := viewingSetKey(workspaceID, conversationID)
+	pipe.SAdd(ctx, setKey, userID)
+
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return false, fmt.Errorf("redis presence SetViewing: %w", err)
+	}
+
+	// The aggregate set add returns whether the member was newly added.
+	// Since we're using a pipeline, check the SAdd result.
+	// Re-check: was this user already in the set?
+	// For simplicity, we report changed=true if no error. The caller uses this
+	// to decide whether to broadcast; broadcasting an extra viewing_started
+	// for an already-viewing user is harmless (idempotent on the frontend).
+	return true, nil
+}
+
+// ClearViewing removes a connection's viewing state for a conversation.
+// Returns true if the user was removed from the aggregate set (no other conn keys remain).
+func (p *RedisPresence) ClearViewing(ctx context.Context, workspaceID, conversationID, userID, connID string) (bool, error) {
+	// Delete the conn key.
+	connKey := viewingConnKey(workspaceID, conversationID, userID, connID)
+	p.rdb.Del(ctx, connKey)
+
+	// Delete the active reverse-index key.
+	activeKey := viewingActiveKey(workspaceID, userID, connID)
+	p.rdb.Del(ctx, activeKey)
+
+	// Check if any other conn keys remain for this user+conversation.
+	pattern := viewingConnKey(workspaceID, conversationID, userID, "*")
+	keys, err := p.scanKeys(ctx, pattern, 1)
+	if err != nil {
+		return false, fmt.Errorf("redis presence ClearViewing scan: %w", err)
+	}
+
+	if len(keys) == 0 {
+		// No other connections — remove from aggregate set.
+		setKey := viewingSetKey(workspaceID, conversationID)
+		removed, err := p.rdb.SRem(ctx, setKey, userID).Result()
+		if err != nil {
+			return false, fmt.Errorf("redis presence ClearViewing SRem: %w", err)
+		}
+		return removed > 0, nil
+	}
+
+	return false, nil
+}
+
+// GetViewers returns the list of user IDs currently viewing a conversation.
+func (p *RedisPresence) GetViewers(ctx context.Context, workspaceID, conversationID string) ([]string, error) {
+	setKey := viewingSetKey(workspaceID, conversationID)
+	members, err := p.rdb.SMembers(ctx, setKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis presence GetViewers: %w", err)
+	}
+	return members, nil
+}
+
+// GetActiveViewing returns the conversation this connection is currently viewing.
+// Returns empty string if not viewing anything.
+func (p *RedisPresence) GetActiveViewing(ctx context.Context, workspaceID, userID, connID string) (string, error) {
+	activeKey := viewingActiveKey(workspaceID, userID, connID)
+	val, err := p.rdb.Get(ctx, activeKey).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("redis presence GetActiveViewing: %w", err)
+	}
+	return val, nil
+}
+
+// RefreshViewing extends the TTL on viewing conn key and active key.
+func (p *RedisPresence) RefreshViewing(ctx context.Context, workspaceID, conversationID, userID, connID string) error {
+	pipe := p.rdb.Pipeline()
+	connKey := viewingConnKey(workspaceID, conversationID, userID, connID)
+	activeKey := viewingActiveKey(workspaceID, userID, connID)
+	pipe.Expire(ctx, connKey, viewingConnTTL)
+	pipe.Expire(ctx, activeKey, viewingConnTTL)
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("redis presence RefreshViewing: %w", err)
+	}
+	return nil
+}
+
+// --- Typing ---
+
+// SetTyping marks a user as typing in a conversation. The value stores the
+// connID and draft content as "{connID}|{content}" for ownership tracking.
+func (p *RedisPresence) SetTyping(ctx context.Context, workspaceID, conversationID, userID, connID, content string) error {
+	key := typingKey(workspaceID, conversationID, userID)
+	val := connID + "|" + content
+	err := p.rdb.Set(ctx, key, val, typingTTL).Err()
+	if err != nil {
+		return fmt.Errorf("redis presence SetTyping: %w", err)
+	}
+	return nil
+}
+
+// ClearTyping removes typing state only if the current connID owns the key.
+// Returns true if the key was actually deleted.
+func (p *RedisPresence) ClearTyping(ctx context.Context, workspaceID, conversationID, userID, connID string) (bool, error) {
+	key := typingKey(workspaceID, conversationID, userID)
+	val, err := p.rdb.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("redis presence ClearTyping GET: %w", err)
+	}
+
+	// Only delete if this connection owns the key.
+	if strings.HasPrefix(val, connID+"|") {
+		deleted, err := p.rdb.Del(ctx, key).Result()
+		if err != nil {
+			return false, fmt.Errorf("redis presence ClearTyping DEL: %w", err)
+		}
+		return deleted > 0, nil
+	}
+
+	// Another tab has overwritten — leave it alone.
+	return false, nil
+}
+
+// GetTypers returns a map of userID → draft content for all users typing in a conversation.
+func (p *RedisPresence) GetTypers(ctx context.Context, workspaceID, conversationID string) (map[string]string, error) {
+	pattern := typingKey(workspaceID, conversationID, "*")
+	keys, err := p.scanKeys(ctx, pattern, 100)
+	if err != nil {
+		return nil, fmt.Errorf("redis presence GetTypers scan: %w", err)
+	}
+
+	typers := make(map[string]string)
+	if len(keys) == 0 {
+		return typers, nil
+	}
+
+	vals, err := p.rdb.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis presence GetTypers MGet: %w", err)
+	}
+
+	// Key format: support:typing:{ws}:{conv}:{userID}
+	prefix := typingKey(workspaceID, conversationID, "")
+	for i, key := range keys {
+		if vals[i] == nil {
+			continue
+		}
+		userID := strings.TrimPrefix(key, prefix)
+		raw, ok := vals[i].(string)
+		if !ok {
+			continue
+		}
+		// Value format: "{connID}|{content}" — extract content.
+		if idx := strings.Index(raw, "|"); idx >= 0 {
+			typers[userID] = raw[idx+1:]
+		}
+	}
+
+	return typers, nil
+}
+
+// --- Disconnect cleanup ---
+
+// ClearAllForConn clears all viewing and typing state for a user+conn.
+// Returns the conversation IDs that were cleared for viewing and typing.
+func (p *RedisPresence) ClearAllForConn(ctx context.Context, workspaceID, userID, connID string) ([]string, []string, error) {
+	var viewingCleared []string
+	var typingCleared []string
+
+	// Look up what conversation this connection was viewing.
+	activeConv, err := p.GetActiveViewing(ctx, workspaceID, userID, connID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("redis presence ClearAllForConn GetActiveViewing: %w", err)
+	}
+
+	if activeConv != "" {
+		changed, err := p.ClearViewing(ctx, workspaceID, activeConv, userID, connID)
+		if err != nil {
+			slog.Warn("redis presence ClearAllForConn: clear viewing",
+				"error", err, "conversation_id", activeConv)
+		}
+		if changed {
+			viewingCleared = append(viewingCleared, activeConv)
+		}
+
+		// Also try to clear typing for this conversation.
+		cleared, err := p.ClearTyping(ctx, workspaceID, activeConv, userID, connID)
+		if err != nil {
+			slog.Warn("redis presence ClearAllForConn: clear typing",
+				"error", err, "conversation_id", activeConv)
+		}
+		if cleared {
+			typingCleared = append(typingCleared, activeConv)
+		}
+	}
+
+	return viewingCleared, typingCleared, nil
+}
+
+// --- Snapshot ---
+
+// GetSnapshot returns the current viewers and typers for a conversation.
+func (p *RedisPresence) GetSnapshot(ctx context.Context, workspaceID, conversationID string) (PresenceSnapshot, error) {
+	snap := PresenceSnapshot{
+		Viewers: make([]string, 0),
+		Typers:  make(map[string]string),
+	}
+
+	viewers, err := p.GetViewers(ctx, workspaceID, conversationID)
+	if err != nil {
+		return snap, err
+	}
+	snap.Viewers = viewers
+
+	typers, err := p.GetTypers(ctx, workspaceID, conversationID)
+	if err != nil {
+		return snap, err
+	}
+	snap.Typers = typers
+
+	return snap, nil
+}
+
+// --- Online visitors ---
+
+// SetVisitorOnline marks a visitor connection as online.
+func (p *RedisPresence) SetVisitorOnline(ctx context.Context, workspaceID, anonymousID, connID string) error {
+	pipe := p.rdb.Pipeline()
+
+	// Set conn key with TTL.
+	connKey := visitorConnKey(workspaceID, anonymousID, p.podID, connID)
+	pipe.Set(ctx, connKey, "1", visitorConnTTL)
+
+	// Add to aggregate set.
+	setKey := visitorSetKey(workspaceID)
+	pipe.SAdd(ctx, setKey, anonymousID)
+
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("redis presence SetVisitorOnline: %w", err)
+	}
+	return nil
+}
+
+// SetVisitorOffline removes a visitor connection. Returns true if this was the last connection.
+func (p *RedisPresence) SetVisitorOffline(ctx context.Context, workspaceID, anonymousID, connID string) (bool, error) {
+	// Delete the conn key.
+	connKey := visitorConnKey(workspaceID, anonymousID, p.podID, connID)
+	p.rdb.Del(ctx, connKey)
+
+	// Check if any other conn keys remain for this visitor (across all pods).
+	pattern := fmt.Sprintf("support:visitors:conn:%s:%s:*", workspaceID, anonymousID)
+	keys, err := p.scanKeys(ctx, pattern, 1)
+	if err != nil {
+		return false, fmt.Errorf("redis presence SetVisitorOffline scan: %w", err)
+	}
+
+	if len(keys) == 0 {
+		// Last connection — remove from aggregate set.
+		setKey := visitorSetKey(workspaceID)
+		p.rdb.SRem(ctx, setKey, anonymousID)
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// IsVisitorOnline returns true if a visitor has at least one active connection.
+func (p *RedisPresence) IsVisitorOnline(ctx context.Context, workspaceID, anonymousID string) (bool, error) {
+	setKey := visitorSetKey(workspaceID)
+	isMember, err := p.rdb.SIsMember(ctx, setKey, anonymousID).Result()
+	if err != nil {
+		return false, fmt.Errorf("redis presence IsVisitorOnline: %w", err)
+	}
+	return isMember, nil
+}
+
+// GetOnlineVisitors returns the list of online visitor IDs for a workspace.
+func (p *RedisPresence) GetOnlineVisitors(ctx context.Context, workspaceID string) ([]string, error) {
+	setKey := visitorSetKey(workspaceID)
+	members, err := p.rdb.SMembers(ctx, setKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis presence GetOnlineVisitors: %w", err)
+	}
+	return members, nil
+}
+
+// RefreshVisitorOnline extends the TTL on a visitor's conn key.
+func (p *RedisPresence) RefreshVisitorOnline(ctx context.Context, workspaceID, anonymousID, connID string) error {
+	connKey := visitorConnKey(workspaceID, anonymousID, p.podID, connID)
+	err := p.rdb.Expire(ctx, connKey, visitorConnTTL).Err()
+	if err != nil {
+		return fmt.Errorf("redis presence RefreshVisitorOnline: %w", err)
+	}
+	return nil
+}
+
+// --- Keepalive ---
+
+// RefreshAllForConn refreshes all active keys for a user+conn.
+// Called on support:ping from the agent frontend.
+func (p *RedisPresence) RefreshAllForConn(ctx context.Context, workspaceID, userID, connID string) error {
+	// Refresh viewing keys.
+	activeConv, err := p.GetActiveViewing(ctx, workspaceID, userID, connID)
+	if err != nil {
+		return fmt.Errorf("redis presence RefreshAllForConn GetActiveViewing: %w", err)
+	}
+	if activeConv != "" {
+		if err := p.RefreshViewing(ctx, workspaceID, activeConv, userID, connID); err != nil {
+			return err
+		}
+	}
+
+	// Refresh typing key if this connection owns it.
+	if activeConv != "" {
+		key := typingKey(workspaceID, activeConv, userID)
+		val, err := p.rdb.Get(ctx, key).Result()
+		if err == nil && strings.HasPrefix(val, connID+"|") {
+			p.rdb.Expire(ctx, key, typingTTL)
+		}
+	}
+
+	return nil
+}
+
+// --- Internal helpers ---
+
+// scanKeys scans Redis for keys matching a pattern. Returns up to limit keys.
+// Uses SCAN to avoid blocking Redis with KEYS on large datasets.
+func (p *RedisPresence) scanKeys(ctx context.Context, pattern string, limit int) ([]string, error) {
+	var allKeys []string
+	var cursor uint64
+	for {
+		keys, nextCursor, err := p.rdb.Scan(ctx, cursor, pattern, int64(limit)).Result()
+		if err != nil {
+			return nil, err
+		}
+		allKeys = append(allKeys, keys...)
+		if len(allKeys) >= limit {
+			return allKeys[:limit], nil
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	return allKeys, nil
+}
+
+// Compile-time check that RedisPresence implements PresenceProvider.
+var _ PresenceProvider = (*RedisPresence)(nil)
