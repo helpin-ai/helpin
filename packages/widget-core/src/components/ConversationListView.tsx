@@ -71,8 +71,8 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
         <div className="helpin-conversations-header-spacer" />
         <span className="helpin-conversations-title">Messages</span>
         {onClose && (
-          <button className="helpin-conversations-close" onClick={onClose} aria-label="Close">
-            <XIcon size={18} />
+          <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
+            <XIcon size={16} />
           </button>
         )}
       </div>
@@ -100,7 +100,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
               </span>
             </div>
             {conv.unreadCount ? (
-              <span className="helpin-conversation-item-badge" style={{ backgroundColor: brandColor }}>
+              <span className="helpin-conversation-item-badge">
                 {conv.unreadCount > 99 ? '99+' : conv.unreadCount}
               </span>
             ) : (
