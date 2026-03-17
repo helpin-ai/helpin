@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, ChevronDown, ChevronUp, ExternalLink, Loader2, MessageSquare, Play, Zap } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ExternalLink, Loader2, MessageSquare, Zap } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
