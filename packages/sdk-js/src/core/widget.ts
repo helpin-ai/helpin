@@ -179,6 +179,13 @@ export class WidgetManager {
       // User had an active conversation — resume it instead of showing home
       this.currentView = 'conversation';
     }
+    // Mark active conversation as read when opening to conversation view
+    if (this.activeConversationId && this.currentView === 'conversation') {
+      this.clearActiveConversationUnread();
+      if (this.wsConnection?.readyState === WebSocket.OPEN) {
+        this.wsSend('conversation:read', { conversation_id: this.activeConversationId });
+      }
+    }
     this.ensureWidget();
     this.render();
     this.triggerCallback('onShow');
@@ -367,6 +374,16 @@ export class WidgetManager {
     if (total !== this.unreadCount) {
       this.unreadCount = total;
       this.triggerCallback('onUnreadCountChange', total);
+    }
+  }
+
+  private clearActiveConversationUnread(): void {
+    if (!this.activeConversationId) return;
+    const convIdx = this.conversations.findIndex(c => c.id === this.activeConversationId);
+    if (convIdx >= 0 && this.conversations[convIdx].unreadCount) {
+      const updated = { ...this.conversations[convIdx], unreadCount: 0 };
+      this.conversations = this.conversations.map((c, i) => i === convIdx ? updated : c);
+      this.syncUnreadCount();
     }
   }
 
@@ -863,7 +880,10 @@ export class WidgetManager {
             status: c.status || 'open',
             lastMessage: c.last_message,
             lastMessageAt: c.updated_at || c.created_at,
-            unreadCount: c.unread_count ?? 0,
+            // Don't show unread badge for the conversation the user is actively viewing
+            unreadCount: (this.isOpen && this.currentView === 'conversation' && this.activeConversationId === c.id)
+              ? 0
+              : (c.unread_count ?? 0),
           }));
           this.syncUnreadCount();
           this.render();
