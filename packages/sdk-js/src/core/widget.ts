@@ -286,13 +286,14 @@ export class WidgetManager {
   private render(): void {
     if (!this.mountContainer || !this.widgetConfig) return;
 
-    // Apply brand color as CSS variable on the shadow root container
+    // Apply brand color as CSS variables on the shadow root container
     const primaryColor = this.widgetConfig.branding?.primaryColor;
     if (primaryColor && this.mountContainer.parentElement) {
       const root = this.mountContainer.parentElement as HTMLElement;
       root.style.setProperty('--helpin-primary', primaryColor);
-      // Derive a slightly darker hover shade
-      root.style.setProperty('--helpin-primary-hover', primaryColor);
+      root.style.setProperty('--helpin-primary-hover', this.darkenColor(primaryColor, 15));
+      // Auto-detect foreground color for readability on both light and dark brand colors
+      root.style.setProperty('--helpin-primary-foreground', this.getContrastColor(primaryColor));
     }
 
     const showPreChat = this.widgetConfig.features?.preChatForm && !this.sessionToken;
@@ -862,6 +863,32 @@ export class WidgetManager {
       this.wsConnection.close();
       this.wsConnection = null;
     }
+  }
+
+  // Returns '#ffffff' or '#000000' based on which has better contrast against the given hex color.
+  private getContrastColor(hex: string): string {
+    const rgb = this.hexToRgb(hex);
+    if (!rgb) return '#ffffff';
+    // Relative luminance (WCAG formula)
+    const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+    return luminance > 0.5 ? '#000000' : '#ffffff';
+  }
+
+  // Darkens a hex color by a percentage (0-100).
+  private darkenColor(hex: string, percent: number): string {
+    const rgb = this.hexToRgb(hex);
+    if (!rgb) return hex;
+    const factor = 1 - percent / 100;
+    const r = Math.round(rgb.r * factor);
+    const g = Math.round(rgb.g * factor);
+    const b = Math.round(rgb.b * factor);
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  }
+
+  private hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    const match = hex.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+    if (!match) return null;
+    return { r: parseInt(match[1], 16), g: parseInt(match[2], 16), b: parseInt(match[3], 16) };
   }
 
   private triggerCallback(name: string, ...args: any[]): void {
