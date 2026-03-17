@@ -86,10 +86,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
             {getInitial(displayName)}
           </div>
           {isVisitorOnline && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
-            </span>
+            <span className="absolute -top-0.5 -left-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background" />
           )}
         </div>
         <div className="min-w-0 flex-1">
