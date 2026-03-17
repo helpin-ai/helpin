@@ -106,7 +106,15 @@ func NewRedisRelay(rdb *redis.Client, hub *Hub, podID string) *RedisRelay
 
 // Start subscribes to the global channel and begins the receive loop.
 // Called as a goroutine on startup. Blocks until ctx is cancelled.
+// Only needed on API server pods (not Temporal workers).
 func (r *RedisRelay) Start(ctx context.Context)
+
+// NewRedisEventPublisher creates a publish-only relay for processes that
+// need to emit events but have no local Hub (e.g. Temporal worker).
+// hub is nil, Start() must NOT be called. Only Publish() is used.
+func NewRedisEventPublisher(rdb *redis.Client, podID string) *RedisRelay {
+    return &RedisRelay{rdb: rdb, podID: podID} // hub=nil, no subscription
+}
 
 // Publish sends an event to the appropriate Redis channel.
 func (r *RedisRelay) Publish(ctx context.Context, event Event) error {
@@ -582,13 +590,15 @@ wsPublisher = ws.NewPublisher(wsHub, redisRelay) // relay can be nil
 - Remove PostgreSQL LISTEN/NOTIFY dependency for WS events.
 
 **Files to modify for PGListener retirement:**
-| File | Change |
-|------|--------|
-| `cmd/temporal-worker/main.go` | Initialize `RedisRelay`, publish events via Redis instead of local Publisher |
-| `internal/service/agent.go` | Replace `pg_notify()` calls with `wsPublisher.Publish()` |
-| `internal/repository/*` | Remove any `pg_notify()` helper calls |
-| `cmd/api/main.go` | Remove PGListener init + goroutine |
-| `internal/websocket/pglistener.go` | Delete file |
+| File | Current pg_notify usage | Change |
+|------|------------------------|--------|
+| `internal/repository/agent.go:237` | `pg_notify('ws_events', ...)` for agent run updates | Replace with `wsPublisher.Publish()` — requires injecting publisher into AgentRepository |
+| `internal/websocket/pg_publisher.go` | `PGPublisher.Publish` wraps `pg_notify('ws_events', ...)` | Delete — replaced by RedisRelay publish-only mode (see below) |
+| `internal/websocket/pg_session_streamer.go` | `pg_notify('planning_stream', ...)` for planning stream events | Replace with Redis Pub/Sub on a `planning_stream` channel, or fold into the main relay |
+| `cmd/temporal-worker/main.go` | Creates local `PGPublisher` for cross-process events | Replace with `RedisEventPublisher` (publish-only, no Hub needed — see below) |
+| `cmd/api/main.go:338` | Starts `pgListener` goroutine | Remove PGListener init + goroutine |
+| `internal/websocket/pglistener.go` | Listens on PG channels, forwards to Hub | Delete file |
+| `internal/websocket/interfaces.go` | References PGPublisher/PGSessionStreamer | Update interface comments |
 
 ---
 
@@ -768,7 +778,7 @@ clearInterval(pingInterval);
 | `server/internal/websocket/widget_handler.go` | Handle `ping` message, refresh visitor key |
 | `server/internal/websocket/handler.go` | Handle `support:ping`, refresh presence keys |
 | `frontend/src/hooks/useWebSocket.ts` | Add 45s ping interval |
-| `server/internal/websocket/redis_presence.go` | Add `RefreshVisitorOnline`, `RefreshAllForUser` |
+| `server/internal/websocket/redis_presence.go` | Add `RefreshVisitorOnline`, `RefreshAllForConn` |
 
 ---
 
