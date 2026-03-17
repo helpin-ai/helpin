@@ -42,12 +42,6 @@ import {
   type VisibilityFieldKey,
 } from '@/lib/teamPresets';
 
-const STORY_TYPE_LABELS: Record<DefaultStoryType, string> = {
-  feature: 'Feature',
-  bug: 'Bug',
-  chore: 'Chore',
-};
-
 /* ── Helper Forms ── */
 
 function EstimateSettingsForm({ teamId, initial, saving, onSave }: {

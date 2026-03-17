@@ -36,7 +36,6 @@ import type {
   AgentRun,
   AgentRunArtifact,
   AgentRuntimeKind,
-  AgentTriggerMode,
   CreateAgentRequest,
   UpdateAgentRequest,
 } from '@/lib/pmTypes';
@@ -229,7 +228,6 @@ interface AgentFormData {
   model: string;
   system_prompt: string;
   planning_notes: string;
-  trigger_mode: AgentTriggerMode;
   monthly_token_budget: string;
   team_id: string;
   schedule: string;
@@ -256,7 +254,6 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
     model: '',
     system_prompt: '',
     planning_notes: '',
-    trigger_mode: 'manual',
     monthly_token_budget: '',
     team_id: '',
     schedule: '',
@@ -758,7 +755,6 @@ export function AgentsPage() {
       schedule: agent.schedule ?? '',
       approval_mode: agent.approval_mode ?? 'class_default',
       max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
-      trigger_mode: agent.trigger_mode ?? 'manual',
       allowed_tools: agent.allowed_tools ?? [],
     });
     setDialogOpen(true);
