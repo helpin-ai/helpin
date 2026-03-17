@@ -21,6 +21,7 @@ func NewPlanningSessionHandler(sessionService *service.PlanningSessionService) *
 
 // Start creates a new interactive planning session for an epic.
 func (h *PlanningSessionHandler) Start(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	epicID := chi.URLParam(r, "epicId")
 	actorID := middleware.GetUserID(r.Context())
@@ -41,6 +42,7 @@ func (h *PlanningSessionHandler) Start(w http.ResponseWriter, r *http.Request) {
 
 // Get returns a planning session by ID.
 func (h *PlanningSessionHandler) Get(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	sessionID := chi.URLParam(r, "sessionId")
 
@@ -54,6 +56,7 @@ func (h *PlanningSessionHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 // GetMessages returns all messages for a planning session.
 func (h *PlanningSessionHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	sessionID := chi.URLParam(r, "sessionId")
 
@@ -67,6 +70,7 @@ func (h *PlanningSessionHandler) GetMessages(w http.ResponseWriter, r *http.Requ
 
 // SendMessage sends a human message and triggers the agent's streaming response.
 func (h *PlanningSessionHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	sessionID := chi.URLParam(r, "sessionId")
 	actorID := middleware.GetUserID(r.Context())
@@ -91,6 +95,7 @@ func (h *PlanningSessionHandler) SendMessage(w http.ResponseWriter, r *http.Requ
 
 // Finalize triggers the agent to write the final spec and complete the session.
 func (h *PlanningSessionHandler) Finalize(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	sessionID := chi.URLParam(r, "sessionId")
 	actorID := middleware.GetUserID(r.Context())
@@ -105,6 +110,7 @@ func (h *PlanningSessionHandler) Finalize(w http.ResponseWriter, r *http.Request
 
 // Abandon cancels the planning session and resets the epic planning state.
 func (h *PlanningSessionHandler) Abandon(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	sessionID := chi.URLParam(r, "sessionId")
 	actorID := middleware.GetUserID(r.Context())

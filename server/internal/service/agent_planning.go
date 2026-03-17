@@ -74,6 +74,9 @@ func (s *AgentService) DraftEpicSpec(ctx context.Context, workspaceID, epicID, a
 	if epic.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("epic not found")
 	}
+	if epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
 	if epic.OrchestratorAgentID == nil || strings.TrimSpace(*epic.OrchestratorAgentID) == "" {
 		return nil, fmt.Errorf("no product planner assigned to this epic")
 	}
@@ -90,7 +93,7 @@ func (s *AgentService) DraftEpicSpec(ctx context.Context, workspaceID, epicID, a
 		Stage:             model.PlanningStageDraftSpec,
 		AdditionalContext: strings.TrimSpace(additionalContext),
 		SpecDocumentID:    specDoc.ID,
-	})
+	}, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +280,7 @@ func (s *AgentService) PlanEpicStories(ctx context.Context, workspaceID, epicID,
 		AdditionalContext: strings.TrimSpace(additionalContext),
 		SpecDocumentID:    *epic.SpecDocumentID,
 		SpecVersionID:     *epic.ApprovedSpecVersionID,
-	})
+	}, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -593,7 +596,33 @@ func (s *AgentService) KickoffEpicExecution(ctx context.Context, workspaceID, ep
 	return result, nil
 }
 
-func (s *AgentService) startEpicPlanningRun(ctx context.Context, workspaceID string, epic *model.PMEpic, actorID, agentID string, input planningRunInput) (*model.AgentRun, error) {
+func (s *AgentService) StartEpicStoryPlanningForFlow(ctx context.Context, workspaceID, epicID, actorID, agentID, additionalContext, flowRunID, flowNodeRunID string) (*model.AgentRun, error) {
+	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, fmt.Errorf("get epic: %w", err)
+	}
+	if epicWithStats == nil {
+		return nil, fmt.Errorf("epic not found")
+	}
+	epic := &epicWithStats.Epic
+	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
+		return nil, fmt.Errorf("epic does not have a product spec document yet")
+	}
+	if epic.ApprovedSpecVersionID == nil || strings.TrimSpace(*epic.ApprovedSpecVersionID) == "" {
+		return nil, fmt.Errorf("planning requires an approved spec version")
+	}
+	if epic.PlanningRepositoryID == nil || strings.TrimSpace(*epic.PlanningRepositoryID) == "" {
+		return nil, fmt.Errorf("planning requires an epic planning repository")
+	}
+	return s.startEpicPlanningRun(ctx, workspaceID, epic, actorID, agentID, planningRunInput{
+		Stage:             model.PlanningStagePlanStories,
+		AdditionalContext: strings.TrimSpace(additionalContext),
+		SpecDocumentID:    *epic.SpecDocumentID,
+		SpecVersionID:     *epic.ApprovedSpecVersionID,
+	}, &flowRunID, &flowNodeRunID)
+}
+
+func (s *AgentService) startEpicPlanningRun(ctx context.Context, workspaceID string, epic *model.PMEpic, actorID, agentID string, input planningRunInput, flowRunID, flowNodeRunID *string) (*model.AgentRun, error) {
 	agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "epic")
 	if err != nil {
 		return nil, err
@@ -614,13 +643,15 @@ func (s *AgentService) startEpicPlanningRun(ctx context.Context, workspaceID str
 
 	payload, _ := json.Marshal(input)
 	run, err := s.createRun(ctx, createRunParams{
-		workspaceID: workspaceID,
-		agent:       agent,
-		profile:     profile,
-		targetType:  "epic",
-		targetID:    epic.ID,
-		actorID:     actorID,
-		input:       payload,
+		workspaceID:   workspaceID,
+		agent:         agent,
+		profile:       profile,
+		targetType:    "epic",
+		targetID:      epic.ID,
+		flowRunID:     flowRunID,
+		flowNodeRunID: flowNodeRunID,
+		actorID:       actorID,
+		input:         payload,
 	})
 	if err != nil {
 		return nil, err
@@ -660,6 +691,18 @@ func (s *AgentService) resolvePlanningWorkspaceAISettings(ctx context.Context, w
 	resolved.webSearchEnabled = settings.PlanningWebSearchEnabled
 	resolved.webSearchProvider = model.NormalizePlanningWebSearchProvider(settings.PlanningWebSearchProvider)
 	return resolved
+}
+
+// EnsureEpicSpecDocument ensures the epic has a canonical product spec doc and returns it.
+func (s *AgentService) EnsureEpicSpecDocument(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error) {
+	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, fmt.Errorf("get epic: %w", err)
+	}
+	if epicWithStats == nil || epicWithStats.Epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	return s.ensureEpicSpecDocument(ctx, workspaceID, &epicWithStats.Epic, actorID)
 }
 
 func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID string, epic *model.PMEpic, actorID string) (*model.DocsDocument, error) {

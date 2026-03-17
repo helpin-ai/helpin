@@ -55,33 +55,34 @@ type planningRunSummary struct {
 
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
-	runRepo         *repository.AgentRunRepository
-	agentRepo       *repository.AgentRepository
-	artifactRepo    *repository.AgentRunArtifactRepository
-	storyRepo       *repository.PMStoryRepository
-	storyLinkRepo   *repository.PMStoryLinkRepository
-	epicRepo        *repository.PMEpicRepository
+	runRepo          *repository.AgentRunRepository
+	agentRepo        *repository.AgentRepository
+	artifactRepo     *repository.AgentRunArtifactRepository
+	storyRepo        *repository.PMStoryRepository
+	storyLinkRepo    *repository.PMStoryLinkRepository
+	epicRepo         *repository.PMEpicRepository
 	conversationRepo *repository.SupportConversationRepository
 	commentRepo      *repository.PMCommentRepository
 	checklistRepo    *repository.PMChecklistItemRepository
 	messageRepo      *repository.SupportMessageRepository
-	gitIntRepo      *repository.GitIntegrationRepository
-	gitRepo         *repository.GitRepositoryRepository
-	gitLinkRepo     *repository.StoryGitLinkRepository
-	deliveryRepo    *repository.StoryDeliveryTargetRepository
-	settingsRepo    *repository.SettingsRepository
-	docsSpaceRepo   *repository.DocsSpaceRepository
-	docsDocRepo     *repository.DocsDocumentRepository
-	docsContentRepo *repository.DocsContentRepository
-	docsVersionRepo *repository.DocsVersionRepository
-	docsLinkRepo    *repository.DocsLinkRepository
-	docsSearchRepo  *repository.DocsSearchRepository
-	crmDealRepo     *repository.CRMDealRepository
-	crmContactRepo  *repository.CRMContactRepository
-	crmSignalRepo   *repository.CRMSignalRepository
-	crmActivityRepo *repository.CRMActivityRepository
-	runtimes        *workerpkg.RuntimeRegistry
-	githubApp       *githubapp.Client
+	gitIntRepo       *repository.GitIntegrationRepository
+	gitRepo          *repository.GitRepositoryRepository
+	gitLinkRepo      *repository.StoryGitLinkRepository
+	deliveryRepo     *repository.StoryDeliveryTargetRepository
+	settingsRepo     *repository.SettingsRepository
+	docsSpaceRepo    *repository.DocsSpaceRepository
+	docsDocRepo      *repository.DocsDocumentRepository
+	docsContentRepo  *repository.DocsContentRepository
+	docsVersionRepo  *repository.DocsVersionRepository
+	docsLinkRepo     *repository.DocsLinkRepository
+	docsSearchRepo   *repository.DocsSearchRepository
+	crmDealRepo      *repository.CRMDealRepository
+	crmContactRepo   *repository.CRMContactRepository
+	crmSignalRepo    *repository.CRMSignalRepository
+	crmActivityRepo  *repository.CRMActivityRepository
+	runtimes         *workerpkg.RuntimeRegistry
+	githubApp        *githubapp.Client
+	runEngine        *RunEngine
 }
 
 // NewAgentRunActivities creates the activity set used by shared Temporal workers.
@@ -113,35 +114,37 @@ func NewAgentRunActivities(
 	crmActivityRepo *repository.CRMActivityRepository,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
+	runEngine *RunEngine,
 ) *AgentRunActivities {
 	return &AgentRunActivities{
-		runRepo:         runRepo,
-		agentRepo:       agentRepo,
-		artifactRepo:    artifactRepo,
-		storyRepo:       storyRepo,
-		storyLinkRepo:   storyLinkRepo,
-		epicRepo:        epicRepo,
+		runRepo:          runRepo,
+		agentRepo:        agentRepo,
+		artifactRepo:     artifactRepo,
+		storyRepo:        storyRepo,
+		storyLinkRepo:    storyLinkRepo,
+		epicRepo:         epicRepo,
 		conversationRepo: conversationRepo,
 		commentRepo:      commentRepo,
 		checklistRepo:    checklistRepo,
 		messageRepo:      messageRepo,
-		gitIntRepo:      gitIntRepo,
-		gitRepo:         gitRepo,
-		gitLinkRepo:     gitLinkRepo,
-		deliveryRepo:    deliveryRepo,
-		settingsRepo:    settingsRepo,
-		docsSpaceRepo:   docsSpaceRepo,
-		docsDocRepo:     docsDocRepo,
-		docsContentRepo: docsContentRepo,
-		docsVersionRepo: docsVersionRepo,
-		docsLinkRepo:    docsLinkRepo,
-		docsSearchRepo:  docsSearchRepo,
-		crmDealRepo:     crmDealRepo,
-		crmContactRepo:  crmContactRepo,
-		crmSignalRepo:   crmSignalRepo,
-		crmActivityRepo: crmActivityRepo,
-		runtimes:        runtimes,
-		githubApp:       githubApp,
+		gitIntRepo:       gitIntRepo,
+		gitRepo:          gitRepo,
+		gitLinkRepo:      gitLinkRepo,
+		deliveryRepo:     deliveryRepo,
+		settingsRepo:     settingsRepo,
+		docsSpaceRepo:    docsSpaceRepo,
+		docsDocRepo:      docsDocRepo,
+		docsContentRepo:  docsContentRepo,
+		docsVersionRepo:  docsVersionRepo,
+		docsLinkRepo:     docsLinkRepo,
+		docsSearchRepo:   docsSearchRepo,
+		crmDealRepo:      crmDealRepo,
+		crmContactRepo:   crmContactRepo,
+		crmSignalRepo:    crmSignalRepo,
+		crmActivityRepo:  crmActivityRepo,
+		runtimes:         runtimes,
+		githubApp:        githubApp,
+		runEngine:        runEngine,
 	}
 }
 
@@ -152,7 +155,7 @@ type resolvedRunState struct {
 	epic           *model.PMEpic
 	epicStories    []model.PMStory
 	conversation   *model.SupportConversation
-	profile        model.RuntimeProfile   // class-level profile (kept for RuntimeProfile passthrough)
+	profile        model.RuntimeProfile      // class-level profile (kept for RuntimeProfile passthrough)
 	resolved       workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
 	deliveryTarget *model.StoryDeliveryTarget
 	repository     *model.GitRepository
@@ -356,6 +359,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 	a.runRepo.Notify(ctx, state.run)
+	a.signalParentFlow(ctx, state.run, state.run.Status)
 
 	if err := a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed); err != nil {
 		return ExecuteRunResult{}, err
@@ -2105,6 +2109,7 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 		return err
 	}
 	a.runRepo.Notify(ctx, state.run)
+	a.signalParentFlow(ctx, state.run, state.run.Status)
 	if state.deliveryTarget != nil {
 		state.deliveryTarget.DeliveryState = "failed"
 		state.deliveryTarget.LastRunID = &state.run.ID
@@ -2117,6 +2122,22 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 		_ = a.agentRepo.Update(ctx, agent)
 	}
 	return nil
+}
+
+func (a *AgentRunActivities) signalParentFlow(ctx context.Context, run *model.AgentRun, status string) {
+	if a == nil || a.runEngine == nil || run == nil || run.FlowRunID == nil || run.FlowNodeRunID == nil {
+		return
+	}
+	if status == "" {
+		status = run.Status
+	}
+	_ = a.runEngine.SignalFlowRun(ctx, *run.FlowRunID, FlowRunSignal{
+		Type:        FlowSignalTypeChildState,
+		NodeRunID:   *run.FlowNodeRunID,
+		ChildType:   FlowChildTypeAgentRun,
+		ChildID:     run.ID,
+		ChildStatus: status,
+	})
 }
 
 func ensureRunNotTerminal(run *model.AgentRun) error {

@@ -26,6 +26,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { agentService } from '@/lib/services/agentService';
+import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import type {
   Agent,
   AgentClass,
@@ -35,6 +36,7 @@ import type {
   AgentRun,
   AgentRunArtifact,
   AgentRuntimeKind,
+  AgentTriggerMode,
   CreateAgentRequest,
   UpdateAgentRequest,
 } from '@/lib/pmTypes';
@@ -90,12 +92,12 @@ const STATUS_LABEL: Record<string, string> = {
   paused: 'Paused',
 };
 
-const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'native_claude', 'claude_code', 'openclaw', 'zeroclaw'];
+const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'native_sdk'];
 const ADVANCED_DEFAULT_RUNTIME: Record<AgentClass, AgentRuntimeKind> = {
-  product_planner: 'opencode',
+  product_planner: 'native_sdk',
   engineer: 'opencode',
   reviewer: 'opencode',
-  support: 'opencode',
+  support: 'native_sdk',
   human: 'opencode',
 };
 const ENGINE_TRIGGER_MODE_OPTIONS: AgentTriggerMode[] = ['manual', 'auto_on_assignment', 'auto_on_event'];
@@ -220,6 +222,7 @@ interface AgentFormData {
   name: string;
   agent_class: AgentClass;
   runtime_kind: AgentRuntimeKind;
+  trigger_mode: AgentTriggerMode;
   backing_user_id: string;
   skills: string;
   provider: AgentModelProvider;
@@ -245,6 +248,7 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
     name: '',
     agent_class: agentClass,
     runtime_kind: ADVANCED_DEFAULT_RUNTIME[agentClass],
+    trigger_mode: 'manual',
     backing_user_id: '',
     skills: '',
     provider: 'anthropic',
@@ -266,10 +270,6 @@ function isLLMAgentClass(agentClass: AgentClass): boolean {
 
 function showsTriggerMode(agentClass: AgentClass): boolean {
   return agentClass === 'engineer' || agentClass === 'reviewer';
-}
-
-function defaultTriggerModeForClass(_agentClass: AgentClass): AgentTriggerMode {
-  return 'manual';
 }
 
 function allowedTriggerModesForClass(agentClass: AgentClass): AgentTriggerMode[] {
@@ -298,6 +298,7 @@ function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentF
     ...current,
     agent_class: nextClass,
     runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
+    trigger_mode: allowedTriggerModesForClass(nextClass)[0] ?? 'manual',
   };
 
   if (nextClass === 'human') {
@@ -347,6 +348,7 @@ function buildAdvancedFields(form: AgentFormData, advancedOpen: boolean): Partia
 function buildAutomationFields(form: AgentFormData): Partial<CreateAgentRequest> {
   if (form.agent_class === 'human') return {};
   return {
+    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : 'manual',
     team_id: form.team_id,
     schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
@@ -742,6 +744,7 @@ export function AgentsPage() {
       name: agent.name,
       agent_class: agent.agent_class,
       runtime_kind: agent.runtime_kind,
+      trigger_mode: agent.trigger_mode ?? 'manual',
       backing_user_id: agent.backing_user_id ?? '',
       skills: agent.skills.join(', '),
       provider: agent.provider ?? 'anthropic',
@@ -1438,7 +1441,7 @@ export function AgentsPage() {
                       <SelectContent>
                         {RUNTIME_KIND_OPTIONS.map((runtimeKind) => (
                           <SelectItem key={runtimeKind} value={runtimeKind}>
-                            {runtimeKind}
+                            {AGENT_RUNTIME_LABELS[runtimeKind]}
                           </SelectItem>
                         ))}
                       </SelectContent>

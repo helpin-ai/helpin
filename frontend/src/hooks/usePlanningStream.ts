@@ -38,17 +38,22 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
       receivedAnyEvent.current = true;
 
       switch (event.type) {
-        case 'token':
+        case 'assistant_message_started':
           setIsStreaming(true);
           setTurnPending(false);
           setError(null);
           break;
-        case 'tool_start':
+        case 'assistant_message_delta':
+          setIsStreaming(true);
+          setTurnPending(false);
+          setError(null);
+          break;
+        case 'tool_call_started':
           setIsStreaming(true);
           setTurnPending(false);
           setActiveToolCall({ tool_name: event.tool_name ?? '' });
           break;
-        case 'tool_result':
+        case 'tool_call_finished':
           setActiveToolCall(null);
           setToolResults((prev) => [
             ...prev,
@@ -60,7 +65,10 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
             },
           ]);
           break;
-        case 'turn_complete': {
+        case 'assistant_message_completed':
+          setIsStreaming(true);
+          break;
+        case 'turn_completed': {
           // Invalidate queries first, then clear streaming state after a short delay
           // so the persisted message has time to load before the streaming bubble disappears.
           qc.invalidateQueries({ queryKey: queryKeys.pm.planningMessages(wsId, sessionId) });

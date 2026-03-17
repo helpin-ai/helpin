@@ -10,6 +10,10 @@ import {
   useSendPlanningMessage,
   useFinalizePlanningSession,
   useAbandonPlanningSession,
+  useFlowNodeMessages,
+  useSendFlowNodeMessage,
+  useSendFlowNodeAction,
+  useCancelFlowRun,
 } from '@/hooks/queries';
 import { usePlanningStream } from '@/hooks/usePlanningStream';
 import type { Epic } from '@/lib/pmTypes';
@@ -21,25 +25,43 @@ interface Props {
   epic: Epic;
   workspaceId: string;
   sessionId?: string;
+  flowRunId?: string;
+  nodeRunId?: string;
   onComplete?: () => void;
 }
 
-export function PlanningSessionPanel({ epic, workspaceId, sessionId: sessionIdProp, onComplete }: Props) {
+export function PlanningSessionPanel({
+  epic,
+  workspaceId,
+  sessionId: sessionIdProp,
+  flowRunId,
+  nodeRunId,
+  onComplete,
+}: Props) {
   const sessionId = sessionIdProp ?? epic.active_planning_session_id;
   const [abandonConfirm, setAbandonConfirm] = useState(false);
+  const flowBacked = Boolean(flowRunId && nodeRunId);
 
   const { data: session } = usePlanningSession(workspaceId, sessionId);
-  const { data: messages } = usePlanningMessages(workspaceId, sessionId);
+  const { data: legacyMessages } = usePlanningMessages(workspaceId, flowBacked ? undefined : sessionId);
+  const { data: flowMessages } = useFlowNodeMessages(workspaceId, flowRunId, nodeRunId);
   const { isStreaming, turnPending, markTurnPending, activeToolCall, toolResults, error } = usePlanningStream(
     workspaceId,
     sessionId,
   );
-  const sendMessage = useSendPlanningMessage(workspaceId, sessionId ?? '');
-  const finalizeMutation = useFinalizePlanningSession(workspaceId);
-  const abandonMutation = useAbandonPlanningSession(workspaceId);
+  const legacySendMessage = useSendPlanningMessage(workspaceId, sessionId ?? '');
+  const flowSendMessage = useSendFlowNodeMessage(workspaceId, flowRunId ?? '', nodeRunId ?? '');
+  const legacyFinalizeMutation = useFinalizePlanningSession(workspaceId);
+  const flowActionMutation = useSendFlowNodeAction(workspaceId, flowRunId ?? '', nodeRunId ?? '');
+  const legacyAbandonMutation = useAbandonPlanningSession(workspaceId);
+  const cancelFlowMutation = useCancelFlowRun(workspaceId);
 
   const isFinalizing = session?.status === 'finalizing';
   const agentBusy = isStreaming || turnPending || isFinalizing;
+  const messages = flowBacked ? flowMessages : legacyMessages;
+  const sendMessage = flowBacked ? flowSendMessage : legacySendMessage;
+  const finalizePending = flowBacked ? flowActionMutation.isPending : legacyFinalizeMutation.isPending;
+  const abandonPending = flowBacked ? cancelFlowMutation.isPending : legacyAbandonMutation.isPending;
 
   const handleSend = (content: string) => {
     markTurnPending();
@@ -49,9 +71,23 @@ export function PlanningSessionPanel({ epic, workspaceId, sessionId: sessionIdPr
   };
 
   const handleFinalize = () => {
+    if (flowBacked && flowRunId && nodeRunId) {
+      markTurnPending();
+      flowActionMutation.mutate(
+        { actionType: 'finalize' },
+        {
+          onSuccess: () => {
+            toast.success('Planning step finalized');
+            onComplete?.();
+          },
+          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to finalize'),
+        },
+      );
+      return;
+    }
     if (!sessionId) return;
     markTurnPending();
-    finalizeMutation.mutate(sessionId, {
+    legacyFinalizeMutation.mutate(sessionId, {
       onSuccess: () => {
         toast.success('Finalizing session — agent is writing the spec');
         onComplete?.();
@@ -61,8 +97,19 @@ export function PlanningSessionPanel({ epic, workspaceId, sessionId: sessionIdPr
   };
 
   const handleAbandon = () => {
+    if (flowBacked && flowRunId) {
+      cancelFlowMutation.mutate(flowRunId, {
+        onSuccess: () => {
+          toast.success('Flow cancelled');
+          setAbandonConfirm(false);
+          setTimeout(() => onComplete?.(), 0);
+        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to cancel flow'),
+      });
+      return;
+    }
     if (!sessionId) return;
-    abandonMutation.mutate(sessionId, {
+    legacyAbandonMutation.mutate(sessionId, {
       onSuccess: () => {
         toast.success('Session abandoned');
         setAbandonConfirm(false);
@@ -101,7 +148,7 @@ export function PlanningSessionPanel({ epic, workspaceId, sessionId: sessionIdPr
                 size="sm"
                 variant="outline"
                 onClick={() => setAbandonConfirm(true)}
-                disabled={isFinalizing || abandonMutation.isPending}
+                disabled={isFinalizing || abandonPending}
               >
                 <X className="mr-1 h-3 w-3" />
                 Abandon
@@ -109,9 +156,9 @@ export function PlanningSessionPanel({ epic, workspaceId, sessionId: sessionIdPr
               <Button
                 size="sm"
                 onClick={handleFinalize}
-                disabled={isFinalizing || finalizeMutation.isPending || isStreaming}
+                disabled={isFinalizing || finalizePending || isStreaming}
               >
-                {finalizeMutation.isPending || isFinalizing ? (
+                {finalizePending || isFinalizing ? (
                   <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                 ) : (
                   <CheckCircle className="mr-1 h-3 w-3" />
@@ -126,9 +173,9 @@ export function PlanningSessionPanel({ epic, workspaceId, sessionId: sessionIdPr
                 size="sm"
                 variant="destructive"
                 onClick={handleAbandon}
-                disabled={abandonMutation.isPending}
+                disabled={abandonPending}
               >
-                {abandonMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Yes, abandon'}
+                {abandonPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Yes, abandon'}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setAbandonConfirm(false)}>
                 Cancel

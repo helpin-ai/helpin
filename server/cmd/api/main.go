@@ -179,6 +179,9 @@ func main() {
 		&model.PMView{},
 		&model.PMAutomation{},
 		&model.AutomationRule{},
+		&model.FlowRun{},
+		&model.FlowNodeRun{},
+		&model.FlowTrigger{},
 		&model.PlanningSession{},
 		&model.PlanningSessionMessage{},
 		&model.WorkspaceInvitation{},
@@ -370,10 +373,12 @@ func main() {
 	pmViewRepo := repository.NewPMViewRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
 	automationRuleRepo := repository.NewAutomationRuleRepository(db)
+	flowRepo := repository.NewFlowRepository(db)
 	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 	planningSessionRepo := repository.NewPlanningSessionRepository(db)
+	wsHandler.SetPlanningSessionRepository(planningSessionRepo)
 	agentRepo := repository.NewAgentRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
@@ -542,7 +547,7 @@ func main() {
 		docsLinkRepo,
 		docsDocumentRepo,
 		docsSpaceRepo,
-		nil, // llmProviders — activities run in temporal-worker
+		nil, // modelFactory — activities run in temporal-worker
 		nil, // toolRegistry — activities run in temporal-worker
 		nil, // streamer — activities run in temporal-worker
 		wsPublisher,
@@ -552,6 +557,17 @@ func main() {
 	if temporalClient != nil {
 		planningSessionService.SetWorkflowStarter(&planningWorkflowAdapter{engine: runEngine})
 	}
+	flowService := service.NewFlowService(
+		flowRepo,
+		pmEpicRepo,
+		agentRepo,
+		agentRunRepo,
+		planningSessionRepo,
+		agentService,
+		planningSessionService,
+		runEngine,
+		wsPublisher,
+	)
 
 	// Log orchestration availability.
 	if cfg.AnthropicAPIKey != "" {
@@ -676,6 +692,7 @@ func main() {
 		PMView:             handler.NewPMViewHandler(pmViewService),
 		Search:             handler.NewSearchHandler(searchService),
 		PMAutomation:       handler.NewPMAutomationHandler(pmAutomationService),
+		Flow:               handler.NewFlowHandler(flowService),
 		PlanningSession:    handler.NewPlanningSessionHandler(planningSessionService),
 		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
 		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
@@ -889,5 +906,15 @@ func (a *planningWorkflowAdapter) SignalPlanningFinalize(ctx context.Context, se
 func (a *planningWorkflowAdapter) SignalPlanningAbandon(ctx context.Context, sessionID string) error {
 	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
 		Type: temporalapp.PlanningSessionSignalTypeAbandon,
+	})
+}
+
+func (a *planningWorkflowAdapter) SignalFlowChildState(ctx context.Context, flowRunID, nodeRunID, childType, childID, childStatus string) error {
+	return a.engine.SignalFlowRun(ctx, flowRunID, temporalapp.FlowRunSignal{
+		Type:        temporalapp.FlowSignalTypeChildState,
+		NodeRunID:   nodeRunID,
+		ChildType:   childType,
+		ChildID:     childID,
+		ChildStatus: childStatus,
 	})
 }

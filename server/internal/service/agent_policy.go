@@ -210,14 +210,62 @@ func normalizeAgentRecord(agent *model.Agent) {
 	if agent.AgentClass != model.AgentClassProductPlanner {
 		agent.PlanningNotes = nil
 	}
+	agent.SupportedModes = supportedModesForAgent(agent)
+}
+
+func supportedModesForAgent(agent *model.Agent) []string {
+	if agent == nil {
+		return []string{}
+	}
+	switch normalizeAgentClass(agent.AgentClass, agent.CapabilityProfile, agent.Role, agent.AgentKind) {
+	case model.AgentClassHuman:
+		return []string{}
+	case model.AgentClassProductPlanner:
+		modes := []string{model.InvocationModeAutonomous}
+		if agentSupportsInteractive(agent) {
+			modes = append(modes, model.InvocationModeInteractive)
+		}
+		return modes
+	case model.AgentClassSupport:
+		modes := []string{model.InvocationModeAutonomous}
+		if agentSupportsInteractive(agent) {
+			modes = append(modes, model.InvocationModeInteractive)
+		}
+		return modes
+	default:
+		return []string{model.InvocationModeAutonomous}
+	}
+}
+
+func agentSupportsMode(agent *model.Agent, mode string) bool {
+	return slices.Contains(supportedModesForAgent(agent), mode)
+}
+
+func agentSupportsInteractive(agent *model.Agent) bool {
+	if agent == nil {
+		return false
+	}
+	switch strings.TrimSpace(agent.RuntimeKind) {
+	case "opencode":
+		return false
+	case "native_sdk":
+		return true
+	}
+	if agent.Provider != nil && strings.TrimSpace(*agent.Provider) != "" {
+		switch normalizeModelProvider(*agent.Provider) {
+		case model.AgentModelProviderAnthropic, model.AgentModelProviderOpenAI, model.AgentModelProviderOpenRouter:
+			return true
+		}
+	}
+	return false
 }
 
 func validateModelProvider(provider string) error {
 	switch normalizeModelProvider(provider) {
-	case model.AgentModelProviderAnthropic, model.AgentModelProviderOpenAI, model.AgentModelProviderOpenRouter:
+	case model.AgentModelProviderAnthropic, model.AgentModelProviderOpenAI, model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
 		return nil
 	default:
-		return fmt.Errorf("provider must be one of anthropic, openai, openrouter")
+		return fmt.Errorf("provider must be one of anthropic, openai, openrouter, openrouter-responses")
 	}
 }
 

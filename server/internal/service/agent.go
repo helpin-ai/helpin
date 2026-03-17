@@ -656,6 +656,15 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 		return nil, err
 	}
 	_ = s.runEngine.CancelRun(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
+	if s.runEngine != nil && run.FlowRunID != nil && run.FlowNodeRunID != nil {
+		_ = s.runEngine.SignalFlowRun(ctx, *run.FlowRunID, temporalapp.FlowRunSignal{
+			Type:        temporalapp.FlowSignalTypeChildState,
+			NodeRunID:   *run.FlowNodeRunID,
+			ChildType:   temporalapp.FlowChildTypeAgentRun,
+			ChildID:     run.ID,
+			ChildStatus: model.AgentRunStatusCancelled,
+		})
+	}
 
 	_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 	s.publishRunEvent(run, actorID)
@@ -764,16 +773,16 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 	}
 
 	handoff := &model.AgentHandoff{
-		WorkspaceID: run.WorkspaceID,
-		FromAgentID: &run.AgentID,
-		ToAgentID:   req.ToAgentID,
-		ToUserID:    req.ToUserID,
+		WorkspaceID:    run.WorkspaceID,
+		FromAgentID:    &run.AgentID,
+		ToAgentID:      req.ToAgentID,
+		ToUserID:       req.ToUserID,
 		StoryID:        run.StoryID,
 		ConversationID: run.ConversationID,
-		RunID:       &run.ID,
-		HandoffType: handoffType,
-		Reason:      req.Reason,
-		Context:     contextJSON,
+		RunID:          &run.ID,
+		HandoffType:    handoffType,
+		Reason:         req.Reason,
+		Context:        contextJSON,
 	}
 	if err := s.handoffRepo.Create(ctx, handoff); err != nil {
 		return nil, err
@@ -803,16 +812,18 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 }
 
 type createRunParams struct {
-	workspaceID string
-	agent       *model.Agent
-	profile     model.RuntimeProfile
-	targetType  string
-	targetID    string
+	workspaceID    string
+	agent          *model.Agent
+	profile        model.RuntimeProfile
+	targetType     string
+	targetID       string
 	storyID        *string
 	conversationID *string
-	actorID     string
-	input       []byte
-	delivery    *model.StoryDeliveryTarget
+	flowRunID      *string
+	flowNodeRunID  *string
+	actorID        string
+	input          []byte
+	delivery       *model.StoryDeliveryTarget
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
@@ -824,6 +835,12 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		if updated := s.reconcileStuckRun(ctx, activeRun); updated != nil {
 			activeRun = updated
 		}
+	}
+	if activeRun != nil && params.flowNodeRunID != nil && activeRun.FlowNodeRunID != nil && *params.flowNodeRunID == *activeRun.FlowNodeRunID {
+		return activeRun, nil
+	}
+	if activeRun != nil && params.flowRunID != nil && activeRun.FlowRunID != nil && *params.flowRunID == *activeRun.FlowRunID {
+		return activeRun, nil
 	}
 	if activeRun != nil && (activeRun.Status == "queued" || activeRun.Status == "running" || activeRun.Status == "awaiting_approval") {
 		return nil, fmt.Errorf("an agent run is already active for this %s", params.targetType)
@@ -844,6 +861,8 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		ApprovalState:     approvalState,
 		TriggeredByUserID: &params.actorID,
 		Status:            "queued",
+		FlowRunID:         params.flowRunID,
+		FlowNodeRunID:     params.flowNodeRunID,
 		TaskQueue:         &taskQueue,
 		RunnerPool:        &taskQueue,
 		Input:             json.RawMessage(params.input),
@@ -1115,10 +1134,10 @@ func isStuckPostRunStage(stage *string) bool {
 
 func validateRuntimeKind(runtimeKind string) error {
 	switch runtimeKind {
-	case "opencode", "native_claude", "claude_code", "openclaw", "zeroclaw":
+	case "opencode", "native_sdk":
 		return nil
 	default:
-		return fmt.Errorf("runtime_kind must be one of opencode, native_claude, claude_code, openclaw, zeroclaw")
+		return fmt.Errorf("runtime_kind must be one of opencode, native_sdk")
 	}
 }
 

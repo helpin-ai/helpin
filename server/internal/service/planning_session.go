@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -21,6 +22,7 @@ type PlanningWorkflowStarter interface {
 	SignalPlanningMessage(ctx context.Context, sessionID string) error
 	SignalPlanningFinalize(ctx context.Context, sessionID, actorID string) error
 	SignalPlanningAbandon(ctx context.Context, sessionID string) error
+	SignalFlowChildState(ctx context.Context, flowRunID, nodeRunID, childType, childID, childStatus string) error
 }
 
 // PlanningSessionService manages interactive planning sessions.
@@ -34,11 +36,11 @@ type PlanningSessionService struct {
 	docsLinkRepo     *repository.DocsLinkRepository
 	docsDocumentRepo *repository.DocsDocumentRepository
 	docsSpaceRepo    *repository.DocsSpaceRepository
-	llmProviders map[string]worker.StreamingProvider // keyed by "anthropic", "openai", "openrouter"
-	toolRegistry *worker.ToolRegistry
-	streamer        websocket.SessionStreamer  // sends stream events (tokens, tool results) to WS clients
-	publisher       websocket.EventPublisher   // broadcasts entity events for query invalidation
-	workflow        PlanningWorkflowStarter
+	modelFactory     *worker.EinoModelFactory
+	toolRegistry     *worker.ToolRegistry
+	streamer         websocket.SessionStreamer // sends stream events (tokens, tool results) to WS clients
+	publisher        websocket.EventPublisher  // broadcasts entity events for query invalidation
+	workflow         PlanningWorkflowStarter
 }
 
 // NewPlanningSessionService creates a new service.
@@ -52,7 +54,7 @@ func NewPlanningSessionService(
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsDocumentRepo *repository.DocsDocumentRepository,
 	docsSpaceRepo *repository.DocsSpaceRepository,
-	llmProviders map[string]worker.StreamingProvider,
+	modelFactory *worker.EinoModelFactory,
 	toolRegistry *worker.ToolRegistry,
 	streamer websocket.SessionStreamer,
 	publisher websocket.EventPublisher,
@@ -67,7 +69,7 @@ func NewPlanningSessionService(
 		docsLinkRepo:     docsLinkRepo,
 		docsDocumentRepo: docsDocumentRepo,
 		docsSpaceRepo:    docsSpaceRepo,
-		llmProviders:     llmProviders,
+		modelFactory:     modelFactory,
 		toolRegistry:     toolRegistry,
 		streamer:         streamer,
 		publisher:        publisher,
@@ -100,6 +102,12 @@ func (s *PlanningSessionService) StartSession(ctx context.Context, workspaceID, 
 		return nil, err
 	}
 	if existing != nil {
+		if req.FlowNodeRunID != nil && existing.FlowNodeRunID != nil && *req.FlowNodeRunID == *existing.FlowNodeRunID {
+			return existing, nil
+		}
+		if req.FlowRunID != nil && existing.FlowRunID != nil && *req.FlowRunID == *existing.FlowRunID {
+			return existing, nil
+		}
 		return nil, fmt.Errorf("an active planning session already exists for this epic")
 	}
 
@@ -114,6 +122,13 @@ func (s *PlanningSessionService) StartSession(ctx context.Context, workspaceID, 
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
 		return nil, fmt.Errorf("agent not found")
+	}
+	normalizeAgentRecord(agent)
+	if err := validateAgentTarget(agent, "epic"); err != nil {
+		return nil, err
+	}
+	if !agentSupportsMode(agent, model.InvocationModeInteractive) {
+		return nil, fmt.Errorf("selected planner does not support interactive mode")
 	}
 
 	// Resolve methodology.
@@ -135,6 +150,8 @@ func (s *PlanningSessionService) StartSession(ctx context.Context, workspaceID, 
 		WorkspaceID:         workspaceID,
 		EpicID:              epicID,
 		AgentID:             agentID,
+		FlowRunID:           req.FlowRunID,
+		FlowNodeRunID:       req.FlowNodeRunID,
 		Status:              model.PlanningSessionStatusActive,
 		PlanningMethodology: methodology,
 		SpecDocumentID:      epic.SpecDocumentID,
@@ -282,6 +299,9 @@ func (s *PlanningSessionService) FinalizeSession(ctx context.Context, workspaceI
 	// Signal Temporal workflow to abandon (cleanup workspace — no agent turn needed).
 	if s.workflow != nil {
 		_ = s.workflow.SignalPlanningAbandon(ctx, sessionID)
+		if session.FlowRunID != nil && session.FlowNodeRunID != nil {
+			_ = s.workflow.SignalFlowChildState(ctx, *session.FlowRunID, *session.FlowNodeRunID, "planning_session", session.ID, model.PlanningSessionStatusCompleted)
+		}
 	}
 
 	s.publisher.Publish(websocket.Event{
@@ -325,6 +345,9 @@ func (s *PlanningSessionService) AbandonSession(ctx context.Context, workspaceID
 	// Signal Temporal workflow to stop (cleanup workspace).
 	if s.workflow != nil {
 		_ = s.workflow.SignalPlanningAbandon(ctx, sessionID)
+		if session.FlowRunID != nil && session.FlowNodeRunID != nil {
+			_ = s.workflow.SignalFlowChildState(ctx, *session.FlowRunID, *session.FlowNodeRunID, "planning_session", session.ID, model.PlanningSessionStatusAbandoned)
+		}
 	}
 
 	s.publisher.Publish(websocket.Event{
@@ -397,28 +420,12 @@ func (s *PlanningSessionService) RunFinalizationTurnWithContext(ctx context.Cont
 
 // --- Internal: agent turn execution ---
 
-// resolveLLMClient selects the LLM provider and model for the given agent.
-func (s *PlanningSessionService) resolveLLMClient(agent *model.Agent) (worker.StreamingProvider, string) {
-	provider := "anthropic"
-	if agent != nil && agent.Provider != nil && *agent.Provider != "" {
-		provider = *agent.Provider
-	}
-	agentModel := ""
-	if agent != nil && agent.Model != nil {
-		agentModel = *agent.Model
-	}
-	client := s.llmProviders[provider]
-	return client, agentModel
-}
-
-// runAgentTurn executes a streaming LLM call with tool loop and pushes events via WebSocket.
+// runAgentTurn executes a streaming Eino-backed agent turn and pushes events via WebSocket.
 func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *model.PlanningSession, agent *model.Agent, execCtx *worker.ExecutionContext) {
 	sessionID := session.ID
 
-	// Resolve LLM client from agent settings.
-	llmClient, agentModel := s.resolveLLMClient(agent)
-	if llmClient == nil {
-		slog.Error("planning session: LLM provider not configured", "session_id", sessionID)
+	if s.modelFactory == nil {
+		slog.Error("planning session: Eino model factory not configured", "session_id", sessionID)
 		s.sendStreamError(sessionID, "LLM provider not configured for agent")
 		return
 	}
@@ -431,191 +438,40 @@ func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *mode
 		return
 	}
 
-	// Convert to Claude message format.
-	claudeMessages := s.buildClaudeMessages(messages, session)
-
-	// Build system prompt.
 	systemPrompt := s.buildSystemPrompt(session, agent)
-
-	// Resolve tools.
+	history, err := s.buildExecutionMessages(messages, session)
+	if err != nil {
+		slog.Error("planning session: failed to build execution history", "error", err, "session_id", sessionID)
+		s.sendStreamError(sessionID, "failed to prepare conversation history")
+		return
+	}
 	tools := s.resolveTools(ctx, session)
-
-	// Run the streaming tool loop.
-	s.executeStreamingToolLoop(ctx, session, systemPrompt, claudeMessages, tools, execCtx, llmClient, agentModel)
-}
-
-// runFinalizationTurnInternal is no longer used — finalization is synchronous.
-// Kept as a stub for backwards compatibility with any code referencing it.
-
-// executeStreamingToolLoop runs the LLM streaming API call with tool execution.
-func (s *PlanningSessionService) executeStreamingToolLoop(
-	ctx context.Context,
-	session *model.PlanningSession,
-	systemPrompt string,
-	claudeMessages []worker.Message,
-	tools []worker.ToolDefinition,
-	execCtx *worker.ExecutionContext,
-	llmClient worker.StreamingProvider,
-	agentModel string,
-) {
-	sessionID := session.ID
-	maxToolRounds := 25
-
-	var allContentBlocks []worker.ContentBlock
-	var toolInvocations []model.ToolInvocation
-	var totalUsage worker.Usage
-
-	currentMessages := claudeMessages
-
-	for round := 0; round < maxToolRounds; round++ {
-		// Stream LLM call.
-		result, err := llmClient.CreateMessageStream(ctx, worker.CreateMessageRequest{
-			Model:    agentModel,
-			System:   systemPrompt,
-			Messages: currentMessages,
-			Tools:    tools,
-		}, func(event worker.StreamEvent) {
-			// Forward text deltas to the frontend.
-			switch event.Type {
-			case "content_block_delta":
-				if event.Delta != nil && event.Delta.Type == "text_delta" {
-					s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
-						Type:      "token",
-						SessionID: sessionID,
-						Text:      event.Delta.Text,
-					})
-				}
-			case "content_block_start":
-				if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {
-					s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
-						Type:      "tool_start",
-						SessionID: sessionID,
-						ToolName:  event.ContentBlock.Name,
-					})
-				}
-			}
-		})
-
-		if err != nil {
-			slog.Error("planning session: claude stream error", "error", err, "session_id", sessionID)
-			s.sendStreamError(sessionID, "failed to get agent response")
-			return
-		}
-		if result.Err != nil {
-			slog.Error("planning session: stream result error", "error", result.Err, "session_id", sessionID)
-			s.sendStreamError(sessionID, result.Err.Error())
-			return
-		}
-
-		totalUsage.InputTokens += result.Usage.InputTokens
-		totalUsage.OutputTokens += result.Usage.OutputTokens
-		allContentBlocks = append(allContentBlocks, result.ContentBlocks...)
-
-		// Check for tool use blocks.
-		var toolUseBlocks []worker.ContentBlock
-		for _, block := range result.ContentBlocks {
-			if block.Type == "tool_use" {
-				toolUseBlocks = append(toolUseBlocks, block)
-			}
-		}
-
-		if len(toolUseBlocks) == 0 {
-			// No tools — agent turn is complete.
-			break
-		}
-
-		// Execute tools.
-		var toolResultBlocks []worker.ContentBlock
-		for _, toolBlock := range toolUseBlocks {
-			start := time.Now()
-			toolResult, toolErr := s.executeTool(execCtx, toolBlock.Name, toolBlock.Input)
-			duration := time.Since(start)
-
-			if toolErr != nil {
-				toolResult = fmt.Sprintf("Error: %s", toolErr.Error())
-			}
-
-			displayResult := truncateForDisplay(toolResult, 500)
-			toolInvocations = append(toolInvocations, model.ToolInvocation{
-				ToolName:      toolBlock.Name,
-				Input:         toolBlock.Input,
-				OutputSummary: displayResult,
-				DurationMs:    duration.Milliseconds(),
-			})
-
-			toolResultBlocks = append(toolResultBlocks, worker.ContentBlock{
-				Type:      "tool_result",
-				ToolUseID: toolBlock.ID,
-				Content:   toolResult,
-			})
-
-			s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
-				Type:          "tool_result",
-				SessionID:     sessionID,
-				ToolName:      toolBlock.Name,
-				OutputSummary: displayResult,
-				DurationMs:    duration.Milliseconds(),
-			})
-		}
-
-		allContentBlocks = append(allContentBlocks, toolResultBlocks...)
-
-		// Extend conversation for next round.
-		currentMessages = append(currentMessages,
-			worker.Message{Role: "assistant", Content: result.ContentBlocks},
-			worker.Message{Role: "user", Content: toolResultBlocks},
-		)
+	result, execErr := worker.ExecuteWithEino(ctx, s.modelFactory, agent, systemPrompt, history, tools, execCtx, s.toolRegistry, 25, func(event worker.ExecutionEvent) {
+		s.streamExecutionEvent(sessionID, event)
+	})
+	if execErr != nil && !errors.Is(execErr, worker.ErrMaxToolStepsReached) {
+		slog.Error("planning session: Eino execution failed", "error", execErr, "session_id", sessionID)
+		s.sendStreamError(sessionID, "failed to get agent response")
+		return
 	}
 
-	// If loop exhausted maxToolRounds while tools were still pending,
-	// run one final call without tools so the agent produces a text response.
-	if len(allContentBlocks) > 0 && allContentBlocks[len(allContentBlocks)-1].Type == "tool_result" {
-		slog.Info("planning session: maxToolRounds exhausted, running final call without tools",
-			"session_id", sessionID, "rounds", maxToolRounds)
-		result, err := llmClient.CreateMessageStream(ctx, worker.CreateMessageRequest{
-			Model:    agentModel,
-			System:   systemPrompt,
-			Messages: currentMessages,
-			Tools:    nil, // no tools — force text response
-		}, func(event worker.StreamEvent) {
-			if event.Type == "content_block_delta" && event.Delta != nil && event.Delta.Type == "text_delta" {
-				s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
-					Type:      "token",
-					SessionID: sessionID,
-					Text:      event.Delta.Text,
-				})
-			}
-		})
-		if err == nil && result.Err == nil {
-			totalUsage.InputTokens += result.Usage.InputTokens
-			totalUsage.OutputTokens += result.Usage.OutputTokens
-			allContentBlocks = append(allContentBlocks, result.ContentBlocks...)
-		} else if err != nil {
-			slog.Error("planning session: final call error", "error", err, "session_id", sessionID)
-		}
-	}
-
-	// Signal turn complete.
 	s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
-		Type:      "turn_complete",
+		Type:      "turn_completed",
 		SessionID: sessionID,
 	})
+	if errors.Is(execErr, worker.ErrMaxToolStepsReached) {
+		s.sendStreamError(sessionID, "Agent reached the maximum number of tool steps and stopped before finishing.")
+	}
 
-	// Extract text content for persisted message.
-	fullText := extractTextFromBlocks(allContentBlocks)
-
-	// Classify the message.
-	messageType := classifyMessage(fullText)
-
-	// Persist the assistant message.
-	contentBlocksJSON, _ := json.Marshal(allContentBlocks)
-	toolInvJSON, _ := json.Marshal(toolInvocations)
-	usageJSON, _ := json.Marshal(totalUsage)
+	messageType := classifyMessage(result.AssistantText)
+	contentBlocksJSON, _ := json.Marshal(result.AssistantBlocks)
+	toolInvJSON, _ := json.Marshal(result.ToolInvocations)
+	usageJSON, _ := json.Marshal(result.Usage)
 
 	assistantMsg := &model.PlanningSessionMessage{
 		SessionID:       sessionID,
 		Role:            "assistant",
-		Content:         fullText,
+		Content:         result.AssistantText,
 		MessageType:     messageType,
 		ToolInvocations: toolInvJSON,
 		ContentBlocks:   contentBlocksJSON,
@@ -623,16 +479,11 @@ func (s *PlanningSessionService) executeStreamingToolLoop(
 	}
 	assistantMsg, _ = s.sessionRepo.CreateMessage(ctx, assistantMsg)
 
-	// Extract and persist spec draft to the session.
-	if draft := extractSpecDraft(fullText); draft != "" {
+	if draft := extractSpecDraft(result.AssistantText); draft != "" {
 		s.persistSpecDraft(ctx, session, draft)
 	}
-
-	// Update session.
 	_ = s.sessionRepo.UpdateLastActive(ctx, sessionID)
-	s.updateSessionTokenUsage(ctx, session, totalUsage)
-
-	// Publish standard event for query invalidation.
+	s.updateSessionTokenUsage(ctx, session, result.Usage)
 	if assistantMsg != nil {
 		s.publisher.Publish(websocket.Event{
 			Action: "created", Entity: "planning_session_message",
@@ -847,93 +698,73 @@ func (s *PlanningSessionService) buildSystemPrompt(session *model.PlanningSessio
 	return b.String()
 }
 
-func (s *PlanningSessionService) buildClaudeMessages(messages []model.PlanningSessionMessage, session *model.PlanningSession) []worker.Message {
+func (s *PlanningSessionService) buildExecutionMessages(messages []model.PlanningSessionMessage, session *model.PlanningSession) ([]worker.ExecutionMessage, error) {
 	if len(messages) == 0 {
-		// First turn: build initial user message from context snapshot.
-		return []worker.Message{{
+		return []worker.ExecutionMessage{{
 			Role:    "user",
 			Content: s.buildInitialUserMessage(session),
-		}}
+		}}, nil
 	}
 
-	var claudeMessages []worker.Message
+	var history []worker.ExecutionMessage
 
 	for _, msg := range messages {
 		if msg.Role == "assistant" && len(msg.ContentBlocks) > 0 {
-			// Use the stored content blocks for faithful reconstruction (includes tool_use/tool_result).
-			var blocks []worker.ContentBlock
-			if err := json.Unmarshal(msg.ContentBlocks, &blocks); err == nil && len(blocks) > 0 {
-				// Walk blocks in order, grouping into alternating assistant/user messages
-				// based on transitions between non-tool_result and tool_result types.
-				// This preserves round boundaries for multi-round tool loops.
-				var assistantBlocks []worker.ContentBlock
-				var toolResultBlocks []worker.ContentBlock
-
+			blocks, err := decodePlanningBlocks(msg.ContentBlocks)
+			if err == nil && len(blocks) > 0 {
+				var assistantBlocks []worker.ExecutionBlock
 				for _, block := range blocks {
-					if block.Type == "tool_result" {
-						toolResultBlocks = append(toolResultBlocks, block)
-					} else {
-						// If we have accumulated tool_results, flush the current round
-						if len(toolResultBlocks) > 0 {
-							if len(assistantBlocks) > 0 {
-								claudeMessages = append(claudeMessages, worker.Message{
-									Role: "assistant", Content: assistantBlocks,
-								})
-								assistantBlocks = nil
-							}
-							claudeMessages = append(claudeMessages, worker.Message{
-								Role: "user", Content: toolResultBlocks,
-							})
-							toolResultBlocks = nil
-						}
+					switch block.Type {
+					case worker.ExecutionBlockTypeText, worker.ExecutionBlockTypeToolCall:
 						assistantBlocks = append(assistantBlocks, block)
+					case worker.ExecutionBlockTypeToolResult:
+						if len(assistantBlocks) > 0 {
+							history = append(history, worker.ExecutionMessage{
+								Role:    "assistant",
+								Content: extractTextFromBlocks(assistantBlocks),
+								Blocks:  assistantBlocks,
+							})
+							assistantBlocks = nil
+						}
+						history = append(history, worker.ExecutionMessage{
+							Role:    "tool",
+							Content: block.Output,
+							Blocks:  []worker.ExecutionBlock{block},
+						})
 					}
 				}
-				// Flush remaining blocks
 				if len(assistantBlocks) > 0 {
-					claudeMessages = append(claudeMessages, worker.Message{
+					history = append(history, worker.ExecutionMessage{
 						Role:    "assistant",
-						Content: assistantBlocks,
-					})
-				}
-				if len(toolResultBlocks) > 0 {
-					claudeMessages = append(claudeMessages, worker.Message{
-						Role:    "user",
-						Content: toolResultBlocks,
+						Content: extractTextFromBlocks(assistantBlocks),
+						Blocks:  assistantBlocks,
 					})
 				}
 				continue
 			}
 		}
 
-		// Fallback: use text content.
-		claudeMessages = append(claudeMessages, worker.Message{
+		history = append(history, worker.ExecutionMessage{
 			Role:    msg.Role,
 			Content: msg.Content,
 		})
 	}
 
-	// If no messages were built, inject the context as the first user message.
-	if len(claudeMessages) == 0 {
-		return []worker.Message{{
+	if len(history) == 0 {
+		return []worker.ExecutionMessage{{
 			Role:    "user",
 			Content: s.buildInitialUserMessage(session),
-		}}
+		}}, nil
 	}
 
-	// Ensure conversation starts with a user message.
-	if claudeMessages[0].Role != "user" {
-		// Prepend context as initial user message.
-		claudeMessages = append([]worker.Message{{
+	if history[0].Role != "user" {
+		history = append([]worker.ExecutionMessage{{
 			Role:    "user",
 			Content: s.buildInitialUserMessage(session),
-		}}, claudeMessages...)
+		}}, history...)
 	}
 
-	// Merge consecutive same-role messages to prevent Claude API errors.
-	claudeMessages = mergeConsecutiveMessages(claudeMessages)
-
-	return claudeMessages
+	return mergeConsecutiveExecutionMessages(history), nil
 }
 
 func (s *PlanningSessionService) buildInitialUserMessage(session *model.PlanningSession) string {
@@ -1006,17 +837,7 @@ func (s *PlanningSessionService) resolveTools(ctx context.Context, session *mode
 	return s.toolRegistry.DefinitionsFor(allowed)
 }
 
-func (s *PlanningSessionService) executeTool(execCtx *worker.ExecutionContext, name string, input json.RawMessage) (string, error) {
-	if execCtx == nil {
-		return "", fmt.Errorf("no execution context available for tool %s", name)
-	}
-	if !model.PlanningSessionAllowedTools[name] {
-		return "", fmt.Errorf("tool %q is not allowed in planning sessions", name)
-	}
-	return s.toolRegistry.Execute(execCtx, name, input)
-}
-
-func (s *PlanningSessionService) updateSessionTokenUsage(ctx context.Context, session *model.PlanningSession, usage worker.Usage) {
+func (s *PlanningSessionService) updateSessionTokenUsage(ctx context.Context, session *model.PlanningSession, usage worker.ExecutionUsage) {
 	var current model.SessionTokenUsage
 	_ = json.Unmarshal(session.TokenUsage, &current)
 	current.Input += usage.InputTokens
@@ -1147,12 +968,26 @@ func (s *PlanningSessionService) sendStreamError(sessionID, errMsg string) {
 	})
 }
 
+func (s *PlanningSessionService) streamExecutionEvent(sessionID string, event worker.ExecutionEvent) {
+	s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
+		Type:          event.Type,
+		SessionID:     sessionID,
+		Text:          event.Text,
+		ToolCallID:    event.ToolCallID,
+		ToolName:      event.ToolName,
+		ToolInput:     event.ToolInput,
+		OutputSummary: event.OutputSummary,
+		DurationMs:    event.DurationMs,
+		Error:         event.Error,
+	})
+}
+
 // --- Pure helpers ---
 
-func extractTextFromBlocks(blocks []worker.ContentBlock) string {
+func extractTextFromBlocks(blocks []worker.ExecutionBlock) string {
 	var parts []string
 	for _, block := range blocks {
-		if block.Type == "text" && block.Text != "" {
+		if block.Type == worker.ExecutionBlockTypeText && block.Text != "" {
 			parts = append(parts, block.Text)
 		}
 	}
@@ -1200,42 +1035,21 @@ func extractSpecDraft(text string) string {
 	return ""
 }
 
-// mergeConsecutiveMessages combines consecutive messages with the same role
-// into a single message, preventing Claude API "must alternate" errors.
-func mergeConsecutiveMessages(messages []worker.Message) []worker.Message {
+func mergeConsecutiveExecutionMessages(messages []worker.ExecutionMessage) []worker.ExecutionMessage {
 	if len(messages) <= 1 {
 		return messages
 	}
-	merged := []worker.Message{messages[0]}
+	merged := []worker.ExecutionMessage{messages[0]}
 	for i := 1; i < len(messages); i++ {
 		last := &merged[len(merged)-1]
 		if messages[i].Role != last.Role {
 			merged = append(merged, messages[i])
 			continue
 		}
-		// Same role — merge content into the previous message.
-		last.Content = mergeMessageContent(last.Content, messages[i].Content)
+		last.Content = strings.TrimSpace(strings.Join([]string{last.Content, messages[i].Content}, "\n"))
+		last.Blocks = append(last.Blocks, messages[i].Blocks...)
 	}
 	return merged
-}
-
-// mergeMessageContent combines two message Content values (which can be string or []ContentBlock).
-func mergeMessageContent(a, b interface{}) interface{} {
-	aBlocks := contentToBlocks(a)
-	bBlocks := contentToBlocks(b)
-	return append(aBlocks, bBlocks...)
-}
-
-// contentToBlocks normalises a message Content (string or []ContentBlock) into []ContentBlock.
-func contentToBlocks(c interface{}) []worker.ContentBlock {
-	switch v := c.(type) {
-	case string:
-		return []worker.ContentBlock{{Type: "text", Text: v}}
-	case []worker.ContentBlock:
-		return v
-	default:
-		return nil
-	}
 }
 
 func truncateForDisplay(s string, maxLen int) string {
@@ -1243,4 +1057,53 @@ func truncateForDisplay(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func decodePlanningBlocks(raw json.RawMessage) ([]worker.ExecutionBlock, error) {
+	var normalized []model.PlanningMessageBlock
+	if err := json.Unmarshal(raw, &normalized); err == nil && len(normalized) > 0 {
+		blocks := make([]worker.ExecutionBlock, 0, len(normalized))
+		for _, block := range normalized {
+			blocks = append(blocks, worker.ExecutionBlock{
+				Type:       block.Type,
+				Text:       block.Text,
+				ToolCallID: block.ToolCallID,
+				ToolName:   block.ToolName,
+				Input:      block.Input,
+				Output:     block.Output,
+				IsError:    block.IsError,
+			})
+		}
+		return blocks, nil
+	}
+
+	var legacy []worker.ContentBlock
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return nil, err
+	}
+	blocks := make([]worker.ExecutionBlock, 0, len(legacy))
+	for _, block := range legacy {
+		switch block.Type {
+		case "text":
+			blocks = append(blocks, worker.ExecutionBlock{
+				Type: worker.ExecutionBlockTypeText,
+				Text: block.Text,
+			})
+		case "tool_use":
+			blocks = append(blocks, worker.ExecutionBlock{
+				Type:       worker.ExecutionBlockTypeToolCall,
+				ToolCallID: block.ID,
+				ToolName:   block.Name,
+				Input:      block.Input,
+			})
+		case "tool_result":
+			blocks = append(blocks, worker.ExecutionBlock{
+				Type:       worker.ExecutionBlockTypeToolResult,
+				ToolCallID: block.ToolUseID,
+				Output:     block.Content,
+				IsError:    block.IsError,
+			})
+		}
+	}
+	return blocks, nil
 }

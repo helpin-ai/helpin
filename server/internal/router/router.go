@@ -73,7 +73,8 @@ type Handlers struct {
 	PlanningSession    *handler.PlanningSessionHandler
 	AutomationRule     *handler.AutomationRuleHandler
 	PMRoadmap          *handler.PMRoadmapHandler
-	SDKAssets           *handler.SDKAssetsHandler
+	Flow               *handler.FlowHandler
+	SDKAssets          *handler.SDKAssetsHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -89,7 +90,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		AllowedOrigins:   corsOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Workspace-ID"},
-		ExposedHeaders:   []string{"Link"},
+		ExposedHeaders:   []string{"Link", "Deprecation", "Sunset"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
@@ -483,6 +484,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/agent-runs", h.Agent.ListEpicRuns)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-runs", h.Flow.StartRun)
+				r.Route("/flow-runs/{flowRunId}", func(r chi.Router) {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Flow.GetRun)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/nodes", h.Flow.ListNodeRuns)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/cancel", h.Flow.CancelRun)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/nodes/{nodeRunId}/actions", h.Flow.SendNodeAction)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/nodes/{nodeRunId}/retry", h.Flow.RetryNode)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/nodes/{nodeRunId}/messages", h.Flow.ListInteractiveMessages)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/nodes/{nodeRunId}/messages", h.Flow.SendInteractiveMessage)
+				})
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/draft-spec", h.Agent.DraftEpicSpec)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/clarify-spec", h.Agent.ClarifyEpicSpec)

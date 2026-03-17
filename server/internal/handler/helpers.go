@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -25,4 +26,14 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func decodeJSON(r *http.Request, target interface{}) error {
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(target)
+}
+
+const flowAPISunset = "Tue, 30 Jun 2026 00:00:00 GMT"
+
+func setDeprecatedFlowHeaders(w http.ResponseWriter, successorPath string) {
+	w.Header().Set("Deprecation", "true")
+	w.Header().Set("Sunset", flowAPISunset)
+	if strings.TrimSpace(successorPath) != "" {
+		w.Header().Add("Link", "<"+successorPath+">; rel=\"successor-version\"")
+	}
 }

@@ -42,6 +42,8 @@ type PlanningSession struct {
 	ID                  string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID         string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	EpicID              string          `json:"epic_id" gorm:"type:uuid;not null;index"`
+	FlowRunID           *string         `json:"flow_run_id,omitempty" gorm:"type:uuid;index"`
+	FlowNodeRunID       *string         `json:"flow_node_run_id,omitempty" gorm:"type:uuid;index"`
 	AgentID             string          `json:"agent_id" gorm:"type:uuid;not null"`
 	Status              string          `json:"status" gorm:"not null;default:'active'"`
 	PlanningMethodology string          `json:"planning_methodology" gorm:"not null;default:'structured_v1'"`
@@ -84,6 +86,17 @@ type ToolInvocation struct {
 	DurationMs    int64           `json:"duration_ms"`
 }
 
+// PlanningMessageBlock stores provider-neutral assistant/tool content for a session turn.
+type PlanningMessageBlock struct {
+	Type       string          `json:"type"`
+	Text       string          `json:"text,omitempty"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
+	ToolName   string          `json:"tool_name,omitempty"`
+	Input      json.RawMessage `json:"input,omitempty"`
+	Output     string          `json:"output,omitempty"`
+	IsError    bool            `json:"is_error,omitempty"`
+}
+
 // SessionTokenUsage tracks cumulative token consumption for a session.
 type SessionTokenUsage struct {
 	Input  int `json:"input"`
@@ -94,6 +107,8 @@ type SessionTokenUsage struct {
 type StartPlanningSessionRequest struct {
 	AgentID           string  `json:"agent_id"`
 	AdditionalContext *string `json:"additional_context,omitempty"`
+	FlowRunID         *string `json:"flow_run_id,omitempty"`
+	FlowNodeRunID     *string `json:"flow_node_run_id,omitempty"`
 }
 
 // SendPlanningMessageRequest is the request to send a message in a planning session.
@@ -107,12 +122,13 @@ type FinalizePlanningSessionRequest struct{}
 
 // PlanningStreamEvent represents a real-time streaming event sent via WebSocket.
 type PlanningStreamEvent struct {
-	Type          string `json:"type"`                     // "token", "tool_start", "tool_result", "turn_complete", "error"
-	SessionID     string `json:"session_id"`               // Planning session ID
-	Text          string `json:"text,omitempty"`           // For "token" events
-	ToolName      string `json:"tool_name,omitempty"`      // For "tool_start", "tool_result"
-	ToolInput     string `json:"tool_input,omitempty"`     // For "tool_start" (summary of input)
-	OutputSummary string `json:"output_summary,omitempty"` // For "tool_result"
-	DurationMs    int64  `json:"duration_ms,omitempty"`    // For "tool_result"
-	Error         string `json:"error,omitempty"`          // For "error"
+	Type          string `json:"type"`
+	SessionID     string `json:"session_id"`
+	Text          string `json:"text,omitempty"`
+	ToolCallID    string `json:"tool_call_id,omitempty"`
+	ToolName      string `json:"tool_name,omitempty"`
+	ToolInput     string `json:"tool_input,omitempty"`
+	OutputSummary string `json:"output_summary,omitempty"`
+	DurationMs    int64  `json:"duration_ms,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
