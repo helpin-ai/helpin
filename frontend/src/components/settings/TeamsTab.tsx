@@ -740,7 +740,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             icon: Settings2,
             title: 'General',
             description: 'Name, identifier, team type, and story defaults',
-            meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', normalizeTeamType(selectedTeam.team_type) === 'engineering' ? 'Engineering' : 'Other', STORY_TYPE_LABELS[selectedTeam.default_story_type ?? 'feature']]
+            meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', normalizeTeamType(selectedTeam.team_type) === 'engineering' ? 'Engineering / dev team' : 'Non-engineering team']
               .filter(Boolean)
               .join(' · '),
             action: () => openEdit(selectedTeam),
