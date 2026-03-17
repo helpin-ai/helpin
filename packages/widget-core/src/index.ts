@@ -50,6 +50,8 @@ export interface MountWidgetOptions {
   showPreChatForm?: boolean;
   onPreChatSubmit?: (data: { name: string; email: string }) => void;
   isTyping?: boolean;
+  typingAgentName?: string;
+  typingAgentAvatar?: string;
   quickReplies?: string[];
   initialView?: WidgetView;
   showLauncher?: boolean;
@@ -75,6 +77,8 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     showPreChatForm = false,
     onPreChatSubmit = () => {},
     isTyping = false,
+    typingAgentName,
+    typingAgentAvatar,
     quickReplies = [],
     initialView = 'home',
     showLauncher = true,
@@ -101,6 +105,8 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       showPreChatForm,
       onPreChatSubmit,
       isTyping,
+      typingAgentName,
+      typingAgentAvatar,
       quickReplies,
       initialView,
       conversations,

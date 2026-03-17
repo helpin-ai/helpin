@@ -1297,6 +1297,7 @@ export interface SupportMessage {
   sender_user_id?: string;
   sender_agent_id?: string;
   sender_display_name?: string;
+  sender_avatar_url?: string;
   content: string;
   is_internal: boolean;
   created_at: string;

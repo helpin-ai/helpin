@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle, User } from 'lucide-react';
+import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,8 +40,8 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
     <div className="flex justify-start mt-2 animate-in fade-in duration-200">
       {/* Avatar placeholder matching customer bubble layout */}
       <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
-          <span className="flex gap-0.5 text-sm leading-none text-muted-foreground">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950/30">
+          <span className="flex gap-0.5 text-sm leading-none text-blue-400">
             <span className="animate-bounce [animation-delay:0ms]">·</span>
             <span className="animate-bounce [animation-delay:150ms]">·</span>
             <span className="animate-bounce [animation-delay:300ms]">·</span>
@@ -49,7 +49,7 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
         </div>
       </div>
       <div className="max-w-[70%]">
-        <div className="rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2 text-sm leading-relaxed text-foreground">
+        <div className="rounded-2xl rounded-bl-sm bg-blue-50 dark:bg-blue-950/30 px-3.5 py-2 text-sm leading-relaxed text-blue-900 dark:text-blue-100">
           {typingState ? (
             <p className="whitespace-pre-wrap italic opacity-60">{typingState}</p>
           ) : (
@@ -79,9 +79,16 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
           <div key={actorId} className="flex justify-end mt-2 animate-in fade-in duration-200">
             <div className="max-w-[70%]">
               <div className="mb-1 pr-1 text-right">
-                <span className="text-[11px] font-medium text-muted-foreground">{name}</span>
+                <span className="text-[11px] font-medium text-blue-600/70 dark:text-blue-400/70">
+                  {name} is typing
+                  <span className="inline-flex ml-0.5">
+                    <span className="animate-bounce [animation-delay:0ms] [animation-duration:1s]">.</span>
+                    <span className="animate-bounce [animation-delay:200ms] [animation-duration:1s]">.</span>
+                    <span className="animate-bounce [animation-delay:400ms] [animation-duration:1s]">.</span>
+                  </span>
+                </span>
               </div>
-              <div className="rounded-2xl rounded-br-sm bg-primary/40 px-3.5 py-2 text-sm leading-relaxed text-primary-foreground">
+              <div className="rounded-2xl rounded-br-sm bg-blue-100/60 px-3.5 py-2 text-sm leading-relaxed text-blue-600/70 dark:bg-blue-900/20 dark:text-blue-300/70">
                 {content ? (
                   <p className="whitespace-pre-wrap italic opacity-70">{content}</p>
                 ) : (
@@ -97,9 +104,13 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
               </div>
             </div>
             <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <User className="h-3.5 w-3.5" />
-              </div>
+              {member?.avatar_url ? (
+                <img src={member.avatar_url} alt={name} title={name} className="h-7 w-7 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white" title={name}>
+                  {getInitial(name)}
+                </div>
+              )}
             </div>
           </div>
         );

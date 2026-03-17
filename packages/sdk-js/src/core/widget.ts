@@ -60,6 +60,8 @@ export class WidgetManager {
   private activeConversationId: string | null = null;
   private currentView: WidgetView = 'home';
   private isTyping = false;
+  private typingAgentName: string | undefined;
+  private typingAgentAvatar: string | undefined;
   private currentEmail: string | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
@@ -171,6 +173,11 @@ export class WidgetManager {
     this.unreadCount = 0;
     if (!this.hasBeenOpened) {
       this.hasBeenOpened = true;
+      // If there's an active conversation (restored session), resume it;
+      // otherwise start fresh in conversation view.
+      this.currentView = 'conversation';
+    } else if (this.activeConversationId && this.currentView === 'home') {
+      // User had an active conversation — resume it instead of showing home
       this.currentView = 'conversation';
     }
     this.ensureWidget();
@@ -286,6 +293,25 @@ export class WidgetManager {
   private render(): void {
     if (!this.mountContainer || !this.widgetConfig) return;
 
+    // Inject brand color overrides as a <style> targeting .helpin-widget directly.
+    // This beats the default --helpin-primary in widget.css because it has equal specificity
+    // but appears later in the shadow DOM stylesheet order.
+    const primaryColor = this.widgetConfig.branding?.primaryColor;
+    if (primaryColor && this.shadowRoot) {
+      const overrideId = 'helpin-brand-override';
+      let overrideStyle = this.shadowRoot.getElementById(overrideId) as HTMLStyleElement | null;
+      if (!overrideStyle) {
+        overrideStyle = document.createElement('style');
+        overrideStyle.id = overrideId;
+        this.shadowRoot.appendChild(overrideStyle);
+      }
+      overrideStyle.textContent = `.helpin-widget, .helpin-launcher {
+  --helpin-primary: ${primaryColor};
+  --helpin-primary-hover: ${this.darkenColor(primaryColor, 15)};
+  --helpin-primary-foreground: ${this.getContrastColor(primaryColor)};
+}`;
+    }
+
     const showPreChat = this.widgetConfig.features?.preChatForm && !this.sessionToken;
 
     mountWidget(this.mountContainer, {
@@ -300,6 +326,8 @@ export class WidgetManager {
       showPreChatForm: showPreChat,
       onPreChatSubmit: (data: { name: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
+      typingAgentName: this.typingAgentName,
+      typingAgentAvatar: this.typingAgentAvatar,
       initialView: this.currentView,
       showLauncher: true,
       onLauncherClick: () => this.toggle(),
@@ -637,6 +665,8 @@ export class WidgetManager {
         // Set active conversation from messages (if session has one)
         if (payload.messages && payload.messages.length > 0 && payload.messages[0].conversation_id) {
           this.activeConversationId = payload.messages[0].conversation_id;
+          // Auto-navigate to the active conversation so the user resumes where they left off
+          this.currentView = 'conversation';
         }
 
         // Load conversation history from server
@@ -646,6 +676,8 @@ export class WidgetManager {
             conversationId: m.conversation_id,
             role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
             content: m.content,
+            senderName: m.sender_display_name || undefined,
+            senderAvatar: m.sender_avatar_url || undefined,
             isInternal: m.is_internal || false,
             createdAt: m.created_at,
           }));
@@ -710,6 +742,8 @@ export class WidgetManager {
           conversationId: msg.conversation_id || '',
           role: msg.sender_type === 'customer' ? 'customer' : msg.sender_type === 'ai' ? 'ai' : 'agent',
           content: msg.content || '',
+          senderName: msg.sender_name || undefined,
+          senderAvatar: msg.sender_avatar || undefined,
           isInternal: false,
           createdAt: msg.created_at || new Date().toISOString(),
         };
@@ -778,14 +812,22 @@ export class WidgetManager {
         break;
       }
 
-      case 'typing:start':
+      case 'typing:start': {
         // Hub already filters out widget's own typing — this is always agent-origin
         this.isTyping = true;
+        const typingData = data.data;
+        if (typingData) {
+          this.typingAgentName = typingData.agent_name || undefined;
+          this.typingAgentAvatar = typingData.agent_avatar || undefined;
+        }
         this.render();
         break;
+      }
 
       case 'typing:stop':
         this.isTyping = false;
+        this.typingAgentName = undefined;
+        this.typingAgentAvatar = undefined;
         this.render();
         break;
 
@@ -812,6 +854,8 @@ export class WidgetManager {
             conversationId: m.conversation_id,
             role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
             content: m.content,
+            senderName: m.sender_display_name || undefined,
+            senderAvatar: m.sender_avatar_url || undefined,
             isInternal: m.is_internal || false,
             createdAt: m.created_at,
           }));
@@ -823,6 +867,20 @@ export class WidgetManager {
       case 'pong':
         // Server acknowledged keepalive ping — no action needed.
         break;
+
+      case 'config:updated': {
+        // Admin changed widget settings — apply new config in real time
+        const newConfig = data.data;
+        if (newConfig && typeof newConfig === 'object') {
+          this.widgetConfig = newConfig;
+          // Update localStorage cache with fresh config
+          if (this.widgetKey) {
+            cacheConfig(this.widgetKey, newConfig);
+          }
+          this.render();
+        }
+        break;
+      }
 
       case 'connection:error':
         console.error('Widget server error:', data.data);
@@ -853,6 +911,32 @@ export class WidgetManager {
       this.wsConnection.close();
       this.wsConnection = null;
     }
+  }
+
+  // Returns '#ffffff' or '#000000' based on which has better contrast against the given hex color.
+  private getContrastColor(hex: string): string {
+    const rgb = this.hexToRgb(hex);
+    if (!rgb) return '#ffffff';
+    // Relative luminance (WCAG formula)
+    const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+    return luminance > 0.5 ? '#000000' : '#ffffff';
+  }
+
+  // Darkens a hex color by a percentage (0-100).
+  private darkenColor(hex: string, percent: number): string {
+    const rgb = this.hexToRgb(hex);
+    if (!rgb) return hex;
+    const factor = 1 - percent / 100;
+    const r = Math.round(rgb.r * factor);
+    const g = Math.round(rgb.g * factor);
+    const b = Math.round(rgb.b * factor);
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  }
+
+  private hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    const match = hex.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+    if (!match) return null;
+    return { r: parseInt(match[1], 16), g: parseInt(match[2], 16), b: parseInt(match[3], 16) };
   }
 
   private triggerCallback(name: string, ...args: any[]): void {

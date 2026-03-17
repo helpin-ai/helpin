@@ -218,9 +218,11 @@ func (h *Hub) Broadcast(event Event) {
 		wm := widgetMessage{Type: "message:received", Data: event.Data}
 		widgetData, _ = json.Marshal(wm)
 	case event.Entity == "support_conversation" && event.Action == "typing_started":
-		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start"})
+		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start", Data: event.Data})
 	case event.Entity == "support_conversation" && event.Action == "typing_stopped":
 		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:stop"})
+	case event.Entity == "support_widget" && event.Action == "config_updated" && len(event.Data) > 0:
+		widgetData, _ = json.Marshal(widgetMessage{Type: "config:updated", Data: event.Data})
 	}
 
 	// Copy targets under read lock.
@@ -274,6 +276,11 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 	// Visitor online/offline events go to internal (agent) clients only
 	if event.Entity == "support_visitor" {
 		return !client.IsWidget
+	}
+
+	// Widget config updates go to all widget clients in the workspace
+	if event.Entity == "support_widget" && event.Action == "config_updated" {
+		return client.IsWidget
 	}
 
 	if event.Entity == "support_conversation" && (isTypingEvent(event.Action) || isViewingEvent(event.Action)) {

@@ -15,12 +15,18 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
   config,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
+  const isInitialMount = useRef(true);
 
   useEffect(() => {
     if (listRef.current) {
       const el = listRef.current;
+      if (isInitialMount.current) {
+        el.scrollTop = el.scrollHeight;
+        isInitialMount.current = false;
+        return;
+      }
       const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-      if (isNearBottom || messages.length <= 1) {
+      if (isNearBottom) {
         el.scrollTop = el.scrollHeight;
       }
     }
@@ -37,7 +43,11 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
     } else if (date.toDateString() === yesterday.toDateString()) {
       return 'Yesterday';
     }
-    return date.toLocaleDateString();
+    return date.toLocaleDateString(undefined, {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    });
   };
 
   const getDateSeparator = (dateStr: string, idx: number): string | null => {
@@ -55,6 +65,12 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
     <div className="helpin-message-list" ref={listRef} role="list" aria-label="Messages">
       {messages.map((message, idx) => {
         const dateSeparator = getDateSeparator(message.createdAt, idx);
+        // Consecutive = same role + same sender (like Crisp — no time limit)
+        const prev = idx > 0 ? messages[idx - 1] : null;
+        const isFirstInGroup = !prev
+          || prev.role !== message.role
+          || prev.senderName !== message.senderName
+          || !!dateSeparator;
         return (
           <div key={message.id}>
             {dateSeparator && (
@@ -62,7 +78,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
                 <span>{dateSeparator}</span>
               </div>
             )}
-            <MessageBubble message={message} config={config} />
+            <MessageBubble message={message} config={config} isFirstInGroup={isFirstInGroup} />
           </div>
         );
       })}

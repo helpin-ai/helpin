@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // parseSettings unmarshals the JSONB settings string, applying defaults for missing fields.
@@ -249,6 +250,17 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 	if err := s.installationRepo.Update(ctx, inst); err != nil {
 		return nil, nil, err
 	}
+
+	// Broadcast config update to all connected widget clients in this workspace
+	configResp := s.buildWidgetConfigResponse(inst)
+	configData, _ := json.Marshal(configResp)
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "config_updated",
+		Entity:      "support_widget",
+		EntityID:    inst.ID,
+		WorkspaceID: workspaceID,
+		Data:        configData,
+	})
 
 	slog.InfoContext(ctx, "updated support installation settings", "workspace_id", workspaceID)
 	return inst, &merged, nil

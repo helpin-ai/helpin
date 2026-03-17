@@ -329,31 +329,7 @@ func (s *SupportInboxService) GetPublicWidgetConfig(ctx context.Context, widgetK
 	if inst == nil {
 		return nil, fmt.Errorf("widget not found")
 	}
-
-	settings := parseSettings(inst.Settings)
-	return &model.WidgetConfigResponse{
-		WidgetKey:              inst.WidgetKey,
-		Active:                 inst.Active,
-		IsOnline:               isOnline(settings),
-		RequireEmailBeforeChat: settings.RequireEmailBeforeChat,
-		RequireNameAfterEmail:  settings.RequireNameAfterEmail,
-		WelcomeMessage:         settings.WelcomeMessage,
-		AIEnabled:              settings.AIEnabled,
-		ShowTalkToHuman:        settings.ShowTalkToHuman,
-		BusinessHoursEnabled:   settings.BusinessHoursEnabled,
-		OutsideHoursMessage:    settings.OutsideHoursMessage,
-		WidgetName:             settings.WidgetName,
-		WidgetAvatarURL:        settings.WidgetAvatarURL,
-		BrandColor:             settings.BrandColor,
-		ShowBranding:           settings.ShowBranding,
-		ColorScheme:            settings.ColorScheme,
-		ButtonColor:            settings.ButtonColor,
-		ButtonIconColor:        settings.ButtonIconColor,
-		LogoURL:                settings.LogoURL,
-		LauncherPosition:       settings.LauncherPosition,
-		LauncherIcon:           settings.LauncherIcon,
-		CSATEnabled:            settings.CSATEnabled,
-	}, nil
+	return s.buildWidgetConfigResponse(inst), nil
 }
 
 // GetPublicWidgetConfigByID returns the public-facing widget config by installation ID.
@@ -365,31 +341,47 @@ func (s *SupportInboxService) GetPublicWidgetConfigByID(ctx context.Context, id 
 	if inst == nil {
 		return nil, fmt.Errorf("widget not found")
 	}
+	return s.buildWidgetConfigResponse(inst), nil
+}
 
+// buildWidgetConfigResponse maps installation settings to the nested WidgetConfig
+// shape expected by the widget-core TypeScript interface.
+func (s *SupportInboxService) buildWidgetConfigResponse(inst *model.SupportWidgetInstallation) *model.WidgetConfigResponse {
 	settings := parseSettings(inst.Settings)
+
+	position := settings.LauncherPosition
+	if position == "" || position == "bottom_right" {
+		position = "bottom-right"
+	} else if position == "bottom_left" {
+		position = "bottom-left"
+	}
+
+	primaryColor := settings.BrandColor
+	if primaryColor == "" {
+		primaryColor = "#6366f1"
+	}
+
 	return &model.WidgetConfigResponse{
-		WidgetKey:              inst.WidgetKey,
-		Active:                 inst.Active,
-		IsOnline:               isOnline(settings),
-		RequireEmailBeforeChat: settings.RequireEmailBeforeChat,
-		RequireNameAfterEmail:  settings.RequireNameAfterEmail,
-		WelcomeMessage:         settings.WelcomeMessage,
-		AIEnabled:              settings.AIEnabled,
-		ShowTalkToHuman:        settings.ShowTalkToHuman,
-		BusinessHoursEnabled:   settings.BusinessHoursEnabled,
-		OutsideHoursMessage:    settings.OutsideHoursMessage,
-		WidgetName:             settings.WidgetName,
-		WidgetAvatarURL:        settings.WidgetAvatarURL,
-		BrandColor:             settings.BrandColor,
-		ShowBranding:           settings.ShowBranding,
-		ColorScheme:            settings.ColorScheme,
-		ButtonColor:            settings.ButtonColor,
-		ButtonIconColor:        settings.ButtonIconColor,
-		LogoURL:                settings.LogoURL,
-		LauncherPosition:       settings.LauncherPosition,
-		LauncherIcon:           settings.LauncherIcon,
-		CSATEnabled:            settings.CSATEnabled,
-	}, nil
+		WorkspaceID:   inst.WorkspaceID,
+		WorkspaceName: settings.WidgetName,
+		Branding: model.WidgetConfigBranding{
+			PrimaryColor:    primaryColor,
+			LogoURL:         settings.LogoURL,
+			WelcomeMessage:  settings.WelcomeMessage,
+			WidgetPosition:  position,
+			ShowBranding:    settings.ShowBranding,
+			LauncherIcon:    settings.LauncherIcon,
+			ColorScheme:     settings.ColorScheme,
+			ButtonColor:     settings.ButtonColor,
+			ButtonIconColor: settings.ButtonIconColor,
+		},
+		Features: model.WidgetConfigFeatures{
+			AIEnabled:   settings.AIEnabled,
+			FileUploads: false,
+			PreChatForm: settings.RequireEmailBeforeChat,
+			CSATRating:  settings.CSATEnabled,
+		},
+	}
 }
 
 // ListWidgetTokens returns all active widget installations formatted as tokens
