@@ -370,7 +370,10 @@ export class WidgetManager {
   // ─── Unread Count ──────────────────────────────────────────
 
   private syncUnreadCount(): void {
-    const total = this.conversations.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
+    const total = this.conversations.reduce((sum, c) => {
+      const unread = Number(c.unreadCount ?? 0);
+      return sum + (Number.isFinite(unread) ? unread : 0);
+    }, 0);
     if (total !== this.unreadCount) {
       this.unreadCount = total;
       this.triggerCallback('onUnreadCountChange', total);
@@ -806,9 +809,10 @@ export class WidgetManager {
         // Update conversation in the list (lastMessage preview + unread count + move to top)
         if (newMsg.conversationId) {
           const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
+          const isActiveAndOpen = this.isOpen && this.activeConversationId === newMsg.conversationId;
+          const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
           if (convIdx >= 0) {
             const prev = this.conversations[convIdx];
-            const isActiveAndOpen = this.isOpen && this.activeConversationId === newMsg.conversationId;
             const updated = {
               ...prev,
               lastMessage: newMsg.content,
@@ -818,12 +822,23 @@ export class WidgetManager {
                 : (prev.unreadCount ?? 0),
             };
             this.conversations = [updated, ...this.conversations.filter((_, i) => i !== convIdx)];
+          } else {
+            this.conversations = [{
+              id: newMsg.conversationId,
+              subject: newMsg.content || 'Conversation',
+              status: 'open',
+              lastMessage: newMsg.content,
+              lastMessageAt: newMsg.createdAt,
+              unreadCount: nextUnreadCount,
+            }, ...this.conversations];
+          }
+
+          if (msg.sender_type !== 'customer' && isActiveAndOpen && this.wsConnection?.readyState === WebSocket.OPEN) {
+            this.wsSend('conversation:read', { conversation_id: newMsg.conversationId });
           }
         }
 
-        if (!this.isOpen) {
-          this.syncUnreadCount();
-        }
+        this.syncUnreadCount();
 
         this.triggerCallback('onMessageReceived', msg);
         this.render();
