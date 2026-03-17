@@ -179,9 +179,6 @@ func TestGetAll_WithSeededSettings(t *testing.T) {
 	if len(cfg.Teams) != 0 {
 		t.Fatalf("expected 0 teams, got %d", len(cfg.Teams))
 	}
-	if len(cfg.BonusTiers) != 0 {
-		t.Fatalf("expected 0 bonus tiers, got %d", len(cfg.BonusTiers))
-	}
 }
 
 func TestGetAll_AutoInitializesWhenNoSettings(t *testing.T) {

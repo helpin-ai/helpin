@@ -80,12 +80,6 @@ func (r *SettingsRepository) GetAll(ctx context.Context, workspaceID string) (*m
 	}
 	cfg.JobRoles = jobRoles
 
-	tiers, err := r.listBonusTiers(ctx, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	cfg.BonusTiers = tiers
-
 	preassignments, err := r.listInvitationTeamPreassignments(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -236,15 +230,6 @@ func (r *SettingsRepository) listJobRoleCriteria(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("list job role criteria: %w", err)
 	}
 	return criteria, nil
-}
-
-func (r *SettingsRepository) listBonusTiers(ctx context.Context, workspaceID string) ([]model.BonusTier, error) {
-	var tiers []model.BonusTier
-	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("tier").Find(&tiers).Error
-	if err != nil {
-		return nil, fmt.Errorf("list bonus tiers: %w", err)
-	}
-	return tiers, nil
 }
 
 // Initialize creates default workspace settings.
@@ -982,47 +967,6 @@ func (r *SettingsRepository) DeletePerson(ctx context.Context, id string) error 
 		}
 		return nil
 	})
-}
-
-// UpdateBonusTiers replaces all bonus tiers for a workspace.
-func (r *SettingsRepository) UpdateBonusTiers(ctx context.Context, workspaceID string, tiers []model.BonusTierItem) ([]model.BonusTier, error) {
-	var result []model.BonusTier
-
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Delete existing tiers that are editable.
-		if err := tx.Where("workspace_id = ? AND editable = true", workspaceID).Delete(&model.BonusTier{}).Error; err != nil {
-			return fmt.Errorf("delete bonus tiers: %w", err)
-		}
-
-		for _, tier := range tiers {
-			t := model.BonusTier{
-				WorkspaceID:      workspaceID,
-				Tier:             tier.Tier,
-				MinScore:         tier.MinScore,
-				MaxScore:         tier.MaxScore,
-				SalaryMultiplier: tier.SalaryMultiplier,
-				Description:      tier.Description,
-			}
-			err := tx.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "workspace_id"}, {Name: "tier"}},
-				DoUpdates: clause.AssignmentColumns([]string{"min_score", "max_score", "salary_multiplier", "description"}),
-			}).Create(&t).Error
-			if err != nil {
-				return fmt.Errorf("upsert bonus tier: %w", err)
-			}
-			// Re-fetch to get correct values after upsert.
-			var fetched model.BonusTier
-			if err := tx.Where("workspace_id = ? AND tier = ?", workspaceID, tier.Tier).First(&fetched).Error; err != nil {
-				return fmt.Errorf("fetch bonus tier: %w", err)
-			}
-			result = append(result, fetched)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 // UpdateJobRoleCriteria replaces all criteria for a given job role in a workspace.

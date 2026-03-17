@@ -18,12 +18,10 @@ export function SystemTab({ workspaceId, config, editable, onRefresh }: {
   const [sprintDuration, setSprintDuration] = useState(config.sprint_duration_weeks);
   const [teamWeight, setTeamWeight] = useState(config.team_weight);
   const [notifications, setNotifications] = useState(config.notifications_enabled);
-  const [autoCalc, setAutoCalc] = useState(config.auto_calculate_bonuses);
   useEffect(() => {
     setSprintDuration(config.sprint_duration_weeks);
     setTeamWeight(config.team_weight);
     setNotifications(config.notifications_enabled);
-    setAutoCalc(config.auto_calculate_bonuses);
   }, [config]);
 
   const handleSave = async () => {
@@ -31,7 +29,6 @@ export function SystemTab({ workspaceId, config, editable, onRefresh }: {
       sprint_duration_weeks: sprintDuration,
       team_weight: teamWeight,
       notifications_enabled: notifications,
-      auto_calculate_bonuses: autoCalc,
     });
     if (error) toast.error(error);
     else { toast.success('System settings updated'); onRefresh(); }
@@ -41,7 +38,7 @@ export function SystemTab({ workspaceId, config, editable, onRefresh }: {
     <div className="space-y-6">
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
-          <CardTitle className="text-base">Reward Defaults</CardTitle>
+          <CardTitle className="text-base">System Defaults</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -77,13 +74,6 @@ export function SystemTab({ workspaceId, config, editable, onRefresh }: {
                 <p className="text-xs text-muted-foreground">Control workspace-level emails for sprint-related events.</p>
               </div>
               <Switch checked={notifications} onCheckedChange={setNotifications} disabled={!editable} />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <Label>Auto-calculate Bonuses</Label>
-                <p className="text-xs text-muted-foreground">Automatically recalculate bonuses when scores change</p>
-              </div>
-              <Switch checked={autoCalc} onCheckedChange={setAutoCalc} disabled={!editable} />
             </div>
           </div>
         </CardContent>

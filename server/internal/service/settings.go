@@ -278,11 +278,6 @@ func (s *SettingsService) DeletePerson(ctx context.Context, id string) error {
 	return s.settingsRepo.DeletePerson(ctx, id)
 }
 
-// UpdateBonusTiers replaces bonus tiers for a workspace.
-func (s *SettingsService) UpdateBonusTiers(ctx context.Context, workspaceID string, tiers []model.BonusTierItem) ([]model.BonusTier, error) {
-	return s.settingsRepo.UpdateBonusTiers(ctx, workspaceID, tiers)
-}
-
 // UpdateJobRoleCriteria replaces criteria for a job role.
 func (s *SettingsService) UpdateJobRoleCriteria(ctx context.Context, workspaceID, jobRole string, criteria []model.JobRoleCriteriaItem) ([]model.JobRoleCriteria, error) {
 	return s.settingsRepo.UpdateJobRoleCriteria(ctx, workspaceID, jobRole, criteria)

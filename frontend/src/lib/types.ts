@@ -201,7 +201,6 @@ export interface WorkspaceConfig {
   quarter_start_date: string;
   sprint_duration_weeks: number;
   notifications_enabled: boolean;
-  auto_calculate_bonuses: boolean;
   team_weight: number;
   planning_methodology: 'structured_v1' | 'basic_v1';
   planning_web_search_enabled: boolean;
@@ -293,22 +292,6 @@ export interface InviteInfo {
   invited_by_name: string;
   status: string;
   expired: boolean;
-}
-
-export interface RewardAuditEntry {
-  id: string;
-  workspace_id: string;
-  quarter_id: string;
-  action: string;
-  employee_id?: string;
-  performed_by: string;
-  performed_by_name: string;
-  performed_by_role: string;
-  old_value?: unknown;
-  new_value?: unknown;
-  justification?: string;
-  affected_count: number;
-  performed_at: string;
 }
 
 export type AutomationKind = 'built_in_automation' | 'automation_rule' | 'contextual_agent' | 'custom_automation';

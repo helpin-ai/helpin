@@ -255,23 +255,6 @@ func (h *SettingsHandler) DeletePerson(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "person deleted"})
 }
 
-// UpdateBonusTiers handles PUT /api/settings/bonus-tiers.
-func (h *SettingsHandler) UpdateBonusTiers(w http.ResponseWriter, r *http.Request) {
-	var req model.UpdateBonusTiersRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	tiers, err := h.settingsService.UpdateBonusTiers(r.Context(), req.WorkspaceID, req.Tiers)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, tiers)
-}
-
 // UpdateJobRoleCriteria handles PUT /api/settings/job-roles.
 func (h *SettingsHandler) UpdateJobRoleCriteria(w http.ResponseWriter, r *http.Request) {
 	var req model.UpdateJobRoleCriteriaRequest
