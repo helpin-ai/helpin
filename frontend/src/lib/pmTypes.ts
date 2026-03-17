@@ -85,6 +85,7 @@ export interface Epic {
   spec_document_id?: string;
   planning_repository_id?: string;
   planning_state: string;
+  active_planning_session_id?: string;
   spec_clarifications?: SpecClarification[];
   spec_clarified_at?: string;
   spec_clarified_by?: string;
@@ -1466,4 +1467,89 @@ export interface AgentHandoff {
   reason: string;
   context: Record<string, unknown>;
   created_at: string;
+}
+
+// ── Planning Sessions ───────────────────────────────────────────────
+
+export type PlanningSessionStatus = 'active' | 'paused' | 'finalizing' | 'completed' | 'abandoned';
+
+export interface PlanningSession {
+  id: string;
+  workspace_id: string;
+  epic_id: string;
+  agent_id: string;
+  status: PlanningSessionStatus;
+  planning_methodology: string;
+  spec_document_id?: string;
+  spec_draft: string;
+  spec_sections: SpecSectionEntry[]; // deprecated
+  context_snapshot: Record<string, unknown>;
+  token_usage: SessionTokenUsage;
+  started_by?: string;
+  started_at: string;
+  last_active_at: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionTokenUsage {
+  input: number;
+  output: number;
+}
+
+export interface PlanningSessionMessage {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string;
+  message_type: string;
+  section_metadata?: Record<string, unknown>;
+  tool_invocations?: ToolInvocation[];
+  content_blocks?: unknown[];
+  token_usage?: SessionTokenUsage;
+  created_at: string;
+}
+
+export interface ToolInvocation {
+  tool_name: string;
+  input: Record<string, unknown>;
+  output_summary: string;
+  duration_ms: number;
+}
+
+export interface SpecSectionEntry {
+  key: string;
+  title: string;
+  status: string;
+  message_id: string;
+  spec_markdown?: string;
+}
+
+export interface PlanningStreamEvent {
+  type: 'token' | 'tool_start' | 'tool_result' | 'turn_complete' | 'error';
+  session_id: string;
+  text?: string;
+  tool_name?: string;
+  tool_input?: string;
+  output_summary?: string;
+  duration_ms?: number;
+  error?: string;
+}
+
+export interface StartPlanningSessionRequest {
+  agent_id: string;
+  additional_context?: string;
+}
+
+export interface StructuredQuestionOption {
+  value: string;
+  label: string;
+  freetext?: boolean;
+}
+
+export interface StructuredQuestion {
+  id: string;
+  text: string;
+  options: StructuredQuestionOption[];
 }

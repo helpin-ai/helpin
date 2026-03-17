@@ -366,7 +366,7 @@ export function EpicDetailPage() {
   }
 
   return (
-    <div className="flex h-full flex-col max-w-7xl mx-auto">
+    <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>

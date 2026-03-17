@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 
@@ -73,16 +74,33 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.hub.Register(client)
 	defer func() {
+		h.hub.UnsubscribeAllSessions(client)
 		h.hub.Unregister(client)
 		conn.Close(websocket.StatusNormalClosure, "closed")
 	}()
 
 	// Read loop: keep connection alive by consuming pings/messages.
-	// We don't expect any client messages — just read to detect disconnect.
+	// Parse client messages for session subscribe/unsubscribe commands.
 	for {
-		_, _, err := conn.Read(r.Context())
+		_, data, err := conn.Read(r.Context())
 		if err != nil {
 			return
+		}
+		var msg struct {
+			Type      string `json:"type"`
+			SessionID string `json:"session_id"`
+		}
+		if json.Unmarshal(data, &msg) == nil {
+			switch msg.Type {
+			case "subscribe_session":
+				if msg.SessionID != "" {
+					h.hub.SubscribeSession(client, msg.SessionID)
+				}
+			case "unsubscribe_session":
+				if msg.SessionID != "" {
+					h.hub.UnsubscribeSession(client, msg.SessionID)
+				}
+			}
 		}
 	}
 }

@@ -268,6 +268,24 @@ export function useStoryDelivery(workspaceId: string, storyDetail: StoryDetail, 
 
   const handleRepoChange = async (repoId: string) => {
     setRepositoryId(repoId);
+    if (!repoId) return;
+    // Auto-save delivery target when repo changes
+    setSavingTarget(true);
+    const resolved = baseBranch.trim() || repositories.find((r) => r.id === repoId)?.default_branch || 'main';
+    const { data, error } = await gitService.updateStoryDeliveryTarget(workspaceId, storyDetail.story.id, {
+      repository_id: repoId,
+      base_branch: resolved,
+    });
+    setSavingTarget(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setTarget(data ?? null);
+    if (data) {
+      setBaseBranch(data.base_branch ?? resolved);
+    }
+    toast.success('Delivery target updated');
   };
 
   const handleRunNow = async () => {

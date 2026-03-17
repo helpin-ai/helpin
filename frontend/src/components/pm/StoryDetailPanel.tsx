@@ -10,6 +10,7 @@ import {
   CheckSquare,
   ChevronRight,
   Gauge,
+  GitBranch,
   Hash,
   Hexagon,
   Layers,
@@ -19,6 +20,7 @@ import {
   Maximize2,
   MoreVertical,
   Paperclip,
+  Play,
   ShieldAlert,
   Tag,
   Target,
@@ -51,7 +53,7 @@ import { Attachments } from '@/components/pm/Attachments';
 import { ChecklistItems } from '@/components/pm/ChecklistItems';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
 import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
-import { StoryDeliveryPanel } from '@/components/pm/StoryDeliveryPanel';
+import { useStoryDelivery } from '@/components/pm/StoryDeliveryPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
 import { getInitials } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
@@ -79,6 +81,7 @@ import { CommentThread } from '@/components/pm/CommentThread';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { StoryRelationshipsSection } from '@/components/pm/StoryRelationshipsSection';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { Input } from '@/components/ui/input';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -312,6 +315,9 @@ function StoryDetailPanelBody({
       setHasGitIntegration((res.data ?? []).some((i) => i.active));
     });
   }, [workspaceId]);
+
+  // ── Delivery (sidebar rows) ──────────────────────────────────────
+  const delivery = useStoryDelivery(workspaceId, storyDetail, onStoryUpdated);
 
   // Re-sync form when storyDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(storyDetail.story.updated_at);
@@ -1064,6 +1070,107 @@ function StoryDetailPanelBody({
             </MetadataRow>
             )}
 
+            {/* ── Delivery ── */}
+            {hasGitIntegration && fieldVis.delivery && !delivery.hidden && !delivery.loading && (
+              <>
+                <div className="col-span-3 h-px bg-border/40 my-1" />
+
+                <MetadataRow icon={Bot} label="Agent">
+                  <SidebarPopoverSelect
+                    value={delivery.selectedAgentId || '__none__'}
+                    options={[
+                      { value: '__none__', label: 'No agent' },
+                      ...delivery.agents.map((a) => ({ value: a.id, label: `${a.name} · ${a.capability_profile}` })),
+                    ]}
+                    onChange={(v) => {
+                      const val = v === '__none__' ? '' : v;
+                      if (val) {
+                        delivery.handleAgentChange(val);
+                      }
+                    }}
+                    renderTrigger={() => (
+                      <>
+                        {delivery.selectedAgent && (
+                          delivery.selectedAgent.agent_kind === 'human'
+                            ? <User className="h-3.5 w-3.5 text-muted-foreground" />
+                            : <Bot className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                        <span>{delivery.selectedAgent?.name ?? 'No agent'}</span>
+                        {delivery.savingAssignment && <Loader2 className="h-3 w-3 animate-spin" />}
+                      </>
+                    )}
+                    renderOption={(v) => {
+                      const a = delivery.agents.find((ag) => ag.id === v);
+                      if (!a) return null;
+                      return a.agent_kind === 'human'
+                        ? <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        : <Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
+                    }}
+                  />
+                </MetadataRow>
+
+                <MetadataRow icon={GitBranch} label="Repository">
+                  <SidebarPopoverSelect
+                    value={delivery.repositoryId || '__none__'}
+                    options={[
+                      { value: '__none__', label: 'None' },
+                      ...delivery.repositories.map((r) => ({ value: r.id, label: r.full_name })),
+                    ]}
+                    onChange={(v) => {
+                      const val = v === '__none__' ? '' : v;
+                      delivery.handleRepoChange(val);
+                    }}
+                    renderTrigger={() => (
+                      <span className="truncate">{delivery.selectedRepository?.full_name ?? 'None'}</span>
+                    )}
+                  />
+                </MetadataRow>
+
+                <MetadataRow icon={GitBranch} label="Base">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+                      >
+                        <span className="truncate font-mono">{delivery.resolvedBaseBranch}</span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-2" align="start">
+                      <Input
+                        value={delivery.baseBranch}
+                        onChange={(e) => delivery.setBaseBranch(e.target.value)}
+                        placeholder={delivery.selectedRepository?.default_branch || 'main'}
+                        className="h-7 text-xs"
+                      />
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        className="mt-1.5 w-full"
+                        onClick={delivery.handleSaveDelivery}
+                        disabled={delivery.savingTarget || !delivery.repositoryId}
+                      >
+                        {delivery.savingTarget ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                        Save
+                      </Button>
+                    </PopoverContent>
+                  </Popover>
+                </MetadataRow>
+
+                <MetadataRow icon={GitBranch} label="Branch">
+                  <span className="truncate font-mono text-xs px-1.5 py-0.5">{delivery.branchPreview}</span>
+                </MetadataRow>
+
+                {delivery.deliveryStateCfg && (
+                  <MetadataRow icon={Play} label="Status">
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${delivery.deliveryStateCfg.className}`}>
+                      {delivery.deliveryStateCfg.label}
+                    </span>
+                  </MetadataRow>
+                )}
+              </>
+            )}
+
           </div>
 
           <AssociationsPanel
@@ -1072,17 +1179,6 @@ function StoryDetailPanelBody({
             workspaceId={workspaceId}
             includeStoryRelationships={false}
           />
-
-          {/* Delivery */}
-          {hasGitIntegration && fieldVis.delivery && (
-            <div className="mt-4">
-              <StoryDeliveryPanel
-                workspaceId={workspaceId}
-                storyDetail={storyDetail}
-                onStoryUpdated={onStoryUpdated}
-              />
-            </div>
-          )}
         </aside>
       </div>
 

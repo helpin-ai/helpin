@@ -179,6 +179,8 @@ func main() {
 		&model.PMView{},
 		&model.PMAutomation{},
 		&model.AutomationRule{},
+		&model.PlanningSession{},
+		&model.PlanningSessionMessage{},
 		&model.WorkspaceInvitation{},
 		&model.InvitationTeamPreassignment{},
 		&model.PMTeamEstimateSettings{},
@@ -371,6 +373,7 @@ func main() {
 	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
+	planningSessionRepo := repository.NewPlanningSessionRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
@@ -527,6 +530,29 @@ func main() {
 	pmStoryService.SetAgentService(agentService)
 	agentService.SetRuleEngine(ruleEngine)
 
+	// Planning session service — HTTP-only (activities run in cmd/temporal-worker).
+	// No claudeClient/toolRegistry/streamer needed: streaming runs in the worker process.
+	planningSessionService := service.NewPlanningSessionService(
+		planningSessionRepo,
+		pmEpicRepo,
+		agentRepo,
+		settingsRepo,
+		docsContentRepo,
+		docsVersionRepo,
+		docsLinkRepo,
+		docsDocumentRepo,
+		docsSpaceRepo,
+		nil, // llmProviders — activities run in temporal-worker
+		nil, // toolRegistry — activities run in temporal-worker
+		nil, // streamer — activities run in temporal-worker
+		wsPublisher,
+	)
+
+	// Wire up Temporal-based planning session workflow.
+	if temporalClient != nil {
+		planningSessionService.SetWorkflowStarter(&planningWorkflowAdapter{engine: runEngine})
+	}
+
 	// Log orchestration availability.
 	if cfg.AnthropicAPIKey != "" {
 		slog.Info("Anthropic API configured — orchestration enabled")
@@ -650,6 +676,7 @@ func main() {
 		PMView:             handler.NewPMViewHandler(pmViewService),
 		Search:             handler.NewSearchHandler(searchService),
 		PMAutomation:       handler.NewPMAutomationHandler(pmAutomationService),
+		PlanningSession:    handler.NewPlanningSessionHandler(planningSessionService),
 		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
 		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
 		Agent:              handler.NewAgentHandler(agentService),
@@ -834,4 +861,33 @@ func main() {
 	}
 
 	slog.Info("server stopped")
+}
+
+// planningWorkflowAdapter implements service.PlanningWorkflowStarter
+// by delegating to the Temporal RunEngine.
+type planningWorkflowAdapter struct {
+	engine *temporalapp.RunEngine
+}
+
+func (a *planningWorkflowAdapter) StartPlanningSession(ctx context.Context, sessionID string) error {
+	return a.engine.StartPlanningSession(ctx, sessionID)
+}
+
+func (a *planningWorkflowAdapter) SignalPlanningMessage(ctx context.Context, sessionID string) error {
+	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
+		Type: temporalapp.PlanningSessionSignalTypeMessage,
+	})
+}
+
+func (a *planningWorkflowAdapter) SignalPlanningFinalize(ctx context.Context, sessionID, actorID string) error {
+	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
+		Type:    temporalapp.PlanningSessionSignalTypeFinalize,
+		ActorID: actorID,
+	})
+}
+
+func (a *planningWorkflowAdapter) SignalPlanningAbandon(ctx context.Context, sessionID string) error {
+	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
+		Type: temporalapp.PlanningSessionSignalTypeAbandon,
+	})
 }

@@ -77,6 +77,13 @@ export function useRealtimeSync(workspaceId: string) {
       if (event.parent_type === 'story' && event.parent_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.story(workspaceId, event.parent_id) })
       }
+    } else if (event.entity === 'planning_session_message') {
+      if (event.parent_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.pm.planningMessages(workspaceId, event.parent_id) })
+      }
+    } else if (event.entity === 'planning_session') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.planningSession(workspaceId, event.entity_id) })
+      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'epics'] })
     } else if (event.entity === 'support_conversation') {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })

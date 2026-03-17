@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react'
+import { create } from 'zustand'
 import { API_BASE } from '@/lib/api'
 
 export interface WSEvent {
@@ -10,6 +11,8 @@ export interface WSEvent {
   parent_type?: string
   parent_id?: string
 }
+
+export const useWSStore = create<{ send: ((data: unknown) => void) | null }>(() => ({ send: null }))
 
 interface UseWebSocketOptions {
   workspaceId: string
@@ -42,12 +45,21 @@ export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
     ws.onopen = () => {
       console.log('[ws] connected')
       retriesRef.current = 0
+      const sendFn = (data: unknown) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data))
+      }
+      useWSStore.setState({ send: sendFn })
     }
 
     ws.onmessage = (e) => {
       try {
-        const event: WSEvent = JSON.parse(e.data)
-        onEventRef.current(event)
+        const parsed = JSON.parse(e.data)
+        if (parsed.session_id && parsed.type) {
+          // Stream event — dispatch as DOM CustomEvent for usePlanningStream
+          window.dispatchEvent(new CustomEvent('planning-stream', { detail: parsed }))
+        } else {
+          onEventRef.current(parsed)
+        }
       } catch {
         // ignore malformed messages
       }
@@ -56,6 +68,7 @@ export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
     ws.onclose = () => {
       console.log('[ws] disconnected')
       wsRef.current = null
+      useWSStore.setState({ send: null })
       // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s cap
       const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000)
       retriesRef.current++

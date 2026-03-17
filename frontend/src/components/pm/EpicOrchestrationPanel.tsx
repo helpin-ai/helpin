@@ -18,6 +18,8 @@ import type {
   SpecClarification,
 } from '@/lib/pmTypes';
 
+import { useStartPlanningSession } from '@/hooks/queries';
+
 import { ApproveSpecStep } from './ApproveSpecStep';
 import { ClarifySpecStep } from './ClarifySpecStep';
 import { DraftSpecStep } from './DraftSpecStep';
@@ -25,6 +27,7 @@ import { ExecuteStep } from './ExecuteStep';
 import { GenerateStoriesStep } from './GenerateStoriesStep';
 import { PlannerSetupStep } from './PlannerSetupStep';
 import { PlanningProgress } from './PlanningProgress';
+import { PlanningSessionPanel } from './PlanningSessionPanel';
 import { computeCurrentStep, getStepStatus } from './planningStepUtils';
 import { ReviewStoriesStep } from './ReviewStoriesStep';
 
@@ -138,6 +141,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   const [selectedStoryIds, setSelectedStoryIds] = useState<string[]>([]);
   const [clarifications, setClarifications] = useState<SpecClarification[]>(epic.spec_clarifications ?? []);
   const [additionalContext, setAdditionalContext] = useState('');
+  const [localSessionId, setLocalSessionId] = useState<string | null>(epic.active_planning_session_id ?? null);
   const [assigning, setAssigning] = useState(false);
   const [, setLoadingRuns] = useState(true);
   const [triggeringDraft, setTriggeringDraft] = useState(false);
@@ -158,6 +162,10 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     setAssignedAgentId(epic.orchestrator_agent_id ?? '');
     setSelectedAgentId(epic.orchestrator_agent_id ?? '');
   }, [epic.orchestrator_agent_id]);
+
+  useEffect(() => {
+    setLocalSessionId(epic.active_planning_session_id ?? null);
+  }, [epic.active_planning_session_id]);
 
   useEffect(() => {
     setClarifications(epic.spec_clarifications ?? []);
@@ -442,6 +450,27 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
 
   const specDocTitle = specDocQuery.data?.title ?? 'Product Spec';
 
+  // Interactive session
+  const startSessionMutation = useStartPlanningSession(workspaceId);
+  const handleStartSession = async () => {
+    const agentId = await ensureAssignedAgent();
+    if (!agentId) return;
+    try {
+      const session = await startSessionMutation.mutateAsync({
+        epicId: epic.id,
+        agentId,
+        additionalContext: additionalContext || undefined,
+      });
+      setLocalSessionId(session.id);
+      setAdditionalContext('');
+      onStoriesCreated?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start session');
+    }
+  };
+
+  const isInSession = (epic.planning_state === 'in_session' && epic.active_planning_session_id) || localSessionId;
+
   // --- Render ---
 
   return (
@@ -457,6 +486,14 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
         <PlanningProgress currentStep={currentStep} />
       </div>
 
+      {isInSession ? (
+        <PlanningSessionPanel
+          epic={epic}
+          workspaceId={workspaceId}
+          sessionId={localSessionId ?? epic.active_planning_session_id}
+          onComplete={() => { setLocalSessionId(null); void fetchRuns(); onStoriesCreated?.(); }}
+        />
+      ) : (
       <div className="space-y-3">
         <PlannerSetupStep
           status={getStepStatus('setup', currentStep)}
@@ -479,6 +516,8 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
           onDraftSpec={() => void handleDraftSpec()}
           onOpenSpecDoc={openSpecDoc}
           triggeringDraft={triggeringDraft}
+          onStartSession={() => void handleStartSession()}
+          startingSession={startSessionMutation.isPending}
         />
 
         <ClarifySpecStep
@@ -533,6 +572,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
           executionResult={lastExecutionResult}
         />
       </div>
+      )}
 
     </div>
   );

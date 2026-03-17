@@ -33,14 +33,17 @@ type Client struct {
 
 // Hub manages all active WebSocket clients grouped by workspace.
 type Hub struct {
-	mu      sync.RWMutex
-	clients map[string]map[*Client]struct{} // workspaceID -> set of clients
+	mu               sync.RWMutex
+	clients          map[string]map[*Client]struct{} // workspaceID -> set of clients
+	sessionSubsMu    sync.RWMutex
+	sessionSubs      map[string]map[*Client]struct{} // sessionID -> set of clients subscribed to stream
 }
 
 // NewHub creates an empty hub.
 func NewHub() *Hub {
 	return &Hub{
-		clients: make(map[string]map[*Client]struct{}),
+		clients:     make(map[string]map[*Client]struct{}),
+		sessionSubs: make(map[string]map[*Client]struct{}),
 	}
 }
 
@@ -146,4 +149,64 @@ func SendToClient(conn *websocket.Conn, msgType string, data interface{}) error 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return conn.Write(ctx, websocket.MessageText, msg)
+}
+
+// SubscribeSession registers a client to receive stream events for a planning session.
+func (h *Hub) SubscribeSession(client *Client, sessionID string) {
+	h.sessionSubsMu.Lock()
+	defer h.sessionSubsMu.Unlock()
+	if h.sessionSubs[sessionID] == nil {
+		h.sessionSubs[sessionID] = make(map[*Client]struct{})
+	}
+	h.sessionSubs[sessionID][client] = struct{}{}
+}
+
+// UnsubscribeSession removes a client from a planning session's stream events.
+func (h *Hub) UnsubscribeSession(client *Client, sessionID string) {
+	h.sessionSubsMu.Lock()
+	defer h.sessionSubsMu.Unlock()
+	if subs, ok := h.sessionSubs[sessionID]; ok {
+		delete(subs, client)
+		if len(subs) == 0 {
+			delete(h.sessionSubs, sessionID)
+		}
+	}
+}
+
+// UnsubscribeAllSessions removes a client from all session subscriptions.
+func (h *Hub) UnsubscribeAllSessions(client *Client) {
+	h.sessionSubsMu.Lock()
+	defer h.sessionSubsMu.Unlock()
+	for sessionID, subs := range h.sessionSubs {
+		delete(subs, client)
+		if len(subs) == 0 {
+			delete(h.sessionSubs, sessionID)
+		}
+	}
+}
+
+// SendToSession sends a stream event to all clients subscribed to a planning session.
+func (h *Hub) SendToSession(sessionID string, event interface{}) {
+	data, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("[ws] failed to marshal stream event: %v", err)
+		return
+	}
+
+	h.sessionSubsMu.RLock()
+	targets := make([]*Client, 0)
+	for c := range h.sessionSubs[sessionID] {
+		targets = append(targets, c)
+	}
+	h.sessionSubsMu.RUnlock()
+
+	for _, c := range targets {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := c.Conn.Write(ctx, websocket.MessageText, data)
+		cancel()
+		if err != nil {
+			log.Printf("[ws] stream write failed for user=%s session=%s, evicting: %v", c.UserID, sessionID, err)
+			h.UnsubscribeSession(c, sessionID)
+		}
+	}
 }

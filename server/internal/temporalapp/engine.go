@@ -155,6 +155,43 @@ func (e *RunEngine) StopSchedule(ctx context.Context, agentID string) error {
 	return nil
 }
 
+// StartPlanningSession starts a Temporal workflow for an interactive planning session.
+func (e *RunEngine) StartPlanningSession(ctx context.Context, sessionID string) error {
+	if e == nil || e.client == nil {
+		return fmt.Errorf("temporal run engine is not configured")
+	}
+	workflowID := WorkflowIDForPlanningSession(sessionID)
+	options := tclient.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: QueuePlanningInteractive,
+	}
+	_, err := e.client.ExecuteWorkflow(ctx, options, PlanningSessionWorkflow, PlanningSessionWorkflowInput{
+		SessionID: sessionID,
+	})
+	if err != nil {
+		return fmt.Errorf("start planning session workflow: %w", err)
+	}
+	return nil
+}
+
+// SignalPlanningSession sends a signal (message, finalize, abandon) to a running planning session workflow.
+func (e *RunEngine) SignalPlanningSession(ctx context.Context, sessionID string, signal PlanningSessionSignal) error {
+	if e == nil || e.client == nil {
+		return fmt.Errorf("temporal run engine is not configured")
+	}
+	workflowID := WorkflowIDForPlanningSession(sessionID)
+	return e.client.SignalWorkflow(ctx, workflowID, "", WorkflowSignalPlanningSession, signal)
+}
+
+// CancelPlanningSession cancels a planning session workflow.
+func (e *RunEngine) CancelPlanningSession(ctx context.Context, sessionID string) error {
+	if e == nil || e.client == nil {
+		return nil
+	}
+	workflowID := WorkflowIDForPlanningSession(sessionID)
+	return e.client.CancelWorkflow(ctx, workflowID, "")
+}
+
 // WorkflowIDForRun returns the temporal workflow ID for a run.
 func WorkflowIDForRun(runID string) string {
 	return "agent-run-" + runID

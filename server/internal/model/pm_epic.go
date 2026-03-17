@@ -42,6 +42,7 @@ type PMEpic struct {
 	SpecClarifiedAt       *time.Time      `json:"spec_clarified_at"`
 	SpecClarifiedBy       *string         `json:"spec_clarified_by" gorm:"type:uuid"`
 	ApprovedSpecVersionID *string         `json:"approved_spec_version_id" gorm:"type:uuid;index"`
+	ActivePlanningSessionID *string       `json:"active_planning_session_id,omitempty" gorm:"type:uuid;index"`
 	LastPlanningRunID     *string         `json:"last_planning_run_id" gorm:"type:uuid;index"`
 	CreatedBy             *string         `json:"created_by" gorm:"type:uuid"`
 	CreatedAt             time.Time       `json:"created_at" gorm:"autoCreateTime"`
