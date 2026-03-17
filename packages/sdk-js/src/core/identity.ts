@@ -111,6 +111,11 @@ export function getCachedConfig(widgetKey: string): any | null {
     if (!raw) return null;
     const cached = JSON.parse(raw);
     if (!cached.config || !cached.cached_at) return null;
+    // Reject stale flat-format config (pre-nested branding migration)
+    if (!cached.config.branding) {
+      clearConfigCache(widgetKey);
+      return null;
+    }
     // 10-minute TTL
     if (Date.now() - cached.cached_at > 10 * 60 * 1000) {
       clearConfigCache(widgetKey);

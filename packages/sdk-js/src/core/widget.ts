@@ -286,6 +286,15 @@ export class WidgetManager {
   private render(): void {
     if (!this.mountContainer || !this.widgetConfig) return;
 
+    // Apply brand color as CSS variable on the shadow root container
+    const primaryColor = this.widgetConfig.branding?.primaryColor;
+    if (primaryColor && this.mountContainer.parentElement) {
+      const root = this.mountContainer.parentElement as HTMLElement;
+      root.style.setProperty('--helpin-primary', primaryColor);
+      // Derive a slightly darker hover shade
+      root.style.setProperty('--helpin-primary-hover', primaryColor);
+    }
+
     const showPreChat = this.widgetConfig.features?.preChatForm && !this.sessionToken;
 
     mountWidget(this.mountContainer, {
