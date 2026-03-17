@@ -208,7 +208,10 @@ export function ObjectivesPage() {
   return (
     <div className="max-w-7xl mx-auto">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Objectives</h1>
+        <div>
+          <h1 className="text-lg font-semibold">Objectives</h1>
+          <p className="text-sm text-muted-foreground">Set measurable goals and track key results across your team.</p>
+        </div>
         {canEdit && (
           <Button size="sm" onClick={() => openCreate('objective')}>
             Create Objective

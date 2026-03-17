@@ -27,13 +27,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn, getInitials } from '@/lib/utils';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Bot, Check, ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
   buildPresetFieldVisibility,
+  normalizeTeamType,
   slugifyTeamHandle,
-  TEAM_TYPE_OPTIONS,
   TEAM_TYPE_PRESETS,
   type DefaultStoryType,
   type TeamType,
@@ -571,7 +572,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     setName(team.name);
     setHandle(team.handle ?? '');
     setDescription(team.description ?? '');
-    setTeamType(team.team_type ?? 'engineering');
+    setTeamType(normalizeTeamType(team.team_type));
     setDefaultStoryType(team.default_story_type ?? 'feature');
     setStoryTypeTouched(false);
     setDialogOpen(true);
@@ -727,7 +728,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             icon: Settings2,
             title: 'General',
             description: 'Name, identifier, team type, and story defaults',
-            meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', TEAM_TYPE_OPTIONS.find((option) => option.value === (selectedTeam.team_type ?? 'engineering'))?.label ?? 'Engineering', STORY_TYPE_LABELS[selectedTeam.default_story_type ?? 'feature']]
+            meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', normalizeTeamType(selectedTeam.team_type) === 'engineering' ? 'Engineering' : 'Other', STORY_TYPE_LABELS[selectedTeam.default_story_type ?? 'feature']]
               .filter(Boolean)
               .join(' · '),
             action: () => openEdit(selectedTeam),
@@ -934,60 +935,27 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Description</Label>
+                  <Label>Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
                   <Textarea
                     value={description}
                     onChange={e => setDescription(e.target.value)}
-                    rows={4}
-                    placeholder="Describe what this team owns."
+                    rows={3}
+                    placeholder="Briefly describe what this team owns."
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Team Type</Label>
-                  <Select value={teamType} onValueChange={(value) => setTeamType(value as TeamType)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TEAM_TYPE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    {TEAM_TYPE_OPTIONS.find((option) => option.value === teamType)?.description}
-                  </p>
-                  {!editTeam && (
+                <div className="flex items-start gap-3 rounded-md border border-border/60 p-3">
+                  <Checkbox
+                    id="engineering-team"
+                    checked={teamType === 'engineering'}
+                    onCheckedChange={(checked) => setTeamType(checked ? 'engineering' : 'custom')}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="engineering-team" className="cursor-pointer leading-tight">This is an engineering / dev team</Label>
                     <p className="text-xs text-muted-foreground">
-                      New teams get recommended estimate and story field defaults based on this preset.
+                      Engineering teams get fibonacci estimates, sprints, epics, delivery tracking, and GitHub integration enabled by default. Non-engineering teams start with a simpler setup.
                     </p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label>Default Story Type</Label>
-                  <Select
-                    value={defaultStoryType}
-                    onValueChange={(value) => {
-                      setDefaultStoryType(value as DefaultStoryType);
-                      setStoryTypeTouched(true);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(['feature', 'bug', 'chore'] as DefaultStoryType[]).map((storyType) => (
-                        <SelectItem key={storyType} value={storyType}>
-                          {STORY_TYPE_LABELS[storyType]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Used as the starting type when someone creates a story for this team.
-                  </p>
+                  </div>
                 </div>
               </div>
               <DialogFooter>
@@ -1171,6 +1139,9 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               onSave={async (data) => {
                 setEstimateSaving(true);
                 const { error } = await settingsService.updateTeamEstimateSettings(workspaceId, selectedTeam.id, data);
+                if (data.enabled !== undefined) {
+                  await settingsService.updateTeamFieldVisibility(workspaceId, selectedTeam.id, { estimate: data.enabled });
+                }
                 setEstimateSaving(false);
                 if (error) {
                   toast.error(error);
@@ -1197,6 +1168,9 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               onSave={async (data) => {
                 setFieldVisSaving(true);
                 const { error } = await settingsService.updateTeamFieldVisibility(workspaceId, selectedTeam.id, data);
+                if ('estimate' in data) {
+                  await settingsService.updateTeamEstimateSettings(workspaceId, selectedTeam.id, { enabled: data.estimate });
+                }
                 setFieldVisSaving(false);
                 if (error) {
                   toast.error(error);
@@ -1438,13 +1412,27 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
               </div>
               <div className="space-y-2">
-                <Label>Description</Label>
+                <Label>Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
                 <Textarea
                   value={description}
                   onChange={e => setDescription(e.target.value)}
-                  rows={4}
-                  placeholder="Describe what this team owns."
+                  rows={3}
+                  placeholder="Briefly describe what this team owns."
                 />
+              </div>
+              <div className="flex items-start gap-3 rounded-md border border-border/60 p-3">
+                <Checkbox
+                  id="create-engineering-team"
+                  checked={teamType === 'engineering'}
+                  onCheckedChange={(checked) => setTeamType(checked ? 'engineering' : 'custom')}
+                  className="mt-0.5"
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="create-engineering-team" className="cursor-pointer leading-tight">This is an engineering / dev team</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Engineering teams get fibonacci estimates, sprints, epics, delivery tracking, and GitHub integration enabled by default. Non-engineering teams start with a simpler setup.
+                  </p>
+                </div>
               </div>
             </div>
             <DialogFooter>

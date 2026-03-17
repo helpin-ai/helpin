@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +39,7 @@ type Hub struct {
 	clients          map[string]map[*Client]struct{} // workspaceID -> set of clients
 	sessionSubsMu    sync.RWMutex
 	sessionSubs      map[string]map[*Client]struct{} // sessionID -> set of clients subscribed to stream
+	Presence         *PresenceState
 }
 
 // NewHub creates an empty hub.
@@ -44,6 +47,7 @@ func NewHub() *Hub {
 	return &Hub{
 		clients:     make(map[string]map[*Client]struct{}),
 		sessionSubs: make(map[string]map[*Client]struct{}),
+		Presence:    NewPresenceState(),
 	}
 }
 
@@ -58,7 +62,7 @@ func (h *Hub) Register(c *Client) {
 	log.Printf("[ws] client registered: user=%s workspace=%s widget=%v", c.UserID, c.WorkspaceID, c.IsWidget)
 }
 
-// Unregister removes a client from the hub.
+// Unregister removes a client from the hub and cleans up presence.
 func (h *Hub) Unregister(c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -69,15 +73,58 @@ func (h *Hub) Unregister(c *Client) {
 		}
 	}
 	log.Printf("[ws] client unregistered: user=%s workspace=%s", c.UserID, c.WorkspaceID)
+
+	// Clean up presence and broadcast stop events for internal (agent) clients
+	if !c.IsWidget {
+		viewingCleared, typingCleared := h.Presence.ClearAllForUser(c.WorkspaceID, c.UserID)
+		for _, convID := range viewingCleared {
+			go h.Broadcast(Event{
+				Action:      "viewing_stopped",
+				Entity:      "support_conversation",
+				EntityID:    convID,
+				WorkspaceID: c.WorkspaceID,
+				ActorID:     c.UserID,
+			})
+		}
+		for _, convID := range typingCleared {
+			go h.Broadcast(Event{
+				Action:      "typing_stopped",
+				Entity:      "support_conversation",
+				EntityID:    convID,
+				WorkspaceID: c.WorkspaceID,
+				ActorID:     c.UserID,
+			})
+		}
+	}
+}
+
+// widgetMessage is the wire format widget clients expect: {type, data}.
+type widgetMessage struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 // Broadcast sends an event to all eligible clients in the event's workspace.
-// Widget clients are filtered by conversation scope via shouldReceive().
+// Internal clients receive the raw Event JSON.
+// Widget clients receive a translated {type, data} message they can render directly.
 func (h *Hub) Broadcast(event Event) {
-	data, err := json.Marshal(event)
+	// Marshal the standard event for internal (agent) clients.
+	agentData, err := json.Marshal(event)
 	if err != nil {
 		log.Printf("[ws] failed to marshal event: %v", err)
 		return
+	}
+
+	// Prepare widget-formatted payload when applicable.
+	var widgetData []byte
+	switch {
+	case event.Entity == "support_conversation_message" && event.Action == "created" && len(event.Data) > 0:
+		wm := widgetMessage{Type: "message:received", Data: event.Data}
+		widgetData, _ = json.Marshal(wm)
+	case event.Entity == "support_conversation" && event.Action == "typing_started":
+		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start"})
+	case event.Entity == "support_conversation" && event.Action == "typing_stopped":
+		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:stop"})
 	}
 
 	// Copy targets under read lock.
@@ -88,12 +135,32 @@ func (h *Hub) Broadcast(event Event) {
 	}
 	h.mu.RUnlock()
 
+	isTyping := event.Entity == "support_conversation" && isTypingEvent(event.Action)
+	if isTyping {
+		slog.Debug("[ws] broadcasting typing event",
+			"action", event.Action, "conversation_id", event.EntityID,
+			"workspace_id", event.WorkspaceID, "actor_id", event.ActorID,
+			"target_count", len(targets))
+	}
+
 	for _, c := range targets {
 		if !h.shouldReceive(c, event) {
+			if isTyping {
+				slog.Debug("[ws] typing event filtered out",
+					"client_user", c.UserID, "is_widget", c.IsWidget)
+			}
 			continue
 		}
+		payload := agentData
+		if c.IsWidget && widgetData != nil {
+			payload = widgetData
+		}
+		if isTyping {
+			slog.Debug("[ws] delivering typing event to client",
+				"client_user", c.UserID, "is_widget", c.IsWidget)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := c.Conn.Write(ctx, websocket.MessageText, data)
+		err := c.Conn.Write(ctx, websocket.MessageText, payload)
 		cancel()
 		if err != nil {
 			log.Printf("[ws] write failed for user=%s, evicting: %v", c.UserID, err)
@@ -104,11 +171,33 @@ func (h *Hub) Broadcast(event Event) {
 }
 
 // shouldReceive determines if a client should receive an event.
-// Internal clients (agents) receive everything in their workspace.
-// Widget clients only receive their own conversation's events.
+// Internal clients receive all workspace typing events except their own.
+// Widget clients only receive their own conversation's events, and only
+// agent-origin typing indicators.
 func (h *Hub) shouldReceive(client *Client, event Event) bool {
+	if event.Entity == "support_conversation" && (isTypingEvent(event.Action) || isViewingEvent(event.Action)) {
+		if client.IsWidget {
+			// Widget clients only get agent-origin typing for their conversation
+			if !isTypingEvent(event.Action) {
+				return false // widgets don't need viewing events
+			}
+			return client.ConversationID != nil &&
+				*client.ConversationID == event.EntityID &&
+				!isWidgetActor(event.ActorID)
+		}
+		// Internal clients receive all typing/viewing except their own
+		return event.ActorID != client.UserID
+	}
+
 	if !client.IsWidget {
-		return true // internal clients see everything in their workspace
+		return true // internal clients see everything else in their workspace
+	}
+
+	// Don't echo message events back to the originating widget client —
+	// the handler already sends a direct response to the sender.
+	if event.Entity == "support_conversation_message" &&
+		event.ActorID != "" && client.UserID == event.ActorID {
+		return false
 	}
 
 	switch event.Entity {
@@ -119,6 +208,18 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 	default:
 		return false // widget doesn't need PM/CRM/other events
 	}
+}
+
+func isTypingEvent(action string) bool {
+	return action == "typing_started" || action == "typing_stopped"
+}
+
+func isViewingEvent(action string) bool {
+	return action == "viewing_started" || action == "viewing_stopped"
+}
+
+func isWidgetActor(actorID string) bool {
+	return strings.HasPrefix(actorID, "widget:")
 }
 
 // SetWidgetConversation updates a widget client's conversation_id by UserID.

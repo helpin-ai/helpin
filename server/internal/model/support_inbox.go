@@ -26,8 +26,8 @@ type SupportConversation struct {
 	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt       time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 
-	// Virtual field — populated by queries, not stored in DB.
-	LastMessage *string `json:"last_message,omitempty" gorm:"-"`
+	// Virtual field — populated by SELECT subquery, not stored as a column.
+	LastMessage *string `json:"last_message,omitempty" gorm:"->"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }
@@ -144,6 +144,12 @@ type WidgetMessageRequest struct {
 	Content      string `json:"content"`
 }
 
+// WidgetTypingRequest sends a typing indicator via widget HTTP fallback.
+type WidgetTypingRequest struct {
+	SessionToken string `json:"session_token"`
+	IsTyping     bool   `json:"is_typing"`
+}
+
 // WidgetSessionRevokeRequest revokes a widget session (HTTP fallback for shutdown).
 type WidgetSessionRevokeRequest struct {
 	SessionToken string `json:"session_token"`
@@ -212,7 +218,13 @@ type CannedResponseRequest struct {
 
 // TypingIndicatorRequest represents a typing indicator event.
 type TypingIndicatorRequest struct {
-	IsTyping bool `json:"is_typing"`
+	IsTyping bool   `json:"is_typing"`
+	Content  string `json:"content,omitempty"`
+}
+
+// ViewingPresenceRequest represents a viewing presence event.
+type ViewingPresenceRequest struct {
+	Viewing bool `json:"viewing"`
 }
 
 // CsatSurveyRequest represents a CSAT rating submission.

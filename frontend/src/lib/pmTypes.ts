@@ -473,6 +473,11 @@ export interface UpdateLabelRequest {
 
 // ── Story Templates ─────────────────────────────────────────────────
 
+export interface TemplateChecklistItem {
+  text: string;
+  position?: number;
+}
+
 export interface StoryTemplate {
   id: string;
   workspace_id: string;
@@ -484,6 +489,12 @@ export interface StoryTemplate {
   severity?: Severity;
   estimate?: number;
   label_ids?: string;
+  owner_member_id?: string;
+  epic_id?: string;
+  sprint_id?: string;
+  deadline?: string;
+  checklist_items?: string;
+  external_links?: string;
   archived: boolean;
   created_at: string;
   updated_at: string;
@@ -499,6 +510,12 @@ export interface CreateStoryTemplateRequest {
   severity?: Severity;
   estimate?: number;
   label_ids?: string;
+  owner_member_id?: string;
+  epic_id?: string;
+  sprint_id?: string;
+  deadline?: string;
+  checklist_items?: string;
+  external_links?: string;
 }
 
 export interface UpdateStoryTemplateRequest {
@@ -510,6 +527,12 @@ export interface UpdateStoryTemplateRequest {
   severity?: Severity;
   estimate?: number;
   label_ids?: string;
+  owner_member_id?: string;
+  epic_id?: string;
+  sprint_id?: string;
+  deadline?: string;
+  checklist_items?: string;
+  external_links?: string;
   archived?: boolean;
 }
 
@@ -596,6 +619,8 @@ export interface CreateStoryRequest {
   owner_ids?: string[];
   follower_ids?: string[];
   label_ids?: string[];
+  checklist_items?: { text: string; position?: number }[];
+  external_links?: { url: string; title?: string }[];
 }
 
 export interface UpdateStoryRequest {
@@ -1258,6 +1283,7 @@ export interface SupportConversation {
   linked_story_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
+  last_message?: string;
   created_at: string;
   updated_at: string;
 }

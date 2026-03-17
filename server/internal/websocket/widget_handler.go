@@ -312,19 +312,40 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			})
 
 		case "typing:start":
-			h.hub.Broadcast(Event{
+			conversationID := derefStr(client.ConversationID)
+			if conversationID == "" {
+				slog.Debug("widget ws: typing:start dropped — no conversation_id",
+					"session_id", session.ID, "workspace_id", session.WorkspaceID)
+				continue
+			}
+			slog.Debug("widget ws: broadcasting typing_started",
+				"conversation_id", conversationID, "workspace_id", session.WorkspaceID, "actor", client.UserID)
+			var eventData json.RawMessage
+			if content, _ := msg.Data["content"].(string); content != "" {
+				eventData, _ = json.Marshal(map[string]string{"content": content})
+			}
+			go h.hub.Broadcast(Event{
 				Action:      "typing_started",
 				Entity:      "support_conversation",
-				EntityID:    derefStr(session.ConversationID),
+				EntityID:    conversationID,
 				WorkspaceID: session.WorkspaceID,
+				ActorID:     client.UserID,
+				Data:        eventData,
 			})
 
 		case "typing:stop":
-			h.hub.Broadcast(Event{
+			conversationID := derefStr(client.ConversationID)
+			if conversationID == "" {
+				continue
+			}
+			slog.Debug("widget ws: broadcasting typing_stopped",
+				"conversation_id", conversationID, "workspace_id", session.WorkspaceID)
+			go h.hub.Broadcast(Event{
 				Action:      "typing_stopped",
 				Entity:      "support_conversation",
-				EntityID:    derefStr(session.ConversationID),
+				EntityID:    conversationID,
 				WorkspaceID: session.WorkspaceID,
+				ActorID:     client.UserID,
 			})
 
 		case "session:upgrade":

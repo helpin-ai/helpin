@@ -724,7 +724,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
   const handleCreate = useCallback(
     async (payload: CreateStoryRequest) => {
-      await createStory(payload);
+      const story = await createStory(payload);
+      return story ? { id: story.id } : undefined;
     },
     [createStory]
   );

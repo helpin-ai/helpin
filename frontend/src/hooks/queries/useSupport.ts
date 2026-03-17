@@ -67,8 +67,7 @@ export function useConversationMessages(workspaceId: string, conversationId: str
     queryKey: queryKeys.support.messages(workspaceId, conversationId ?? ''),
     queryFn: async () => unwrap(await supportService.listConversationMessages(workspaceId, conversationId!)),
     enabled: !!workspaceId && !!conversationId,
-    staleTime: 10_000,
-    refetchInterval: 15_000,
+    staleTime: 5_000,
   });
 }
 

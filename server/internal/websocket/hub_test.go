@@ -84,6 +84,83 @@ func TestShouldReceive_WidgetClient_NonSupportEvents(t *testing.T) {
 	}
 }
 
+func TestShouldReceive_InternalClient_TypingFromAllExceptSelf(t *testing.T) {
+	hub := NewHub()
+	client := &Client{UserID: "user-1", WorkspaceID: "ws-1", IsWidget: false}
+
+	customerTyping := Event{
+		Action:      "typing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "widget:sess-1",
+	}
+	if !hub.shouldReceive(client, customerTyping) {
+		t.Error("internal client should receive customer typing events")
+	}
+
+	otherAgentTyping := Event{
+		Action:      "typing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-2",
+	}
+	if !hub.shouldReceive(client, otherAgentTyping) {
+		t.Error("internal client should receive other agent typing events")
+	}
+
+	ownTyping := Event{
+		Action:      "typing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-1",
+	}
+	if hub.shouldReceive(client, ownTyping) {
+		t.Error("internal client should NOT receive own typing events")
+	}
+}
+
+func TestShouldReceive_WidgetClient_TypingOnlyFromAgentsInSameConversation(t *testing.T) {
+	hub := NewHub()
+	convID := "conv-1"
+	client := &Client{UserID: "widget:sess-1", WorkspaceID: "ws-1", IsWidget: true, ConversationID: &convID}
+
+	agentTyping := Event{
+		Action:      "typing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-2",
+	}
+	if !hub.shouldReceive(client, agentTyping) {
+		t.Error("widget client should receive agent typing for its conversation")
+	}
+
+	customerTyping := Event{
+		Action:      "typing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "widget:sess-2",
+	}
+	if hub.shouldReceive(client, customerTyping) {
+		t.Error("widget client should NOT receive customer typing events")
+	}
+
+	otherConversation := Event{
+		Action:      "typing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-2",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-2",
+	}
+	if hub.shouldReceive(client, otherConversation) {
+		t.Error("widget client should NOT receive typing for a different conversation")
+	}
+}
+
 func TestSetWidgetConversation(t *testing.T) {
 	hub := NewHub()
 	client := &Client{UserID: "widget:sess-1", WorkspaceID: "ws-1", IsWidget: true, ConversationID: nil}

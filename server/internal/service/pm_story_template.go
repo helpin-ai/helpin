@@ -59,15 +59,21 @@ func (s *PMStoryTemplateService) Create(ctx context.Context, req model.CreateSto
 	}
 
 	tmpl := &model.PMStoryTemplate{
-		WorkspaceID: req.WorkspaceID,
-		TeamID:      teamID,
-		Name:        name,
-		Description: req.Description,
-		StoryType:   req.StoryType,
-		Priority:    req.Priority,
-		Severity:    req.Severity,
-		Estimate:    req.Estimate,
-		LabelIDs:    req.LabelIDs,
+		WorkspaceID:    req.WorkspaceID,
+		TeamID:         teamID,
+		Name:           name,
+		Description:    req.Description,
+		StoryType:      req.StoryType,
+		Priority:       req.Priority,
+		Severity:       req.Severity,
+		Estimate:       req.Estimate,
+		LabelIDs:       req.LabelIDs,
+		OwnerMemberID:  normalizeOptionalID(req.OwnerMemberID),
+		EpicID:         normalizeOptionalID(req.EpicID),
+		SprintID:       normalizeOptionalID(req.SprintID),
+		Deadline:       req.Deadline,
+		ChecklistItems: req.ChecklistItems,
+		ExternalLinks:  req.ExternalLinks,
 	}
 	if err := s.templateRepo.Create(ctx, tmpl); err != nil {
 		return nil, err
@@ -121,6 +127,24 @@ func (s *PMStoryTemplateService) Update(ctx context.Context, id string, req mode
 	}
 	if req.LabelIDs != nil {
 		tmpl.LabelIDs = req.LabelIDs
+	}
+	if req.OwnerMemberID != nil {
+		tmpl.OwnerMemberID = normalizeOptionalID(req.OwnerMemberID)
+	}
+	if req.EpicID != nil {
+		tmpl.EpicID = normalizeOptionalID(req.EpicID)
+	}
+	if req.SprintID != nil {
+		tmpl.SprintID = normalizeOptionalID(req.SprintID)
+	}
+	if req.Deadline != nil {
+		tmpl.Deadline = req.Deadline
+	}
+	if req.ChecklistItems != nil {
+		tmpl.ChecklistItems = req.ChecklistItems
+	}
+	if req.ExternalLinks != nil {
+		tmpl.ExternalLinks = req.ExternalLinks
 	}
 	if req.Archived != nil {
 		tmpl.Archived = *req.Archived

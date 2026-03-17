@@ -3,13 +3,20 @@ import { create } from 'zustand'
 import { API_BASE } from '@/lib/api'
 
 export interface WSEvent {
-  action: 'created' | 'updated' | 'deleted' | 'moved'
+  action: 'created' | 'updated' | 'deleted' | 'moved' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped'
   entity: string
   entity_id: string
   workspace_id: string
   actor_id: string
   parent_type?: string
   parent_id?: string
+  data?: Record<string, unknown>
+}
+
+// Snapshot sent by server when agent starts viewing a conversation
+export interface PresenceSnapshot {
+  viewers: string[]
+  typers: Record<string, string>
 }
 
 export const useWSStore = create<{ send: ((data: unknown) => void) | null }>(() => ({ send: null }))
@@ -17,7 +24,10 @@ export const useWSStore = create<{ send: ((data: unknown) => void) | null }>(() 
 interface UseWebSocketOptions {
   workspaceId: string
   onEvent: (event: WSEvent) => void
+  onPresenceSnapshot?: (conversationId: string, snapshot: PresenceSnapshot) => void
 }
+
+export type WSSend = (type: string, data: Record<string, unknown>) => void
 
 function getWSUrl(workspaceId: string): string {
   const token = localStorage.getItem('access_token')
@@ -28,12 +38,20 @@ function getWSUrl(workspaceId: string): string {
   return `${base}/ws?token=${encodeURIComponent(token)}&workspace_id=${encodeURIComponent(workspaceId)}`
 }
 
-export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
+export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null)
   const retriesRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
+  const onSnapshotRef = useRef(onPresenceSnapshot)
+  onSnapshotRef.current = onPresenceSnapshot
+
+  const send: WSSend = useCallback((type, data) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type, data }))
+    }
+  }, [])
 
   const connect = useCallback(() => {
     const url = getWSUrl(workspaceId)
@@ -57,8 +75,13 @@ export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
         if (parsed.session_id && parsed.type) {
           // Stream event — dispatch as DOM CustomEvent for usePlanningStream
           window.dispatchEvent(new CustomEvent('planning-stream', { detail: parsed }))
-        } else {
-          onEventRef.current(parsed)
+        } else if (parsed.type === 'support:presence_snapshot' && parsed.data) {
+          // Handle presence snapshot (sent as {type, data} envelope)
+          const snapshot = parsed.data as PresenceSnapshot & { conversation_id?: string }
+          onSnapshotRef.current?.('', snapshot)
+        } else if (parsed.action && parsed.entity) {
+          // Standard event (has action/entity fields)
+          onEventRef.current(parsed as WSEvent)
         }
       } catch {
         // ignore malformed messages
@@ -94,4 +117,6 @@ export function useWebSocket({ workspaceId, onEvent }: UseWebSocketOptions) {
       }
     }
   }, [connect])
+
+  return { send }
 }

@@ -25,6 +25,8 @@ function savePersisted(state: PersistedState) {
   } catch {}
 }
 
+export type WSSendFn = (type: string, data: Record<string, unknown>) => void;
+
 interface SupportInboxState {
   // Navigation
   navFilter: NavFilter;
@@ -42,6 +44,14 @@ interface SupportInboxState {
   createDialogOpen: boolean;
   // Mobile
   activePanel: ActivePanel;
+  // Typing indicators: conversationId → content string when typing, false when not
+  typingIndicators: Record<string, string | false>;
+  // Agent typing: conversationId → map of actorId → content (supports multiple agents)
+  agentTyping: Record<string, Record<string, string>>;
+  // Viewing presence: conversationId → set of agent userIds currently viewing
+  viewingAgents: Record<string, string[]>;
+  // Drafts: conversationId → unsent textarea content
+  drafts: Record<string, string>;
 
   // Actions
   setNavFilter: (filter: NavFilter) => void;
@@ -53,6 +63,15 @@ interface SupportInboxState {
   toggleDetailSidebar: () => void;
   setCreateDialogOpen: (open: boolean) => void;
   setActivePanel: (panel: ActivePanel) => void;
+  setTyping: (conversationId: string, isTyping: boolean, content?: string) => void;
+  setAgentTyping: (conversationId: string, actorId: string | null, content?: string) => void;
+  clearOneAgentTyping: (conversationId: string, actorId: string) => void;
+  setViewingAgent: (conversationId: string, actorId: string, viewing: boolean) => void;
+  setDraft: (conversationId: string, content: string) => void;
+  clearDraft: (conversationId: string) => void;
+  // WS send function — set by useRealtimeSync when connection is established
+  wsSend: WSSendFn | null;
+  setWsSend: (fn: WSSendFn | null) => void;
 }
 
 export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
@@ -68,6 +87,12 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
     createDialogOpen: false,
     activePanel: 'list',
+    typingIndicators: {},
+    agentTyping: {},
+    viewingAgents: {},
+    drafts: {},
+    wsSend: null,
+    setWsSend: (fn) => set({ wsSend: fn }),
 
     setNavFilter: (filter) => set({ navFilter: filter }),
     toggleNavCollapsed: () => {
@@ -86,5 +111,53 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     },
     setCreateDialogOpen: (open) => set({ createDialogOpen: open }),
     setActivePanel: (panel) => set({ activePanel: panel }),
+    setTyping: (conversationId, isTyping, content) =>
+      set((state) => ({
+        typingIndicators: { ...state.typingIndicators, [conversationId]: isTyping ? (content ?? '') : false },
+      })),
+    setAgentTyping: (conversationId, actorId, content) =>
+      set((state) => {
+        const current = state.agentTyping[conversationId] ?? {};
+        if (!actorId) {
+          // Clear all agent typing for this conversation
+          if (Object.keys(current).length === 0) return state;
+          return { agentTyping: { ...state.agentTyping, [conversationId]: {} } };
+        }
+        return {
+          agentTyping: {
+            ...state.agentTyping,
+            [conversationId]: { ...current, [actorId]: content ?? '' },
+          },
+        };
+      }),
+    clearOneAgentTyping: (conversationId, actorId) =>
+      set((state) => {
+        const current = state.agentTyping[conversationId];
+        if (!current || !(actorId in current)) return state;
+        const { [actorId]: _, ...rest } = current;
+        return { agentTyping: { ...state.agentTyping, [conversationId]: rest } };
+      }),
+    setViewingAgent: (conversationId, actorId, viewing) =>
+      set((state) => {
+        const current = state.viewingAgents[conversationId] ?? [];
+        if (viewing && current.includes(actorId)) return state;
+        if (!viewing && !current.includes(actorId)) return state;
+        const next = viewing ? [...current, actorId] : current.filter((id) => id !== actorId);
+        return { viewingAgents: { ...state.viewingAgents, [conversationId]: next } };
+      }),
+    setDraft: (conversationId, content) =>
+      set((state) => {
+        if (!content) {
+          const { [conversationId]: _, ...rest } = state.drafts;
+          return { drafts: rest };
+        }
+        return { drafts: { ...state.drafts, [conversationId]: content } };
+      }),
+    clearDraft: (conversationId) =>
+      set((state) => {
+        if (!(conversationId in state.drafts)) return state;
+        const { [conversationId]: _, ...rest } = state.drafts;
+        return { drafts: rest };
+      }),
   };
 });

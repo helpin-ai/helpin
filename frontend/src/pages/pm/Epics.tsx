@@ -24,7 +24,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import { useEpicStates } from '@/hooks/queries';
+import { useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import type { EpicWithStats, EpicHealth, EpicWorkflowState, StateType } from '@/lib/pmTypes';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
@@ -92,6 +92,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
   const workspaceId = workspace?.id;
   const slug = workspace?.slug;
+  const { data: access } = useWorkspaceAccess(workspaceId ?? '');
+  const { canEdit } = usePermissions(access);
   const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
   const isSingleTeam = teams.length <= 1;
 
@@ -324,6 +326,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     });
   };
 
+  const teamLabel = teamId ? findTeamName(teamId) : null;
   const showHeaderIntro = epics.length > 0;
   const showHeaderActions = epics.length > 0;
 
@@ -336,28 +339,35 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       <header className="flex items-center justify-between">
         {showHeaderIntro ? (
           <div>
-            <h2 className="text-xl font-semibold">Epics</h2>
+            <h2 className="text-xl font-semibold">Epics{teamLabel && <span className="text-muted-foreground font-normal"> ({teamLabel})</span>}</h2>
             <p className="text-sm text-muted-foreground">Track long-running initiatives and their story progress.</p>
           </div>
         ) : <div />}
-        {showHeaderActions && (
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search epics…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-8 w-48 pl-8 text-xs"
+        <div className="flex items-center gap-2">
+          {showHeaderActions && (
+            <>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search epics…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-8 w-48 pl-8 text-xs"
+                />
+              </div>
+              <DisplayPropertiesPopover
+                allProperties={ALL_PROPERTIES}
+                visible={visibleColumns}
+                onChange={setVisibleColumns}
               />
-            </div>
-            <DisplayPropertiesPopover
-              allProperties={ALL_PROPERTIES}
-              visible={visibleColumns}
-              onChange={setVisibleColumns}
-            />
-          </div>
-        )}
+              {canEdit && (
+                <Button size="sm" onClick={() => openCreate('epic', { teamId })}>
+                  Create Epic
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       </header>
 
       {error ? (

@@ -20,6 +20,7 @@ import { pmSprintService } from '@/lib/services/pmSprintService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import type { SprintStatus, SprintWithStats } from '@/lib/pmTypes';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 
@@ -74,6 +75,8 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   }, [VIEW_MODE_KEY]);
 
   const { findTeamName } = useWorkspaceTeams(workspaceId);
+  const { data: access } = useWorkspaceAccess(workspaceId ?? '');
+  const { canEdit } = usePermissions(access);
   const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
 
@@ -231,6 +234,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: entry.sprint.id } });
   };
 
+  const teamLabel = teamId ? findTeamName(teamId) : null;
   const showHeaderActions = sprints.length > 0 || showArchived;
   const showHeaderIntro = sprints.length > 0;
   const showArchivedToggle = hasArchivedSprints || showArchived;
@@ -251,49 +255,56 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
       <header className="flex items-center justify-between">
         {showHeaderIntro ? (
           <div>
-            <h2 className="text-xl font-semibold">Sprints</h2>
+            <h2 className="text-xl font-semibold">Sprints{teamLabel && <span className="text-muted-foreground font-normal"> ({teamLabel})</span>}</h2>
             <p className="text-sm text-muted-foreground">Plan cycles and monitor story completion.</p>
           </div>
         ) : <div />}
-        {showHeaderActions && (
-          <div className="flex items-center gap-2">
-            {showArchivedToggle && (
-              <Button
-                variant={showArchived ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => setShowArchived((v) => !v)}
-              >
-                {showArchived ? 'Showing archived' : 'Show archived'}
-              </Button>
-            )}
-            {viewMode === 'table' && (
-              <DisplayPropertiesPopover
-                allProperties={ALL_PROPERTIES}
-                visible={visibleColumns}
-                onChange={setVisibleColumns}
-              />
-            )}
-            <div className="flex items-center rounded-md border border-border/60">
-              <Button
-                variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-8 rounded-r-none px-2.5"
-                onClick={() => setViewMode('cards')}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={viewMode === 'table' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-8 rounded-l-none px-2.5"
-                onClick={() => setViewMode('table')}
-              >
-                <LayoutList className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {showHeaderActions && (
+            <>
+              {showArchivedToggle && (
+                <Button
+                  variant={showArchived ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setShowArchived((v) => !v)}
+                >
+                  {showArchived ? 'Hide archived' : 'Show archived'}
+                </Button>
+              )}
+              {viewMode === 'table' && (
+                <DisplayPropertiesPopover
+                  allProperties={ALL_PROPERTIES}
+                  visible={visibleColumns}
+                  onChange={setVisibleColumns}
+                />
+              )}
+              <div className="flex items-center rounded-md border border-border/60">
+                <Button
+                  variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-8 rounded-r-none px-2.5"
+                  onClick={() => setViewMode('cards')}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'table' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="h-8 rounded-l-none px-2.5"
+                  onClick={() => setViewMode('table')}
+                >
+                  <LayoutList className="h-4 w-4" />
+                </Button>
+              </div>
+              {canEdit && (
+                <Button size="sm" onClick={() => openCreate('sprint', { teamId })}>
+                  Create Sprint
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       </header>
 
       {error ? (

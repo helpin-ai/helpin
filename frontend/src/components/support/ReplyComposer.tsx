@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { Send, Smile, Paperclip, StickyNote, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -12,11 +12,71 @@ interface ReplyComposerProps {
 }
 
 export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProps) {
-  const [content, setContent] = useState('');
-  const { replyMode, setReplyMode } = useSupportInboxStore();
+  const draft = useSupportInboxStore((s) => s.drafts[conversationId] ?? '');
+  const [content, setContent] = useState(draft);
+  const { replyMode, setReplyMode, setDraft, clearDraft } = useSupportInboxStore();
+
+  // Load draft when switching conversations; flush pending draft on leave
+  useEffect(() => {
+    const saved = useSupportInboxStore.getState().drafts[conversationId] ?? '';
+    setContent(saved);
+    return () => {
+      // Flush any pending debounced draft immediately
+      if (draftTimerRef.current) {
+        clearTimeout(draftTimerRef.current);
+        draftTimerRef.current = null;
+      }
+    };
+  }, [conversationId]);
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
   const isNote = replyMode === 'note';
+
+  const lastTypingSentRef = useRef(0);
+  const wsSend = useSupportInboxStore((s) => s.wsSend);
+
+  // Send typing indicator via WebSocket — supports content for live preview
+  const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
+    if (isNote || !wsSend) return;
+    if (!typing && typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    if (!typing) {
+      isTypingRef.current = false;
+      wsSend('support:typing:stop', { conversation_id: conversationId });
+      return;
+    }
+    // Throttle content updates to every 300ms
+    const now = Date.now();
+    if (isTypingRef.current && now - lastTypingSentRef.current < 300) return;
+    isTypingRef.current = true;
+    lastTypingSentRef.current = now;
+    wsSend(isTypingRef.current ? 'support:typing:update' : 'support:typing:start', {
+      conversation_id: conversationId,
+      content: typingContent ?? '',
+    });
+  }, [conversationId, isNote, wsSend]);
+
+  const handleTyping = useCallback((typingContent: string) => {
+    sendTyping(true, typingContent);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => sendTyping(false), 5000);
+  }, [sendTyping]);
+
+  // Clean up typing indicator on unmount or conversation change
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      if (isTypingRef.current && wsSend) {
+        isTypingRef.current = false;
+        wsSend('support:typing:stop', { conversation_id: conversationId });
+      }
+    };
+  }, [conversationId, wsSend]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -28,11 +88,16 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
 
   const handleSend = async () => {
     if (!content.trim() || sendMutation.isPending) return;
+    // Stop typing indicator and cancel pending draft save
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    sendTyping(false);
     await sendMutation.mutateAsync({
       content: content.trim(),
       is_internal: isNote,
     });
     setContent('');
+    clearDraft(conversationId);
     textareaRef.current?.focus();
   };
 
@@ -83,7 +148,14 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
           )}
           placeholder={isNote ? 'Add an internal note...' : 'Write a reply...'}
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setContent(val);
+            // Debounce draft save (500ms)
+            if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+            draftTimerRef.current = setTimeout(() => setDraft(conversationId, val), 500);
+            val.trim() ? handleTyping(val) : sendTyping(false);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();

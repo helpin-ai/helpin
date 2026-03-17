@@ -318,12 +318,14 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     };
   }, [editor]);
 
-  // Sync external content changes (e.g. form reset)
+  // Sync external content changes (e.g. form reset, template apply)
   useEffect(() => {
     if (!editor) return;
     const current = editor.getHTML();
     if (content === '' && current !== '<p></p>' && current !== '') {
       editor.commands.clearContent();
+    } else if (content !== '' && content !== current) {
+      editor.commands.setContent(content);
     }
   }, [content, editor]);
 

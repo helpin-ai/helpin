@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -37,6 +38,13 @@ func (r *SupportMessageRepository) ListByConversation(ctx context.Context, works
 func (r *SupportMessageRepository) Create(ctx context.Context, message *model.SupportMessage) error {
 	if err := r.db.WithContext(ctx).Create(message).Error; err != nil {
 		return fmt.Errorf("create message: %w", err)
+	}
+	// Bump parent conversation's updated_at so it moves to top of inbox list
+	if message.ConversationID != "" {
+		r.db.WithContext(ctx).
+			Model(&model.SupportConversation{}).
+			Where("id = ?", message.ConversationID).
+			Update("updated_at", time.Now())
 	}
 	return nil
 }
@@ -172,17 +180,17 @@ func NewSupportConversationRepository(db *gorm.DB) *SupportConversationRepositor
 
 // List returns conversations with optional filters and pagination.
 func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
-	query := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("workspace_id = ?", workspaceID)
+	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("workspace_id = ?", workspaceID)
 
 	if status != "" {
-		query = query.Where("status = ?", status)
+		base = base.Where("status = ?", status)
 	}
 	if priority != "" {
-		query = query.Where("priority = ?", priority)
+		base = base.Where("priority = ?", priority)
 	}
 
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count conversations: %w", err)
 	}
 
@@ -196,8 +204,24 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	}
 	offset := (page - 1) * perPage
 
+	// Fresh query for fetch — Count() taints the SELECT clause
+	fetch := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
+	if status != "" {
+		fetch = fetch.Where("status = ?", status)
+	}
+	if priority != "" {
+		fetch = fetch.Where("priority = ?", priority)
+	}
+
 	var conversations []model.SupportConversation
-	if err := query.Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
+	if err := fetch.
+		Select(`support_conversations.*, (
+			SELECT CASE WHEN m.is_internal THEN 'Note: ' || LEFT(m.content, 100) ELSE LEFT(m.content, 100) END
+			FROM support_messages m
+			WHERE m.conversation_id = support_conversations.id
+			ORDER BY m.created_at DESC LIMIT 1
+		) AS last_message`).
+		Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
 	return conversations, total, nil

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useWebSocket, type WSEvent } from './useWebSocket'
+import { useWebSocket, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
+import { useSupportInboxStore } from '@/stores/supportInboxStore'
+import { useAuthStore } from '@/stores/authStore'
 import { pmStoryService } from '@/lib/services/pmStoryService'
 import { queryKeys } from '@/lib/queryKeys'
 
@@ -10,10 +12,17 @@ const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'exte
 
 /** Debounce window (ms) for batching rapid websocket events into a single board refresh. */
 const DEBOUNCE_MS = 200
+/** Auto-clear typing indicator after this many ms without a refresh. */
+const TYPING_TIMEOUT_MS = 10_000
 
-export function useRealtimeSync(workspaceId: string) {
+export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const queryClient = useQueryClient()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // Track which conversation the snapshot is for (set before sending viewing:start)
+  const pendingSnapshotConvRef = useRef<string | null>(null)
+  const selfIdRef = useRef<string | undefined>(useAuthStore.getState().user?.id)
+  selfIdRef.current = useAuthStore.getState().user?.id
   const scheduleRefresh = useCallback(() => {
     clearTimeout(debounceTimer.current ?? undefined)
     debounceTimer.current = setTimeout(() => {
@@ -39,7 +48,7 @@ export function useRealtimeSync(workspaceId: string) {
             if (story.owner_member_id && !story.owner_name && res.data.owner_member) {
               story.owner_name = res.data.owner_member.display_name || res.data.owner_member.email
             }
-            const patched = store.patchStory(event.action, event.entity_id, story)
+            const patched = store.patchStory(event.action as 'created' | 'updated' | 'moved', event.entity_id, story)
             if (!patched) scheduleRefresh()
           } else {
             // Story might have been archived/deleted by the time we fetch.
@@ -85,11 +94,86 @@ export function useRealtimeSync(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.planningSession(workspaceId, event.entity_id) })
       queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'epics'] })
     } else if (event.entity === 'support_conversation') {
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
+      if (event.action === 'typing_started' || event.action === 'typing_stopped') {
+        if (!event.entity_id) return
+
+        if (import.meta.env.DEV) {
+          console.debug('[ws] typing event received:', event.action, 'conversation:', event.entity_id, 'actor:', event.actor_id)
+        }
+        const store = useSupportInboxStore.getState()
+        const convId = event.entity_id
+        const content = (event.data?.content as string) || ''
+        const isWidget = event.actor_id?.startsWith('widget:')
+        const timerKey = `${convId}:${isWidget ? 'customer' : 'agent'}`
+
+        // Clear any existing auto-clear timer for this conversation+actor type
+        const prevTimer = typingTimers.current.get(timerKey)
+        if (prevTimer) {
+          clearTimeout(prevTimer)
+          typingTimers.current.delete(timerKey)
+        }
+
+        if (isWidget) {
+          // Customer typing
+          store.setTyping(convId, event.action === 'typing_started', content)
+        } else {
+          // Agent typing — supports multiple agents per conversation
+          if (event.action === 'typing_started') {
+            store.setAgentTyping(convId, event.actor_id, content)
+          } else {
+            store.clearOneAgentTyping(convId, event.actor_id)
+          }
+        }
+
+        // Auto-clear after timeout in case typing:stop is never received
+        if (event.action === 'typing_started') {
+          const timer = setTimeout(() => {
+            typingTimers.current.delete(timerKey)
+            const s = useSupportInboxStore.getState()
+            if (isWidget) {
+              s.setTyping(convId, false)
+            } else {
+              s.clearOneAgentTyping(convId, event.actor_id)
+            }
+          }, TYPING_TIMEOUT_MS)
+          typingTimers.current.set(timerKey, timer)
+        }
+      } else if (event.action === 'viewing_started' || event.action === 'viewing_stopped') {
+        if (!event.entity_id || !event.actor_id) return
+        if (import.meta.env.DEV) {
+          console.debug('[ws] viewing event:', event.action, 'conv:', event.entity_id, 'actor:', event.actor_id)
+        }
+        // Hub already filters out self-viewing events server-side
+        const store = useSupportInboxStore.getState()
+        store.setViewingAgent(event.entity_id, event.actor_id, event.action === 'viewing_started')
+
+        // Auto-clear viewing after 30s in case viewing_stopped is never received
+        if (event.action === 'viewing_started') {
+          const timerKey = `${event.entity_id}:viewing:${event.actor_id}`
+          const prev = typingTimers.current.get(timerKey)
+          if (prev) clearTimeout(prev)
+          const timer = setTimeout(() => {
+            typingTimers.current.delete(timerKey)
+            useSupportInboxStore.getState().setViewingAgent(event.entity_id, event.actor_id, false)
+          }, 30_000)
+          typingTimers.current.set(timerKey, timer)
+        }
+      } else {
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
+      }
     } else if (event.entity === 'support_conversation_message') {
       if (event.parent_id) {
+        const s = useSupportInboxStore.getState()
+        // Clear typing state for whoever sent this message
+        if (event.actor_id?.startsWith('widget:')) {
+          s.setTyping(event.parent_id, false)
+        } else if (event.actor_id) {
+          s.clearOneAgentTyping(event.parent_id, event.actor_id)
+        }
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.parent_id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.parent_id) })
       }
     }
 
@@ -125,9 +209,44 @@ export function useRealtimeSync(workspaceId: string) {
     }
   }, [scheduleRefresh, workspaceId, queryClient])
 
-  useEffect(() => {
-    return () => { clearTimeout(debounceTimer.current ?? undefined) }
+  const onPresenceSnapshot = useCallback((_convId: string, snapshot: PresenceSnapshot) => {
+    const convId = pendingSnapshotConvRef.current
+    if (!convId) return
+    const store = useSupportInboxStore.getState()
+    const selfId = selfIdRef.current
+    // Apply viewers (excluding self — self avatar is handled locally via isSelected)
+    for (const uid of snapshot.viewers) {
+      if (uid !== selfId) store.setViewingAgent(convId, uid, true)
+    }
+    // Apply typers (excluding self)
+    for (const [uid, content] of Object.entries(snapshot.typers)) {
+      if (uid !== selfId) store.setAgentTyping(convId, uid, content)
+    }
   }, [])
 
-  useWebSocket({ workspaceId, onEvent })
+  useEffect(() => {
+    return () => {
+      clearTimeout(debounceTimer.current ?? undefined)
+      typingTimers.current.forEach((t) => clearTimeout(t))
+      typingTimers.current.clear()
+    }
+  }, [])
+
+  const { send: wsSend } = useWebSocket({ workspaceId, onEvent, onPresenceSnapshot })
+
+  // Wrap send to track pending snapshot conversation
+  const wsSendWithSnapshot: WSSend = useCallback((type, data) => {
+    if (type === 'support:viewing:start' && data.conversation_id) {
+      pendingSnapshotConvRef.current = data.conversation_id as string
+    }
+    wsSend(type, data)
+  }, [wsSend])
+
+  // Expose wsSend to components via the store
+  useEffect(() => {
+    useSupportInboxStore.getState().setWsSend(wsSendWithSnapshot)
+    return () => { useSupportInboxStore.getState().setWsSend(null) }
+  }, [wsSendWithSnapshot])
+
+  return { wsSend: wsSendWithSnapshot }
 }

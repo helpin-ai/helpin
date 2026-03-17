@@ -57,7 +57,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   {
     id: 'labels',
     label: 'Labels',
-    description: '',
+    description: 'Categorize and filter stories with color-coded labels.',
     icon: Tag,
     group: 'Project Settings',
   },
