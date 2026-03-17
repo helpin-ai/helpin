@@ -3,9 +3,8 @@ package model
 import "time"
 
 const (
-	AutomationKindBuiltIn    = "built_in_automation"
-	AutomationKindContextual = "contextual_agent"
-	AutomationKindCustom     = "custom_automation"
+	AutomationKindBuiltIn = "built_in_automation"
+	AutomationKindRule    = "automation_rule"
 )
 
 const (

@@ -484,6 +484,10 @@ func (s *PMWorkflowService) CopyToTeam(ctx context.Context, sourceWorkflowID, ta
 		return nil, err
 	}
 	s.logger.InfoContext(ctx, "workflow copied to team", "source_workflow_id", sourceWorkflowID, "new_workflow_id", result.Workflow.ID, "team_id", targetTeamID)
+
+	// Migrate existing team stories from source workflow to new workflow.
+	s.migrateTeamStories(ctx, targetTeamID, source, result)
+
 	return result, nil
 }
 
@@ -505,12 +509,15 @@ func (s *PMWorkflowService) SeedTeamWorkflow(ctx context.Context, workspaceID, t
 	}
 	if defaultWf != nil && len(defaultWf.States) > 0 {
 		name := teamName + " Workflow"
-		_, err := s.workflowRepo.CopyWorkflow(ctx, defaultWf, name, &teamID)
+		newWf, err := s.workflowRepo.CopyWorkflow(ctx, defaultWf, name, &teamID)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "failed to seed team workflow from default", "error", err, "team_id", teamID)
 			return err
 		}
 		s.logger.InfoContext(ctx, "team workflow seeded from default", "team_id", teamID, "workspace_id", workspaceID)
+
+		// Migrate existing team stories from old workflow to new workflow.
+		s.migrateTeamStories(ctx, teamID, defaultWf, newWf)
 		return nil
 	}
 
@@ -526,6 +533,55 @@ func (s *PMWorkflowService) SeedTeamWorkflow(ctx context.Context, workspaceID, t
 	}
 	s.logger.InfoContext(ctx, "team workflow seeded with defaults", "team_id", teamID, "workspace_id", workspaceID)
 	return nil
+}
+
+// migrateTeamStories remaps stories from an old workflow to a new one by matching states.
+func (s *PMWorkflowService) migrateTeamStories(ctx context.Context, teamID string, oldWf, newWf *model.WorkflowWithStates) {
+	stateMap := buildStateMapping(oldWf.States, newWf.States, newWf.Workflow.DefaultStateID)
+	migrated, err := s.storyRepo.MigrateStoriesToWorkflow(ctx, teamID, oldWf.Workflow.ID, newWf.Workflow.ID, stateMap)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to migrate team stories to new workflow",
+			"error", err, "team_id", teamID,
+			"old_workflow_id", oldWf.Workflow.ID, "new_workflow_id", newWf.Workflow.ID)
+		return
+	}
+	if migrated > 0 {
+		s.logger.InfoContext(ctx, "migrated team stories to new workflow",
+			"team_id", teamID, "count", migrated,
+			"old_workflow_id", oldWf.Workflow.ID, "new_workflow_id", newWf.Workflow.ID)
+	}
+}
+
+// buildStateMapping creates a mapping from old state IDs to new state IDs,
+// matching by (state_type, position) first, then state_type only, then default.
+func buildStateMapping(oldStates, newStates []model.PMWorkflowState, defaultStateID *string) map[string]string {
+	byTypeAndPos := map[string]string{}
+	byType := map[string]string{}
+	for _, ns := range newStates {
+		key := fmt.Sprintf("%s:%d", ns.StateType, ns.Position)
+		byTypeAndPos[key] = ns.ID
+		if _, exists := byType[ns.StateType]; !exists {
+			byType[ns.StateType] = ns.ID
+		}
+	}
+
+	fallback := newStates[0].ID
+	if defaultStateID != nil {
+		fallback = *defaultStateID
+	}
+
+	result := make(map[string]string, len(oldStates))
+	for _, os := range oldStates {
+		key := fmt.Sprintf("%s:%d", os.StateType, os.Position)
+		if newID, ok := byTypeAndPos[key]; ok {
+			result[os.ID] = newID
+		} else if newID, ok := byType[os.StateType]; ok {
+			result[os.ID] = newID
+		} else {
+			result[os.ID] = fallback
+		}
+	}
+	return result
 }
 
 // SeedWorkspaceDefaults seeds default workflow, epic states, and labels.

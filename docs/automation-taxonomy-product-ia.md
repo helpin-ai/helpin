@@ -1,6 +1,6 @@
 # Automation Taxonomy Product IA Note
 
-This note describes how the simplified automation model should appear in the product once it becomes user-visible.
+This note describes how the automation model appears in the product.
 
 The deeper architecture lives in:
 
@@ -8,47 +8,54 @@ The deeper architecture lives in:
 - `docs/automation-taxonomy-seed-catalog.md`
 - `docs/automation-taxonomy-migration.md`
 
-## Future Home
+## Shared Home
 
-The future shared home is:
+The shared automation home is:
 
 - `Settings > AI & Automations`
 
-That home should begin as:
+It provides:
 
 - inventory
 - governance
 - diagnostics
 
-It should not begin as the canonical write surface for all automation.
+Configuration surfaces remain distributed:
 
-Near-term implication:
-
-- shared Settings is the place to understand automation
-- existing module surfaces remain the place to change behavior
+- automation rules → Settings > Teams > Workflow pipeline builder
+- agents → `/pm/agents`
+- PM built-in rules → PM settings automations
+- CRM built-ins → CRM domain settings
 
 ## Primary Product Groups
 
-The future shared home should organize automation into three primary groups:
+The shared home organizes automation into two primary groups:
 
 - `Built-in Automations`
-- `Contextual Agents`
-- `Custom Automations`
-
-Optional grouping inside `Built-in Automations`:
-
-- CRM system intelligence
-- PM built-in rules
-
-That gives users a simpler story than teaching a separate top-level “rule automation” category.
+  - CRM system intelligence
+  - PM built-in rules
+- `Automation Rules`
+  - User-configured trigger → action rules
+  - Stage-based agent pipelines
 
 ## Kind-by-Kind Product Model
 
-| Kind | Visible in | Configured in today | Runs on | Output appears in | Who invokes / governs |
+| Kind | Visible in | Configured in | Runs on | Output appears in | Who invokes / governs |
 |---|---|---|---|---|---|
-| `built_in_automation` | future `Settings > AI & Automations`, plus indirect module output | current module/domain settings where applicable | current built-in runtime path | CRM surfaces, PM state/activity changes, future diagnostics | system invokes; admins govern where applicable |
-| `contextual_agent` | `/pm/agents`, target detail surfaces, future shared inventory | `/pm/agents` and current contextual surfaces | class-specific agent queues | run panels, artifacts, target detail pages, support inbox | users run from context; admins govern setup |
-| `custom_automation` | future shared inventory | future dedicated builder/config UI | future shared automation lanes | module-specific outcomes and future diagnostics | future admin/builder-managed |
+| `built_in_automation` | `Settings > AI & Automations`, module output | module/domain settings | built-in runtime path | CRM surfaces, PM state/activity changes, diagnostics | system invokes; admins govern |
+| `automation_rule` | `Settings > AI & Automations`, pipeline builder | Settings > Teams > Workflow pipeline builder | inline rule engine + agent queues | story state changes, agent runs, branch merges | admins configure; events invoke |
+
+### Agents as executors
+
+Agents are executors, not a taxonomy kind:
+
+| Agent surface | Purpose |
+|---|---|
+| `/pm/agents` | Create, configure, and manage agents |
+| Story detail Delivery block | Assign agent manually, run agent manually |
+| Pipeline builder | Assign agent to workflow state via automation rule |
+| Kanban board | Bot icon on automated columns |
+| Story detail | Pipeline step indicator showing automated stages |
 
 ## Product Principles
 
@@ -61,68 +68,55 @@ Users should understand them as:
 - built-in system behavior
 - optionally governed by admins
 
-Not as:
+### Automation rules should feel configurable
 
-- agents they assigned
-- a separate platform category they must learn
+Stage-based agent pipelines should feel like user-configured workflow automation.
 
-### Contextual agents stay explicit
+Users should understand them as:
 
-PM/support agents remain valuable because they are:
+- rules they created to automate their workflow
+- agents assigned to pipeline stages
+- events that trigger actions
 
-- explicit
-- contextual
-- artifact-producing
+### Pipeline builder is the primary configuration surface
 
-The shared settings home should list and govern them, but their primary execution surfaces should remain contextual.
+The pipeline builder in Settings > Teams > Workflow dialog is where users configure automation rules. It provides:
 
-### Shared settings is inventory first
+- visual horizontal layout of workflow states
+- agent assignment dropdowns per state
+- auto-advance toggles for approval-based progression
+- merge branch inputs for deployment automation
 
-`Settings > AI & Automations` should first answer:
+## Current Surface Ownership
 
-- what exists
-- what is enabled
-- what is failing
-- where to configure or run it
+- `/pm/agents` — create and configure agents (executors)
+- Settings > Teams > Workflow — configure automation rules via pipeline builder
+- PM settings automations — PM built-in rules (epic auto-start/complete, sprint scheduling)
+- CRM settings — CRM built-in diagnostics
 
-That is enough value before a unified write model exists.
+## UI Architecture Principle: Domain-Specific Configuration
 
-## Near-Term Surface Ownership
+`Settings > AI & Automations` is a **read-only dashboard** — it shows inventory, governance, and diagnostics. It does not provide inline CRUD for automation rules.
 
-Until a later consolidation phase:
+Configuration surfaces are **domain-specific** because different automation types have fundamentally different config needs (workflow state pickers vs CRM threshold sliders vs email sequence editors). A generic rules form cannot serve all domains well.
 
-- `/pm/agents` remains the write and run surface for contextual agents
-- current PM settings remain the write surface for PM built-in rules
-- CRM built-ins remain governed through CRM-domain settings and diagnostics where applicable
+Each automation domain owns its configuration surface:
 
-This split is intentional. The shared home should make it legible before it tries to replace it.
+- PM pipeline rules → pipeline builder in Settings > Teams > Workflow dialog
+- PM built-in rules → PM settings automations
+- CRM built-ins → CRM domain settings
+- Future automation types → purpose-built UIs at the relevant settings surface
 
-## Current vs Future Surface Rules
-
-### Current state
-
-Keep:
-
-- PM agents in `/pm/agents`
-- PM built-in automation settings in current PM settings
-- CRM built-ins implicit in CRM module behavior and diagnostics
-
-### Future state
-
-Later add:
-
-- a shared inventory and diagnostics home in Settings
-- subgrouping for built-ins
-- links out to current write surfaces
-
-Only later consider selective write overlays.
+The backend `automation_rules` engine is generic and extensible. The frontend intentionally is not.
 
 ## UX Questions This IA Must Answer
 
-Any future UI based on this note should make these answers obvious:
+Any UI based on this note should make these answers obvious:
 
-- Is this built in, an explicit agent, or a future custom automation?
-- Where do I inspect its health?
-- Where do I configure it today?
-- Can I run it manually?
+- Is this a built-in automation or a user-configured rule?
+- Where do I configure it?
+- What events trigger it?
+- What agent runs when it fires?
 - Where will its output show up?
+- Is it enabled or disabled?
+- Is it healthy or failing?

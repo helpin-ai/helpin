@@ -19,7 +19,7 @@ type PGListener struct {
 }
 
 // NewPGListener creates a new listener that will forward pg_notify
-// events on the "ws_events" channel to the WebSocket hub.
+// events on the "ws_events" and "planning_stream" channels to the WebSocket hub.
 func NewPGListener(dsn string, hub *Hub) *PGListener {
 	return &PGListener{dsn: dsn, hub: hub}
 }
@@ -54,7 +54,10 @@ func (l *PGListener) listen(ctx context.Context) error {
 	if _, err := conn.Exec(ctx, "LISTEN ws_events"); err != nil {
 		return err
 	}
-	slog.Info("pg listener started on channel ws_events")
+	if _, err := conn.Exec(ctx, "LISTEN planning_stream"); err != nil {
+		return err
+	}
+	slog.Info("pg listener started on channels ws_events, planning_stream")
 
 	for {
 		n, err := conn.WaitForNotification(ctx)
@@ -62,11 +65,34 @@ func (l *PGListener) listen(ctx context.Context) error {
 			return err
 		}
 
-		var event Event
-		if err := json.Unmarshal([]byte(n.Payload), &event); err != nil {
-			slog.Warn("pg listener: invalid event payload", "error", err, "payload", n.Payload)
-			continue
+		switch n.Channel {
+		case "planning_stream":
+			l.handlePlanningStream(n.Payload)
+		default:
+			l.handleWSEvent(n.Payload)
 		}
-		l.hub.Broadcast(event)
 	}
+}
+
+// handleWSEvent routes ws_events notifications to hub.Broadcast (existing behavior).
+func (l *PGListener) handleWSEvent(payload string) {
+	var event Event
+	if err := json.Unmarshal([]byte(payload), &event); err != nil {
+		slog.Warn("pg listener: invalid event payload", "error", err, "payload", payload)
+		return
+	}
+	l.hub.Broadcast(event)
+}
+
+// handlePlanningStream routes planning_stream notifications to hub.SendToSession.
+func (l *PGListener) handlePlanningStream(payload string) {
+	var wrapper struct {
+		SessionID string          `json:"session_id"`
+		Event     json.RawMessage `json:"event"`
+	}
+	if err := json.Unmarshal([]byte(payload), &wrapper); err != nil {
+		slog.Warn("pg listener: invalid planning_stream payload", "error", err, "payload", payload)
+		return
+	}
+	l.hub.SendToSession(wrapper.SessionID, json.RawMessage(wrapper.Event))
 }

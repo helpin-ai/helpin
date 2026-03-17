@@ -184,6 +184,67 @@ func main() {
 		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities))
 	}
 
+	// Planning session worker — separate queue with session pinning.
+	// Uses PG NOTIFY to stream tokens cross-process to the API server's WS hub.
+	// Build LLM provider map from configured API keys.
+	planningProviders := make(map[string]workerpkg.StreamingProvider)
+	if cfg.AnthropicAPIKey != "" {
+		planningProviders["anthropic"] = workerpkg.NewClaudeClient(cfg.AnthropicAPIKey)
+	}
+	if cfg.OpenAIAPIKey != "" {
+		planningProviders["openai"] = workerpkg.NewOpenAIStreamingClient(cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, "")
+	}
+	if cfg.OpenRouterAPIKey != "" {
+		baseURL := cfg.OpenRouterBaseURL
+		if baseURL == "" {
+			baseURL = "https://openrouter.ai/api/v1"
+		}
+		planningProviders["openrouter"] = workerpkg.NewOpenAIStreamingClient(cfg.OpenRouterAPIKey, baseURL, "")
+	}
+
+	if len(planningProviders) > 0 {
+		planningSessionRepo := repository.NewPlanningSessionRepository(db)
+
+		var webSearchClient workerpkg.WebSearchClient
+		toolRegistry := workerpkg.NewToolRegistry(webSearchClient)
+
+		pgStreamer := ws.NewPGSessionStreamer(db)
+		pgPublisher := ws.NewPGPublisher(db)
+
+		planningService := service.NewPlanningSessionService(
+			planningSessionRepo, epicRepo, agentRepo, settingsRepo,
+			docsContentRepo, docsVersionRepo, docsLinkRepo,
+			docsDocumentRepo, docsSpaceRepo,
+			planningProviders, toolRegistry,
+			pgStreamer, pgPublisher,
+		)
+
+		planningActivities := temporalapp.NewPlanningSessionActivities(
+			planningSessionRepo, epicRepo, gitIntRepo, gitRepo, githubAppClient,
+			planningService.RunAgentTurnWithContext,
+			planningService.RunFinalizationTurnWithContext,
+		)
+		planningWorker := tworker.New(temporalClient, temporalapp.QueuePlanningInteractive, tworker.Options{
+			MaxConcurrentActivityExecutionSize: 4,
+			EnableSessionWorker:                true,
+		})
+		planningWorker.RegisterWorkflow(temporalapp.PlanningSessionWorkflow)
+		planningWorker.RegisterActivityWithOptions(planningActivities.PrepareWorkspaceActivity, activity.RegisterOptions{
+			Name: "PlanningSessionActivities.PrepareWorkspaceActivity",
+		})
+		planningWorker.RegisterActivityWithOptions(planningActivities.RunTurnActivity, activity.RegisterOptions{
+			Name: "PlanningSessionActivities.RunTurnActivity",
+		})
+		planningWorker.RegisterActivityWithOptions(planningActivities.FinalizeTurnActivity, activity.RegisterOptions{
+			Name: "PlanningSessionActivities.FinalizeTurnActivity",
+		})
+		planningWorker.RegisterActivityWithOptions(planningActivities.CleanupWorkspaceActivity, activity.RegisterOptions{
+			Name: "PlanningSessionActivities.CleanupWorkspaceActivity",
+		})
+		workers = append(workers, planningWorker)
+		log.Printf("planning session worker registered on queue %s", temporalapp.QueuePlanningInteractive)
+	}
+
 	for _, sharedWorker := range workers {
 		if err := sharedWorker.Start(); err != nil {
 			log.Fatalf("failed to start temporal worker: %v", err)

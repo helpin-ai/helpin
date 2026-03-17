@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
+import { create } from 'zustand'
 import { API_BASE } from '@/lib/api'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 
@@ -18,6 +19,8 @@ export interface PresenceSnapshot {
   viewers: string[]
   typers: Record<string, string>
 }
+
+export const useWSStore = create<{ send: ((data: unknown) => void) | null }>(() => ({ send: null }))
 
 interface UseWebSocketOptions {
   workspaceId: string
@@ -63,27 +66,28 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
       console.log('[ws] connected')
       retriesRef.current = 0
       setIsConnected(true)
+      const sendFn = (data: unknown) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data))
+      }
+      useWSStore.setState({ send: sendFn })
     }
 
     ws.onmessage = (e) => {
       try {
-        const msg = JSON.parse(e.data)
+        const parsed = JSON.parse(e.data)
         // Handle online visitors snapshot (sent on agent connect)
-        if (msg.type === 'support:online_visitors' && msg.data?.visitors) {
-          useSupportPresenceStore.getState().setOnlineVisitors(msg.data.visitors as string[])
-          return
-        }
-        // Handle presence snapshot (sent as {type, data} envelope)
-        if (msg.type === 'support:presence_snapshot' && msg.data) {
-          const snapshot = msg.data as PresenceSnapshot & { conversation_id?: string }
-          // The snapshot is sent in response to viewing:start — the conversation_id
-          // is not in the snapshot itself; the client tracks which conversation it asked about.
+        if (parsed.type === 'support:online_visitors' && parsed.data?.visitors) {
+          useSupportPresenceStore.getState().setOnlineVisitors(parsed.data.visitors as string[])
+        } else if (parsed.session_id && parsed.type) {
+          // Stream event — dispatch as DOM CustomEvent for usePlanningStream
+          window.dispatchEvent(new CustomEvent('planning-stream', { detail: parsed }))
+        } else if (parsed.type === 'support:presence_snapshot' && parsed.data) {
+          // Handle presence snapshot (sent as {type, data} envelope)
+          const snapshot = parsed.data as PresenceSnapshot & { conversation_id?: string }
           onSnapshotRef.current?.('', snapshot)
-          return
-        }
-        // Standard event (has action/entity fields)
-        if (msg.action && msg.entity) {
-          onEventRef.current(msg as WSEvent)
+        } else if (parsed.action && parsed.entity) {
+          // Standard event (has action/entity fields)
+          onEventRef.current(parsed as WSEvent)
         }
       } catch {
         // ignore malformed messages
@@ -94,6 +98,7 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
       console.log('[ws] disconnected')
       wsRef.current = null
       setIsConnected(false)
+      useWSStore.setState({ send: null })
       // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s cap
       const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000)
       retriesRef.current++

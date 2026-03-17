@@ -13,6 +13,56 @@ For the broader cross-app automation control-plane taxonomy introduced in Phase 
 
 Teampulse treats agents as opinionated workflow participants inside PM and support.
 
+At the product level, the system now has a clearer split between three things:
+
+- built-in automations
+- automation rules
+- agents
+
+The intended model is:
+
+```text
+                   +----------------------+
+                   | Built-in Automation  |
+                   |----------------------|
+                   | CRM background jobs  |
+                   | PM epic rules        |
+                   | PM sprint rules      |
+                   +----------+-----------+
+                              |
+                              v
+                   +----------------------+
+                   | Automation Inventory |
+                   |----------------------|
+                   | shared catalog       |
+                   | shared health model  |
+                   | shared settings view |
+                   +----------+-----------+
+                              |
+         +--------------------+--------------------+
+         |                                         |
+         v                                         v
++-------------------------+             +-------------------------+
+|   Automation Rules      |             |         Agents          |
+|-------------------------|             |-------------------------|
+| trigger -> action       |             | explicit typed actors   |
+| workflow-state driven   |             | planner / engineer /    |
+| user-configured         |             | reviewer / support      |
+| powers PM pipelines     |             | runs / approvals /      |
++-----------+-------------+             | handoffs / artifacts    |
+            |                           +-----------+-------------+
+            |                                       |
+            +-------------- run_agent --------------+
+```
+
+Practical interpretation:
+
+- built-in automations are product-owned behaviors that already exist in CRM and PM
+- automation rules are user-configured trigger -> action rules
+- agents are the executors that perform work and own the run lifecycle
+
+Agents are no longer the taxonomy bucket for "all automation". They remain first-class product entities, but they sit beside the automation-rule system rather than inside it.
+
 Teampulse owns:
 
 - assignments
@@ -33,6 +83,13 @@ The product model is intentionally narrow:
 - one workspace-level planning methodology
 - hidden planning prompt packs for epic planning
 
+The control-plane model is also intentionally narrow:
+
+- one shared automation inventory surface
+- one shared health model for built-ins and rules
+- one explicit PM pipeline model based on workflow-state triggers
+- one agent execution model backed by Temporal
+
 ## Core Model
 
 | Concept | Meaning |
@@ -45,6 +102,69 @@ The product model is intentionally narrow:
 | `story_git_link` | Historical branch, commit, and PR output for a story |
 | `artifact` | A stored run output such as logs, diffs, or PR metadata |
 | `handoff` | Explicit transfer from one agent to another agent or a human |
+
+## Current System Boundaries
+
+Teampulse currently has three real automation surfaces:
+
+### 1. Built-in automations
+
+These are product-owned behaviors shipped as part of Teampulse.
+
+Current examples:
+
+- CRM buyer-signal ingestion
+- CRM contact/deal summary refresh
+- PM epic auto-start
+- PM epic auto-complete
+- PM sprint auto-create
+- PM sprint move unfinished
+
+Characteristics:
+
+- not user-created
+- may be system-governed or workspace-governed
+- surfaced through shared inventory and health reporting
+- may run as background workflows, scheduled rules, or deterministic inline rules
+
+### 2. Automation rules
+
+These are user-configured trigger -> action rules.
+
+Current trigger shapes in active use:
+
+- `story.state_entered`
+- `agent_run.approved`
+
+Current action shapes in active use:
+
+- `run_agent`
+- `move_to_state`
+- `merge_branch`
+
+Characteristics:
+
+- workspace-configured
+- event-driven
+- powers PM workflow pipelines
+- can chain actions with loop prevention
+
+### 3. Agents
+
+Agents remain explicit workspace actors with lifecycle and auditability.
+
+Characteristics:
+
+- typed by class
+- routed to strict target types
+- executed as `agent_run`
+- own approvals, handoffs, artifacts, and execution history
+
+The important boundary is:
+
+- rules decide when work should happen
+- agents perform the work
+- built-ins are shipped product behavior outside the user-authored rule graph
 
 ## Agent Classes
 
@@ -147,6 +267,8 @@ Current behavior:
 - `engineer` and `reviewer` can use `manual`, `auto_on_assignment`, or `auto_on_event`
 - auto execution only starts when repo requirements are satisfied for the selected profile
 
+In the current PM pipeline design, `auto_on_event` is most useful when combined with automation rules rather than treated as a separate product concept. The pipeline builder now effectively maps workflow states to rule-driven stage behavior.
+
 ## Planning Methodology
 
 Epic planning uses a workspace-level planning methodology, configured in `Project Settings > AI`.
@@ -221,6 +343,29 @@ Each run gets:
 - heartbeat updates written back to `agent_runs`
 
 The current implementation uses shared runners, not one container or pod per run. The legacy `agent_jobs` poller has been removed. Temporal workflows are the only supported execution path.
+
+### Shared execution pattern
+
+Across PM, CRM, and support, the common pattern is:
+
+```text
+catalog/config
+    ->
+inventory/read model
+    ->
+runtime execution
+    ->
+health + diagnostics
+    ->
+settings / operator surface
+```
+
+Operationally this means:
+
+- Temporal is the shared async backbone
+- the API owns product-facing state transitions and persistence
+- worker pools own long-running execution
+- WebSocket and event publication keep UI state fresh
 
 ## Story Delivery Model
 
@@ -384,28 +529,84 @@ Execution flow:
 5. artifacts and run status update live.
 6. PR and push events update delivery state and history.
 
+## PM Pipeline Model
+
+PM workflows now support a more explicit stage-based automation model.
+
+Conceptually:
+
+```text
+story enters workflow state
+          |
+          v
+   automation rule evaluates
+          |
+          +--> run_agent
+          |       |
+          |       v
+          |   agent run lifecycle
+          |
+          +--> move_to_state
+          |
+          +--> merge_branch
+```
+
+Practical behavior:
+
+- a workflow stage can have an assigned agent
+- entering that stage can automatically run the assigned agent
+- approving the resulting run can automatically advance the story to the next state
+- entering a stage can also merge the story branch to a configured target branch
+
+This is the first concrete implementation of the stage-based agent pipeline. It is implemented through automation rules, not a separate hidden pipeline engine.
+
 ## Epic Planning Flow
 
-Epic planning is docs-first and staged.
+Epic planning is docs-first and now has two parallel modes:
+
+- autonomous staged planning through `agent_run`
+- interactive planning sessions for collaborative planner/human dialogue
 
 Core rules:
 
 - Docs is the canonical source of truth for product specs
 - epics are the planning entrypoint
 - the epic planning repo is the live code source for both `draft_spec` and `plan_stories`
-- `agent_run` is the audit trail for draft and planning stages
+- `agent_run` remains the audit trail for autonomous draft and planning stages
+- planning sessions persist their own conversation and draft state
 - stories are only created after human confirmation
 - code execution remains story-scoped
 
 ### Planning stages
 
 - `draft_spec`
+- `in_session`
 - `awaiting_spec_clarification`
 - `awaiting_spec_approval`
 - `plan_stories`
 - `awaiting_plan_approval`
 - `stories_created`
 - `execution_started` or `ready_for_execution`
+
+### Interactive planning session path
+
+The planner is no longer limited to a single batch draft. Teampulse now also supports a persistent interactive planning session for an epic.
+
+Practical flow:
+
+1. A human starts a planning session on the epic.
+2. The planner and human collaborate in a persistent conversation.
+3. The planner can ask structured questions progressively instead of dumping all open questions at once.
+4. The planner can inspect bounded repo context with read-only tools during the conversation.
+5. A live `spec_draft` evolves during the session.
+6. Finalization writes the draft into Docs and moves the epic directly to `awaiting_spec_approval`.
+
+Important semantics:
+
+- this is collaborative planning, not autonomous execution
+- the conversation is the process; the spec is the artifact
+- Temporal manages lifecycle and workspace preparation, not the chat transport itself
+- interactive planning is an alternative to batch `draft_spec`, not a replacement for it
 
 ### Draft spec stage
 
@@ -472,6 +673,16 @@ Important runtime rule:
 
 - the code-context summary used for planning is not saved as a Docs artifact, so it cannot become stale canonical documentation
 - external web search is not exposed during `plan_stories` in v1
+
+### Planning mode split
+
+The current product split is:
+
+- `draft_spec` and `plan_stories` are autonomous planning runs
+- `in_session` is a collaborative planning state
+- both paths converge back to Docs approval and later story creation
+
+This keeps planning collaborative where needed without changing the downstream story execution model.
 
 ### Confirmation and handoff
 
@@ -677,6 +888,108 @@ Current UI support:
   - approval of draft replies
 - Project Settings > AI:
   - workspace planning methodology selector
+
+## Automation Rules Engine
+
+Teampulse includes a generic automation rules engine that enables event-driven workflow automation through a trigger → action pattern.
+
+### Data Model
+
+Rules are stored in the `automation_rules` table with:
+
+- `trigger_type` + `trigger_config`: what event fires the rule
+- `action_type` + `action_config`: what happens when the rule fires
+- `workflow_id`: optional scope to a specific workflow
+- `team_id`: optional scope to a specific team
+- `position`: execution order when multiple rules match
+- `stop_on_match`: prevents later rules from firing
+- `enabled`: toggle without deletion
+
+### Trigger Types
+
+| Trigger | Config | Fires when |
+|---|---|---|
+| `story.state_entered` | `{ state_id }` | A story moves into the specified workflow state |
+| `agent_run.approved` | `{ state_id }` | An agent run is approved while the story is in the specified state |
+
+### Action Types
+
+| Action | Config | Effect |
+|---|---|---|
+| `run_agent` | `{ agent_id }` | Assigns and runs the specified agent on the story |
+| `move_to_state` | `{ target_state_id }` | Moves the story to the target workflow state |
+| `merge_branch` | `{ target_branch }` | Merges the story's working branch into the target branch |
+
+### Pipeline Pattern
+
+The primary use case is stage-based agent pipelines. Example for a workflow with states Planning → Development → Review → Deploy → Done:
+
+| Rule | Trigger | Action | Effect |
+|---|---|---|---|
+| 1 | `story.state_entered` (Planning) | `run_agent` (planner) | Planner starts when story enters Planning |
+| 2 | `agent_run.approved` (Planning) | `move_to_state` (Development) | Auto-advance after planner approval |
+| 3 | `story.state_entered` (Development) | `run_agent` (engineer) | Engineer starts when story enters Development |
+| 4 | `agent_run.approved` (Development) | `move_to_state` (Review) | Auto-advance after engineer approval |
+| 5 | `story.state_entered` (Review) | `run_agent` (reviewer) | Reviewer starts when story enters Review |
+| 6 | `agent_run.approved` (Review) | `move_to_state` (Deploy) | Auto-advance after reviewer approval |
+| 7 | `story.state_entered` (Deploy) | `merge_branch` (develop) | Merge to staging on deploy |
+
+**Chaining flow**: User drags story to Planning → Rule 1 fires (run planner) → planner works → user approves → Rule 2 fires (move to Dev) → Rule 3 fires (run engineer) → ... cascading through the pipeline.
+
+### Loop Prevention
+
+Four layers prevent infinite loops:
+
+1. **Chain depth counter**: `RuleExecutionContext.Depth` incremented per chained event. Max 10.
+2. **Same-rule dedup**: `FiredRuleIDs` tracks rules fired in the current chain. Same rule can't fire twice.
+3. **State transition guard**: `move_to_state` is a no-op if story is already in the target state.
+4. **Active run guard**: `AgentService.RunAgent` prevents duplicate concurrent runs on the same story.
+
+### Integration Points
+
+Rules are evaluated synchronously in:
+
+- `PMStoryService.MoveToState` — emits `story.state_entered` after state change
+- `PMStoryService.Create` — emits `story.state_entered` for initial state
+- `AgentService.ApproveRun` — emits `agent_run.approved` after run approval
+
+### API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/pm/automation-rules?workspace_id=` | List rules |
+| GET | `/api/pm/automation-rules?workspace_id=&workflow_id=` | List rules for workflow |
+| POST | `/api/pm/automation-rules?workspace_id=` | Create rule |
+| GET | `/api/pm/automation-rules/{id}?workspace_id=` | Get rule |
+| PUT | `/api/pm/automation-rules/{id}?workspace_id=` | Update rule |
+| DELETE | `/api/pm/automation-rules/{id}?workspace_id=` | Delete rule |
+
+### Frontend Surfaces
+
+- **Pipeline builder**: Visual horizontal pipeline editor in Settings > Teams > Workflow dialog. Shows states left-to-right with agent assignment dropdowns, auto-advance toggles, and merge branch inputs.
+- **Kanban board**: Bot icon on column headers for states with `run_agent` rules.
+- **Story cards**: Bot badge when an agent is assigned.
+- **Story list view**: Bot icon next to story name when agent is assigned.
+- **Story detail panel**: Horizontal pipeline step indicator showing completed, current, and pending stages with automation badges.
+- **Settings > AI & Automations**: Automation rules group showing configured rules with health status.
+
+### Key Files
+
+Backend:
+
+- `server/internal/model/automation_rule.go` — model, DTOs, event types
+- `server/internal/repository/automation_rule.go` — CRUD + rule matching
+- `server/internal/service/automation_rule_engine.go` — evaluation + action executors
+- `server/internal/handler/automation_rule.go` — HTTP endpoints
+- `server/migrations/042_automation_rules.sql` — table + indexes
+
+Frontend:
+
+- `frontend/src/lib/services/automationRuleService.ts` — API client
+- `frontend/src/components/settings/PipelineBuilder.tsx` — visual pipeline editor
+- `frontend/src/components/settings/TeamsTab.tsx` — pipeline builder integration
+- `frontend/src/components/pm/KanbanBoard.tsx` — bot icons on columns
+- `frontend/src/components/pm/StoryDetailPanel.tsx` — pipeline step indicator
 
 ## What Is Not Implemented Yet
 

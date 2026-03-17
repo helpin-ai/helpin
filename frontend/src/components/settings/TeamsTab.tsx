@@ -5,9 +5,12 @@ import { gitService } from '@/lib/services/gitService';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
+import { automationRuleService } from '@/lib/services/automationRuleService';
+import { agentService } from '@/lib/services/agentService';
+import { PipelineBuilder } from './PipelineBuilder';
 import { SCALE_LABELS, SCALE_DESCRIPTIONS, getEstimateOptions } from '@/lib/estimateScales';
 import type { WorkspaceTeam, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, EstimateScale, TeamRepoDefault } from '@/lib/types';
-import type { GitRepository, StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { Agent, AutomationRule, GitRepository, StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { SettingsSection } from '@/pages/Settings';
@@ -25,7 +28,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn, getInitials } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Check, ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
+import { Bot, Check, ChevronRight, Eye, GitBranch, GitPullRequest, LayoutGrid, Pencil, Plus, RefreshCw, Settings2, Tag, Trash2, Users, X, type LucideIcon } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
@@ -447,6 +450,8 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [repositoriesLoading, setRepositoriesLoading] = useState(false);
   const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
   const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
+  const [pipelineRules, setPipelineRules] = useState<AutomationRule[]>([]);
+  const [pipelineAgents, setPipelineAgents] = useState<Agent[]>([]);
 
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<MemberWithUser[]>([]);
@@ -517,6 +522,11 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     };
     loadWorkflows();
     return () => { mounted = false; };
+  }, [workspaceId]);
+
+  // Load agents for pipeline builder
+  useEffect(() => {
+    agentService.list(workspaceId).then((res) => { if (res.data) setPipelineAgents(res.data.filter((a) => a.agent_kind === 'llm')); });
   }, [workspaceId]);
 
   const filteredTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name));
@@ -744,7 +754,14 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             title: 'Workflow states',
             description: 'Manage workflow states for this team',
             meta: workflowMeta,
-            action: () => setWorkflowDialogOpen(true),
+            action: () => {
+              setWorkflowDialogOpen(true);
+              if (activeTeamWorkflow) {
+                automationRuleService.listByWorkflow(workspaceId, activeTeamWorkflow.workflow.id).then((res) => {
+                  if (res.data) setPipelineRules(res.data);
+                });
+              }
+            },
             disabled: false,
           },
           {
@@ -1196,19 +1213,34 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
         {/* Workflow States Editor Dialog */}
         <Dialog open={workflowDialogOpen} onOpenChange={setWorkflowDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="sm:max-w-5xl">
             <DialogHeader>
               <DialogTitle>Workflow States</DialogTitle>
             </DialogHeader>
             {activeTeamWorkflow ? (
-              <TeamWorkflowStateEditor
-                workspaceId={workspaceId}
-                workflow={activeTeamWorkflow}
-                editable={editable}
-                onUpdate={(updated) => {
-                  setWorkflows((prev) => prev.map((w) => w.workflow.id === updated.workflow.id ? updated : w));
-                }}
-              />
+              <>
+                <PipelineBuilder
+                  workspaceId={workspaceId}
+                  workflowId={activeTeamWorkflow.workflow.id}
+                  states={activeTeamWorkflow.states.slice().sort((a, b) => a.position - b.position)}
+                  agents={pipelineAgents}
+                  rules={pipelineRules}
+                  editable={editable}
+                  onChanged={() => {
+                    automationRuleService.listByWorkflow(workspaceId, activeTeamWorkflow.workflow.id).then((res) => {
+                      if (res.data) setPipelineRules(res.data);
+                    });
+                  }}
+                />
+                <TeamWorkflowStateEditor
+                  workspaceId={workspaceId}
+                  workflow={activeTeamWorkflow}
+                  editable={editable}
+                  onUpdate={(updated) => {
+                    setWorkflows((prev) => prev.map((w) => w.workflow.id === updated.workflow.id ? updated : w));
+                  }}
+                />
+              </>
             ) : (
               <p className="text-sm text-muted-foreground py-2">No workflow configured for this team.</p>
             )}

@@ -61,6 +61,12 @@ export const queryKeys = {
 
     automations: (wsId: string) => ['pm', wsId, 'automations'] as const,
 
+    automationRules: (wsId: string) => ['pm', wsId, 'automationRules'] as const,
+    automationRulesByWorkflow: (wsId: string, wfId: string) => ['pm', wsId, 'automationRules', 'workflow', wfId] as const,
+
+    planningSession: (wsId: string, sessionId: string) => ['pm', wsId, 'planningSession', sessionId] as const,
+    planningMessages: (wsId: string, sessionId: string) => ['pm', wsId, 'planningSession', sessionId, 'messages'] as const,
+
     comments: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'comments'] as const,
     checklists: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'checklists'] as const,
     attachments: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'attachments'] as const,

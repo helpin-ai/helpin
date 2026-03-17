@@ -201,6 +201,58 @@ func (c *Client) GetInstallation(ctx context.Context, installationID string) (*I
 	}, nil
 }
 
+// MergeBranch merges the head branch into the base branch using the GitHub REST API.
+func (c *Client) MergeBranch(ctx context.Context, installationID, owner, repo, base, head, commitMessage string) error {
+	if c == nil {
+		return fmt.Errorf("github app is not configured")
+	}
+	token, err := c.MintInstallationToken(ctx, installationID)
+	if err != nil {
+		return err
+	}
+
+	body, _ := json.Marshal(map[string]string{
+		"base":           base,
+		"head":           head,
+		"commit_message": commitMessage,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s/repos/%s/%s/merges", c.apiBaseURL, owner, repo),
+		strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("build github merge request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request github merge: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 204 {
+		// Base already contains head — nothing to merge
+		return nil
+	}
+	if resp.StatusCode == 201 {
+		// Merge commit created successfully
+		return nil
+	}
+
+	var payload struct {
+		Message string `json:"message"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&payload)
+
+	if resp.StatusCode == 409 {
+		return fmt.Errorf("merge conflict: %s", payload.Message)
+	}
+	return fmt.Errorf("github merge failed (%d): %s", resp.StatusCode, payload.Message)
+}
+
 func (c *Client) createAppJWT() (string, error) {
 	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.RegisteredClaims{

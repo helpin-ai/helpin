@@ -44,6 +44,8 @@ function hasPendingClarifications(epic: Epic): boolean {
 export function computeCurrentStep(epic: Epic, _agents: Agent[], runs: AgentRun[]): PlanningStep {
   if (!epic.orchestrator_agent_id) return 'setup';
 
+  if (epic.planning_state === 'in_session') return 'draft';
+
   if (hasActiveStageRun(runs, 'draft_spec')) return 'draft';
   if (hasActiveStageRun(runs, 'plan_stories')) return 'generate';
 

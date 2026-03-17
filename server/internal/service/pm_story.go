@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -26,6 +27,8 @@ type PMStoryService struct {
 	automationService   *PMAutomationService
 	notificationService *NotificationService
 	followerService     *FollowerService
+	ruleEngine          *AutomationRuleEngine
+	agentService        *AgentService
 	logger              *slog.Logger
 }
 
@@ -45,6 +48,17 @@ func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *r
 		followerService:     followerService,
 		logger:              slog.Default().With("service", "pm_story"),
 	}
+}
+
+// SetRuleEngine sets the automation rule engine (breaks circular dependency).
+func (s *PMStoryService) SetRuleEngine(engine *AutomationRuleEngine) *PMStoryService {
+	s.ruleEngine = engine
+	return s
+}
+
+// SetAgentService sets the agent service (breaks circular dependency).
+func (s *PMStoryService) SetAgentService(svc *AgentService) {
+	s.agentService = svc
 }
 
 // requireCanEdit checks that the actor has owner, admin, or manager role.
@@ -318,6 +332,16 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 
 	if s.automationService != nil {
 		s.automationService.OnStoryStateChange(ctx, story, story.WorkflowStateID)
+	}
+
+	// Evaluate automation rules for the initial state entry
+	if s.ruleEngine != nil {
+		s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
+			WorkspaceID: story.WorkspaceID,
+			TriggerType: model.TriggerStoryStateEntered,
+			StoryID:     story.ID,
+			StateID:     story.WorkflowStateID,
+		}, nil)
 	}
 
 	createdAction := "created this story"
@@ -808,6 +832,29 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit notification for story move", "error", err, "story_id", current.ID)
+		}
+	}
+
+	// Evaluate automation rules for the state entry event.
+	// If called from the rule engine's executeMoveToState, the chain context
+	// is carried via ctx to preserve depth tracking and prevent double-firing.
+	if s.ruleEngine != nil {
+		execCtx := ruleExecCtxFromContext(ctx)
+		s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
+			WorkspaceID: current.WorkspaceID,
+			TriggerType: model.TriggerStoryStateEntered,
+			StoryID:     current.ID,
+			StateID:     req.StateID,
+		}, execCtx)
+	}
+
+	// Auto-start pre-assigned LLM agent on state change.
+	if s.agentService != nil && current.AssignedAgentID != nil && *current.AssignedAgentID != "" {
+		if _, err := s.agentService.RunAgent(ctx, current.WorkspaceID, current.ID, "system"); err != nil {
+			if !errors.Is(err, ErrStoryDeliveryTargetRequired) {
+				s.logger.WarnContext(ctx, "auto-start agent on state change failed",
+					"error", err, "story_id", current.ID, "agent_id", *current.AssignedAgentID)
+			}
 		}
 	}
 

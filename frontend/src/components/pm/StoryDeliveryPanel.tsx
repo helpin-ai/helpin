@@ -46,7 +46,9 @@ interface Props {
   onStoryUpdated: (story: StoryDetail) => void;
 }
 
-export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }: Props) {
+// ── Hook ──────────────────────────────────────────────────────────
+
+export function useStoryDelivery(workspaceId: string, storyDetail: StoryDetail, onStoryUpdated: (story: StoryDetail) => void) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [target, setTarget] = useState<StoryDeliveryTarget | null>(null);
@@ -58,7 +60,6 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [savingTarget, setSavingTarget] = useState(false);
   const [triggeringRun, setTriggeringRun] = useState(false);
-  const [expanded, setExpanded] = useState<boolean | null>(null);
   const assignmentPromiseRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
@@ -109,8 +110,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
     };
   }, [storyDetail.story.id, workspaceId]);
 
-  // Hide delivery section entirely when no GitHub repos are connected
-  if (!loading && repositories.length === 0 && !target) return null;
+  const hidden = !loading && repositories.length === 0 && !target;
 
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedAgentId),
@@ -131,9 +131,6 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
   const deliveryTargetSaved =
     repositoryId === (target?.repository_id ?? '') &&
     (!repositoryId || resolvedBaseBranch === (target?.base_branch ?? ''));
-
-  // Auto-expand when configured, collapse when not — but only on initial load
-  const isExpanded = expanded ?? isConfigured;
 
   const refreshStory = async () => {
     const { data, error } = await pmStoryService.get(workspaceId, storyDetail.story.id);
@@ -244,6 +241,53 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
     await ensureAgentAssigned(true);
   };
 
+  const handleAgentChange = async (agentId: string) => {
+    setSelectedAgentId(agentId);
+    // Auto-assign immediately
+    if (assignmentPromiseRef.current) return;
+    const assignmentPromise = (async () => {
+      setSavingAssignment(true);
+      const { error } = await agentService.assignToStory(workspaceId, storyDetail.story.id, agentId);
+      setSavingAssignment(false);
+      if (error) {
+        toast.error(error);
+        return false;
+      }
+      toast.success('Agent assigned');
+      await refreshStory();
+      await refreshDeliveryTarget(true);
+      return true;
+    })();
+    assignmentPromiseRef.current = assignmentPromise;
+    try {
+      await assignmentPromise;
+    } finally {
+      assignmentPromiseRef.current = null;
+    }
+  };
+
+  const handleRepoChange = async (repoId: string) => {
+    setRepositoryId(repoId);
+    if (!repoId) return;
+    // Auto-save delivery target when repo changes
+    setSavingTarget(true);
+    const resolved = baseBranch.trim() || repositories.find((r) => r.id === repoId)?.default_branch || 'main';
+    const { data, error } = await gitService.updateStoryDeliveryTarget(workspaceId, storyDetail.story.id, {
+      repository_id: repoId,
+      base_branch: resolved,
+    });
+    setSavingTarget(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setTarget(data ?? null);
+    if (data) {
+      setBaseBranch(data.base_branch ?? resolved);
+    }
+    toast.success('Delivery target updated');
+  };
+
   const handleRunNow = async () => {
     if (requiresRepo) {
       const savedDelivery = await ensureDeliveryTargetSaved(false);
@@ -266,7 +310,54 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
     toast.success('Agent run started');
   };
 
-  if (loading) {
+  const deliveryStateCfg = target?.delivery_state
+    ? (DELIVERY_STATE_CONFIG[target.delivery_state] ?? { label: target.delivery_state.replace(/_/g, ' '), className: 'bg-muted text-muted-foreground' })
+    : null;
+
+  return {
+    agents,
+    repositories,
+    target,
+    selectedAgent,
+    selectedAgentId,
+    setSelectedAgentId,
+    repositoryId,
+    setRepositoryId,
+    baseBranch,
+    setBaseBranch,
+    loading,
+    hidden,
+    savingAssignment,
+    savingTarget,
+    triggeringRun,
+    resolvedBaseBranch,
+    requiresRepo,
+    hasDeliveryTarget,
+    branchPreview,
+    isConfigured,
+    agentSelectionSaved,
+    deliveryTargetSaved,
+    deliveryStateCfg,
+    selectedRepository,
+    handleSaveDelivery,
+    handleAssignAgent,
+    handleAgentChange,
+    handleRepoChange,
+    handleRunNow,
+    ensureDeliveryTargetSaved,
+    ensureAgentAssigned,
+  };
+}
+
+// ── Card Component (full-page usage) ──────────────────────────────
+
+export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }: Props) {
+  const d = useStoryDelivery(workspaceId, storyDetail, onStoryUpdated);
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+
+  if (d.hidden) return null;
+
+  if (d.loading) {
     return (
       <div className="mt-6 flex items-center gap-2 py-3 text-xs text-muted-foreground">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -275,9 +366,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
     );
   }
 
-  const deliveryStateCfg = target?.delivery_state
-    ? (DELIVERY_STATE_CONFIG[target.delivery_state] ?? { label: target.delivery_state.replace(/_/g, ' '), className: 'bg-muted text-muted-foreground' })
-    : null;
+  const isExpanded = expanded ?? d.isConfigured;
 
   return (
     <div className="mt-6 rounded-lg border border-border/70 bg-card">
@@ -290,13 +379,13 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
         <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
         <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-sm font-semibold">Delivery</span>
-        {!isConfigured && !isExpanded && (
+        {!d.isConfigured && !isExpanded && (
           <span className="text-xs text-muted-foreground">Not configured</span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          {deliveryStateCfg && (
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${deliveryStateCfg.className}`}>
-              {deliveryStateCfg.label}
+          {d.deliveryStateCfg && (
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${d.deliveryStateCfg.className}`}>
+              {d.deliveryStateCfg.label}
             </span>
           )}
         </div>
@@ -307,22 +396,22 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
           <Separator />
 
           {/* Form */}
-          <div className="space-y-3 px-3 py-3">
+          <div className="space-y-3 px-2 py-2">
             <p className="text-xs text-muted-foreground">
-              Pick the execution agent and the repository lane this story should ship through.
+              Pick the agent and repo for this story.
             </p>
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
               <div className="space-y-1">
                 <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Agent
                 </label>
-                <Select value={selectedAgentId || undefined} onValueChange={setSelectedAgentId}>
+                <Select value={d.selectedAgentId || undefined} onValueChange={d.setSelectedAgentId}>
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Choose agent" />
                   </SelectTrigger>
                   <SelectContent>
-                    {agents.map((agent) => (
+                    {d.agents.map((agent) => (
                       <SelectItem key={agent.id} value={agent.id}>
                         <div className="flex items-center gap-2">
                           {agent.agent_kind === 'human' ? (
@@ -337,16 +426,14 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedAgent && (
+                {d.selectedAgent && (
                   <p className="text-[11px] text-muted-foreground">
-                    {selectedAgent.agent_kind === 'human'
+                    {d.selectedAgent.agent_kind === 'human'
                       ? 'Human agents are assignment-only and do not execute code.'
-                      : selectedAgent.trigger_mode === 'auto_on_assignment'
-                        ? 'Starts automatically after assignment.'
-                        : 'Runs manually after assignment.'}
+                      : 'Starts automatically after assignment.'}
                   </p>
                 )}
-                {selectedAgentId && !agentSelectionSaved && (
+                {d.selectedAgentId && !d.agentSelectionSaved && (
                   <p className="text-[11px] text-amber-700 dark:text-amber-400">
                     This agent change is not saved yet. Assign or Run Now will persist it.
                   </p>
@@ -357,12 +444,12 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                 <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Repository
                 </label>
-                <Select value={repositoryId || undefined} onValueChange={setRepositoryId}>
+                <Select value={d.repositoryId || undefined} onValueChange={d.setRepositoryId}>
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Choose repository" />
                   </SelectTrigger>
                   <SelectContent>
-                    {repositories.map((repository) => (
+                    {d.repositories.map((repository) => (
                       <SelectItem key={repository.id} value={repository.id}>
                         {repository.full_name}
                       </SelectItem>
@@ -372,7 +459,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                 <p className="text-[11px] text-muted-foreground">
                   Team defaults prefill this. Story delivery can override it.
                 </p>
-                {repositoryId && !deliveryTargetSaved && (
+                {d.repositoryId && !d.deliveryTargetSaved && (
                   <p className="text-[11px] text-amber-700 dark:text-amber-400">
                     Repository changes are not saved yet. Save or Run Now will persist them.
                   </p>
@@ -384,9 +471,9 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                   Base Branch
                 </label>
                 <Input
-                  value={baseBranch}
-                  onChange={(event) => setBaseBranch(event.target.value)}
-                  placeholder={selectedRepository?.default_branch || 'main'}
+                  value={d.baseBranch}
+                  onChange={(event) => d.setBaseBranch(event.target.value)}
+                  placeholder={d.selectedRepository?.default_branch || 'main'}
                   className="h-8 text-sm"
                 />
               </div>
@@ -396,12 +483,12 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                   Working Branch
                 </label>
                 <div className="flex h-8 items-center rounded-md border border-border/70 bg-muted/30 px-2.5 text-sm">
-                  <span className="truncate font-mono">{branchPreview}</span>
+                  <span className="truncate font-mono">{d.branchPreview}</span>
                 </div>
               </div>
             </div>
 
-            {selectedAgent && selectedAgent.agent_kind === 'llm' && requiresRepo && !hasDeliveryTarget && (
+            {d.selectedAgent && d.selectedAgent.agent_kind === 'llm' && d.requiresRepo && !d.hasDeliveryTarget && (
               <Alert variant="destructive" className="border-amber-500/30 bg-amber-50 text-amber-800 dark:bg-amber-900/10 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle className="text-xs">Repository required</AlertTitle>
@@ -411,7 +498,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
               </Alert>
             )}
 
-            {selectedAgent?.agent_kind === 'human' && (
+            {d.selectedAgent?.agent_kind === 'human' && (
               <Alert>
                 <UserRoundCog className="h-4 w-4" />
                 <AlertTitle className="text-xs">Human handoff</AlertTitle>
@@ -424,64 +511,64 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
 
           {/* Actions */}
           <Separator />
-          <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5 px-2 py-2">
             <Button
               size="xs"
               variant="outline"
-              onClick={handleSaveDelivery}
-              disabled={savingTarget || !repositoryId}
+              onClick={d.handleSaveDelivery}
+              disabled={d.savingTarget || !d.repositoryId}
             >
-              {savingTarget ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+              {d.savingTarget ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
               Save
             </Button>
             <Button
               size="xs"
               variant="outline"
-              onClick={handleAssignAgent}
-              disabled={savingAssignment || !selectedAgentId}
+              onClick={d.handleAssignAgent}
+              disabled={d.savingAssignment || !d.selectedAgentId}
             >
-              {savingAssignment ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}
+              {d.savingAssignment ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}
               Assign
             </Button>
-            {selectedAgent?.agent_kind === 'llm' && selectedAgent.trigger_mode === 'manual' && (
+            {d.selectedAgent?.agent_kind === 'llm' && (
               <Button
                 size="xs"
-                onClick={handleRunNow}
-                disabled={triggeringRun || savingAssignment || savingTarget || (requiresRepo && !hasDeliveryTarget)}
+                onClick={d.handleRunNow}
+                disabled={d.triggeringRun || d.savingAssignment || d.savingTarget || (d.requiresRepo && !d.hasDeliveryTarget)}
               >
-                {triggeringRun ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                {d.triggeringRun ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
                 Run Now
               </Button>
             )}
           </div>
 
           {/* Summary */}
-          {(target?.active_pr_url || target?.last_commit_sha || target?.repo_full_name) && (
+          {(d.target?.active_pr_url || d.target?.last_commit_sha || d.target?.repo_full_name) && (
             <>
               <Separator />
-              <div className="grid gap-3 px-3 py-2.5 text-xs md:grid-cols-3">
+              <div className="space-y-1 px-2 py-2 text-xs">
                 <div>
                   <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Repository</p>
-                  <p className="text-xs font-medium">{target?.repo_full_name || selectedRepository?.full_name || 'Unconfigured'}</p>
+                  <p className="text-xs font-medium">{d.target?.repo_full_name || d.selectedRepository?.full_name || 'Unconfigured'}</p>
                 </div>
                 <div>
                   <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Last Commit</p>
-                  <p className="font-mono text-xs">{target?.last_commit_sha ? target.last_commit_sha.slice(0, 7) : <span className="text-muted-foreground">None</span>}</p>
+                  <p className="font-mono text-xs">{d.target?.last_commit_sha ? d.target.last_commit_sha.slice(0, 7) : <span className="text-muted-foreground">None</span>}</p>
                 </div>
                 <div>
                   <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pull Request</p>
-                  {target?.active_pr_url ? (
+                  {d.target?.active_pr_url ? (
                     <a
-                      href={target.active_pr_url}
+                      href={d.target.active_pr_url}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
                     >
                       <GitPullRequest className="h-3 w-3" />
-                      <span>#{target.active_pr_number}</span>
-                      {target.active_pr_status && (
-                        <Badge variant="outline" className={`text-[9px] ${PR_STATUS_COLORS[target.active_pr_status] ?? ''}`}>
-                          {target.active_pr_status}
+                      <span>#{d.target.active_pr_number}</span>
+                      {d.target.active_pr_status && (
+                        <Badge variant="outline" className={`text-[9px] ${PR_STATUS_COLORS[d.target.active_pr_status] ?? ''}`}>
+                          {d.target.active_pr_status}
                         </Badge>
                       )}
                     </a>

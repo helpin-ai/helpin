@@ -35,7 +35,6 @@ import type {
   AgentRun,
   AgentRunArtifact,
   AgentRuntimeKind,
-  AgentTriggerMode,
   CreateAgentRequest,
   UpdateAgentRequest,
 } from '@/lib/pmTypes';
@@ -221,7 +220,6 @@ interface AgentFormData {
   name: string;
   agent_class: AgentClass;
   runtime_kind: AgentRuntimeKind;
-  trigger_mode: AgentTriggerMode;
   backing_user_id: string;
   skills: string;
   provider: AgentModelProvider;
@@ -247,7 +245,6 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
     name: '',
     agent_class: agentClass,
     runtime_kind: ADVANCED_DEFAULT_RUNTIME[agentClass],
-    trigger_mode: defaultTriggerModeForClass(agentClass),
     backing_user_id: '',
     skills: '',
     provider: 'anthropic',
@@ -301,16 +298,12 @@ function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentF
     ...current,
     agent_class: nextClass,
     runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
-    trigger_mode: allowedTriggerModesForClass(nextClass).includes(current.trigger_mode)
-      ? current.trigger_mode
-      : defaultTriggerModeForClass(nextClass),
   };
 
   if (nextClass === 'human') {
     return {
       ...next,
       runtime_kind: ADVANCED_DEFAULT_RUNTIME[nextClass],
-      trigger_mode: 'manual',
       provider: 'anthropic',
       model: '',
       system_prompt: '',
@@ -326,7 +319,6 @@ function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentF
       backing_user_id: '',
       provider: 'anthropic',
       system_prompt: '',
-      trigger_mode: 'manual',
     };
   }
 
@@ -369,7 +361,6 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     name: form.name.trim(),
     agent_class: form.agent_class,
     backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : undefined,
-    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : undefined,
     provider: isLLMAgentClass(form.agent_class) ? form.provider : undefined,
     model: isLLMAgentClass(form.agent_class) ? form.model.trim() : undefined,
     planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
@@ -751,7 +742,6 @@ export function AgentsPage() {
       name: agent.name,
       agent_class: agent.agent_class,
       runtime_kind: agent.runtime_kind,
-      trigger_mode: agent.trigger_mode,
       backing_user_id: agent.backing_user_id ?? '',
       skills: agent.skills.join(', '),
       provider: agent.provider ?? 'anthropic',

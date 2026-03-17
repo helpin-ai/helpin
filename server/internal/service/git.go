@@ -494,6 +494,41 @@ func (s *GitService) CreateBranch(ctx context.Context, workspaceID, storyID stri
 	return link, nil
 }
 
+// MergeBranch merges the story's working branch into the target branch via GitHub API.
+func (s *GitService) MergeBranch(ctx context.Context, workspaceID, storyID, targetBranch string) error {
+	target, err := s.deliveryRepo.GetByStory(ctx, workspaceID, storyID)
+	if err != nil {
+		return fmt.Errorf("load delivery target: %w", err)
+	}
+	if target == nil || target.WorkingBranch == nil || *target.WorkingBranch == "" {
+		return fmt.Errorf("story has no working branch")
+	}
+	if target.IntegrationID == nil || *target.IntegrationID == "" {
+		return fmt.Errorf("story has no git integration")
+	}
+	if target.RepoFullName == nil || *target.RepoFullName == "" {
+		return fmt.Errorf("story has no repository configured")
+	}
+
+	integration, err := s.integrationRepo.GetByID(ctx, workspaceID, *target.IntegrationID)
+	if err != nil {
+		return fmt.Errorf("load git integration: %w", err)
+	}
+	if integration == nil || integration.InstallationID == nil {
+		return fmt.Errorf("git integration not found or has no installation ID")
+	}
+
+	// Parse owner/repo from full name (e.g., "org/repo")
+	parts := strings.SplitN(*target.RepoFullName, "/", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid repo full name: %s", *target.RepoFullName)
+	}
+	owner, repo := parts[0], parts[1]
+
+	commitMsg := fmt.Sprintf("Merge %s into %s", *target.WorkingBranch, targetBranch)
+	return s.githubApp.MergeBranch(ctx, *integration.InstallationID, owner, repo, targetBranch, *target.WorkingBranch, commitMsg)
+}
+
 // ProcessWebhookPush handles a push event from a git provider.
 func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, branch, commitSHA string) error {
 	link, err := s.linkRepo.GetByBranch(ctx, workspaceID, repo, branch)
