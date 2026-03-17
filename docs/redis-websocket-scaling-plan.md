@@ -586,8 +586,11 @@ wsPublisher = ws.NewPublisher(wsHub, redisRelay) // relay can be nil
 - **Temporal worker** (`cmd/temporal-worker/main.go` line 165): currently creates a local `wsPublisher` that cannot reach any Hub. Migrate to publish via Redis directly using a `RedisRelay.Publish()` call (no local Hub needed).
 - **Agent run repository** (`service/agent.go` line 237): currently uses `pg_notify('ws_events', ...)` for agent run updates. Replace with `wsPublisher.Publish()` which now goes through Redis.
 - **API server** (`cmd/api/main.go` line 338): stop starting `pgListener` goroutine.
-- Remove `pglistener.go` entirely.
-- Remove PostgreSQL LISTEN/NOTIFY dependency for WS events.
+- Delete `pglistener.go` (PG LISTEN → Hub bridge).
+- Delete `pg_publisher.go` (PGPublisher wrapping pg_notify for ws_events).
+- Delete `pg_session_streamer.go` (PGSessionStreamer wrapping pg_notify for planning_stream).
+- Remove all `pg_notify()` calls from the codebase (`repository/agent.go:237`).
+- Remove PostgreSQL LISTEN/NOTIFY dependency for WS events entirely.
 
 **Files to modify for PGListener retirement:**
 | File | Current pg_notify usage | Change |
@@ -849,10 +852,14 @@ Each phase is independently deployable and reversible.
 | `frontend/src/hooks/useWebSocket.ts` | Add 45s `support:ping` keepalive interval | 3 |
 | `packages/sdk-js/src/core/widget.ts` | Add 60s `ping` keepalive interval, cleanup on disconnect | 3 |
 
-### Deleted Files
-| File | Phase |
-|------|-------|
-| `server/internal/websocket/pglistener.go` | 4 |
+### Deleted Files (Phase 4)
+| File | Purpose being replaced |
+|------|----------------------|
+| `server/internal/websocket/pglistener.go` | PG LISTEN → Hub bridge — replaced by RedisRelay.Start() |
+| `server/internal/websocket/pg_publisher.go` | PGPublisher wrapping `pg_notify('ws_events', ...)` — replaced by RedisRelay.Publish() / RedisEventPublisher |
+| `server/internal/websocket/pg_session_streamer.go` | PGSessionStreamer wrapping `pg_notify('planning_stream', ...)` — replaced by RedisRelay.Publish() on a `planning_stream` channel |
+
+All three files are pg_notify-based cross-process bridges. Redis Pub/Sub replaces them entirely. No pg_notify calls should remain in the codebase after Phase 4.
 
 ---
 
