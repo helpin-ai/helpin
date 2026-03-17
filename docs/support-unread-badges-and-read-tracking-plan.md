@@ -128,12 +128,12 @@ For v1:
 
 Recommended v1 definition:
 
-`unread_count = count of non-internal messages created after agent_last_seen_at`
+`unread_count = count of inbound customer messages created after agent_last_seen_at`
 
 Notes:
 
 - Exclude internal notes from unread in the main inbox.
-- Include customer-visible messages only.
+- Exclude outbound agent/user/AI replies so agents do not create unread for themselves.
 - This makes the queue reflect customer work, not internal commentary.
 
 ### 6.2 Contact/Widget Unread
@@ -189,12 +189,26 @@ Do not compute support rail unread totals by summing only the visible page of co
 
 The conversation list endpoint is paginated, so totals must come from the server.
 
-Recommended list response metadata:
+Keep the existing paginated response fields for compatibility, and add unread aggregates under `meta`:
 
-- `meta.total`
 - `meta.unread.total`
 - `meta.unread.my_inbox`
 - `meta.unread.unassigned`
+
+Do not move `total`, `page`, `per_page`, or `total_pages` under `meta`; keep those at the top level of the existing `PaginatedResponse`.
+
+### 7.4 Widget Unread Requires Visitor-Scoped WS Fanout
+
+The current widget websocket routing is scoped to the selected conversation for `support_conversation` and `support_conversation_message` events.
+
+That means unread for inactive conversations cannot rely on the generic internal `entity/action` event stream alone.
+
+Recommended v1 rule:
+
+- keep widget message delivery on the current widget websocket
+- add widget-native unread fanout for the visitor conversation list
+- push an authoritative widget payload such as `conversations:listed` to all active widget sessions for the same visitor when unread-affecting state changes
+- do not make `widget-core` or `sdk-js` parse raw internal `entity/action` events
 
 ---
 
@@ -269,7 +283,7 @@ File:
 Add:
 
 - `MarkAgentRead(ctx, conversationID, userID string) error`
-- `MarkContactRead(ctx, conversationID string) error`
+- `MarkContactRead(ctx, conversationID, anonymousID string) error`
 
 Behavior:
 
@@ -296,6 +310,7 @@ SELECT COUNT(*)
 FROM support_messages
 WHERE support_messages.conversation_id = support_conversations.id
   AND support_messages.is_internal = false
+  AND support_messages.sender_type = 'customer'
   AND support_messages.created_at > COALESCE(support_conversations.agent_last_seen_at, to_timestamp(0))
 ```
 
@@ -348,7 +363,9 @@ Behavior:
 
 - validate workspace ownership/access
 - call the repository read methods
-- publish a WebSocket support conversation update/read event
+- publish websocket fanout after durable cursor updates
+- internal agent flow emits the existing raw workspace event shape used by `useRealtimeSync`
+- widget flow emits widget-native payload refreshes for the visitor conversation list
 
 ### 11.2 Reassignment Rule
 
@@ -361,34 +378,51 @@ When assigned agent changes:
 Ensure list responses include:
 
 - conversations with `unread_count`
-- metadata with aggregate unread totals
+- existing `PaginatedResponse` fields
+- `meta.unread` aggregate totals
 
 ---
 
-## 12. Handler and Router Plan
+## 12. WebSocket Handler Plan
 
 Files:
 
-- `server/internal/handler/support_inbox.go`
-- `server/internal/router/router.go`
+- `server/internal/websocket/handler.go`
+- `server/internal/websocket/widget_handler.go`
 
-### 12.1 Agent Read Endpoint
+### 12.1 Agent Read Message
 
 Add:
 
-- `POST /api/support/inbox/conversations/{id}/read`
+- `support:conversation:read`
 
 Handler responsibilities:
 
 - resolve workspace and actor
 - call `MarkConversationRead`
-- return success response
+- publish the standard `support_conversation updated` event with `data.reason = "read"`
 
-### 12.2 Permissions
+This should use the existing authenticated workspace websocket alongside the current `support:viewing:*` and `support:typing:*` messages.
+
+### 12.2 Widget Read Messages
+
+Add:
+
+- `conversation:read`
+
+Behavior:
+
+- `conversation:read` marks the specified conversation read for the current widget visitor
+- `conversation:select` should also call the same read path after session ownership is validated
+- after read, server should send refreshed widget payloads for that visitor over websocket
+
+### 12.3 Permissions and Ownership
 
 Use support read permission, not support edit permission.
 
 Reading a conversation should be enough to mark it read.
+
+For widget traffic, validate through the current session token and `anonymous_id` ownership checks rather than workspace auth middleware.
 
 ---
 
@@ -405,6 +439,7 @@ Use the current model:
 - agent clients fetch inbox over HTTP
 - server broadcasts support conversation updates and support message events over WS
 - frontend invalidates and refetches support queries on these events
+- agent read acknowledgements are sent over the existing workspace websocket as `support:conversation:read`
 
 For read fanout, publish a support conversation event after read updates.
 
@@ -418,7 +453,7 @@ This avoids introducing a parallel event family just for unread.
 
 ### 13.2 Widget WebSocket
 
-Widget is already bidirectional, so use WS for widget read acknowledgements.
+Widget should stay WS-first for unread.
 
 Add support for:
 
@@ -427,6 +462,13 @@ Add support for:
 Also auto-mark read on:
 
 - `conversation:select`
+
+Important implementation note:
+
+- widget unread fanout must use widget-native websocket payloads
+- do not assume `sdk-js` or `widget-core` consume raw internal `entity/action` events
+- push an authoritative visitor-scoped list refresh such as `conversations:listed` after unread-affecting changes
+- if a lighter incremental payload is introduced later, it can be added as a widget-specific event such as `conversation:updated`
 
 ### 13.3 Widget Payloads
 
@@ -439,10 +481,12 @@ to include `unread_count` on each conversation object.
 
 ### 13.4 Message Events
 
-When a new message is delivered:
+When unread-affecting state changes:
 
-- internal support clients should invalidate support conversation lists
-- widget clients should update conversation unread state in memory, but server truth remains authoritative
+- internal support clients should continue to receive raw workspace events and invalidate support queries
+- widget clients should receive `message:received` only for the active conversation stream
+- widget clients should receive an authoritative visitor-scoped list refresh such as `conversations:listed` for unread changes affecting any conversation
+- widget optimistic state is allowed for UX, but the server payload remains the source of truth
 
 ---
 
@@ -451,7 +495,6 @@ When a new message is delivered:
 Files:
 
 - `frontend/src/lib/pmTypes.ts`
-- `frontend/src/lib/services/supportService.ts`
 - `frontend/src/hooks/queries/useSupport.ts`
 - `frontend/src/hooks/queries/index.ts`
 - `frontend/src/components/support/ConversationList.tsx`
@@ -469,11 +512,13 @@ Extend `SupportConversation` with:
 - `contact_last_seen_at?: string`
 - `unread_count?: number`
 
-### 14.2 Service
+### 14.2 WebSocket Command
 
-Add:
+Use the existing workspace websocket send path from `useRealtimeSync` / `useSupportPresenceStore`:
 
-- `markConversationRead(workspaceId, conversationId)`
+- send `support:conversation:read`
+
+No new HTTP read endpoint is required for the primary flow.
 
 ### 14.3 Query Hook Shape
 
@@ -488,11 +533,11 @@ Needed because the UI requires:
 
 When a user selects a conversation:
 
-- call `markConversationRead`
+- send `support:conversation:read`
 
 If the selected conversation is already open and a new message arrives while the thread is visible:
 
-- mark it read again with a small debounce
+- send `support:conversation:read` again with a small debounce
 
 ### 14.5 Conversation Row Styling
 
@@ -547,6 +592,7 @@ Instead:
 - derive launcher unread count from the sum of `conversation.unreadCount`
 - hydrate unread from `session:joined`
 - hydrate unread from `conversations:listed`
+- use widget-native websocket refreshes as the authoritative unread source for inactive conversations
 
 ### 15.2 Widget Read Behavior
 
@@ -554,7 +600,7 @@ When the customer opens or selects a conversation:
 
 - send `conversation:read`
 - optimistically set that conversation's unread to `0`
-- keep server as source of truth on next payload refresh
+- keep server as source of truth on the next widget payload refresh
 
 ### 15.3 Widget List UI
 
@@ -572,10 +618,15 @@ In `widget.css`:
 On `message:received`:
 
 - if the message belongs to the active visible conversation, mark it read or keep unread at `0`
-- if it belongs to another conversation or the widget is closed, increment that conversation's `unreadCount`
+- do not assume this event arrives for inactive conversations
+
+For inactive conversations or background tabs:
+
+- rely on the authoritative widget list refresh payload sent over websocket
+- replace the affected conversation's `unreadCount`, preview, and timestamp from the server payload
 - recompute launcher unread as the sum across conversations
 
-This should be optimistic, but the server-correct count should win on the next authoritative conversation payload.
+This may still use light optimistic updates for the active conversation, but the server payload should win.
 
 ---
 
@@ -596,8 +647,11 @@ This should be optimistic, but the server-correct count should win on the next a
       "unread_count": 2
     }
   ],
+  "total": 48,
+  "page": 1,
+  "per_page": 50,
+  "total_pages": 1,
   "meta": {
-    "total": 48,
     "unread": {
       "total": 12,
       "my_inbox": 5,
@@ -607,10 +661,15 @@ This should be optimistic, but the server-correct count should win on the next a
 }
 ```
 
-### 16.2 Agent Read Request
+### 16.2 Agent Read WebSocket Message
 
-```http
-POST /api/support/inbox/conversations/{id}/read?workspace_id=...
+```json
+{
+  "type": "support:conversation:read",
+  "data": {
+    "conversation_id": "conv_123"
+  }
+}
 ```
 
 ### 16.3 Widget Session Joined Payload
@@ -647,6 +706,34 @@ POST /api/support/inbox/conversations/{id}/read?workspace_id=...
   "action": "updated",
   "data": {
     "reason": "read"
+  }
+}
+```
+
+### 16.5 Widget Authoritative List Refresh
+
+```json
+{
+  "type": "conversations:listed",
+  "data": {
+    "conversations": [
+      {
+        "id": "conv_123",
+        "subject": "Billing issue",
+        "status": "open",
+        "last_message": "We have refunded the charge.",
+        "updated_at": "2026-03-16T21:00:00Z",
+        "unread_count": 0
+      },
+      {
+        "id": "conv_456",
+        "subject": "Question about plan limits",
+        "status": "open",
+        "last_message": "Can you confirm the seat cap?",
+        "updated_at": "2026-03-16T21:05:00Z",
+        "unread_count": 1
+      }
+    ]
   }
 }
 ```
@@ -711,7 +798,9 @@ Add coverage for:
 - throttled no-op reads
 - assignment change clearing `assignee_last_seen_at`
 - list endpoint metadata totals
+- agent `support:conversation:read` websocket handling
 - widget `conversation:read`
+- widget visitor-scoped authoritative list refresh after unread changes
 
 Primary files:
 
@@ -734,7 +823,7 @@ Widget tests:
 - launcher badge reflects server unread
 - unread persists across reconnect / session restore
 - selecting a conversation clears only that conversation's unread
-- incoming agent message increments unread for inactive conversations
+- authoritative widget list refresh updates unread for inactive conversations
 
 Primary files:
 
@@ -754,7 +843,7 @@ Primary files:
 
 ### Phase 2
 
-- internal agent read endpoint
+- internal agent read websocket message
 - support inbox unread UI
 - support rail and filter badges
 
@@ -801,4 +890,3 @@ Remaining follow-up after unread is landed:
 - Assignee-specific unread counters (v2)
 - Per-agent read history table for audit/compliance
 - Unread state in push notifications / email digests
-
