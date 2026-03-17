@@ -52,6 +52,8 @@ interface ConversationRowProps {
 
 export const ConversationRow = memo(function ConversationRow({ conversation, isSelected, onSelect }: ConversationRowProps) {
   const displayName = conversation.customer_name || conversation.customer_email || 'Anonymous';
+  const unreadCount = conversation.unread_count ?? 0;
+  const isUnread = unreadCount > 0;
   const typingState = useSupportPresenceStore((s) => s.typingIndicators[conversation.id]);
   // typing state is string (including empty '') when typing, false/undefined when not
   const isCustomerTyping = typeof typingState === 'string';
@@ -72,14 +74,14 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
   const viewingAgentIds = isSelected && currentUserId && !remoteViewingIds.includes(currentUserId)
     ? [...remoteViewingIds, currentUserId]
     : remoteViewingIds;
-  const hasActivity = isCustomerTyping || isAgentTyping || viewingAgentIds.length > 0;
+  const hasActivity = isUnread || isCustomerTyping || isAgentTyping || viewingAgentIds.length > 0;
 
   return (
     <button
       type="button"
       onClick={onSelect}
       className={`w-full text-left border-b px-3 py-2.5 transition-colors hover:bg-muted/50 ${
-        isSelected ? 'bg-muted border-l-2 border-l-primary' : ''
+        isSelected ? 'bg-muted border-l-2 border-l-primary' : isUnread ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
       }`}
     >
       <div className="flex items-start gap-2.5">
@@ -93,11 +95,11 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-medium">{displayName}</span>
+            <span className={`truncate text-sm ${isUnread ? 'font-semibold' : 'font-medium'}`}>{displayName}</span>
             <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(conversation.updated_at)}</span>
           </div>
           <div className="mt-0.5 flex items-center gap-1.5">
-            <p className="min-w-0 flex-1 truncate text-sm text-foreground/80">
+            <p className={`min-w-0 flex-1 truncate text-sm ${isUnread ? 'font-medium text-foreground' : 'text-foreground/80'}`}>
               {isCustomerTyping ? (
                 <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
               ) : isAgentTyping ? (
@@ -128,12 +130,17 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
             {hasActivity && (
               <div className="flex shrink-0 items-center gap-1">
                 {(isCustomerTyping || isAgentTyping) && <TypingDotsPill />}
-                {agentTypingEntries
+                {isUnread && (
+                  <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+                {!isUnread && agentTypingEntries
                   .filter(([uid]) => !viewingAgentIds.includes(uid))
                   .map(([uid]) => (
                     <AgentAvatar key={uid} userId={uid} tooltip="responding" />
                   ))}
-                {viewingAgentIds.map((uid) => (
+                {!isUnread && viewingAgentIds.map((uid) => (
                   <AgentAvatar
                     key={uid}
                     userId={uid}

@@ -170,7 +170,6 @@ export class WidgetManager {
 
   show(): void {
     this.isOpen = true;
-    this.unreadCount = 0;
     if (!this.hasBeenOpened) {
       this.hasBeenOpened = true;
       // If there's an active conversation (restored session), resume it;
@@ -361,6 +360,16 @@ export class WidgetManager {
     }
   }
 
+  // ─── Unread Count ──────────────────────────────────────────
+
+  private syncUnreadCount(): void {
+    const total = this.conversations.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
+    if (total !== this.unreadCount) {
+      this.unreadCount = total;
+      this.triggerCallback('onUnreadCountChange', total);
+    }
+  }
+
   // ─── Message Handling ──────────────────────────────────────
 
   private resetActiveConversation(): void {
@@ -502,9 +511,17 @@ export class WidgetManager {
   private handleSelectConversation(conversationId: string): void {
     this.activeConversationId = conversationId;
 
-    // Request messages for this conversation via WS
+    // Request messages for this conversation via WS (also marks it read server-side)
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('conversation:select', { conversation_id: conversationId });
+    }
+
+    // Clear local unread count for this conversation immediately (optimistic)
+    const convIdx = this.conversations.findIndex(c => c.id === conversationId);
+    if (convIdx >= 0 && this.conversations[convIdx].unreadCount) {
+      const updated = { ...this.conversations[convIdx], unreadCount: 0 };
+      this.conversations = this.conversations.map((c, i) => i === convIdx ? updated : c);
+      this.syncUnreadCount();
     }
 
     // Clear current messages while loading
@@ -659,6 +676,7 @@ export class WidgetManager {
             status: c.status || 'open',
             lastMessage: c.last_message,
             lastMessageAt: c.updated_at || c.created_at,
+            unreadCount: c.unread_count ?? 0,
           }));
         }
 
@@ -684,6 +702,7 @@ export class WidgetManager {
         }
 
         this.connectionStatus = 'connected';
+        this.syncUnreadCount();
 
         // Start keepalive ping every 60s to refresh server-side visitor online keys.
         if (this.keepaliveTimer) {
@@ -767,22 +786,26 @@ export class WidgetManager {
           this.isTyping = false;
         }
 
-        if (!this.isOpen) {
-          this.unreadCount++;
-          this.triggerCallback('onUnreadCountChange', this.unreadCount);
-        }
-
-        // Update conversation in the list (lastMessage preview + move to top)
+        // Update conversation in the list (lastMessage preview + unread count + move to top)
         if (newMsg.conversationId) {
           const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
           if (convIdx >= 0) {
+            const prev = this.conversations[convIdx];
+            const isActiveAndOpen = this.isOpen && this.activeConversationId === newMsg.conversationId;
             const updated = {
-              ...this.conversations[convIdx],
+              ...prev,
               lastMessage: newMsg.content,
               lastMessageAt: newMsg.createdAt,
+              unreadCount: (msg.sender_type !== 'customer' && !isActiveAndOpen)
+                ? (prev.unreadCount ?? 0) + 1
+                : (prev.unreadCount ?? 0),
             };
             this.conversations = [updated, ...this.conversations.filter((_, i) => i !== convIdx)];
           }
+        }
+
+        if (!this.isOpen) {
+          this.syncUnreadCount();
         }
 
         this.triggerCallback('onMessageReceived', msg);
@@ -840,7 +863,9 @@ export class WidgetManager {
             status: c.status || 'open',
             lastMessage: c.last_message,
             lastMessageAt: c.updated_at || c.created_at,
+            unreadCount: c.unread_count ?? 0,
           }));
+          this.syncUnreadCount();
           this.render();
         }
         break;

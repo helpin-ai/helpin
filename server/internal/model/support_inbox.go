@@ -21,16 +21,41 @@ type SupportConversation struct {
 	Source          string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
 	AnonymousID     *string    `json:"anonymous_id" gorm:"index"`
 	CRMContactID    *string    `json:"crm_contact_id" gorm:"type:uuid;index"`
-	ResolvedAt      *time.Time `json:"resolved_at"`
-	ClosedAt        *time.Time `json:"closed_at"`
-	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt       time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ResolvedAt        *time.Time `json:"resolved_at"`
+	ClosedAt          *time.Time `json:"closed_at"`
+	TeamLastSeenAt    *time.Time `json:"team_last_seen_at" gorm:"type:timestamptz"`
+	ContactLastSeenAt *time.Time `json:"contact_last_seen_at" gorm:"type:timestamptz"`
+	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 
-	// Virtual field — populated by SELECT subquery, not stored as a column.
+	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage *string `json:"last_message,omitempty" gorm:"->"`
+	UnreadCount int     `json:"unread_count" gorm:"->"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }
+
+// UnreadStats holds aggregate unread conversation counts for sidebar badges.
+type UnreadStats struct {
+	Total      int `json:"total"`
+	MyInbox    int `json:"my_inbox"`
+	Unassigned int `json:"unassigned"`
+}
+
+// ConversationListMeta holds metadata returned alongside paginated conversation lists.
+type ConversationListMeta struct {
+	Unread UnreadStats `json:"unread"`
+}
+
+// ConversationListResponse is the paginated conversation list with unread metadata.
+type ConversationListResponse struct {
+	Data       []SupportConversation `json:"data"`
+	Total      int                   `json:"total"`
+	Page       int                   `json:"page"`
+	PerPage    int                   `json:"per_page"`
+	TotalPages int                   `json:"total_pages"`
+	Meta       ConversationListMeta  `json:"meta"`
+}
 
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {

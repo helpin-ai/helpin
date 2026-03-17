@@ -161,6 +161,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       } else {
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
+        // Invalidate unread stats on any non-presence conversation update (includes reason=read)
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
       }
     } else if (event.entity === 'support_visitor') {
       const store = useSupportPresenceStore.getState()
@@ -192,6 +194,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
             )
           },
         })
+        // New messages change unread counts
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
       }
     }
 

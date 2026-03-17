@@ -223,6 +223,8 @@ func (h *Hub) Broadcast(event Event) {
 		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:stop"})
 	case event.Entity == "support_widget" && event.Action == "config_updated" && len(event.Data) > 0:
 		widgetData, _ = json.Marshal(widgetMessage{Type: "config:updated", Data: event.Data})
+	case event.Entity == "support_visitor_conversations" && event.Action == "updated" && len(event.Data) > 0:
+		widgetData, _ = json.Marshal(widgetMessage{Type: "conversations:listed", Data: event.Data})
 	}
 
 	// Copy targets under read lock.
@@ -276,6 +278,11 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 	// Visitor online/offline events go to internal (agent) clients only
 	if event.Entity == "support_visitor" {
 		return !client.IsWidget
+	}
+
+	// Visitor-scoped conversation list refresh: deliver to all widget clients matching the visitor's AnonymousID
+	if event.Entity == "support_visitor_conversations" {
+		return client.IsWidget && client.AnonymousID == event.EntityID
 	}
 
 	// Widget config updates go to all widget clients in the workspace

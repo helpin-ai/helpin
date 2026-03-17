@@ -67,6 +67,124 @@ func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID
 	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination)
 }
 
+// ListConversationsWithMeta returns conversations plus aggregate unread stats.
+func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination) (*model.ConversationListResponse, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination)
+	if err != nil {
+		return nil, err
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+
+	stats, err := s.conversationRepo.GetUnreadStats(ctx, workspaceID, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get unread stats", "error", err, "workspace_id", workspaceID)
+		// Non-fatal: return conversations with zero stats
+	}
+
+	perPage := pagination.PerPage
+	if perPage <= 0 {
+		perPage = 50
+	}
+	page := pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+	totalPages := 0
+	if perPage > 0 {
+		totalPages = int((total + int64(perPage) - 1) / int64(perPage))
+	}
+
+	return &model.ConversationListResponse{
+		Data:       conversations,
+		Total:      int(total),
+		Page:       page,
+		PerPage:    perPage,
+		TotalPages: totalPages,
+		Meta: model.ConversationListMeta{
+			Unread: stats,
+		},
+	}, nil
+}
+
+// GetUnreadStats returns aggregate unread conversation counts for sidebar badges.
+func (s *SupportInboxService) GetUnreadStats(ctx context.Context, workspaceID, userID string) (model.UnreadStats, error) {
+	return s.conversationRepo.GetUnreadStats(ctx, workspaceID, userID)
+}
+
+// MarkConversationRead updates the team read cursor and broadcasts a read event.
+func (s *SupportInboxService) MarkConversationRead(ctx context.Context, workspaceID, conversationID, userID string) error {
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.MarkInternalRead(ctx, conversationID); err != nil {
+		return err
+	}
+
+	// Broadcast read event so other tabs/users can invalidate
+	reasonJSON, _ := json.Marshal(map[string]string{"reason": "read"})
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     userID,
+		Data:        reasonJSON,
+	})
+	return nil
+}
+
+// MarkConversationReadByVisitor updates the contact read cursor and broadcasts a list refresh.
+func (s *SupportInboxService) MarkConversationReadByVisitor(ctx context.Context, workspaceID, conversationID, anonymousID string) error {
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+	if conv.AnonymousID == nil || *conv.AnonymousID != anonymousID {
+		return fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.MarkContactRead(ctx, conversationID); err != nil {
+		return err
+	}
+
+	// Push authoritative conversations:listed refresh to all visitor widget sessions
+	s.pushVisitorConversationsRefresh(ctx, workspaceID, anonymousID)
+	return nil
+}
+
+// pushVisitorConversationsRefresh sends an updated conversation list to all widget sessions for a visitor.
+func (s *SupportInboxService) pushVisitorConversationsRefresh(ctx context.Context, workspaceID, anonymousID string) {
+	conversations, err := s.conversationRepo.ListByAnonymousID(ctx, workspaceID, anonymousID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to fetch visitor conversations for refresh", "error", err)
+		return
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	listJSON, _ := json.Marshal(map[string]any{"conversations": conversations})
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_visitor_conversations",
+		EntityID:    anonymousID,
+		WorkspaceID: workspaceID,
+		Data:        listJSON,
+	})
+}
+
 // GetConversation returns a single conversation.
 func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, id string) (*model.SupportConversation, error) {
 	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, id)
@@ -246,6 +364,14 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		ParentID:    ticketID,
 		Data:        hydratedJSON,
 	})
+
+	// Push visitor-scoped list refresh for widget unread when an agent/user/AI reply is sent.
+	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" {
+		conv, _ := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
+		if conv != nil && conv.AnonymousID != nil && *conv.AnonymousID != "" {
+			s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+		}
+	}
 
 	return msg, nil
 }

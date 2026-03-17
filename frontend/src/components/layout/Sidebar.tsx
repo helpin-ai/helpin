@@ -58,6 +58,7 @@ import { SpaceDialog } from '@/components/docs/SpaceDialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useUnreadStats } from '@/hooks/queries/useSupport';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -106,6 +107,7 @@ type RailItem = {
   label: string;
   icon: LucideIcon;
   defaultLink: string;
+  badge?: number;
 };
 
 function deriveActiveRail(pathname: string): RailId {
@@ -435,6 +437,7 @@ export function Sidebar() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { isAdmin, canManageSettings } = usePermissions(access);
   const { navFilter, setNavFilter, statusFilter, setStatusFilter } = useSupportInboxStore();
+  const { data: unreadStats } = useUnreadStats(workspaceId ?? '');
 
   const { teams: allTeams } = useWorkspaceTeams(workspaceId);
   const myTeamMemberships = access?.team_memberships ?? [];
@@ -532,7 +535,7 @@ export function Sidebar() {
   const railItems: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
-    { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support` },
+    { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support`, badge: unreadStats?.total || undefined },
     { id: 'agents', label: 'Agents', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agents` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
@@ -705,7 +708,14 @@ export function Sidebar() {
                         : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
                     }`}
                   >
-                    <item.icon className="h-3.5 w-3.5" />
+                    <div className="relative">
+                      <item.icon className="h-3.5 w-3.5" />
+                      {!!item.badge && (
+                        <span className="absolute -top-1 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-blue-600 px-0.5 text-[9px] font-bold leading-none text-white">
+                          {item.badge > 99 ? '99+' : item.badge}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[10px] leading-none">{item.label}</span>
                   </button>
               ))}
@@ -890,9 +900,9 @@ export function Sidebar() {
                   </SidebarGroupLabel>
                   <SidebarMenu>
                     {([
-                      { key: 'my_inbox' as const, label: 'My Inbox', icon: User },
-                      { key: 'all' as const, label: 'All Conversations', icon: Mail },
-                      { key: 'unassigned' as const, label: 'Unassigned', icon: UserX },
+                      { key: 'my_inbox' as const, label: 'My Inbox', icon: User, badge: unreadStats?.my_inbox },
+                      { key: 'all' as const, label: 'All Conversations', icon: Mail, badge: unreadStats?.total },
+                      { key: 'unassigned' as const, label: 'Unassigned', icon: UserX, badge: unreadStats?.unassigned },
                     ] as const).map((item) => (
                       <SidebarMenuItem key={item.key}>
                         <SidebarMenuButton
@@ -901,7 +911,12 @@ export function Sidebar() {
                           onClick={() => setNavFilter(item.key)}
                         >
                           <item.icon />
-                          <span>{item.label}</span>
+                          <span className="flex-1">{item.label}</span>
+                          {item.badge != null && item.badge > 0 && (
+                            <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
+                              {item.badge > 99 ? '99+' : item.badge}
+                            </span>
+                          )}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}

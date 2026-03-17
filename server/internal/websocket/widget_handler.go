@@ -25,6 +25,7 @@ type WidgetService interface {
 	RevokeWidgetSession(ctx context.Context, sessionToken string) error
 	ClearSessionConversation(ctx context.Context, sessionToken string) error
 	SetSessionConversation(ctx context.Context, sessionToken, conversationID string) error
+	MarkConversationReadByVisitor(ctx context.Context, workspaceID, conversationID, anonymousID string) error
 }
 
 // WidgetHandler upgrades HTTP connections to WebSocket for widget clients.
@@ -494,6 +495,17 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 			SendToClient(conn, "pong", nil)
 
+		case "conversation:read":
+			typed, err := unmarshalWidgetData[model.WidgetConversationSelectData](msg.Data)
+			if err != nil || typed.ConversationID == "" {
+				continue
+			}
+			if session.AnonymousID != "" {
+				if err := h.service.MarkConversationReadByVisitor(ctx, session.WorkspaceID, typed.ConversationID, session.AnonymousID); err != nil {
+					slog.Error("widget ws: mark read failed", "error", err, "conversation_id", typed.ConversationID)
+				}
+			}
+
 		case "conversation:select":
 			typed, err := unmarshalWidgetData[model.WidgetConversationSelectData](msg.Data)
 			if err != nil {
@@ -513,6 +525,13 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			session.ConversationID = &convID
 			client.ConversationID = &convID
 			h.hub.SetWidgetConversation(client.UserID, convID)
+
+			// Mark selected conversation as read for the visitor
+			if session.AnonymousID != "" {
+				if err := h.service.MarkConversationReadByVisitor(ctx, session.WorkspaceID, convID, session.AnonymousID); err != nil {
+					slog.Error("widget ws: mark read on select failed", "error", err, "conversation_id", convID)
+				}
+			}
 
 			// Load and send messages for the selected conversation
 			msgs, err := h.service.ListConversationMessages(ctx, session.WorkspaceID, convID, false)

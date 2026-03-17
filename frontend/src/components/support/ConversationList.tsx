@@ -1,9 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { MessageSquare, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useConversations } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { supportService } from '@/lib/services/supportService';
 import { ConversationRow } from './ConversationRow';
 import type { SupportConversation } from '@/lib/pmTypes';
 
@@ -19,9 +21,21 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     selectedConversationId, selectConversation,
     navFilter,
   } = useSupportInboxStore();
+  const wsSend = useSupportPresenceStore((s) => s.wsSend);
+
+  const handleSelect = useCallback((id: string) => {
+    selectConversation(id);
+    if (wsSend) {
+      wsSend('support:conversation:read', { conversation_id: id });
+    } else {
+      // HTTP fallback when WS is disconnected
+      supportService.markConversationRead(workspaceId, id).catch(() => {});
+    }
+  }, [selectConversation, wsSend, workspaceId]);
 
   const filters = statusFilter !== 'all' ? { status: statusFilter } : undefined;
-  const { data: conversations = [], isLoading, error } = useConversations(workspaceId, filters);
+  const { data: response, isLoading, error } = useConversations(workspaceId, filters);
+  const conversations = response?.data ?? [];
 
   const filteredConversations = useMemo(() => {
     let result: SupportConversation[] = conversations;
@@ -82,7 +96,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
             key={conversation.id}
             conversation={conversation}
             isSelected={selectedConversationId === conversation.id}
-            onSelect={() => selectConversation(conversation.id)}
+            onSelect={() => handleSelect(conversation.id)}
           />
         ))}
       </ScrollArea>

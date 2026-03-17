@@ -35,7 +35,7 @@ export interface WidgetAdapter {
 
   sendMessage(content: string, attachments?: File[]): Promise<void>;
   startConversation(customer: CustomerInfo): Promise<string>;
-  markAsRead(messageId: string): void;
+  markConversationAsRead(conversationId: string): void;
   sendTypingIndicator(isTyping: boolean): void;
 
   getConfig(): WidgetConfig;
