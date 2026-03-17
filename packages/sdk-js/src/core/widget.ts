@@ -379,7 +379,7 @@ export class WidgetManager {
 
   private handleTyping(content: string): void {
     if (!this.sessionToken) {
-      console.debug('[helpin] typing skipped — no session token');
+      if (import.meta.env.DEV) console.debug('[helpin] typing skipped — no session token');
       return;
     }
 
@@ -391,11 +391,11 @@ export class WidgetManager {
       this.isSendingTyping = true;
       this.lastTypingSentAt = now;
       if (this.wsConnection?.readyState === WebSocket.OPEN) {
-        console.debug('[helpin] sending typing:start via WS, conversationId:', this.activeConversationId);
+        if (import.meta.env.DEV) console.debug('[helpin] sending typing:start via WS, conversationId:', this.activeConversationId);
         this.wsSend('typing:start', { content });
       } else if (!wasTyping) {
         // Only send HTTP fallback on the initial typing:start (no content preview over HTTP)
-        console.debug('[helpin] sending typing:start via HTTP fallback');
+        if (import.meta.env.DEV) console.debug('[helpin] sending typing:start via HTTP fallback');
         void this.sendTypingHTTP(true);
       }
     }

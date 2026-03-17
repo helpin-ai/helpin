@@ -161,6 +161,214 @@ func TestShouldReceive_WidgetClient_TypingOnlyFromAgentsInSameConversation(t *te
 	}
 }
 
+func TestShouldReceive_ViewingStarted_InternalClient_SelfFiltered(t *testing.T) {
+	hub := NewHub()
+	client := &Client{UserID: "user-1", WorkspaceID: "ws-1", IsWidget: false}
+
+	// Self-viewing should be filtered
+	selfViewing := Event{
+		Action:      "viewing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-1",
+	}
+	if hub.shouldReceive(client, selfViewing) {
+		t.Error("internal client should NOT receive own viewing_started events")
+	}
+}
+
+func TestShouldReceive_ViewingStarted_InternalClient_OtherAgentAllowed(t *testing.T) {
+	hub := NewHub()
+	client := &Client{UserID: "user-1", WorkspaceID: "ws-1", IsWidget: false}
+
+	// Other agent viewing should be allowed
+	otherViewing := Event{
+		Action:      "viewing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-2",
+	}
+	if !hub.shouldReceive(client, otherViewing) {
+		t.Error("internal client should receive other agent's viewing_started events")
+	}
+}
+
+func TestShouldReceive_ViewingStopped_InternalClient(t *testing.T) {
+	hub := NewHub()
+	client := &Client{UserID: "user-1", WorkspaceID: "ws-1", IsWidget: false}
+
+	// Self viewing_stopped should be filtered
+	selfStop := Event{
+		Action:      "viewing_stopped",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-1",
+	}
+	if hub.shouldReceive(client, selfStop) {
+		t.Error("internal client should NOT receive own viewing_stopped events")
+	}
+
+	// Other agent viewing_stopped should be received
+	otherStop := Event{
+		Action:      "viewing_stopped",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-2",
+	}
+	if !hub.shouldReceive(client, otherStop) {
+		t.Error("internal client should receive other agent's viewing_stopped events")
+	}
+}
+
+func TestShouldReceive_ViewingEvents_WidgetClientFiltered(t *testing.T) {
+	hub := NewHub()
+	convID := "conv-1"
+	client := &Client{UserID: "widget:sess-1", WorkspaceID: "ws-1", IsWidget: true, ConversationID: &convID}
+
+	// Widget clients should NOT receive viewing events (they don't need them)
+	agentViewing := Event{
+		Action:      "viewing_started",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-2",
+	}
+	if hub.shouldReceive(client, agentViewing) {
+		t.Error("widget client should NOT receive viewing_started events")
+	}
+
+	viewingStopped := Event{
+		Action:      "viewing_stopped",
+		Entity:      "support_conversation",
+		EntityID:    "conv-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-2",
+	}
+	if hub.shouldReceive(client, viewingStopped) {
+		t.Error("widget client should NOT receive viewing_stopped events")
+	}
+}
+
+func TestShouldReceive_WidgetClient_DoesNotEchoOwnMessages(t *testing.T) {
+	hub := NewHub()
+	convID := "conv-1"
+	client := &Client{UserID: "widget:sess-1", WorkspaceID: "ws-1", IsWidget: true, ConversationID: &convID}
+
+	// Widget should not echo own messages back
+	ownMessage := Event{
+		Entity:      "support_conversation_message",
+		Action:      "created",
+		EntityID:    "msg-1",
+		WorkspaceID: "ws-1",
+		ActorID:     "widget:sess-1",
+		ParentType:  "support_conversation",
+		ParentID:    "conv-1",
+	}
+	if hub.shouldReceive(client, ownMessage) {
+		t.Error("widget client should NOT echo its own messages")
+	}
+
+	// But should receive messages from agents
+	agentMessage := Event{
+		Entity:      "support_conversation_message",
+		Action:      "created",
+		EntityID:    "msg-2",
+		WorkspaceID: "ws-1",
+		ActorID:     "user-1",
+		ParentType:  "support_conversation",
+		ParentID:    "conv-1",
+	}
+	if !hub.shouldReceive(client, agentMessage) {
+		t.Error("widget client should receive agent messages for its conversation")
+	}
+}
+
+func TestShouldReceive_VisitorOnlineEvents_OnlyInternalClients(t *testing.T) {
+	hub := NewHub()
+	agentClient := &Client{UserID: "user-1", WorkspaceID: "ws-1", IsWidget: false}
+	convID := "conv-1"
+	widgetClient := &Client{UserID: "widget:sess-1", WorkspaceID: "ws-1", IsWidget: true, ConversationID: &convID}
+
+	visitorOnline := Event{
+		Action:      "visitor_online",
+		Entity:      "support_visitor",
+		EntityID:    "anon-123",
+		WorkspaceID: "ws-1",
+	}
+
+	if !hub.shouldReceive(agentClient, visitorOnline) {
+		t.Error("internal client should receive visitor_online events")
+	}
+
+	if hub.shouldReceive(widgetClient, visitorOnline) {
+		t.Error("widget client should NOT receive visitor_online events")
+	}
+
+	visitorOffline := Event{
+		Action:      "visitor_offline",
+		Entity:      "support_visitor",
+		EntityID:    "anon-123",
+		WorkspaceID: "ws-1",
+	}
+
+	if !hub.shouldReceive(agentClient, visitorOffline) {
+		t.Error("internal client should receive visitor_offline events")
+	}
+
+	if hub.shouldReceive(widgetClient, visitorOffline) {
+		t.Error("widget client should NOT receive visitor_offline events")
+	}
+}
+
+func TestVisitorOnlineTracking(t *testing.T) {
+	hub := NewHub()
+
+	// Initially no visitors online
+	if hub.IsVisitorOnline("ws-1", "anon-1") {
+		t.Error("visitor should not be online initially")
+	}
+	visitors := hub.GetOnlineVisitors("ws-1")
+	if len(visitors) != 0 {
+		t.Errorf("expected 0 visitors, got %d", len(visitors))
+	}
+
+	// Set visitor online
+	hub.SetVisitorOnline("ws-1", "anon-1")
+	if !hub.IsVisitorOnline("ws-1", "anon-1") {
+		t.Error("visitor should be online after SetVisitorOnline")
+	}
+	visitors = hub.GetOnlineVisitors("ws-1")
+	if len(visitors) != 1 || visitors[0] != "anon-1" {
+		t.Errorf("expected [anon-1], got %v", visitors)
+	}
+
+	// Multiple connections from same visitor
+	hub.SetVisitorOnline("ws-1", "anon-1")
+	if !hub.IsVisitorOnline("ws-1", "anon-1") {
+		t.Error("visitor should still be online with 2 connections")
+	}
+
+	// Disconnect one — still online
+	hub.SetVisitorOffline("ws-1", "anon-1")
+	if !hub.IsVisitorOnline("ws-1", "anon-1") {
+		t.Error("visitor should still be online with 1 remaining connection")
+	}
+
+	// Disconnect last — offline
+	hub.SetVisitorOffline("ws-1", "anon-1")
+	if hub.IsVisitorOnline("ws-1", "anon-1") {
+		t.Error("visitor should be offline after all connections closed")
+	}
+	visitors = hub.GetOnlineVisitors("ws-1")
+	if len(visitors) != 0 {
+		t.Errorf("expected 0 visitors after all disconnected, got %d", len(visitors))
+	}
+}
+
 func TestSetWidgetConversation(t *testing.T) {
 	hub := NewHub()
 	client := &Client{UserID: "widget:sess-1", WorkspaceID: "ws-1", IsWidget: true, ConversationID: nil}

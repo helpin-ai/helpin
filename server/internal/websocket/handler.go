@@ -97,6 +97,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		conn.Close(websocket.StatusNormalClosure, "closed")
 	}()
 
+	// Send current online visitors as initial snapshot
+	visitors := h.hub.GetOnlineVisitors(workspaceID)
+	if len(visitors) > 0 {
+		data, _ := json.Marshal(map[string]any{"visitors": visitors})
+		SendToClient(conn, "support:online_visitors", json.RawMessage(data))
+	}
+
 	// Read loop: process client messages for session subscriptions and support presence/typing.
 	for {
 		_, data, err := conn.Read(r.Context())

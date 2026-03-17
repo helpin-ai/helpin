@@ -2,12 +2,10 @@ import { useMemo, useState } from 'react';
 import { automationRuleService } from '@/lib/services/automationRuleService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import type { Agent, AutomationRule, WorkflowState } from '@/lib/pmTypes';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Bot, ChevronRight, GitBranch, X } from 'lucide-react';
-import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 export function PipelineBuilder({

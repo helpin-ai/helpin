@@ -122,7 +122,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/session", h.SupportInboxWidget.CreateSession)
 		r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 		r.Post("/messages", h.SupportInboxWidget.SendMessage)
-		r.Post("/typing", h.SupportInboxWidget.TypingIndicator)
+		r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 		r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
 	})
@@ -179,7 +179,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
 			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
-			r.Post("/typing", h.SupportInboxWidget.TypingIndicator)
+			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 		})
 
@@ -209,7 +209,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
 			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
-			r.Post("/typing", h.SupportInboxWidget.TypingIndicator)
+			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 			r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
 		})
@@ -424,10 +424,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/canned-responses/{id}", h.SupportInbox.UpdateCannedResponse)
 				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/canned-responses/{id}", h.SupportInbox.DeleteCannedResponse)
 
-				// Typing indicators
+				// Typing indicators — Deprecated: use WebSocket support:typing:start/stop instead. Kept as HTTP fallback.
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/typing", h.SupportInbox.TypingIndicator)
 
-				// Viewing presence
+				// Viewing presence — Deprecated: use WebSocket support:viewing:start/stop instead. Kept as HTTP fallback.
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/viewing", h.SupportInbox.ViewingPresence)
 			})
 

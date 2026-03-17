@@ -31,6 +31,7 @@ type Client struct {
 	WorkspaceID    string
 	IsWidget       bool    // true for widget clients, false for internal (agent) clients
 	ConversationID *string // set for widget clients, scopes which events they receive
+	AnonymousID    string  // set for widget clients, used for visitor online tracking
 }
 
 // Hub manages all active WebSocket clients grouped by workspace.
@@ -40,15 +41,67 @@ type Hub struct {
 	sessionSubsMu    sync.RWMutex
 	sessionSubs      map[string]map[*Client]struct{} // sessionID -> set of clients subscribed to stream
 	Presence         *PresenceState
+	onlineVisitors   map[string]map[string]int // workspaceID → anonymousID → connection count
 }
 
 // NewHub creates an empty hub.
 func NewHub() *Hub {
 	return &Hub{
-		clients:     make(map[string]map[*Client]struct{}),
-		sessionSubs: make(map[string]map[*Client]struct{}),
-		Presence:    NewPresenceState(),
+		clients:        make(map[string]map[*Client]struct{}),
+		sessionSubs:    make(map[string]map[*Client]struct{}),
+		Presence:       NewPresenceState(),
+		onlineVisitors: make(map[string]map[string]int),
 	}
+}
+
+// SetVisitorOnline increments the connection count for a visitor.
+func (h *Hub) SetVisitorOnline(workspaceID, anonymousID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.onlineVisitors[workspaceID] == nil {
+		h.onlineVisitors[workspaceID] = make(map[string]int)
+	}
+	h.onlineVisitors[workspaceID][anonymousID]++
+}
+
+// SetVisitorOffline decrements the connection count for a visitor. Removes entry at 0.
+func (h *Hub) SetVisitorOffline(workspaceID, anonymousID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if ws, ok := h.onlineVisitors[workspaceID]; ok {
+		ws[anonymousID]--
+		if ws[anonymousID] <= 0 {
+			delete(ws, anonymousID)
+		}
+		if len(ws) == 0 {
+			delete(h.onlineVisitors, workspaceID)
+		}
+	}
+}
+
+// IsVisitorOnline returns true if the visitor has at least one active connection.
+func (h *Hub) IsVisitorOnline(workspaceID, anonymousID string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if ws, ok := h.onlineVisitors[workspaceID]; ok {
+		return ws[anonymousID] > 0
+	}
+	return false
+}
+
+// GetOnlineVisitors returns the list of online anonymous_ids for a workspace.
+func (h *Hub) GetOnlineVisitors(workspaceID string) []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ws, ok := h.onlineVisitors[workspaceID]
+	if !ok {
+		return nil
+	}
+	visitors := make([]string, 0, len(ws))
+	for id := range ws {
+		visitors = append(visitors, id)
+	}
+	return visitors
 }
 
 // Register adds a client to the hub.
@@ -175,6 +228,11 @@ func (h *Hub) Broadcast(event Event) {
 // Widget clients only receive their own conversation's events, and only
 // agent-origin typing indicators.
 func (h *Hub) shouldReceive(client *Client, event Event) bool {
+	// Visitor online/offline events go to internal (agent) clients only
+	if event.Entity == "support_visitor" {
+		return !client.IsWidget
+	}
+
 	if event.Entity == "support_conversation" && (isTypingEvent(event.Action) || isViewingEvent(event.Action)) {
 		if client.IsWidget {
 			// Widget clients only get agent-origin typing for their conversation

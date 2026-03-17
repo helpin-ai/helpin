@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Bot, StickyNote, User } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
@@ -24,7 +25,7 @@ interface MessageBubbleProps {
   source?: TicketSource;
 }
 
-export function MessageBubble({ message, isConsecutive, isLastInGroup = true, source }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const isCustomer = message.sender_type === 'customer';
   const isAgent = message.sender_type === 'agent';
@@ -132,4 +133,4 @@ export function MessageBubble({ message, isConsecutive, isLastInGroup = true, so
       )}
     </div>
   );
-}
+});

@@ -18,7 +18,7 @@ import {
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
-import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
 import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS } from './constants';
 import { getDayLabel, isSameDay, getInitial } from './helpers';
@@ -32,7 +32,7 @@ interface MessageThreadProps {
 }
 
 function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
-  const typingState = useSupportInboxStore(
+  const typingState = useSupportPresenceStore(
     (s) => (conversationId ? s.typingIndicators[conversationId] : false)
   );
   if (typingState === false || typingState === undefined) return null;
@@ -62,7 +62,7 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
 }
 
 function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: string | null; workspaceId: string }) {
-  const agentTypingMap = useSupportInboxStore(
+  const agentTypingMap = useSupportPresenceStore(
     (s) => (conversationId ? s.agentTyping[conversationId] : undefined)
   );
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
@@ -146,14 +146,15 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   }, [loadAgentRuns]);
 
   // Broadcast viewing presence via WebSocket (server tracks state, cleans up on disconnect)
-  const wsSend = useSupportInboxStore((s) => s.wsSend);
+  const wsSend = useSupportPresenceStore((s) => s.wsSend);
+  const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
   useEffect(() => {
-    if (!conversationId || !wsSend) return;
+    if (!conversationId || !wsSend || !wsConnected) return;
     wsSend('support:viewing:start', { conversation_id: conversationId });
     return () => {
       wsSend('support:viewing:stop', { conversation_id: conversationId });
     };
-  }, [conversationId, wsSend]);
+  }, [conversationId, wsSend, wsConnected]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
