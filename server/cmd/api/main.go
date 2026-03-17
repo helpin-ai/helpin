@@ -381,11 +381,6 @@ func main() {
 	wsPublisher := ws.NewPublisher(wsHub, redisRelay)
 	wsHandler := ws.NewHandler(wsHub, jwtManager)
 
-	// Start PG LISTEN → WS bridge for cross-process events (e.g. Temporal worker).
-	pgListenerCtx, pgListenerCancel := context.WithCancel(context.Background())
-	pgListener := ws.NewPGListener(cfg.DatabaseURL, wsHub)
-	go pgListener.Start(pgListenerCtx)
-
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
@@ -419,6 +414,7 @@ func main() {
 	planningSessionRepo := repository.NewPlanningSessionRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
+	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
@@ -890,7 +886,6 @@ func main() {
 
 	<-done
 	slog.Info("server shutting down")
-	pgListenerCancel()
 	close(automationDone)
 	close(digestDone)
 	close(cleanupDone)

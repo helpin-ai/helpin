@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"gorm.io/gorm"
@@ -66,14 +65,28 @@ func (r *AgentRepository) Delete(ctx context.Context, workspaceID, id string) er
 	return nil
 }
 
+// AgentRunNotifier publishes agent run events to WebSocket clients.
+// This abstracts the cross-process notification mechanism so the repository
+// does not depend on a specific transport (pg_notify, Redis, etc.).
+type AgentRunNotifier interface {
+	PublishRunEvent(ctx context.Context, run *model.AgentRun)
+}
+
 // AgentRunRepository handles DB operations for agent runs.
 type AgentRunRepository struct {
-	db *gorm.DB
+	db       *gorm.DB
+	notifier AgentRunNotifier // optional, set via SetNotifier
 }
 
 // NewAgentRunRepository creates a new AgentRunRepository.
 func NewAgentRunRepository(db *gorm.DB) *AgentRunRepository {
 	return &AgentRunRepository{db: db}
+}
+
+// SetNotifier sets the event notifier used by Notify(). This breaks a
+// circular dependency: the repository is created before the publisher exists.
+func (r *AgentRunRepository) SetNotifier(n AgentRunNotifier) {
+	r.notifier = n
 }
 
 // ListByAgent returns runs for an agent with pagination.
@@ -234,15 +247,15 @@ func (r *AgentRunRepository) AddTokens(ctx context.Context, workspaceID, runID s
 	return nil
 }
 
-// Notify sends a pg_notify event so the API server's PGListener can broadcast
-// the run status change over WebSocket. This bridges the Temporal worker process
-// (which has no WS clients) to the API server's WebSocket hub.
+// Notify publishes an agent_run updated event so WebSocket clients see
+// the run status change in real time. When a notifier is configured
+// (via SetNotifier), the event is published through it (Redis Pub/Sub
+// in production). Safe to call when no notifier is set — it is a no-op.
 func (r *AgentRunRepository) Notify(ctx context.Context, run *model.AgentRun) {
-	payload := fmt.Sprintf(`{"entity":"agent_run","entity_id":"%s","workspace_id":"%s","action":"updated","parent_type":"%s","parent_id":"%s"}`,
-		run.ID, run.WorkspaceID, run.TargetType, run.TargetID)
-	if err := r.db.WithContext(ctx).Exec("SELECT pg_notify('ws_events', ?)", payload).Error; err != nil {
-		slog.ErrorContext(ctx, "pg_notify failed", "error", err, "run_id", run.ID)
+	if r.notifier == nil {
+		return
 	}
+	r.notifier.PublishRunEvent(ctx, run)
 }
 
 // AgentRunArtifactRepository handles DB operations for run artifacts.
