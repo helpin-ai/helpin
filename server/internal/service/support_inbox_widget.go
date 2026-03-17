@@ -329,7 +329,7 @@ func (s *SupportInboxService) GetPublicWidgetConfig(ctx context.Context, widgetK
 	if inst == nil {
 		return nil, fmt.Errorf("widget not found")
 	}
-	return s.buildWidgetConfigResponse(inst), nil
+	return s.buildWidgetConfigResponse(ctx, inst)
 }
 
 // GetPublicWidgetConfigByID returns the public-facing widget config by installation ID.
@@ -341,12 +341,12 @@ func (s *SupportInboxService) GetPublicWidgetConfigByID(ctx context.Context, id 
 	if inst == nil {
 		return nil, fmt.Errorf("widget not found")
 	}
-	return s.buildWidgetConfigResponse(inst), nil
+	return s.buildWidgetConfigResponse(ctx, inst)
 }
 
 // buildWidgetConfigResponse maps installation settings to the nested WidgetConfig
 // shape expected by the widget-core TypeScript interface.
-func (s *SupportInboxService) buildWidgetConfigResponse(inst *model.SupportWidgetInstallation) *model.WidgetConfigResponse {
+func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, inst *model.SupportWidgetInstallation) (*model.WidgetConfigResponse, error) {
 	settings := parseSettings(inst.Settings)
 
 	position := settings.LauncherPosition
@@ -359,6 +359,11 @@ func (s *SupportInboxService) buildWidgetConfigResponse(inst *model.SupportWidge
 	primaryColor := settings.BrandColor
 	if primaryColor == "" {
 		primaryColor = "#6366f1"
+	}
+
+	helpSpaces, err := s.resolveWidgetHelpSpaces(ctx, inst.WorkspaceID, settings.WidgetHelpSpaceIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	return &model.WidgetConfigResponse{
@@ -381,7 +386,175 @@ func (s *SupportInboxService) buildWidgetConfigResponse(inst *model.SupportWidge
 			PreChatForm: settings.RequireEmailBeforeChat,
 			CSATRating:  settings.CSATEnabled,
 		},
+		HelpSpaces: helpSpaces,
+	}, nil
+}
+
+func (s *SupportInboxService) resolveWidgetHelpSpaces(ctx context.Context, workspaceID string, configuredIDs []string) ([]model.WidgetHelpSpace, error) {
+	if len(configuredIDs) == 0 {
+		return []model.WidgetHelpSpace{}, nil
 	}
+	if s.docsSpaceRepo == nil {
+		return nil, fmt.Errorf("docs spaces repository not configured")
+	}
+
+	spaces, err := s.docsSpaceRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	byID := make(map[string]model.DocsSpace, len(spaces))
+	for _, space := range spaces {
+		if space.Type == model.SpaceTypeExternalCapable {
+			byID[space.ID] = space
+		}
+	}
+
+	result := make([]model.WidgetHelpSpace, 0, len(configuredIDs))
+	seen := make(map[string]struct{}, len(configuredIDs))
+	for _, id := range configuredIDs {
+		if _, alreadySeen := seen[id]; alreadySeen {
+			continue
+		}
+		space, ok := byID[id]
+		if !ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, model.WidgetHelpSpace{
+			ID:   space.ID,
+			Name: space.Name,
+			Slug: space.Slug,
+			Icon: space.Icon,
+		})
+	}
+
+	return result, nil
+}
+
+func (s *SupportInboxService) getAllowedWidgetHelpSpaces(ctx context.Context, widgetKey string) (*model.SupportWidgetInstallation, []model.WidgetHelpSpace, error) {
+	inst, err := s.installationRepo.GetByWidgetKey(ctx, widgetKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if inst == nil {
+		return nil, nil, fmt.Errorf("widget not found")
+	}
+
+	settings := parseSettings(inst.Settings)
+	spaces, err := s.resolveWidgetHelpSpaces(ctx, inst.WorkspaceID, settings.WidgetHelpSpaceIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return inst, spaces, nil
+}
+
+func findWidgetHelpSpaceBySlug(spaces []model.WidgetHelpSpace, slug string) *model.WidgetHelpSpace {
+	for i := range spaces {
+		if spaces[i].Slug == slug {
+			return &spaces[i]
+		}
+	}
+	return nil
+}
+
+func widgetHelpSpaceIDs(spaces []model.WidgetHelpSpace) []string {
+	ids := make([]string, 0, len(spaces))
+	for _, space := range spaces {
+		ids = append(ids, space.ID)
+	}
+	return ids
+}
+
+// ListWidgetHelpCollections returns widget-visible collections for a selected space.
+func (s *SupportInboxService) ListWidgetHelpCollections(ctx context.Context, widgetKey, spaceSlug string) ([]model.WidgetHelpCollection, error) {
+	_, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
+	if err != nil {
+		return nil, err
+	}
+
+	space := findWidgetHelpSpaceBySlug(allowedSpaces, spaceSlug)
+	if space == nil {
+		return nil, fmt.Errorf("space not found")
+	}
+	if s.docsHelpcenterRepo == nil {
+		return nil, fmt.Errorf("docs helpcenter repository not configured")
+	}
+
+	return s.docsHelpcenterRepo.ListWidgetCollections(ctx, space.ID)
+}
+
+// ListWidgetHelpArticles returns widget-visible articles for a selected collection.
+func (s *SupportInboxService) ListWidgetHelpArticles(ctx context.Context, widgetKey, collectionSlug string) ([]model.WidgetHelpArticleSummary, error) {
+	inst, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
+	if err != nil {
+		return nil, err
+	}
+	if s.docsHelpcenterRepo == nil || s.docsCollectionRepo == nil {
+		return nil, fmt.Errorf("docs repositories not configured")
+	}
+
+	if strings.HasPrefix(collectionSlug, "uncategorized:") {
+		spaceID := strings.TrimPrefix(collectionSlug, "uncategorized:")
+		for _, space := range allowedSpaces {
+			if space.ID == spaceID {
+				return s.docsHelpcenterRepo.ListWidgetArticlesBySpaceUncategorized(ctx, spaceID)
+			}
+		}
+		return nil, fmt.Errorf("collection not found")
+	}
+
+	collection, err := s.docsCollectionRepo.GetByID(ctx, collectionSlug)
+	if err != nil {
+		return nil, err
+	}
+	if collection == nil || collection.WorkspaceID != inst.WorkspaceID {
+		return nil, fmt.Errorf("collection not found")
+	}
+
+	allowedByID := make(map[string]struct{}, len(allowedSpaces))
+	for _, space := range allowedSpaces {
+		allowedByID[space.ID] = struct{}{}
+	}
+	if _, ok := allowedByID[collection.SpaceID]; !ok {
+		return nil, fmt.Errorf("collection not found")
+	}
+
+	return s.docsHelpcenterRepo.ListWidgetArticlesByCollectionID(ctx, collection.ID)
+}
+
+// GetWidgetHelpArticle returns a widget-visible article with rendered HTML content.
+func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKey, articleSlug string) (*model.WidgetHelpArticle, error) {
+	_, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
+	if err != nil {
+		return nil, err
+	}
+	if s.docsHelpcenterRepo == nil {
+		return nil, fmt.Errorf("docs helpcenter repository not configured")
+	}
+
+	doc, _, content, err := s.docsHelpcenterRepo.GetPublicArticleByDocumentIDInSpaces(ctx, widgetHelpSpaceIDs(allowedSpaces), articleSlug)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("article not found")
+	}
+
+	var contentJSON json.RawMessage
+	if content != nil {
+		contentJSON = content.Content
+	}
+
+	return &model.WidgetHelpArticle{
+		ID:          doc.ID,
+		Title:       doc.Title,
+		Slug:        doc.ID,
+		Excerpt:     doc.Excerpt,
+		Icon:        doc.Icon,
+		ContentHTML: renderWidgetArticleHTML(contentJSON),
+	}, nil
 }
 
 // ListWidgetTokens returns all active widget installations formatted as tokens

@@ -66,7 +66,7 @@ type Handlers struct {
 	PlanningSession    *handler.PlanningSessionHandler
 	AutomationRule     *handler.AutomationRuleHandler
 	PMRoadmap          *handler.PMRoadmapHandler
-	SDKAssets           *handler.SDKAssetsHandler
+	SDKAssets          *handler.SDKAssetsHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -169,6 +169,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				MaxAge:           3600,
 			}))
 			r.Get("/config", h.SupportInboxWidget.GetConfig)
+			r.Get("/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
+			r.Get("/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+			r.Get("/help/articles/{articleSlug}", h.SupportInboxWidget.GetHelpArticle)
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
 			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
@@ -276,7 +279,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Settings management (admin+)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/initialize", h.Settings.Initialize)
-					r.With(requirePerm(authorization.PermSettingsManage)).Put("/job-roles", h.Settings.UpdateJobRoleCriteria)
+				r.With(requirePerm(authorization.PermSettingsManage)).Put("/job-roles", h.Settings.UpdateJobRoleCriteria)
 				r.With(requirePerm(authorization.PermSettingsManage)).Delete("/job-roles", h.Settings.DeleteJobRole)
 				r.With(requirePerm(authorization.PermSettingsManage)).Put("/system", h.Settings.UpdateSystem)
 

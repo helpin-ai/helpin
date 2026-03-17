@@ -32,6 +32,9 @@ func TestSupportInboxServiceSessionConversationLifecycle(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
+		nil,
+		nil,
 	)
 
 	session := &model.SupportWidgetSession{

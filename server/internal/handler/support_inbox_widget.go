@@ -18,6 +18,10 @@ func NewSupportInboxWidgetHandler(supportService *service.SupportInboxService) *
 	return &SupportInboxWidgetHandler{supportService: supportService}
 }
 
+func widgetKeyFromRequest(r *http.Request) string {
+	return r.URL.Query().Get("widget_key")
+}
+
 // GetWidgetTokens handles GET /api/internal/widget-tokens.
 // Returns all active widget installations as tokens for the events-pipeline.
 // Protected by INTERNAL_API_SECRET bearer token.
@@ -32,7 +36,7 @@ func (h *SupportInboxWidgetHandler) GetWidgetTokens(w http.ResponseWriter, r *ht
 
 // GetConfig handles GET /api/widget/support/config?widget_key=...
 func (h *SupportInboxWidgetHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
-	widgetKey := r.URL.Query().Get("widget_key")
+	widgetKey := widgetKeyFromRequest(r)
 	if widgetKey == "" {
 		writeError(w, http.StatusBadRequest, "widget_key is required")
 		return
@@ -177,4 +181,91 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 		messages = []model.SupportMessage{}
 	}
 	writeJSON(w, http.StatusOK, messages)
+}
+
+// GetHelpCollections handles GET /api/widget/support/help/spaces/{spaceSlug}/collections?widget_key=...
+func (h *SupportInboxWidgetHandler) GetHelpCollections(w http.ResponseWriter, r *http.Request) {
+	widgetKey := widgetKeyFromRequest(r)
+	if widgetKey == "" {
+		writeError(w, http.StatusBadRequest, "widget_key is required")
+		return
+	}
+
+	spaceSlug := chi.URLParam(r, "spaceSlug")
+	if spaceSlug == "" {
+		writeError(w, http.StatusBadRequest, "spaceSlug is required")
+		return
+	}
+
+	collections, err := h.supportService.ListWidgetHelpCollections(r.Context(), widgetKey, spaceSlug)
+	if err != nil {
+		if err.Error() == "widget not found" || err.Error() == "space not found" {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if collections == nil {
+		collections = []model.WidgetHelpCollection{}
+	}
+	writeJSON(w, http.StatusOK, collections)
+}
+
+// GetHelpArticles handles GET /api/widget/support/help/collections/{collectionSlug}/articles?widget_key=...
+func (h *SupportInboxWidgetHandler) GetHelpArticles(w http.ResponseWriter, r *http.Request) {
+	widgetKey := widgetKeyFromRequest(r)
+	if widgetKey == "" {
+		writeError(w, http.StatusBadRequest, "widget_key is required")
+		return
+	}
+
+	collectionSlug := chi.URLParam(r, "collectionSlug")
+	if collectionSlug == "" {
+		writeError(w, http.StatusBadRequest, "collectionSlug is required")
+		return
+	}
+
+	articles, err := h.supportService.ListWidgetHelpArticles(r.Context(), widgetKey, collectionSlug)
+	if err != nil {
+		if err.Error() == "widget not found" || err.Error() == "collection not found" {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if articles == nil {
+		articles = []model.WidgetHelpArticleSummary{}
+	}
+	writeJSON(w, http.StatusOK, articles)
+}
+
+// GetHelpArticle handles GET /api/widget/support/help/articles/{articleSlug}?widget_key=...
+func (h *SupportInboxWidgetHandler) GetHelpArticle(w http.ResponseWriter, r *http.Request) {
+	widgetKey := widgetKeyFromRequest(r)
+	if widgetKey == "" {
+		writeError(w, http.StatusBadRequest, "widget_key is required")
+		return
+	}
+
+	articleSlug := chi.URLParam(r, "articleSlug")
+	if articleSlug == "" {
+		writeError(w, http.StatusBadRequest, "articleSlug is required")
+		return
+	}
+
+	article, err := h.supportService.GetWidgetHelpArticle(r.Context(), widgetKey, articleSlug)
+	if err != nil {
+		if err.Error() == "widget not found" || err.Error() == "article not found" {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, article)
 }

@@ -1,5 +1,5 @@
 import { mountWidget, unmountWidget } from '@helpin/widget-core';
-import type { WidgetConfig, Message, Conversation, MountWidgetOptions, WidgetView } from '@helpin/widget-core';
+import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
 import widgetStyles from '@helpin/widget-core/styles?inline';
 import { isBot } from '../utils/bot-detect';
@@ -27,6 +27,11 @@ export interface WidgetSettings {
   key: string;
   host?: string;
   user?: WidgetUser;
+}
+
+export interface ShowArticleOptions {
+  collectionId?: string;
+  spaceId?: string;
 }
 
 type WidgetCallback = (...args: any[]) => void;
@@ -59,6 +64,8 @@ export class WidgetManager {
   private conversations: Conversation[] = [];
   private activeConversationId: string | null = null;
   private currentView: WidgetView = 'home';
+  private openArticleRequest: { key: number; articleSlug: string } | null = null;
+  private articleRequestKey = 0;
   private isTyping = false;
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
@@ -150,6 +157,8 @@ export class WidgetManager {
     this.conversations = [];
     this.activeConversationId = null;
     this.currentView = 'home';
+    this.openArticleRequest = null;
+    this.articleRequestKey = 0;
     this.isTyping = false;
     this.connectionStatus = 'idle';
     this.currentEmail = null;
@@ -170,12 +179,15 @@ export class WidgetManager {
 
   show(): void {
     this.isOpen = true;
-    if (!this.hasBeenOpened) {
+    if (!this.hasBeenOpened && this.currentView === 'home') {
       this.hasBeenOpened = true;
       // If there's an active conversation (restored session), resume it;
       // otherwise start fresh in conversation view.
       this.currentView = 'conversation';
-    } else if (this.activeConversationId && this.currentView === 'home') {
+    } else {
+      this.hasBeenOpened = true;
+    }
+    if (this.activeConversationId && this.currentView === 'home') {
       // User had an active conversation — resume it instead of showing home
       this.currentView = 'conversation';
     }
@@ -232,8 +244,13 @@ export class WidgetManager {
     this.show();
   }
 
-  showArticle(articleId: string): void {
-    this.currentView = 'help';
+  showArticle(articleId: string, _options?: ShowArticleOptions): void {
+    this.articleRequestKey += 1;
+    this.openArticleRequest = {
+      key: this.articleRequestKey,
+      articleSlug: articleId,
+    };
+    this.currentView = 'help-article';
     this.show();
   }
 
@@ -320,7 +337,12 @@ export class WidgetManager {
 
     const showPreChat = this.widgetConfig.features?.preChatForm && !this.sessionToken;
 
-    mountWidget(this.mountContainer, {
+    const mountOptions: Parameters<typeof mountWidget>[1] & {
+      openArticleRequest?: {
+        key: number;
+        articleSlug: string;
+      };
+    } = {
       config: this.widgetConfig,
       messages: this.messages,
       isOpen: this.isOpen,
@@ -342,6 +364,9 @@ export class WidgetManager {
       conversations: this.conversations,
       onSelectConversation: (id: string) => this.handleSelectConversation(id),
       onStartNewConversation: () => this.handleStartNewConversation(),
+      widgetKey: this.widgetKey || undefined,
+      host: this.host,
+      openArticleRequest: this.openArticleRequest || undefined,
       onViewChange: (view: WidgetView) => {
         this.currentView = view;
         // Refresh conversations list from server when navigating to Messages tab
@@ -349,7 +374,9 @@ export class WidgetManager {
           this.wsSend('conversations:list', {});
         }
       },
-    });
+    };
+
+    mountWidget(this.mountContainer, mountOptions);
   }
 
   private removeWidget(): void {

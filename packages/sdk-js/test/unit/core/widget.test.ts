@@ -172,8 +172,19 @@ describe('WidgetManager', () => {
     it('should have showArticle method', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
-      
-      expect(() => widget.showArticle('article-123')).not.toThrow();
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      mockMount.mockClear();
+
+      widget.showArticle('article-123');
+
+      expect(mockMount).toHaveBeenCalled();
+      const latestOptions = mockMount.mock.calls[mockMount.mock.calls.length - 1][1];
+      expect(latestOptions.initialView).toBe('help-article');
+      expect(latestOptions.openArticleRequest).toEqual({
+        key: 1,
+        articleSlug: 'article-123',
+      });
     });
   });
 

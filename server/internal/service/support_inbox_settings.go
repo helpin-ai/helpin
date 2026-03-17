@@ -78,6 +78,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.WidgetAvatarURL != nil {
 		current.WidgetAvatarURL = *patch.WidgetAvatarURL
 	}
+	if patch.WidgetHelpSpaceIDs != nil {
+		current.WidgetHelpSpaceIDs = append([]string(nil), patch.WidgetHelpSpaceIDs...)
+	}
 	if patch.BrandColor != nil {
 		current.BrandColor = *patch.BrandColor
 	}
@@ -252,15 +255,18 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 	}
 
 	// Broadcast config update to all connected widget clients in this workspace
-	configResp := s.buildWidgetConfigResponse(inst)
-	configData, _ := json.Marshal(configResp)
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "config_updated",
-		Entity:      "support_widget",
-		EntityID:    inst.ID,
-		WorkspaceID: workspaceID,
-		Data:        configData,
-	})
+	if configResp, err := s.buildWidgetConfigResponse(ctx, inst); err == nil {
+		configData, _ := json.Marshal(configResp)
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "config_updated",
+			Entity:      "support_widget",
+			EntityID:    inst.ID,
+			WorkspaceID: workspaceID,
+			Data:        configData,
+		})
+	} else {
+		slog.ErrorContext(ctx, "failed to build updated support widget config", "error", err, "workspace_id", workspaceID)
+	}
 
 	slog.InfoContext(ctx, "updated support installation settings", "workspace_id", workspaceID)
 	return inst, &merged, nil
