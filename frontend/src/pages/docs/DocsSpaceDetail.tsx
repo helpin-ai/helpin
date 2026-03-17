@@ -310,32 +310,6 @@ export function DocsSpaceDetail() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div>
-                    <DropdownMenuItem
-                      disabled={!(collections ?? []).length}
-                      onClick={() => openCreate('docs_document', {
-                        spaceId,
-                        collectionId: activeCollection && activeCollection !== '__uncollected__' ? activeCollection : undefined,
-                      })}
-                    >
-                      <FileText className="h-3.5 w-3.5" />
-                      New document
-                    </DropdownMenuItem>
-                  </div>
-                </TooltipTrigger>
-                {!(collections ?? []).length && (
-                  <TooltipContent side="left">
-                    Create a collection first
-                  </TooltipContent>
-                )}
-              </Tooltip>
-              <DropdownMenuItem onClick={() => openCreate('docs_collection', { spaceId })}>
-                <Plus className="h-3.5 w-3.5" />
-                New collection
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setEditSpaceOpen(true)}>
                 <Settings className="h-3.5 w-3.5" />
                 Edit space
@@ -434,7 +408,7 @@ export function DocsSpaceDetail() {
             <button
               type="button"
               onClick={() => openCreate('docs_collection', { spaceId })}
-              className="flex items-center gap-1 rounded-full bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex items-center gap-1 rounded-full border border-dashed border-primary/40 px-2.5 py-1 text-xs font-medium text-primary/70 transition-colors hover:border-primary hover:text-primary hover:bg-primary/5"
             >
               <Plus className="h-3 w-3" />
               Collection
@@ -699,7 +673,7 @@ export function DocsSpaceDetail() {
       {/* Typed confirm delete dialog */}
       <TypedConfirmDialog
         open={confirmDelete !== null}
-        onOpenChange={(open) => { if (!open) setConfirmDelete(null) }}
+        onOpenChange={(open) => { if (!open) setTimeout(() => setConfirmDelete(null), 150) }}
         title={confirmDelete?.type === 'space' ? 'Delete space' : 'Delete collection'}
         description={
           confirmDelete?.type === 'space'
