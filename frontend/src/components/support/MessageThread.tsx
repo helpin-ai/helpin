@@ -79,9 +79,16 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
           <div key={actorId} className="flex justify-end mt-2 animate-in fade-in duration-200">
             <div className="max-w-[70%]">
               <div className="mb-1 pr-1 text-right">
-                <span className="text-[11px] font-medium text-muted-foreground">{name}</span>
+                <span className="text-[11px] font-medium text-blue-600/70 dark:text-blue-400/70">
+                  {name} is typing
+                  <span className="inline-flex ml-0.5">
+                    <span className="animate-bounce [animation-delay:0ms] [animation-duration:1s]">.</span>
+                    <span className="animate-bounce [animation-delay:200ms] [animation-duration:1s]">.</span>
+                    <span className="animate-bounce [animation-delay:400ms] [animation-duration:1s]">.</span>
+                  </span>
+                </span>
               </div>
-              <div className="rounded-2xl rounded-br-sm bg-blue-600/10 px-3.5 py-2 text-sm leading-relaxed text-blue-700 dark:text-blue-300">
+              <div className="rounded-2xl rounded-br-sm bg-blue-100/60 px-3.5 py-2 text-sm leading-relaxed text-blue-600/70 dark:bg-blue-900/20 dark:text-blue-300/70">
                 {content ? (
                   <p className="whitespace-pre-wrap italic opacity-70">{content}</p>
                 ) : (
