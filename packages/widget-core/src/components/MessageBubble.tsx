@@ -13,14 +13,18 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
-function formatFullTime(dateStr: string): string {
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
   const d = new Date(dateStr);
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
@@ -47,7 +51,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
   const displayName = isCustomer ? '' : (agentName || config?.workspaceName || 'Support');
-  const tooltipText = formatFullTime(message.createdAt);
+  const tooltipText = formatRelativeTime(message.createdAt);
 
   return (
     <div
@@ -75,7 +79,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
           {/* Bubble — indented to align with name, timestamp on hover */}
           <div className="helpin-message-agent-bubble-wrap">
-            <div className={bubbleClass} title={tooltipText}>
+            <div className={bubbleClass} data-tooltip={tooltipText}>
               <div
                 className="helpin-message-content"
                 dangerouslySetInnerHTML={{ __html: escapeHtml(message.content) }}
@@ -101,7 +105,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
         </>
       ) : (
         /* Customer bubble — right-aligned, no avatar */
-        <div className={bubbleClass} title={tooltipText}>
+        <div className={bubbleClass} data-tooltip={tooltipText}>
           <div
             className="helpin-message-content"
             dangerouslySetInnerHTML={{ __html: escapeHtml(message.content) }}

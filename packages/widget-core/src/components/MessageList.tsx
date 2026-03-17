@@ -15,12 +15,18 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
   config,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
+  const isInitialMount = useRef(true);
 
   useEffect(() => {
     if (listRef.current) {
       const el = listRef.current;
+      if (isInitialMount.current) {
+        el.scrollTop = el.scrollHeight;
+        isInitialMount.current = false;
+        return;
+      }
       const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-      if (isNearBottom || messages.length <= 1) {
+      if (isNearBottom) {
         el.scrollTop = el.scrollHeight;
       }
     }
@@ -37,7 +43,11 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
     } else if (date.toDateString() === yesterday.toDateString()) {
       return 'Yesterday';
     }
-    return date.toLocaleDateString();
+    return date.toLocaleDateString(undefined, {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    });
   };
 
   const getDateSeparator = (dateStr: string, idx: number): string | null => {

@@ -135,7 +135,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       <div className="helpin-conversation-thread">
         <MessageList
           messages={displayMessages}
-          showDateSeparators={false}
+          showDateSeparators={true}
           config={config}
         />
       </div>
