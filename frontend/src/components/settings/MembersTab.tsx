@@ -365,7 +365,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
       </div>
 
       <Dialog open={inviteOpen} onOpenChange={closeInviteDialog}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           {createdJoinUrl ? (
             <>
               <DialogHeader>
