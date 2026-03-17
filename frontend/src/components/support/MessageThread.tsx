@@ -40,8 +40,8 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
     <div className="flex justify-start mt-2 animate-in fade-in duration-200">
       {/* Avatar placeholder matching customer bubble layout */}
       <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
-          <span className="flex gap-0.5 text-sm leading-none text-muted-foreground">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950/30">
+          <span className="flex gap-0.5 text-sm leading-none text-blue-400">
             <span className="animate-bounce [animation-delay:0ms]">·</span>
             <span className="animate-bounce [animation-delay:150ms]">·</span>
             <span className="animate-bounce [animation-delay:300ms]">·</span>
@@ -49,7 +49,7 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
         </div>
       </div>
       <div className="max-w-[70%]">
-        <div className="rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2 text-sm leading-relaxed text-foreground">
+        <div className="rounded-2xl rounded-bl-sm bg-blue-50 dark:bg-blue-950/30 px-3.5 py-2 text-sm leading-relaxed text-blue-900 dark:text-blue-100">
           {typingState ? (
             <p className="whitespace-pre-wrap italic opacity-60">{typingState}</p>
           ) : (
@@ -81,7 +81,7 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
               <div className="mb-1 pr-1 text-right">
                 <span className="text-[11px] font-medium text-muted-foreground">{name}</span>
               </div>
-              <div className="rounded-2xl rounded-br-sm bg-primary/40 px-3.5 py-2 text-sm leading-relaxed text-primary-foreground">
+              <div className="rounded-2xl rounded-br-sm bg-blue-600/10 px-3.5 py-2 text-sm leading-relaxed text-blue-700 dark:text-blue-300">
                 {content ? (
                   <p className="whitespace-pre-wrap italic opacity-70">{content}</p>
                 ) : (

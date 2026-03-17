@@ -113,7 +113,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
               className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
                 isCustomer
                   ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
-                  : `bg-primary text-primary-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
+                  : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
               }`}
             >
               <p className="whitespace-pre-wrap">{message.content}</p>

@@ -58,6 +58,8 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
   const agentTypingMap = useSupportPresenceStore((s) => s.agentTyping[conversation.id]);
   const agentTypingEntries = agentTypingMap ? Object.entries(agentTypingMap) : [];
   const isAgentTyping = agentTypingEntries.length > 0;
+  const wsId = useWorkspaceStore((s) => s.currentWorkspace?.id ?? '');
+  const { data: members = [] } = useWorkspaceMembers(wsId);
   const isVisitorOnline = useSupportPresenceStore((s) =>
     conversation.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false
   );
@@ -99,7 +101,14 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
               {isCustomerTyping ? (
                 <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
               ) : isAgentTyping ? (
-                <span className="italic text-primary/60">{agentTypingEntries[0][1] || 'typing…'}</span>
+                <span className="italic text-blue-600/70 dark:text-blue-400/70">
+                  {(() => {
+                    const [uid, content] = agentTypingEntries[0];
+                    const m = members.find((mb) => mb.user_id === uid);
+                    const name = m?.full_name?.split(' ')[0] || 'Agent';
+                    return content ? `${name}: ${content}` : `${name} is typing…`;
+                  })()}
+                </span>
               ) : hasDraft ? (
                 <>
                   <span className="inline-block w-0.5 h-3 align-middle rounded-full bg-blue-500 mr-1" />
