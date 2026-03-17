@@ -834,6 +834,20 @@ export class WidgetManager {
         // Server acknowledged keepalive ping — no action needed.
         break;
 
+      case 'config:updated': {
+        // Admin changed widget settings — apply new config in real time
+        const newConfig = data.data;
+        if (newConfig && typeof newConfig === 'object') {
+          this.widgetConfig = newConfig;
+          // Update localStorage cache with fresh config
+          if (this.widgetKey) {
+            cacheConfig(this.widgetKey, newConfig);
+          }
+          this.render();
+        }
+        break;
+      }
+
       case 'connection:error':
         console.error('Widget server error:', data.data);
         break;
