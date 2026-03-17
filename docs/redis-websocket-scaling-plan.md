@@ -90,30 +90,88 @@ Redis gives us **both** cross-pod broadcasting AND shared presence state in one 
 
 ### 4.1 Redis Relay (`server/internal/websocket/redis_relay.go`)
 
-New file. Replaces the role of `pglistener.go` with a bidirectional Redis bridge.
+New file. Replaces the role of `pglistener.go` with a bidirectional Redis bridge. Manages dynamic per-workspace channel subscriptions with ref-counting.
 
 ```go
 type RedisRelay struct {
     rdb       *redis.Client
     hub       *Hub
-    podID     string          // unique identifier for this pod instance
-    channel   string          // Redis Pub/Sub channel name
+    podID     string
+    pubsub    *redis.PubSub           // managed subscription handle
+    mu        sync.Mutex
+    wsRefCount map[string]int          // workspaceID → number of local clients
 }
 
 func NewRedisRelay(rdb *redis.Client, hub *Hub, podID string) *RedisRelay
 
-// Start subscribes to the Redis channel and forwards events to the local Hub.
-// Called as a goroutine on startup.
+// Start subscribes to the global channel and begins the receive loop.
+// Called as a goroutine on startup. Blocks until ctx is cancelled.
 func (r *RedisRelay) Start(ctx context.Context)
 
-// Publish sends an event to Redis Pub/Sub for cross-pod fan-out.
-// The local Hub broadcast is handled separately (Publisher still calls hub.Broadcast).
-func (r *RedisRelay) Publish(ctx context.Context, event Event) error
+// Publish sends an event to the appropriate Redis channel.
+func (r *RedisRelay) Publish(ctx context.Context, event Event) error {
+    channel := "ws:events:global"
+    if event.WorkspaceID != "" {
+        channel = "ws:events:" + event.WorkspaceID
+    }
+    envelope, _ := json.Marshal(relayEnvelope{OriginPod: r.podID, Event: event})
+    return r.rdb.Publish(ctx, channel, envelope).Err()
+}
+
+// EnsureWorkspaceSubscription subscribes to a workspace channel when the
+// first local client for that workspace connects. Thread-safe, ref-counted.
+func (r *RedisRelay) EnsureWorkspaceSubscription(workspaceID string) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    r.wsRefCount[workspaceID]++
+    if r.wsRefCount[workspaceID] == 1 {
+        // First client for this workspace on this pod — subscribe
+        r.pubsub.Subscribe(context.Background(), "ws:events:"+workspaceID)
+    }
+}
+
+// ReleaseWorkspaceSubscription unsubscribes from a workspace channel when
+// the last local client for that workspace disconnects. Thread-safe.
+func (r *RedisRelay) ReleaseWorkspaceSubscription(workspaceID string) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    r.wsRefCount[workspaceID]--
+    if r.wsRefCount[workspaceID] <= 0 {
+        delete(r.wsRefCount, workspaceID)
+        r.pubsub.Unsubscribe(context.Background(), "ws:events:"+workspaceID)
+    }
+}
 ```
 
-**Pub/Sub channel**: `ws:events:{workspaceID}` (per-workspace channels for efficiency)
+**Channel subscriptions are managed by Hub.Register/Unregister:**
+```go
+// In Hub.Register:
+if h.relay != nil {
+    h.relay.EnsureWorkspaceSubscription(c.WorkspaceID)
+}
 
-**Message format**: JSON-encoded `Event` struct + `origin_pod` field to skip self-delivery.
+// In Hub.Unregister:
+if h.relay != nil {
+    h.relay.ReleaseWorkspaceSubscription(c.WorkspaceID)
+}
+```
+
+**Receive loop** (inside `Start`):
+```go
+for msg := range r.pubsub.Channel() {
+    var env relayEnvelope
+    if json.Unmarshal([]byte(msg.Payload), &env) != nil { continue }
+    if env.OriginPod == r.podID { continue } // skip self-origin
+    r.hub.Broadcast(env.Event) // deliver to local clients only
+}
+```
+
+**Hub wiring** — Hub gets a relay reference set during DI:
+```go
+func (h *Hub) SetRelay(relay *RedisRelay) { h.relay = relay }
+```
+
+This is called in `main.go` after both Hub and RedisRelay are created.
 
 ### 4.2 Redis Presence (`server/internal/websocket/redis_presence.go`)
 
@@ -148,14 +206,34 @@ On `SetViewing`: add to set + create conn key. On `ClearViewing`: delete conn ke
 
 This ensures **one tab cannot clear another tab's viewing state** — each connection owns its own key.
 
-**Typing state** — Per-connection keys (only one active draft per user per conversation):
+**Typing state** — Per-user key (NOT per-connection):
 ```
 Key:    support:typing:{workspaceID}:{conversationID}:{userID}
 Value:  {content}   (draft preview text)
 TTL:    15s (refreshed on each keystroke)
 ```
 
-Typing is last-writer-wins per user (latest tab's content wins), which is correct — a user only has one active draft per conversation regardless of tab count.
+**Deliberate design decision: typing is single-active-tab per user.** Rationale:
+- A user realistically types in one tab at a time. The latest keystroke from any tab is the correct draft preview.
+- Last-writer-wins is correct — if tab A is idle and tab B is typing, tab B's content should show.
+- On graceful disconnect, only clear the typing key if the disconnecting connection was the **last active typer** for that user. Implementation: store `connID` in the Redis value alongside content (e.g. `{connID}:{content}`), and only `DEL` on disconnect if the stored connID matches the closing connection. If another tab has since overwritten the key, the disconnect is a no-op.
+
+```
+Key:    support:typing:{workspaceID}:{conversationID}:{userID}
+Value:  {connID}|{content}
+TTL:    15s
+```
+
+```go
+// On disconnect:
+val := rdb.Get(ctx, key)
+if strings.HasPrefix(val, closingConnID+"|") {
+    rdb.Del(ctx, key)  // this connection owns the key
+}
+// else: another tab has overwritten — leave it alone
+```
+
+This avoids the complexity of per-connection typing keys while preventing one tab's close from wiping another tab's active draft.
 
 **Online visitors** — Per-connection keys + aggregate set:
 
@@ -163,7 +241,7 @@ Each widget connection registers:
 ```
 Key:    support:visitors:conn:{workspaceID}:{anonymousID}:{podID}:{connID}
 Value:  1
-TTL:    90s (refreshed by periodic ping from widget handler)
+TTL:    90s (refreshed by widget keepalive ping every 60s — see Section 8.4)
 ```
 
 Aggregate set:
@@ -267,6 +345,53 @@ type PresenceProvider interface {
 
 Both `PresenceState` (in-memory, for tests/dev) and `RedisPresence` (production) implement this interface.
 
+### 4.4.1 Connection Identity
+
+Every conn-scoped Redis key depends on a unique `connID`. Add this to the `Client` struct:
+
+```go
+type Client struct {
+    Conn           *websocket.Conn
+    ConnID         string  // unique per connection, e.g. UUID generated on accept
+    UserID         string
+    WorkspaceID    string
+    IsWidget       bool
+    ConversationID *string
+    AnonymousID    string
+}
+```
+
+Generated in both `handler.go` (agent) and `widget_handler.go` (widget) at connection accept time:
+```go
+connID := uuid.NewString() // or use a counter + podID
+client := &Client{ConnID: connID, ...}
+```
+
+All PresenceProvider methods that need conn-scoping receive `connID` as a parameter.
+
+### 4.4.2 Viewing Heartbeat
+
+**Problem**: The frontend currently sends `support:viewing:start` once on mount and `support:viewing:stop` on cleanup. With a 60s TTL on viewing conn keys, an agent who keeps a thread open will disappear after one minute.
+
+**Fix**: The agent WS handler (`handler.go`) must refresh the viewing conn key server-side. Two options:
+
+**Option A (recommended): Server-side refresh in the read loop.**
+The agent handler's read loop already processes `support:viewing:start`. On receiving it, refresh the TTL. But the frontend only sends it once per mount.
+
+So add a **server-side keepalive**: when the handler processes ANY message from the agent (typing, viewing, or even a periodic `ping`), refresh all that agent's active viewing conn keys:
+
+```go
+// In handler.go read loop, after processing any message:
+if viewingConvID := h.hub.Presence.GetActiveViewing(workspaceID, client.UserID, client.ConnID); viewingConvID != "" {
+    h.hub.Presence.RefreshViewing(ctx, workspaceID, viewingConvID, client.UserID, client.ConnID)
+}
+```
+
+**Option B: Frontend heartbeat.**
+Add a 30s interval in `MessageThread.tsx` that re-sends `support:viewing:start`. Simpler but adds client-side complexity we already removed.
+
+**Recommendation**: Option A — server-side refresh. The frontend already sends typing events while the agent is active. For truly idle agents (reading, not typing), add a lightweight `support:ping` client message sent every 45s from the frontend `useWebSocket` hook. The handler refreshes all presence keys on any message receipt.
+
 ### 4.5 Operational Modes & Failure Handling
 
 **Development mode** (`REDIS_URL` empty):
@@ -354,34 +479,39 @@ go get github.com/redis/go-redis/v9
 ### 5.4 DI Wiring (`cmd/api/main.go`)
 
 ```go
-// Initialize Redis (optional — graceful if unavailable)
-var redisClient *redis.Client
-var redisRelay *ws.RedisRelay
-var presenceProvider ws.PresenceProvider
+podID := os.Getenv("HOSTNAME") // K8s sets this to pod name
 
-if cfg.RedisURL != "" {
+if cfg.RedisURL == "" {
+    // Development mode — single-process, no Redis
+    slog.Info("REDIS_URL not set — running in local-only mode (single pod)")
+    presenceProvider = ws.NewPresenceState() // in-memory
+    wsPublisher = ws.NewPublisher(wsHub, nil)
+} else {
+    // Production mode — Redis required, fail fast if unavailable
     opts, err := redis.ParseURL(cfg.RedisURL)
-    if err == nil {
-        redisClient = redis.NewClient(opts)
-        if err := redisClient.Ping(ctx).Err(); err != nil {
-            slog.Warn("Redis unavailable, falling back to local-only mode", "error", err)
-        } else {
-            podID := os.Getenv("HOSTNAME") // K8s sets this to pod name
-            redisRelay = ws.NewRedisRelay(redisClient, wsHub, podID)
-            go redisRelay.Start(ctx)
-            presenceProvider = ws.NewRedisPresence(redisClient, podID)
-            slog.Info("Redis connected for WebSocket scaling", "url", cfg.RedisURL)
-        }
+    if err != nil {
+        slog.Error("invalid REDIS_URL", "error", err)
+        os.Exit(1)
     }
-}
+    redisClient := redis.NewClient(opts)
+    if err := redisClient.Ping(ctx).Err(); err != nil {
+        slog.Error("Redis unreachable at startup — cannot run multi-pod", "error", err)
+        os.Exit(1) // crash loop until Redis is available
+    }
 
-if presenceProvider == nil {
-    presenceProvider = ws.NewPresenceState() // in-memory fallback
+    redisRelay := ws.NewRedisRelay(redisClient, wsHub, podID)
+    go redisRelay.Start(ctx)
+
+    presenceProvider = ws.NewRedisPresence(redisClient, podID)
+    wsPublisher = ws.NewPublisher(wsHub, redisRelay)
+    slog.Info("Redis connected for WebSocket scaling", "url", cfg.RedisURL, "pod", podID)
 }
 
 wsHub.SetPresenceProvider(presenceProvider)
-wsPublisher = ws.NewPublisher(wsHub, redisRelay) // relay can be nil
+wsHub.SetRelay(redisRelay) // nil in dev mode — BroadcastAll becomes local-only
 ```
+
+**No ambiguity**: `REDIS_URL` empty = dev mode (in-memory, local-only). `REDIS_URL` set = production mode (fail-to-start if Redis unreachable).
 
 ---
 
@@ -449,7 +579,29 @@ func (r *RedisRelay) Publish(ctx context.Context, event Event) error {
 }
 ```
 
-**Before Phase 2 ships**: Audit all event producers and ensure `WorkspaceID` is set wherever possible. Events routed to the global channel are less efficient (every pod processes them).
+**PREREQUISITE for Phase 2 — enforce WorkspaceID on all client-visible events:**
+
+The global channel is a fallback, NOT a first-class routing path. `Hub.Broadcast` routes events by `event.WorkspaceID` to find target clients — events with empty `WorkspaceID` have no target client set and are silently dropped.
+
+Before Phase 2 ships, **every event producer must set WorkspaceID**. Specific fixes needed:
+
+| File | Event | Fix |
+|------|-------|-----|
+| `signal_detection_workflow.go:108` | `crm_buyer_signal:created` | Add WorkspaceID from the signal's workspace context |
+| Any other producer found by: `grep -r 'wsPublisher.Publish' --include="*.go" \| grep -v WorkspaceID` | — | Add WorkspaceID |
+
+Events without WorkspaceID should be logged as errors at the Publisher level:
+```go
+func (p *Publisher) Publish(event Event) {
+    if event.WorkspaceID == "" {
+        slog.Error("event published without WorkspaceID — will not reach clients",
+            "entity", event.Entity, "action", event.Action)
+    }
+    ...
+}
+```
+
+The global channel exists only as a safety net for the transition period. Long-term goal: zero events on the global channel.
 
 ### 7.2 Message Envelope
 
@@ -508,9 +660,79 @@ A **background cleanup goroutine** (one per pod, every 30s) scans for expired co
 ### 8.3 Key Refresh
 
 Conn-level keys are refreshed by active operations:
-- Viewing conn keys: refreshed on each `support:viewing:start` message (no separate heartbeat needed — the frontend already sends this on mount)
+- Viewing conn keys: refreshed on each `support:viewing:start` AND on each `support:ping` (45s interval from frontend). An idle agent viewing a thread sends pings that keep the key alive.
 - Typing keys: refreshed on each keystroke (natural 300ms throttle)
-- Visitor conn keys: refreshed by a lightweight periodic ping from the widget handler read loop (every 60s)
+- Visitor conn keys: refreshed by the widget keepalive protocol (see Section 8.4)
+
+### 8.4 Widget Keepalive Protocol
+
+**Problem**: The widget handler's read loop (`widget_handler.go:336`) blocks on `conn.Read()`. A quiet-but-open widget session (customer has the page open but isn't typing or clicking) generates zero messages. With a 90s TTL on the visitor conn key, the customer's online status will expire even though their WebSocket is alive.
+
+**Solution**: An application-level keepalive protocol between the widget SDK and the server.
+
+**Widget SDK changes** (`packages/sdk-js/src/core/widget.ts`):
+```typescript
+// In connectWebSocket(), after session:joined:
+// Start keepalive ping every 60s
+this.keepaliveTimer = setInterval(() => {
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+        this.wsSend('ping', {});
+    }
+}, 60_000);
+
+// In disconnectWebSocket():
+if (this.keepaliveTimer) {
+    clearInterval(this.keepaliveTimer);
+    this.keepaliveTimer = null;
+}
+```
+
+**Server handler changes** (`widget_handler.go`):
+Add a `ping` case to the read loop:
+```go
+case "ping":
+    // Refresh visitor online key TTL
+    if session.AnonymousID != "" {
+        h.hub.Presence.RefreshVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID)
+    }
+    SendToClient(conn, "pong", nil)
+```
+
+**Agent handler changes** (`handler.go`):
+Add a `support:ping` case:
+```go
+case "support:ping":
+    // Refresh all active presence keys for this agent
+    h.hub.Presence.RefreshAllForUser(ctx, workspaceID, client.UserID, client.ConnID)
+```
+
+Frontend sends `support:ping` every 45s from `useWebSocket`:
+```typescript
+// In useWebSocket connect():
+const pingInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'support:ping', data: {} }));
+    }
+}, 45_000);
+
+// In cleanup:
+clearInterval(pingInterval);
+```
+
+**PresenceProvider additions**:
+```go
+RefreshVisitorOnline(ctx, workspaceID, anonymousID, connID string) error  // EXPIRE the conn key
+RefreshAllForUser(ctx, workspaceID, userID, connID string) error          // EXPIRE all viewing/typing keys
+```
+
+**Files to modify**:
+| File | Change |
+|------|--------|
+| `packages/sdk-js/src/core/widget.ts` | Add 60s keepalive ping interval |
+| `server/internal/websocket/widget_handler.go` | Handle `ping` message, refresh visitor key |
+| `server/internal/websocket/handler.go` | Handle `support:ping`, refresh presence keys |
+| `frontend/src/hooks/useWebSocket.ts` | Add 45s ping interval |
+| `server/internal/websocket/redis_presence.go` | Add `RefreshVisitorOnline`, `RefreshAllForUser` |
 
 ---
 
