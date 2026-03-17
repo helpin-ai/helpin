@@ -161,3 +161,8 @@ type FlowInteractiveMessageRequest struct {
 }
 
 type FlowRetryNodeRequest struct{}
+
+type FlowRunListResponse struct {
+	Data  []FlowRunView `json:"data"`
+	Total int64         `json:"total"`
+}

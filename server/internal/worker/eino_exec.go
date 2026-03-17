@@ -113,8 +113,9 @@ func (f *EinoModelFactory) resolveBaseModel(ctx context.Context, provider, model
 			return nil, fmt.Errorf("anthropic API key is not configured")
 		}
 		return einoclaude.NewChatModel(ctx, &einoclaude.Config{
-			APIKey: f.AnthropicAPIKey,
-			Model:  modelName,
+			APIKey:    f.AnthropicAPIKey,
+			Model:     modelName,
+			MaxTokens: defaultMaxTokensForProvider(provider),
 		})
 	case "openai":
 		if strings.TrimSpace(f.OpenAIAPIKey) == "" {
@@ -151,6 +152,15 @@ func defaultModelForProvider(provider string) string {
 		return "openai/gpt-4.1"
 	default:
 		return "claude-sonnet-4-20250514"
+	}
+}
+
+func defaultMaxTokensForProvider(provider string) int {
+	switch provider {
+	case "anthropic":
+		return 4096
+	default:
+		return 0
 	}
 }
 

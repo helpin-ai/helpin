@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -111,6 +112,31 @@ func (h *FlowHandler) SendInteractiveMessage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, message)
+}
+
+func (h *FlowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+
+	limit := 20
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
+		limit = l
+	}
+	offset := 0
+	if o, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && o >= 0 {
+		offset = o
+	}
+
+	resp, err := h.flowService.ListRuns(r.Context(), workspaceID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *FlowHandler) ListTemplates(w http.ResponseWriter, r *http.Request) {
+	templates := h.flowService.ListTemplates()
+	writeJSON(w, http.StatusOK, templates)
 }
 
 func (h *FlowHandler) CancelRun(w http.ResponseWriter, r *http.Request) {

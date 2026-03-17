@@ -1593,6 +1593,8 @@ export interface SpecSectionEntry {
 }
 
 export interface PlanningStreamEvent {
+  event_id?: string;
+  sent_at?: string;
   type:
     | 'assistant_message_started'
     | 'assistant_message_delta'
@@ -1602,6 +1604,7 @@ export interface PlanningStreamEvent {
     | 'turn_completed'
     | 'error';
   session_id: string;
+  message_id?: string;
   text?: string;
   tool_call_id?: string;
   tool_name?: string;

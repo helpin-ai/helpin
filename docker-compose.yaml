@@ -1,4 +1,12 @@
 services:
+  nats:
+    image: nats:2.11-alpine
+    command: ["-js", "--store_dir", "/data"]
+    ports:
+      - "4222:4222"
+    volumes:
+      - nats-data:/data
+
   server:
     build: ./server
     ports:
@@ -8,6 +16,20 @@ services:
       - JWT_SECRET=dev-secret-change-in-prod
       - CORS_ORIGINS=http://localhost:5173
       - PORT=8080
+      - NATS_URL=nats://nats:4222
+    depends_on:
+      - nats
+
+  temporal-worker:
+    build: ./server
+    command: ["./temporal-worker"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=dev-secret-change-in-prod
+      - NATS_URL=nats://nats:4222
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-localhost:7233}
+    depends_on:
+      - nats
 
   frontend:
     build:
@@ -18,3 +40,6 @@ services:
       - "5173:80"
     depends_on:
       - server
+
+volumes:
+  nats-data:

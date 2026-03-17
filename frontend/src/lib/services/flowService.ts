@@ -2,6 +2,7 @@ import { api } from '../api';
 import type {
   FlowNodeRun,
   FlowRunView,
+  FlowSpec,
   PlanningSessionMessage,
   StartFlowRunRequest,
 } from '../pmTypes';
@@ -37,4 +38,10 @@ export const flowService = {
 
   retryNode: (wsId: string, flowRunId: string, nodeRunId: string) =>
     api.post<FlowRunView>(`/pm/flow-runs/${flowRunId}/nodes/${nodeRunId}/retry${qs(wsId)}`, {}),
+
+  listRuns: (wsId: string, limit = 20, offset = 0) =>
+    api.get<{ data: FlowRunView[]; total: number }>(`/pm/flow-runs${qs(wsId)}&limit=${limit}&offset=${offset}`),
+
+  listTemplates: (wsId: string) =>
+    api.get<FlowSpec[]>(`/pm/flow-templates${qs(wsId)}`),
 };

@@ -365,6 +365,27 @@ func main() {
 	wsPublisher := ws.NewPublisher(wsHub, redisRelay)
 	wsHandler := ws.NewHandler(wsHub, jwtManager)
 
+	// Start JetStream -> WS bridge for cross-process events (e.g. Temporal worker).
+	realtimeCtx, realtimeCancel := context.WithCancel(context.Background())
+	realtimeInstanceID := ws.ResolveRealtimeInstanceID()
+	natsConn, jetstream, err := ws.ConnectJetStream(cfg.NatsURL, "helpin-api-"+realtimeInstanceID)
+	if err != nil {
+		slog.Error("failed to connect to NATS", "error", err, "url", cfg.NatsURL)
+		os.Exit(1)
+	}
+	defer natsConn.Close()
+	if err := ws.EnsureJetStreamInfrastructure(jetstream); err != nil {
+		slog.Error("failed to ensure JetStream infrastructure", "error", err)
+		os.Exit(1)
+	}
+	jetstreamBridge := ws.NewJetStreamBridge(jetstream, wsHub, realtimeInstanceID)
+	go func() {
+		if err := jetstreamBridge.Start(realtimeCtx); err != nil {
+			slog.Error("jetstream bridge stopped", "error", err)
+			os.Exit(1)
+		}
+	}()
+
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
@@ -879,6 +900,7 @@ func main() {
 
 	<-done
 	slog.Info("server shutting down")
+	realtimeCancel()
 	close(automationDone)
 	close(digestDone)
 	close(cleanupDone)

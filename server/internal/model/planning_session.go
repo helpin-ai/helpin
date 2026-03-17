@@ -122,13 +122,16 @@ type FinalizePlanningSessionRequest struct{}
 
 // PlanningStreamEvent represents a real-time streaming event sent via WebSocket.
 type PlanningStreamEvent struct {
-	Type          string `json:"type"`
-	SessionID     string `json:"session_id"`
-	Text          string `json:"text,omitempty"`
-	ToolCallID    string `json:"tool_call_id,omitempty"`
-	ToolName      string `json:"tool_name,omitempty"`
-	ToolInput     string `json:"tool_input,omitempty"`
-	OutputSummary string `json:"output_summary,omitempty"`
-	DurationMs    int64  `json:"duration_ms,omitempty"`
-	Error         string `json:"error,omitempty"`
+	EventID       string    `json:"event_id,omitempty"`
+	SentAt        time.Time `json:"sent_at,omitempty"`
+	Type          string    `json:"type"`
+	SessionID     string    `json:"session_id"`
+	MessageID     string    `json:"message_id,omitempty"`
+	Text          string    `json:"text,omitempty"`
+	ToolCallID    string    `json:"tool_call_id,omitempty"`
+	ToolName      string    `json:"tool_name,omitempty"`
+	ToolInput     string    `json:"tool_input,omitempty"`
+	OutputSummary string    `json:"output_summary,omitempty"`
+	DurationMs    int64     `json:"duration_ms,omitempty"`
+	Error         string    `json:"error,omitempty"`
 }

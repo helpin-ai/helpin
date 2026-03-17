@@ -441,6 +441,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/agent-runs", h.Agent.ListEpicRuns)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-runs", h.Flow.ListRuns)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-templates", h.Flow.ListTemplates)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-runs", h.Flow.StartRun)
 				r.Route("/flow-runs/{flowRunId}", func(r chi.Router) {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Flow.GetRun)

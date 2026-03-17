@@ -31,6 +31,7 @@ export function useStartFlowRun(wsId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.pm.epics(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.pm.epic(wsId, data.run.target_id) });
       qc.setQueryData(queryKeys.pm.flowRun(wsId, data.run.id), data);
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowRuns(wsId) });
     },
   });
 }
@@ -77,5 +78,22 @@ export function useCancelFlowRun(wsId: string) {
         qc.invalidateQueries({ queryKey: queryKeys.pm.epic(wsId, data.run.target_id) });
       }, 1500);
     },
+  });
+}
+
+export function useFlowRuns(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.pm.flowRuns(wsId),
+    queryFn: async () => unwrap(await flowService.listRuns(wsId)),
+    enabled: !!wsId,
+  });
+}
+
+export function useFlowTemplates(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.pm.flowTemplates(wsId),
+    queryFn: async () => unwrap(await flowService.listTemplates(wsId)),
+    enabled: !!wsId,
+    staleTime: 60_000,
   });
 }

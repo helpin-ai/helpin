@@ -3,16 +3,13 @@ package main
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
 	"go.temporal.io/sdk/activity"
 	tclient "go.temporal.io/sdk/client"
 	tworker "go.temporal.io/sdk/worker"
@@ -55,6 +52,16 @@ func main() {
 
 	if err := sqlDB.Ping(); err != nil {
 		log.Fatalf("failed to ping database: %v", err)
+	}
+
+	realtimeInstanceID := ws.ResolveRealtimeInstanceID()
+	natsConn, jetstream, err := ws.ConnectJetStream(cfg.NatsURL, "helpin-temporal-worker-"+realtimeInstanceID)
+	if err != nil {
+		log.Fatalf("failed to connect to NATS: %v", err)
+	}
+	defer natsConn.Close()
+	if err := ws.EnsureJetStreamInfrastructure(jetstream); err != nil {
+		log.Fatalf("failed to ensure JetStream infrastructure: %v", err)
 	}
 
 	temporalClient, err := tclient.Dial(temporalapp.BuildClientOptions(cfg))
@@ -175,32 +182,8 @@ func main() {
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
-	// Build a WebSocket publisher for the Temporal worker. When Redis is
-	// available, events are published directly to Redis Pub/Sub so all
-	// API server pods receive them. Otherwise, fall back to a local Hub
-	// that cannot reach any browser clients (best-effort for dev mode).
-	var wsPublisher *ws.Publisher
-	var redisEventPublisher *ws.RedisRelay
-	if cfg.RedisURL != "" {
-		redisOpts, err := redis.ParseURL(cfg.RedisURL)
-		if err != nil {
-			log.Fatalf("invalid REDIS_URL: %v", err)
-		}
-		redisClient := redis.NewClient(redisOpts)
-		podID := os.Getenv("HOSTNAME")
-		if podID == "" {
-			podID = fmt.Sprintf("worker-%d", time.Now().UnixNano()%10000)
-		}
-		redisEventPublisher = ws.NewRedisEventPublisher(redisClient, podID)
-		wsPublisher = ws.NewPublisher(ws.NewHub(), redisEventPublisher)
-		log.Printf("Redis connected for temporal-worker event publishing (pod=%s)", podID)
-	} else {
-		wsHub := ws.NewHub()
-		wsPublisher = ws.NewPublisher(wsHub, nil)
-	}
-
+	wsPublisher := ws.NewJetStreamPublisher(jetstream)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
-
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmStoryService := service.NewPMStoryService(
 		storyRepo,
@@ -273,8 +256,7 @@ func main() {
 	}
 
 	// Planning session worker — separate queue with session pinning.
-	// Uses Redis Pub/Sub to stream events cross-process to the API server's WS hub.
-	// Falls back to a local Hub in dev mode (no Redis).
+	// Uses JetStream to relay events cross-process to the API server's WS hub.
 	planningModels := &workerpkg.EinoModelFactory{
 		AnthropicAPIKey: cfg.AnthropicAPIKey,
 		OpenAIAPIKey:    cfg.OpenAIAPIKey,
@@ -289,31 +271,14 @@ func main() {
 		var webSearchClient workerpkg.WebSearchClient
 		toolRegistry := workerpkg.NewToolRegistry(webSearchClient)
 
-		// Build session streamer and event publisher for planning sessions.
-		// When Redis is available, tokens stream via Redis Pub/Sub.
-		// Otherwise, fall back to a local Hub (dev-only).
-		var planningStreamer ws.SessionStreamer
-		var planningPublisher ws.EventPublisher
-		if cfg.RedisURL != "" && redisEventPublisher != nil {
-			redisOpts, _ := redis.ParseURL(cfg.RedisURL)
-			streamerRedis := redis.NewClient(redisOpts)
-			podID := os.Getenv("HOSTNAME")
-			if podID == "" {
-				podID = fmt.Sprintf("worker-%d", time.Now().UnixNano()%10000)
-			}
-			planningStreamer = ws.NewRedisSessionStreamer(streamerRedis, podID)
-			planningPublisher = wsPublisher
-		} else {
-			planningStreamer = ws.NewHub()
-			planningPublisher = wsPublisher
-		}
+		jsStreamer := ws.NewJetStreamSessionStreamer(jetstream)
 
 		planningService := service.NewPlanningSessionService(
 			planningSessionRepo, epicRepo, agentRepo, settingsRepo,
 			docsContentRepo, docsVersionRepo, docsLinkRepo,
 			docsDocumentRepo, docsSpaceRepo,
 			planningModels, toolRegistry,
-			planningStreamer, planningPublisher,
+			jsStreamer, wsPublisher,
 		)
 		planningService.SetWorkflowStarter(&planningWorkflowAdapter{engine: runEngine})
 		flowService := service.NewFlowService(

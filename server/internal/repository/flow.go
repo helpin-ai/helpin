@@ -67,6 +67,23 @@ func (r *FlowRepository) GetActiveRunByTarget(ctx context.Context, workspaceID, 
 	return &run, nil
 }
 
+func (r *FlowRepository) ListRuns(ctx context.Context, workspaceID string, limit, offset int) ([]model.FlowRun, int64, error) {
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&model.FlowRun{}).Where("workspace_id = ?", workspaceID).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count flow runs: %w", err)
+	}
+	var items []model.FlowRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&items).Error; err != nil {
+		return nil, 0, fmt.Errorf("list flow runs: %w", err)
+	}
+	return items, total, nil
+}
+
 func (r *FlowRepository) CreateNodeRun(ctx context.Context, nodeRun *model.FlowNodeRun) error {
 	if err := r.db.WithContext(ctx).Create(nodeRun).Error; err != nil {
 		return fmt.Errorf("create flow node run: %w", err)

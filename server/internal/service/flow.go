@@ -96,6 +96,31 @@ func (s *FlowService) ListNodeRuns(ctx context.Context, workspaceID, flowRunID s
 	return s.flowRepo.ListNodeRuns(ctx, flowRunID)
 }
 
+func (s *FlowService) ListRuns(ctx context.Context, workspaceID string, limit, offset int) (*model.FlowRunListResponse, error) {
+	runs, total, err := s.flowRepo.ListRuns(ctx, workspaceID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]model.FlowRunView, len(runs))
+	for i, run := range runs {
+		nodeRuns, err := s.flowRepo.ListNodeRuns(ctx, run.ID)
+		if err != nil {
+			s.logger.WarnContext(ctx, "failed to fetch node runs for flow run", "flow_run_id", run.ID, "error", err)
+			nodeRuns = nil
+		}
+		views[i] = model.FlowRunView{
+			Run:      &runs[i],
+			Spec:     flowSpec(run.TemplateID),
+			NodeRuns: nodeRuns,
+		}
+	}
+	return &model.FlowRunListResponse{Data: views, Total: total}, nil
+}
+
+func (s *FlowService) ListTemplates() []model.FlowSpec {
+	return []model.FlowSpec{flowSpec(model.FlowTemplateEpicPlanningV1)}
+}
+
 func (s *FlowService) SendInteractiveMessage(ctx context.Context, workspaceID, flowRunID, nodeRunID, actorID string, req model.FlowInteractiveMessageRequest) (*model.PlanningSessionMessage, error) {
 	nodeRun, _, err := s.requireInteractiveNode(ctx, workspaceID, flowRunID, nodeRunID)
 	if err != nil {

@@ -22,7 +22,7 @@ type PlanningFinalizeTurnFunc func(ctx context.Context, sessionID, actorID strin
 
 // PlanningSessionActivities contains the Temporal activities for interactive planning sessions.
 // These run in the shared temporal-worker process and publish stream events through
-// PGSessionStreamer so the API websocket hub can relay them to browsers.
+// JetStream so the API websocket hub can relay them to browsers.
 type PlanningSessionActivities struct {
 	sessionRepo *repository.PlanningSessionRepository
 	epicRepo    *repository.PMEpicRepository

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useWSStore } from './useWebSocket';
+import { useWSStore, type WSEvent } from './useWebSocket';
 import { queryKeys } from '@/lib/queryKeys';
 import type { PlanningStreamEvent, ToolInvocation } from '@/lib/pmTypes';
 
@@ -13,10 +13,39 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
   const send = useWSStore((s) => s.send);
   const qc = useQueryClient();
   const receivedAnyEvent = useRef(false);
+  const seenEventIds = useRef<string[]>([]);
 
   // Mark that we're waiting for the agent to respond (bridges the gap
   // between sending a message and the first stream token arriving).
   const markTurnPending = () => setTurnPending(true);
+
+  const settleTurn = () => {
+    if (!sessionId) return;
+    qc.invalidateQueries({ queryKey: queryKeys.pm.planningMessages(wsId, sessionId) });
+    qc.invalidateQueries({ queryKey: queryKeys.pm.planningSession(wsId, sessionId) });
+    setTimeout(() => {
+      setIsStreaming(false);
+      setTurnPending(false);
+      setToolResults([]);
+      setActiveToolCall(null);
+    }, 300);
+  };
+
+  const isDuplicateEvent = (eventId?: string) => {
+    if (!eventId) return false;
+    if (seenEventIds.current.includes(eventId)) {
+      return true;
+    }
+    seenEventIds.current.push(eventId);
+    if (seenEventIds.current.length > 200) {
+      seenEventIds.current = seenEventIds.current.slice(-200);
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    seenEventIds.current = [];
+  }, [sessionId]);
 
   // Subscribe on mount, unsubscribe on unmount.
   // Also re-subscribe when `send` changes (WS reconnect).
@@ -35,6 +64,7 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
     const handler = (e: Event) => {
       const event = (e as CustomEvent<PlanningStreamEvent>).detail;
       if (event.session_id !== sessionId) return;
+      if (isDuplicateEvent(event.event_id)) return;
       receivedAnyEvent.current = true;
 
       switch (event.type) {
@@ -69,17 +99,7 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
           setIsStreaming(true);
           break;
         case 'turn_completed': {
-          // Invalidate queries first, then clear streaming state after a short delay
-          // so the persisted message has time to load before the streaming bubble disappears.
-          qc.invalidateQueries({ queryKey: queryKeys.pm.planningMessages(wsId, sessionId) });
-          qc.invalidateQueries({ queryKey: queryKeys.pm.planningSession(wsId, sessionId) });
-          // Delay clearing to avoid blank flash between streaming and persisted message
-          setTimeout(() => {
-            setIsStreaming(false);
-            setTurnPending(false);
-            setToolResults([]);
-            setActiveToolCall(null);
-          }, 500);
+          settleTurn();
           break;
         }
         case 'error':
@@ -91,7 +111,20 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
     };
     window.addEventListener('planning-stream', handler);
     return () => window.removeEventListener('planning-stream', handler);
-  }, [sessionId, wsId, qc]);
+  }, [sessionId, settleTurn]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const handler = (e: Event) => {
+      const event = (e as CustomEvent<WSEvent>).detail;
+      if (event.parent_id !== sessionId) return;
+      if (isDuplicateEvent(event.event_id)) return;
+      if (event.data?.role !== 'assistant') return;
+      settleTurn();
+    };
+    window.addEventListener('planning-session-message', handler);
+    return () => window.removeEventListener('planning-session-message', handler);
+  }, [sessionId, settleTurn]);
 
   return { isStreaming, turnPending, markTurnPending, activeToolCall, toolResults, error };
 }

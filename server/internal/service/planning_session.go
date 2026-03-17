@@ -232,10 +232,11 @@ func (s *PlanningSessionService) SendMessage(ctx context.Context, workspaceID, s
 	_ = s.sessionRepo.UpdateLastActive(ctx, sessionID)
 
 	// Publish user message event.
+	userEventData, _ := json.Marshal(map[string]string{"role": "user"})
 	s.publisher.Publish(websocket.Event{
 		Action: "created", Entity: "planning_session_message",
 		EntityID: userMsg.ID, ParentType: "planning_session", ParentID: sessionID,
-		WorkspaceID: workspaceID, ActorID: actorID,
+		WorkspaceID: workspaceID, ActorID: actorID, Data: userEventData,
 	})
 
 	// Signal Temporal workflow to run agent turn.
@@ -455,10 +456,6 @@ func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *mode
 		return
 	}
 
-	s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
-		Type:      "turn_completed",
-		SessionID: sessionID,
-	})
 	if errors.Is(execErr, worker.ErrMaxToolStepsReached) {
 		s.sendStreamError(sessionID, "Agent reached the maximum number of tool steps and stopped before finishing.")
 	}
@@ -485,12 +482,21 @@ func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *mode
 	_ = s.sessionRepo.UpdateLastActive(ctx, sessionID)
 	s.updateSessionTokenUsage(ctx, session, result.Usage)
 	if assistantMsg != nil {
+		assistantEventData, _ := json.Marshal(map[string]string{"role": "assistant"})
 		s.publisher.Publish(websocket.Event{
 			Action: "created", Entity: "planning_session_message",
 			EntityID: assistantMsg.ID, ParentType: "planning_session", ParentID: sessionID,
-			WorkspaceID: session.WorkspaceID,
+			WorkspaceID: session.WorkspaceID, Data: assistantEventData,
 		})
 	}
+	completedEvent := model.PlanningStreamEvent{
+		Type:      "turn_completed",
+		SessionID: sessionID,
+	}
+	if assistantMsg != nil {
+		completedEvent.MessageID = assistantMsg.ID
+	}
+	s.streamer.SendToSession(sessionID, completedEvent)
 }
 
 // --- Helpers ---
