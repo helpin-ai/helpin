@@ -179,7 +179,9 @@ export default function Workspaces() {
     }
   };
 
-  const handleContinueToTeams = (e: FormEvent) => {
+  const [checkingSlug, setCheckingSlug] = useState(false);
+
+  const handleContinueToTeams = async (e: FormEvent) => {
     e.preventDefault();
     if (!currentOrganization) {
       toast.error('Please select an organization first');
@@ -187,6 +189,14 @@ export default function Workspaces() {
     }
     if (!name.trim() || !slug.trim()) {
       toast.error('Enter a workspace name and slug');
+      return;
+    }
+    // Check slug availability
+    setCheckingSlug(true);
+    const { data: existing } = await workspacesService.getBySlug(slug.trim());
+    setCheckingSlug(false);
+    if (existing) {
+      toast.error(`The slug "${slug.trim()}" is already taken. Please choose a different one.`);
       return;
     }
     setWorkspaceStep('teams');
@@ -612,7 +622,7 @@ export default function Workspaces() {
                   {workspaceStep === 'details' && (
                     <>
                       <Button type="button" variant="outline" onClick={() => handleWorkspaceDialogChange(false)}>Cancel</Button>
-                      <Button type="submit">Continue</Button>
+                      <Button type="submit" disabled={checkingSlug}>{checkingSlug ? 'Checking...' : 'Continue'}</Button>
                     </>
                   )}
                   {workspaceStep === 'teams' && (
