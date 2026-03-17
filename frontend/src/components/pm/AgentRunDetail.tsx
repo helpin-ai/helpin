@@ -3,6 +3,7 @@ import { Bot, Clock, Loader2, CheckCircle2, XCircle, ShieldCheck, StopCircle } f
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { STATUS_META } from './agentRunConstants';
 import { AgentRunArtifactView } from './AgentRunArtifactView';
 import type { AgentRun, AgentRunArtifact } from '@/lib/pmTypes';
@@ -97,7 +98,7 @@ export function AgentRunDetail({ run, artifacts, actingOnRun, onCancel, onApprov
 
       {/* Metadata grid */}
       <dl className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1.5">
-        <MetadataItem label="Runtime" value={run.runtime_kind} />
+        <MetadataItem label="Runtime" value={AGENT_RUNTIME_LABELS[run.runtime_kind] ?? run.runtime_kind} />
         <MetadataItem label="Pool" value={run.runner_pool} />
         <MetadataItem label="Stage" value={run.execution_stage} />
         <MetadataItem label="Approval" value={run.approval_state} />

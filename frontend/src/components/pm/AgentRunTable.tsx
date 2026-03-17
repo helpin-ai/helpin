@@ -1,5 +1,6 @@
 import { Clock, Loader2, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { TABLE_HEADER, TABLE_HEADER_CELL, TABLE_ROW, TABLE_CELL } from '@/lib/tableStyles';
 import { STATUS_META } from './agentRunConstants';
 import type { AgentRun } from '@/lib/pmTypes';
@@ -69,7 +70,7 @@ export function AgentRunTable({ runs, selectedRunId, onSelectRun, loading }: Pro
               </Badge>
             </div>
             <div className={`${TABLE_CELL} text-muted-foreground`} style={{ width: 90 }}>
-              <span className="truncate">{run.runtime_kind}</span>
+              <span className="truncate">{AGENT_RUNTIME_LABELS[run.runtime_kind] ?? run.runtime_kind}</span>
             </div>
             <div className={`${TABLE_CELL} text-muted-foreground`} style={{ flex: '1 1 0%', minWidth: 100 }}>
               <span className="truncate" title={branch}>{branch || '-'}</span>
