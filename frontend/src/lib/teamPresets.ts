@@ -25,7 +25,7 @@ export const WORKSPACE_TEAM_SUGGESTIONS: { name: string; teamType: TeamType; sel
   { name: 'Product', teamType: 'engineering', selected: true },
   { name: 'Design', teamType: 'custom', selected: false },
   { name: 'Support', teamType: 'custom', selected: false },
-  { name: 'Marketing', teamType: 'custom', selected: false },
+  { name: 'Marketing', teamType: 'custom', selected: true },
 ];
 
 export function slugifyTeamHandle(name: string): string {

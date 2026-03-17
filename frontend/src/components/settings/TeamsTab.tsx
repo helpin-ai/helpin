@@ -986,15 +986,17 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   <Label>Name</Label>
                   <Input value={name} onChange={e => setName(e.target.value)} required />
                 </div>
-                <div className="space-y-2">
-                  <Label>Handle</Label>
-                  <Input
-                    value={handle}
-                    onChange={e => setHandle(e.target.value)}
-                    placeholder={slugifyTeamHandle(name) || 'growth'}
-                  />
-                  <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
-                </div>
+                {editTeam && (
+                  <div className="space-y-2">
+                    <Label>Handle</Label>
+                    <Input
+                      value={handle}
+                      onChange={e => setHandle(e.target.value)}
+                      placeholder={slugifyTeamHandle(name) || 'growth'}
+                    />
+                    <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
                   <Textarea
@@ -1014,7 +1016,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   <div className="space-y-1">
                     <Label htmlFor="engineering-team" className="cursor-pointer leading-tight">This is an engineering / dev team</Label>
                     <p className="text-xs text-muted-foreground">
-                      Engineering teams get fibonacci estimates, sprints, epics, delivery tracking, and GitHub integration enabled by default. Non-engineering teams start with a simpler setup.
+                      Engineering teams get development workflows, GitHub integration, and pre-defined settings. Non-engineering teams start with a simpler setup.
                     </p>
                   </div>
                 </div>
@@ -1593,15 +1595,6 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               <div className="space-y-2">
                 <Label>Name</Label>
                 <Input value={name} onChange={e => setName(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Handle</Label>
-                <Input
-                  value={handle}
-                  onChange={e => setHandle(e.target.value)}
-                  placeholder={slugifyTeamHandle(name) || 'growth'}
-                />
-                <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
               </div>
               <div className="space-y-2">
                 <Label>Description <span className="text-muted-foreground font-normal">(optional)</span></Label>

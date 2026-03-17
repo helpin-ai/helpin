@@ -10,12 +10,14 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { Copy, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Copy, Plus, RefreshCw, Search, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function MembersTab({ workspaceId, organizationId, editable, teams, userMemberships }: {
@@ -122,23 +124,51 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     if (createdJoinUrl) loadData();
   };
 
+  const parseEmails = (raw: string): string[] =>
+    raw.split(/[,\n\s]+/).map((s) => s.trim().toLowerCase()).filter((s) => s && s.includes('@'));
+
   const handleInvite = async (e: FormEvent) => {
     e.preventDefault();
+    const emails = parseEmails(invEmail);
+    if (emails.length === 0) {
+      toast.error('Enter at least one valid email address');
+      return;
+    }
     setSending(true);
-    const { data, error } = await inviteService.send({ workspace_id: workspaceId, email: invEmail, role: invRole });
+    let sent = 0;
+    const failedEmails: string[] = [];
+    let lastJoinUrl: string | null = null;
+
+    await Promise.all(
+      emails.map(async (email) => {
+        const { data, error } = await inviteService.send({ workspace_id: workspaceId, email, role: invRole });
+        if (error) {
+          failedEmails.push(email);
+        } else {
+          if (data?.id && selectedTeamIds.length > 0) {
+            await Promise.all(
+              selectedTeamIds.map((teamId) => settingsService.addTeamInvitation(workspaceId, teamId, data.id)),
+            );
+          }
+          if (data?.join_url) lastJoinUrl = data.join_url;
+          sent++;
+        }
+      }),
+    );
+
     setSending(false);
-    if (error) {
-      toast.error(error);
+
+    if (sent > 0 && failedEmails.length > 0) {
+      toast.warning(`${sent} of ${emails.length} invitations sent. Failed: ${failedEmails.join(', ')}`);
+    } else if (sent > 0) {
+      toast.success(`${sent} invitation${sent === 1 ? '' : 's'} sent`);
     } else {
-      // Preassign to selected teams
-      if (data?.id && selectedTeamIds.length > 0) {
-        await Promise.all(
-          selectedTeamIds.map((teamId) => settingsService.addTeamInvitation(workspaceId, teamId, data.id)),
-        );
-      }
-      toast.success(`Invitation sent to ${invEmail}`);
-      if (data?.join_url) {
-        setCreatedJoinUrl(data.join_url);
+      toast.error(`Failed to send invitations: ${failedEmails.join(', ')}`);
+    }
+
+    if (sent > 0) {
+      if (emails.length === 1 && lastJoinUrl) {
+        setCreatedJoinUrl(lastJoinUrl);
       } else {
         setInviteOpen(false);
         loadData();
@@ -357,51 +387,71 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
           ) : (
             <form onSubmit={handleInvite}>
               <DialogHeader>
-                <DialogTitle>Invite Member</DialogTitle>
+                <DialogTitle>Invite Members</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>Email</Label>
-                  <div className="relative">
-                    <Input
-                      ref={inputRef}
-                      type="email"
-                      placeholder="colleague@example.com"
-                      value={invEmail}
-                      onChange={(e) => { setInvEmail(e.target.value); setShowSuggestions(true); }}
-                      onFocus={() => setShowSuggestions(true)}
-                      onBlur={() => { setTimeout(() => setShowSuggestions(false), 150); }}
-                      required
-                      autoComplete="off"
-                    />
-                    {showSuggestions && filteredSuggestions.length > 0 && (
-                      <div ref={suggestionsRef} className="absolute z-50 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md">
-                        {availableOrgMembers.length > 0 && !invEmail && (
-                          <div className="px-3 py-1.5 text-xs text-muted-foreground font-medium border-b">
-                            Organization members
-                          </div>
-                        )}
-                        {filteredSuggestions.map((m) => (
-                          <button
-                            key={m.user_id}
-                            type="button"
-                            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setInvEmail(m.email);
-                              setShowSuggestions(false);
-                            }}
-                          >
-                            <UserAvatar name={m.full_name || m.email} className="h-6 w-6" fallbackClassName="text-[10px]" />
-                            <div className="min-w-0 flex-1">
-                              {m.full_name && <p className="truncate text-sm font-medium">{m.full_name}</p>}
-                              <p className="truncate text-xs text-muted-foreground">{m.email}</p>
-                            </div>
+                  <div className="flex items-center justify-between">
+                    <Label>Emails</Label>
+                    {availableOrgMembers.length > 0 && (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button type="button" className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors">
+                            <Users className="h-3 w-3" />
+                            Add from organization
                           </button>
-                        ))}
-                      </div>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-64 p-0">
+                          <div className="max-h-56 overflow-y-auto">
+                            {availableOrgMembers.map((m) => {
+                              const alreadyAdded = parseEmails(invEmail).includes(m.email.toLowerCase());
+                              return (
+                                <button
+                                  key={m.user_id}
+                                  type="button"
+                                  disabled={alreadyAdded}
+                                  onClick={() => {
+                                    setInvEmail((prev) => {
+                                      const trimmed = prev.trim();
+                                      return trimmed ? `${trimmed}\n${m.email}` : m.email;
+                                    });
+                                  }}
+                                  className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                                    alreadyAdded
+                                      ? 'opacity-40 cursor-default'
+                                      : 'hover:bg-accent'
+                                  }`}
+                                >
+                                  <UserAvatar name={m.full_name || m.email} className="h-6 w-6" fallbackClassName="text-[10px]" />
+                                  <div className="min-w-0 flex-1">
+                                    {m.full_name && <p className="truncate text-sm font-medium">{m.full_name}</p>}
+                                    <p className="truncate text-xs text-muted-foreground">{m.email}</p>
+                                  </div>
+                                  {alreadyAdded && <span className="text-[10px] text-muted-foreground shrink-0">Added</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     )}
                   </div>
+                  <Textarea
+                    ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+                    placeholder="name@example.com, name2@example.com"
+                    value={invEmail}
+                    onChange={(e) => {
+                      setInvEmail(e.target.value);
+                      const el = e.target;
+                      el.style.height = 'auto';
+                      el.style.height = `${el.scrollHeight}px`;
+                    }}
+                    rows={1}
+                    className="resize-none text-sm min-h-[36px] overflow-hidden break-all w-full"
+                    required
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-muted-foreground">Separate multiple emails with commas, spaces, or new lines</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Role</Label>
@@ -476,7 +526,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={closeInviteDialog}>Cancel</Button>
-                <Button type="submit" disabled={sending}>{sending ? 'Sending...' : 'Send Invite'}</Button>
+                <Button type="submit" disabled={sending}>{sending ? 'Sending invites...' : 'Send Invites'}</Button>
               </DialogFooter>
             </form>
           )}
