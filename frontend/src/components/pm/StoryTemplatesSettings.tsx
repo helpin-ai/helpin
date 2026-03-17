@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CreateStoryModal } from '@/components/pm/CreateStoryModal';
 import { pmStoryTemplateService } from '@/lib/services/pmStoryTemplateService';
 import type { StoryTemplate } from '@/lib/pmTypes';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 
 interface StoryTemplatesSettingsProps {
   workspaceId: string;
@@ -75,7 +75,7 @@ function TemplateCard({
 }
 
 export function StoryTemplatesSettings({ workspaceId, initialTeamId }: StoryTemplatesSettingsProps) {
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId);
   const [templates, setTemplates] = useState<StoryTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingTemplate, setEditingTemplate] = useState<StoryTemplate | null>(null);

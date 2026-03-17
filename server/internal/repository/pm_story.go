@@ -135,6 +135,13 @@ func (r *PMStoryRepository) List(ctx context.Context, workspaceID string, filter
 	if filters.LabelID != nil && *filters.LabelID != "" {
 		query = query.Joins("JOIN pm_story_labels psl ON psl.story_id = pm_stories.id").Where("psl.label_id = ?", *filters.LabelID)
 	}
+	if filters.AccessibleTeamIDs != nil {
+		if len(filters.AccessibleTeamIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("team_id IN ?", filters.AccessibleTeamIDs)
+		}
+	}
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -659,6 +666,13 @@ func (r *PMStoryRepository) applyBoardFilters(q *gorm.DB, filters model.PMStoryF
 		vals := strings.Split(*filters.LabelID, ",")
 		q = q.Joins("JOIN pm_story_labels psl ON psl.story_id = pm_stories.id").
 			Where("psl.label_id IN ?", vals)
+	}
+	if filters.AccessibleTeamIDs != nil {
+		if len(filters.AccessibleTeamIDs) == 0 {
+			q = q.Where("1 = 0")
+		} else {
+			q = q.Where("pm_stories.team_id IN ?", filters.AccessibleTeamIDs)
+		}
 	}
 	return q
 }

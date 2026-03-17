@@ -3,6 +3,7 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useOrganizationMembers } from '@/hooks/queries';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
+import { settingsService } from '@/lib/services/settingsService';
 import type { MemberWithUser, Invitation, TeamUserMembership, WorkspaceTeam } from '@/lib/types';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -32,6 +33,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   const [invRole, setInvRole] = useState('member');
   const [sending, setSending] = useState(false);
   const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [query, setQuery] = useState('');
   const suggestionsRef = useRef<HTMLDivElement>(null);
@@ -89,6 +91,11 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     );
   }, [members, query]);
 
+  const pendingInvitations = useMemo(() =>
+    invitations.filter((inv) => inv.status === 'pending'),
+    [invitations],
+  );
+
   const loadData = async () => {
     setLoading(true);
     const [membersRes, invitationsRes] = await Promise.all([
@@ -106,6 +113,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     setCreatedJoinUrl(null);
     setInvEmail('');
     setInvRole('member');
+    setSelectedTeamIds([]);
     setInviteOpen(true);
   };
 
@@ -122,6 +130,12 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     if (error) {
       toast.error(error);
     } else {
+      // Preassign to selected teams
+      if (data?.id && selectedTeamIds.length > 0) {
+        await Promise.all(
+          selectedTeamIds.map((teamId) => settingsService.addTeamInvitation(workspaceId, teamId, data.id)),
+        );
+      }
       toast.success(`Invitation sent to ${invEmail}`);
       if (data?.join_url) {
         setCreatedJoinUrl(data.join_url);
@@ -264,7 +278,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
           </div>
         )}
 
-        {editable && invitations.filter((inv) => inv.status === 'pending').length > 0 && (
+        {editable && pendingInvitations.length > 0 && (
           <div className="space-y-3">
             <div>
               <h3 className="text-sm font-medium">Pending Invitations</h3>
@@ -283,7 +297,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {invitations.filter((inv) => inv.status === 'pending').map((inv) => (
+                  {pendingInvitations.map((inv) => (
                     <TableRow key={inv.id}>
                       <TableCell className="font-medium">{inv.email}</TableCell>
                       <TableCell><Badge variant="outline" className="text-xs">{inv.role}</Badge></TableCell>
@@ -393,15 +407,14 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                   <Label>Role</Label>
                   <div className="space-y-2">
                     {([
-                      { value: 'admin', label: 'Admin', description: 'Full access to all settings, members, billing, and workspace configuration.' },
-                      { value: 'manager', label: 'Manager', description: 'Can manage teams, projects, sprints, and view performance data.' },
-                      { value: 'member', label: 'Member', description: 'Can create and edit stories, epics, and participate in sprints.' },
-                      { value: 'viewer', label: 'Viewer', description: 'Read-only access. Can view projects and dashboards but cannot make changes.' },
+                      { value: 'admin', label: 'Admin', description: 'Full access across all teams. Can manage settings, workflows, labels, and members.' },
+                      { value: 'member', label: 'Member', description: 'Can create and edit stories in their teams. Can be promoted to team manager to manage epics, sprints, and objectives.' },
+                      { value: 'viewer', label: 'Viewer', description: 'Read-only access to stories, epics, and sprints in their assigned teams only.' },
                     ] as const).map((role) => (
                       <button
                         key={role.value}
                         type="button"
-                        onClick={() => setInvRole(role.value)}
+                        onClick={() => { setInvRole(role.value); if (role.value === 'admin') setSelectedTeamIds([]); }}
                         className={cn(
                           'flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors',
                           invRole === role.value
@@ -423,6 +436,43 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                     ))}
                   </div>
                 </div>
+                {invRole !== 'admin' && (
+                <div className="space-y-2">
+                  <Label>Teams <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  {teams.length > 0 ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">Auto-assign to teams when the invite is accepted.</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {teams.map((team) => {
+                          const selected = selectedTeamIds.includes(team.id);
+                          return (
+                            <button
+                              key={team.id}
+                              type="button"
+                              onClick={() =>
+                                setSelectedTeamIds((prev) =>
+                                  selected
+                                    ? prev.filter((id) => id !== team.id)
+                                    : [...prev, team.id],
+                                )
+                              }
+                              className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                                selected
+                                  ? 'border-primary bg-primary/10 text-primary font-medium'
+                                  : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
+                              }`}
+                            >
+                              {team.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No teams created yet. You can assign this member to teams later from the Teams settings.</p>
+                  )}
+                </div>
+                )}
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={closeInviteDialog}>Cancel</Button>

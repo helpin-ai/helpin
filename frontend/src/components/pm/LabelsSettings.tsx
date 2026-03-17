@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import type { LabelWithStats } from '@/lib/pmTypes';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 
 interface LabelsSettingsProps {
   workspaceId: string;
@@ -181,7 +181,7 @@ function LabelForm({
 }
 
 export function LabelsSettings({ workspaceId, initialTeamId, editable = true }: LabelsSettingsProps) {
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId);
   const [labels, setLabels] = useState<LabelWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

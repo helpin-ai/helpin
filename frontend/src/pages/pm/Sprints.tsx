@@ -18,7 +18,7 @@ import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopov
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import type { SprintStatus, SprintWithStats } from '@/lib/pmTypes';
@@ -74,7 +74,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
   }, [VIEW_MODE_KEY]);
 
-  const { findTeamName } = useWorkspaceTeams(workspaceId);
+  const { findTeamName } = useAccessibleTeams(workspaceId);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const navigate = useNavigate();

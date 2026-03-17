@@ -110,6 +110,9 @@ type PMStoryFilters struct {
 	Blocking          *string
 	UpdatedAfter      *string
 	Archived          *bool
+	// AccessibleTeamIDs enforces team-based access boundaries.
+	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
+	AccessibleTeamIDs []string
 }
 
 // PMPagination is common pagination input.

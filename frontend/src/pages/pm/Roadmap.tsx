@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
@@ -48,7 +48,7 @@ export function RoadmapPage() {
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit } = usePermissions(access);
 
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),

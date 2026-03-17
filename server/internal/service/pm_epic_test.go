@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -210,7 +211,14 @@ func TestPMEpicService_Create_Forbidden(t *testing.T) {
 	activityService := NewPMActivityService(activityRepo)
 	svc := NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, workspaceRepo, activityService, nil, nil)
 
-	_, err := svc.Create(context.Background(), model.CreateEpicRequest{
+	// Inject a member actor (not a team owner) — members cannot create epics
+	ctx := authorization.WithActor(context.Background(), &authorization.Actor{
+		UserID:            userID,
+		WorkspaceID:       wsID,
+		WorkspaceMemberID: memberID,
+		Role:              model.RoleMember,
+	})
+	_, err := svc.Create(ctx, model.CreateEpicRequest{
 		WorkspaceID: wsID,
 		Name:        "Should Fail",
 	}, userID)
@@ -450,7 +458,7 @@ func TestPMEpicService_Delete_Forbidden(t *testing.T) {
 	seedUser(t, db, managerUserID, "delmanager@test.com", "Manager", "hash")
 	seedWorkspace(t, db, wsID, "Del WS", "del-ws", adminUserID)
 	seedWorkspaceMember(t, db, "member-del-admin", wsID, adminUserID, "deladmin@test.com", "Admin", model.RoleAdmin)
-	seedWorkspaceMember(t, db, "member-del-manager", wsID, managerUserID, "delmanager@test.com", "Manager", model.RoleManager)
+	seedWorkspaceMember(t, db, "member-del-manager", wsID, managerUserID, "delmanager@test.com", "Manager", model.RoleMember)
 
 	epicRepo := repository.NewPMEpicRepository(db)
 	storyRepo := repository.NewPMStoryRepository(db)

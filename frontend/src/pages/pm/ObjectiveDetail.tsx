@@ -31,7 +31,7 @@ import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -437,7 +437,7 @@ export function ObjectiveDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const ownerOptions = useMemo(
     () => buildAssignableMemberOptions(assignableMembers),

@@ -21,7 +21,7 @@ import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopov
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
@@ -94,7 +94,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const slug = workspace?.slug;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
-  const { teams, findTeamName } = useWorkspaceTeams(workspaceId);
+  const { teams, findTeamName } = useAccessibleTeams(workspaceId);
   const isSingleTeam = teams.length <= 1;
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE);
