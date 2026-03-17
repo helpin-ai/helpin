@@ -122,6 +122,7 @@ Disadvantages:
 - Mention notifications should use the existing mention-event style:
   - existing: `story.mention`, `comment.mention`, `checklist.mention`
   - add: `epic.mention`, `sprint.mention`, `objective.mention`
+- All new mention event types must be wired into the notification category mapping, Mentions tab filtering, unread counts, and related notification tests so they behave like existing mention events in the UI.
 
 ### Supported Surfaces
 
@@ -139,6 +140,7 @@ Team mentions should work everywhere mentions are currently authored in PM:
 - Keep authoring UX the same for the first version: editors still autocomplete `@team-handle`.
 - On display, resolve team mentions as distinct team chips rather than generic highlighted text.
 - If a team mention cannot be resolved at render time, fall back to plain `@handle` text rather than breaking the UI.
+- Read-time team mention rendering should use the existing workspace team list on the frontend, passed into mention-rendering components as optional team metadata, rather than introducing a new mention-resolution API just for display.
 
 ### Collision Rule
 
@@ -172,7 +174,7 @@ Reason:
 ### Frontend
 
 - Keep existing mention suggestion behavior.
-- Improve mention rendering so team mentions display distinctly from person mentions.
+- Extend mention-rendering components to accept optional team metadata sourced from the existing workspace team list, so team mentions can display distinctly from person mentions without changing PM entity response shapes.
 - Do not block backend rollout on richer rendering; notification correctness is the first priority.
 
 ## Testing
