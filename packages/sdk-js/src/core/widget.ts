@@ -286,14 +286,13 @@ export class WidgetManager {
   private render(): void {
     if (!this.mountContainer || !this.widgetConfig) return;
 
-    // Apply brand color as CSS variables on the shadow root container
+    // Apply brand color as CSS variables on the mount container
+    // This cascades into .helpin-widget and overrides the defaults in widget.css
     const primaryColor = this.widgetConfig.branding?.primaryColor;
-    if (primaryColor && this.mountContainer.parentElement) {
-      const root = this.mountContainer.parentElement as HTMLElement;
-      root.style.setProperty('--helpin-primary', primaryColor);
-      root.style.setProperty('--helpin-primary-hover', this.darkenColor(primaryColor, 15));
-      // Auto-detect foreground color for readability on both light and dark brand colors
-      root.style.setProperty('--helpin-primary-foreground', this.getContrastColor(primaryColor));
+    if (primaryColor) {
+      this.mountContainer.style.setProperty('--helpin-primary', primaryColor);
+      this.mountContainer.style.setProperty('--helpin-primary-hover', this.darkenColor(primaryColor, 15));
+      this.mountContainer.style.setProperty('--helpin-primary-foreground', this.getContrastColor(primaryColor));
     }
 
     const showPreChat = this.widgetConfig.features?.preChatForm && !this.sessionToken;
