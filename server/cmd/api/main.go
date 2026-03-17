@@ -364,6 +364,20 @@ func main() {
 	}
 
 	wsHub.SetRelay(redisRelay) // nil in local-only mode
+
+	// When Redis is available, use RedisPresence for shared state across pods.
+	// Otherwise, the default in-memory PresenceState set in NewHub() is used.
+	if cfg.RedisURL != "" {
+		redisOpts2, _ := redis.ParseURL(cfg.RedisURL)
+		presenceRedis := redis.NewClient(redisOpts2)
+		podID := os.Getenv("HOSTNAME")
+		if podID == "" {
+			podID = fmt.Sprintf("pod-%d", time.Now().UnixNano()%10000)
+		}
+		wsHub.SetPresenceProvider(ws.NewRedisPresence(presenceRedis, podID))
+		slog.Info("Redis presence provider enabled")
+	}
+
 	wsPublisher := ws.NewPublisher(wsHub, redisRelay)
 	wsHandler := ws.NewHandler(wsHub, jwtManager)
 

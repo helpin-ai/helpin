@@ -192,9 +192,9 @@ func TestHub_Unregister_BroadcastsDisconnectViaRelay(t *testing.T) {
 	}
 
 	// Set up an agent client with viewing state.
-	client := &Client{UserID: "user-1", WorkspaceID: "ws-1", IsWidget: false}
+	client := &Client{ConnID: "conn-1", UserID: "user-1", WorkspaceID: "ws-1", IsWidget: false}
 	hub.Register(client)
-	hub.Presence.SetViewing("ws-1", "conv-1", "user-1")
+	hub.Presence.SetViewing(context.Background(), "ws-1", "conv-1", "user-1", "conn-1")
 
 	// Unregister should broadcast viewing_stopped via BroadcastAll → Redis.
 	hub.Unregister(client)

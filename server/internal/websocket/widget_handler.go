@@ -126,6 +126,7 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 
 	client := &Client{
 		Conn:           conn,
+		ConnID:         generateConnID(),
 		UserID:         "widget:" + session.ID,
 		WorkspaceID:    session.WorkspaceID,
 		IsWidget:       true,
@@ -136,6 +137,9 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 	h.hub.Register(client)
 	if session.AnonymousID != "" {
 		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
+		if err := h.hub.Presence.SetVisitorOnline(r.Context(), session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
+			slog.Error("presence SetVisitorOnline (legacy)", "error", err)
+		}
 		h.hub.BroadcastAll(Event{
 			Action:      "visitor_online",
 			Entity:      "support_visitor",
@@ -147,7 +151,11 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 		h.hub.Unregister(client)
 		if session.AnonymousID != "" {
 			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
-			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) {
+			lastConn, err := h.hub.Presence.SetVisitorOffline(r.Context(), session.WorkspaceID, session.AnonymousID, client.ConnID)
+			if err != nil {
+				slog.Error("presence SetVisitorOffline (legacy)", "error", err)
+			}
+			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) || lastConn {
 				h.hub.BroadcastAll(Event{
 					Action:      "visitor_offline",
 					Entity:      "support_visitor",
@@ -300,6 +308,7 @@ func (h *WidgetHandler) sendSessionJoined(ctx context.Context, conn *websocket.C
 func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Conn, session *model.SupportWidgetSession, widgetKey string) {
 	client := &Client{
 		Conn:           conn,
+		ConnID:         generateConnID(),
 		UserID:         "widget:" + session.ID,
 		WorkspaceID:    session.WorkspaceID,
 		IsWidget:       true,
@@ -310,6 +319,9 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 	h.hub.Register(client)
 	if session.AnonymousID != "" {
 		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
+		if err := h.hub.Presence.SetVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
+			slog.Error("presence SetVisitorOnline", "error", err)
+		}
 		h.hub.BroadcastAll(Event{
 			Action:      "visitor_online",
 			Entity:      "support_visitor",
@@ -321,7 +333,11 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 		h.hub.Unregister(client)
 		if session.AnonymousID != "" {
 			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
-			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) {
+			lastConn, err := h.hub.Presence.SetVisitorOffline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID)
+			if err != nil {
+				slog.Error("presence SetVisitorOffline", "error", err)
+			}
+			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) || lastConn {
 				h.hub.BroadcastAll(Event{
 					Action:      "visitor_offline",
 					Entity:      "support_visitor",
@@ -467,6 +483,15 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 			session.ConversationID = nil
 			client.ConversationID = nil
+
+		case "ping":
+			// Refresh visitor online key TTL (keepalive from widget SDK).
+			if session.AnonymousID != "" {
+				if err := h.hub.Presence.RefreshVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
+					slog.Error("presence RefreshVisitorOnline", "error", err)
+				}
+			}
+			SendToClient(conn, "pong", nil)
 
 		case "conversation:select":
 			typed, err := unmarshalWidgetData[model.WidgetConversationSelectData](msg.Data)

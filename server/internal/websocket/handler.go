@@ -1,7 +1,9 @@
 package websocket
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -11,6 +13,13 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 )
+
+// generateConnID creates a unique connection identifier.
+func generateConnID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
 
 // agentMessage is the envelope for client→server messages from agent WS connections.
 type agentMessage struct {
@@ -86,6 +95,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	client := &Client{
 		Conn:        conn,
+		ConnID:      generateConnID(),
 		UserID:      claims.UserID,
 		WorkspaceID: workspaceID,
 	}
@@ -97,8 +107,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		conn.Close(websocket.StatusNormalClosure, "closed")
 	}()
 
-	// Send current online visitors as initial snapshot
-	visitors := h.hub.GetOnlineVisitors(workspaceID)
+	// Send current online visitors as initial snapshot.
+	// Try PresenceProvider first (shared across pods), fall back to Hub's in-memory map.
+	visitors, err := h.hub.Presence.GetOnlineVisitors(r.Context(), workspaceID)
+	if err != nil {
+		slog.Error("presence GetOnlineVisitors", "error", err)
+		visitors = h.hub.GetOnlineVisitors(workspaceID)
+	}
 	if len(visitors) > 0 {
 		data, _ := json.Marshal(map[string]any{"visitors": visitors})
 		SendToClient(conn, "support:online_visitors", json.RawMessage(data))
@@ -137,7 +152,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {
 				continue
 			}
-			if h.hub.Presence.SetViewing(workspaceID, d.ConversationID, client.UserID) {
+			ctx := r.Context()
+			changed, err := h.hub.Presence.SetViewing(ctx, workspaceID, d.ConversationID, client.UserID, client.ConnID)
+			if err != nil {
+				slog.Error("presence SetViewing", "error", err)
+			}
+			if changed {
 				h.hub.BroadcastAll(Event{
 					Action:      "viewing_started",
 					Entity:      "support_conversation",
@@ -147,15 +167,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 			// Send presence snapshot to this client
-			snap := h.hub.Presence.MarshalSnapshot(workspaceID, d.ConversationID)
-			SendToClient(conn, "support:presence_snapshot", json.RawMessage(snap))
+			snap, err := h.hub.Presence.GetSnapshot(ctx, workspaceID, d.ConversationID)
+			if err != nil {
+				slog.Error("presence GetSnapshot", "error", err)
+			}
+			snapData, _ := json.Marshal(snap)
+			SendToClient(conn, "support:presence_snapshot", json.RawMessage(snapData))
 
 		case "support:viewing:stop":
 			var d agentViewingData
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {
 				continue
 			}
-			if h.hub.Presence.ClearViewing(workspaceID, d.ConversationID, client.UserID) {
+			cleared, err := h.hub.Presence.ClearViewing(r.Context(), workspaceID, d.ConversationID, client.UserID, client.ConnID)
+			if err != nil {
+				slog.Error("presence ClearViewing", "error", err)
+			}
+			if cleared {
 				h.hub.BroadcastAll(Event{
 					Action:      "viewing_stopped",
 					Entity:      "support_conversation",
@@ -170,27 +198,32 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {
 				continue
 			}
-			if h.hub.Presence.SetTyping(workspaceID, d.ConversationID, client.UserID, d.Content) {
-				var eventData json.RawMessage
-				if d.Content != "" {
-					eventData, _ = json.Marshal(map[string]string{"content": d.Content})
-				}
-				h.hub.BroadcastAll(Event{
-					Action:      "typing_started",
-					Entity:      "support_conversation",
-					EntityID:    d.ConversationID,
-					WorkspaceID: workspaceID,
-					ActorID:     client.UserID,
-					Data:        eventData,
-				})
+			if err := h.hub.Presence.SetTyping(r.Context(), workspaceID, d.ConversationID, client.UserID, client.ConnID, d.Content); err != nil {
+				slog.Error("presence SetTyping", "error", err)
 			}
+			var eventData json.RawMessage
+			if d.Content != "" {
+				eventData, _ = json.Marshal(map[string]string{"content": d.Content})
+			}
+			h.hub.BroadcastAll(Event{
+				Action:      "typing_started",
+				Entity:      "support_conversation",
+				EntityID:    d.ConversationID,
+				WorkspaceID: workspaceID,
+				ActorID:     client.UserID,
+				Data:        eventData,
+			})
 
 		case "support:typing:stop":
 			var d agentTypingData
 			if json.Unmarshal(msg.Data, &d) != nil || d.ConversationID == "" {
 				continue
 			}
-			if h.hub.Presence.ClearTyping(workspaceID, d.ConversationID, client.UserID) {
+			cleared, err := h.hub.Presence.ClearTyping(r.Context(), workspaceID, d.ConversationID, client.UserID, client.ConnID)
+			if err != nil {
+				slog.Error("presence ClearTyping", "error", err)
+			}
+			if cleared {
 				h.hub.BroadcastAll(Event{
 					Action:      "typing_stopped",
 					Entity:      "support_conversation",
@@ -198,6 +231,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					WorkspaceID: workspaceID,
 					ActorID:     client.UserID,
 				})
+			}
+
+		case "support:ping":
+			// Refresh all active presence keys for this agent connection (keepalive).
+			if err := h.hub.Presence.RefreshAllForConn(r.Context(), workspaceID, client.UserID, client.ConnID); err != nil {
+				slog.Error("presence RefreshAllForConn", "error", err)
 			}
 
 		default:

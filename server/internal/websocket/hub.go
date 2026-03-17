@@ -27,6 +27,7 @@ type Event struct {
 // Client represents a single WebSocket connection.
 type Client struct {
 	Conn           *websocket.Conn
+	ConnID         string  // unique per connection, generated at accept time
 	UserID         string
 	WorkspaceID    string
 	IsWidget       bool    // true for widget clients, false for internal (agent) clients
@@ -40,12 +41,12 @@ type Hub struct {
 	clients          map[string]map[*Client]struct{} // workspaceID -> set of clients
 	sessionSubsMu    sync.RWMutex
 	sessionSubs      map[string]map[*Client]struct{} // sessionID -> set of clients subscribed to stream
-	Presence         *PresenceState
+	Presence         PresenceProvider
 	onlineVisitors   map[string]map[string]int // workspaceID → anonymousID → connection count
 	relay            *RedisRelay               // nil in local-only mode (no Redis)
 }
 
-// NewHub creates an empty hub.
+// NewHub creates an empty hub with an in-memory PresenceProvider as default.
 func NewHub() *Hub {
 	return &Hub{
 		clients:        make(map[string]map[*Client]struct{}),
@@ -53,6 +54,13 @@ func NewHub() *Hub {
 		Presence:       NewPresenceState(),
 		onlineVisitors: make(map[string]map[string]int),
 	}
+}
+
+// SetPresenceProvider replaces the default in-memory presence with an
+// alternative implementation (e.g. RedisPresence for multi-pod).
+// Called during DI wiring in main.go.
+func (h *Hub) SetPresenceProvider(p PresenceProvider) {
+	h.Presence = p
 }
 
 // SetRelay configures the Redis relay for cross-pod event broadcasting.
@@ -159,7 +167,12 @@ func (h *Hub) Unregister(c *Client) {
 	// Clean up presence and broadcast stop events for internal (agent) clients.
 	// Use BroadcastAll so disconnect events reach other pods too.
 	if !c.IsWidget {
-		viewingCleared, typingCleared := h.Presence.ClearAllForUser(c.WorkspaceID, c.UserID)
+		ctx := context.Background()
+		viewingCleared, typingCleared, err := h.Presence.ClearAllForConn(ctx, c.WorkspaceID, c.UserID, c.ConnID)
+		if err != nil {
+			slog.Error("presence cleanup on disconnect", "error", err,
+				"user_id", c.UserID, "workspace_id", c.WorkspaceID, "conn_id", c.ConnID)
+		}
 		for _, convID := range viewingCleared {
 			h.BroadcastAll(Event{
 				Action:      "viewing_stopped",

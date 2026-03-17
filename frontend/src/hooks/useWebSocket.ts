@@ -43,6 +43,7 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
   const wsRef = useRef<WebSocket | null>(null)
   const retriesRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
   const onSnapshotRef = useRef(onPresenceSnapshot)
@@ -70,6 +71,13 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data))
       }
       useWSStore.setState({ send: sendFn })
+
+      // Start keepalive ping every 45s to refresh server-side presence keys.
+      pingIntervalRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'support:ping', data: {} }))
+        }
+      }, 45_000)
     }
 
     ws.onmessage = (e) => {
@@ -99,6 +107,10 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
       wsRef.current = null
       setIsConnected(false)
       useWSStore.setState({ send: null })
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current)
+        pingIntervalRef.current = null
+      }
       // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s cap
       const delay = Math.min(1000 * Math.pow(2, retriesRef.current), 30000)
       retriesRef.current++
@@ -117,6 +129,10 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
 
     return () => {
       clearTimeout(timerRef.current ?? undefined)
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current)
+        pingIntervalRef.current = null
+      }
       if (wsRef.current) {
         wsRef.current.onclose = null // prevent reconnect on intentional close
         wsRef.current.close()
