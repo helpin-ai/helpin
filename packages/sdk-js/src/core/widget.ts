@@ -286,13 +286,23 @@ export class WidgetManager {
   private render(): void {
     if (!this.mountContainer || !this.widgetConfig) return;
 
-    // Apply brand color as CSS variables on the mount container
-    // This cascades into .helpin-widget and overrides the defaults in widget.css
+    // Inject brand color overrides as a <style> targeting .helpin-widget directly.
+    // This beats the default --helpin-primary in widget.css because it has equal specificity
+    // but appears later in the shadow DOM stylesheet order.
     const primaryColor = this.widgetConfig.branding?.primaryColor;
-    if (primaryColor) {
-      this.mountContainer.style.setProperty('--helpin-primary', primaryColor);
-      this.mountContainer.style.setProperty('--helpin-primary-hover', this.darkenColor(primaryColor, 15));
-      this.mountContainer.style.setProperty('--helpin-primary-foreground', this.getContrastColor(primaryColor));
+    if (primaryColor && this.shadowRoot) {
+      const overrideId = 'helpin-brand-override';
+      let overrideStyle = this.shadowRoot.getElementById(overrideId) as HTMLStyleElement | null;
+      if (!overrideStyle) {
+        overrideStyle = document.createElement('style');
+        overrideStyle.id = overrideId;
+        this.shadowRoot.appendChild(overrideStyle);
+      }
+      overrideStyle.textContent = `.helpin-widget, .helpin-launcher {
+  --helpin-primary: ${primaryColor};
+  --helpin-primary-hover: ${this.darkenColor(primaryColor, 15)};
+  --helpin-primary-foreground: ${this.getContrastColor(primaryColor)};
+}`;
     }
 
     const showPreChat = this.widgetConfig.features?.preChatForm && !this.sessionToken;
