@@ -92,6 +92,7 @@ export default function Workspaces() {
   const [creating, setCreating] = useState(false);
   const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams' | 'invite'>('details');
   const [createdWorkspace, setCreatedWorkspace] = useState<{ id: string; slug: string } | null>(null);
+  const [createdTeamIds, setCreatedTeamIds] = useState<string[]>([]);
   const [inviteEmails, setInviteEmails] = useState('');
   const [inviteRole, setInviteRole] = useState('member');
   const [sendingInvites, setSendingInvites] = useState(false);
@@ -148,6 +149,7 @@ export default function Workspaces() {
     setDescription('');
     setTeamDrafts(createInitialTeamDrafts());
     setCreatedWorkspace(null);
+    setCreatedTeamIds([]);
     setInviteEmails('');
     setInviteRole('member');
   };
@@ -267,11 +269,13 @@ export default function Workspaces() {
           if (estimateRes.error || visibilityRes.error) {
             throw new Error(estimateRes.error ?? visibilityRes.error ?? `Failed to finish setup for ${team.name}`);
           }
+          return teamRes.data.id;
         }),
       );
 
       createdTeamCount = results.filter((result) => result.status === 'fulfilled').length;
       failedTeamCount = results.length - createdTeamCount;
+      setCreatedTeamIds(results.filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled').map((r) => r.value));
     }
 
     setCreating(false);
@@ -306,9 +310,18 @@ export default function Workspaces() {
     const failedEmails: string[] = [];
     await Promise.all(
       emails.map(async (email) => {
-        const { error } = await inviteService.send({ workspace_id: createdWorkspace.id, email, role: inviteRole });
-        if (error) failedEmails.push(email);
-        else sent++;
+        const { data, error } = await inviteService.send({ workspace_id: createdWorkspace.id, email, role: inviteRole });
+        if (error) {
+          failedEmails.push(email);
+        } else {
+          sent++;
+          // Preassign non-admin invitees to all created teams
+          if (data?.id && inviteRole !== 'admin' && createdTeamIds.length > 0) {
+            await Promise.all(
+              createdTeamIds.map((teamId) => settingsService.addTeamInvitation(createdWorkspace.id, teamId, data.id)),
+            );
+          }
+        }
       }),
     );
     setSendingInvites(false);
