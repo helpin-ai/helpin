@@ -648,7 +648,7 @@ export function StoryDetailPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={copyLink}>
+              <DropdownMenuItem onSelect={() => { void copyLink(); }}>
                 <Link2 className="mr-2 h-4 w-4" />
                 {linkCopied ? 'Copied!' : 'Copy link'}
               </DropdownMenuItem>
