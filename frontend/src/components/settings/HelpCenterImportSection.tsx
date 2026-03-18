@@ -233,7 +233,7 @@ export function HelpCenterImportSection({
               disabled={!editable || connecting}
             />
             <p className="text-xs text-muted-foreground">
-              Find your API key in HelpScout → Manage → API Keys
+              Find your API key in HelpScout → Your Profile → Authentication → API Keys
             </p>
           </div>
           <div className="flex justify-center">
