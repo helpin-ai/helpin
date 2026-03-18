@@ -156,6 +156,20 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     loadAgentRuns();
   }, [loadAgentRuns]);
 
+  useEffect(() => {
+    const handleAgentRunEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ parent_type?: string; parent_id?: string }>).detail;
+      if (detail?.parent_type === 'support_conversation' && detail.parent_id === conversationId) {
+        void loadAgentRuns();
+      }
+    };
+
+    window.addEventListener('agent_run-updated', handleAgentRunEvent);
+    return () => {
+      window.removeEventListener('agent_run-updated', handleAgentRunEvent);
+    };
+  }, [conversationId, loadAgentRuns]);
+
   // Broadcast viewing presence via WebSocket (server tracks state, cleans up on disconnect)
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);

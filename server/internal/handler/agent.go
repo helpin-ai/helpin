@@ -157,6 +157,7 @@ func (h *AgentHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 
 // RunEpicAgent handles POST /api/pm/epics/{id}/run-agent.
 func (h *AgentHandler) RunEpicAgent(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	epicID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
@@ -177,6 +178,7 @@ func (h *AgentHandler) RunEpicAgent(w http.ResponseWriter, r *http.Request) {
 
 // DraftEpicSpec handles POST /api/pm/epics/{id}/draft-spec.
 func (h *AgentHandler) DraftEpicSpec(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	epicID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
@@ -197,6 +199,7 @@ func (h *AgentHandler) DraftEpicSpec(w http.ResponseWriter, r *http.Request) {
 
 // ApproveEpicSpec handles POST /api/pm/epics/{id}/approve-spec.
 func (h *AgentHandler) ApproveEpicSpec(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	epicID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
@@ -217,6 +220,7 @@ func (h *AgentHandler) ApproveEpicSpec(w http.ResponseWriter, r *http.Request) {
 
 // ClarifyEpicSpec handles POST /api/pm/epics/{id}/clarify-spec.
 func (h *AgentHandler) ClarifyEpicSpec(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	epicID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
@@ -237,6 +241,7 @@ func (h *AgentHandler) ClarifyEpicSpec(w http.ResponseWriter, r *http.Request) {
 
 // PlanEpicStories handles POST /api/pm/epics/{id}/plan-stories.
 func (h *AgentHandler) PlanEpicStories(w http.ResponseWriter, r *http.Request) {
+	setDeprecatedFlowHeaders(w, "/api/pm/flow-runs")
 	workspaceID := getWorkspaceID(r)
 	epicID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())

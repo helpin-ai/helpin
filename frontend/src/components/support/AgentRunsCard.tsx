@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { Bot, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { agentService } from '@/lib/services/agentService';
 import type { AgentRun, AgentRunArtifact } from '@/lib/pmTypes';
 import { timeAgo } from './helpers';
@@ -78,7 +79,7 @@ export function AgentRunsCard({ workspaceId, agentRuns, onApprove }: AgentRunsCa
               <span className="text-muted-foreground">{run.approval_state}</span>
             </div>
             <div className="mt-1 text-[10px] text-muted-foreground">
-              {timeAgo(run.created_at)} · {run.runtime_kind}
+              {timeAgo(run.created_at)} · {AGENT_RUNTIME_LABELS[run.runtime_kind] ?? run.runtime_kind}
             </div>
           </button>
         ))}

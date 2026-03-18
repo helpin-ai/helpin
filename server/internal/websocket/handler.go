@@ -13,6 +13,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // generateConnID creates a unique connection identifier.
@@ -50,6 +51,7 @@ type Handler struct {
 	hub          *Hub
 	jwtManager   *auth.JWTManager
 	authzService *authorization.AuthzService
+	sessionRepo  *repository.PlanningSessionRepository
 	userLookup   UserLookupFunc
 	markRead     MarkReadFunc
 }
@@ -62,6 +64,10 @@ func NewHandler(hub *Hub, jwtManager *auth.JWTManager) *Handler {
 // SetAuthzService injects the authorization service for workspace access checks.
 func (h *Handler) SetAuthzService(authz *authorization.AuthzService) {
 	h.authzService = authz
+}
+
+func (h *Handler) SetPlanningSessionRepository(repo *repository.PlanningSessionRepository) {
+	h.sessionRepo = repo
 }
 
 // SetUserLookup injects the function used to resolve user display info for typing events.
@@ -156,6 +162,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				SessionID string `json:"session_id"`
 			}
 			if json.Unmarshal(data, &sessionMsg) == nil && sessionMsg.SessionID != "" {
+				if h.sessionRepo == nil {
+					continue
+				}
+				session, err := h.sessionRepo.GetByID(r.Context(), sessionMsg.SessionID)
+				if err != nil || session == nil || session.WorkspaceID != workspaceID {
+					_ = SendToClient(conn, "session:error", map[string]string{
+						"code":    "invalid_session",
+						"message": "session does not belong to this workspace",
+					})
+					continue
+				}
 				h.hub.SubscribeSession(client, sessionMsg.SessionID)
 			}
 		case "unsubscribe_session":

@@ -9,6 +9,9 @@ frontend:
 backend:
     cd server && air
 
+worker:
+    cd server && go run ./cmd/temporal-worker
+
 dev:
     # Run frontend and backend together; stop both if either exits.
     bash -c 'set -euo pipefail; \
@@ -17,6 +20,15 @@ dev:
       trap "kill $frontend_pid $backend_pid 2>/dev/null || true" EXIT INT TERM; \
       wait -n $frontend_pid $backend_pid'
 
+dev-full:
+    # Run frontend, backend, and temporal worker together; stop all if any exits.
+    bash -c 'set -euo pipefail; \
+      (cd frontend && pnpm dev) & frontend_pid=$!; \
+      (cd server && air) & backend_pid=$!; \
+      (cd server && go run ./cmd/temporal-worker) & worker_pid=$!; \
+      trap "kill $frontend_pid $backend_pid $worker_pid 2>/dev/null || true" EXIT INT TERM; \
+      wait -n $frontend_pid $backend_pid $worker_pid'
+
 dev-tmux:
     tmux new-session -d -s helpin -n dev 'cd server && air'
     tmux split-window -h -t helpin:dev 'cd frontend && pnpm dev'
@@ -24,6 +36,7 @@ dev-tmux:
 
 build-server:
     cd server && go mod download && go build -o bin/api ./cmd/api
+    cd server && go build -o bin/temporal-worker ./cmd/temporal-worker
     @echo "✅ server built → server/bin/api"
 
 build-frontend:

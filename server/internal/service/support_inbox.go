@@ -18,20 +18,21 @@ import (
 
 // SupportInboxService contains support business logic.
 type SupportInboxService struct {
-	conversationRepo   *repository.SupportConversationRepository
-	messageRepo        *repository.SupportMessageRepository
-	agentRepo          *repository.AgentRepository
-	assocRepo          *repository.CRMAssociationRepository
-	installationRepo   *repository.SupportInboxInstallationRepository
-	sessionRepo        *repository.SupportInboxSessionRepository
-	cannedResponseRepo *repository.SupportCannedResponseRepository
-	activitySvc        *PMActivityService
-	wsPublisher        *websocket.Publisher
-	contactRepo        *repository.CRMContactRepository
-	userRepo           *repository.UserRepository
-	docsSpaceRepo      *repository.DocsSpaceRepository
-	docsCollectionRepo *repository.DocsCollectionRepository
-	docsHelpcenterRepo *repository.DocsHelpcenterRepository
+	conversationRepo        *repository.SupportConversationRepository
+	messageRepo             *repository.SupportMessageRepository
+	agentRepo               *repository.AgentRepository
+	assocRepo               *repository.CRMAssociationRepository
+	installationRepo        *repository.SupportInboxInstallationRepository
+	sessionRepo             *repository.SupportInboxSessionRepository
+	cannedResponseRepo      *repository.SupportCannedResponseRepository
+	activitySvc             *PMActivityService
+	wsPublisher             *websocket.Publisher
+	contactRepo             *repository.CRMContactRepository
+	userRepo                *repository.UserRepository
+	docsSpaceRepo           *repository.DocsSpaceRepository
+	docsCollectionRepo      *repository.DocsCollectionRepository
+	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
+	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -80,6 +81,15 @@ func renderWidgetArticleHTML(content json.RawMessage) *string {
 	}
 
 	return &rendered
+}
+
+// SetConversationAgentRunner injects the agent-run startup hook used for widget auto-replies.
+func (s *SupportInboxService) SetConversationAgentRunner(runner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.conversationAgentRunner = runner
+	return s
 }
 
 // ListConversations returns conversations with optional filters.
@@ -366,27 +376,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, err
 	}
 
-	// IMPORTANT: Publish WS event only AFTER the DB write has succeeded.
-	// Publishing before persist can cause phantom messages on other clients.
-	hydratedJSON, _ := json.Marshal(model.WidgetMessageReceivedPayload{
-		ID:             msg.ID,
-		ConversationID: msg.ConversationID,
-		Content:        msg.Content,
-		SenderType:     msg.SenderType,
-		SenderName:     msg.SenderDisplayName,
-		SenderAvatar:   msg.SenderAvatarURL,
-		CreatedAt:      msg.CreatedAt.Format(time.RFC3339),
-	})
-
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "created",
-		Entity:      "support_conversation_message",
-		EntityID:    msg.ID,
-		WorkspaceID: workspaceID,
-		ParentType:  "support_conversation",
-		ParentID:    ticketID,
-		Data:        hydratedJSON,
-	})
+	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
 
 	// Push visitor-scoped list refresh for widget unread when an agent/user/AI reply is sent.
 	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" {
@@ -440,40 +430,7 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 
 // AssignConversationAgent assigns an agent to a conversation.
 func (s *SupportInboxService) AssignConversationAgent(ctx context.Context, workspaceID, ticketID, agentID, actorID string) error {
-	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
-	if err != nil {
-		return err
-	}
-	if ticket == nil {
-		return fmt.Errorf("ticket not found")
-	}
-	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
-	if err != nil {
-		return err
-	}
-	if agent == nil {
-		return fmt.Errorf("agent not found")
-	}
-	if err := validateAgentTarget(agent, "support_ticket"); err != nil {
-		return err
-	}
-
-	ticket.AssignedAgentID = &agentID
-	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
-		return err
-	}
-
-	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agentID, nil)
-
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "updated",
-		Entity:      "support_conversation",
-		EntityID:    ticketID,
-		WorkspaceID: workspaceID,
-		ActorID:     actorID,
-	})
-
-	return nil
+	return s.assignConversationAgent(ctx, workspaceID, ticketID, agentID, &actorID)
 }
 
 // ListContactConversations returns support conversations linked to a CRM contact.
@@ -540,4 +497,44 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen-3]) + "..."
+}
+
+func (s *SupportInboxService) assignConversationAgent(ctx context.Context, workspaceID, conversationID, agentID string, actorID *string) error {
+	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if ticket == nil {
+		return fmt.Errorf("ticket not found")
+	}
+
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return err
+	}
+	if agent == nil {
+		return fmt.Errorf("agent not found")
+	}
+	if err := validateAgentTarget(agent, "support_conversation"); err != nil {
+		return err
+	}
+
+	ticket.AssignedAgentID = &agentID
+	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
+		return err
+	}
+
+	if s.activitySvc != nil {
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("assigned_agent_id"), nil, &agentID, nil)
+	}
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     derefString(actorID),
+	})
+
+	return nil
 }

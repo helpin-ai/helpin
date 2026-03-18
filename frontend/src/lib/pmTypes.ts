@@ -82,6 +82,7 @@ export interface Epic {
   health_comment?: string;
   archived: boolean;
   orchestrator_agent_id?: string;
+  active_flow_run_id?: string;
   spec_document_id?: string;
   planning_repository_id?: string;
   planning_state: string;
@@ -995,7 +996,7 @@ export type AgentKind = 'human' | 'llm';
 export type AgentClass = 'product_planner' | 'engineer' | 'reviewer' | 'support' | 'human';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
-export type AgentRuntimeKind = 'opencode' | 'native_claude' | 'claude_code' | 'openclaw' | 'zeroclaw';
+export type AgentRuntimeKind = 'opencode' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
 export type AgentTargetType = 'story' | 'support_conversation' | 'epic' | 'document' | 'crm_deal';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
@@ -1032,6 +1033,7 @@ export interface Agent {
   trigger_events: string[];
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: number;
+  supported_modes?: Array<'interactive' | 'autonomous'>;
   created_at: string;
   updated_at: string;
 }
@@ -1052,6 +1054,8 @@ export interface AgentRun {
   status: AgentRunStatus;
   workflow_id?: string;
   workflow_run_id?: string;
+  flow_run_id?: string;
+  flow_node_run_id?: string;
   task_queue?: string;
   runner_pool?: string;
   repository_id?: string;
@@ -1363,6 +1367,7 @@ export interface SupportInboxSettings {
   default_lifecycle_stage: string;
   auto_promote_to_lead: boolean;
   ai_enabled: boolean;
+  ai_agent_id: string | null;
   ai_confidence_threshold: number;
   show_talk_to_human: boolean;
   handoff_behavior: string;
@@ -1529,6 +1534,8 @@ export interface PlanningSession {
   workspace_id: string;
   epic_id: string;
   agent_id: string;
+  flow_run_id?: string;
+  flow_node_run_id?: string;
   status: PlanningSessionStatus;
   planning_methodology: string;
   spec_document_id?: string;
@@ -1557,7 +1564,7 @@ export interface PlanningSessionMessage {
   message_type: string;
   section_metadata?: Record<string, unknown>;
   tool_invocations?: ToolInvocation[];
-  content_blocks?: unknown[];
+  content_blocks?: PlanningMessageBlock[];
   token_usage?: SessionTokenUsage;
   created_at: string;
 }
@@ -1569,6 +1576,16 @@ export interface ToolInvocation {
   duration_ms: number;
 }
 
+export interface PlanningMessageBlock {
+  type: 'text' | 'tool_call' | 'tool_result';
+  text?: string;
+  tool_call_id?: string;
+  tool_name?: string;
+  input?: Record<string, unknown>;
+  output?: string;
+  is_error?: boolean;
+}
+
 export interface SpecSectionEntry {
   key: string;
   title: string;
@@ -1578,9 +1595,20 @@ export interface SpecSectionEntry {
 }
 
 export interface PlanningStreamEvent {
-  type: 'token' | 'tool_start' | 'tool_result' | 'turn_complete' | 'error';
+  event_id?: string;
+  sent_at?: string;
+  type:
+    | 'assistant_message_started'
+    | 'assistant_message_delta'
+    | 'tool_call_started'
+    | 'tool_call_finished'
+    | 'assistant_message_completed'
+    | 'turn_completed'
+    | 'error';
   session_id: string;
+  message_id?: string;
   text?: string;
+  tool_call_id?: string;
   tool_name?: string;
   tool_input?: string;
   output_summary?: string;
@@ -1591,6 +1619,96 @@ export interface PlanningStreamEvent {
 export interface StartPlanningSessionRequest {
   agent_id: string;
   additional_context?: string;
+}
+
+export type FlowStatus = 'running' | 'awaiting_input' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
+export type FlowNodeType = 'interactive_agent' | 'agent_task' | 'approval_gate' | 'system_action' | 'terminal';
+export type FlowNodeStatus =
+  | 'queued'
+  | 'running'
+  | 'awaiting_input'
+  | 'awaiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'skipped';
+
+export interface FlowRun {
+  id: string;
+  workspace_id: string;
+  template_id: string;
+  template_version: number;
+  target_type: string;
+  target_id: string;
+  status: FlowStatus;
+  current_node_id?: string;
+  trigger_type: string;
+  trigger_payload: Record<string, unknown>;
+  input: Record<string, unknown>;
+  output_summary: Record<string, unknown>;
+  spec_snapshot: Record<string, unknown>;
+  dedupe_key?: string;
+  started_by?: string;
+  completed_at?: string;
+  cancellation_reason?: string;
+  retry_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlowNodeRun {
+  id: string;
+  flow_run_id: string;
+  node_id: string;
+  node_type: FlowNodeType;
+  status: FlowNodeStatus;
+  attempt_count: number;
+  agent_id?: string;
+  child_run_id?: string;
+  child_session_id?: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlowNodeSpec {
+  id: string;
+  type: FlowNodeType;
+  required_mode?: 'interactive' | 'autonomous';
+  actions?: string[];
+}
+
+export interface FlowSpec {
+  template_id: string;
+  template_version: number;
+  target_type: string;
+  supported_triggers: string[];
+  nodes: FlowNodeSpec[];
+}
+
+export interface FlowRunView {
+  run: FlowRun;
+  spec: FlowSpec;
+  node_runs: FlowNodeRun[];
+}
+
+export interface StartEpicPlanningFlowInput {
+  spec_planner_agent_id: string;
+  story_planner_agent_id?: string;
+  additional_context?: string;
+}
+
+export interface StartFlowRunRequest {
+  template_id: string;
+  target_type: string;
+  target_id: string;
+  input?: StartEpicPlanningFlowInput | Record<string, unknown>;
+  trigger_type?: string;
+  trigger_payload?: Record<string, unknown>;
 }
 
 export interface StructuredQuestionOption {

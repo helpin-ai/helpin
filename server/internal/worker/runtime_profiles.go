@@ -20,7 +20,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 	},
 	{
 		Name:               model.AgentClassProductPlanner,
-		RuntimeKind:        "opencode",
+		RuntimeKind:        "native_sdk",
 		Description:        "Epic-only product spec and story planning with repository-aware read access, optional web research, and no mutation tools.",
 		AllowedTools:       []string{"read_file", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search", "add_story_comment", "list_story_checklist"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
@@ -40,7 +40,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 	},
 	{
 		Name:               model.AgentClassSupport,
-		RuntimeKind:        "opencode",
+		RuntimeKind:        "native_sdk",
 		Description:        "Support conversation triage and draft replies with human approval before customer-visible sends.",
 		AllowedTools:       []string{"list_conversation_messages", "draft_support_reply", "update_conversation_status"},
 		AllowedCommands:    []string{},

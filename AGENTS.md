@@ -17,7 +17,14 @@ Internal performance-based quarterly bonus system with integrated project manage
 cd server
 go run ./cmd/api
 ```
-Requires: `DATABASE_URL`, `JWT_SECRET` env vars. See `server/.env.example` for all options.
+Requires: `DATABASE_URL`, `JWT_SECRET`, `NATS_URL` env vars. See `server/.env.example` for all options.
+
+### Temporal Worker
+```bash
+cd server
+go run ./cmd/temporal-worker
+```
+Required for interactive planning sessions and other Temporal-driven realtime updates.
 
 ### Frontend
 ```bash

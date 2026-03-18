@@ -12,13 +12,14 @@ import type {
   AgentRun,
   AgentRunArtifact,
   Epic,
+  FlowNodeRun,
   KickoffExecutionResult,
   OrchestrationProposal,
   ProposedStory,
   SpecClarification,
 } from '@/lib/pmTypes';
 
-import { useStartPlanningSession } from '@/hooks/queries';
+import { useFlowRun, useSendFlowNodeAction, useStartFlowRun } from '@/hooks/queries';
 
 import { ApproveSpecStep } from './ApproveSpecStep';
 import { ClarifySpecStep } from './ClarifySpecStep';
@@ -125,6 +126,10 @@ function parseExecutionResult(value: unknown): KickoffExecutionResult | null {
   return parseJSONValue<KickoffExecutionResult>(value);
 }
 
+function latestFlowNodeRun(nodeRuns: FlowNodeRun[], nodeId: string): FlowNodeRun | null {
+  return [...nodeRuns].reverse().find((item) => item.node_id === nodeId) ?? null;
+}
+
 // --- Component ---
 
 export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onStoriesCreated }: Props) {
@@ -142,6 +147,9 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   const [clarifications, setClarifications] = useState<SpecClarification[]>(epic.spec_clarifications ?? []);
   const [additionalContext, setAdditionalContext] = useState('');
   const [localSessionId, setLocalSessionId] = useState<string | null>(epic.active_planning_session_id ?? null);
+  const [localFlowRunId, setLocalFlowRunId] = useState<string | null>(epic.active_flow_run_id ?? null);
+  const [dismissedSessionId, setDismissedSessionId] = useState<string | null>(null);
+  const [dismissedFlowRunId, setDismissedFlowRunId] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
   const [, setLoadingRuns] = useState(true);
   const [triggeringDraft, setTriggeringDraft] = useState(false);
@@ -153,9 +161,14 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   const [lastExecutionResult, setLastExecutionResult] = useState<KickoffExecutionResult | null>(null);
   const lastDraftRefreshKey = useRef<string>('');
   const lastPlanRefreshKey = useRef<string>('');
+  const lastFlowRefreshKey = useRef<string>('');
 
   useDocsLinkedDocs(workspaceId, 'epic', epic.id);
   const specDocQuery = useDocsDocument(workspaceId, epic.spec_document_id ?? '');
+  const epicFlowRunId = epic.active_flow_run_id === dismissedFlowRunId ? null : epic.active_flow_run_id;
+  const resolvedLocalFlowRunId = localFlowRunId === dismissedFlowRunId ? null : localFlowRunId;
+  const activeFlowRunId = resolvedLocalFlowRunId ?? epicFlowRunId;
+  const { data: flowRunView } = useFlowRun(workspaceId, activeFlowRunId ?? undefined);
 
   // Sync props
   useEffect(() => {
@@ -166,6 +179,10 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   useEffect(() => {
     setLocalSessionId(epic.active_planning_session_id ?? null);
   }, [epic.active_planning_session_id]);
+
+  useEffect(() => {
+    setLocalFlowRunId(epic.active_flow_run_id ?? null);
+  }, [epic.active_flow_run_id]);
 
   useEffect(() => {
     setClarifications(epic.spec_clarifications ?? []);
@@ -281,6 +298,24 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
 
   // Compute current step
   const currentStep = useMemo(() => computeCurrentStep(epic, agents, runs), [epic, agents, runs]);
+  const flowNodeRuns = flowRunView?.node_runs ?? [];
+  const specPlanningNode = useMemo(() => latestFlowNodeRun(flowNodeRuns, 'spec_planning'), [flowNodeRuns]);
+  const specApprovalNode = useMemo(() => latestFlowNodeRun(flowNodeRuns, 'spec_approval'), [flowNodeRuns]);
+  const planApprovalNode = useMemo(() => latestFlowNodeRun(flowNodeRuns, 'plan_approval'), [flowNodeRuns]);
+  const epicSessionId = epic.active_planning_session_id === dismissedSessionId ? null : epic.active_planning_session_id;
+  const resolvedLocalSessionId = localSessionId === dismissedSessionId ? null : localSessionId;
+  const activeInteractiveSessionId =
+    specPlanningNode?.child_session_id ?? resolvedLocalSessionId ?? epicSessionId ?? null;
+  const activeInteractiveNodeId =
+    flowRunView?.run.current_node_id === 'spec_planning' && specPlanningNode?.status === 'awaiting_input'
+      ? specPlanningNode.id
+      : undefined;
+  const flowInteractiveActive =
+    Boolean(activeFlowRunId) &&
+    flowRunView?.run.current_node_id === 'spec_planning' &&
+    specPlanningNode?.status === 'awaiting_input' &&
+    Boolean(activeInteractiveSessionId);
+  const legacyInteractiveActive = !activeFlowRunId && Boolean(activeInteractiveSessionId);
   const pendingClarifyCount = useMemo(
     () =>
       clarifications.filter((item) => {
@@ -295,6 +330,17 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     [clarifications],
   );
   const canApproveSpec = pendingClarifyCount === 0;
+  const specNodeAction = useSendFlowNodeAction(workspaceId, activeFlowRunId ?? '', specApprovalNode?.id ?? activeInteractiveNodeId ?? '');
+  const planNodeAction = useSendFlowNodeAction(workspaceId, activeFlowRunId ?? '', planApprovalNode?.id ?? '');
+
+  useEffect(() => {
+    if (!flowRunView || !onStoriesCreated) return;
+    const key = `${flowRunView.run.id}:${flowRunView.run.current_node_id}:${flowRunView.run.status}:${flowRunView.run.updated_at}`;
+    if (lastFlowRefreshKey.current === key) return;
+    lastFlowRefreshKey.current = key;
+    void fetchRuns();
+    onStoriesCreated();
+  }, [fetchRuns, flowRunView, onStoriesCreated]);
 
   // --- Handlers ---
 
@@ -323,6 +369,10 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   }, [epic.id, selectedAgentId, workspaceId]);
 
   const handleDraftSpec = useCallback(async () => {
+    if (activeFlowRunId) {
+      toast.message('Spec planning is already managed by the active flow');
+      return;
+    }
     const agentId = await ensureAssignedAgent();
     if (!agentId) return;
     setTriggeringDraft(true);
@@ -336,7 +386,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
       onStoriesCreated?.();
       if (res.data?.id) setSelectedRunId(res.data.id);
     } finally { setTriggeringDraft(false); }
-  }, [additionalContext, ensureAssignedAgent, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
+  }, [activeFlowRunId, additionalContext, ensureAssignedAgent, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
 
   const updateClarification = useCallback((id: string, patch: Partial<SpecClarification>) => {
     setClarifications((current) =>
@@ -366,6 +416,20 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
       toast.error('Resolve all open questions and assumptions before approval');
       return;
     }
+    if (activeFlowRunId && specApprovalNode?.id && specApprovalNode.status === 'awaiting_approval') {
+      setApprovingSpec(true);
+      try {
+        await specNodeAction.mutateAsync({ actionType: 'approve' });
+        toast.success('Spec approved');
+        await fetchRuns();
+        onStoriesCreated?.();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to approve spec');
+      } finally {
+        setApprovingSpec(false);
+      }
+      return;
+    }
     setApprovingSpec(true);
     try {
       const res = await agentService.approveEpicSpec(workspaceId, epic.id);
@@ -374,9 +438,13 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
       await fetchRuns();
       onStoriesCreated?.();
     } finally { setApprovingSpec(false); }
-  }, [canApproveSpec, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
+  }, [activeFlowRunId, canApproveSpec, epic.id, fetchRuns, onStoriesCreated, specApprovalNode?.id, specApprovalNode?.status, specNodeAction, workspaceId]);
 
   const handlePlanStories = useCallback(async () => {
+    if (activeFlowRunId) {
+      toast.message('Story planning is already managed by the active flow');
+      return;
+    }
     const agentId = await ensureAssignedAgent();
     if (!agentId) return;
     setTriggeringPlan(true);
@@ -389,9 +457,27 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
       onStoriesCreated?.();
       if (res.data?.id) setSelectedRunId(res.data.id);
     } finally { setTriggeringPlan(false); }
-  }, [additionalContext, ensureAssignedAgent, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
+  }, [activeFlowRunId, additionalContext, ensureAssignedAgent, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
 
   const handleConfirmPlan = useCallback(async () => {
+    if (activeFlowRunId && planApprovalNode?.id && planApprovalNode.status === 'awaiting_approval') {
+      if (!editedStories.length) { toast.error('No proposed stories to create'); return; }
+      setConfirmingPlan(true);
+      try {
+        await planNodeAction.mutateAsync({
+          actionType: 'approve',
+          payload: { proposed_stories: editedStories },
+        });
+        toast.success(`Created ${editedStories.length} stories`);
+        await fetchRuns();
+        onStoriesCreated?.();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to confirm plan');
+      } finally {
+        setConfirmingPlan(false);
+      }
+      return;
+    }
     const run = selectedRunStage === 'plan_stories' ? selectedRun : latestPlanRun;
     if (!run) { toast.error('Select a story planning run first'); return; }
     if (!editedStories.length) { toast.error('No proposed stories to create'); return; }
@@ -404,7 +490,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
       await loadArtifacts(run.id);
       onStoriesCreated?.();
     } finally { setConfirmingPlan(false); }
-  }, [editedStories, fetchRuns, latestPlanRun, loadArtifacts, onStoriesCreated, selectedRun, selectedRunStage, workspaceId]);
+  }, [activeFlowRunId, editedStories, fetchRuns, latestPlanRun, loadArtifacts, onStoriesCreated, planApprovalNode?.id, planApprovalNode?.status, planNodeAction, selectedRun, selectedRunStage, workspaceId]);
 
   const handleKickoffExecution = useCallback(async () => {
     const run = selectedRunStage === 'plan_stories' ? selectedRun : latestPlanRun;
@@ -451,17 +537,29 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   const specDocTitle = specDocQuery.data?.title ?? 'Product Spec';
 
   // Interactive session
-  const startSessionMutation = useStartPlanningSession(workspaceId);
+  const startFlowMutation = useStartFlowRun(workspaceId);
   const handleStartSession = async () => {
     const agentId = await ensureAssignedAgent();
     if (!agentId) return;
+    if (activeFlowRunId) {
+      toast.message('Epic planning flow is already active');
+      return;
+    }
     try {
-      const session = await startSessionMutation.mutateAsync({
-        epicId: epic.id,
-        agentId,
-        additionalContext: additionalContext || undefined,
+      const flow = await startFlowMutation.mutateAsync({
+        template_id: 'pm.epic_planning_v1',
+        target_type: 'epic',
+        target_id: epic.id,
+        input: {
+          spec_planner_agent_id: agentId,
+          additional_context: additionalContext || undefined,
+        },
       });
-      setLocalSessionId(session.id);
+      setDismissedFlowRunId(null);
+      setDismissedSessionId(null);
+      setLocalFlowRunId(flow.run.id);
+      const sessionNode = latestFlowNodeRun(flow.node_runs ?? [], 'spec_planning');
+      setLocalSessionId(sessionNode?.child_session_id ?? null);
       setAdditionalContext('');
       onStoriesCreated?.();
     } catch (err) {
@@ -469,7 +567,8 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     }
   };
 
-  const isInSession = (epic.planning_state === 'in_session' && epic.active_planning_session_id) || localSessionId;
+  const flowTerminal = flowRunView?.run.status === 'cancelled' || flowRunView?.run.status === 'failed' || flowRunView?.run.status === 'completed';
+  const isInSession = !flowTerminal && (flowInteractiveActive || legacyInteractiveActive);
 
   // --- Render ---
 
@@ -490,8 +589,17 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
         <PlanningSessionPanel
           epic={epic}
           workspaceId={workspaceId}
-          sessionId={localSessionId ?? epic.active_planning_session_id}
-          onComplete={() => { setLocalSessionId(null); void fetchRuns(); onStoriesCreated?.(); }}
+          sessionId={activeInteractiveSessionId ?? undefined}
+          flowRunId={activeFlowRunId ?? undefined}
+          nodeRunId={activeInteractiveNodeId}
+          onComplete={() => {
+            setDismissedSessionId(activeInteractiveSessionId ?? null);
+            setDismissedFlowRunId(activeFlowRunId ?? null);
+            setLocalSessionId(null);
+            setLocalFlowRunId(null);
+            void fetchRuns();
+            onStoriesCreated?.();
+          }}
         />
       ) : (
       <div className="space-y-3">
@@ -517,7 +625,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
           onOpenSpecDoc={openSpecDoc}
           triggeringDraft={triggeringDraft}
           onStartSession={() => void handleStartSession()}
-          startingSession={startSessionMutation.isPending}
+          startingSession={startFlowMutation.isPending}
         />
 
         <ClarifySpecStep
@@ -559,7 +667,11 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
           onUpdateStory={updateStoryField}
           onConfirmPlan={() => void handleConfirmPlan()}
           confirmingPlan={confirmingPlan}
-          canConfirm={editedStories.length > 0 && !!(selectedRunStage === 'plan_stories' ? selectedRun : latestPlanRun)}
+          canConfirm={
+            editedStories.length > 0 &&
+            (Boolean(activeFlowRunId && planApprovalNode?.status === 'awaiting_approval') ||
+              Boolean(selectedRunStage === 'plan_stories' ? selectedRun : latestPlanRun))
+          }
         />
 
         <ExecuteStep

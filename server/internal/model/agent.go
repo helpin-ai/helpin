@@ -14,7 +14,8 @@ const (
 
 	AgentModelProviderAnthropic  = "anthropic"
 	AgentModelProviderOpenAI     = "openai"
-	AgentModelProviderOpenRouter = "openrouter"
+	AgentModelProviderOpenRouter          = "openrouter"
+	AgentModelProviderOpenRouterResponses = "openrouter-responses"
 )
 
 // Agent represents a human or LLM agent in a workspace.
@@ -48,6 +49,7 @@ type Agent struct {
 	TriggerEvents       json.RawMessage `json:"trigger_events" gorm:"type:jsonb;not null;default:'[]'"`
 	ApprovalMode        string          `json:"approval_mode" gorm:"not null;default:'class_default'"`
 	MaxConcurrentRuns   int             `json:"max_concurrent_runs" gorm:"not null;default:1"`
+	SupportedModes      []string        `json:"supported_modes" gorm:"-"`
 	CreatedAt           time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt           time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -71,6 +73,8 @@ type AgentRun struct {
 	Status            string          `json:"status" gorm:"not null;default:'queued'"`
 	WorkflowID        *string         `json:"workflow_id"`
 	WorkflowRunID     *string         `json:"workflow_run_id"`
+	FlowRunID         *string         `json:"flow_run_id,omitempty" gorm:"type:uuid;index"`
+	FlowNodeRunID     *string         `json:"flow_node_run_id,omitempty" gorm:"type:uuid;index"`
 	TaskQueue         *string         `json:"task_queue"`
 	RunnerPool        *string         `json:"runner_pool"`
 	RepositoryID      *string         `json:"repository_id" gorm:"type:uuid;index"`
@@ -176,6 +180,15 @@ type AssignAgentRequest struct {
 type ApproveAgentRunRequest struct {
 	SendMessage bool `json:"send_message"`
 }
+
+const (
+	AgentRunStatusQueued           = "queued"
+	AgentRunStatusRunning          = "running"
+	AgentRunStatusAwaitingApproval = "awaiting_approval"
+	AgentRunStatusCompleted        = "completed"
+	AgentRunStatusFailed           = "failed"
+	AgentRunStatusCancelled        = "cancelled"
+)
 
 // HandoffAgentRunRequest records an explicit handoff from a run.
 type HandoffAgentRunRequest struct {

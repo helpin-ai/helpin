@@ -14,6 +14,8 @@ import (
 
 // Event is the lightweight notification sent to clients.
 type Event struct {
+	EventID     string          `json:"event_id,omitempty"`
+	SentAt      time.Time       `json:"sent_at,omitempty"`
 	Action      string          `json:"action"`
 	Entity      string          `json:"entity"`
 	EntityID    string          `json:"entity_id"`
@@ -27,7 +29,7 @@ type Event struct {
 // Client represents a single WebSocket connection.
 type Client struct {
 	Conn           *websocket.Conn
-	ConnID         string  // unique per connection, generated at accept time
+	ConnID         string // unique per connection, generated at accept time
 	UserID         string
 	WorkspaceID    string
 	IsWidget       bool    // true for widget clients, false for internal (agent) clients
@@ -37,13 +39,13 @@ type Client struct {
 
 // Hub manages all active WebSocket clients grouped by workspace.
 type Hub struct {
-	mu               sync.RWMutex
-	clients          map[string]map[*Client]struct{} // workspaceID -> set of clients
-	sessionSubsMu    sync.RWMutex
-	sessionSubs      map[string]map[*Client]struct{} // sessionID -> set of clients subscribed to stream
-	Presence         PresenceProvider
-	onlineVisitors   map[string]map[string]int // workspaceID → anonymousID → connection count
-	relay            *RedisRelay               // nil in local-only mode (no Redis)
+	mu             sync.RWMutex
+	clients        map[string]map[*Client]struct{} // workspaceID -> set of clients
+	sessionSubsMu  sync.RWMutex
+	sessionSubs    map[string]map[*Client]struct{} // sessionID -> set of clients subscribed to stream
+	Presence       PresenceProvider
+	onlineVisitors map[string]map[string]int // workspaceID → anonymousID → connection count
+	relay          *RedisRelay               // nil in local-only mode (no Redis)
 }
 
 // NewHub creates an empty hub with an in-memory PresenceProvider as default.
@@ -317,7 +319,7 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 
 	switch event.Entity {
 	case "support_conversation_message":
-		return client.ConversationID != nil && *client.ConversationID == event.ParentID
+		return len(event.Data) > 0 && client.ConversationID != nil && *client.ConversationID == event.ParentID
 	case "support_conversation":
 		return client.ConversationID != nil && *client.ConversationID == event.EntityID
 	default:

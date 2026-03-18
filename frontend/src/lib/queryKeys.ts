@@ -65,6 +65,11 @@ export const queryKeys = {
 
     planningSession: (wsId: string, sessionId: string) => ['pm', wsId, 'planningSession', sessionId] as const,
     planningMessages: (wsId: string, sessionId: string) => ['pm', wsId, 'planningSession', sessionId, 'messages'] as const,
+    flowRun: (wsId: string, flowRunId: string) => ['pm', wsId, 'flowRun', flowRunId] as const,
+    flowNodeMessages: (wsId: string, flowRunId: string, nodeRunId: string) =>
+      ['pm', wsId, 'flowRun', flowRunId, 'nodes', nodeRunId, 'messages'] as const,
+    flowRuns: (wsId: string) => ['pm', wsId, 'flowRuns'] as const,
+    flowTemplates: (wsId: string) => ['pm', wsId, 'flowTemplates'] as const,
 
     comments: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'comments'] as const,
     checklists: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'checklists'] as const,

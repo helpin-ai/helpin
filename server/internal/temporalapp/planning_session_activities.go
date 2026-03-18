@@ -21,8 +21,8 @@ type PlanningTurnFunc func(ctx context.Context, sessionID string, execCtx *worke
 type PlanningFinalizeTurnFunc func(ctx context.Context, sessionID, actorID string, execCtx *worker.ExecutionContext) error
 
 // PlanningSessionActivities contains the Temporal activities for interactive planning sessions.
-// These run in the API server process (not the shared temporal-worker binary) so they
-// have access to the WebSocket hub for streaming tokens to the frontend.
+// These run in the shared temporal-worker process and publish stream events through
+// JetStream so the API websocket hub can relay them to browsers.
 type PlanningSessionActivities struct {
 	sessionRepo *repository.PlanningSessionRepository
 	epicRepo    *repository.PMEpicRepository

@@ -21,7 +21,9 @@ jobs:
         run: go vet ./...
       - name: Build
         working-directory: server
-        run: go build ./cmd/api
+        run: |
+          go build ./cmd/api
+          go build ./cmd/temporal-worker
 
   frontend:
     name: Frontend CI
