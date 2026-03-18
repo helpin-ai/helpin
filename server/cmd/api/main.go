@@ -551,6 +551,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
+	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 
 	// Automation Rule Engine — wired after agent + story services to break circular deps.
 	ruleEngine := service.NewAutomationRuleEngine(

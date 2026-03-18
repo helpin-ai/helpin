@@ -20,6 +20,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
@@ -53,6 +54,18 @@ type planningRunSummary struct {
 	Proposal            *model.OrchestrationProposal  `json:"proposal,omitempty"`
 }
 
+type supportRunActivitySummary struct {
+	DraftReply    *supportRunActivityDraft `json:"draft_reply,omitempty"`
+	SentMessageID *string                  `json:"sent_message_id,omitempty"`
+}
+
+type supportRunActivityDraft struct {
+	Content           string  `json:"content"`
+	IsInternal        bool    `json:"is_internal"`
+	SenderDisplayName *string `json:"sender_display_name,omitempty"`
+	ApprovalRequired  bool    `json:"approval_required"`
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
 	runRepo          *repository.AgentRunRepository
@@ -80,6 +93,7 @@ type AgentRunActivities struct {
 	crmContactRepo   *repository.CRMContactRepository
 	crmSignalRepo    *repository.CRMSignalRepository
 	crmActivityRepo  *repository.CRMActivityRepository
+	wsPublisher      websocket.EventPublisher
 	runtimes         *workerpkg.RuntimeRegistry
 	githubApp        *githubapp.Client
 	runEngine        *RunEngine
@@ -112,6 +126,7 @@ func NewAgentRunActivities(
 	crmContactRepo *repository.CRMContactRepository,
 	crmSignalRepo *repository.CRMSignalRepository,
 	crmActivityRepo *repository.CRMActivityRepository,
+	wsPublisher websocket.EventPublisher,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
 	runEngine *RunEngine,
@@ -142,6 +157,7 @@ func NewAgentRunActivities(
 		crmContactRepo:   crmContactRepo,
 		crmSignalRepo:    crmSignalRepo,
 		crmActivityRepo:  crmActivityRepo,
+		wsPublisher:      wsPublisher,
 		runtimes:         runtimes,
 		githubApp:        githubApp,
 		runEngine:        runEngine,
@@ -334,6 +350,10 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	if err := a.finalizeSupportConversationRun(ctx, state); err != nil {
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
+	}
 
 	if state.story != nil && execCtx.WorkingBranch != "" {
 		state.run.WorkingBranch = &execCtx.WorkingBranch
@@ -366,6 +386,73 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	}
 
 	return ExecuteRunResult{WaitForApproval: waitForApproval}, nil
+}
+
+func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context, state *resolvedRunState) error {
+	if state == nil || state.run == nil || state.run.TargetType != "support_conversation" || state.conversation == nil {
+		return nil
+	}
+	if state.run.ApprovalState == "pending" {
+		return nil
+	}
+
+	var summary supportRunActivitySummary
+	if len(state.run.OutputSummary) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(state.run.OutputSummary, &summary); err != nil {
+		return fmt.Errorf("parse support run summary: %w", err)
+	}
+	if summary.SentMessageID != nil && strings.TrimSpace(*summary.SentMessageID) != "" {
+		return nil
+	}
+	if summary.DraftReply == nil || strings.TrimSpace(summary.DraftReply.Content) == "" {
+		return nil
+	}
+
+	messageID := state.run.ID
+	existing, err := a.messageRepo.GetByID(ctx, messageID)
+	if err != nil {
+		return fmt.Errorf("lookup support reply message: %w", err)
+	}
+	createdMessage := false
+	if existing == nil {
+		createdMessage = true
+		existing = &model.SupportMessage{
+			ID:                messageID,
+			WorkspaceID:       state.run.WorkspaceID,
+			ConversationID:    state.conversation.ID,
+			SenderType:        "agent",
+			SenderAgentID:     &state.run.AgentID,
+			SenderDisplayName: summary.DraftReply.SenderDisplayName,
+			Content:           strings.TrimSpace(summary.DraftReply.Content),
+			IsInternal:        summary.DraftReply.IsInternal,
+			MessageType:       "reply",
+		}
+		if err := a.messageRepo.Create(ctx, existing); err != nil {
+			return fmt.Errorf("create support reply message: %w", err)
+		}
+	}
+
+	summary.SentMessageID = &existing.ID
+	payload, err := json.Marshal(summary)
+	if err != nil {
+		return fmt.Errorf("marshal support run summary: %w", err)
+	}
+	state.run.OutputSummary = payload
+	if err := a.runRepo.Update(ctx, state.run); err != nil {
+		return fmt.Errorf("persist support run summary: %w", err)
+	}
+
+	if a.wsPublisher != nil {
+		event := websocket.SupportMessageEvent(state.run.WorkspaceID, existing, "")
+		if !createdMessage {
+			event.Data = nil
+		}
+		a.wsPublisher.Publish(event)
+	}
+	a.pushVisitorConversationRefresh(ctx, state.run.WorkspaceID, state.conversation)
+	return nil
 }
 
 func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*resolvedRunState, error) {
@@ -2030,7 +2117,18 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return fmt.Errorf("conversation not found")
 			}
 			conversation.Status = status
-			return a.conversationRepo.Update(ctx, conversation)
+			if err := a.conversationRepo.Update(ctx, conversation); err != nil {
+				return err
+			}
+			if a.wsPublisher != nil {
+				a.wsPublisher.Publish(websocket.Event{
+					Action:      "updated",
+					Entity:      "support_conversation",
+					EntityID:    conversationID,
+					WorkspaceID: workspaceID,
+				})
+			}
+			return nil
 		},
 
 		// CRM
@@ -2096,6 +2194,30 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			return hits, nil
 		},
 	}
+}
+
+func (a *AgentRunActivities) pushVisitorConversationRefresh(ctx context.Context, workspaceID string, conversation *model.SupportConversation) {
+	if conversation == nil || conversation.AnonymousID == nil || strings.TrimSpace(*conversation.AnonymousID) == "" || a.wsPublisher == nil {
+		return
+	}
+	conversations, err := a.conversationRepo.ListByAnonymousID(ctx, workspaceID, *conversation.AnonymousID)
+	if err != nil {
+		return
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	listJSON, err := json.Marshal(map[string]any{"conversations": conversations})
+	if err != nil {
+		return
+	}
+	a.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_visitor_conversations",
+		EntityID:    *conversation.AnonymousID,
+		WorkspaceID: workspaceID,
+		Data:        listJSON,
+	})
 }
 
 func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunState, errMsg string) error {

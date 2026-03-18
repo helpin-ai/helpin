@@ -580,7 +580,7 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actor
 		targetType:  "story",
 		targetID:    storyID,
 		storyID:     &storyID,
-		actorID:     actorID,
+		actorID:     &actorID,
 		input:       input,
 		delivery:    deliveryTarget,
 	})
@@ -596,6 +596,15 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actor
 
 // RunConversationAgent creates a new conversation-targeted agent run and starts its Temporal workflow.
 func (s *AgentService) RunConversationAgent(ctx context.Context, workspaceID, conversationID, actorID string) (*model.AgentRun, error) {
+	return s.runConversationAgent(ctx, workspaceID, conversationID, &actorID)
+}
+
+// RunConversationAgentAuto starts a support conversation run without a user actor.
+func (s *AgentService) RunConversationAgentAuto(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error) {
+	return s.runConversationAgent(ctx, workspaceID, conversationID, nil)
+}
+
+func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, conversationID string, actorID *string) (*model.AgentRun, error) {
 	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("get conversation: %w", err)
@@ -632,8 +641,10 @@ func (s *AgentService) RunConversationAgent(ctx context.Context, workspaceID, co
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
-	s.publishRunEvent(run, actorID)
+	if s.activitySvc != nil {
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+	}
+	s.publishRunEvent(run, derefString(actorID))
 
 	return run, nil
 }
@@ -709,15 +720,8 @@ func (s *AgentService) ApproveRun(ctx context.Context, workspaceID, runID, actor
 				return nil, fmt.Errorf("create approved support reply: %w", err)
 			}
 
-			s.wsPublisher.Publish(websocket.Event{
-				Action:      "created",
-				Entity:      "support_message",
-				EntityID:    msg.ID,
-				WorkspaceID: workspaceID,
-				ParentType:  "support_conversation",
-				ParentID:    *run.ConversationID,
-				ActorID:     actorID,
-			})
+			s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, actorID))
+			s.pushVisitorConversationRefresh(ctx, workspaceID, conversation)
 		}
 	}
 
@@ -821,7 +825,7 @@ type createRunParams struct {
 	conversationID *string
 	flowRunID      *string
 	flowNodeRunID  *string
-	actorID        string
+	actorID        *string
 	input          []byte
 	delivery       *model.StoryDeliveryTarget
 }
@@ -859,7 +863,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		TargetID:          params.targetID,
 		RuntimeKind:       params.agent.RuntimeKind,
 		ApprovalState:     approvalState,
-		TriggeredByUserID: &params.actorID,
+		TriggeredByUserID: params.actorID,
 		Status:            "queued",
 		FlowRunID:         params.flowRunID,
 		FlowNodeRunID:     params.flowNodeRunID,
@@ -974,6 +978,28 @@ func (s *AgentService) saveArtifact(ctx context.Context, run *model.AgentRun, ar
 		SequenceNo:    seqNo,
 	}
 	return s.artifactRepo.Create(ctx, artifact)
+}
+
+func (s *AgentService) pushVisitorConversationRefresh(ctx context.Context, workspaceID string, conversation *model.SupportConversation) {
+	if conversation == nil || conversation.AnonymousID == nil || strings.TrimSpace(*conversation.AnonymousID) == "" {
+		return
+	}
+	conversations, err := s.conversationRepo.ListByAnonymousID(ctx, workspaceID, *conversation.AnonymousID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to refresh visitor conversations after support reply", "workspace_id", workspaceID, "conversation_id", conversation.ID, "error", err)
+		return
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	listJSON, _ := json.Marshal(map[string]any{"conversations": conversations})
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_visitor_conversations",
+		EntityID:    *conversation.AnonymousID,
+		WorkspaceID: workspaceID,
+		Data:        listJSON,
+	})
 }
 
 func defaultCapabilityProfileForRole(role string) string {

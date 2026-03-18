@@ -48,6 +48,14 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.AIEnabled != nil {
 		current.AIEnabled = *patch.AIEnabled
 	}
+	if patch.AIAgentID != nil {
+		trimmed := strings.TrimSpace(*patch.AIAgentID)
+		if trimmed == "" {
+			current.AIAgentID = nil
+		} else {
+			current.AIAgentID = &trimmed
+		}
+	}
 	if patch.AIConfidenceThreshold != nil {
 		current.AIConfidenceThreshold = *patch.AIConfidenceThreshold
 	}
@@ -111,41 +119,62 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 var hexColorRegex = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // validateSettings checks settings field constraints.
-func validateSettings(s model.SupportInboxSettings) error {
-	if s.AIConfidenceThreshold < 0 || s.AIConfidenceThreshold > 1 {
+func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID string, settings model.SupportInboxSettings) error {
+	if settings.AIConfidenceThreshold < 0 || settings.AIConfidenceThreshold > 1 {
 		return fmt.Errorf("ai_confidence_threshold must be between 0.0 and 1.0")
 	}
-	if s.BrandColor != "" && !hexColorRegex.MatchString(s.BrandColor) {
+	if settings.BrandColor != "" && !hexColorRegex.MatchString(settings.BrandColor) {
 		return fmt.Errorf("brand_color must be a valid hex color (e.g. #6366F1)")
 	}
-	if s.ButtonColor != "" && !hexColorRegex.MatchString(s.ButtonColor) {
+	if settings.ButtonColor != "" && !hexColorRegex.MatchString(settings.ButtonColor) {
 		return fmt.Errorf("button_color must be a valid hex color (e.g. #000000)")
 	}
-	if s.ButtonIconColor != "" && !hexColorRegex.MatchString(s.ButtonIconColor) {
+	if settings.ButtonIconColor != "" && !hexColorRegex.MatchString(settings.ButtonIconColor) {
 		return fmt.Errorf("button_icon_color must be a valid hex color (e.g. #FFFFFF)")
 	}
 	validColorScheme := map[string]bool{"system": true, "light": true, "dark": true}
-	if s.ColorScheme != "" && !validColorScheme[s.ColorScheme] {
+	if settings.ColorScheme != "" && !validColorScheme[settings.ColorScheme] {
 		return fmt.Errorf("color_scheme must be system, light, or dark")
 	}
 	validHandoff := map[string]bool{"unassigned": true, "assign_to_team": true, "round_robin": true}
-	if !validHandoff[s.HandoffBehavior] {
+	if !validHandoff[settings.HandoffBehavior] {
 		return fmt.Errorf("handoff_behavior must be unassigned, assign_to_team, or round_robin")
 	}
-	if s.HandoffBehavior == "assign_to_team" && (s.HandoffTeamID == nil || *s.HandoffTeamID == "") {
+	if settings.HandoffBehavior == "assign_to_team" && (settings.HandoffTeamID == nil || *settings.HandoffTeamID == "") {
 		return fmt.Errorf("handoff_team_id is required when handoff_behavior is assign_to_team")
 	}
 	validPosition := map[string]bool{"bottom_right": true, "bottom_left": true}
-	if !validPosition[s.LauncherPosition] {
+	if !validPosition[settings.LauncherPosition] {
 		return fmt.Errorf("launcher_position must be bottom_right or bottom_left")
 	}
 	validIcon := map[string]bool{"chat_bubble": true, "question_mark": true, "help": true}
-	if !validIcon[s.LauncherIcon] {
+	if !validIcon[settings.LauncherIcon] {
 		return fmt.Errorf("launcher_icon must be chat_bubble, question_mark, or help")
 	}
 	validLifecycle := map[string]bool{"subscriber": true, "lead": true, "opportunity": true}
-	if !validLifecycle[s.DefaultLifecycleStage] {
+	if !validLifecycle[settings.DefaultLifecycleStage] {
 		return fmt.Errorf("default_lifecycle_stage must be subscriber, lead, or opportunity")
+	}
+	if settings.AIEnabled {
+		if settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {
+			return fmt.Errorf("ai_agent_id is required when ai_enabled is true")
+		}
+		if s == nil || s.agentRepo == nil {
+			return fmt.Errorf("support agent validation is unavailable")
+		}
+		agent, err := s.agentRepo.GetByID(ctx, workspaceID, strings.TrimSpace(*settings.AIAgentID))
+		if err != nil {
+			return fmt.Errorf("get support ai agent: %w", err)
+		}
+		if agent == nil {
+			return fmt.Errorf("selected support ai agent was not found")
+		}
+		if agent.AgentClass != model.AgentClassSupport {
+			return fmt.Errorf("selected ai agent must be a support agent")
+		}
+		if err := validateAgentTarget(agent, "support_conversation"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -237,7 +266,7 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 	current := parseSettings(inst.Settings)
 	merged := mergeSettingsUpdate(current, req)
-	if err := validateSettings(merged); err != nil {
+	if err := s.validateSettings(ctx, workspaceID, merged); err != nil {
 		return nil, nil, err
 	}
 

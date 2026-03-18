@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -276,27 +275,9 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		return nil, err
 	}
 
-	// IMPORTANT: Publish WS event only AFTER the DB write has succeeded.
-	// Publishing before persist can cause phantom messages on other clients.
-	hydratedJSON, _ := json.Marshal(model.WidgetMessageReceivedPayload{
-		ID:             msg.ID,
-		ConversationID: msg.ConversationID,
-		Content:        msg.Content,
-		SenderType:     msg.SenderType,
-		SenderName:     msg.SenderDisplayName,
-		CreatedAt:      msg.CreatedAt.Format(time.RFC3339),
-	})
+	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
 
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "created",
-		Entity:      "support_conversation_message",
-		EntityID:    msg.ID,
-		WorkspaceID: session.WorkspaceID,
-		ActorID:     "widget:" + session.ID, // exclude sender from Hub broadcast (handler echoes directly)
-		ParentType:  "support_conversation",
-		ParentID:    *session.ConversationID,
-		Data:        hydratedJSON,
-	})
+	go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID)
 
 	return msg, nil
 }
@@ -342,6 +323,58 @@ func (s *SupportInboxService) GetPublicWidgetConfigByID(ctx context.Context, id 
 		return nil, fmt.Errorf("widget not found")
 	}
 	return s.buildWidgetConfigResponse(inst), nil
+}
+
+func (s *SupportInboxService) maybeAutoRunConversationAgent(ctx context.Context, workspaceID, conversationID string) {
+	if s == nil || s.conversationAgentRunner == nil || s.installationRepo == nil || s.agentRepo == nil {
+		return
+	}
+
+	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil || inst == nil {
+		if err != nil {
+			slog.ErrorContext(ctx, "support widget auto-run: get installation failed", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+		}
+		return
+	}
+
+	settings := parseSettings(inst.Settings)
+	if !settings.AIEnabled || settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {
+		return
+	}
+
+	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil || conversation == nil {
+		if err != nil {
+			slog.ErrorContext(ctx, "support widget auto-run: get conversation failed", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+		}
+		return
+	}
+
+	configuredAgentID := strings.TrimSpace(*settings.AIAgentID)
+	if conversation.AssignedAgentID == nil || strings.TrimSpace(*conversation.AssignedAgentID) == "" {
+		if err := s.assignConversationAgent(ctx, workspaceID, conversationID, configuredAgentID, nil); err != nil {
+			slog.ErrorContext(ctx, "support widget auto-run: assign ai agent failed", "workspace_id", workspaceID, "conversation_id", conversationID, "agent_id", configuredAgentID, "error", err)
+			return
+		}
+	} else if strings.TrimSpace(*conversation.AssignedAgentID) != configuredAgentID {
+		assignedAgent, err := s.agentRepo.GetByID(ctx, workspaceID, strings.TrimSpace(*conversation.AssignedAgentID))
+		if err != nil {
+			slog.ErrorContext(ctx, "support widget auto-run: get assigned agent failed", "workspace_id", workspaceID, "conversation_id", conversationID, "agent_id", *conversation.AssignedAgentID, "error", err)
+			return
+		}
+		if assignedAgent == nil {
+			return
+		}
+		if err := validateAgentTarget(assignedAgent, "support_conversation"); err != nil {
+			slog.InfoContext(ctx, "support widget auto-run skipped for non-support assignee", "workspace_id", workspaceID, "conversation_id", conversationID, "agent_id", assignedAgent.ID, "error", err)
+			return
+		}
+	}
+
+	if _, err := s.conversationAgentRunner(ctx, workspaceID, conversationID); err != nil {
+		slog.ErrorContext(ctx, "support widget auto-run failed", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+	}
 }
 
 // buildWidgetConfigResponse maps installation settings to the nested WidgetConfig

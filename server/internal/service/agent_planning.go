@@ -568,7 +568,7 @@ func (s *AgentService) KickoffEpicExecution(ctx context.Context, workspaceID, ep
 			targetType:  "story",
 			targetID:    storyID,
 			storyID:     &storyID,
-			actorID:     actorID,
+			actorID:     &actorID,
 			input:       input,
 			delivery:    deliveryTarget,
 		})
@@ -650,7 +650,7 @@ func (s *AgentService) startEpicPlanningRun(ctx context.Context, workspaceID str
 		targetID:      epic.ID,
 		flowRunID:     flowRunID,
 		flowNodeRunID: flowNodeRunID,
-		actorID:       actorID,
+		actorID:       &actorID,
 		input:         payload,
 	})
 	if err != nil {

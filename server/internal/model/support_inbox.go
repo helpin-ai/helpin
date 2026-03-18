@@ -6,21 +6,21 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
-	ID              string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	DisplayID       int        `json:"display_id" gorm:"not null;index"`
-	Subject         string     `json:"subject" gorm:"not null"`
-	Status          string     `json:"status" gorm:"not null;default:'open'"`     // open, in_progress, waiting, resolved, closed
-	Priority        string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
-	Channel         string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
-	CustomerName    *string    `json:"customer_name"`
-	CustomerEmail   *string    `json:"customer_email"`
-	OpenedByUserID  *string    `json:"opened_by_user_id" gorm:"type:uuid"`
-	AssignedAgentID *string    `json:"assigned_agent_id" gorm:"type:uuid"`
-	LinkedStoryID   *string    `json:"linked_story_id" gorm:"type:uuid"`
-	Source          string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
-	AnonymousID     *string    `json:"anonymous_id" gorm:"index"`
-	CRMContactID    *string    `json:"crm_contact_id" gorm:"type:uuid;index"`
+	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	DisplayID         int        `json:"display_id" gorm:"not null;index"`
+	Subject           string     `json:"subject" gorm:"not null"`
+	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, in_progress, waiting, resolved, closed
+	Priority          string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
+	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
+	CustomerName      *string    `json:"customer_name"`
+	CustomerEmail     *string    `json:"customer_email"`
+	OpenedByUserID    *string    `json:"opened_by_user_id" gorm:"type:uuid"`
+	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid"`
+	LinkedStoryID     *string    `json:"linked_story_id" gorm:"type:uuid"`
+	Source            string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
+	AnonymousID       *string    `json:"anonymous_id" gorm:"index"`
+	CRMContactID      *string    `json:"crm_contact_id" gorm:"type:uuid;index"`
 	ResolvedAt        *time.Time `json:"resolved_at"`
 	ClosedAt          *time.Time `json:"closed_at"`
 	TeamLastSeenAt    *time.Time `json:"team_last_seen_at" gorm:"type:timestamptz"`
@@ -185,7 +185,7 @@ type WidgetSessionRevokeRequest struct {
 
 // WidgetWSMessage is the envelope for all widget WS messages.
 type WidgetWSMessage struct {
-	Type string                 `json:"type"`
+	Type string         `json:"type"`
 	Data map[string]any `json:"data,omitempty"`
 }
 
@@ -290,6 +290,7 @@ type SupportInboxSettings struct {
 
 	// AI Auto-Reply
 	AIEnabled             bool    `json:"ai_enabled"`
+	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
@@ -333,6 +334,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		DefaultLifecycleStage:  "subscriber",
 		AutoPromoteToLead:      false,
 		AIEnabled:              false,
+		AIAgentID:              nil,
 		AIConfidenceThreshold:  0.7,
 		ShowTalkToHuman:        true,
 		HandoffBehavior:        "unassigned",
@@ -372,6 +374,7 @@ type UpdateInstallationSettingsRequest struct {
 	DefaultLifecycleStage  *string                     `json:"default_lifecycle_stage,omitempty"`
 	AutoPromoteToLead      *bool                       `json:"auto_promote_to_lead,omitempty"`
 	AIEnabled              *bool                       `json:"ai_enabled,omitempty"`
+	AIAgentID              *string                     `json:"ai_agent_id,omitempty"`
 	AIConfidenceThreshold  *float64                    `json:"ai_confidence_threshold,omitempty"`
 	ShowTalkToHuman        *bool                       `json:"show_talk_to_human,omitempty"`
 	HandoffBehavior        *string                     `json:"handoff_behavior,omitempty"`
@@ -408,14 +411,14 @@ type WidgetTokensResponse struct {
 
 // WidgetConfigBranding matches the widget-core WidgetConfig.branding shape.
 type WidgetConfigBranding struct {
-	PrimaryColor   string `json:"primaryColor"`
-	LogoURL        string `json:"logoUrl,omitempty"`
-	WelcomeMessage string `json:"welcomeMessage"`
-	WidgetPosition string `json:"widgetPosition"`
-	ShowBranding   bool   `json:"showBranding"`
-	LauncherIcon   string `json:"launcherIcon,omitempty"`
-	ColorScheme    string `json:"colorScheme,omitempty"`
-	ButtonColor    string `json:"buttonColor,omitempty"`
+	PrimaryColor    string `json:"primaryColor"`
+	LogoURL         string `json:"logoUrl,omitempty"`
+	WelcomeMessage  string `json:"welcomeMessage"`
+	WidgetPosition  string `json:"widgetPosition"`
+	ShowBranding    bool   `json:"showBranding"`
+	LauncherIcon    string `json:"launcherIcon,omitempty"`
+	ColorScheme     string `json:"colorScheme,omitempty"`
+	ButtonColor     string `json:"buttonColor,omitempty"`
 	ButtonIconColor string `json:"buttonIconColor,omitempty"`
 }
 
@@ -432,8 +435,8 @@ type WidgetConfigFeatures struct {
 type WidgetConfigResponse struct {
 	WorkspaceID   string               `json:"workspaceId"`
 	WorkspaceName string               `json:"workspaceName,omitempty"`
-	Branding      WidgetConfigBranding  `json:"branding"`
-	Features      WidgetConfigFeatures  `json:"features"`
+	Branding      WidgetConfigBranding `json:"branding"`
+	Features      WidgetConfigFeatures `json:"features"`
 }
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.

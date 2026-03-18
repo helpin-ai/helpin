@@ -137,6 +137,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize github app client: %v", err)
 	}
+	wsPublisher := ws.NewJetStreamPublisher(jetstream)
 	activities := temporalapp.NewAgentRunActivities(
 		runRepo,
 		agentRepo,
@@ -163,6 +164,7 @@ func main() {
 		crmContactRepo,
 		crmSignalRepo,
 		crmActivityRepo,
+		wsPublisher,
 		runtimes,
 		githubAppClient,
 		runEngine,
@@ -182,7 +184,6 @@ func main() {
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
-	wsPublisher := ws.NewJetStreamPublisher(jetstream)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmStoryService := service.NewPMStoryService(

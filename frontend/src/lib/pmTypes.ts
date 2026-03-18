@@ -1367,6 +1367,7 @@ export interface SupportInboxSettings {
   default_lifecycle_stage: string;
   auto_promote_to_lead: boolean;
   ai_enabled: boolean;
+  ai_agent_id: string | null;
   ai_confidence_threshold: number;
   show_talk_to_human: boolean;
   handoff_behavior: string;

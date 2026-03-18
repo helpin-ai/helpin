@@ -319,7 +319,7 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 
 	switch event.Entity {
 	case "support_conversation_message":
-		return client.ConversationID != nil && *client.ConversationID == event.ParentID
+		return len(event.Data) > 0 && client.ConversationID != nil && *client.ConversationID == event.ParentID
 	case "support_conversation":
 		return client.ConversationID != nil && *client.ConversationID == event.EntityID
 	default:

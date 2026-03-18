@@ -49,6 +49,18 @@ func (r *SupportMessageRepository) Create(ctx context.Context, message *model.Su
 	return nil
 }
 
+// GetByID returns a support message by ID.
+func (r *SupportMessageRepository) GetByID(ctx context.Context, id string) (*model.SupportMessage, error) {
+	var message model.SupportMessage
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&message).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get message: %w", err)
+	}
+	return &message, nil
+}
+
 // SupportInboxInstallationRepository handles widget installations.
 type SupportInboxInstallationRepository struct {
 	db *gorm.DB
