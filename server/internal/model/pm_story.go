@@ -148,6 +148,7 @@ type CreateStoryRequest struct {
 	OwnerIDs          []string                     `json:"owner_ids"`
 	FollowerIDs       []string                     `json:"follower_ids"`
 	LabelIDs          []string                     `json:"label_ids"`
+	AttachmentIDs     []string                     `json:"attachment_ids,omitempty"`
 	ChecklistItems    []CreateChecklistItemRequest  `json:"checklist_items,omitempty"`
 	ExternalLinks     []CreateExternalLinkRequest  `json:"external_links,omitempty"`
 }

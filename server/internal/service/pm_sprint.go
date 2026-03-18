@@ -16,6 +16,8 @@ import (
 type PMSprintService struct {
 	sprintRepo          *repository.PMSprintRepository
 	labelRepo           *repository.PMLabelRepository
+	attachmentRepo      *repository.PMAttachmentRepository
+	workspaceRepo       *repository.WorkspaceRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
@@ -23,8 +25,8 @@ type PMSprintService struct {
 }
 
 // NewPMSprintService creates a new PMSprintService.
-func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMSprintService {
-	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService, logger: slog.Default().With("service", "pm_sprint")}
+func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMSprintService {
+	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, attachmentRepo: attachmentRepo, workspaceRepo: workspaceRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService, logger: slog.Default().With("service", "pm_sprint")}
 }
 
 // List returns sprints with filters.
@@ -100,6 +102,11 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 		s.logger.ErrorContext(ctx, "failed to create sprint", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
+	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "sprint", sprint.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to sprint", "error", err, "sprint_id", sprint.ID, "attachment_ids", req.AttachmentIDs)
+		}
+	}
 	if len(req.LabelIDs) > 0 {
 		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
 			return nil, err
@@ -131,6 +138,22 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit sprint created notification", "error", err, "sprint_id", sprint.ID)
+		}
+		if sprint.Description != nil {
+			if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:     sprint.WorkspaceID,
+				ActorID:         actorID,
+				Body:            *sprint.Description,
+				EventType:       "sprint.mention",
+				EntityType:      "sprint",
+				EntityID:        sprint.ID,
+				Title:           "mentioned you in sprint " + sprint.Name,
+				TeamID:          derefString(sprint.TeamID),
+				ReadableTeamIDs: mentionScopeForTeamID(sprint.TeamID),
+				EntitySnapshot:  model.JSONB{"title": sprint.Name},
+			}); err != nil {
+				s.logger.ErrorContext(ctx, "failed to emit sprint mention notification", "error", err, "sprint_id", sprint.ID)
+			}
 		}
 	}
 
@@ -224,6 +247,22 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit sprint updated notification", "error", err, "sprint_id", sprint.ID)
+		}
+		if req.Description != nil {
+			if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:     sprint.WorkspaceID,
+				ActorID:         actorID,
+				Body:            *req.Description,
+				EventType:       "sprint.mention",
+				EntityType:      "sprint",
+				EntityID:        sprint.ID,
+				Title:           "mentioned you in sprint " + sprint.Name,
+				TeamID:          derefString(sprint.TeamID),
+				ReadableTeamIDs: mentionScopeForTeamID(sprint.TeamID),
+				EntitySnapshot:  model.JSONB{"title": sprint.Name},
+			}); err != nil {
+				s.logger.ErrorContext(ctx, "failed to emit sprint mention notification", "error", err, "sprint_id", sprint.ID)
+			}
 		}
 	}
 

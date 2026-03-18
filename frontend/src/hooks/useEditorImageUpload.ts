@@ -3,19 +3,25 @@ import { uploadToS3 } from '@/lib/api';
 
 export interface EditorUploadConfig {
   workspaceId: string;
-  entityType: 'story' | 'editor_upload';
+  entityType: 'story' | 'epic' | 'objective' | 'sprint' | 'editor_upload';
   entityId: string;
+}
+
+export interface EditorImageUploadResult {
+  attachmentId: string;
+  publicUrl: string;
 }
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
 /**
- * Upload an image file via the attachment infrastructure and return its public S3 URL.
+ * Upload an image file via the attachment infrastructure and return the public URL
+ * together with the persistent attachment ID.
  */
 export async function uploadEditorImage(
   file: File,
   config: EditorUploadConfig,
-): Promise<string> {
+): Promise<EditorImageUploadResult> {
   if (!file.type.startsWith('image/')) {
     throw new Error('Only image files are supported');
   }
@@ -57,5 +63,8 @@ export async function uploadEditorImage(
   if (!initData.public_url) {
     throw new Error('Server did not return a public URL');
   }
-  return initData.public_url;
+  return {
+    attachmentId: initData.attachment.id,
+    publicUrl: initData.public_url,
+  };
 }

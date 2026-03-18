@@ -51,6 +51,7 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import {
   TABLE_CONTAINER,
   TABLE_HEADER,
@@ -70,7 +71,7 @@ import {
   pinnedStyle,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
-import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
@@ -1247,71 +1248,37 @@ function InlineOwnerCell({
   ownerNameMap: Map<string, string>;
   onUpdate: (storyId: string, patch: Partial<Story>) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
   const ownerKey = story.owner_member_id;
   const ownerName = ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : null;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-        >
-          {ownerName ? (
-            <>
-              <UserAvatar name={ownerName} className="h-4 w-4" />
-              <span className="truncate">{ownerName}</span>
-            </>
-          ) : (
-            <>
-              <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-muted-foreground">Assign</span>
-            </>
-          )}
-        </button>
-      </PopoverTrigger>
-      {open && (
-        <PopoverContent
-          className="w-[220px] p-0"
-          align="start"
-          side="bottom"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <Command>
-            <CommandInput placeholder="Search members..." className="h-8 text-xs" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No members found</CommandEmpty>
-              <CommandGroup>
-                {assignableMembers.map((m) => {
-                  const optionName = ownerNameMap.get(m.id) ?? m.display_name ?? m.email;
-                  const isSelected = story.owner_member_id === m.id;
-                  return (
-                  <CommandItem
-                    key={m.id}
-                    value={optionName}
-                    onSelect={() => {
-                      const newOwnerId = isSelected ? '' : m.id;
-                      onUpdate(story.id, { owner_member_id: newOwnerId });
-                      setOpen(false);
-                    }}
-                    className="flex items-center gap-2 text-xs"
-                  >
-                    <UserAvatar name={optionName} className="h-5 w-5" />
-                    <span className="truncate">{optionName}</span>
-                    {isSelected && (
-                      <Check className="ml-auto h-3.5 w-3.5 text-primary" />
-                    )}
-                  </CommandItem>
-                )})}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      )}
-    </Popover>
+    <MemberPickerPopover
+      value={story.owner_member_id || '__none__'}
+      members={assignableMembers}
+      noneLabel="Unassigned"
+      onChange={(value) => {
+        void onUpdate(story.id, { owner_member_id: value === '__none__' ? '' : value });
+      }}
+      renderTrigger={() => {
+        const selectedMember = findAssignableMember(assignableMembers, story.owner_member_id);
+        return selectedMember ? (
+          <>
+            <UserAvatar
+              name={selectedMember.display_name || selectedMember.email}
+              avatarUrl={selectedMember.avatar_url}
+              className="h-4 w-4"
+              fallbackClassName="text-[7px]"
+            />
+            <span className="truncate">{ownerName}</span>
+          </>
+        ) : (
+          <>
+            <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">Assign</span>
+          </>
+        );
+      }}
+    />
   );
 }
 

@@ -69,7 +69,7 @@ func newStoryTestEnv(t *testing.T) storyTestEnv {
 	activityService := NewPMActivityService(activityRepo)
 
 	// wsPublisher is nil-safe (Publish is a no-op on nil receiver).
-	svc := NewPMStoryService(storyRepo, workspaceRepo, workflowRepo, labelRepo, nil, nil, activityService, nil, nil, nil, nil)
+	svc := NewPMStoryService(storyRepo, workspaceRepo, workflowRepo, labelRepo, nil, nil, repository.NewPMAttachmentRepository(db), activityService, nil, nil, nil, nil)
 
 	return storyTestEnv{
 		svc:    svc,
@@ -182,6 +182,36 @@ func TestPMStoryService_Create(t *testing.T) {
 		}
 		if story.Story.Severity != model.PMStorySeverityMajor {
 			t.Errorf("severity = %q, want %q", story.Story.Severity, model.PMStorySeverityMajor)
+		}
+	})
+
+	t.Run("create reassigns temporary attachment ids", func(t *testing.T) {
+		seedTemporaryAttachment(t, env.db, "attachment-story-1", env.wsID, env.wsID, env.userID)
+
+		story, err := env.svc.Create(ctx, model.CreateStoryRequest{
+			WorkspaceID:     env.wsID,
+			Name:            "Story With Image",
+			WorkflowID:      env.wfID,
+			WorkflowStateID: env.stTodo,
+			AttachmentIDs:   []string{"attachment-story-1"},
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		attachmentRepo := repository.NewPMAttachmentRepository(env.db)
+		attachment, err := attachmentRepo.GetByID(ctx, "attachment-story-1")
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if attachment == nil {
+			t.Fatal("expected attachment")
+		}
+		if attachment.EntityType != "story" {
+			t.Fatalf("entity_type = %q, want %q", attachment.EntityType, "story")
+		}
+		if attachment.EntityID != story.Story.ID {
+			t.Fatalf("entity_id = %q, want %q", attachment.EntityID, story.Story.ID)
 		}
 	})
 
@@ -626,7 +656,7 @@ func TestPMStoryService_Update(t *testing.T) {
 	t.Run("forbidden for viewer role", func(t *testing.T) {
 		viewerID := "user-viewer-upd-001"
 		seedUser(t, env.db, viewerID, "viewer-upd@test.com", "Viewer User", "hash")
-		seedWorkspaceMember(t, env.db, "wm-viewer-upd-001", env.wsID, viewerID, "viewer-upd@test.com", "Viewer User", model.RoleViewer)
+		seedWorkspaceMember(t, env.db, "wm-viewer-upd-001", env.wsID, viewerID, "viewer-upd@test.com", "Viewer User", "viewer")
 
 		newName := "Forbidden Update"
 		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{

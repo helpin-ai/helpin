@@ -91,15 +91,15 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
     load();
   }, [workspaceId, version, load]);
 
-  const getTeamMembers = (teamId: string): WorkspacePerson[] => {
+  const getTeamMembers = useCallback((teamId: string): WorkspacePerson[] => {
     const memberIds = new Set(memberships.filter((m) => m.team_id === teamId).map((m) => m.person_id));
     return people.filter((p) => memberIds.has(p.id));
-  };
+  }, [memberships, people]);
 
-  const findTeamName = (teamId: string | null | undefined): string | undefined => {
+  const findTeamName = useCallback((teamId: string | null | undefined): string | undefined => {
     if (!teamId) return undefined;
     return teams.find((t) => t.id === teamId)?.name;
-  };
+  }, [teams]);
 
   return { teams, people, memberships, userMemberships, loading, getTeamMembers, findTeamName };
 }

@@ -163,6 +163,7 @@ func main() {
 		labelRepo,
 		checklistRepo,
 		externalLinkRepo,
+		attachRepo,
 		pmActivityService,
 		wsPublisher,
 		nil,

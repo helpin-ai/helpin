@@ -33,7 +33,7 @@ var allowedMIMETypes = map[string]bool{
 }
 
 var allowedEntityTypes = map[string]bool{
-	"story": true, "epic": true, "comment": true, "editor_upload": true,
+	"story": true, "epic": true, "objective": true, "sprint": true, "comment": true, "editor_upload": true,
 }
 
 // PMAttachmentService contains attachment business logic.
@@ -120,7 +120,7 @@ func (s *PMAttachmentService) prepareAttachment(ctx context.Context, req model.C
 		return nil, fmt.Errorf("entity_type and entity_id are required")
 	}
 	if !allowedEntityTypes[req.EntityType] {
-		return nil, fmt.Errorf("invalid entity_type: must be story, epic, comment, or editor_upload")
+		return nil, fmt.Errorf("invalid entity_type: must be story, epic, objective, sprint, comment, or editor_upload")
 	}
 	if strings.TrimSpace(req.FileName) == "" {
 		return nil, fmt.Errorf("file_name is required")

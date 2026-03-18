@@ -1,16 +1,116 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check } from 'lucide-react';
+
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { formatAssignableMemberName, matchesAssignableMemberValue } from '@/lib/assignableMembers';
+import { cn } from '@/lib/utils';
 import type { AssignableMember } from '@/lib/types';
-import { formatAssignableMemberName } from '@/lib/assignableMembers';
 
-interface MemberPickerPopoverProps {
-  value: string;
+type PopoverAlign = 'start' | 'center' | 'end';
+type MemberValueGetter = (member: AssignableMember) => string;
+
+interface BaseMemberPickerProps {
   members: AssignableMember[];
-  onChange: (memberId: string) => void;
   renderTrigger: () => React.ReactNode;
+  triggerClassName?: string;
+  contentClassName?: string;
+  align?: PopoverAlign;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  getMemberValue?: MemberValueGetter;
+  disabled?: boolean;
+}
+
+interface MemberPickerPopoverProps extends BaseMemberPickerProps {
+  value: string;
+  onChange: (memberId: string) => void;
   noneLabel?: string;
+}
+
+interface MultiMemberPickerPopoverProps extends BaseMemberPickerProps {
+  values: string[];
+  onChange: (memberIds: string[]) => void;
+}
+
+const DEFAULT_TRIGGER_CLASSNAME =
+  'inline-flex max-w-full min-w-0 items-center overflow-hidden rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer';
+
+function defaultGetMemberValue(member: AssignableMember) {
+  return member.id;
+}
+
+function getSelectableMembers(members: AssignableMember[]) {
+  return members.filter((member) => member.status === 'active');
+}
+
+function MemberList({
+  members,
+  selectedValues,
+  onToggle,
+  noneLabel,
+  multiple,
+  getMemberValue,
+}: {
+  members: AssignableMember[];
+  selectedValues: string[];
+  onToggle: (value: string) => void;
+  noneLabel?: string;
+  multiple: boolean;
+  getMemberValue: MemberValueGetter;
+}) {
+  return (
+    <Command>
+      <CommandInput placeholder="Search members..." className="h-8 text-xs" />
+      <CommandList>
+        <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+          No members found
+        </CommandEmpty>
+        <CommandGroup>
+          {!multiple && noneLabel ? (
+            <CommandItem
+              value={noneLabel}
+              onSelect={() => onToggle('__none__')}
+              className={cn(
+                'flex min-w-0 items-center gap-2 text-xs',
+                selectedValues.includes('__none__') && 'font-medium text-foreground',
+              )}
+            >
+              <span className="min-w-0 flex-1 truncate">{noneLabel}</span>
+              {selectedValues.includes('__none__') && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+            </CommandItem>
+          ) : null}
+
+          {members.map((member) => {
+            const optionValue = `${formatAssignableMemberName(member)} ${member.email}`;
+            const memberId = getMemberValue(member);
+            const isSelected = selectedValues.some((value) =>
+              matchesAssignableMemberValue(member, value, getMemberValue),
+            );
+
+            return (
+              <CommandItem
+                key={memberId}
+                value={optionValue}
+                onSelect={() => onToggle(memberId)}
+                className="flex min-w-0 items-center gap-2 text-xs"
+              >
+                <UserAvatar
+                  name={member.display_name || member.email}
+                  avatarUrl={member.avatar_url}
+                  className="h-5 w-5"
+                  fallbackClassName="text-[8px]"
+                />
+                <span className="min-w-0 flex-1 truncate">{member.display_name || member.email}</span>
+                {isSelected && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+              </CommandItem>
+            );
+          })}
+        </CommandGroup>
+      </CommandList>
+    </Command>
+  );
 }
 
 export function MemberPickerPopover({
@@ -19,107 +119,124 @@ export function MemberPickerPopover({
   onChange,
   renderTrigger,
   noneLabel = 'None',
+  triggerClassName,
+  contentClassName,
+  align = 'start',
+  open,
+  onOpenChange,
+  getMemberValue = defaultGetMemberValue,
+  disabled = false,
 }: MemberPickerPopoverProps) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isOpen = open ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
 
-  const joined = members.filter((m) => m.status === 'active');
-  const invited = members.filter((m) => m.status === 'pending');
+  const selectableMembers = useMemo(
+    () => getSelectableMembers(members),
+    [members],
+  );
 
-  const handleSelect = (id: string) => {
-    onChange(id);
+  const handleToggle = (selectedValue: string) => {
+    onChange(selectedValue);
     setOpen(false);
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={isOpen} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex max-w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          disabled={disabled}
+          className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
         >
-          {renderTrigger()}
+          <span className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden [&_span:last-child]:truncate [&_span:last-child]:whitespace-nowrap">
+            {renderTrigger()}
+          </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-0.5 z-[60]" align="start" onWheel={(e) => e.stopPropagation()}>
-        <div className="flex max-h-60 flex-col overflow-y-auto overscroll-contain">
-          {/* None option */}
-          <button
-            type="button"
-            className={`flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors cursor-pointer
-              ${value === '__none__' ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}
-            `}
-            onClick={() => handleSelect('__none__')}
-          >
-            <span className="truncate">{noneLabel}</span>
-            {value === '__none__' && <Check className="ml-auto h-3 w-3 shrink-0" />}
-          </button>
-
-          {/* Joined members */}
-          {joined.length > 0 && (
-            <>
-              <div className="px-2 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-                Members
-              </div>
-              {joined.map((m) => (
-                <MemberRow
-                  key={m.id}
-                  member={m}
-                  selected={value === m.id}
-                  onSelect={handleSelect}
-                />
-              ))}
-            </>
-          )}
-
-          {/* Invited members */}
-          {invited.length > 0 && (
-            <>
-              <div className="px-2 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-                Invited
-              </div>
-              {invited.map((m) => (
-                <MemberRow
-                  key={m.id}
-                  member={m}
-                  selected={value === m.id}
-                  onSelect={handleSelect}
-                />
-              ))}
-            </>
-          )}
-        </div>
-      </PopoverContent>
+      {!disabled ? (
+        <PopoverContent
+          className={cn('z-[60] w-[240px] p-0', contentClassName)}
+          align={align}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <MemberList
+            members={selectableMembers}
+            selectedValues={[value || '__none__']}
+            onToggle={handleToggle}
+            noneLabel={noneLabel}
+            multiple={false}
+            getMemberValue={getMemberValue}
+          />
+        </PopoverContent>
+      ) : null}
     </Popover>
   );
 }
 
-function MemberRow({
-  member,
-  selected,
-  onSelect,
-}: {
-  member: AssignableMember;
-  selected: boolean;
-  onSelect: (id: string) => void;
-}) {
-  const name = formatAssignableMemberName(member);
+export function MultiMemberPickerPopover({
+  values,
+  members,
+  onChange,
+  renderTrigger,
+  triggerClassName,
+  contentClassName,
+  align = 'start',
+  open,
+  onOpenChange,
+  getMemberValue = defaultGetMemberValue,
+  disabled = false,
+}: MultiMemberPickerPopoverProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isOpen = open ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
+
+  const selectableMembers = useMemo(
+    () => getSelectableMembers(members),
+    [members],
+  );
+
+  const handleToggle = (selectedValue: string) => {
+    const nextValues = values.includes(selectedValue)
+      ? values.filter((value) => value !== selectedValue)
+      : [...values, selectedValue];
+    onChange(nextValues);
+  };
 
   return (
-    <button
-      type="button"
-      className={`flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs transition-colors cursor-pointer
-        ${selected ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}
-      `}
-      onClick={() => onSelect(member.id)}
-    >
-      <UserAvatar
-        name={member.display_name || member.email}
-        avatarUrl={member.avatar_url}
-        className="h-5 w-5"
-        fallbackClassName="text-[8px]"
-      />
-      <span className="truncate">{name}</span>
-      {selected && <Check className="ml-auto h-3 w-3 shrink-0" />}
-    </button>
+    <Popover open={isOpen} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <span className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden [&_span:last-child]:truncate [&_span:last-child]:whitespace-nowrap">
+            {renderTrigger()}
+          </span>
+        </button>
+      </PopoverTrigger>
+      {!disabled ? (
+        <PopoverContent
+          className={cn('z-[60] w-[240px] p-0', contentClassName)}
+          align={align}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <MemberList
+            members={selectableMembers}
+            selectedValues={values}
+            onToggle={handleToggle}
+            multiple
+            getMemberValue={getMemberValue}
+          />
+        </PopoverContent>
+      ) : null}
+    </Popover>
   );
 }

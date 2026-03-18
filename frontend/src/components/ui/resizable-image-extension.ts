@@ -16,6 +16,7 @@ declare module '@tiptap/core' {
         width?: string;
         height?: string;
         aspectRatio?: number | null;
+        attachmentId?: string | null;
       }) => ReturnType;
     };
   }
@@ -41,6 +42,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       width: { default: '35%' },
       height: { default: 'auto' },
       aspectRatio: { default: null },
+      attachmentId: { default: null },
     };
   },
 
@@ -57,15 +59,17 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
           aspectRatio: dom.getAttribute('data-aspect-ratio')
             ? Number(dom.getAttribute('data-aspect-ratio'))
             : null,
+          attachmentId: dom.getAttribute('data-attachment-id'),
         };
       }},
     ];
   },
 
   renderHTML({ HTMLAttributes }) {
-    const { aspectRatio, ...rest } = HTMLAttributes;
+    const { aspectRatio, attachmentId, ...rest } = HTMLAttributes;
     return ['img', mergeAttributes(this.options.HTMLAttributes, rest, {
       ...(aspectRatio ? { 'data-aspect-ratio': aspectRatio } : {}),
+      ...(attachmentId ? { 'data-attachment-id': attachmentId } : {}),
     })];
   },
 

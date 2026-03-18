@@ -69,7 +69,7 @@ export function UserAvatar({
 
   return (
     <Avatar className={cn('h-7 w-7 border border-border/80', avatarClassName)}>
-      {avatarUrl && <AvatarImage src={avatarUrl} alt={name ?? ''} />}
+      <AvatarImage src={avatarUrl ?? undefined} alt={name ?? ''} />
       <AvatarFallback className={cn('text-[9px] font-semibold', color.bg, color.text, fallbackClassName)}>
         {getInitials(name)}
       </AvatarFallback>

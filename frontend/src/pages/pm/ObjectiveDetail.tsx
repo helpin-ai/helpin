@@ -26,19 +26,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
+import { Attachments } from '@/components/pm/Attachments';
 import { DatePicker } from '@/components/ui/date-picker';
+import {
+  diffRemovedInlineAttachmentIds,
+  extractInlineAttachmentIds,
+  removeInlineImagesByAttachmentIds,
+} from '@/components/pm/editorImageAttachments';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { UserAvatar } from '@/components/pm/UserAvatar';
+import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import type {
+  AttachmentResponse,
   EpicWithStats,
   KeyResult,
   KeyResultType,
@@ -436,16 +448,18 @@ export function ObjectiveDetailPage() {
   const pendingPatchRef = useRef<UpdateObjectiveRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
+  const savedDescriptionRef = useRef('');
 
   const { teams } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
-  const ownerOptions = useMemo(
-    () => buildAssignableMemberOptions(assignableMembers),
-    [assignableMembers],
-  );
   const memberMap = useMemo(() => {
     return buildAssignableMemberNameMap(assignableMembers);
   }, [assignableMembers]);
+  const mentionTeams = useMemo(
+    () => filterMentionTeams(teams, data?.teams ?? []),
+    [teams, data?.teams],
+  );
 
   useTitle(form?.name ? `${form.name} — Objective` : 'Objective');
 
@@ -470,6 +484,7 @@ export function ObjectiveDetailPage() {
       return;
     }
     setData(obj);
+    savedDescriptionRef.current = obj.objective.description ?? '';
     setForm(buildForm(obj));
     setLoading(false);
   }, [workspaceId, objectiveId]);
@@ -478,9 +493,16 @@ export function ObjectiveDetailPage() {
 
   // Auto-save debounce
   useEffect(() => {
-    if (saving || Object.keys(pendingPatch).length === 0 || !workspaceId || !data) return;
+    if (
+      saving ||
+      Object.keys(pendingPatch).length === 0 ||
+      !workspaceId ||
+      !data ||
+      (pendingPatch.description !== undefined && descriptionPendingUploads > 0)
+    ) return;
     const timer = window.setTimeout(async () => {
       const patch = pendingPatch;
+      const previousDescription = savedDescriptionRef.current;
       setPendingPatch({});
       pendingPatchRef.current = {};
       setSaving(true);
@@ -495,6 +517,16 @@ export function ObjectiveDetailPage() {
       } else {
         setSaveError(null);
         setData(updated);
+        const nextDescription = updated.objective.description ?? '';
+        savedDescriptionRef.current = nextDescription;
+        if (patch.description !== undefined) {
+          const removedAttachmentIds = diffRemovedInlineAttachmentIds(previousDescription, nextDescription);
+          if (removedAttachmentIds.length > 0) {
+            await Promise.allSettled(
+              removedAttachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+            );
+          }
+        }
         // Re-sync form from server, but don't overwrite fields the user edited during the save
         const fresh = buildForm(updated);
         const stillPending = pendingPatchRef.current;
@@ -512,7 +544,7 @@ export function ObjectiveDetailPage() {
       setSaving(false);
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [workspaceId, data, pendingPatch, saving]);
+  }, [workspaceId, data, pendingPatch, saving, descriptionPendingUploads]);
 
   const queuePatch = (patch: UpdateObjectiveRequest) => {
     setPendingPatch((current) => {
@@ -526,6 +558,49 @@ export function ObjectiveDetailPage() {
     setForm((current) => current ? { ...current, [key]: value } : current);
     queuePatch(patch);
   };
+
+  const handleDescriptionAttachmentDelete = useCallback(
+    async (entry: AttachmentResponse) => {
+      if (!workspaceId || !data || !form) {
+        return 'fallback' as const;
+      }
+      if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
+        return 'fallback' as const;
+      }
+      if (!window.confirm('Delete this image from the description and attachments?')) {
+        return 'prevent' as const;
+      }
+
+      const previousDescription = form.description;
+      const nextDescription = removeInlineImagesByAttachmentIds(previousDescription, [entry.attachment.id]);
+
+      setForm((current) => (current ? { ...current, description: nextDescription } : current));
+      setPendingPatch((current) => {
+        const { description, ...rest } = current;
+        pendingPatchRef.current = rest;
+        return rest;
+      });
+      setSaving(true);
+
+      const { data: updated, error: err } = await pmObjectiveService.update(workspaceId, data.objective.id, {
+        description: nextDescription,
+      });
+      if (err || !updated) {
+        setForm((current) => (current ? { ...current, description: previousDescription } : current));
+        setSaveError(err ?? 'Failed to save');
+        setSaving(false);
+        return 'prevent' as const;
+      }
+
+      setSaveError(null);
+      setData(updated);
+      savedDescriptionRef.current = updated.objective.description ?? '';
+      await pmAttachmentService.remove(workspaceId, entry.attachment.id);
+      setSaving(false);
+      return 'handled' as const;
+    },
+    [workspaceId, data, form],
+  );
 
   // Key result handlers
   const handleCreateKeyResult = async () => {
@@ -597,6 +672,19 @@ export function ObjectiveDetailPage() {
       ...prev,
       owner_member_ids: (prev.owner_member_ids ?? []).filter((id) => id !== workspaceMemberId),
     } : prev);
+  };
+
+  const handleOwnerSelectionChange = async (nextOwnerIds: string[]) => {
+    const currentOwnerIds = data?.owner_member_ids ?? data?.owners ?? [];
+    const ownersToAdd = nextOwnerIds.filter((id) => !currentOwnerIds.includes(id));
+    const ownersToRemove = currentOwnerIds.filter((id) => !nextOwnerIds.includes(id));
+
+    for (const ownerId of ownersToAdd) {
+      await handleAddOwner(ownerId);
+    }
+    for (const ownerId of ownersToRemove) {
+      await handleRemoveOwner(ownerId);
+    }
   };
 
   // Epic handlers
@@ -705,7 +793,9 @@ export function ObjectiveDetailPage() {
                     onChange={(html) => updateField('description', html, { description: html })}
                     placeholder="Add a description..."
                     className="border-transparent shadow-none"
-                    teams={teams}
+                    uploadConfig={{ workspaceId: workspaceId!, entityType: 'editor_upload', entityId: workspaceId! }}
+                    onUploadStateChange={setDescriptionPendingUploads}
+                    teams={mentionTeams}
                     members={assignableMembers}
                   />
                   <div className="mt-2 flex justify-end">
@@ -717,7 +807,12 @@ export function ObjectiveDetailPage() {
               ) : (
                 <div className="group/desc relative">
                   {form.description ? (
-                    <div className="prose prose-sm dark:prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: form.description }} />
+                    <RichTextMentionContent
+                      html={form.description}
+                      members={assignableMembers}
+                      teams={mentionTeams}
+                      className="prose prose-sm dark:prose-invert max-w-none text-sm"
+                    />
                   ) : (
                     <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
                   )}
@@ -734,6 +829,16 @@ export function ObjectiveDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="mt-6">
+            <Attachments
+              workspaceId={workspaceId!}
+              entityType="objective"
+              entityId={data.objective.id}
+              memberNameMap={memberMap}
+              onDeleteAttachment={handleDescriptionAttachmentDelete}
+            />
           </div>
 
           {/* ── Progress Summary ────────────────────────────────── */}
@@ -1005,14 +1110,43 @@ export function ObjectiveDetailPage() {
             </MetadataRow>
 
             {/* Owners */}
-              <MetadataRow icon={User} label="Owners">
-                <MultiValueList
-                  items={ownerIds}
-                  allOptions={ownerOptions}
-                  onAdd={handleAddOwner}
-                  onRemove={handleRemoveOwner}
-                placeholder="Add owner"
-                readOnly={!canEdit}
+            <MetadataRow icon={User} label="Owners">
+              <MultiMemberPickerPopover
+                values={ownerIds}
+                members={assignableMembers}
+                disabled={!canEdit}
+                onChange={(nextOwnerIds) => {
+                  void handleOwnerSelectionChange(nextOwnerIds);
+                }}
+                renderTrigger={() => {
+                  const selectedMembers = assignableMembers.filter((member) => ownerIds.includes(member.id));
+                  if (selectedMembers.length === 0) {
+                    return <span className="text-muted-foreground">{canEdit ? 'Add owners' : 'None'}</span>;
+                  }
+
+                  const label = selectedMembers
+                    .map((member) => member.display_name || member.email)
+                    .join(', ');
+
+                  return (
+                    <>
+                      <div className="flex items-center -space-x-1">
+                        {selectedMembers.slice(0, 2).map((member) => (
+                          <UserAvatar
+                            key={member.id}
+                            name={member.display_name || member.email}
+                            avatarUrl={member.avatar_url}
+                            className="h-4 w-4"
+                            fallbackClassName="text-[7px]"
+                          />
+                        ))}
+                      </div>
+                      <span className="truncate">{label}</span>
+                    </>
+                  );
+                }}
+                triggerClassName="inline-flex max-w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+                contentClassName="w-[260px]"
               />
             </MetadataRow>
 

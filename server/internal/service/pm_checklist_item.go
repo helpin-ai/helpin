@@ -144,33 +144,36 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 		return
 	}
 
-	// Resolve handles to user IDs.
-	var mentionedUserIDs []string
-	if s.workspaceRepo != nil {
-		for _, handle := range mentions {
-			uid, err := s.workspaceRepo.GetUserIDByHandle(ctx, workspaceID, handle)
-			if err != nil {
-				slog.ErrorContext(ctx, "failed to resolve checklist mention handle", "handle", handle, "error", err)
-				continue
-			}
-			if uid == "" {
-				continue
-			}
-			mentionedUserIDs = append(mentionedUserIDs, uid)
-		}
-	}
-
-	if len(mentionedUserIDs) == 0 {
-		return
-	}
-
 	entityTitle := item.StoryID
 	var entityTeamID string
+	readableTeamIDs := []string(nil)
 	if s.storyRepo != nil {
 		if story, _ := s.storyRepo.GetRawByID(ctx, item.StoryID); story != nil {
 			entityTitle = story.Name
 			entityTeamID = derefString(story.TeamID)
+			readableTeamIDs = mentionScopeForTeamID(story.TeamID)
 		}
+	}
+
+	mentionedUserIDs, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+		WorkspaceID:      workspaceID,
+		ActorID:          actorID,
+		Body:             item.Text,
+		EventType:        "checklist.mention",
+		EntityType:       "story",
+		EntityID:         item.StoryID,
+		Title:            "mentioned you in a checklist item on " + entityTitle,
+		TeamID:           entityTeamID,
+		ReadableTeamIDs:  readableTeamIDs,
+		EntitySnapshot:   model.JSONB{"title": entityTitle, "checklist_item": item.Text},
+		NotificationBody: truncate(item.Text, 200),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to emit checklist mention notification", "error", err, "story_id", item.StoryID)
+		return
+	}
+	if len(mentionedUserIDs) == 0 {
+		return
 	}
 
 	slog.InfoContext(ctx, "emitting checklist mention notification",
@@ -178,24 +181,4 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 		"story_id", item.StoryID,
 		"mentioned_user_ids", mentionedUserIDs,
 	)
-
-	if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
-		WorkspaceID:        workspaceID,
-		ActorID:            actorID,
-		EventType:          "checklist.mention",
-		EntityType:         "story",
-		EntityID:           item.StoryID,
-		Title:              "mentioned you in a checklist item on " + entityTitle,
-		Body:               truncate(item.Text, 200),
-		Category:           "mention",
-		Priority:           "high",
-		TeamID:             entityTeamID,
-		ExplicitRecipients: mentionedUserIDs,
-		EntitySnapshot: model.JSONB{
-			"title":           entityTitle,
-			"checklist_item":  item.Text,
-		},
-	}); err != nil {
-		slog.ErrorContext(ctx, "failed to emit checklist mention notification", "error", err, "story_id", item.StoryID)
-	}
 }

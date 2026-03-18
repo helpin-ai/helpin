@@ -18,6 +18,7 @@ type PMObjectiveService struct {
 	objectiveRepo       *repository.PMObjectiveRepository
 	krRepo              *repository.PMKeyResultRepository
 	labelRepo           *repository.PMLabelRepository
+	attachmentRepo      *repository.PMAttachmentRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	activitySvc         *PMActivityService
 	wsPublisher         *websocket.Publisher
@@ -30,6 +31,7 @@ func NewPMObjectiveService(
 	objectiveRepo *repository.PMObjectiveRepository,
 	krRepo *repository.PMKeyResultRepository,
 	labelRepo *repository.PMLabelRepository,
+	attachmentRepo *repository.PMAttachmentRepository,
 	workspaceRepo *repository.WorkspaceRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
@@ -39,6 +41,7 @@ func NewPMObjectiveService(
 		objectiveRepo:       objectiveRepo,
 		krRepo:              krRepo,
 		labelRepo:           labelRepo,
+		attachmentRepo:      attachmentRepo,
 		workspaceRepo:       workspaceRepo,
 		activitySvc:         activitySvc,
 		wsPublisher:         wsPublisher,
@@ -159,6 +162,11 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 	if err := s.objectiveRepo.Create(ctx, obj); err != nil {
 		return nil, err
 	}
+	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "objective", obj.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to objective", "error", err, "objective_id", obj.ID, "attachment_ids", req.AttachmentIDs)
+		}
+	}
 
 	// Sync many-to-many
 	if len(req.TeamIDs) > 0 {
@@ -210,6 +218,24 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit notification for objective create", "error", err, "objective_id", obj.ID, "workspace_id", obj.WorkspaceID)
+		}
+		if obj.Description != nil {
+			if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:     obj.WorkspaceID,
+				ActorID:         actorID,
+				Body:            *obj.Description,
+				EventType:       "objective.mention",
+				EntityType:      "objective",
+				EntityID:        obj.ID,
+				Title:           "mentioned you in objective " + obj.Name,
+				ReadableTeamIDs: req.TeamIDs,
+				EntitySnapshot: model.JSONB{
+					"title": obj.Name,
+					"type":  obj.ObjectiveType,
+				},
+			}); err != nil {
+				s.logger.ErrorContext(ctx, "failed to emit notification for objective mention", "error", err, "objective_id", obj.ID, "workspace_id", obj.WorkspaceID)
+			}
 		}
 	}
 
@@ -333,6 +359,28 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit notification for objective update", "error", err, "objective_id", obj.ID, "workspace_id", obj.WorkspaceID)
+		}
+		if req.Description != nil {
+			readableTeamIDs := current.Teams
+			if req.TeamIDs != nil {
+				readableTeamIDs = req.TeamIDs
+			}
+			if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:     obj.WorkspaceID,
+				ActorID:         actorID,
+				Body:            *req.Description,
+				EventType:       "objective.mention",
+				EntityType:      "objective",
+				EntityID:        obj.ID,
+				Title:           "mentioned you in objective " + obj.Name,
+				ReadableTeamIDs: readableTeamIDs,
+				EntitySnapshot: model.JSONB{
+					"title": obj.Name,
+					"type":  obj.ObjectiveType,
+				},
+			}); err != nil {
+				s.logger.ErrorContext(ctx, "failed to emit notification for objective mention", "error", err, "objective_id", obj.ID, "workspace_id", obj.WorkspaceID)
+			}
 		}
 	}
 

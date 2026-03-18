@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -62,7 +62,7 @@ interface ColumnProps {
   isLoadingMore: boolean;
 }
 
-function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore, automatedStateIds }: ColumnProps) {
+const Column = memo(function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore, automatedStateIds }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -253,7 +253,8 @@ function Column({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTea
       </SortableContext>
     </section>
   );
-}
+});
+Column.displayName = 'Column';
 
 interface MemberColumnProps {
   column: StoryMemberColumn;
@@ -273,7 +274,7 @@ interface MemberColumnProps {
   isLoadingMore: boolean;
 }
 
-function MemberColumn({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore }: MemberColumnProps) {
+const MemberColumn = memo(function MemberColumn({ column, collapsed, onToggleCollapse, onCreate, onOpen, findTeamName, workspaceId, assignableMembers, ownerNameMap, onOwnerChanged, onPriorityChanged, onSeverityChanged, onEstimateChanged, onLoadMore, isLoadingMore }: MemberColumnProps) {
   const colKey = column.member?.id ?? '__unassigned__';
   const { setNodeRef, isOver } = useDroppable({ id: colKey });
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -403,32 +404,31 @@ function MemberColumn({ column, collapsed, onToggleCollapse, onCreate, onOpen, f
       </SortableContext>
     </section>
   );
-}
+});
+MemberColumn.displayName = 'MemberColumn';
 
 export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
-  const {
-    workflow,
-    columns,
-    loading,
-    error,
-    teamId: storeTeamId,
-    filters,
-    columnLoading,
-    loadBoard,
-    setTeamFilter,
-    setFilters,
-    createStory,
-    moveStory,
-    patchStory,
-    refreshBoard,
-    loadMoreColumn,
-    loadViews,
-    memberColumns,
-    memberColumnLoading,
-    loadMemberBoard,
-    loadMoreMemberColumn,
-    moveMemberStory,
-  } = usePMBoardStore();
+  const workflow = usePMBoardStore((state) => state.workflow);
+  const columns = usePMBoardStore((state) => state.columns);
+  const loading = usePMBoardStore((state) => state.loading);
+  const error = usePMBoardStore((state) => state.error);
+  const storeTeamId = usePMBoardStore((state) => state.teamId);
+  const filters = usePMBoardStore((state) => state.filters);
+  const columnLoading = usePMBoardStore((state) => state.columnLoading);
+  const loadBoard = usePMBoardStore((state) => state.loadBoard);
+  const setTeamFilter = usePMBoardStore((state) => state.setTeamFilter);
+  const setFilters = usePMBoardStore((state) => state.setFilters);
+  const createStory = usePMBoardStore((state) => state.createStory);
+  const moveStory = usePMBoardStore((state) => state.moveStory);
+  const patchStory = usePMBoardStore((state) => state.patchStory);
+  const refreshBoard = usePMBoardStore((state) => state.refreshBoard);
+  const loadMoreColumn = usePMBoardStore((state) => state.loadMoreColumn);
+  const loadViews = usePMBoardStore((state) => state.loadViews);
+  const memberColumns = usePMBoardStore((state) => state.memberColumns);
+  const memberColumnLoading = usePMBoardStore((state) => state.memberColumnLoading);
+  const loadMemberBoard = usePMBoardStore((state) => state.loadMemberBoard);
+  const loadMoreMemberColumn = usePMBoardStore((state) => state.loadMoreMemberColumn);
+  const moveMemberStory = usePMBoardStore((state) => state.moveMemberStory);
 
   const currentUser = useAuthStore((s) => s.user);
   const { data: sessionMembership } = useSession(workspaceId);
@@ -561,6 +561,23 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     (story: Story) => openStoryPanel(story.id),
     [openStoryPanel]
   );
+  const resolveTeamName = useCallback(
+    (storyTeamId: string | undefined) => {
+      if (storeTeamId) return undefined;
+      return findTeamName(storyTeamId);
+    },
+    [storeTeamId, findTeamName],
+  );
+  const handleCreateForState = useCallback((stateId: string) => {
+    setCreateOwnerMemberId(undefined);
+    setCreateStateId(stateId);
+    setCreateOpen(true);
+  }, []);
+  const handleCreateForMember = useCallback((memberId: string | null) => {
+    setCreateOwnerMemberId(memberId ?? undefined);
+    setCreateStateId(workflow?.states[0]?.id || '');
+    setCreateOpen(true);
+  }, [workflow]);
 
   // Listen for global panel events to patch board state
   useEffect(() => {
@@ -869,13 +886,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                       column={col}
                       collapsed={collapsedColumns.has(colKey)}
                       onToggleCollapse={toggleCollapse}
-                      onCreate={(memberId) => {
-                        setCreateOwnerMemberId(memberId ?? undefined);
-                        setCreateStateId(workflow?.states[0]?.id || '');
-                        setCreateOpen(true);
-                      }}
+                      onCreate={handleCreateForMember}
                       onOpen={openStory}
-                      findTeamName={storeTeamId ? () => undefined : findTeamName}
+                      findTeamName={resolveTeamName}
                       workspaceId={workspaceId}
                       assignableMembers={assignableMembers}
                       ownerNameMap={ownerNameMap}
@@ -895,13 +908,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                     column={column}
                     collapsed={collapsedColumns.has(column.state.id)}
                     onToggleCollapse={toggleCollapse}
-                    onCreate={(stateId) => {
-                      setCreateOwnerMemberId(undefined);
-                      setCreateStateId(stateId);
-                      setCreateOpen(true);
-                    }}
+                    onCreate={handleCreateForState}
                     onOpen={openStory}
-                    findTeamName={storeTeamId ? () => undefined : findTeamName}
+                    findTeamName={resolveTeamName}
                     workspaceId={workspaceId}
                     assignableMembers={assignableMembers}
                     ownerNameMap={ownerNameMap}
@@ -919,7 +928,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           </div>
 
           <DragOverlay>
-            {activeStory ? <StoryCard story={activeStory} onOpen={() => {}} isOverlay teamName={storeTeamId ? undefined : findTeamName(activeStory.team_id)} ownerNameMap={ownerNameMap} showStateBadge={groupBy === 'members'} /> : null}
+            {activeStory ? <StoryCard story={activeStory} onOpen={() => {}} isOverlay teamName={resolveTeamName(activeStory.team_id)} ownerNameMap={ownerNameMap} showStateBadge={groupBy === 'members'} /> : null}
           </DragOverlay>
         </DndContext>
       ) : null}
