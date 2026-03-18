@@ -126,8 +126,9 @@ function parseExecutionResult(value: unknown): KickoffExecutionResult | null {
   return parseJSONValue<KickoffExecutionResult>(value);
 }
 
-function latestFlowNodeRun(nodeRuns: FlowNodeRun[], nodeId: string): FlowNodeRun | null {
-  return [...nodeRuns].reverse().find((item) => item.node_id === nodeId) ?? null;
+function latestFlowNodeRun(nodeRuns: FlowNodeRun[], nodeIds: string | string[]): FlowNodeRun | null {
+  const allowed = new Set(Array.isArray(nodeIds) ? nodeIds : [nodeIds]);
+  return [...nodeRuns].reverse().find((item) => allowed.has(item.node_id)) ?? null;
 }
 
 // --- Component ---
@@ -155,8 +156,12 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   const [triggeringDraft, setTriggeringDraft] = useState(false);
   const [savingClarifications, setSavingClarifications] = useState(false);
   const [approvingSpec, setApprovingSpec] = useState(false);
+  const [requestingSpecChanges, setRequestingSpecChanges] = useState(false);
+  const [specReviewComment, setSpecReviewComment] = useState('');
   const [triggeringPlan, setTriggeringPlan] = useState(false);
   const [confirmingPlan, setConfirmingPlan] = useState(false);
+  const [requestingPlanChanges, setRequestingPlanChanges] = useState(false);
+  const [planReviewComment, setPlanReviewComment] = useState('');
   const [kickingOff, setKickingOff] = useState(false);
   const [lastExecutionResult, setLastExecutionResult] = useState<KickoffExecutionResult | null>(null);
   const lastDraftRefreshKey = useRef<string>('');
@@ -299,7 +304,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   // Compute current step
   const currentStep = useMemo(() => computeCurrentStep(epic, agents, runs), [epic, agents, runs]);
   const flowNodeRuns = flowRunView?.node_runs ?? [];
-  const specPlanningNode = useMemo(() => latestFlowNodeRun(flowNodeRuns, 'spec_planning'), [flowNodeRuns]);
+  const specPlanningNode = useMemo(() => latestFlowNodeRun(flowNodeRuns, ['spec_draft', 'spec_planning']), [flowNodeRuns]);
   const specApprovalNode = useMemo(() => latestFlowNodeRun(flowNodeRuns, 'spec_approval'), [flowNodeRuns]);
   const planApprovalNode = useMemo(() => latestFlowNodeRun(flowNodeRuns, 'plan_approval'), [flowNodeRuns]);
   const epicSessionId = epic.active_planning_session_id === dismissedSessionId ? null : epic.active_planning_session_id;
@@ -307,12 +312,12 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
   const activeInteractiveSessionId =
     specPlanningNode?.child_session_id ?? resolvedLocalSessionId ?? epicSessionId ?? null;
   const activeInteractiveNodeId =
-    flowRunView?.run.current_node_id === 'spec_planning' && specPlanningNode?.status === 'awaiting_input'
+    ['spec_draft', 'spec_planning'].includes(flowRunView?.run.current_node_id ?? '') && specPlanningNode?.status === 'awaiting_input'
       ? specPlanningNode.id
       : undefined;
   const flowInteractiveActive =
     Boolean(activeFlowRunId) &&
-    flowRunView?.run.current_node_id === 'spec_planning' &&
+    ['spec_draft', 'spec_planning'].includes(flowRunView?.run.current_node_id ?? '') &&
     specPlanningNode?.status === 'awaiting_input' &&
     Boolean(activeInteractiveSessionId);
   const legacyInteractiveActive = !activeFlowRunId && Boolean(activeInteractiveSessionId);
@@ -459,6 +464,32 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     } finally { setTriggeringPlan(false); }
   }, [activeFlowRunId, additionalContext, ensureAssignedAgent, epic.id, fetchRuns, onStoriesCreated, workspaceId]);
 
+  const handleRequestSpecChanges = useCallback(async () => {
+    if (!activeFlowRunId || !specApprovalNode?.id || specApprovalNode.status !== 'awaiting_approval') {
+      toast.error('Spec is not currently awaiting approval');
+      return;
+    }
+    if (!specReviewComment.trim()) {
+      toast.error('Add reviewer feedback before requesting changes');
+      return;
+    }
+    setRequestingSpecChanges(true);
+    try {
+      await specNodeAction.mutateAsync({
+        actionType: 'request_changes',
+        payload: { comment: specReviewComment.trim() },
+      });
+      setSpecReviewComment('');
+      toast.success('Requested spec changes');
+      await fetchRuns();
+      onStoriesCreated?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to request spec changes');
+    } finally {
+      setRequestingSpecChanges(false);
+    }
+  }, [activeFlowRunId, fetchRuns, onStoriesCreated, specApprovalNode?.id, specApprovalNode?.status, specNodeAction, specReviewComment]);
+
   const handleConfirmPlan = useCallback(async () => {
     if (activeFlowRunId && planApprovalNode?.id && planApprovalNode.status === 'awaiting_approval') {
       if (!editedStories.length) { toast.error('No proposed stories to create'); return; }
@@ -491,6 +522,32 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
       onStoriesCreated?.();
     } finally { setConfirmingPlan(false); }
   }, [activeFlowRunId, editedStories, fetchRuns, latestPlanRun, loadArtifacts, onStoriesCreated, planApprovalNode?.id, planApprovalNode?.status, planNodeAction, selectedRun, selectedRunStage, workspaceId]);
+
+  const handleRequestPlanChanges = useCallback(async () => {
+    if (!activeFlowRunId || !planApprovalNode?.id || planApprovalNode.status !== 'awaiting_approval') {
+      toast.error('Story plan is not currently awaiting approval');
+      return;
+    }
+    if (!planReviewComment.trim()) {
+      toast.error('Add reviewer feedback before requesting changes');
+      return;
+    }
+    setRequestingPlanChanges(true);
+    try {
+      await planNodeAction.mutateAsync({
+        actionType: 'request_changes',
+        payload: { comment: planReviewComment.trim() },
+      });
+      setPlanReviewComment('');
+      toast.success('Requested story plan changes');
+      await fetchRuns();
+      onStoriesCreated?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to request plan changes');
+    } finally {
+      setRequestingPlanChanges(false);
+    }
+  }, [activeFlowRunId, fetchRuns, onStoriesCreated, planApprovalNode?.id, planApprovalNode?.status, planNodeAction, planReviewComment]);
 
   const handleKickoffExecution = useCallback(async () => {
     const run = selectedRunStage === 'plan_stories' ? selectedRun : latestPlanRun;
@@ -547,7 +604,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     }
     try {
       const flow = await startFlowMutation.mutateAsync({
-        template_id: 'pm.epic_planning_v1',
+        template_id: 'pm.epic_planning_v2',
         target_type: 'epic',
         target_id: epic.id,
         input: {
@@ -558,7 +615,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
       setDismissedFlowRunId(null);
       setDismissedSessionId(null);
       setLocalFlowRunId(flow.run.id);
-      const sessionNode = latestFlowNodeRun(flow.node_runs ?? [], 'spec_planning');
+      const sessionNode = latestFlowNodeRun(flow.node_runs ?? [], ['spec_draft', 'spec_planning']);
       setLocalSessionId(sessionNode?.child_session_id ?? null);
       setAdditionalContext('');
       onStoriesCreated?.();
@@ -647,6 +704,11 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
           onApproveSpec={() => void handleApproveSpec()}
           onOpenSpecDoc={openSpecDoc}
           approvingSpec={approvingSpec}
+          canRequestChanges={Boolean(activeFlowRunId && specApprovalNode?.status === 'awaiting_approval')}
+          requestChangesComment={specReviewComment}
+          onRequestChangesCommentChange={setSpecReviewComment}
+          onRequestChanges={() => void handleRequestSpecChanges()}
+          requestingChanges={requestingSpecChanges}
         />
 
         <GenerateStoriesStep
@@ -672,6 +734,11 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
             (Boolean(activeFlowRunId && planApprovalNode?.status === 'awaiting_approval') ||
               Boolean(selectedRunStage === 'plan_stories' ? selectedRun : latestPlanRun))
           }
+          canRequestChanges={Boolean(activeFlowRunId && planApprovalNode?.status === 'awaiting_approval')}
+          requestChangesComment={planReviewComment}
+          onRequestChangesCommentChange={setPlanReviewComment}
+          onRequestChanges={() => void handleRequestPlanChanges()}
+          requestingChanges={requestingPlanChanges}
         />
 
         <ExecuteStep

@@ -17,6 +17,17 @@ func NewFlowRuntimeActivities(flowService *FlowService) *FlowRuntimeActivities {
 	return &FlowRuntimeActivities{flowService: flowService}
 }
 
+func (a *FlowRuntimeActivities) BootstrapRunActivity(ctx context.Context, flowRunID, actorID string) error {
+	run, err := a.flowService.GetRunByIDAny(ctx, flowRunID)
+	if err != nil {
+		return err
+	}
+	if run == nil {
+		return fmt.Errorf("flow run not found")
+	}
+	return a.flowService.genericBootstrapRun(ctx, run, actorID)
+}
+
 func (a *FlowRuntimeActivities) BootstrapEpicPlanningRunActivity(ctx context.Context, flowRunID, actorID string) error {
 	run, err := a.flowService.GetRunByIDAny(ctx, flowRunID)
 	if err != nil {
@@ -26,6 +37,14 @@ func (a *FlowRuntimeActivities) BootstrapEpicPlanningRunActivity(ctx context.Con
 		return fmt.Errorf("flow run not found")
 	}
 	return a.flowService.bootstrapEpicPlanningRun(ctx, run, actorID)
+}
+
+func (a *FlowRuntimeActivities) HandleApprovalActionActivity(ctx context.Context, flowRunID, actorID, action string, payload json.RawMessage) error {
+	run, nodeRun, err := a.flowService.loadCurrentNode(ctx, flowRunID)
+	if err != nil {
+		return err
+	}
+	return a.flowService.genericHandleApprovalAction(ctx, run, nodeRun, actorID, action, payload)
 }
 
 func (a *FlowRuntimeActivities) FinalizeInteractiveNodeActivity(ctx context.Context, flowRunID, actorID string) error {
@@ -75,6 +94,9 @@ func (a *FlowRuntimeActivities) RetryNodeActivity(ctx context.Context, flowRunID
 	if nodeRun == nil || nodeRun.FlowRunID != flowRunID {
 		return fmt.Errorf("flow node run not found")
 	}
+	if run.TemplateID != model.FlowTemplateEpicPlanningV1 {
+		return a.flowService.genericRetryNode(ctx, run, nodeRun, actorID)
+	}
 	switch nodeRun.NodeID {
 	case model.FlowNodeStoryPlanning:
 		return a.flowService.restartStoryPlanningNode(ctx, run, nodeRun, actorID)
@@ -104,6 +126,9 @@ func (a *FlowRuntimeActivities) ProgressRunStateActivity(ctx context.Context, fl
 	if run == nil {
 		return temporalapp.FlowProgressResult{}, fmt.Errorf("flow run not found")
 	}
+	if run.TemplateID != model.FlowTemplateEpicPlanningV1 {
+		return a.flowService.genericProgressRunState(ctx, flowRunID)
+	}
 	if err := a.flowService.syncRunState(ctx, run); err != nil {
 		return temporalapp.FlowProgressResult{}, err
 	}
@@ -122,5 +147,12 @@ func (a *FlowRuntimeActivities) LoadRunStateActivity(ctx context.Context, flowRu
 }
 
 func (a *FlowRuntimeActivities) HandleChildStateActivity(ctx context.Context, flowRunID, nodeRunID, childType, childID, childStatus string) error {
+	run, err := a.flowService.GetRunByIDAny(ctx, flowRunID)
+	if err != nil {
+		return err
+	}
+	if run != nil && run.TemplateID != model.FlowTemplateEpicPlanningV1 {
+		return a.flowService.genericHandleChildState(ctx, flowRunID, nodeRunID, childType, childID, childStatus)
+	}
 	return a.flowService.HandleChildState(ctx, flowRunID, nodeRunID, childType, childID, childStatus)
 }

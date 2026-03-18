@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -88,6 +89,8 @@ type ServiceBridge struct {
 	GetDocument        func(ctx context.Context, id string) (*model.DocsDocument, error)
 	ListDocuments      func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
 	SearchDocuments    func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
+	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
+	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
 }
 
 // DocsSearchHit is a simplified search result for tool responses.

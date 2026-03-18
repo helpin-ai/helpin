@@ -154,6 +154,7 @@ func (s *PlanningSessionService) StartSession(ctx context.Context, workspaceID, 
 		FlowNodeRunID:       req.FlowNodeRunID,
 		Status:              model.PlanningSessionStatusActive,
 		PlanningMethodology: methodology,
+		AllowedTools:        normalizeJSONSlice(req.AllowedTools),
 		SpecDocumentID:      epic.SpecDocumentID,
 		ContextSnapshot:     contextJSON,
 		StartedBy:           &actorID,
@@ -830,8 +831,15 @@ func (s *PlanningSessionService) buildInitialUserMessage(session *model.Planning
 
 func (s *PlanningSessionService) resolveTools(ctx context.Context, session *model.PlanningSession) []worker.ToolDefinition {
 	allowed := make(map[string]bool)
-	for k, v := range model.PlanningSessionAllowedTools {
-		allowed[k] = v
+	configuredTools := parseJSONStringSlice(session.AllowedTools)
+	if len(configuredTools) > 0 {
+		for _, toolName := range configuredTools {
+			allowed[toolName] = true
+		}
+	} else {
+		for k, v := range model.PlanningSessionAllowedTools {
+			allowed[k] = v
+		}
 	}
 
 	// Check if web search is enabled.

@@ -7,6 +7,9 @@ import (
 
 const (
 	FlowTemplateEpicPlanningV1 = "pm.epic_planning_v1"
+	FlowTemplateEpicPlanningV2 = "pm.epic_planning_v2"
+	FlowTemplateStoryCompletionV1 = "pm.story_completion_v1"
+	FlowTemplateCRMDealReviewV1   = "crm.deal_review_v1"
 
 	FlowStatusRunning          = "running"
 	FlowStatusAwaitingInput    = "awaiting_input"
@@ -39,6 +42,7 @@ const (
 
 	FlowActionFinalize = "finalize"
 	FlowActionApprove  = "approve"
+	FlowActionRequestChanges = "request_changes"
 	FlowActionReject   = "reject"
 
 	InvocationModeInteractive = "interactive"
@@ -51,6 +55,15 @@ const (
 	FlowNodePlanApproval  = "plan_approval"
 	FlowNodeCreateStories = "create_stories"
 	FlowNodeDone          = "done"
+
+	FlowNodeSpecDraft           = "spec_draft"
+	FlowNodeStoryPlan           = "story_plan"
+	FlowNodeCompletionAssessment = "completion_assessment"
+	FlowNodeCompletionReview     = "completion_review"
+	FlowNodeCreateFollowups      = "create_followups"
+	FlowNodeDealReview           = "deal_review"
+	FlowNodeDealReviewApproval   = "deal_review_approval"
+	FlowNodeApplyDealActions     = "apply_deal_actions"
 )
 
 // FlowRun is a durable orchestration instance for a built-in or future user-authored flow.
@@ -116,10 +129,13 @@ type FlowTrigger struct {
 func (FlowTrigger) TableName() string { return "flow_triggers" }
 
 type FlowNodeSpec struct {
-	ID           string   `json:"id"`
-	Type         string   `json:"type"`
-	RequiredMode string   `json:"required_mode,omitempty"`
-	Actions      []string `json:"actions,omitempty"`
+	ID             string   `json:"id"`
+	Type           string   `json:"type"`
+	RequiredMode   string   `json:"required_mode,omitempty"`
+	Actions        []string `json:"actions,omitempty"`
+	AllowedTools   []string `json:"allowed_tools,omitempty"`
+	LoopbackNodeID *string  `json:"loopback_node_id,omitempty"`
+	CommandName    *string  `json:"command_name,omitempty"`
 }
 
 type FlowSpec struct {
@@ -151,9 +167,51 @@ type StartEpicPlanningFlowInput struct {
 	AdditionalContext   string `json:"additional_context,omitempty"`
 }
 
+type StartStoryCompletionFlowInput struct {
+	AgentID           string `json:"agent_id"`
+	AdditionalContext string `json:"additional_context,omitempty"`
+}
+
+type StartCRMDealReviewFlowInput struct {
+	AgentID           string `json:"agent_id"`
+	AdditionalContext string `json:"additional_context,omitempty"`
+}
+
 type FlowNodeActionRequest struct {
 	ActionType string          `json:"action_type"`
 	Payload    json.RawMessage `json:"payload,omitempty"`
+}
+
+type FlowRequestChangesPayload struct {
+	Comment            string          `json:"comment"`
+	StructuredFeedback json.RawMessage `json:"structured_feedback,omitempty"`
+}
+
+type FlowApprovalDecision struct {
+	Decision           string          `json:"decision"`
+	ActorID            string          `json:"actor_id,omitempty"`
+	Comment            string          `json:"comment,omitempty"`
+	StructuredFeedback json.RawMessage `json:"structured_feedback,omitempty"`
+	OverridePayload    json.RawMessage `json:"override_payload,omitempty"`
+	DecidedAt          *time.Time      `json:"decided_at,omitempty"`
+}
+
+type StoryCompletionFollowupProposal struct {
+	Title       string  `json:"title"`
+	Description string  `json:"description,omitempty"`
+	StoryType   string  `json:"story_type,omitempty"`
+	Priority    *string `json:"priority,omitempty"`
+}
+
+type StoryCompletionAssessment struct {
+	Summary   string                          `json:"summary"`
+	Followups []StoryCompletionFollowupProposal `json:"followups,omitempty"`
+}
+
+type CRMDealReviewActionPlan struct {
+	Summary            string  `json:"summary"`
+	RecommendedStageID *string `json:"recommended_stage_id,omitempty"`
+	Note               *string `json:"note,omitempty"`
 }
 
 type FlowInteractiveMessageRequest struct {

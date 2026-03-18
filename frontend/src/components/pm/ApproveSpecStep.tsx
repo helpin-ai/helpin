@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check, ChevronDown, ChevronUp, ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import type { Epic } from '@/lib/pmTypes';
 import type { StepStatus } from './planningStepUtils';
 import { StepCard } from './PlannerSetupStep';
@@ -15,9 +16,28 @@ interface Props {
   onApproveSpec: () => void;
   onOpenSpecDoc: () => void;
   approvingSpec: boolean;
+  canRequestChanges?: boolean;
+  requestChangesComment?: string;
+  onRequestChangesCommentChange?: (value: string) => void;
+  onRequestChanges?: () => void;
+  requestingChanges?: boolean;
 }
 
-export function ApproveSpecStep({ status, epic, specDocTitle, canApprove, pendingClarifyCount, onApproveSpec, onOpenSpecDoc, approvingSpec }: Props) {
+export function ApproveSpecStep({
+  status,
+  epic,
+  specDocTitle,
+  canApprove,
+  pendingClarifyCount,
+  onApproveSpec,
+  onOpenSpecDoc,
+  approvingSpec,
+  canRequestChanges = false,
+  requestChangesComment = '',
+  onRequestChangesCommentChange,
+  onRequestChanges,
+  requestingChanges = false,
+}: Props) {
   const [expanded, setExpanded] = useState(status === 'current');
 
   if (status === 'upcoming') {
@@ -69,6 +89,26 @@ export function ApproveSpecStep({ status, epic, specDocTitle, canApprove, pendin
           Approve current version
         </Button>
       </div>
+
+      {canRequestChanges && onRequestChanges && onRequestChangesCommentChange && (
+        <div className="mt-3 space-y-2">
+          <Textarea
+            value={requestChangesComment}
+            onChange={(event) => onRequestChangesCommentChange(event.target.value)}
+            className="min-h-[88px] text-xs"
+            placeholder="Explain what needs to change before this spec can be approved..."
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onRequestChanges}
+            disabled={requestingChanges || !requestChangesComment.trim()}
+          >
+            {requestingChanges ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Request changes
+          </Button>
+        </div>
+      )}
 
       {!canApprove && pendingClarifyCount > 0 && (
         <div className="mt-3 rounded-md border border-dashed border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300">

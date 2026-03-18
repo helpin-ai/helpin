@@ -20,10 +20,14 @@ func TestValidateAgentTargetEnforcesOpinionatedTargetMapping(t *testing.T) {
 			target: "epic",
 		},
 		{
-			name:      "product planner cannot run on stories",
-			agent:     model.Agent{AgentKind: "llm", AgentClass: model.AgentClassProductPlanner},
-			target:    "story",
-			shouldErr: true,
+			name:   "product planner can run on stories",
+			agent:  model.Agent{AgentKind: "llm", AgentClass: model.AgentClassProductPlanner},
+			target: "story",
+		},
+		{
+			name:   "product planner can run on crm deals",
+			agent:  model.Agent{AgentKind: "llm", AgentClass: model.AgentClassProductPlanner},
+			target: "crm_deal",
 		},
 		{
 			name:   "engineer can run on stories",
@@ -81,6 +85,21 @@ func TestNormalizeAgentRecordMapsLegacyAliases(t *testing.T) {
 	}
 	if agent.CapabilityProfile != model.AgentClassProductPlanner {
 		t.Fatalf("expected capability profile to normalize to %q, got %q", model.AgentClassProductPlanner, agent.CapabilityProfile)
+	}
+}
+
+func TestNormalizeAgentRecordPreservesExplicitCustomCapabilityProfile(t *testing.T) {
+	agent := &model.Agent{
+		AgentKind:         "llm",
+		AgentClass:        model.AgentClassProductPlanner,
+		CapabilityProfile: "planner_with_docs_focus",
+		TriggerMode:       "manual",
+	}
+
+	normalizeAgentRecord(agent)
+
+	if agent.CapabilityProfile != "planner_with_docs_focus" {
+		t.Fatalf("expected explicit capability profile to be preserved, got %q", agent.CapabilityProfile)
 	}
 }
 

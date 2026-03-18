@@ -153,6 +153,45 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		_ = e.runRepo.Update(ctx, run)
 	}
 
+	if flowOutputKind := flowOutputKindFromRunInput(run.Input); flowOutputKind != "" {
+		switch flowOutputKind {
+		case "pm.story_completion_followups":
+			assessment, err := extractStoryCompletionAssessmentFromResponseText(result.AssistantText)
+			if err != nil {
+				fallback := &model.StoryCompletionAssessment{
+					Summary: strings.TrimSpace(result.AssistantText),
+				}
+				seqNo++
+				e.saveArtifact(ctx, run, "story_completion_assessment_raw", "text", truncate(result.AssistantText, 50000), seqNo)
+				seqNo++
+				e.saveArtifact(ctx, run, "story_completion_assessment_parse_error", "text", err.Error(), seqNo)
+				assessment = fallback
+			}
+			payload, _ := json.Marshal(assessment)
+			run.OutputSummary = payload
+			_ = e.runRepo.Update(ctx, run)
+			seqNo++
+			e.saveArtifact(ctx, run, "story_completion_assessment", "json", string(payload), seqNo)
+		case "crm.deal_review_actions":
+			plan, err := extractCRMDealReviewActionPlanFromResponseText(result.AssistantText)
+			if err != nil {
+				fallback := &model.CRMDealReviewActionPlan{
+					Summary: strings.TrimSpace(result.AssistantText),
+				}
+				seqNo++
+				e.saveArtifact(ctx, run, "crm_deal_review_plan_raw", "text", truncate(result.AssistantText, 50000), seqNo)
+				seqNo++
+				e.saveArtifact(ctx, run, "crm_deal_review_plan_parse_error", "text", err.Error(), seqNo)
+				plan = fallback
+			}
+			payload, _ := json.Marshal(plan)
+			run.OutputSummary = payload
+			_ = e.runRepo.Update(ctx, run)
+			seqNo++
+			e.saveArtifact(ctx, run, "crm_deal_review_plan", "json", string(payload), seqNo)
+		}
+	}
+
 	if execCtx.TargetType == "epic" && execCtx.Epic != nil {
 		switch execCtx.PlanningStage {
 		case model.PlanningStageDraftSpec:
