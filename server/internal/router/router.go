@@ -155,6 +155,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/spaces/{spaceSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/search", h.Docs.PublicSearchArticles)
+
+			// Canonical collection + article routes
+			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
+
+			// Legacy/redirect resolver
+			r.Get("/resolve/*", h.Docs.PublicResolvePath)
 		})
 
 		// ---- Public shared document route (no JWT) ----

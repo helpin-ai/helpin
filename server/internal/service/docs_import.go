@@ -23,6 +23,7 @@ type DocsImportService struct {
 	documentSvc   *DocsDocumentService
 	contentSvc    *DocsContentService
 	helpcenterSvc *DocsHelpcenterService
+	redirectRepo  *repository.DocsRedirectRepository
 	s3Client      *storage.S3Client
 	logger        *slog.Logger
 }
@@ -35,6 +36,7 @@ func NewDocsImportService(
 	documentSvc *DocsDocumentService,
 	contentSvc *DocsContentService,
 	helpcenterSvc *DocsHelpcenterService,
+	redirectRepo *repository.DocsRedirectRepository,
 	s3Client *storage.S3Client,
 ) *DocsImportService {
 	return &DocsImportService{
@@ -44,6 +46,7 @@ func NewDocsImportService(
 		documentSvc:   documentSvc,
 		contentSvc:    contentSvc,
 		helpcenterSvc: helpcenterSvc,
+		redirectRepo:  redirectRepo,
 		s3Client:      s3Client,
 		logger:        slog.Default().With("service", "docs_import"),
 	}

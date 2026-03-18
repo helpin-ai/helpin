@@ -835,6 +835,80 @@ func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, article)
 }
 
+// PublicGetCollectionPage returns a collection and its published articles for the public help center.
+func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	collectionSlug := chi.URLParam(r, "collectionSlug")
+	coll, articles, err := h.helpcenterSvc.GetPublicCollection(r.Context(), cfg.WorkspaceID, collectionSlug)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if coll == nil {
+		writeError(w, http.StatusNotFound, "collection not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"collection": coll,
+		"articles":   articles,
+	})
+}
+
+// PublicGetCanonicalArticle returns a public article by canonical collection/article slug path.
+func (h *DocsHandler) PublicGetCanonicalArticle(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	collectionSlug := chi.URLParam(r, "collectionSlug")
+	articleSlug := chi.URLParam(r, "articleSlug")
+	article, err := h.helpcenterSvc.GetPublicArticleByCanonicalPath(r.Context(), cfg.WorkspaceID, collectionSlug, articleSlug)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if article == nil {
+		writeError(w, http.StatusNotFound, "article not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, article)
+}
+
+// PublicResolvePath resolves a legacy or imported URL path to a redirect target.
+func (h *DocsHandler) PublicResolvePath(w http.ResponseWriter, r *http.Request) {
+	cfg := h.resolveSubdomain(w, r)
+	if cfg == nil {
+		return
+	}
+	// Extract the catch-all path after /resolve/.
+	path := chi.URLParam(r, "*")
+	if path == "" {
+		writeError(w, http.StatusNotFound, "path required")
+		return
+	}
+	redirect, err := h.helpcenterSvc.ResolvePublicPath(r.Context(), cfg.WorkspaceID, path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if redirect == nil {
+		writeError(w, http.StatusNotFound, "no redirect found")
+		return
+	}
+	target := "/" + redirect.TargetCollectionSlug
+	if redirect.TargetArticleSlug != nil && *redirect.TargetArticleSlug != "" {
+		target += "/" + *redirect.TargetArticleSlug
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"redirect": true,
+		"target":   target,
+		"status":   301,
+	})
+}
+
 func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Request) {
 	cfg := h.resolveSubdomain(w, r)
 	if cfg == nil {

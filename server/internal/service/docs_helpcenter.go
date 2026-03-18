@@ -20,6 +20,7 @@ type DocsHelpcenterService struct {
 	docRepo        *repository.DocsDocumentRepository
 	spaceRepo      *repository.DocsSpaceRepository
 	collectionRepo *repository.DocsCollectionRepository
+	redirectRepo   *repository.DocsRedirectRepository
 	s3Client       *storage.S3Client
 }
 
@@ -29,9 +30,10 @@ func NewDocsHelpcenterService(
 	docRepo *repository.DocsDocumentRepository,
 	spaceRepo *repository.DocsSpaceRepository,
 	collectionRepo *repository.DocsCollectionRepository,
+	redirectRepo *repository.DocsRedirectRepository,
 	s3Client *storage.S3Client,
 ) *DocsHelpcenterService {
-	return &DocsHelpcenterService{hcRepo: hcRepo, docRepo: docRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, s3Client: s3Client}
+	return &DocsHelpcenterService{hcRepo: hcRepo, docRepo: docRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, redirectRepo: redirectRepo, s3Client: s3Client}
 }
 
 // UploadAsset uploads a help center asset (logo or favicon) to S3 and returns the public URL.
@@ -414,6 +416,75 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 		ViewCount:       ha.ViewCount,
 		ContentHTML:     contentHTML,
 	}, nil
+}
+
+// GetPublicArticleByCanonicalPath returns a public article by collection slug and article slug.
+func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
+	doc, ha, content, err := s.hcRepo.GetPublicArticleByCollectionSlug(ctx, workspaceID, collectionSlug, articleSlug)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil || ha == nil {
+		return nil, nil
+	}
+
+	// Resolve collection name if present.
+	var collectionName *string
+	if doc.CollectionID != nil {
+		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
+		if err == nil && coll != nil {
+			collectionName = &coll.Name
+		}
+	}
+
+	// Render TipTap JSON -> HTML for public display.
+	var contentHTML *string
+	if content != nil && len(content.Content) > 0 {
+		rendered, err := tiptap.RenderHTML(content.Content)
+		if err == nil && rendered != "" {
+			contentHTML = &rendered
+		}
+	}
+
+	var publishedAt *string
+	if ha.PublicPublishedAt != nil {
+		s := ha.PublicPublishedAt.Format(time.RFC3339)
+		publishedAt = &s
+	}
+
+	// Increment view count asynchronously.
+	go func() {
+		defer func() { recover() }()
+		_ = s.hcRepo.IncrementViewCount(ctx, doc.ID)
+	}()
+
+	return &model.PublicArticleResponse{
+		ID:              doc.ID,
+		Title:           doc.Title,
+		Slug:            ha.Slug,
+		Excerpt:         doc.Excerpt,
+		Icon:            doc.Icon,
+		Status:          doc.Status,
+		CollectionID:    doc.CollectionID,
+		CollectionName:  collectionName,
+		PublishedAt:     publishedAt,
+		SEOTitle:        ha.SEOTitle,
+		SEODescription:  ha.SEODescription,
+		HelpfulCount:    ha.HelpfulCount,
+		NotHelpfulCount: ha.NotHelpfulCount,
+		ViewCount:       ha.ViewCount,
+		ContentHTML:     contentHTML,
+	}, nil
+}
+
+// GetPublicCollection returns a collection and its published articles by workspace and collection slug.
+func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, error) {
+	return s.hcRepo.GetPublicCollectionBySlug(ctx, workspaceID, collectionSlug)
+}
+
+// ResolvePublicPath resolves a legacy or imported URL path to a redirect target.
+func (s *DocsHelpcenterService) ResolvePublicPath(ctx context.Context, workspaceID, path string) (*model.DocsRedirect, error) {
+	return s.redirectRepo.GetBySourcePath(ctx, workspaceID, path)
 }
 
 // SubmitFeedback records article feedback and updates counts.
