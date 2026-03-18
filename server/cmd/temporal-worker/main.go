@@ -109,6 +109,7 @@ func main() {
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
+	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -163,6 +164,7 @@ func main() {
 		labelRepo,
 		checklistRepo,
 		externalLinkRepo,
+		pmAttachmentRepo,
 		pmActivityService,
 		wsPublisher,
 		nil,

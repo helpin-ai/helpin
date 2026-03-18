@@ -13,11 +13,15 @@ import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmViewService } from '@/lib/services/pmViewService';
 import { getDefaultViews, isDefaultView } from '@/lib/pmDefaultViews';
+import { createDebouncedBoardFetchScheduler } from './pmBoardFetchScheduler';
 
 export type BoardFilters = Record<string, string | undefined>;
 
 /** Default number of stories loaded per column on initial board fetch. */
-const PER_STATE_LIMIT = 50;
+const PER_STATE_LIMIT = 25;
+
+/** Debounce window for board filter fetches. */
+const FILTER_FETCH_DEBOUNCE_MS = 250;
 
 /** Number of additional stories fetched when a column nears the bottom. */
 const COLUMN_PAGE_SIZE = 50;
@@ -223,6 +227,13 @@ const buildApiFilters = (teamId: string | null, filters: BoardFilters): Record<s
 const sortColumns = (data: StoryStateColumn[]) =>
   [...data].sort((a, b) => a.state.position - b.state.position);
 
+type BoardFetchArgs = {
+  workspaceId: string;
+  workflowId: string;
+  teamId: string | null;
+  filters: BoardFilters;
+};
+
 // ── localStorage helpers for user preferences ─────────────────────────
 const WORKFLOW_KEY = (wsId: string) => `pm_workflow_${wsId}`;
 const VIEW_KEY = (wsId: string) => `pm_active_view_${wsId}`;
@@ -240,7 +251,67 @@ function saveActiveViewId(workspaceId: string, id: string) {
   try { localStorage.setItem(VIEW_KEY(workspaceId), id); } catch {}
 }
 
-export const usePMBoardStore = create<PMBoardState>((set, get) => ({
+export const usePMBoardStore = create<PMBoardState>((set, get) => {
+  let latestBoardFetchRequest = 0;
+
+  const runBoardFetch = async (
+    args: BoardFetchArgs,
+    options: {
+      errorMessage: string;
+      setLoading?: boolean;
+      onSuccess?: () => Partial<PMBoardState>;
+      onError?: () => Partial<PMBoardState>;
+    },
+  ) => {
+    const requestId = ++latestBoardFetchRequest;
+    if (options.setLoading) {
+      set({ loading: true, error: null });
+    } else {
+      set({ error: null });
+    }
+
+    const boardRes = await pmStoryService.listBoard(
+      args.workspaceId,
+      args.workflowId,
+      buildApiFilters(args.teamId, args.filters),
+      PER_STATE_LIMIT,
+    );
+
+    if (requestId != latestBoardFetchRequest) {
+      return null;
+    }
+
+    if (boardRes.error || !boardRes.data) {
+      set({
+        loading: false,
+        error: boardRes.error ?? options.errorMessage,
+        ...(options.onError?.() ?? {}),
+      });
+      return null;
+    }
+
+    const columns = sortColumns(boardRes.data);
+    set({
+      columns,
+      loading: false,
+      error: null,
+      ...(options.onSuccess?.() ?? {}),
+    });
+    return columns;
+  };
+
+  const filterFetchScheduler = createDebouncedBoardFetchScheduler<BoardFetchArgs>(
+    FILTER_FETCH_DEBOUNCE_MS,
+    (args) => {
+      void runBoardFetch(args, { errorMessage: 'Failed to filter board' });
+    },
+  );
+
+  const cancelPendingFilterFetch = () => {
+    filterFetchScheduler.cancel();
+  };
+
+  return {
   workspaceId: null,
   workflows: [],
   workflow: null,
@@ -261,6 +332,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   savedViewFilters: {},
 
   loadBoard: async (workspaceId, workflowId) => {
+    cancelPendingFilterFetch();
     set({ loading: true, error: null, workspaceId });
 
     const workflowRes = await pmWorkflowService.list(workspaceId);
@@ -268,6 +340,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       set({ loading: false, error: workflowRes.error ?? 'Failed to load workflows' });
       return;
     }
+    const workflows = workflowRes.data;
 
     const { teamId, filters } = get();
 
@@ -275,7 +348,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
 
     if (workflowId) {
       // Explicit workflow ID provided — use it
-      selected = workflowRes.data.find((workflow) => workflow.workflow.id === workflowId) ?? workflowRes.data[0] ?? null;
+      selected = workflows.find((workflow) => workflow.workflow.id === workflowId) ?? workflows[0] ?? null;
     } else if (teamId) {
       // Team filter active — resolve the team's workflow, auto-seeding if needed.
       const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, teamId);
@@ -283,7 +356,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
         set({
           loading: false,
           error: resolved.error ?? 'Failed to resolve team workflow',
-          workflows: workflowRes.data,
+          workflows,
           workflow: null,
           columns: [],
         });
@@ -294,23 +367,29 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       // No team filter — use saved workflow or first available
       const resolvedId = getSavedWorkflowId(workspaceId);
       selected = resolvedId
-        ? workflowRes.data.find((workflow) => workflow.workflow.id === resolvedId) ?? workflowRes.data[0] ?? null
-        : workflowRes.data[0] ?? null;
+        ? workflows.find((workflow) => workflow.workflow.id === resolvedId) ?? workflows[0] ?? null
+        : workflows[0] ?? null;
     }
 
     if (!selected) {
-      set({ loading: false, workflows: workflowRes.data, workflow: null, columns: [] });
-      return;
-    }
-
-    const boardRes = await pmStoryService.listBoard(workspaceId, selected.workflow.id, buildApiFilters(teamId, filters), PER_STATE_LIMIT);
-    if (boardRes.error || !boardRes.data) {
-      set({ loading: false, error: boardRes.error ?? 'Failed to load board', workflows: workflowRes.data, workflow: selected });
+      set({ loading: false, workflows, workflow: null, columns: [] });
       return;
     }
 
     saveWorkflowId(workspaceId, selected.workflow.id);
-    set({ workflows: workflowRes.data, workflow: selected, columns: sortColumns(boardRes.data), loading: false });
+    await runBoardFetch(
+      {
+        workspaceId,
+        workflowId: selected.workflow.id,
+        teamId,
+        filters,
+      },
+      {
+        errorMessage: 'Failed to load board',
+        onSuccess: () => ({ workflows, workflow: selected }),
+        onError: () => ({ workflows, workflow: selected }),
+      },
+    );
   },
 
   setWorkflow: async (workflowId) => {
@@ -321,6 +400,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
 
   setTeamFilter: async (teamId) => {
     if (teamId === get().teamId) return;
+    cancelPendingFilterFetch();
     set({ teamId });
     const { workspaceId, workflows, filters } = get();
     if (!workspaceId) return;
@@ -347,13 +427,16 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     }
 
     set({ workflow: selected });
-    const boardRes = await pmStoryService.listBoard(workspaceId, selected.workflow.id, buildApiFilters(teamId, filters), PER_STATE_LIMIT);
-    if (boardRes.error || !boardRes.data) {
-      set({ error: boardRes.error ?? 'Failed to filter board' });
-      return;
-    }
     saveWorkflowId(workspaceId, selected.workflow.id);
-    set({ columns: sortColumns(boardRes.data) });
+    await runBoardFetch(
+      {
+        workspaceId,
+        workflowId: selected.workflow.id,
+        teamId,
+        filters,
+      },
+      { errorMessage: 'Failed to filter board' },
+    );
   },
 
   setFilters: async (filters) => {
@@ -361,24 +444,28 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     const { workspaceId, workflow, teamId } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters), PER_STATE_LIMIT);
-    if (boardRes.error || !boardRes.data) {
-      set({ error: boardRes.error ?? 'Failed to filter board' });
-      return;
-    }
-    set({ columns: sortColumns(boardRes.data) });
+    filterFetchScheduler.schedule({
+      workspaceId,
+      workflowId,
+      teamId,
+      filters,
+    });
   },
 
   refreshBoard: async () => {
+    cancelPendingFilterFetch();
     const { workspaceId, workflow, teamId, filters } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    const boardRes = await pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters), PER_STATE_LIMIT);
-    if (boardRes.error || !boardRes.data) {
-      set({ error: boardRes.error ?? 'Failed to refresh board' });
-      return;
-    }
-    set({ columns: sortColumns(boardRes.data) });
+    await runBoardFetch(
+      {
+        workspaceId,
+        workflowId,
+        teamId,
+        filters,
+      },
+      { errorMessage: 'Failed to refresh board' },
+    );
   },
 
   loadMoreColumn: async (stateId: string) => {
@@ -793,6 +880,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   },
 
   applyView: (view) => {
+    cancelPendingFilterFetch();
     const cleanFilters: Record<string, string> = {};
     for (const [k, v] of Object.entries(view.filters)) {
       if (v) cleanFilters[k] = v;
@@ -805,17 +893,18 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
       savedViewFilters: { ...cleanFilters },
     });
     const filters = cleanFilters;
-    // Trigger board refresh with new filters
     const { workspaceId, workflow, teamId } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, filters), PER_STATE_LIMIT).then((boardRes) => {
-      if (boardRes.error || !boardRes.data) {
-        set({ error: boardRes.error ?? 'Failed to apply view' });
-        return;
-      }
-      set({ columns: sortColumns(boardRes.data) });
-    });
+    void runBoardFetch(
+      {
+        workspaceId,
+        workflowId,
+        teamId,
+        filters,
+      },
+      { errorMessage: 'Failed to apply view' },
+    );
   },
 
   saveCurrentAsView: async (workspaceId, name, isShared) => {
@@ -854,16 +943,21 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
   },
 
   discardChanges: () => {
+    cancelPendingFilterFetch();
     const { savedViewFilters } = get();
     set({ filters: { ...savedViewFilters } });
-    // Re-fetch board with saved filters
     const { workspaceId, workflow, teamId } = get();
     const workflowId = workflow?.workflow.id;
     if (!workspaceId || !workflowId) return;
-    pmStoryService.listBoard(workspaceId, workflowId, buildApiFilters(teamId, savedViewFilters), PER_STATE_LIMIT).then((boardRes) => {
-      if (boardRes.error || !boardRes.data) return;
-      set({ columns: sortColumns(boardRes.data) });
-    });
+    void runBoardFetch(
+      {
+        workspaceId,
+        workflowId,
+        teamId,
+        filters: savedViewFilters,
+      },
+      { errorMessage: 'Failed to discard changes' },
+    );
   },
 
   deleteView: async (workspaceId, id) => {
@@ -889,4 +983,5 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => ({
     }));
     return updated;
   },
-}));
+  };
+});

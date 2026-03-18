@@ -15,16 +15,16 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowDown, ArrowUp, ArrowUpDown, Building2, Check, ChevronDown, ChevronRight, EllipsisVertical, ExternalLink, Loader2, Plus, Trash2, UserPlus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Building2, ChevronDown, ChevronRight, EllipsisVertical, ExternalLink, Loader2, Plus, Trash2, UserPlus } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { format, parseISO } from 'date-fns';
 import { crmCompanyService } from '@/lib/services/crmService';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { findAssignableMember } from '@/lib/assignableMembers';
 import {
   TABLE_CONTAINER,
   TABLE_HEADER,
@@ -529,66 +529,36 @@ function InlineOwnerCell({
   ownerNameMap: Map<string, string>;
   onUpdate: (id: string, patch: Partial<CRMCompany>) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const ownerName = company.owner_member_id ? ownerNameMap.get(company.owner_member_id) ?? 'Unknown' : null;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          className="flex w-full items-center gap-1.5 truncate text-xs hover:text-primary"
-          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-        >
-          {ownerName ? (
-            <>
-              <UserAvatar name={ownerName} className="h-5 w-5 shrink-0" />
-              <span className="truncate">{ownerName}</span>
-            </>
-          ) : (
-            <span className="flex items-center gap-1 text-muted-foreground">
-              <UserPlus className="h-3 w-3" /> Assign
-            </span>
-          )}
-        </button>
-      </PopoverTrigger>
-      {open && (
-        <PopoverContent
-          className="w-[220px] p-0"
-          align="start"
-          side="bottom"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <Command>
-            <CommandInput placeholder="Search members..." className="h-8 text-xs" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No members found</CommandEmpty>
-              <CommandGroup>
-                {assignableMembers.map((m) => {
-                  const name = ownerNameMap.get(m.id) ?? m.display_name ?? m.email;
-                  const isSelected = company.owner_member_id === m.id;
-                  return (
-                    <CommandItem
-                      key={m.id}
-                      value={name}
-                      onSelect={() => {
-                        onUpdate(company.id, { owner_member_id: isSelected ? '' : m.id });
-                        setOpen(false);
-                      }}
-                      className="flex items-center gap-2 text-xs"
-                    >
-                      <UserAvatar name={name} className="h-5 w-5" />
-                      <span className="truncate">{name}</span>
-                      {isSelected && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      )}
-    </Popover>
+    <MemberPickerPopover
+      value={company.owner_member_id || '__none__'}
+      members={assignableMembers}
+      noneLabel="Unassigned"
+      onChange={(value) => {
+        onUpdate(company.id, { owner_member_id: value === '__none__' ? '' : value });
+      }}
+      triggerClassName="flex w-full items-center gap-1.5 truncate text-xs hover:text-primary"
+      contentClassName="w-[220px]"
+      renderTrigger={() => {
+        const selectedMember = findAssignableMember(assignableMembers, company.owner_member_id);
+        return selectedMember ? (
+          <>
+            <UserAvatar
+              name={selectedMember.display_name || selectedMember.email}
+              avatarUrl={selectedMember.avatar_url}
+              className="h-5 w-5 shrink-0"
+            />
+            <span className="truncate">{ownerName}</span>
+          </>
+        ) : (
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <UserPlus className="h-3 w-3" /> Assign
+          </span>
+        );
+      }}
+    />
   );
 }
 

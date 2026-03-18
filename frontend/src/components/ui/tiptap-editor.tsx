@@ -2,6 +2,8 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
+import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
+import { diffRemovedInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
 import {
   Bold,
   Code2,
@@ -18,16 +20,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
 import { uploadEditorImage } from '@/hooks/useEditorImageUpload';
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { ResizableImageExtension } from './resizable-image-extension';
+import {
+  getMentionSuggestions,
+  type MentionSuggestionItem,
+} from '@/components/pm/mentionSuggestions';
 
 export type { EditorUploadConfig };
-
-interface MentionItem {
-  id: string;
-  name: string;
-  handle: string;
-  type: 'member' | 'team';
-}
 
 interface TiptapEditorProps {
   content: string;
@@ -35,6 +35,7 @@ interface TiptapEditorProps {
   placeholder?: string;
   className?: string;
   uploadConfig?: EditorUploadConfig;
+  onUploadStateChange?: (pendingUploads: number) => void;
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
 }
@@ -61,13 +62,18 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, teams = [], members = [] }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [] }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
+  const onUploadStateChangeRef = useRef(onUploadStateChange);
+  onUploadStateChangeRef.current = onUploadStateChange;
+  const pendingUploadsRef = useRef(0);
+  const currentHtmlRef = useRef(content);
+  currentHtmlRef.current = content;
   const [mentionState, setMentionState] = useState<{
     from: number;
     to: number;
-    items: MentionItem[];
+    items: MentionSuggestionItem[];
     selectedIndex: number;
   } | null>(null);
   const mentionStateRef = useRef(mentionState);
@@ -101,8 +107,10 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         .run();
 
       // Upload in background
+      pendingUploadsRef.current += 1;
+      onUploadStateChangeRef.current?.(pendingUploadsRef.current);
       try {
-        const publicUrl = await uploadEditorImage(file, uploadConfigRef.current!);
+        const upload = await uploadEditorImage(file, uploadConfigRef.current!);
 
         // Replace the data URI with the permanent public URL
         const { doc } = editorInstance.state;
@@ -120,8 +128,9 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
             editorInstance.view.dispatch(
               editorInstance.state.tr.setNodeMarkup(targetPos, undefined, {
                 ...node.attrs,
-                src: publicUrl,
+                src: upload.publicUrl,
                 title: null,
+                attachmentId: upload.attachmentId,
               }),
             );
           }
@@ -145,6 +154,9 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
             );
           }
         }
+      } finally {
+        pendingUploadsRef.current = Math.max(0, pendingUploadsRef.current - 1);
+        onUploadStateChangeRef.current?.(pendingUploadsRef.current);
       }
     },
     [],
@@ -168,6 +180,16 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     return exts;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placeholder, !!uploadConfig]);
+
+  const cleanupDraftAttachments = useCallback(async (attachmentIds: string[]) => {
+    const currentConfig = uploadConfigRef.current;
+    if (!currentConfig || currentConfig.entityType !== 'editor_upload' || attachmentIds.length === 0) {
+      return;
+    }
+    await Promise.allSettled(
+      attachmentIds.map((attachmentId) => pmAttachmentService.remove(currentConfig.workspaceId, attachmentId)),
+    );
+  }, []);
 
   const editor = useEditor({
     extensions,
@@ -257,7 +279,13 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     if (!editor) return;
 
     const handleUpdate = () => {
-      onChangeRef.current(editor.getHTML());
+      const html = editor.getHTML();
+      const removedDraftAttachmentIds = diffRemovedInlineAttachmentIds(currentHtmlRef.current, html);
+      currentHtmlRef.current = html;
+      onChangeRef.current(html);
+      if (removedDraftAttachmentIds.length > 0) {
+        void cleanupDraftAttachments(removedDraftAttachmentIds);
+      }
       const currentTeams = teamsRef.current;
       const currentMembers = membersRef.current;
       if (currentTeams.length === 0 && currentMembers.length === 0) {
@@ -276,24 +304,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         return;
       }
       const query = match[1].toLowerCase();
-      const items: MentionItem[] = [];
-
-      // Members first
-      for (const m of currentMembers) {
-        if (m.status !== 'active') continue;
-        const handle = m.display_name.toLowerCase().replace(/\s+/g, '.');
-        if (!query || handle.includes(query) || m.display_name.toLowerCase().includes(query) || m.email.toLowerCase().includes(query)) {
-          items.push({ id: m.user_id || m.id, name: m.display_name, handle, type: 'member' });
-        }
-      }
-
-      // Then teams
-      for (const t of currentTeams) {
-        if (!t.handle) continue;
-        if (!query || t.handle.toLowerCase().includes(query) || t.name.toLowerCase().includes(query)) {
-          items.push({ id: t.id, name: t.name, handle: t.handle, type: 'team' });
-        }
-      }
+      const items = getMentionSuggestions(query, currentMembers, currentTeams, 8);
 
       if (items.length === 0) {
         setMentionState(null);
@@ -316,7 +327,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       editor.off('update', handleUpdate);
       editor.off('blur', handleBlur);
     };
-  }, [editor]);
+  }, [cleanupDraftAttachments, editor]);
 
   // Sync external content changes (e.g. form reset, template apply)
   useEffect(() => {
@@ -423,40 +434,19 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       <EditorContent editor={editor} className="min-h-0 flex-1 overflow-y-auto" />
       {mentionState && mentionState.items.length > 0 ? (
         <div className="border-t border-border/60 bg-muted/40 px-2 py-2">
-          <div className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Mention
-          </div>
-          <div className="space-y-1">
-            {mentionState.items.map((item, index) => (
-              <button
-                key={`${item.type}-${item.id}`}
-                type="button"
-                className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                  index === mentionState.selectedIndex
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                }`}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  if (!editorRef.current) return;
-                  editorRef.current
-                    .chain()
-                    .focus()
-                    .insertContentAt({ from: mentionState.from, to: mentionState.to }, `@${item.handle} `)
-                    .run();
-                  setMentionState(null);
-                }}
-              >
-                <div className="flex items-center gap-1.5">
-                  {item.type === 'team' && (
-                    <span className="inline-flex h-4 items-center rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground">T</span>
-                  )}
-                  <span>{item.name}</span>
-                </div>
-                <span className="font-mono text-xs text-muted-foreground">@{item.handle}</span>
-              </button>
-            ))}
-          </div>
+          <MentionSuggestionsList
+            items={mentionState.items}
+            selectedIndex={mentionState.selectedIndex}
+            onSelect={(item) => {
+              if (!editorRef.current) return;
+              editorRef.current
+                .chain()
+                .focus()
+                .insertContentAt({ from: mentionState.from, to: mentionState.to }, `@${item.handle} `)
+                .run();
+              setMentionState(null);
+            }}
+          />
         </div>
       ) : null}
     </div>

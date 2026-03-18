@@ -4,15 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
-
-var mentionPattern = regexp.MustCompile(`@([A-Za-z0-9._-]+)`)
 
 // PMCommentService contains comment business logic.
 type PMCommentService struct {
@@ -70,7 +67,7 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 
 	// Reassign any pre-uploaded attachments to this comment.
 	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
-		if err := s.attachmentRepo.ReassignToComment(ctx, req.AttachmentIDs, comment.ID); err != nil {
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "comment", comment.ID); err != nil {
 			s.logger.ErrorContext(ctx, "failed to reassign attachments to comment", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
@@ -106,40 +103,19 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	if s.notificationService != nil {
 		entityTitle := req.EntityID
 		var entityTeamID string
+		readableTeamIDs := []string(nil)
 		if req.EntityType == "story" {
 			if story, _ := s.storyRepo.GetRawByID(ctx, req.EntityID); story != nil {
 				entityTitle = story.Name
 				entityTeamID = derefString(story.TeamID)
+				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
 			}
 		}
 
-		// Resolve @mentions to user IDs for explicit notification recipients.
-		var mentionedUserIDs []string
-		if len(mentions) > 0 && s.workspaceRepo != nil {
-			for _, handle := range mentions {
-				uid, err := s.workspaceRepo.GetUserIDByHandle(ctx, workspaceID, handle)
-				if err != nil {
-					slog.ErrorContext(ctx, "failed to resolve mention handle",
-						"handle", handle,
-						"workspace_id", workspaceID,
-						"error", err,
-					)
-					continue
-				}
-				if uid == "" {
-					slog.WarnContext(ctx, "mention handle not found",
-						"handle", handle,
-						"workspace_id", workspaceID,
-					)
-					continue
-				}
-				slog.InfoContext(ctx, "mention resolved",
-					"handle", handle,
-					"user_id", uid,
-					"workspace_id", workspaceID,
-				)
-				mentionedUserIDs = append(mentionedUserIDs, uid)
-			}
+		mentionedUserIDs, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, comment.Body, authorID, readableTeamIDs)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to resolve comment mention recipients", "error", err, "comment_id", comment.ID, "workspace_id", workspaceID)
+			mentionedUserIDs = nil
 		}
 
 		// Comment notification goes to followers + mentioned users.
@@ -159,27 +135,97 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 			"priority", notifPriority,
 		)
 
-		if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
-			WorkspaceID:        workspaceID,
-			ActorID:            authorID,
-			EventType:          eventType,
-			EntityType:         req.EntityType,
-			EntityID:           req.EntityID,
-			Title:              "commented on " + entityTitle,
-			Body:               truncate(comment.Body, 200),
-			Category:           category,
-			Priority:           notifPriority,
-			TeamID:             entityTeamID,
-			ExplicitRecipients: mentionedUserIDs,
-			EntitySnapshot: model.JSONB{
-				"title": entityTitle,
-			},
-		}); err != nil {
-			slog.ErrorContext(ctx, "failed to emit comment notification",
-				"error", err,
-				"entity_id", req.EntityID,
-				"event_type", eventType,
-			)
+		entitySnapshot := model.JSONB{
+			"title": entityTitle,
+		}
+		commentBody := truncate(comment.Body, 200)
+
+		if len(mentionedUserIDs) == 0 {
+			if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
+				WorkspaceID:    workspaceID,
+				ActorID:        authorID,
+				EventType:      eventType,
+				EntityType:     req.EntityType,
+				EntityID:       req.EntityID,
+				Title:          "commented on " + entityTitle,
+				Body:           commentBody,
+				Category:       category,
+				Priority:       notifPriority,
+				TeamID:         entityTeamID,
+				EntitySnapshot: entitySnapshot,
+			}); err != nil {
+				slog.ErrorContext(ctx, "failed to emit comment notification",
+					"error", err,
+					"entity_id", req.EntityID,
+					"event_type", eventType,
+				)
+			}
+		} else {
+			followerRecipients := []string(nil)
+			if s.notificationService.followerRepo != nil {
+				followers, err := s.notificationService.followerRepo.GetFollowers(ctx, req.EntityType, req.EntityID)
+				if err != nil {
+					s.logger.ErrorContext(ctx, "failed to load comment followers", "error", err, "entity_type", req.EntityType, "entity_id", req.EntityID)
+				} else {
+					excluded := make(map[string]struct{}, len(mentionedUserIDs)+1)
+					excluded[authorID] = struct{}{}
+					for _, userID := range mentionedUserIDs {
+						excluded[userID] = struct{}{}
+					}
+					for _, userID := range followers {
+						if _, skip := excluded[userID]; skip {
+							continue
+						}
+						followerRecipients = append(followerRecipients, userID)
+					}
+				}
+			}
+
+			if len(followerRecipients) > 0 {
+				if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
+					WorkspaceID:        workspaceID,
+					ActorID:            authorID,
+					EventType:          "comment.created",
+					EntityType:         req.EntityType,
+					EntityID:           req.EntityID,
+					Title:              "commented on " + entityTitle,
+					Body:               commentBody,
+					Category:           "comment",
+					Priority:           "normal",
+					TeamID:             entityTeamID,
+					ExplicitRecipients: followerRecipients,
+					SkipFollowers:      true,
+					EntitySnapshot:     entitySnapshot,
+				}); err != nil {
+					slog.ErrorContext(ctx, "failed to emit follower comment notification",
+						"error", err,
+						"entity_id", req.EntityID,
+						"event_type", "comment.created",
+					)
+				}
+			}
+
+			if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
+				WorkspaceID:        workspaceID,
+				ActorID:            authorID,
+				EventType:          "comment.mention",
+				EntityType:         req.EntityType,
+				EntityID:           req.EntityID,
+				Title:              "mentioned you in a comment on " + entityTitle,
+				Body:               commentBody,
+				Category:           "mention",
+				Priority:           "high",
+				TeamID:             entityTeamID,
+				ExplicitRecipients: mentionedUserIDs,
+				SkipFollowers:      true,
+				EntitySnapshot:     entitySnapshot,
+			}); err != nil {
+				slog.ErrorContext(ctx, "failed to emit comment mention notification",
+					"error", err,
+					"entity_id", req.EntityID,
+					"event_type", "comment.mention",
+				)
+			}
 		}
 	}
 
@@ -221,6 +267,34 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 		s.logger.ErrorContext(ctx, "failed to log activity for comment update", "error", err, "comment_id", id, "entity_id", comment.EntityID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "comment", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: comment.EntityType, ParentID: comment.EntityID})
+
+	if s.notificationService != nil {
+		entityTitle := comment.EntityID
+		var entityTeamID string
+		readableTeamIDs := []string(nil)
+		if comment.EntityType == "story" {
+			if story, _ := s.storyRepo.GetRawByID(ctx, comment.EntityID); story != nil {
+				entityTitle = story.Name
+				entityTeamID = derefString(story.TeamID)
+				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
+			}
+		}
+		if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+			WorkspaceID:      workspaceID,
+			ActorID:          actorID,
+			Body:             comment.Body,
+			EventType:        "comment.mention",
+			EntityType:       comment.EntityType,
+			EntityID:         comment.EntityID,
+			Title:            "mentioned you in a comment on " + entityTitle,
+			TeamID:           entityTeamID,
+			ReadableTeamIDs:  readableTeamIDs,
+			EntitySnapshot:   model.JSONB{"title": entityTitle},
+			NotificationBody: truncate(comment.Body, 200),
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to emit comment mention notification", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+		}
+	}
 	s.logger.InfoContext(ctx, "comment updated", "comment_id", id, "entity_type", comment.EntityType, "entity_id", comment.EntityID, "workspace_id", workspaceID, "actor_id", actorID)
 	return comment, nil
 }
@@ -311,25 +385,4 @@ func (s *PMCommentService) ToggleReaction(ctx context.Context, commentID, userID
 		}
 	}
 	return []model.ReactionSummary{}, nil
-}
-
-func extractMentions(body string) []string {
-	matches := mentionPattern.FindAllStringSubmatch(body, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	mentions := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if len(match) < 2 {
-			continue
-		}
-		username := match[1]
-		if _, exists := seen[username]; exists {
-			continue
-		}
-		seen[username] = struct{}{}
-		mentions = append(mentions, username)
-	}
-	return mentions
 }

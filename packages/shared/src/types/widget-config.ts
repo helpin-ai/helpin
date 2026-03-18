@@ -23,6 +23,7 @@ export interface WidgetConfig {
     aiEnabled: boolean;
     fileUploads: boolean;
     preChatForm: boolean;
+    requireName: boolean;
     csatRating: boolean;
   };
   helpSpaces?: HelpSpace[];

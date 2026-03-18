@@ -55,6 +55,7 @@ type CreateSprintRequest struct {
 	EndDate     time.Time `json:"end_date"`
 	TeamID      *string   `json:"team_id"`
 	LabelIDs    []string  `json:"label_ids"`
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
 // UpdateSprintRequest is the payload for updating a sprint.

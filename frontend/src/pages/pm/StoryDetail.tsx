@@ -10,7 +10,6 @@ import {
   Check,
   CheckSquare,
   ChevronRight,
-  Copy,
   Gauge,
   Hash,
   Hexagon,
@@ -50,6 +49,11 @@ import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
 import { ChecklistItems } from '@/components/pm/ChecklistItems';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
+import {
+  diffRemovedInlineAttachmentIds,
+  extractInlineAttachmentIds,
+  removeInlineImagesByAttachmentIds,
+} from '@/components/pm/editorImageAttachments';
 import { DatePicker } from '@/components/ui/date-picker';
 import { getInitials } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
@@ -60,9 +64,12 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
+import { UserAvatar } from '@/components/pm/UserAvatar';
+import { StorySidebarIdRow } from '@/components/pm/StorySidebarIdRow';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkflows } from '@/hooks/queries/useWorkflows';
@@ -83,11 +90,12 @@ import type {
   UpdateStoryRequest,
   WorkflowState,
 } from '@/lib/pmTypes';
-import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
 import { CommentThread } from '@/components/pm/CommentThread';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { StoryRelationshipsSection } from '@/components/pm/StoryRelationshipsSection';
+import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { StoryDeliveryPanel } from '@/components/pm/StoryDeliveryPanel';
 import { StoryGitPanel } from '@/components/pm/StoryGitPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
@@ -267,6 +275,7 @@ export function StoryDetailPage() {
   const [pendingPatch, setPendingPatch] = useState<UpdateStoryRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [hasGitIntegration, setHasGitIntegration] = useState(false);
@@ -291,6 +300,10 @@ export function StoryDetailPage() {
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
+  );
+  const mentionTeams = useMemo(
+    () => filterMentionTeams(teams, form?.team_id ? [form.team_id] : []),
+    [teams, form?.team_id],
   );
 
   useTitle(form?.name ? `${storyDetail?.story.display_id} ${form.name}` : 'Story');
@@ -328,6 +341,7 @@ export function StoryDetailPage() {
       const detail = storyRes.data;
       setStoryDetail(detail);
       setForm(buildFormState(detail));
+      savedDescriptionRef.current = detail.story.description ?? '';
 
       setEpics(epicsRes.data ?? []);
       setSprints(sprintsRes.data ?? []);
@@ -384,10 +398,12 @@ export function StoryDetailPage() {
 
   // ── Re-sync form when storyDetail changes externally ────────────
   const lastSyncedAt = useRef(storyDetail?.story.updated_at);
+  const savedDescriptionRef = useRef('');
   useEffect(() => {
     if (!storyDetail) return;
     if (storyDetail.story.updated_at !== lastSyncedAt.current) {
       lastSyncedAt.current = storyDetail.story.updated_at;
+      savedDescriptionRef.current = storyDetail.story.description ?? '';
       if (Object.keys(pendingPatch).length === 0 && !saving) {
         setForm(buildFormState(storyDetail));
       }
@@ -397,9 +413,16 @@ export function StoryDetailPage() {
   // ── Auto-save debounce ──────────────────────────────────────────
   const storyEntityId = storyDetail?.story.id;
   useEffect(() => {
-    if (saving || Object.keys(pendingPatch).length === 0 || !workspaceId || !storyEntityId) return;
+    if (
+      saving ||
+      Object.keys(pendingPatch).length === 0 ||
+      !workspaceId ||
+      !storyEntityId ||
+      (pendingPatch.description !== undefined && descriptionPendingUploads > 0)
+    ) return;
     const timer = window.setTimeout(async () => {
       const patch = pendingPatch;
+      const previousDescription = savedDescriptionRef.current;
       setPendingPatch({});
       setSaving(true);
       const { data, error: err } = await pmStoryService.update(workspaceId, storyEntityId, patch);
@@ -409,11 +432,21 @@ export function StoryDetailPage() {
       } else {
         setSaveError(null);
         setStoryDetail(data);
+        const nextDescription = data.story.description ?? '';
+        savedDescriptionRef.current = nextDescription;
+        if (patch.description !== undefined) {
+          const removedAttachmentIds = diffRemovedInlineAttachmentIds(previousDescription, nextDescription);
+          if (removedAttachmentIds.length > 0) {
+            await Promise.allSettled(
+              removedAttachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+            );
+          }
+        }
       }
       setSaving(false);
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [workspaceId, storyEntityId, pendingPatch, saving]);
+  }, [workspaceId, storyEntityId, pendingPatch, saving, descriptionPendingUploads]);
 
   const queuePatch = (patch: UpdateStoryRequest) => {
     setPendingPatch((current) => ({ ...current, ...patch }));
@@ -423,6 +456,48 @@ export function StoryDetailPage() {
     setForm((current) => (current ? { ...current, [key]: value } : current));
     queuePatch(patch);
   };
+
+  const handleDescriptionAttachmentDelete = useCallback(
+    async (entry: import('@/lib/pmTypes').AttachmentResponse) => {
+      if (!workspaceId || !storyDetail || !form) {
+        return 'fallback' as const;
+      }
+      if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
+        return 'fallback' as const;
+      }
+      if (!window.confirm('Delete this image from the description and attachments?')) {
+        return 'prevent' as const;
+      }
+
+      const previousDescription = form.description;
+      const nextDescription = removeInlineImagesByAttachmentIds(previousDescription, [entry.attachment.id]);
+
+      setForm((current) => (current ? { ...current, description: nextDescription } : current));
+      setPendingPatch((current) => {
+        const { description, ...rest } = current;
+        return rest;
+      });
+      setSaving(true);
+
+      const { data, error: err } = await pmStoryService.update(workspaceId, storyDetail.story.id, {
+        description: nextDescription,
+      });
+      if (err || !data) {
+        setForm((current) => (current ? { ...current, description: previousDescription } : current));
+        setSaveError(err ?? 'Failed to save');
+        setSaving(false);
+        return 'prevent' as const;
+      }
+
+      setSaveError(null);
+      setStoryDetail(data);
+      savedDescriptionRef.current = data.story.description ?? '';
+      await pmAttachmentService.remove(workspaceId, entry.attachment.id);
+      setSaving(false);
+      return 'handled' as const;
+    },
+    [workspaceId, storyDetail, form],
+  );
 
   // ── Archive ─────────────────────────────────────────────────────
   const archiveStory = async () => {
@@ -606,8 +681,9 @@ export function StoryDetailPage() {
               onChange={(html) => updateField('description', html, { description: html })}
               placeholder="Add a description..."
               className="border-transparent shadow-none"
-              uploadConfig={{ workspaceId: workspaceId!, entityType: 'story', entityId: storyDetail.story.id }}
-              teams={teams}
+              uploadConfig={{ workspaceId: workspaceId!, entityType: 'editor_upload', entityId: workspaceId! }}
+              onUploadStateChange={setDescriptionPendingUploads}
+              teams={mentionTeams}
               members={assignableMembers}
             />
           </div>
@@ -686,7 +762,12 @@ export function StoryDetailPage() {
           {/* Checklist */}
           {showChecklist && (
             <div className="mt-6">
-              <ChecklistItems workspaceId={workspaceId!} storyId={storyDetail.story.id} members={assignableMembers} />
+              <ChecklistItems
+                workspaceId={workspaceId!}
+                storyId={storyDetail.story.id}
+                members={assignableMembers}
+                teams={mentionTeams}
+              />
             </div>
           )}
 
@@ -704,6 +785,7 @@ export function StoryDetailPage() {
               entityType="story"
               entityId={storyDetail.story.id}
               memberNameMap={memberNameMap}
+              onDeleteAttachment={handleDescriptionAttachmentDelete}
             />
           </div>
 
@@ -718,10 +800,10 @@ export function StoryDetailPage() {
               entityId={storyDetail.story.id}
               comments={comments}
               currentUserId={currentUser?.id}
-              teams={teams}
+              teams={mentionTeams}
               members={assignableMembers}
               onCommentsChange={setComments}
-              uploadConfig={{ workspaceId: workspaceId!, entityType: 'story', entityId: storyDetail.story.id }}
+              uploadConfig={{ workspaceId: workspaceId!, entityType: 'editor_upload', entityId: workspaceId! }}
             />
 
             {/* Activity section */}
@@ -749,15 +831,25 @@ export function StoryDetailPage() {
 
         {/* ── Right column — metadata sidebar ────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
-          {/* Story ID + copy */}
-          <div className="mb-4 flex items-center justify-between">
-            <span className="text-sm font-semibold text-foreground">{storyDetail.story.display_id}</span>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={copyLink}>
-              {linkCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
+          <StorySidebarIdRow displayId={storyDetail.story.display_id} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
+            {/* Team */}
+            <MetadataRow icon={Users} label="Team">
+              <SidebarPopoverSelect
+                value={form.team_id || '__none__'}
+                options={[
+                  { value: '__none__', label: 'No team' },
+                  ...teams.map((t) => ({ value: t.id, label: t.name })),
+                ]}
+                onChange={(v) => {
+                  const val = v === '__none__' ? '' : v;
+                  updateField('team_id', val, { team_id: val || undefined });
+                }}
+                renderTrigger={() => <span>{currentTeamName}</span>}
+              />
+            </MetadataRow>
+
             {/* State */}
             <MetadataRow icon={Hash} label="State">
               <SidebarPopoverSelect
@@ -777,6 +869,70 @@ export function StoryDetailPage() {
               />
             </MetadataRow>
 
+            {/* ── People ── */}
+            <div className="col-span-3 h-px bg-border/40 my-1" />
+
+            {/* Owner */}
+            <MetadataRow icon={User} label="Owner">
+              <MemberPickerPopover
+                value={form.owner_member_id || '__none__'}
+                members={assignableMembers}
+                noneLabel="No owner"
+                onChange={(v) => {
+                  const val = v === '__none__' ? '' : v;
+                  updateField('owner_member_id', val, { owner_member_id: val });
+                }}
+                renderTrigger={() => {
+                  const selectedMember = findAssignableMember(assignableMembers, form.owner_member_id);
+                  return (
+                    <>
+                      {selectedMember ? (
+                        <UserAvatar
+                          name={selectedMember.display_name || selectedMember.email}
+                          avatarUrl={selectedMember.avatar_url}
+                          className="h-4 w-4"
+                          fallbackClassName="text-[7px]"
+                        />
+                      ) : null}
+                      <span>{currentOwnerName}</span>
+                    </>
+                  );
+                }}
+              />
+            </MetadataRow>
+
+            {/* Requester */}
+            <MetadataRow icon={User} label="Requester">
+              <MemberPickerPopover
+                value={form.requester_member_id || '__none__'}
+                members={assignableMembers}
+                noneLabel="No requester"
+                onChange={(v) => {
+                  const val = v === '__none__' ? '' : v;
+                  updateField('requester_member_id', val, { requester_member_id: val });
+                }}
+                renderTrigger={() => {
+                  const selectedMember = findAssignableMember(assignableMembers, form.requester_member_id);
+                  return (
+                    <>
+                      {selectedMember ? (
+                        <UserAvatar
+                          name={selectedMember.display_name || selectedMember.email}
+                          avatarUrl={selectedMember.avatar_url}
+                          className="h-4 w-4"
+                          fallbackClassName="text-[7px]"
+                        />
+                      ) : null}
+                      <span>{currentRequesterName}</span>
+                    </>
+                  );
+                }}
+              />
+            </MetadataRow>
+
+            {/* ── Classification ── */}
+            <div className="col-span-3 h-px bg-border/40 my-1" />
+
             {/* Priority */}
             <MetadataRow icon={Gauge} label="Priority">
               <SidebarPopoverSelect
@@ -793,72 +949,6 @@ export function StoryDetailPage() {
               />
             </MetadataRow>
 
-            {/* Type */}
-            <MetadataRow icon={Hash} label="Type">
-              <SidebarPopoverSelect
-                value={form.story_type}
-                options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
-                onChange={(v) => updateField('story_type', v as StoryType, { story_type: v as StoryType })}
-                renderTrigger={() => (
-                  <>
-                    <StoryTypeIcon storyType={form.story_type} className="h-3.5 w-3.5" />
-                    <span>{STORY_TYPE_CONFIG[form.story_type].label}</span>
-                  </>
-                )}
-                renderOption={(v) => <StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" />}
-              />
-            </MetadataRow>
-
-            {/* ── People ── */}
-            <div className="col-span-3 h-px bg-border/40 my-1" />
-
-            {/* Owner */}
-            <MetadataRow icon={User} label="Owner">
-              <MemberPickerPopover
-                value={form.owner_member_id || '__none__'}
-                members={assignableMembers}
-                noneLabel="No owner"
-                onChange={(v) => {
-                  const val = v === '__none__' ? '' : v;
-                  updateField('owner_member_id', val, { owner_member_id: val });
-                }}
-                renderTrigger={() => <span>{currentOwnerName}</span>}
-              />
-            </MetadataRow>
-
-            {/* Requester */}
-            <MetadataRow icon={User} label="Requester">
-              <MemberPickerPopover
-                value={form.requester_member_id || '__none__'}
-                members={assignableMembers}
-                noneLabel="No requester"
-                onChange={(v) => {
-                  const val = v === '__none__' ? '' : v;
-                  updateField('requester_member_id', val, { requester_member_id: val });
-                }}
-                renderTrigger={() => <span>{currentRequesterName}</span>}
-              />
-            </MetadataRow>
-
-            {/* Team */}
-            <MetadataRow icon={Users} label="Team">
-              <SidebarPopoverSelect
-                value={form.team_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'No team' },
-                  ...teams.map((t) => ({ value: t.id, label: t.name })),
-                ]}
-                onChange={(v) => {
-                  const val = v === '__none__' ? '' : v;
-                  updateField('team_id', val, { team_id: val || undefined });
-                }}
-                renderTrigger={() => <span>{currentTeamName}</span>}
-              />
-            </MetadataRow>
-
-            {/* ── Classification ── */}
-            <div className="col-span-3 h-px bg-border/40 my-1" />
-
             {/* Severity */}
             <MetadataRow icon={ShieldAlert} label="Severity">
               <SidebarPopoverSelect
@@ -872,6 +962,22 @@ export function StoryDetailPage() {
                   </>
                 )}
                 renderOption={(v) => <SeverityIcon severity={v as Severity} className="h-4 w-4 shrink-0" />}
+              />
+            </MetadataRow>
+
+            {/* Type */}
+            <MetadataRow icon={Hash} label="Type">
+              <SidebarPopoverSelect
+                value={form.story_type}
+                options={storyTypeOptions.map((t) => ({ value: t, label: STORY_TYPE_CONFIG[t].label }))}
+                onChange={(v) => updateField('story_type', v as StoryType, { story_type: v as StoryType })}
+                renderTrigger={() => (
+                  <>
+                    <StoryTypeIcon storyType={form.story_type} className="h-3.5 w-3.5" />
+                    <span>{STORY_TYPE_CONFIG[form.story_type].label}</span>
+                  </>
+                )}
+                renderOption={(v) => <StoryTypeIcon storyType={v as StoryType} className="h-4 w-4 shrink-0" />}
               />
             </MetadataRow>
 

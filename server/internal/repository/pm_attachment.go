@@ -91,8 +91,8 @@ func (r *PMAttachmentRepository) ListByWorkspace(ctx context.Context, workspaceI
 	return attachments, nil
 }
 
-// ReassignToComment updates attachments to point to a comment entity.
-func (r *PMAttachmentRepository) ReassignToComment(ctx context.Context, attachmentIDs []string, commentID string) error {
+// ReassignToEntity updates attachments to point to a target entity.
+func (r *PMAttachmentRepository) ReassignToEntity(ctx context.Context, attachmentIDs []string, entityType, entityID string) error {
 	if len(attachmentIDs) == 0 {
 		return nil
 	}
@@ -100,8 +100,8 @@ func (r *PMAttachmentRepository) ReassignToComment(ctx context.Context, attachme
 		Model(&model.PMAttachment{}).
 		Where("id IN ?", attachmentIDs).
 		Updates(map[string]interface{}{
-			"entity_type": "comment",
-			"entity_id":   commentID,
+			"entity_type": entityType,
+			"entity_id":   entityID,
 		}).Error; err != nil {
 		return fmt.Errorf("reassign attachments: %w", err)
 	}

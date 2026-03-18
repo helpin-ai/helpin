@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func TestNormalizeObjectiveState(t *testing.T) {
@@ -140,4 +142,55 @@ func TestComputeSuggestedHealth(t *testing.T) {
 			t.Errorf("off_track got %q, want %q", result, model.PMObjectiveHealthOffTrack)
 		}
 	})
+}
+
+func TestPMObjectiveService_Create_ReassignsTemporaryAttachmentIDs(t *testing.T) {
+	t.Parallel()
+
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-objective-attachments"
+	userID := "user-objective-attachments"
+
+	seedUser(t, db, userID, "objective@test.com", "Objective User", "hash")
+	seedWorkspace(t, db, workspaceID, "Objective Workspace", "objective-ws", userID)
+	seedWorkspaceMember(t, db, "member-objective-attachments", workspaceID, userID, "objective@test.com", "Objective User", model.RoleAdmin)
+
+	seedTemporaryAttachment(t, db, "attachment-objective-1", workspaceID, workspaceID, userID)
+
+	svc := NewPMObjectiveService(
+		repository.NewPMObjectiveRepository(db),
+		repository.NewPMKeyResultRepository(db),
+		repository.NewPMLabelRepository(db),
+		repository.NewPMAttachmentRepository(db),
+		repository.NewWorkspaceRepository(db),
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+		nil,
+	)
+
+	objective, err := svc.Create(ctx, model.CreateObjectiveRequest{
+		WorkspaceID:    workspaceID,
+		Name:           "Objective With Image",
+		ObjectiveType:  model.PMObjectiveTypeTactical,
+		AttachmentIDs:  []string{"attachment-objective-1"},
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	attachmentRepo := repository.NewPMAttachmentRepository(db)
+	attachment, err := attachmentRepo.GetByID(ctx, "attachment-objective-1")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if attachment == nil {
+		t.Fatal("expected attachment")
+	}
+	if attachment.EntityType != "objective" {
+		t.Fatalf("entity_type = %q, want %q", attachment.EntityType, "objective")
+	}
+	if attachment.EntityID != objective.Objective.ID {
+		t.Fatalf("entity_id = %q, want %q", attachment.EntityID, objective.Objective.ID)
+	}
 }

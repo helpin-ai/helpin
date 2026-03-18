@@ -97,6 +97,7 @@ type CreateEpicRequest struct {
 	Health               *string    `json:"health"`
 	HealthComment        *string    `json:"health_comment"`
 	LabelIDs             []string   `json:"label_ids"`
+	AttachmentIDs        []string   `json:"attachment_ids,omitempty"`
 	PlanningRepositoryID *string    `json:"planning_repository_id"`
 }
 

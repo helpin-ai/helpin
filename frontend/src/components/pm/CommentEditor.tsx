@@ -2,21 +2,19 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { MentionHighlight } from '@/components/pm/mention-highlight'
+import { diffRemovedInlineAttachmentIds, extractInlineAttachmentIds } from '@/components/pm/editorImageAttachments'
 import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
+import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService'
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Loader2, Send, ImageIcon, Paperclip, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
-import { UserAvatar } from '@/components/pm/UserAvatar'
-
-interface MentionItem {
-  id: string
-  name: string
-  handle: string
-  type: 'member' | 'team'
-  avatarUrl?: string
-}
+import {
+  getMentionSuggestions,
+  type MentionSuggestionItem,
+} from '@/components/pm/mentionSuggestions'
 
 interface CommentEditorProps {
   onSubmit: (text: string) => void | Promise<void>
@@ -25,13 +23,10 @@ interface CommentEditorProps {
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[]
   members?: AssignableMember[]
   uploadConfig?: EditorUploadConfig
+  onUploadStateChange?: (pendingUploads: number) => void
   onFileSelect?: () => void
   uploadedFiles?: { id: string; name: string }[]
   onRemoveUploadedFile?: (id: string) => void
-}
-
-function buildMemberHandle(member: AssignableMember): string {
-  return member.display_name.toLowerCase().replace(/\s+/g, '.')
 }
 
 function getFileExtension(filename: string): string {
@@ -43,7 +38,7 @@ function detectMentions(
   editorInstance: ReturnType<typeof useEditor>,
   teams: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[],
   members: AssignableMember[],
-): { from: number; to: number; items: MentionItem[]; selectedIndex: number } | null {
+): { from: number; to: number; items: MentionSuggestionItem[]; selectedIndex: number } | null {
   if (!editorInstance) return null
   if (teams.length === 0 && members.length === 0) return null
 
@@ -60,42 +55,7 @@ function detectMentions(
   if (!match) return null
 
   const query = match[1].toLowerCase()
-  const items: MentionItem[] = []
-
-  for (const m of members) {
-    if (m.status !== 'active') continue
-    const handle = buildMemberHandle(m)
-    if (
-      !query ||
-      handle.includes(query) ||
-      m.display_name.toLowerCase().includes(query) ||
-      m.email.toLowerCase().includes(query)
-    ) {
-      items.push({
-        id: m.user_id || m.id,
-        name: m.display_name,
-        handle,
-        type: 'member',
-        avatarUrl: m.avatar_url,
-      })
-    }
-  }
-
-  for (const t of teams) {
-    if (!t.handle) continue
-    if (
-      !query ||
-      t.handle.toLowerCase().includes(query) ||
-      t.name.toLowerCase().includes(query)
-    ) {
-      items.push({
-        id: t.id,
-        name: t.name,
-        handle: t.handle,
-        type: 'team',
-      })
-    }
-  }
+  const items = getMentionSuggestions(query, members, teams, 8)
 
   if (items.length === 0) return null
 
@@ -114,6 +74,7 @@ export function CommentEditor({
   teams = [],
   members = [],
   uploadConfig,
+  onUploadStateChange,
   onFileSelect,
   uploadedFiles = [],
   onRemoveUploadedFile,
@@ -121,7 +82,7 @@ export function CommentEditor({
   const [mentionState, setMentionState] = useState<{
     from: number
     to: number
-    items: MentionItem[]
+    items: MentionSuggestionItem[]
     selectedIndex: number
   } | null>(null)
   const mentionStateRef = useRef(mentionState)
@@ -132,6 +93,12 @@ export function CommentEditor({
   membersRef.current = members
   const uploadConfigRef = useRef(uploadConfig)
   uploadConfigRef.current = uploadConfig
+  const onUploadStateChangeRef = useRef(onUploadStateChange)
+  onUploadStateChangeRef.current = onUploadStateChange
+  const pendingUploadsRef = useRef(0)
+  const [pendingUploads, setPendingUploads] = useState(0)
+  const currentHtmlRef = useRef('')
+  const skipNextCleanupRef = useRef(false)
 
   const getContent = useCallback((editor: ReturnType<typeof useEditor>) => {
     if (!editor) return ''
@@ -158,8 +125,11 @@ export function CommentEditor({
 
       editorInstance.chain().focus().setResizableImage({ src: dataUri, alt: file.name, title: uploadId }).run()
 
+      pendingUploadsRef.current += 1
+      setPendingUploads(pendingUploadsRef.current)
+      onUploadStateChangeRef.current?.(pendingUploadsRef.current)
       try {
-        const publicUrl = await uploadEditorImage(file, uploadConfigRef.current!)
+        const upload = await uploadEditorImage(file, uploadConfigRef.current!)
 
         const { doc } = editorInstance.state
         let targetPos: number | null = null
@@ -176,8 +146,9 @@ export function CommentEditor({
             editorInstance.view.dispatch(
               editorInstance.state.tr.setNodeMarkup(targetPos, undefined, {
                 ...node.attrs,
-                src: publicUrl,
+                src: upload.publicUrl,
                 title: null,
+                attachmentId: upload.attachmentId,
               }),
             )
           }
@@ -202,16 +173,35 @@ export function CommentEditor({
           }
         }
         toast.error('Failed to upload image')
+      } finally {
+        pendingUploadsRef.current = Math.max(0, pendingUploadsRef.current - 1)
+        setPendingUploads(pendingUploadsRef.current)
+        onUploadStateChangeRef.current?.(pendingUploadsRef.current)
       }
     },
     [],
   )
 
-  const handleSubmit = useCallback(() => {
+  const cleanupDraftAttachments = useCallback(async (attachmentIds: string[]) => {
+    const currentConfig = uploadConfigRef.current
+    if (!currentConfig || currentConfig.entityType !== 'editor_upload' || attachmentIds.length === 0) {
+      return
+    }
+    await Promise.allSettled(
+      attachmentIds.map((attachmentId) => pmAttachmentService.remove(currentConfig.workspaceId, attachmentId)),
+    )
+  }, [])
+
+  const handleSubmit = useCallback(async () => {
     if (!editorRef.current || loading) return
     const text = getContent(editorRef.current)
     if (!text.trim() && uploadedFiles.length === 0) return
-    onSubmit(text.trim())
+    try {
+      await onSubmit(text.trim())
+    } catch {
+      return
+    }
+    skipNextCleanupRef.current = true
     editorRef.current.commands.clearContent()
   }, [onSubmit, loading, getContent, uploadedFiles.length])
 
@@ -328,6 +318,18 @@ export function CommentEditor({
       },
     },
     onUpdate: () => {
+      const html = editorRef.current?.getHTML() ?? ''
+      if (skipNextCleanupRef.current) {
+        skipNextCleanupRef.current = false
+        currentHtmlRef.current = html
+        setMentionState(detectMentions(editorRef.current, teamsRef.current, membersRef.current))
+        return
+      }
+      const removedDraftAttachmentIds = diffRemovedInlineAttachmentIds(currentHtmlRef.current, html)
+      currentHtmlRef.current = html
+      if (removedDraftAttachmentIds.length > 0) {
+        void cleanupDraftAttachments(removedDraftAttachmentIds)
+      }
       setMentionState(detectMentions(editorRef.current, teamsRef.current, membersRef.current))
     },
     onBlur: () => setMentionState(null),
@@ -342,6 +344,18 @@ export function CommentEditor({
     if (!editor) return
 
     const handleUpdate = () => {
+      const html = editor.getHTML()
+      if (skipNextCleanupRef.current) {
+        skipNextCleanupRef.current = false
+        currentHtmlRef.current = html
+        setMentionState(detectMentions(editor, teamsRef.current, membersRef.current))
+        return
+      }
+      const removedDraftAttachmentIds = diffRemovedInlineAttachmentIds(currentHtmlRef.current, html)
+      currentHtmlRef.current = html
+      if (removedDraftAttachmentIds.length > 0) {
+        void cleanupDraftAttachments(removedDraftAttachmentIds)
+      }
       setMentionState(detectMentions(editor, teamsRef.current, membersRef.current))
     }
     const handleBlur = () => setMentionState(null)
@@ -353,63 +367,48 @@ export function CommentEditor({
       editor.off('update', handleUpdate)
       editor.off('blur', handleBlur)
     }
-  }, [editor])
+  }, [cleanupDraftAttachments, editor])
+
+  useEffect(
+    () => () => {
+      const currentConfig = uploadConfigRef.current
+      if (!currentConfig || currentConfig.entityType !== 'editor_upload') {
+        return
+      }
+      const draftAttachmentIds = extractInlineAttachmentIds(currentHtmlRef.current)
+      if (draftAttachmentIds.length > 0) {
+        void cleanupDraftAttachments(draftAttachmentIds)
+      }
+    },
+    [cleanupDraftAttachments],
+  )
 
   if (!editor) return null
 
   const content = getContent(editor)
-  const canSubmit = !loading && (content.trim().length > 0 || uploadedFiles.length > 0)
+  const canSubmit = !loading && pendingUploads === 0 && (content.trim().length > 0 || uploadedFiles.length > 0)
 
   return (
     <div className="rounded-lg border border-border/60 bg-background transition-colors focus-within:border-border">
       <EditorContent editor={editor} />
       {mentionState && mentionState.items.length > 0 ? (
         <div className="border-t border-border/60 bg-muted/40 px-2 py-2">
-          <div className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Mention
-          </div>
-          <div className="max-h-[200px] overflow-y-auto space-y-0.5">
-            {mentionState.items.map((item, index) => (
-              <button
-                key={`${item.type}-${item.id}`}
-                type="button"
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                  index === mentionState.selectedIndex
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                }`}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  if (!editorRef.current) return
-                  editorRef.current
-                    .chain()
-                    .focus()
-                    .insertContentAt(
-                      { from: mentionState.from, to: mentionState.to },
-                      `@${item.handle} `,
-                    )
-                    .run()
-                  setMentionState(null)
-                }}
-              >
-                {item.type === 'member' ? (
-                  <UserAvatar
-                    name={item.name}
-                    avatarUrl={item.avatarUrl}
-                    className="h-5 w-5 text-[10px]"
-                  />
-                ) : (
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
-                    T
-                  </div>
-                )}
-                <span className="flex-1 truncate">{item.name}</span>
-                <span className="font-mono text-xs text-muted-foreground">
-                  @{item.handle}
-                </span>
-              </button>
-            ))}
-          </div>
+          <MentionSuggestionsList
+            items={mentionState.items}
+            selectedIndex={mentionState.selectedIndex}
+            onSelect={(item) => {
+              if (!editorRef.current) return
+              editorRef.current
+                .chain()
+                .focus()
+                .insertContentAt(
+                  { from: mentionState.from, to: mentionState.to },
+                  `@${item.handle} `,
+                )
+                .run()
+              setMentionState(null)
+            }}
+          />
         </div>
       ) : null}
       {/* Uploaded files preview */}

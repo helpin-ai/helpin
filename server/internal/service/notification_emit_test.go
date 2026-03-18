@@ -216,6 +216,62 @@ func TestEmit_SkipsNotificationWhenWorkspaceCategoryDisablesInApp(t *testing.T) 
 	}
 }
 
+func TestEmit_SkipFollowersLimitsDeliveryToExplicitRecipients(t *testing.T) {
+	db := newNotificationServiceTestDB(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
+
+	seedNotificationServiceWorkspace(t, db, "ws-1", "Acme Workspace", now)
+	seedNotificationServiceUser(t, db, "user-1", "user1@example.com", "Explicit Recipient", now)
+	seedNotificationServiceUser(t, db, "user-2", "user2@example.com", "Follower Recipient", now)
+	seedNotificationServiceUserSettings(t, db, "user-1", true, "none", nil, now)
+	seedNotificationServiceUserSettings(t, db, "user-2", true, "none", nil, now)
+	mustExecNotificationService(t, db, `INSERT INTO entity_followers (id, user_id, entity_type, entity_id, workspace_id, reason, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"follower-1", "user-2", "story", "story-1", "ws-1", "watching", now)
+
+	service := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewWorkspaceRepository(db),
+		nil,
+		nil,
+		"",
+	)
+
+	if err := service.Emit(ctx, model.NotificationEventInput{
+		WorkspaceID:        "ws-1",
+		ActorID:            "actor-1",
+		EventType:          "comment.mention",
+		EntityType:         "story",
+		EntityID:           "story-1",
+		Title:              "Mentioned you in a comment",
+		Category:           model.NotifCategoryMentions,
+		Priority:           "high",
+		ExplicitRecipients: []string{"user-1"},
+		SkipFollowers:      true,
+	}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+
+	var notifications []model.Notification
+	if err := db.WithContext(ctx).Order("recipient_id ASC").Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("notification count = %d, want 1", len(notifications))
+	}
+	if notifications[0].RecipientID != "user-1" {
+		t.Fatalf("recipient_id = %q, want user-1", notifications[0].RecipientID)
+	}
+	if notifications[0].EventType != "comment.mention" {
+		t.Fatalf("event_type = %q, want comment.mention", notifications[0].EventType)
+	}
+}
+
 func TestBuildDeliveryPlans_ImmediateEmailBranches(t *testing.T) {
 	now := time.Date(2026, time.March, 10, 10, 0, 0, 0, time.UTC)
 	event := model.NotificationEventInput{

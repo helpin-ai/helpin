@@ -58,7 +58,10 @@ import { useTeamFieldVisibilityForTeam } from "@/hooks/queries/useSettings";
 import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MemberPickerPopover } from "@/components/pm/MemberPickerPopover";
-import { buildAssignableMemberNameMap } from "@/lib/assignableMembers";
+import { UserAvatar } from "@/components/pm/UserAvatar";
+import { filterMentionTeams } from "@/components/pm/mentionSuggestions";
+import { extractInlineAttachmentIds } from "@/components/pm/editorImageAttachments";
+import { buildAssignableMemberNameMap, findAssignableMember } from "@/lib/assignableMembers";
 import { pmAttachmentService } from "@/lib/services/pmAttachmentService";
 import { uploadToS3 } from "@/lib/api";
 import { toast } from "sonner";
@@ -202,6 +205,8 @@ export function CreateStoryModal({
   const [stateId, setStateId] = useState(initialStateId ?? '');
   const [createMore, setCreateMore] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
+  const [descriptionEditorKey, setDescriptionEditorKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [storyTypeDirty, setStoryTypeDirty] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -227,9 +232,21 @@ export function CreateStoryModal({
     () => (teams.find((team) => team.id === form.team_id)?.default_story_type as StoryType | undefined) ?? 'feature',
     [teams, form.team_id],
   );
+  const mentionTeams = useMemo(
+    () => filterMentionTeams(teams, form.team_id ? [form.team_id] : []),
+    [teams, form.team_id],
+  );
+  const cleanupInlineDraftUploads = useCallback(async () => {
+    const attachmentIds = extractInlineAttachmentIds(form.description);
+    if (attachmentIds.length === 0) return;
+    await Promise.allSettled(
+      attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+    );
+  }, [form.description, workspaceId]);
 
   useEffect(() => {
     if (!open) return;
+    setDescriptionEditorKey((current) => current + 1);
     if (isTemplateMode && editingTemplate) {
       setForm({
         name: editingTemplate.name,
@@ -323,8 +340,12 @@ export function CreateStoryModal({
   }, [labels, form.team_id]);
 
   const canSubmit = useMemo(
-    () => form.name.trim().length > 0 && form.team_id.trim().length > 0 && (isTemplateMode || stateId.trim().length > 0),
-    [form.name, form.team_id, stateId, isTemplateMode]
+    () =>
+      descriptionPendingUploads === 0 &&
+      form.name.trim().length > 0 &&
+      form.team_id.trim().length > 0 &&
+      (isTemplateMode || stateId.trim().length > 0),
+    [descriptionPendingUploads, form.name, form.team_id, stateId, isTemplateMode]
   );
 
   const currentStateName = useMemo(
@@ -483,6 +504,7 @@ export function CreateStoryModal({
 
         if (createMore) {
           const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
+          setDescriptionEditorKey((current) => current + 1);
           setForm({
             ...defaultState,
             story_type: (resetTeam?.default_story_type as StoryType | undefined) ?? 'feature',
@@ -527,6 +549,9 @@ export function CreateStoryModal({
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && hasUnsavedChanges) {
       if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
+    }
+    if (!nextOpen) {
+      void cleanupInlineDraftUploads();
     }
     onOpenChange(nextOpen);
   };
@@ -575,6 +600,7 @@ export function CreateStoryModal({
               {/* Description — Tiptap rich text editor */}
               <div className="relative flex flex-col min-h-0 flex-1">
                 <TiptapEditor
+                  key={descriptionEditorKey}
                   content={form.description}
                   onChange={(html) =>
                     setForm((prev) => ({ ...prev, description: html }))
@@ -582,7 +608,8 @@ export function CreateStoryModal({
                   placeholder="Press '/' for commands"
                   className="min-h-0 flex-1 flex flex-col"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
-                  teams={teams}
+                  onUploadStateChange={setDescriptionPendingUploads}
+                  teams={mentionTeams}
                 />
                 <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
                   <div className="pointer-events-none inline-flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground">
@@ -923,7 +950,22 @@ export function CreateStoryModal({
                         owner_member_id: value === "__none__" ? "" : value,
                       }))
                     }
-                    renderTrigger={() => <span>{currentOwnerName}</span>}
+                    renderTrigger={() => {
+                      const selectedMember = findAssignableMember(assignableMembers, form.owner_member_id);
+                      return (
+                        <>
+                          {selectedMember ? (
+                            <UserAvatar
+                              name={selectedMember.display_name || selectedMember.email}
+                              avatarUrl={selectedMember.avatar_url}
+                              className="h-4 w-4"
+                              fallbackClassName="text-[7px]"
+                            />
+                          ) : null}
+                          <span>{currentOwnerName}</span>
+                        </>
+                      );
+                    }}
                   />
                 </MetadataRow>
 
@@ -940,13 +982,28 @@ export function CreateStoryModal({
                         requester_member_id: value === "__none__" ? "" : value,
                       }))
                     }
-                    renderTrigger={() => <span>{currentRequesterName}</span>}
+                    renderTrigger={() => {
+                      const selectedMember = findAssignableMember(assignableMembers, form.requester_member_id);
+                      return (
+                        <>
+                          {selectedMember ? (
+                            <UserAvatar
+                              name={selectedMember.display_name || selectedMember.email}
+                              avatarUrl={selectedMember.avatar_url}
+                              className="h-4 w-4"
+                              fallbackClassName="text-[7px]"
+                            />
+                          ) : null}
+                          <span>{currentRequesterName}</span>
+                        </>
+                      );
+                    }}
                   />
                 </MetadataRow>
                 )}
 
                 {/* ── Classification ── */}
-                {(fieldVis.priority || fieldVis.story_type || fieldVis.severity || fieldVis.labels) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+                {(fieldVis.priority || fieldVis.severity || fieldVis.story_type || fieldVis.labels) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Priority */}
                 {fieldVis.priority && (

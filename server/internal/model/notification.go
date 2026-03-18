@@ -195,6 +195,7 @@ var EventTypeToCategory = map[string]string{
 	"checklist.mention": NotifCategoryMentions,
 	"objective.mention": NotifCategoryMentions,
 	"epic.mention":      NotifCategoryMentions,
+	"sprint.mention":    NotifCategoryMentions,
 
 	"epic.created":      NotifCategorySubscriptions,
 	"epic.updated":      NotifCategorySubscriptions,
@@ -247,6 +248,7 @@ type NotificationEventInput struct {
 	EntitySnapshot       JSONB
 	ParentEntitySnapshot JSONB
 	ExplicitRecipients   []string // Additional recipients beyond followers
+	SkipFollowers        bool     // When true, only ExplicitRecipients are considered
 }
 
 // UpdateNotificationRequest is the payload for updating a notification.

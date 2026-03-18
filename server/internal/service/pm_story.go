@@ -22,6 +22,7 @@ type PMStoryService struct {
 	labelRepo           *repository.PMLabelRepository
 	checklistRepo       *repository.PMChecklistItemRepository
 	externalLinkRepo    *repository.PMExternalLinkRepository
+	attachmentRepo      *repository.PMAttachmentRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	automationService   *PMAutomationService
@@ -33,7 +34,7 @@ type PMStoryService struct {
 }
 
 // NewPMStoryService creates a new PMStoryService.
-func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
+func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, labelRepo *repository.PMLabelRepository, checklistRepo *repository.PMChecklistItemRepository, externalLinkRepo *repository.PMExternalLinkRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, automationService *PMAutomationService, notificationService *NotificationService, followerService *FollowerService) *PMStoryService {
 	return &PMStoryService{
 		storyRepo:           storyRepo,
 		workspaceRepo:       workspaceRepo,
@@ -41,6 +42,7 @@ func NewPMStoryService(storyRepo *repository.PMStoryRepository, workspaceRepo *r
 		labelRepo:           labelRepo,
 		checklistRepo:       checklistRepo,
 		externalLinkRepo:    externalLinkRepo,
+		attachmentRepo:      attachmentRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
 		automationService:   automationService,
@@ -255,6 +257,11 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 	if err := s.storyRepo.Create(ctx, story); err != nil {
 		return nil, err
 	}
+	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "story", story.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to story", "error", err, "story_id", story.ID, "attachment_ids", req.AttachmentIDs)
+		}
+	}
 
 	ownerIDs := dedupeIDs(req.OwnerIDs)
 	if story.OwnerID != nil {
@@ -370,7 +377,6 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		}
 	}
 	if s.notificationService != nil {
-		// Check for @mentions in description.
 		var mentionedUserIDs []string
 		if story.Description != nil {
 			mentions := extractMentions(*story.Description)
@@ -379,20 +385,11 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 				"workspace_id", story.WorkspaceID,
 				"mentions", mentions,
 			)
-			if len(mentions) > 0 && s.workspaceRepo != nil {
-				for _, handle := range mentions {
-					uid, err := s.workspaceRepo.GetUserIDByHandle(ctx, story.WorkspaceID, handle)
-					if err != nil {
-						slog.ErrorContext(ctx, "failed to resolve mention in story", "handle", handle, "error", err)
-						continue
-					}
-					if uid == "" {
-						slog.WarnContext(ctx, "mention handle not found in story", "handle", handle, "workspace_id", story.WorkspaceID)
-						continue
-					}
-					slog.InfoContext(ctx, "story mention resolved", "handle", handle, "user_id", uid)
-					mentionedUserIDs = append(mentionedUserIDs, uid)
-				}
+			var err error
+			mentionedUserIDs, err = resolveMentionRecipients(ctx, s.workspaceRepo, story.WorkspaceID, *story.Description, actorID, mentionScopeForTeamID(story.TeamID))
+			if err != nil {
+				s.logger.ErrorContext(ctx, "failed to resolve story mention recipients", "error", err, "story_id", story.ID)
+				mentionedUserIDs = nil
 			}
 		}
 
@@ -416,6 +413,7 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 			Priority:           priority,
 			TeamID:             derefString(story.TeamID),
 			ExplicitRecipients: mentionedUserIDs,
+			SkipFollowers:      len(mentionedUserIDs) > 0,
 			EntitySnapshot: model.JSONB{
 				"title":      story.Name,
 				"display_id": story.DisplayID,
@@ -715,41 +713,24 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 			"workspace_id", current.WorkspaceID,
 			"mentions", mentions,
 		)
-		if len(mentions) > 0 && s.workspaceRepo != nil {
-			var mentionedUserIDs []string
-			for _, handle := range mentions {
-				uid, err := s.workspaceRepo.GetUserIDByHandle(ctx, current.WorkspaceID, handle)
-				if err != nil {
-					slog.ErrorContext(ctx, "failed to resolve mention in story update", "handle", handle, "error", err)
-					continue
-				}
-				if uid == "" {
-					slog.WarnContext(ctx, "mention handle not found in story update", "handle", handle, "workspace_id", current.WorkspaceID)
-					continue
-				}
-				slog.InfoContext(ctx, "story update mention resolved", "handle", handle, "user_id", uid)
-				mentionedUserIDs = append(mentionedUserIDs, uid)
-			}
-			if len(mentionedUserIDs) > 0 {
-				if err := s.notificationService.Emit(ctx, model.NotificationEventInput{
-					WorkspaceID:        current.WorkspaceID,
-					ActorID:            actorID,
-					EventType:          "story.mention",
-					EntityType:         "story",
-					EntityID:           current.ID,
-					Title:              "mentioned you in " + current.Name,
-					Category:           "mention",
-					Priority:           "high",
-					TeamID:             derefString(current.TeamID),
-					ExplicitRecipients: mentionedUserIDs,
-					EntitySnapshot: model.JSONB{
-						"title":      current.Name,
-						"display_id": current.DisplayID,
-						"type":       current.StoryType,
-					},
-				}); err != nil {
-					slog.ErrorContext(ctx, "failed to emit story mention notification", "error", err, "story_id", current.ID)
-				}
+		if len(mentions) > 0 {
+			if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:     current.WorkspaceID,
+				ActorID:         actorID,
+				Body:            *req.Description,
+				EventType:       "story.mention",
+				EntityType:      "story",
+				EntityID:        current.ID,
+				Title:           "mentioned you in " + current.Name,
+				TeamID:          derefString(current.TeamID),
+				ReadableTeamIDs: mentionScopeForTeamID(current.TeamID),
+				EntitySnapshot: model.JSONB{
+					"title":      current.Name,
+					"display_id": current.DisplayID,
+					"type":       current.StoryType,
+				},
+			}); err != nil {
+				slog.ErrorContext(ctx, "failed to emit story mention notification", "error", err, "story_id", current.ID)
 			}
 		}
 	}

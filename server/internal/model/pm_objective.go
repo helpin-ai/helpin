@@ -118,6 +118,7 @@ type CreateObjectiveRequest struct {
 	OwnerMemberIDs   []string   `json:"owner_member_ids"`
 	LabelIDs         []string   `json:"label_ids"`
 	EpicIDs          []string   `json:"epic_ids"`
+	AttachmentIDs    []string   `json:"attachment_ids,omitempty"`
 }
 
 type UpdateObjectiveRequest struct {

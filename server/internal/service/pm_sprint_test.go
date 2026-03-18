@@ -7,11 +7,18 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/gorm"
 )
 
 // newSprintTestService sets up a PMSprintService backed by an in-memory SQLite DB.
 // It seeds a workspace and returns the service, the DB, and the workspace ID.
 func newSprintTestService(t *testing.T) (*PMSprintService, string) {
+	t.Helper()
+	svc, _, wsID := newSprintTestEnvWithDB(t)
+	return svc, wsID
+}
+
+func newSprintTestEnvWithDB(t *testing.T) (*PMSprintService, *gorm.DB, string) {
 	t.Helper()
 
 	db := newTestDB(t)
@@ -22,8 +29,8 @@ func newSprintTestService(t *testing.T) (*PMSprintService, string) {
 	activityRepo := repository.NewPMActivityRepository(db)
 	activityService := NewPMActivityService(activityRepo)
 
-	svc := NewPMSprintService(sprintRepo, labelRepo, activityService, nil, nil)
-	return svc, "ws-sprint"
+	svc := NewPMSprintService(sprintRepo, labelRepo, repository.NewPMAttachmentRepository(db), repository.NewWorkspaceRepository(db), activityService, nil, nil)
+	return svc, db, "ws-sprint"
 }
 
 // makeSprintDates returns a start and end date offset by the given number of days
@@ -172,6 +179,43 @@ func TestCreateSprint_WithDescription(t *testing.T) {
 	}
 	if result.Sprint.Description == nil || *result.Sprint.Description != desc {
 		t.Fatalf("description = %v, want %q", result.Sprint.Description, desc)
+	}
+}
+
+func TestCreateSprint_ReassignsTemporaryAttachmentIDs(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	ctx := context.Background()
+
+	start, end := makeSprintDates(time.Now().UTC(), 1, 14)
+	seedTemporaryAttachment(t, db, "attachment-sprint-1", wsID, wsID, "actor-1")
+
+	req := model.CreateSprintRequest{
+		WorkspaceID:   wsID,
+		Name:          "Sprint With Image",
+		StartDate:     start,
+		EndDate:       end,
+		AttachmentIDs: []string{"attachment-sprint-1"},
+	}
+
+	result, err := svc.Create(ctx, req, "actor-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	attachmentRepo := repository.NewPMAttachmentRepository(db)
+	attachment, err := attachmentRepo.GetByID(ctx, "attachment-sprint-1")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if attachment == nil {
+		t.Fatal("expected attachment")
+	}
+	if attachment.EntityType != "sprint" {
+		t.Fatalf("entity_type = %q, want %q", attachment.EntityType, "sprint")
+	}
+	if attachment.EntityID != result.Sprint.ID {
+		t.Fatalf("entity_id = %q, want %q", attachment.EntityID, result.Sprint.ID)
 	}
 }
 
@@ -553,7 +597,7 @@ func TestGetCurrentSprint_WithTeamID(t *testing.T) {
 	labelRepo := repository.NewPMLabelRepository(db)
 	activityRepo := repository.NewPMActivityRepository(db)
 	activityService := NewPMActivityService(activityRepo)
-	svc := NewPMSprintService(sprintRepo, labelRepo, activityService, nil, nil)
+	svc := NewPMSprintService(sprintRepo, labelRepo, repository.NewPMAttachmentRepository(db), repository.NewWorkspaceRepository(db), activityService, nil, nil)
 
 	ctx := context.Background()
 	teamID := "team-1"

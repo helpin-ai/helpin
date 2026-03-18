@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, Download, MessageSquare, Pencil, Reply, SmilePlus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { CommentEditor } from '@/components/pm/CommentEditor';
 import { CommentBody } from '@/components/pm/CommentBody';
+import { extractInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { pmCommentService } from '@/lib/services/pmCommentService';
@@ -140,14 +141,29 @@ function CommentReactions({
 }
 
 // ── Comment attachment display (compact inline) ──
-function CommentAttachments({ attachments }: { attachments: AttachmentResponse[] }) {
+function CommentAttachments({
+  attachments,
+  body,
+}: {
+  attachments: AttachmentResponse[];
+  body: string;
+}) {
   if (!attachments || attachments.length === 0) return null;
+
+  const inlineAttachmentIds = new Set(extractInlineAttachmentIds(body));
+  const visibleAttachments = attachments.filter(({ attachment }) => {
+    const isInlineImage =
+      attachment.content_type.startsWith('image/') &&
+      inlineAttachmentIds.has(attachment.id);
+    return !isInlineImage;
+  });
+  if (visibleAttachments.length === 0) return null;
 
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
 
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
-      {attachments.map((entry) => {
+      {visibleAttachments.map((entry) => {
         const ext = getFileExtension(entry.attachment.file_name);
         const isImage = entry.attachment.content_type.startsWith('image/') && !entry.attachment.content_type.includes('svg');
         const url = resolveUrl(entry);
@@ -216,7 +232,6 @@ export function CommentThread({
   teams = [],
   members = [],
   onCommentsChange,
-  uploadConfig,
 }: CommentThreadProps) {
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -227,6 +242,16 @@ export function CommentThread({
   // Uploaded attachment IDs for new comment and per-reply
   const [pendingAttachments, setPendingAttachments] = useState<{ id: string; name: string }[]>([]);
   const [replyPendingAttachments, setReplyPendingAttachments] = useState<Map<string, { id: string; name: string }[]>>(new Map());
+  const draftUploadConfig = useRef<EditorUploadConfig>({
+    workspaceId,
+    entityType: 'editor_upload',
+    entityId: workspaceId,
+  });
+  draftUploadConfig.current = {
+    workspaceId,
+    entityType: 'editor_upload',
+    entityId: workspaceId,
+  };
 
   // Member name map for reaction tooltips
   const memberNameMap = useRef(new Map<string, string>());
@@ -254,6 +279,24 @@ export function CommentThread({
     await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
     return { id: initData.attachment.id, name: file.name };
   }, [workspaceId]);
+
+  useEffect(
+    () => () => {
+      const attachmentIds = [
+        ...pendingAttachments.map((attachment) => attachment.id),
+        ...Array.from(replyPendingAttachments.values()).flatMap((attachments) =>
+          attachments.map((attachment) => attachment.id),
+        ),
+      ];
+      if (attachmentIds.length === 0) {
+        return;
+      }
+      void Promise.allSettled(
+        attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+      );
+    },
+    [pendingAttachments, replyPendingAttachments, workspaceId],
+  );
 
   const handleFileUpload = useCallback(async (parentId?: string) => {
     const input = document.createElement('input');
@@ -404,8 +447,22 @@ export function CommentThread({
   };
 
   const deleteComment = async (id: string) => {
+    const attachmentIds = comments
+      .flatMap((comment) => [comment, ...(comment.replies ?? [])])
+      .find((comment) => comment.comment.id === id)
+      ? extractInlineAttachmentIds(
+          comments
+            .flatMap((comment) => [comment, ...(comment.replies ?? [])])
+            .find((comment) => comment.comment.id === id)?.comment.body ?? '',
+        )
+      : [];
     const { error } = await pmCommentService.remove(workspaceId, id);
     if (error) return;
+    if (attachmentIds.length > 0) {
+      await Promise.allSettled(
+        attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+      );
+    }
     onCommentsChange(
       comments
         .filter((c) => c.comment.id !== id)
@@ -541,12 +598,17 @@ export function CommentThread({
         {isEditing ? (
           renderEditForm(indent)
         ) : (
-          <CommentBody body={entry.comment.body} members={members} className={`mt-1.5 ${indent}`} />
+          <CommentBody
+            body={entry.comment.body}
+            members={members}
+            teams={teams}
+            className={`mt-1.5 ${indent}`}
+          />
         )}
         {/* Attachments */}
         {entry.attachments && entry.attachments.length > 0 && (
           <div className={indent}>
-            <CommentAttachments attachments={entry.attachments} />
+            <CommentAttachments attachments={entry.attachments} body={entry.comment.body} />
           </div>
         )}
         {/* Reactions */}
@@ -606,7 +668,7 @@ export function CommentThread({
                       placeholder="Write a reply..."
                       teams={teams}
                       members={members}
-                      uploadConfig={uploadConfig}
+                      uploadConfig={draftUploadConfig.current}
                       onFileSelect={() => handleFileUpload(entry.comment.id)}
                       uploadedFiles={replyPendingAttachments.get(entry.comment.id) ?? []}
                       onRemoveUploadedFile={(id) => removePendingAttachment(id, entry.comment.id)}
@@ -628,7 +690,7 @@ export function CommentThread({
           placeholder="Leave a comment... (type @ to mention)"
           teams={teams}
           members={members}
-          uploadConfig={uploadConfig}
+          uploadConfig={draftUploadConfig.current}
           onFileSelect={() => handleFileUpload()}
           uploadedFiles={pendingAttachments}
           onRemoveUploadedFile={(id) => removePendingAttachment(id)}

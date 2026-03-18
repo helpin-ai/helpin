@@ -8,13 +8,20 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/gorm"
 )
 
 // newEpicTestEnv sets up a test environment for PMEpicService tests:
 // workspace, user, workspace member (admin role), and all required repos/services.
 func newEpicTestEnv(t *testing.T) (svc *PMEpicService, wsID, userID string) {
 	t.Helper()
-	db := newTestDB(t)
+	svc, _, wsID, userID = newEpicTestEnvWithDB(t)
+	return svc, wsID, userID
+}
+
+func newEpicTestEnvWithDB(t *testing.T) (svc *PMEpicService, db *gorm.DB, wsID, userID string) {
+	t.Helper()
+	db = newTestDB(t)
 
 	wsID = "ws-epic-001"
 	userID = "user-epic-001"
@@ -32,8 +39,8 @@ func newEpicTestEnv(t *testing.T) (svc *PMEpicService, wsID, userID string) {
 	activityRepo := repository.NewPMActivityRepository(db)
 	activityService := NewPMActivityService(activityRepo)
 
-	svc = NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, workspaceRepo, activityService, nil, nil)
-	return svc, wsID, userID
+	svc = NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, repository.NewPMAttachmentRepository(db), workspaceRepo, activityService, nil, nil)
+	return svc, db, wsID, userID
 }
 
 // helper to create a basic epic for reuse across tests.
@@ -145,6 +152,35 @@ func TestPMEpicService_Create(t *testing.T) {
 		}
 	})
 
+	t.Run("create reassigns temporary attachment ids", func(t *testing.T) {
+		svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+		seedTemporaryAttachment(t, db, "attachment-epic-1", wsID, wsID, userID)
+
+		epic, err := svc.Create(ctx, model.CreateEpicRequest{
+			WorkspaceID:   wsID,
+			Name:          "Epic With Image",
+			AttachmentIDs: []string{"attachment-epic-1"},
+		}, userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		attachmentRepo := repository.NewPMAttachmentRepository(db)
+		attachment, err := attachmentRepo.GetByID(ctx, "attachment-epic-1")
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if attachment == nil {
+			t.Fatal("expected attachment")
+		}
+		if attachment.EntityType != "epic" {
+			t.Fatalf("entity_type = %q, want %q", attachment.EntityType, "epic")
+		}
+		if attachment.EntityID != epic.Epic.ID {
+			t.Fatalf("entity_id = %q, want %q", attachment.EntityID, epic.Epic.ID)
+		}
+	})
+
 	t.Run("create sets created_by", func(t *testing.T) {
 		epic, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID: wsID,
@@ -209,7 +245,7 @@ func TestPMEpicService_Create_Forbidden(t *testing.T) {
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	activityRepo := repository.NewPMActivityRepository(db)
 	activityService := NewPMActivityService(activityRepo)
-	svc := NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, workspaceRepo, activityService, nil, nil)
+	svc := NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, repository.NewPMAttachmentRepository(db), workspaceRepo, activityService, nil, nil)
 
 	// Inject a member actor (not a team owner) — members cannot create epics
 	ctx := authorization.WithActor(context.Background(), &authorization.Actor{
@@ -467,7 +503,7 @@ func TestPMEpicService_Delete_Forbidden(t *testing.T) {
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	activityRepo := repository.NewPMActivityRepository(db)
 	activityService := NewPMActivityService(activityRepo)
-	svc := NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, workspaceRepo, activityService, nil, nil)
+	svc := NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, repository.NewPMAttachmentRepository(db), workspaceRepo, activityService, nil, nil)
 
 	// Manager can create (requireCanEdit) but cannot delete (requireAdmin)
 	created := createTestEpic(t, svc, wsID, managerUserID, "Manager Epic")

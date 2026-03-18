@@ -470,7 +470,7 @@ export function DocsEditor({
           .run()
 
         try {
-          const publicUrl = await uploadEditorImage(file, uploadConfigRef.current!)
+          const upload = await uploadEditorImage(file, uploadConfigRef.current!)
 
           // Replace data-uri with permanent URL
           const { doc } = editorInstance.state
@@ -488,8 +488,9 @@ export function DocsEditor({
             if (node) {
               tr.setNodeMarkup(targetPos, undefined, {
                 ...node.attrs,
-                src: publicUrl,
+                src: upload.publicUrl,
                 title: null,
+                attachmentId: upload.attachmentId,
               })
               editorInstance.view.dispatch(tr)
             }

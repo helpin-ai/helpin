@@ -99,14 +99,18 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 	)
 
 	// 1. Resolve recipients: followers + explicit recipients
-	followers, err := s.followerRepo.GetFollowers(ctx, event.EntityType, event.EntityID)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to get followers",
-			"error", err,
-			"entity_type", event.EntityType,
-			"entity_id", event.EntityID,
-		)
-		followers = []string{}
+	followers := []string{}
+	if !event.SkipFollowers && s.followerRepo != nil {
+		var err error
+		followers, err = s.followerRepo.GetFollowers(ctx, event.EntityType, event.EntityID)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to get followers",
+				"error", err,
+				"entity_type", event.EntityType,
+				"entity_id", event.EntityID,
+			)
+			followers = []string{}
+		}
 	}
 
 	s.logger.DebugContext(ctx, "resolved followers",

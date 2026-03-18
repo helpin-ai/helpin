@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
@@ -20,23 +20,33 @@ import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
+import { Attachments } from '@/components/pm/Attachments';
 import { DatePicker } from '@/components/ui/date-picker';
+import {
+  diffRemovedInlineAttachmentIds,
+  extractInlineAttachmentIds,
+  removeInlineImagesByAttachmentIds,
+} from '@/components/pm/editorImageAttachments';
 import { StoryListView } from '@/components/pm/StoryListView';
 import { useStoryPanelStore } from '@/stores/storyPanelStore';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { EpicWithStats, EpicHealth, GitRepository, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Story, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { EpicOrchestrationPanel } from '@/components/pm/EpicOrchestrationPanel';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
-import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
+import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -190,21 +200,23 @@ export function EpicDetailPage() {
   const [pendingPatch, setPendingPatch] = useState<UpdateEpicRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [editingDescription, setEditingDescription] = useState(false);
   const [showOrchestration, setShowOrchestration] = useState(false);
+  const savedDescriptionRef = useRef('');
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
 
   const { teams, getTeamMembers, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
-  const ownerOptions = useMemo(
-    () => buildAssignableMemberOptions(assignableMembers),
-    [assignableMembers],
-  );
   const assignableMemberNames = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
+  );
+  const mentionTeams = useMemo(
+    () => filterMentionTeams(teams, form?.team_id ? [form.team_id] : []),
+    [teams, form?.team_id],
   );
 
   const openStoryPanel = useStoryPanelStore((s) => s.openStory);
@@ -228,6 +240,7 @@ export function EpicDetailPage() {
       return;
     }
     setEpic(epicRes.data);
+    savedDescriptionRef.current = epicRes.data.epic.description ?? '';
     setForm((current) => current ? current : buildForm(epicRes.data!));
     setStories(storiesRes.data ?? []);
     setAllEpics(epicsRes.data ?? []);
@@ -243,9 +256,16 @@ export function EpicDetailPage() {
 
   // Auto-save debounce
   useEffect(() => {
-    if (saving || Object.keys(pendingPatch).length === 0 || !workspaceId || !epic) return;
+    if (
+      saving ||
+      Object.keys(pendingPatch).length === 0 ||
+      !workspaceId ||
+      !epic ||
+      (pendingPatch.description !== undefined && descriptionPendingUploads > 0)
+    ) return;
     const timer = window.setTimeout(async () => {
       const patch = pendingPatch;
+      const previousDescription = savedDescriptionRef.current;
       setPendingPatch({});
       setSaving(true);
       const { data, error: err } = await pmEpicService.update(workspaceId, epic.epic.id, patch);
@@ -255,11 +275,21 @@ export function EpicDetailPage() {
       } else {
         setSaveError(null);
         setEpic(data);
+        const nextDescription = data.epic.description ?? '';
+        savedDescriptionRef.current = nextDescription;
+        if (patch.description !== undefined) {
+          const removedAttachmentIds = diffRemovedInlineAttachmentIds(previousDescription, nextDescription);
+          if (removedAttachmentIds.length > 0) {
+            await Promise.allSettled(
+              removedAttachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+            );
+          }
+        }
       }
       setSaving(false);
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [workspaceId, epic, pendingPatch, saving]);
+  }, [workspaceId, epic, pendingPatch, saving, descriptionPendingUploads]);
 
   const queuePatch = (patch: UpdateEpicRequest) => {
     setPendingPatch((current) => ({ ...current, ...patch }));
@@ -269,6 +299,48 @@ export function EpicDetailPage() {
     setForm((current) => current ? { ...current, [key]: value } : current);
     queuePatch(patch);
   };
+
+  const handleDescriptionAttachmentDelete = useCallback(
+    async (entry: AttachmentResponse) => {
+      if (!workspaceId || !epic || !form) {
+        return 'fallback' as const;
+      }
+      if (!extractInlineAttachmentIds(form.description).includes(entry.attachment.id)) {
+        return 'fallback' as const;
+      }
+      if (!window.confirm('Delete this image from the description and attachments?')) {
+        return 'prevent' as const;
+      }
+
+      const previousDescription = form.description;
+      const nextDescription = removeInlineImagesByAttachmentIds(previousDescription, [entry.attachment.id]);
+
+      setForm((current) => (current ? { ...current, description: nextDescription } : current));
+      setPendingPatch((current) => {
+        const { description, ...rest } = current;
+        return rest;
+      });
+      setSaving(true);
+
+      const { data, error: err } = await pmEpicService.update(workspaceId, epic.epic.id, {
+        description: nextDescription,
+      });
+      if (err || !data) {
+        setForm((current) => (current ? { ...current, description: previousDescription } : current));
+        setSaveError(err ?? 'Failed to save');
+        setSaving(false);
+        return 'prevent' as const;
+      }
+
+      setSaveError(null);
+      setEpic(data);
+      savedDescriptionRef.current = data.epic.description ?? '';
+      await pmAttachmentService.remove(workspaceId, entry.attachment.id);
+      setSaving(false);
+      return 'handled' as const;
+    },
+    [workspaceId, epic, form],
+  );
 
   // Derived data
   const progress = useMemo(() => {
@@ -307,7 +379,7 @@ export function EpicDetailPage() {
     for (const story of stories) {
       const ownerKey = story.owner_member_id;
       if (ownerKey) {
-        const assignable = assignableMembers.find((member) => member.id === ownerKey);
+        const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {
           personMap.set(assignable.id, {
             id: assignable.id,
@@ -418,7 +490,9 @@ export function EpicDetailPage() {
                   onChange={(html) => updateField('description', html, { description: html })}
                   placeholder="Add a description..."
                   className="border-transparent shadow-none"
-                  teams={teams}
+                  uploadConfig={{ workspaceId: workspaceId!, entityType: 'editor_upload', entityId: workspaceId! }}
+                  onUploadStateChange={setDescriptionPendingUploads}
+                  teams={mentionTeams}
                   members={assignableMembers}
                 />
                 <div className="mt-2 flex justify-end">
@@ -428,12 +502,17 @@ export function EpicDetailPage() {
                 </div>
               </div>
             ) : (
-              <div className="group/desc relative">
-                {form.description ? (
-                  <div className="prose prose-sm dark:prose-invert max-w-none text-sm" dangerouslySetInnerHTML={{ __html: form.description }} />
-                ) : (
-                  <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
-                )}
+                <div className="group/desc relative">
+                  {form.description ? (
+                    <RichTextMentionContent
+                      html={form.description}
+                      members={assignableMembers}
+                      teams={mentionTeams}
+                      className="prose prose-sm dark:prose-invert max-w-none text-sm"
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
+                  )}
                 {canEdit && (
                   <button
                     type="button"
@@ -446,6 +525,16 @@ export function EpicDetailPage() {
                 )}
               </div>
             )}
+          </div>
+
+          <div className="mt-6">
+            <Attachments
+              workspaceId={workspaceId!}
+              entityType="epic"
+              entityId={epic.epic.id}
+              memberNameMap={assignableMemberNames}
+              onDeleteAttachment={handleDescriptionAttachmentDelete}
+            />
           </div>
 
           <Separator className="my-6" />
@@ -593,17 +682,30 @@ export function EpicDetailPage() {
 
             {/* Owner */}
             <MetadataRow icon={User} label="Owner">
-              <SidebarPopoverSelect
+              <MemberPickerPopover
                 value={form.owner_member_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'Nobody' },
-                  ...ownerOptions.map((owner) => ({ value: owner.id, label: owner.name })),
-                ]}
+                members={assignableMembers}
+                noneLabel="Nobody"
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('owner_member_id', val, { owner_member_id: val || undefined });
                 }}
-                renderTrigger={() => <span>{currentOwnerName}</span>}
+                renderTrigger={() => {
+                  const selectedMember = findAssignableMember(assignableMembers, form.owner_member_id);
+                  return (
+                    <>
+                      {selectedMember ? (
+                        <UserAvatar
+                          name={selectedMember.display_name || selectedMember.email}
+                          avatarUrl={selectedMember.avatar_url}
+                          className="h-4 w-4"
+                          fallbackClassName="text-[7px]"
+                        />
+                      ) : null}
+                      <span>{currentOwnerName}</span>
+                    </>
+                  );
+                }}
               />
             </MetadataRow>
 

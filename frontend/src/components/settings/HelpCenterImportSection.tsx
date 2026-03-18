@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Check } from 'lucide-react';
@@ -148,10 +148,19 @@ export function HelpCenterImportSection({
     startPolling(jobId);
   };
 
-  const handleDownloadRedirectMap = () => {
-    const url = docsImportService.getRedirectMapUrl(workspaceId, jobId);
-    const token = localStorage.getItem('access_token');
-    window.open(`${url}&token=${encodeURIComponent(token || '')}`, '_blank');
+  const handleDownloadRedirectMap = async () => {
+    const { data, error } = await docsImportService.getRedirectMap(workspaceId, jobId);
+    if (error || !data) {
+      toast.error(error || 'Failed to download redirect map');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'redirect-map.json';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleReset = () => {
@@ -169,7 +178,6 @@ export function HelpCenterImportSection({
     setJobStatus(null);
   };
 
-  const selectedCollectionData = preview?.collections.find((c) => c.id === selectedCollection);
   const isFinished = jobStatus?.status === 'done' || jobStatus?.status === 'failed';
   const progressPercent = jobStatus && jobStatus.total > 0
     ? Math.round(((jobStatus.completed + jobStatus.failed) / jobStatus.total) * 100)
@@ -183,8 +191,8 @@ export function HelpCenterImportSection({
 
   return (
     <div className="space-y-6">
-      {/* Step indicator — shown after connecting */}
-      {step > 0 && <div className="flex items-center justify-center gap-2">
+      {/* Step indicator */}
+      <div className="flex items-center justify-center gap-2">
         {STEP_LABELS.map((label, i) => (
           <div key={label} className="flex items-center gap-2">
             {i > 0 && <div className="h-px w-8 bg-border" />}
@@ -207,15 +215,15 @@ export function HelpCenterImportSection({
             </div>
           </div>
         ))}
-      </div>}
+      </div>
 
       {/* Step 0: Connect */}
       {step === 0 && (
-        <div className="space-y-4">
+        <div className="mx-auto max-w-md rounded-lg border border-border bg-card p-6 space-y-4">
           <div className="space-y-2">
             <Label>Source</Label>
             <Select value="helpscout" disabled>
-              <SelectTrigger className="w-full">
+              <SelectTrigger>
                 <SelectValue placeholder="Select source" />
               </SelectTrigger>
               <SelectContent>
@@ -233,10 +241,10 @@ export function HelpCenterImportSection({
               disabled={!editable || connecting}
             />
             <p className="text-xs text-muted-foreground">
-              Find your API key in HelpScout → Manage → API Keys
+              Find your API key in HelpScout → Your Profile → Authentication → API Keys
             </p>
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-center">
             <Button onClick={handleConnect} disabled={!editable || connecting || !apiKey.trim()}>
               {connecting ? 'Connecting...' : 'Connect & Preview'}
             </Button>
@@ -246,25 +254,12 @@ export function HelpCenterImportSection({
 
       {/* Step 1: Configure */}
       {step === 1 && (
-        <div className="space-y-4">
-          {selectedCollectionData && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">{selectedCollectionData.name}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Found {selectedCollectionData.category_count} categories and {selectedCollectionData.article_count} articles
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {preview && preview.collections.length > 1 && (
+        <div className="mx-auto max-w-md rounded-lg border border-border bg-card p-6 space-y-4">
+          {preview && preview.collections.length > 0 && (
             <div className="space-y-2">
               <Label>Collection</Label>
-              <Select value={selectedCollection} onValueChange={setSelectedCollection}>
-                <SelectTrigger className="w-full">
+              <Select value={selectedCollection} onValueChange={setSelectedCollection} disabled={preview.collections.length === 1}>
+                <SelectTrigger>
                   <SelectValue placeholder="Select collection" />
                 </SelectTrigger>
                 <SelectContent>
@@ -341,7 +336,7 @@ export function HelpCenterImportSection({
 
       {/* Step 2: Import Progress */}
       {step === 2 && (
-        <div className="space-y-4">
+        <div className="mx-auto max-w-md rounded-lg border border-border bg-card p-6 space-y-4">
           <div className="space-y-2">
             <Progress value={progressPercent} className="h-2" />
             <p className="text-sm text-muted-foreground">
