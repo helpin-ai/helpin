@@ -84,7 +84,6 @@ func main() {
 	commentRepo := repository.NewPMCommentRepository(db)
 	checklistRepo := repository.NewPMChecklistItemRepository(db)
 	externalLinkRepo := repository.NewPMExternalLinkRepository(db)
-	attachRepo := repository.NewPMAttachmentRepository(db)
 	recurringRepo := repository.NewPMRecurringTemplateRepository(db)
 	sprintRepo := repository.NewPMSprintRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
