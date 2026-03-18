@@ -4,6 +4,7 @@ import type { Message, WidgetConfig } from '../types';
 import { MessageList } from './MessageList';
 import { ComposeBar } from './ComposeBar';
 import { TypingIndicator } from './TypingIndicator';
+import { PreChatForm } from './PreChatForm';
 import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 interface ConversationViewProps {
@@ -16,6 +17,8 @@ interface ConversationViewProps {
   typingAgentAvatar?: string;
   onBack: () => void;
   onClose?: () => void;
+  showPreChatForm?: boolean;
+  onPreChatSubmit?: (data: { name: string; email: string }) => void;
 }
 
 export const ConversationView: FunctionComponent<ConversationViewProps> = ({
@@ -28,13 +31,17 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   typingAgentAvatar,
   onBack,
   onClose,
+  showPreChatForm = false,
+  onPreChatSubmit,
 }) => {
   const [introCreatedAt] = useState(() => new Date().toISOString());
+  const [preChatDone, setPreChatDone] = useState(false);
 
   const workspaceName = config.workspaceName || 'Support';
   const logoUrl = config.branding?.logoUrl;
   const welcomeMessage = config.branding?.welcomeMessage || 'Hi there. How can we help?';
   const hasTeamReply = messages.some((message) => message.role !== 'customer');
+  const hasCustomerMessage = messages.some((message) => message.role === 'customer');
 
   // Derive the most recent responding agent from messages.
   const activeAgent = useMemo(() => {
@@ -138,6 +145,15 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           showDateSeparators={true}
           config={config}
         />
+        {showPreChatForm && !preChatDone && hasCustomerMessage && onPreChatSubmit && (
+          <PreChatForm
+            config={config}
+            onSubmit={(data) => {
+              onPreChatSubmit(data);
+              setPreChatDone(true);
+            }}
+          />
+        )}
       </div>
 
       {isTyping && (

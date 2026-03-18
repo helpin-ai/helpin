@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useOrganizationMembers } from '@/hooks/queries';
 import { workspacesService } from '@/lib/services/workspacesService';
@@ -36,10 +36,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   const [sending, setSending] = useState(false);
   const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [query, setQuery] = useState('');
-  const suggestionsRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: orgMembers } = useOrganizationMembers(organizationId);
 
@@ -54,15 +51,6 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
       (om) => !wsEmails.has(om.email.toLowerCase()) && !pendingEmails.has(om.email.toLowerCase())
     );
   }, [orgMembers, members, invitations]);
-
-  // Filter suggestions based on email input
-  const filteredSuggestions = useMemo(() => {
-    if (!invEmail) return availableOrgMembers;
-    const q = invEmail.toLowerCase();
-    return availableOrgMembers.filter(
-      (m) => m.email.toLowerCase().includes(q) || (m.full_name && m.full_name.toLowerCase().includes(q))
-    );
-  }, [availableOrgMembers, invEmail]);
 
   const teamNamesByUserId = useMemo(() => {
     const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
@@ -437,7 +425,6 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                     )}
                   </div>
                   <Textarea
-                    ref={inputRef as React.RefObject<HTMLTextAreaElement>}
                     placeholder="name@example.com, name2@example.com"
                     value={invEmail}
                     onChange={(e) => {

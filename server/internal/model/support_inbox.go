@@ -430,6 +430,7 @@ type WidgetConfigFeatures struct {
 	AIEnabled   bool `json:"aiEnabled"`
 	FileUploads bool `json:"fileUploads"`
 	PreChatForm bool `json:"preChatForm"`
+	RequireName bool `json:"requireName"`
 	CSATRating  bool `json:"csatRating"`
 }
 

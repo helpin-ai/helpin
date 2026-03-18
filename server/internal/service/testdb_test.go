@@ -740,4 +740,12 @@ func mustExec(t *testing.T, db *gorm.DB, query string, args ...any) {
 	}
 }
 
+// seedTemporaryAttachment inserts a temporary (unconfirmed) attachment into the test DB.
+func seedTemporaryAttachment(t *testing.T, db *gorm.DB, id, workspaceID, entityID, uploadedByID string) {
+	t.Helper()
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, workspaceID, "temporary", entityID, "test-file.png", 1024, "image/png", "uploads/"+id+".png", true, uploadedByID, now)
+}
+
 // min is provided by the builtin (Go 1.21+) or pm_import.go

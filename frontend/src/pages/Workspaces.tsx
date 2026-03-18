@@ -250,6 +250,7 @@ export default function Workspaces() {
         .filter((team) => team.selected && team.name.trim())
         .map((team) => ({
           name: team.name.trim(),
+          handle: team.handle.trim(),
           teamType: team.teamType,
         }));
 

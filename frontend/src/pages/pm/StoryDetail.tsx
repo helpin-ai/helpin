@@ -10,7 +10,6 @@ import {
   Check,
   CheckSquare,
   ChevronRight,
-  Copy,
   Gauge,
   Hash,
   Hexagon,

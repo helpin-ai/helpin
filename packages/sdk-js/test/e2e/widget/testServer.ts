@@ -63,6 +63,7 @@ app.get('/v1/widget/config', (req, res) => {
       aiEnabled: true,
       fileUploads: true,
       preChatForm: true,
+      requireName: true,
       csatRating: true,
     },
   });

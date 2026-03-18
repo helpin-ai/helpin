@@ -5,7 +5,7 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { cn } from '@/lib/utils';
 
 interface StorySidebarIdRowProps {
-  displayId: string;
+  displayId: string | number;
   className?: string;
 }
 
@@ -22,7 +22,7 @@ export function StorySidebarIdRow({ displayId, className }: StorySidebarIdRowPro
         size="icon"
         className="h-6 w-6 shrink-0"
         aria-label={`Copy story ID ${displayId}`}
-        onClick={() => copy(displayId)}
+        onClick={() => copy(String(displayId))}
       >
         {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
       </Button>
