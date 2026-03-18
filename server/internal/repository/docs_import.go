@@ -71,6 +71,18 @@ func (r *DocsImportRepository) UpdateStatus(ctx context.Context, id, status stri
 	return nil
 }
 
+// SetTotal updates the total article count of an import job.
+func (r *DocsImportRepository) SetTotal(ctx context.Context, id string, total int) error {
+	updates := map[string]interface{}{
+		"total":      total,
+		"updated_at": time.Now(),
+	}
+	if err := r.db.WithContext(ctx).Model(&model.DocsImportJob{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return fmt.Errorf("set docs import job total: %w", err)
+	}
+	return nil
+}
+
 // SetRedirectMap updates the redirect_map field of an import job.
 func (r *DocsImportRepository) SetRedirectMap(ctx context.Context, id string, redirectMap json.RawMessage) error {
 	updates := map[string]interface{}{

@@ -231,6 +231,11 @@ func (s *DocsHelpcenterService) GetArticle(ctx context.Context, documentID strin
 	return s.hcRepo.GetArticle(ctx, documentID)
 }
 
+// CreateArticle creates a help center article extension record.
+func (s *DocsHelpcenterService) CreateArticle(ctx context.Context, art *model.DocsHelpcenterArticle) (*model.DocsHelpcenterArticle, error) {
+	return s.hcRepo.CreateArticle(ctx, art)
+}
+
 // IncrementViewCount increments article view count.
 func (s *DocsHelpcenterService) IncrementViewCount(ctx context.Context, documentID string) error {
 	return s.hcRepo.IncrementViewCount(ctx, documentID)
