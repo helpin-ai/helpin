@@ -101,6 +101,50 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "password updated"})
 }
 
+// UploadAvatar handles POST /api/auth/me/avatar.
+func (h *AuthHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	if err := r.ParseMultipartForm(2 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "file too large (max 2MB)")
+		return
+	}
+
+	file, header, err := r.FormFile("avatar")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing avatar file")
+		return
+	}
+	defer file.Close()
+
+	contentType := header.Header.Get("Content-Type")
+	if contentType != "image/png" && contentType != "image/jpeg" && contentType != "image/webp" && contentType != "image/svg+xml" {
+		writeError(w, http.StatusBadRequest, "only PNG, JPEG, WebP, and SVG images are allowed")
+		return
+	}
+
+	profile, err := h.authService.UploadAvatar(r.Context(), userID, file, header.Size, contentType)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, profile)
+}
+
+// DeleteAvatar handles DELETE /api/auth/me/avatar.
+func (h *AuthHandler) DeleteAvatar(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	profile, err := h.authService.DeleteAvatar(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, profile)
+}
+
 // RefreshToken handles POST /api/auth/refresh.
 func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var req model.RefreshTokenRequest

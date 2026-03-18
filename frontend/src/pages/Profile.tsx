@@ -6,10 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { getInitials } from '@/lib/utils';
-import { Mail } from 'lucide-react';
+import { Camera, Loader2, Mail, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
@@ -25,6 +25,7 @@ export default function Profile() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const initials = getInitials(user?.full_name || user?.email);
 
@@ -38,6 +39,41 @@ export default function Profile() {
       toast.error('Failed to update profile');
     }
     setSaving(false);
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image must be under 2MB');
+      return;
+    }
+    setUploadingAvatar(true);
+    const { data, error } = await authService.uploadAvatar(file);
+    setUploadingAvatar(false);
+    e.target.value = '';
+    if (error || !data) {
+      toast.error(error ?? 'Upload failed');
+      return;
+    }
+    toast.success('Avatar updated');
+    useAuthStore.setState({ user: data });
+  };
+
+  const handleRemoveAvatar = async () => {
+    setUploadingAvatar(true);
+    const { data, error } = await authService.deleteAvatar();
+    setUploadingAvatar(false);
+    if (error) {
+      toast.error(error);
+    } else {
+      toast.success('Avatar removed');
+      if (data) useAuthStore.setState({ user: data });
+    }
   };
 
   const handleChangePassword = async (e: FormEvent) => {
@@ -70,15 +106,44 @@ export default function Profile() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-4">
-            <Avatar className="h-16 w-16">
-              <AvatarFallback className="text-lg">{initials}</AvatarFallback>
-            </Avatar>
+            <div className="relative group">
+              <Avatar className="h-16 w-16">
+                {user?.avatar_url && <AvatarImage src={user.avatar_url} alt={user.full_name || 'Avatar'} />}
+                <AvatarFallback className="text-lg">{initials}</AvatarFallback>
+              </Avatar>
+              <label className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                {uploadingAvatar ? (
+                  <Loader2 className="h-5 w-5 text-white animate-spin" />
+                ) : (
+                  <Camera className="h-5 w-5 text-white" />
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarUpload}
+                  disabled={uploadingAvatar}
+                />
+              </label>
+            </div>
             <div>
               <CardTitle>{user?.full_name || 'User'}</CardTitle>
               <CardDescription className="flex items-center gap-1">
                 <Mail className="h-3 w-3" />
                 {user?.email}
               </CardDescription>
+              {user?.avatar_url && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 mt-1 text-xs text-destructive hover:text-destructive p-0"
+                  onClick={handleRemoveAvatar}
+                  disabled={uploadingAvatar}
+                >
+                  <Trash2 className="h-3 w-3 mr-1" />
+                  Remove photo
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>

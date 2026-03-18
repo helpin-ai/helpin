@@ -1,4 +1,4 @@
-import { api } from '../api';
+import { api, API_BASE } from '../api';
 import type { AuthResponse, User } from '../types';
 
 export const authService = {
@@ -19,4 +19,25 @@ export const authService = {
     api.post<{ message: string }>('/auth/reset-password', { token, password }),
   verifyEmail: (token: string) =>
     api.post<{ message: string }>('/auth/verify-email', { token }),
+  uploadAvatar: async (file: File): Promise<{ data: User | null; error: string | null }> => {
+    const token = localStorage.getItem('access_token');
+    const formData = new FormData();
+    formData.append('avatar', file);
+    try {
+      const res = await fetch(`${API_BASE}/auth/me/avatar`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        return { data: null, error: err.error || res.statusText };
+      }
+      const data = await res.json();
+      return { data, error: null };
+    } catch (e) {
+      return { data: null, error: e instanceof Error ? e.message : 'Upload failed' };
+    }
+  },
+  deleteAvatar: () => api.del<User>('/auth/me/avatar'),
 };

@@ -3,13 +3,17 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"unicode"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 )
 
 // AuthService handles authentication business logic.
@@ -17,15 +21,17 @@ type AuthService struct {
 	userRepo         *repository.UserRepository
 	organizationRepo *repository.OrganizationRepository
 	jwtManager       *auth.JWTManager
+	s3Client         *storage.S3Client
 	logger           *slog.Logger
 }
 
 // NewAuthService creates a new AuthService.
-func NewAuthService(userRepo *repository.UserRepository, organizationRepo *repository.OrganizationRepository, jwtManager *auth.JWTManager) *AuthService {
+func NewAuthService(userRepo *repository.UserRepository, organizationRepo *repository.OrganizationRepository, jwtManager *auth.JWTManager, s3Client *storage.S3Client) *AuthService {
 	return &AuthService{
 		userRepo:         userRepo,
 		organizationRepo: organizationRepo,
 		jwtManager:       jwtManager,
+		s3Client:         s3Client,
 		logger:           slog.Default().With("service", "auth"),
 	}
 }
@@ -170,6 +176,74 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req mode
 	if err != nil {
 		return nil, fmt.Errorf("update profile: %w", err)
 	}
+	profile := toUserProfile(user)
+	return &profile, nil
+}
+
+// UploadAvatar uploads a user avatar to S3 and saves the public URL.
+func (s *AuthService) UploadAvatar(ctx context.Context, userID string, body io.Reader, size int64, contentType string) (*model.UserProfile, error) {
+	if s.s3Client == nil {
+		return nil, fmt.Errorf("file storage not configured")
+	}
+
+	// Delete old avatar from S3 if it exists.
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("upload avatar: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if user.AvatarURL != nil && *user.AvatarURL != "" {
+		oldKey := fmt.Sprintf("users/%s/avatar/%s", userID, filepath.Base(*user.AvatarURL))
+		_ = s.s3Client.DeleteObject(ctx, oldKey)
+	}
+
+	ext := ".png"
+	switch contentType {
+	case "image/jpeg":
+		ext = ".jpg"
+	case "image/webp":
+		ext = ".webp"
+	case "image/svg+xml":
+		ext = ".svg"
+	}
+	key := fmt.Sprintf("users/%s/avatar/%s%s", userID, uuid.New().String(), ext)
+
+	if err := s.s3Client.PutObject(ctx, key, contentType, size, body, true); err != nil {
+		return nil, fmt.Errorf("upload avatar: %w", err)
+	}
+
+	avatarURL := s.s3Client.PublicURL(key)
+	user, err = s.userRepo.Update(ctx, userID, nil, &avatarURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("upload avatar: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "avatar uploaded", "user_id", userID)
+	profile := toUserProfile(user)
+	return &profile, nil
+}
+
+// DeleteAvatar removes the user's avatar.
+func (s *AuthService) DeleteAvatar(ctx context.Context, userID string) (*model.UserProfile, error) {
+	// Delete old avatar from S3 if it exists.
+	existing, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("delete avatar: %w", err)
+	}
+	if existing != nil && existing.AvatarURL != nil && *existing.AvatarURL != "" && s.s3Client != nil {
+		oldKey := fmt.Sprintf("users/%s/avatar/%s", userID, filepath.Base(*existing.AvatarURL))
+		_ = s.s3Client.DeleteObject(ctx, oldKey)
+	}
+
+	emptyURL := ""
+	user, err := s.userRepo.Update(ctx, userID, nil, &emptyURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("delete avatar: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "avatar deleted", "user_id", userID)
 	profile := toUserProfile(user)
 	return &profile, nil
 }
