@@ -229,25 +229,8 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 		"user_id", userID,
 	)
 
-	// Auto-assign teams from preassignments
-	preassignments, err := s.settingsRepo.GetInvitationTeamPreassignmentsByInvitation(ctx, inv.ID)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to get invitation team preassignments",
-			"error", err,
-			"invitation_id", inv.ID,
-		)
-	} else {
-		for _, pa := range preassignments {
-			if _, err := s.settingsRepo.AddTeamUserMembership(ctx, pa.TeamID, userID, "member"); err != nil {
-				s.logger.ErrorContext(ctx, "failed to auto-assign team",
-					"error", err,
-					"team_id", pa.TeamID,
-					"invitation_id", inv.ID,
-					"user_id", userID,
-				)
-			}
-		}
-	}
+	// Auto-assign teams
+	s.autoAssignTeams(ctx, inv, userID)
 
 	// Update invitation status
 	now := time.Now()
@@ -327,24 +310,8 @@ func (s *InviteService) AcceptInvitationWithSignup(ctx context.Context, req mode
 		"user_id", user.ID,
 	)
 
-	preassignments, err := s.settingsRepo.GetInvitationTeamPreassignmentsByInvitation(ctx, inv.ID)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to get invitation team preassignments",
-			"error", err,
-			"invitation_id", inv.ID,
-		)
-	} else {
-		for _, pa := range preassignments {
-			if _, err := s.settingsRepo.AddTeamUserMembership(ctx, pa.TeamID, user.ID, "member"); err != nil {
-				s.logger.ErrorContext(ctx, "failed to auto-assign team",
-					"error", err,
-					"team_id", pa.TeamID,
-					"invitation_id", inv.ID,
-					"user_id", user.ID,
-				)
-			}
-		}
-	}
+	// Auto-assign teams
+	s.autoAssignTeams(ctx, inv, user.ID)
 
 	now := time.Now()
 	if err := s.invitationRepo.UpdateStatus(ctx, inv.ID, "accepted", &now); err != nil {
@@ -520,6 +487,56 @@ func (s *InviteService) RevokeInvitation(ctx context.Context, invitationID, user
 }
 
 // ensureOrgMembership adds the user to the workspace's organization if they aren't already a member.
+// autoAssignTeams handles team assignment on invite acceptance.
+// Admins and owners are added to ALL workspace teams.
+// Other roles are added only to preassigned teams.
+func (s *InviteService) autoAssignTeams(ctx context.Context, inv *model.WorkspaceInvitation, userID string) {
+	isAdminOrOwner := inv.Role == model.RoleAdmin || inv.Role == model.RoleOwner
+
+	if isAdminOrOwner {
+		// Add admin/owner to every team in the workspace.
+		teams, err := s.settingsRepo.ListTeams(ctx, inv.WorkspaceID)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to list teams for admin auto-assign",
+				"error", err,
+				"workspace_id", inv.WorkspaceID,
+				"user_id", userID,
+			)
+			return
+		}
+		for _, team := range teams {
+			if _, err := s.settingsRepo.AddTeamUserMembership(ctx, team.ID, userID, "member"); err != nil {
+				s.logger.ErrorContext(ctx, "failed to auto-assign admin to team",
+					"error", err,
+					"team_id", team.ID,
+					"user_id", userID,
+				)
+			}
+		}
+		return
+	}
+
+	// Non-admin: use preassignments only.
+	preassignments, err := s.settingsRepo.GetInvitationTeamPreassignmentsByInvitation(ctx, inv.ID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to get invitation team preassignments",
+			"error", err,
+			"invitation_id", inv.ID,
+		)
+		return
+	}
+	for _, pa := range preassignments {
+		if _, err := s.settingsRepo.AddTeamUserMembership(ctx, pa.TeamID, userID, "member"); err != nil {
+			s.logger.ErrorContext(ctx, "failed to auto-assign team",
+				"error", err,
+				"team_id", pa.TeamID,
+				"invitation_id", inv.ID,
+				"user_id", userID,
+			)
+		}
+	}
+}
+
 func (s *InviteService) ensureOrgMembership(ctx context.Context, workspaceID, userID string) {
 	ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
 	if err != nil || ws == nil || ws.OrganizationID == nil {

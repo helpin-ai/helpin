@@ -22,6 +22,20 @@ func NewSettingsRepository(db *gorm.DB) *SettingsRepository {
 	return &SettingsRepository{db: db}
 }
 
+// ListAdminOwnerUserIDs returns user IDs of active workspace members with admin or owner roles.
+func (r *SettingsRepository) ListAdminOwnerUserIDs(ctx context.Context, workspaceID string) ([]string, error) {
+	var userIDs []string
+	err := r.db.WithContext(ctx).
+		Table("workspace_members").
+		Select("user_id").
+		Where("workspace_id = ? AND status = ? AND role IN (?, ?) AND user_id IS NOT NULL", workspaceID, model.WorkspaceMemberStatusActive, model.RoleAdmin, model.RoleOwner).
+		Scan(&userIDs).Error
+	if err != nil {
+		return nil, fmt.Errorf("list admin/owner user ids: %w", err)
+	}
+	return userIDs, nil
+}
+
 // GetAll returns the full workspace configuration.
 func (r *SettingsRepository) GetAll(ctx context.Context, workspaceID string) (*model.FullWorkspaceConfig, error) {
 	cfg := &model.FullWorkspaceConfig{}

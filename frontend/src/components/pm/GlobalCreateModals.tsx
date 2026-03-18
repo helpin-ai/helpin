@@ -39,6 +39,11 @@ import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { EpicHealth, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
+import {
+  dismissSprintAutomationPrompt,
+  shouldPromptSprintAutomation,
+  type SprintAutomationPromptState,
+} from '@/components/pm/sprintAutomationPrompt';
 
 const healthOptions: EpicHealth[] = ['no_health', 'on_track', 'at_risk', 'off_track'];
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
@@ -304,15 +309,9 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [automationPrompt, setAutomationPrompt] = useState<{
-    teamId: string;
-    teamName: string;
-    sprintCount: number;
-    weeks: number;
-    startDay: number;
-    moveUnfinished: boolean;
-  } | null>(null);
+  const [automationPrompt, setAutomationPrompt] = useState<SprintAutomationPromptState | null>(null);
   const [enablingAutomation, setEnablingAutomation] = useState(false);
+  const [dismissingAutomation, setDismissingAutomation] = useState(false);
 
   const create = async () => {
     if (!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting) return;
@@ -337,10 +336,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
     if (form.teamId) {
       try {
         const { data: automations } = await pmAutomationService.list(workspaceId);
-        const hasAutoCreate = automations?.some(
-          (a) => a.automation_type === 'sprint_auto_create' && a.team_id === form.teamId
-        );
-        if (!hasAutoCreate) {
+        if (shouldPromptSprintAutomation(automations, form.teamId)) {
           const team = teams.find((t) => t.id === form.teamId);
           const start = new Date(form.startDate);
           const end = new Date(form.endDate);
@@ -369,9 +365,8 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
   const enableAutomations = async () => {
     if (!automationPrompt) return;
     setEnablingAutomation(true);
-
-    const promises = [
-      pmAutomationService.upsert(workspaceId, {
+    try {
+      const createResult = await pmAutomationService.upsert(workspaceId, {
         workspace_id: workspaceId,
         automation_type: 'sprint_auto_create',
         enabled: true,
@@ -379,31 +374,75 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
         config_int: automationPrompt.sprintCount,
         config_int2: automationPrompt.weeks,
         config_int3: automationPrompt.startDay,
-      }),
-    ];
+      });
+      if (createResult.error) {
+        toast.error(createResult.error);
+        return;
+      }
 
-    if (automationPrompt.moveUnfinished) {
-      promises.push(
-        pmAutomationService.upsert(workspaceId, {
+      if (automationPrompt.moveUnfinished) {
+        const moveResult = await pmAutomationService.upsert(workspaceId, {
           workspace_id: workspaceId,
           automation_type: 'sprint_move_unfinished',
           enabled: true,
           team_id: automationPrompt.teamId,
-        }),
-      );
-    }
+        });
+        if (moveResult.error) {
+          const rollbackResult = await pmAutomationService.remove(
+            workspaceId,
+            'sprint_auto_create',
+            automationPrompt.teamId,
+          );
+          if (rollbackResult.error) {
+            toast.error(`${moveResult.error} Rollback failed: ${rollbackResult.error}`);
+          } else {
+            toast.error(moveResult.error);
+          }
+          return;
+        }
+      }
 
-    await Promise.all(promises);
-    setEnablingAutomation(false);
-    toast.success('Sprint automation enabled for ' + automationPrompt.teamName);
-    onClose();
+      toast.success('Sprint automation enabled for ' + automationPrompt.teamName);
+      onClose();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to enable sprint automation';
+      toast.error(message);
+    } finally {
+      setEnablingAutomation(false);
+    }
+  };
+
+  const dismissAutomations = async () => {
+    if (!automationPrompt) return;
+    setDismissingAutomation(true);
+    try {
+      await dismissSprintAutomationPrompt({
+        workspaceId,
+        prompt: automationPrompt,
+        upsert: pmAutomationService.upsert,
+      });
+      toast.success('Sprint automation dismissed');
+      onClose();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save sprint automation preference';
+      toast.error(message);
+    } finally {
+      setDismissingAutomation(false);
+    }
   };
 
   const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   if (automationPrompt) {
     return (
-      <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (open) return;
+          if (enablingAutomation || dismissingAutomation) return;
+          void dismissAutomations();
+        }}
+      >
         <DialogContent className="max-w-sm">
           <div className="space-y-5">
             <div>
@@ -471,10 +510,10 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             </p>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={onClose} disabled={enablingAutomation}>
+              <Button variant="outline" size="sm" onClick={dismissAutomations} disabled={enablingAutomation || dismissingAutomation}>
                 No thanks
               </Button>
-              <Button size="sm" onClick={enableAutomations} disabled={enablingAutomation}>
+              <Button size="sm" onClick={enableAutomations} disabled={enablingAutomation || dismissingAutomation}>
                 {enablingAutomation ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
                 {enablingAutomation ? 'Enabling...' : 'Enable'}
               </Button>

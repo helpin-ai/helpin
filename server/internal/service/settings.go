@@ -109,6 +109,22 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 			return nil, err
 		}
 	}
+	// Auto-add workspace admins and owners to the new team.
+	adminIDs, err := s.settingsRepo.ListAdminOwnerUserIDs(ctx, req.WorkspaceID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to list admins for team auto-add", "error", err, "team_id", team.ID)
+		// Non-fatal: team was created, admins can be added manually.
+	} else {
+		for _, uid := range adminIDs {
+			if uid == actorUserID {
+				continue // already added as owner
+			}
+			if _, err := s.settingsRepo.AddTeamUserMembership(ctx, team.ID, uid, "member"); err != nil {
+				s.logger.ErrorContext(ctx, "failed to auto-add admin to team", "error", err, "team_id", team.ID, "user_id", uid)
+				// Non-fatal: continue with remaining admins.
+			}
+		}
+	}
 	// Seed a default workflow for the new team.
 	if s.pmWorkflowService != nil {
 		if err := s.pmWorkflowService.SeedTeamWorkflow(ctx, req.WorkspaceID, team.ID, req.Name); err != nil {

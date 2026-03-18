@@ -65,6 +65,24 @@ func newWorkspaceTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService) {
 	return db, svc
 }
 
+func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService, *repository.PMAutomationRepository, *repository.PMWorkflowRepository) {
+	t.Helper()
+	db := newTestDB(t)
+	wsRepo := repository.NewWorkspaceRepository(db)
+	attachRepo := repository.NewPMAttachmentRepository(db)
+	workflowRepo := repository.NewPMWorkflowRepository(db)
+	labelRepo := repository.NewPMLabelRepository(db)
+	automationRepo := repository.NewPMAutomationRepository(db)
+
+	pmWorkflowService := NewPMWorkflowService(workflowRepo, nil, labelRepo)
+	pmAutomationService := NewPMAutomationService(automationRepo, nil, nil, nil, workflowRepo, nil, nil)
+	defaults := NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService)
+	svc := NewWorkspaceService(wsRepo, attachRepo, nil, defaults)
+
+	seedUser(t, db, "owner-1", "owner@test.com", "Test Owner", "hashed")
+	return db, svc, automationRepo, workflowRepo
+}
+
 func TestWorkspaceService_Create(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
@@ -96,6 +114,69 @@ func TestWorkspaceService_Create(t *testing.T) {
 	}
 	if ws.ID == "" {
 		t.Error("ID should be non-empty")
+	}
+}
+
+func TestWorkspaceService_Create_SeedsDefaultEpicAutomations(t *testing.T) {
+	_, svc, automationRepo, workflowRepo := newWorkspaceDefaultsTestHarness(t)
+	ctx := context.Background()
+
+	ws, err := svc.Create(ctx, model.CreateWorkspaceRequest{
+		Name: "Automation Defaults",
+		Slug: "automation-defaults",
+	}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	epicStates, err := workflowRepo.ListEpicStates(ctx, ws.ID)
+	if err != nil {
+		t.Fatalf("ListEpicStates: %v", err)
+	}
+
+	stateByType := map[string]string{}
+	for _, state := range epicStates {
+		if _, exists := stateByType[state.StateType]; !exists {
+			stateByType[state.StateType] = state.ID
+		}
+	}
+
+	automations, err := automationRepo.ListByWorkspace(ctx, ws.ID)
+	if err != nil {
+		t.Fatalf("ListByWorkspace: %v", err)
+	}
+
+	automationByType := map[string]model.PMAutomation{}
+	for _, automation := range automations {
+		automationByType[automation.AutomationType] = automation
+	}
+
+	autoStart, ok := automationByType[model.PMAutomationTypeEpicAutoStart]
+	if !ok {
+		t.Fatal("expected epic_auto_start automation to be seeded")
+	}
+	if !autoStart.Enabled {
+		t.Fatal("expected epic_auto_start automation to be enabled")
+	}
+	if autoStart.TeamID != nil {
+		t.Fatalf("expected epic_auto_start automation to be workspace-scoped, got team_id=%v", autoStart.TeamID)
+	}
+	if autoStart.ConfigStateID == nil || *autoStart.ConfigStateID != stateByType[model.PMStateTypeStarted] {
+		t.Fatalf("epic_auto_start config_state_id = %v, want %q", autoStart.ConfigStateID, stateByType[model.PMStateTypeStarted])
+	}
+
+	autoComplete, ok := automationByType[model.PMAutomationTypeEpicAutoComplete]
+	if !ok {
+		t.Fatal("expected epic_auto_complete automation to be seeded")
+	}
+	if !autoComplete.Enabled {
+		t.Fatal("expected epic_auto_complete automation to be enabled")
+	}
+	if autoComplete.TeamID != nil {
+		t.Fatalf("expected epic_auto_complete automation to be workspace-scoped, got team_id=%v", autoComplete.TeamID)
+	}
+	if autoComplete.ConfigStateID == nil || *autoComplete.ConfigStateID != stateByType[model.PMStateTypeDone] {
+		t.Fatalf("epic_auto_complete config_state_id = %v, want %q", autoComplete.ConfigStateID, stateByType[model.PMStateTypeDone])
 	}
 }
 

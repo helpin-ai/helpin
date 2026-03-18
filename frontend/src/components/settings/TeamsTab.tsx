@@ -740,7 +740,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             icon: Settings2,
             title: 'General',
             description: 'Name, identifier, team type, and story defaults',
-            meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', normalizeTeamType(selectedTeam.team_type) === 'engineering' ? 'Engineering' : 'Other', STORY_TYPE_LABELS[selectedTeam.default_story_type ?? 'feature']]
+            meta: [selectedTeam.handle ? `@${selectedTeam.handle}` : '', normalizeTeamType(selectedTeam.team_type) === 'engineering' ? 'Engineering / dev team' : 'Non-engineering team']
               .filter(Boolean)
               .join(' · '),
             action: () => openEdit(selectedTeam),
@@ -784,10 +784,21 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             title: 'Workflow states',
             description: 'Manage workflow states for this team',
             meta: workflowMeta,
-            action: () => {
+            action: async () => {
+              // If team is using the shared workspace default, resolve a team-specific copy first.
+              if (!teamOwnWorkflow && selectedTeam) {
+                const { data: resolved } = await pmWorkflowService.resolveTeamWorkflow(workspaceId, selectedTeam.id);
+                if (resolved) {
+                  setWorkflows((prev) => {
+                    const exists = prev.some((w) => w.workflow.id === resolved.workflow.id);
+                    return exists ? prev.map((w) => w.workflow.id === resolved.workflow.id ? resolved : w) : [...prev, resolved];
+                  });
+                }
+              }
               setWorkflowDialogOpen(true);
-              if (activeTeamWorkflow) {
-                automationRuleService.listByWorkflow(workspaceId, activeTeamWorkflow.workflow.id).then((res) => {
+              const wf = teamOwnWorkflow ?? workflows.find((w) => !w.workflow.team_id);
+              if (wf) {
+                automationRuleService.listByWorkflow(workspaceId, wf.workflow.id).then((res) => {
                   if (res.data) setPipelineRules(res.data);
                 });
               }
@@ -975,15 +986,17 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   <Label>Name</Label>
                   <Input value={name} onChange={e => setName(e.target.value)} required />
                 </div>
-                <div className="space-y-2">
-                  <Label>Handle</Label>
-                  <Input
-                    value={handle}
-                    onChange={e => setHandle(e.target.value)}
-                    placeholder={slugifyTeamHandle(name) || 'growth'}
-                  />
-                  <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
-                </div>
+                {editTeam && (
+                  <div className="space-y-2">
+                    <Label>Handle</Label>
+                    <Input
+                      value={handle}
+                      onChange={e => setHandle(e.target.value)}
+                      placeholder={slugifyTeamHandle(name) || 'growth'}
+                    />
+                    <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
                   <Textarea
@@ -1003,7 +1016,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   <div className="space-y-1">
                     <Label htmlFor="engineering-team" className="cursor-pointer leading-tight">This is an engineering / dev team</Label>
                     <p className="text-xs text-muted-foreground">
-                      Engineering teams get fibonacci estimates, sprints, epics, delivery tracking, and GitHub integration enabled by default. Non-engineering teams start with a simpler setup.
+                      Engineering teams get development workflows, GitHub integration, and pre-defined settings. Non-engineering teams start with a simpler setup.
                     </p>
                   </div>
                 </div>
@@ -1533,12 +1546,20 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                         })()}
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-muted-foreground">
-                          {(() => {
-                            const wf = workflows.find((w) => w.workflow.team_id === team.id);
-                            return wf ? `${wf.states.length} states` : '\u2014';
-                          })()}
-                        </span>
+                        {(() => {
+                          const wf = workflows.find((w) => w.workflow.team_id === team.id);
+                          if (!wf) return <span className="text-sm text-muted-foreground/50">&mdash;</span>;
+                          return (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-sm text-muted-foreground cursor-default">{wf.states.length} states</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {wf.states.map((s) => s.name).join(' → ')}
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         {(() => {
@@ -1574,15 +1595,6 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               <div className="space-y-2">
                 <Label>Name</Label>
                 <Input value={name} onChange={e => setName(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Handle</Label>
-                <Input
-                  value={handle}
-                  onChange={e => setHandle(e.target.value)}
-                  placeholder={slugifyTeamHandle(name) || 'growth'}
-                />
-                <p className="text-xs text-muted-foreground">Used for mentions like @{slugifyTeamHandle(handle || name) || 'team'}.</p>
               </div>
               <div className="space-y-2">
                 <Label>Description <span className="text-muted-foreground font-normal">(optional)</span></Label>

@@ -444,7 +444,7 @@ func main() {
 	}()
 
 	// Initialize services.
-	authService := service.NewAuthService(userRepo, jwtManager)
+	authService := service.NewAuthService(userRepo, orgRepo, jwtManager)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
 	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
@@ -637,7 +637,7 @@ func main() {
 	_ = signalDetectionService // Used by Temporal workers
 
 	orgService := service.NewOrganizationService(orgRepo)
-	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, crmDealService, supportInboxService)
+	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
