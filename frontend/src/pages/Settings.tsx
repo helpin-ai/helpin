@@ -24,9 +24,10 @@ import {
   AIAutomationsTab,
   ChatGeneralTab,
   ChatAITab,
+  RedirectsTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -97,6 +98,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Help Center',
     description: 'Configure your public help center branding, domain, and SEO.',
     icon: Globe,
+    group: 'Support & Docs',
+  },
+  {
+    id: 'redirects',
+    label: 'Redirects',
+    description: 'Manage URL redirects for the public help center.',
+    icon: RefreshCw,
     group: 'Support & Docs',
   },
   {
@@ -282,6 +290,8 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <ImportTab workspaceId={workspaceId} editable={canImport} />;
       case 'helpcenter':
         return <HelpcenterTab workspaceId={workspaceId} workspaceName={currentWorkspace?.name ?? ''} />;
+      case 'redirects':
+        return <RedirectsTab workspaceId={workspaceId} editable={canManageSettings} />;
       case 'crm-pipelines':
         return <PipelineSettings />;
       case 'crm-email':
