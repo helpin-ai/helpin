@@ -228,8 +228,6 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
               }
               handleNavigate(view);
             }}
-            showPreChatForm={showPreChatForm}
-            onPreChatSubmit={onPreChatSubmit}
           />
         )}
         {activeView === 'conversation' && (
@@ -243,6 +241,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             typingAgentAvatar={typingAgentAvatar}
             onBack={() => setActiveView(previousView)}
             onClose={onClose}
+            showPreChatForm={showPreChatForm}
+            onPreChatSubmit={onPreChatSubmit}
           />
         )}
         {activeView === 'messages' && (

@@ -418,6 +418,7 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			AIEnabled:   settings.AIEnabled,
 			FileUploads: false,
 			PreChatForm: settings.RequireEmailBeforeChat,
+			RequireName: settings.RequireNameAfterEmail,
 			CSATRating:  settings.CSATEnabled,
 		},
 		HelpSpaces: helpSpaces,
