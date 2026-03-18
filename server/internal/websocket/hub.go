@@ -223,6 +223,10 @@ func (h *Hub) Broadcast(event Event) {
 		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start", Data: event.Data})
 	case event.Entity == "support_conversation" && event.Action == "typing_stopped":
 		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:stop"})
+	case event.Entity == "support_conversation" && event.Action == "ai_thinking_started":
+		widgetData, _ = json.Marshal(widgetMessage{Type: "ai:thinking:start"})
+	case event.Entity == "support_conversation" && event.Action == "ai_thinking_stopped":
+		widgetData, _ = json.Marshal(widgetMessage{Type: "ai:thinking:stop"})
 	case event.Entity == "support_widget" && event.Action == "config_updated" && len(event.Data) > 0:
 		widgetData, _ = json.Marshal(widgetMessage{Type: "config:updated", Data: event.Data})
 	case event.Entity == "support_visitor_conversations" && event.Action == "updated" && len(event.Data) > 0:

@@ -232,3 +232,26 @@ export function useDeleteConversation(workspaceId: string) {
     },
   });
 }
+
+export function useAgentKnowledgeSources(workspaceId: string, agentId?: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.knowledgeSources(workspaceId, agentId ?? ''),
+    queryFn: async () => unwrap(await agentService.listKnowledgeSources(workspaceId, agentId!)),
+    enabled: !!workspaceId && !!agentId,
+    staleTime: 60_000,
+  });
+}
+
+export function useUpdateAgentKnowledgeSources(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, spaceIds }: { agentId: string; spaceIds: string[] }) =>
+      agentService.updateKnowledgeSources(workspaceId, agentId, spaceIds).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.knowledgeSources(workspaceId, variables.agentId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update knowledge sources', { description: error.message });
+    },
+  });
+}

@@ -71,4 +71,9 @@ export const agentService = {
     api.post<KickoffExecutionResult>(`/pm/epics/${epicId}/kickoff-execution${qs(workspaceId)}`, { run_id: runId, story_ids: storyIds ?? [] }),
   assignOrchestrator: (workspaceId: string, epicId: string, agentId: string) =>
     api.post(`/pm/epics/${epicId}/assign-orchestrator${qs(workspaceId)}`, { agent_id: agentId }),
+  // Knowledge Sources
+  listKnowledgeSources: (workspaceId: string, agentId: string) =>
+    api.get<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`),
+  updateKnowledgeSources: (workspaceId: string, agentId: string, spaceIds: string[]) =>
+    api.put<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`, { space_ids: spaceIds }),
 };

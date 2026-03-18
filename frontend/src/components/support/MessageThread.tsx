@@ -351,8 +351,8 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         </div>
       )}
 
-      {/* Agent runs (if any) */}
-      {agentRuns.length > 0 && (
+      {/* Agent runs — hidden for AI-first conversations (ai_state is set) */}
+      {agentRuns.length > 0 && !conversation?.ai_state && (
         <div className="border-b px-4 py-2">
           <AgentRunsCard
             workspaceId={workspaceId}

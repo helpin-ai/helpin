@@ -13,6 +13,7 @@ interface ConversationViewProps {
   onSendMessage: (content: string) => void;
   onTyping?: (content: string) => void;
   isTyping?: boolean;
+  isAIThinking?: boolean;
   typingAgentName?: string;
   typingAgentAvatar?: string;
   onBack: () => void;
@@ -27,6 +28,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   onSendMessage,
   onTyping,
   isTyping = false,
+  isAIThinking = false,
   typingAgentName,
   typingAgentAvatar,
   onBack,
@@ -109,9 +111,9 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
               </>
             ) : (
               <>
-                <span className="helpin-conversation-title">{workspaceName}</span>
+                <span className="helpin-conversation-title">{config.features?.aiEnabled ? 'Helpin' : workspaceName}</span>
                 {config.features?.aiEnabled && (
-                  <span className="helpin-conversation-subtitle">The team can also help</span>
+                  <span className="helpin-conversation-subtitle">Our bot will reply instantly</span>
                 )}
               </>
             )}
@@ -156,11 +158,23 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         )}
       </div>
 
-      {isTyping && (
+      {isTyping && !isAIThinking && (
         <TypingIndicator
           agentName={typingAgentName}
           agentAvatar={typingAgentAvatar}
         />
+      )}
+      {isAIThinking && (
+        <div className="helpin-ai-thinking">
+          <div className="helpin-ai-thinking-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22" />
+              <path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93" />
+            </svg>
+          </div>
+          <span className="helpin-ai-thinking-text">Thinking</span>
+          <span className="helpin-ai-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+        </div>
       )}
       <ComposeBar onSend={onSendMessage} onTyping={onTyping} />
     </div>

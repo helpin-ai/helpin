@@ -355,6 +355,17 @@ func (r *SupportConversationRepository) Update(ctx context.Context, conversation
 	return nil
 }
 
+// UpdateFields updates specific fields on a conversation by ID and workspace.
+func (r *SupportConversationRepository) UpdateFields(ctx context.Context, workspaceID, conversationID string, fields map[string]any) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportConversation{}).
+		Where("id = ? AND workspace_id = ?", conversationID, workspaceID).
+		Updates(fields).Error; err != nil {
+		return fmt.Errorf("update conversation fields: %w", err)
+	}
+	return nil
+}
+
 // UpdateSubject updates only the subject of a conversation.
 func (r *SupportConversationRepository) UpdateSubject(ctx context.Context, id, subject string) error {
 	if err := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("id = ?", id).Update("subject", subject).Error; err != nil {

@@ -1,8 +1,8 @@
-import { memo } from 'react';
-import { Bot, StickyNote } from 'lucide-react';
+import { memo, useMemo, useState } from 'react';
+import { Bot, ChevronDown, ChevronUp, FileText, StickyNote } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
-import type { SupportMessage, TicketSource } from '@/lib/pmTypes';
+import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { formatTimestamp, getInitial } from './helpers';
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -36,6 +36,17 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   const fullTimestamp = formatTimestamp(message.created_at);
   const senderLabel = SENDER_TYPE_LABELS[message.sender_type] ?? message.sender_type;
   const sourceLabel = source ? SOURCE_LABELS[source] ?? source : null;
+
+  // Parse AI metadata if present
+  const aiMeta = useMemo<AIMessageMetadata | null>(() => {
+    if (!message.metadata) return null;
+    try {
+      const meta = JSON.parse(message.metadata);
+      return meta.ai_auto_reply ? meta : null;
+    } catch { return null; }
+  }, [message.metadata]);
+
+  const [sourcesOpen, setSourcesOpen] = useState(false);
 
   const tooltipContent = (
     <div className="space-y-0.5 text-xs">
@@ -139,6 +150,37 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
             {tooltipContent}
           </TooltipContent>
         </Tooltip>
+
+        {/* AI metadata: confidence badge + collapsible sources */}
+        {aiMeta && (
+          <div className={`mt-1 ${isCustomer ? '' : 'text-right'}`}>
+            <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
+                {(aiMeta.ai_confidence * 100).toFixed(0)}% confident
+              </span>
+              {aiMeta.ai_sources?.length > 0 && (
+                <button
+                  onClick={() => setSourcesOpen(!sourcesOpen)}
+                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 hover:bg-muted"
+                >
+                  <FileText className="h-3 w-3" />
+                  {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
+                  {sourcesOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                </button>
+              )}
+            </div>
+            {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
+              <div className="mt-1.5 space-y-1 rounded-lg border bg-muted/50 p-2 text-left text-xs">
+                {aiMeta.ai_sources.map((src) => (
+                  <div key={src.docId} className="flex items-start gap-1.5">
+                    <FileText className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className="font-medium">{src.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Right side: avatar or spacer (agent/user messages) */}

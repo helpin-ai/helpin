@@ -380,7 +380,36 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
 
-	go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID)
+	// Branch on ai_response_mode: AI-first publishes to JetStream, manual-assist runs existing path.
+	inst, instErr := s.installationRepo.GetByWorkspace(ctx, session.WorkspaceID)
+	settings := model.DefaultSupportInboxSettings()
+	if instErr == nil && inst != nil {
+		settings = parseSettings(inst.Settings)
+	}
+
+	if settings.AIEnabled && settings.AIResponseMode == "ai_first" && settings.AIAgentID != nil && s.supportAIService != nil {
+		// AI-first path: publish to JetStream for worker consumer
+		if pubErr := s.supportAIService.PublishAIRequest(ctx, session.WorkspaceID, *session.ConversationID, msg.ID, msg.Content); pubErr != nil {
+			slog.ErrorContext(ctx, "failed to publish AI request event",
+				"workspace_id", session.WorkspaceID,
+				"conversation_id", *session.ConversationID,
+				"error", pubErr,
+			)
+			// Fallback to manual-assist path on publish failure
+			go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID)
+		}
+
+		// Set AI state to pending and assign AI agent
+		agentID := strings.TrimSpace(*settings.AIAgentID)
+		pending := "pending"
+		_ = s.conversationRepo.UpdateFields(ctx, session.WorkspaceID, *session.ConversationID, map[string]any{
+			"ai_state":          &pending,
+			"assigned_agent_id": &agentID,
+		})
+	} else {
+		// Manual-assist path: existing agent run (unchanged)
+		go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), session.WorkspaceID, *session.ConversationID)
+	}
 
 	return msg, nil
 }
@@ -517,11 +546,12 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			ButtonIconColor: settings.ButtonIconColor,
 		},
 		Features: model.WidgetConfigFeatures{
-			AIEnabled:   settings.AIEnabled,
-			FileUploads: false,
-			PreChatForm: settings.RequireEmailBeforeChat,
-			RequirePhone: settings.RequirePhoneAfterEmail,
-			CSATRating:  settings.CSATEnabled,
+			AIEnabled:       settings.AIEnabled,
+			ShowTalkToHuman: settings.ShowTalkToHuman,
+			FileUploads:     false,
+			PreChatForm:     settings.RequireEmailBeforeChat,
+			RequirePhone:    settings.RequirePhoneAfterEmail,
+			CSATRating:      settings.CSATEnabled,
 		},
 		HelpSpaces: helpSpaces,
 	}, nil

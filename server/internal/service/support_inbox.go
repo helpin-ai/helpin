@@ -33,6 +33,7 @@ type SupportInboxService struct {
 	docsCollectionRepo      *repository.DocsCollectionRepository
 	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
+	supportAIService        *SupportAIService
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -81,6 +82,15 @@ func renderWidgetArticleHTML(content json.RawMessage) *string {
 	}
 
 	return &rendered
+}
+
+// SetSupportAIService injects the AI-first auto-reply service.
+func (s *SupportInboxService) SetSupportAIService(aiService *SupportAIService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.supportAIService = aiService
+	return s
 }
 
 // SetConversationAgentRunner injects the agent-run startup hook used for widget auto-replies.

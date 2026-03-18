@@ -68,6 +68,7 @@ type Handlers struct {
 	PMRoadmap          *handler.PMRoadmapHandler
 	Flow               *handler.FlowHandler
 	SDKAssets          *handler.SDKAssetsHandler
+	SupportAI          *handler.SupportAIHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -178,6 +179,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
 			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
+			if h.SupportAI != nil {
+				r.Post("/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
+			}
 		})
 
 		// ---- Public widget config by installation ID (no JWT, open CORS) ----
@@ -589,6 +593,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}", h.Agent.UpdateAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}", h.Agent.DeleteAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/runs", h.Agent.ListAgentRuns)
+				if h.SupportAI != nil {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/knowledge-sources", h.SupportAI.UpdateKnowledgeSources)
+				}
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/assign-agent", h.Agent.AssignAgentToStory)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/run-agent", h.Agent.RunAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)

@@ -6,10 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { useChatSettings, useUpdateChatSettings } from '@/hooks/queries';
-import { useSupportAgents } from '@/hooks/queries/useSupport';
+import { useChatSettings, useUpdateChatSettings, useDocsSpaces } from '@/hooks/queries';
+import { useSupportAgents, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
@@ -53,6 +54,8 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiAgentId, setAiAgentId] = useState(NO_AGENT_VALUE);
   const [confidenceThreshold, setConfidenceThreshold] = useState('0.7');
+  const [aiResponseMode, setAiResponseMode] = useState('off');
+  const [aiMaxFollowups, setAiMaxFollowups] = useState(3);
   const [showTalkToHuman, setShowTalkToHuman] = useState(true);
   const [handoffBehavior, setHandoffBehavior] = useState('unassigned');
   const [handoffTeamId, setHandoffTeamId] = useState<string | null>(null);
@@ -62,12 +65,29 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
   const [outsideMessage, setOutsideMessage] = useState('');
   const [csatEnabled, setCsatEnabled] = useState(false);
 
+  const activeAgentId = aiAgentId !== NO_AGENT_VALUE ? aiAgentId : undefined;
+  const { data: allSpaces = [] } = useDocsSpaces(workspaceId);
+  const { data: knowledgeSources = [] } = useAgentKnowledgeSources(workspaceId, activeAgentId);
+  const updateKnowledgeSources = useUpdateAgentKnowledgeSources(workspaceId);
+  const linkedSpaceIds = new Set(knowledgeSources.map((ks) => ks.space_id));
+
+  const toggleSpace = (spaceId: string) => {
+    if (!activeAgentId) return;
+    const current = knowledgeSources.map((ks) => ks.space_id);
+    const next = current.includes(spaceId)
+      ? current.filter((id) => id !== spaceId)
+      : [...current, spaceId];
+    updateKnowledgeSources.mutate({ agentId: activeAgentId, spaceIds: next });
+  };
+
   useEffect(() => {
     if (data?.settings) {
       const s = data.settings;
       setAiEnabled(s.ai_enabled);
       setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
       setConfidenceThreshold(String(s.ai_confidence_threshold));
+      setAiResponseMode(s.ai_response_mode ?? 'off');
+      setAiMaxFollowups(s.ai_max_followups ?? 3);
       setShowTalkToHuman(s.show_talk_to_human);
       setHandoffBehavior(s.handoff_behavior);
       setHandoffTeamId(s.handoff_team_id);
@@ -84,6 +104,8 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
       ai_enabled: aiEnabled,
       ai_agent_id: aiAgentId === NO_AGENT_VALUE ? '' : aiAgentId,
       ai_confidence_threshold: parseFloat(confidenceThreshold),
+      ai_response_mode: aiResponseMode,
+      ai_max_followups: aiMaxFollowups,
       show_talk_to_human: showTalkToHuman,
       handoff_behavior: handoffBehavior,
       handoff_team_id: handoffBehavior === 'assign_to_team' ? handoffTeamId : null,
@@ -156,6 +178,33 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
             </p>
           </div>
 
+          {activeAgentId && (
+            <div className="space-y-2">
+              <Label className="text-sm">Knowledge Sources</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Select docs spaces the AI agent can search for answers. Internal spaces are used for grounding only — never cited to customers.
+              </p>
+              {allSpaces.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">No docs spaces found. Create one in the Docs section first.</p>
+              ) : (
+                <div className="space-y-1.5 rounded-md border p-3">
+                  {allSpaces.map((space) => (
+                    <label key={space.id} className="flex items-center gap-2.5 cursor-pointer">
+                      <Checkbox
+                        checked={linkedSpaceIds.has(space.id)}
+                        onCheckedChange={() => toggleSpace(space.id)}
+                      />
+                      <span className="text-sm">{space.name}</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {space.type === 'internal' ? 'Internal' : 'Public'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label className="text-sm">Confidence Threshold</Label>
             <Select value={confidenceThreshold} onValueChange={setConfidenceThreshold}>
@@ -169,6 +218,35 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">AI will only respond when confidence is at or above this level.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm">Response Mode</Label>
+            <Select value={aiResponseMode} onValueChange={setAiResponseMode}>
+              <SelectTrigger className="w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off">Off (manual only)</SelectItem>
+                <SelectItem value="ai_first">AI First (auto-reply)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">AI First: AI responds automatically. Off: human agents handle all messages.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm">Max AI Follow-ups</Label>
+            <Select value={String(aiMaxFollowups)} onValueChange={(v) => setAiMaxFollowups(Number(v))}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
+                  <SelectItem key={v} value={String(v)}>{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Maximum AI turns before auto-escalating to a human.</p>
           </div>
 
           <div className="flex items-center justify-between">

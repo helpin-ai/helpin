@@ -26,8 +26,17 @@ type SupportConversation struct {
 	ClosedAt          *time.Time `json:"closed_at"`
 	TeamLastSeenAt    *time.Time `json:"team_last_seen_at" gorm:"type:timestamptz"`
 	ContactLastSeenAt *time.Time `json:"contact_last_seen_at" gorm:"type:timestamptz"`
-	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	// AI State — separate from human Status. Null when AI is not involved.
+	AIState                  *string    `json:"ai_state" gorm:"index"`                 // null, "pending", "resolved", "escalated"
+	AIResolvedAt             *time.Time `json:"ai_resolved_at" gorm:"type:timestamptz"`
+	AIEscalatedAt            *time.Time `json:"ai_escalated_at" gorm:"type:timestamptz"`
+	AIResolutionType         *string    `json:"ai_resolution_type"`                    // "confirmed", "assumed", null
+	AITurnCount              int        `json:"ai_turn_count" gorm:"not null;default:0"`
+	CustomerRequestedHumanAt *time.Time `json:"customer_requested_human_at" gorm:"type:timestamptz"`
+
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage *string `json:"last_message,omitempty" gorm:"->"`
@@ -257,6 +266,7 @@ type WidgetMessageReceivedPayload struct {
 	SenderType     string  `json:"sender_type"`
 	SenderName     *string `json:"sender_name"`
 	SenderAvatar   *string `json:"sender_avatar"`
+	Metadata       *string `json:"metadata,omitempty"`
 	CreatedAt      string  `json:"created_at"`
 }
 
@@ -307,6 +317,9 @@ type SupportInboxSettings struct {
 	AIEnabled             bool    `json:"ai_enabled"`
 	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
+	AIResponseMode        string  `json:"ai_response_mode"`        // v1: "ai_first" | "off"
+	AIMaxFollowups        int     `json:"ai_max_followups"`        // max AI turns before forced handoff (default: 3)
+	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
 	// Handoff Routing
@@ -352,6 +365,9 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIEnabled:              false,
 		AIAgentID:              nil,
 		AIConfidenceThreshold:  0.7,
+		AIResponseMode:         "off",
+		AIMaxFollowups:         3,
+		AIAutoResolveTimeout:   24,
 		ShowTalkToHuman:        true,
 		HandoffBehavior:        "unassigned",
 		HandoffTeamID:          nil,
@@ -393,6 +409,9 @@ type UpdateInstallationSettingsRequest struct {
 	AIEnabled              *bool                       `json:"ai_enabled,omitempty"`
 	AIAgentID              *string                     `json:"ai_agent_id,omitempty"`
 	AIConfidenceThreshold  *float64                    `json:"ai_confidence_threshold,omitempty"`
+	AIResponseMode         *string                     `json:"ai_response_mode,omitempty"`
+	AIMaxFollowups         *int                        `json:"ai_max_followups,omitempty"`
+	AIAutoResolveTimeout   *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman        *bool                       `json:"show_talk_to_human,omitempty"`
 	HandoffBehavior        *string                     `json:"handoff_behavior,omitempty"`
 	HandoffTeamID          *string                     `json:"handoff_team_id,omitempty"`
@@ -442,11 +461,12 @@ type WidgetConfigBranding struct {
 
 // WidgetConfigFeatures matches the widget-core WidgetConfig.features shape.
 type WidgetConfigFeatures struct {
-	AIEnabled   bool `json:"aiEnabled"`
-	FileUploads bool `json:"fileUploads"`
-	PreChatForm bool `json:"preChatForm"`
-	RequirePhone bool `json:"requirePhone"`
-	CSATRating  bool `json:"csatRating"`
+	AIEnabled       bool `json:"aiEnabled"`
+	ShowTalkToHuman bool `json:"showTalkToHuman"`
+	FileUploads     bool `json:"fileUploads"`
+	PreChatForm     bool `json:"preChatForm"`
+	RequirePhone    bool `json:"requirePhone"`
+	CSATRating      bool `json:"csatRating"`
 }
 
 // WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.

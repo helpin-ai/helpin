@@ -38,6 +38,7 @@ type WidgetCallback = (...args: any[]) => void;
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 
 const MAX_WS_RETRIES = 10;
+const MAX_WS_INITIAL_RETRIES = 3; // retries before first successful connection (invalid key, server down)
 const WS_BASE_DELAY_MS = 1000;
 const WS_MAX_DELAY_MS = 30000;
 
@@ -49,6 +50,7 @@ export class WidgetManager {
   private sessionToken: string | null = null;
   private wsConnection: WebSocket | null = null;
   private wsRetryCount = 0;
+  private wsHasConnected = false;
   private wsRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private isShutdown = false;
   private hasBeenOpened = false;
@@ -67,6 +69,7 @@ export class WidgetManager {
   private openArticleRequest: { key: number; articleSlug: string } | null = null;
   private articleRequestKey = 0;
   private isTyping = false;
+  private isAIThinking = false;
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
   private currentEmail: string | null = null;
@@ -356,6 +359,7 @@ export class WidgetManager {
       showPreChatForm: showPreChat,
       onPreChatSubmit: (data: { phone: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
+      isAIThinking: this.isAIThinking,
       typingAgentName: this.typingAgentName,
       typingAgentAvatar: this.typingAgentAvatar,
       initialView: this.currentView,
@@ -649,6 +653,7 @@ export class WidgetManager {
 
       this.wsConnection.onopen = () => {
         this.wsRetryCount = 0;
+        this.wsHasConnected = true;
         this.connectionStatus = 'connected';
 
         // Send session:create or session:restore
@@ -676,14 +681,25 @@ export class WidgetManager {
         }
       };
 
-      this.wsConnection.onclose = () => {
+      this.wsConnection.onclose = (event) => {
         if (this.isShutdown) return;
 
         this.connectionStatus = 'disconnected';
         this.render();
 
-        if (this.wsRetryCount >= MAX_WS_RETRIES) {
-          console.error(`WebSocket: gave up after ${MAX_WS_RETRIES} retries`);
+        // Server rejected before WS upgrade (e.g. invalid widget key → HTTP 400).
+        // Code 1006 = abnormal closure (no close frame received — typical for HTTP rejection).
+        const maxRetries = this.wsHasConnected ? MAX_WS_RETRIES : MAX_WS_INITIAL_RETRIES;
+
+        if (this.wsRetryCount >= maxRetries) {
+          if (!this.wsHasConnected) {
+            console.error(
+              `Helpin widget: failed to connect after ${MAX_WS_INITIAL_RETRIES} attempts. ` +
+              'Please verify your widget key is correct and the server is reachable.'
+            );
+          } else {
+            console.error(`Helpin widget: lost connection, gave up after ${MAX_WS_RETRIES} retries`);
+          }
           this.connectionStatus = 'failed';
           this.render();
           return;
@@ -743,16 +759,27 @@ export class WidgetManager {
 
         // Load conversation history from server
         if (payload.messages && payload.messages.length > 0) {
-          this.messages = payload.messages.map((m: any) => ({
-            id: m.id,
-            conversationId: m.conversation_id,
-            role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
-            content: m.content,
-            senderName: m.sender_display_name || undefined,
-            senderAvatar: m.sender_avatar_url || undefined,
-            isInternal: m.is_internal || false,
-            createdAt: m.created_at,
-          }));
+          this.messages = payload.messages.map((m: any) => {
+            const msg: any = {
+              id: m.id,
+              conversationId: m.conversation_id,
+              role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
+              content: m.content,
+              senderName: m.sender_display_name || undefined,
+              senderAvatar: m.sender_avatar_url || undefined,
+              isInternal: m.is_internal || false,
+              createdAt: m.created_at,
+            };
+            // Map AI metadata to widget Message fields
+            if (m.metadata) {
+              try {
+                const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
+                if (meta.ai_sources) msg.sources = meta.ai_sources;
+                if (meta.ai_confidence !== undefined) msg.aiConfidence = meta.ai_confidence;
+              } catch { /* ignore parse errors */ }
+            }
+            return msg;
+          });
         }
 
         this.connectionStatus = 'connected';
@@ -826,6 +853,14 @@ export class WidgetManager {
           isInternal: false,
           createdAt: msg.created_at || new Date().toISOString(),
         };
+        // Map AI metadata from WS payload
+        if (msg.metadata) {
+          try {
+            const meta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+            if (meta.ai_sources) (newMsg as any).sources = meta.ai_sources;
+            if (meta.ai_confidence !== undefined) (newMsg as any).aiConfidence = meta.ai_confidence;
+          } catch { /* ignore parse errors */ }
+        }
 
         // Replace optimistic message if this is an echo
         if (msg.sender_type === 'customer') {
@@ -923,6 +958,16 @@ export class WidgetManager {
         this.isTyping = false;
         this.typingAgentName = undefined;
         this.typingAgentAvatar = undefined;
+        this.render();
+        break;
+
+      case 'ai:thinking:start':
+        this.isAIThinking = true;
+        this.render();
+        break;
+
+      case 'ai:thinking:stop':
+        this.isAIThinking = false;
         this.render();
         break;
 

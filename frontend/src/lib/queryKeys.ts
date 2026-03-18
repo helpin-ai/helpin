@@ -83,6 +83,7 @@ export const queryKeys = {
     all: (wsId: string) => ['agents', wsId] as const,
     detail: (wsId: string, id: string) => ['agents', wsId, id] as const,
     runs: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'runs'] as const,
+    knowledgeSources: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'knowledge-sources'] as const,
   },
 
   git: {

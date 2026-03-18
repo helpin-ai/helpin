@@ -1292,6 +1292,12 @@ export interface SupportConversation {
   linked_story_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
+  ai_state?: 'pending' | 'resolved' | 'escalated' | null;
+  ai_resolved_at?: string;
+  ai_escalated_at?: string;
+  ai_resolution_type?: 'confirmed' | 'assumed' | null;
+  ai_turn_count?: number;
+  customer_requested_human_at?: string;
   last_message?: string;
   unread_count?: number;
   team_last_seen_at?: string;
@@ -1330,8 +1336,33 @@ export interface SupportMessage {
   sender_avatar_url?: string;
   content: string;
   is_internal: boolean;
+  metadata?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AIMessageMetadata {
+  ai_auto_reply: boolean;
+  ai_sources: Array<{
+    docId: string;
+    title: string;
+    snippet: string;
+    confidence: number;
+  }>;
+  ai_confidence: number;
+  ai_model: string;
+  ai_tokens_used: number;
+  ai_agent_id: string;
+}
+
+export interface AgentKnowledgeSource {
+  id: string;
+  agent_id: string;
+  space_id: string;
+  workspace_id: string;
+  space_name?: string;
+  space_type?: string;
+  created_at: string;
 }
 
 export interface CreateConversationRequest {
@@ -1370,6 +1401,9 @@ export interface SupportInboxSettings {
   ai_enabled: boolean;
   ai_agent_id: string | null;
   ai_confidence_threshold: number;
+  ai_response_mode: string;
+  ai_max_followups: number;
+  ai_auto_resolve_timeout: number;
   show_talk_to_human: boolean;
   handoff_behavior: string;
   handoff_team_id: string | null;

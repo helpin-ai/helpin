@@ -50,6 +50,15 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.AIConfidenceThreshold != nil {
 		current.AIConfidenceThreshold = *patch.AIConfidenceThreshold
 	}
+	if patch.AIResponseMode != nil {
+		current.AIResponseMode = *patch.AIResponseMode
+	}
+	if patch.AIMaxFollowups != nil {
+		current.AIMaxFollowups = *patch.AIMaxFollowups
+	}
+	if patch.AIAutoResolveTimeout != nil {
+		current.AIAutoResolveTimeout = *patch.AIAutoResolveTimeout
+	}
 	if patch.ShowTalkToHuman != nil {
 		current.ShowTalkToHuman = *patch.ShowTalkToHuman
 	}
@@ -144,6 +153,16 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	validIcon := map[string]bool{"chat_bubble": true, "question_mark": true, "help": true}
 	if !validIcon[settings.LauncherIcon] {
 		return fmt.Errorf("launcher_icon must be chat_bubble, question_mark, or help")
+	}
+	validResponseMode := map[string]bool{"ai_first": true, "off": true}
+	if settings.AIResponseMode != "" && !validResponseMode[settings.AIResponseMode] {
+		return fmt.Errorf("ai_response_mode must be ai_first or off")
+	}
+	if settings.AIMaxFollowups < 0 || settings.AIMaxFollowups > 50 {
+		return fmt.Errorf("ai_max_followups must be between 0 and 50")
+	}
+	if settings.AIAutoResolveTimeout < 0 {
+		return fmt.Errorf("ai_auto_resolve_timeout must be >= 0")
 	}
 	if settings.AIEnabled {
 		if settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {

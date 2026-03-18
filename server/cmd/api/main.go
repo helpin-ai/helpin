@@ -245,6 +245,9 @@ func main() {
 		// CRM Email Sync Settings
 		&model.CRMEmailSyncSettings{},
 		&model.AutomationHealthSnapshot{},
+		// AI Support Agent
+		&model.AgentKnowledgeSource{},
+		&model.AIMessageProcessing{},
 	); err != nil {
 		slog.Error("failed to auto-migrate", "error", err)
 		os.Exit(1)
@@ -325,13 +328,14 @@ func main() {
 
 	// Initialize Redis relay for cross-pod event broadcasting (optional).
 	var redisRelay *ws.RedisRelay
+	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)
 		if err != nil {
 			slog.Error("invalid REDIS_URL", "error", err)
 			os.Exit(1)
 		}
-		redisClient := redis.NewClient(redisOpts)
+		redisClient = redis.NewClient(redisOpts)
 		if err := redisClient.Ping(context.Background()).Err(); err != nil {
 			slog.Error("Redis unreachable at startup — cannot run multi-pod", "error", err)
 			os.Exit(1)
@@ -499,6 +503,11 @@ func main() {
 	searchService := service.NewSearchService(searchRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+
+	// AI Support Agent — new repositories and service
+	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
+	aiMessageProcessingRepo := repository.NewAIMessageProcessingRepository(db)
+	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceService(agentKnowledgeSourceRepo, docsSpaceRepo)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -691,6 +700,24 @@ func main() {
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	_ = signalDetectionService // Used by Temporal workers
 
+	// AI Support Agent — wire SupportAIService with LLM provider and JetStream.
+	supportAIService := service.NewSupportAIService(
+		llmProvider, docsSearchRepo, docsContentRepo, docsSpaceRepo,
+		agentKnowledgeSourceRepo, aiMessageProcessingRepo,
+		supportConversationRepo, supportMessageRepo,
+		agentRepo, agentHandoffRepo, supportInstallRepo,
+		wsPublisher, jetstream, redisClient, db,
+	)
+	supportInboxService.SetSupportAIService(supportAIService)
+
+	// Start AI support consumer in-process for local dev.
+	// In production this runs on the worker node (cmd/temporal-worker/main.go).
+	go func() {
+		if err := supportAIService.StartNATSConsumer(realtimeCtx); err != nil {
+			slog.Error("support AI consumer stopped", "error", err)
+		}
+	}()
+
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
@@ -753,6 +780,7 @@ func main() {
 		Agent:              handler.NewAgentHandler(agentService),
 		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),
 		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),
+		SupportAI:          handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService),
 		Git:                handler.NewGitHandler(gitService),
 		Orchestration:      handler.NewOrchestrationHandler(orchestrationService),
 		Notification:       handler.NewNotificationHandler(notificationService, followerService),

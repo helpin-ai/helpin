@@ -63,6 +63,7 @@ export function WidgetPreview({
         },
         features: {
           aiEnabled: false,
+          showTalkToHuman: false,
           fileUploads: false,
           preChatForm: false,
           requirePhone: false,
