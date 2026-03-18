@@ -16,7 +16,7 @@ import (
 
 // CreateWidgetSession creates a new session for external widget chat.
 // Always creates a new session — multiple concurrent sessions per visitor are allowed.
-func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL *string) (*model.SupportWidgetSession, error) {
+func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL, timezone, locale *string) (*model.SupportWidgetSession, error) {
 	inst, err := s.installationRepo.GetByWidgetKey(ctx, widgetKey)
 	if err != nil {
 		return nil, err
@@ -41,6 +41,8 @@ func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey
 		CustomerEmail: customerEmail,
 		UserAgent:     userAgent,
 		LastPageURL:   pageURL,
+		Timezone:      timezone,
+		Locale:        locale,
 		ExpiresAt:     time.Now().Add(30 * 24 * time.Hour),
 	}
 
@@ -205,6 +207,16 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 		"conversations_backfilled", len(updatedConvIDs),
 	)
 	return nil
+}
+
+// UpdateSessionPageURL updates the last_page_url on a session.
+func (s *SupportInboxService) UpdateSessionPageURL(ctx context.Context, sessionToken, url string) error {
+	session, err := s.GetWidgetSession(ctx, sessionToken)
+	if err != nil {
+		return err
+	}
+	session.LastPageURL = &url
+	return s.sessionRepo.Update(ctx, session)
 }
 
 // RevokeWidgetSession marks a session as revoked.

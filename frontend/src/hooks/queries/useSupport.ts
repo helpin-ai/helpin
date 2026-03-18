@@ -4,7 +4,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { supportService } from '@/lib/services/supportService';
 import { agentService } from '@/lib/services/agentService';
 import { unwrap } from '@/lib/queryUtils';
-import type { SupportInboxSettings, ConversationStatus, ConversationListResponse } from '@/lib/pmTypes';
+import type { SupportInboxSettings, ConversationStatus, ConversationListResponse, VisitorContextResponse } from '@/lib/pmTypes';
 
 // ── Installation settings ───────────────────────────────────────────
 
@@ -90,6 +90,15 @@ export function useConversationMessages(workspaceId: string, conversationId: str
     queryFn: async () => unwrap(await supportService.listConversationMessages(workspaceId, conversationId!)),
     enabled: !!workspaceId && !!conversationId,
     staleTime: 5_000,
+  });
+}
+
+export function useVisitorContext(workspaceId: string, conversationId: string | null) {
+  return useQuery<VisitorContextResponse>({
+    queryKey: queryKeys.support.visitorContext(workspaceId, conversationId ?? ''),
+    queryFn: async () => unwrap(await supportService.getVisitorContext(workspaceId, conversationId!)),
+    enabled: !!workspaceId && !!conversationId,
+    staleTime: 60_000,
   });
 }
 

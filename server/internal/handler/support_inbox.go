@@ -467,6 +467,23 @@ func (h *SupportInboxHandler) RegenerateWidgetKey(w http.ResponseWriter, r *http
 	})
 }
 
+// GetVisitorContext handles GET /api/support/inbox/conversations/{id}/visitor-context.
+func (h *SupportInboxHandler) GetVisitorContext(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	conversationID := chi.URLParam(r, "id")
+
+	resp, err := h.supportService.GetVisitorContext(r.Context(), workspaceID, conversationID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // TypingIndicator handles POST /api/support/inbox/conversations/{id}/typing.
 func (h *SupportInboxHandler) TypingIndicator(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

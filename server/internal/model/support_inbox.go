@@ -119,6 +119,8 @@ type SupportWidgetSession struct {
 	CustomerPhone  *string    `json:"customer_phone"`
 	UserAgent      *string    `json:"-"`
 	LastPageURL    *string    `json:"last_page_url"`
+	Timezone       *string    `json:"timezone"`
+	Locale         *string    `json:"locale"`
 	RevokedAt      *time.Time `json:"-" gorm:"index"`
 	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
 	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
@@ -491,6 +493,56 @@ type WidgetConfigResponse struct {
 	Branding      WidgetConfigBranding `json:"branding"`
 	Features      WidgetConfigFeatures `json:"features"`
 	HelpSpaces    []WidgetHelpSpace    `json:"helpSpaces"`
+}
+
+// ── Visitor Context DTOs ─────────────────────────────────────────────
+
+// VisitorDeviceInfo holds parsed user-agent data for visitor context.
+type VisitorDeviceInfo struct {
+	Browser        string `json:"browser"`
+	BrowserVersion string `json:"browser_version"`
+	OS             string `json:"os"`
+	OSVersion      string `json:"os_version"`
+	DeviceType     string `json:"device_type"` // desktop, mobile, tablet
+}
+
+// VisitorLocation holds geographic/locale data for visitor context.
+type VisitorLocation struct {
+	Timezone    *string `json:"timezone"`
+	Locale      *string `json:"locale"`
+	LastPageURL *string `json:"last_page_url"`
+}
+
+// VisitorContactData holds CRM contact details for visitor context.
+type VisitorContactData struct {
+	ID               string            `json:"id"`
+	Name             *string           `json:"name"`
+	Email            *string           `json:"email"`
+	Phone            *string           `json:"phone"`
+	JobTitle         *string           `json:"job_title"`
+	LifecycleStage   string            `json:"lifecycle_stage"`
+	LeadStatus       string            `json:"lead_status"`
+	Source           string            `json:"source"`
+	CustomProperties map[string]string `json:"custom_properties,omitempty"`
+}
+
+// VisitorOtherConversation is a compact summary for other conversations in visitor context.
+type VisitorOtherConversation struct {
+	ID        string `json:"id"`
+	DisplayID int    `json:"display_id"`
+	Subject   string `json:"subject"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
+}
+
+// VisitorContextResponse assembles all visitor intelligence for a conversation.
+type VisitorContextResponse struct {
+	Device             *VisitorDeviceInfo         `json:"device,omitempty"`
+	Location           *VisitorLocation           `json:"location,omitempty"`
+	Contact            *VisitorContactData        `json:"contact,omitempty"`
+	OtherConversations []VisitorOtherConversation `json:"other_conversations"`
+	TotalConversations int                        `json:"total_conversations"`
+	SessionCreatedAt   *string                    `json:"session_created_at,omitempty"`
 }
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.

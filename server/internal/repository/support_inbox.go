@@ -180,6 +180,36 @@ func (r *SupportInboxSessionRepository) Update(ctx context.Context, session *mod
 	return nil
 }
 
+// GetLatestByConversation returns the most recent session for a conversation.
+func (r *SupportInboxSessionRepository) GetLatestByConversation(ctx context.Context, workspaceID, conversationID string) (*model.SupportWidgetSession, error) {
+	var session model.SupportWidgetSession
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID).
+		Order("created_at DESC").
+		First(&session).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get latest session by conversation: %w", err)
+	}
+	return &session, nil
+}
+
+// GetLatestByAnonymousID returns the most recent session for an anonymous visitor.
+func (r *SupportInboxSessionRepository) GetLatestByAnonymousID(ctx context.Context, workspaceID, anonymousID string) (*model.SupportWidgetSession, error) {
+	var session model.SupportWidgetSession
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID).
+		Order("created_at DESC").
+		First(&session).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get latest session by anonymous_id: %w", err)
+	}
+	return &session, nil
+}
+
 // SupportConversationRepository handles DB operations for support conversations.
 type SupportConversationRepository struct {
 	db *gorm.DB

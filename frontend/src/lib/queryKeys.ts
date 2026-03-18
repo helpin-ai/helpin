@@ -98,6 +98,7 @@ export const queryKeys = {
     messages: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'messages'] as const,
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
     unreadStats: (wsId: string) => ['support', wsId, 'unread-stats'] as const,
+    visitorContext: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
   },
 
   docs: {

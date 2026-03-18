@@ -81,7 +81,7 @@ func (h *SupportInboxWidgetHandler) CreateSession(w http.ResponseWriter, r *http
 	}
 
 	// Legacy HTTP path — anonymous_id defaults to empty, will be set by WS flow
-	session, err := h.supportService.CreateWidgetSession(r.Context(), req.WidgetKey, "", req.CustomerName, req.CustomerEmail, nil, nil)
+	session, err := h.supportService.CreateWidgetSession(r.Context(), req.WidgetKey, "", req.CustomerName, req.CustomerEmail, nil, nil, nil, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

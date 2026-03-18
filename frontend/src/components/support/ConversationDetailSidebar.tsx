@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Mail, User, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SidebarAssociations } from './SidebarAssociations';
+import { SidebarVisitorContext } from './SidebarVisitorContext';
 import { useConversation } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -79,6 +80,12 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
               <span>{formatTimestamp(conversation.updated_at)}</span>
             </div>
           </div>
+
+          {/* ── Visitor Intelligence ─────────────────────── */}
+          <SidebarVisitorContext
+            workspaceId={workspaceId}
+            conversationId={conversation.id}
+          />
 
           {/* ── Links / Associations ─────────────────────── */}
           <SidebarAssociations
