@@ -1680,6 +1680,9 @@ export interface FlowNodeSpec {
   type: FlowNodeType;
   required_mode?: 'interactive' | 'autonomous';
   actions?: string[];
+  allowed_tools?: string[];
+  loopback_node_id?: string;
+  command_name?: string;
 }
 
 export interface FlowSpec {
@@ -1702,11 +1705,39 @@ export interface StartEpicPlanningFlowInput {
   additional_context?: string;
 }
 
+export interface StartStoryCompletionFlowInput {
+  agent_id: string;
+  additional_context?: string;
+}
+
+export interface StartCRMDealReviewFlowInput {
+  agent_id: string;
+  additional_context?: string;
+}
+
+export interface FlowRequestChangesPayload {
+  comment: string;
+  structured_feedback?: Record<string, unknown>;
+}
+
+export interface FlowApprovalDecision {
+  decision: string;
+  actor_id?: string;
+  comment?: string;
+  structured_feedback?: Record<string, unknown>;
+  override_payload?: Record<string, unknown>;
+  decided_at?: string;
+}
+
 export interface StartFlowRunRequest {
   template_id: string;
   target_type: string;
   target_id: string;
-  input?: StartEpicPlanningFlowInput | Record<string, unknown>;
+  input?:
+    | StartEpicPlanningFlowInput
+    | StartStoryCompletionFlowInput
+    | StartCRMDealReviewFlowInput
+    | Record<string, unknown>;
   trigger_type?: string;
   trigger_payload?: Record<string, unknown>;
 }

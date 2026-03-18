@@ -17,11 +17,14 @@ import (
 type FlowService struct {
 	flowRepo        *repository.FlowRepository
 	epicRepo        *repository.PMEpicRepository
+	storyRepo       *repository.PMStoryRepository
+	crmDealRepo     *repository.CRMDealRepository
 	agentRepo       *repository.AgentRepository
 	runRepo         *repository.AgentRunRepository
 	sessionRepo     *repository.PlanningSessionRepository
 	agentService    *AgentService
 	planningService *PlanningSessionService
+	commandService  *InternalCommandService
 	runEngine       *temporalapp.RunEngine
 	wsPublisher     *websocket.Publisher
 	logger          *slog.Logger
@@ -30,6 +33,8 @@ type FlowService struct {
 func NewFlowService(
 	flowRepo *repository.FlowRepository,
 	epicRepo *repository.PMEpicRepository,
+	storyRepo *repository.PMStoryRepository,
+	crmDealRepo *repository.CRMDealRepository,
 	agentRepo *repository.AgentRepository,
 	runRepo *repository.AgentRunRepository,
 	sessionRepo *repository.PlanningSessionRepository,
@@ -41,6 +46,8 @@ func NewFlowService(
 	return &FlowService{
 		flowRepo:        flowRepo,
 		epicRepo:        epicRepo,
+		storyRepo:       storyRepo,
+		crmDealRepo:     crmDealRepo,
 		agentRepo:       agentRepo,
 		runRepo:         runRepo,
 		sessionRepo:     sessionRepo,
@@ -52,18 +59,26 @@ func NewFlowService(
 	}
 }
 
+func (s *FlowService) SetCommandService(commandService *InternalCommandService) {
+	s.commandService = commandService
+}
+
 func (s *FlowService) StartRun(ctx context.Context, workspaceID, actorID string, req model.StartFlowRunRequest) (*model.FlowRunView, error) {
 	templateID := strings.TrimSpace(req.TemplateID)
 	if templateID == "" {
 		return nil, fmt.Errorf("template_id is required")
 	}
-	if req.TargetType != "epic" {
-		return nil, fmt.Errorf("unsupported target_type: %s", req.TargetType)
-	}
-	if templateID != model.FlowTemplateEpicPlanningV1 {
+	def, ok := lookupFlowTemplate(templateID)
+	if !ok {
 		return nil, fmt.Errorf("unsupported flow template: %s", templateID)
 	}
-	return s.startEpicPlanningFlow(ctx, workspaceID, actorID, req)
+	if strings.TrimSpace(req.TargetType) == "" {
+		return nil, fmt.Errorf("target_type is required")
+	}
+	if req.TargetType != def.spec.TargetType {
+		return nil, fmt.Errorf("template %s requires target_type %s", templateID, def.spec.TargetType)
+	}
+	return def.startRun(ctx, s, workspaceID, actorID, req)
 }
 
 func (s *FlowService) GetRunView(ctx context.Context, workspaceID, flowRunID string) (*model.FlowRunView, error) {
@@ -118,7 +133,7 @@ func (s *FlowService) ListRuns(ctx context.Context, workspaceID string, limit, o
 }
 
 func (s *FlowService) ListTemplates() []model.FlowSpec {
-	return []model.FlowSpec{flowSpec(model.FlowTemplateEpicPlanningV1)}
+	return flowTemplateSpecs()
 }
 
 func (s *FlowService) SendInteractiveMessage(ctx context.Context, workspaceID, flowRunID, nodeRunID, actorID string, req model.FlowInteractiveMessageRequest) (*model.PlanningSessionMessage, error) {
@@ -160,7 +175,7 @@ func (s *FlowService) SendNodeAction(ctx context.Context, workspaceID, flowRunID
 		return nil, fmt.Errorf("flow node run not found")
 	}
 	action := strings.TrimSpace(req.ActionType)
-	if !s.supportsNodeAction(nodeRun, action) {
+	if !s.supportsNodeAction(run.TemplateID, nodeRun, action) {
 		return nil, fmt.Errorf("unsupported action %q for node %q", action, nodeRun.NodeID)
 	}
 	if s.runEngine == nil {
@@ -283,7 +298,12 @@ func (s *FlowService) RetryNode(ctx context.Context, workspaceID, flowRunID, nod
 	if nodeRun.Status != model.FlowNodeStatusFailed && nodeRun.Status != model.FlowNodeStatusCancelled {
 		return nil, fmt.Errorf("only failed or cancelled nodes can be retried")
 	}
-	if nodeRun.NodeID != model.FlowNodeStoryPlanning && nodeRun.NodeID != model.FlowNodeCreateStories {
+	def, nodeDef, err := s.lookupNode(run.TemplateID, nodeRun.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	_ = def
+	if !nodeDef.retryable {
 		return nil, fmt.Errorf("retry is not supported for node %q", nodeRun.NodeID)
 	}
 	if s.runEngine == nil {
@@ -1014,7 +1034,7 @@ func (s *FlowService) cancelRunNow(ctx context.Context, run *model.FlowRun, acto
 	if err := s.flowRepo.UpdateRun(ctx, run); err != nil {
 		return err
 	}
-	if err := s.clearEpicActiveFlow(ctx, run.TargetID); err != nil {
+	if err := s.clearActiveTargetForRun(ctx, run); err != nil {
 		return err
 	}
 	s.publishRunEvent(run, actorID)
@@ -1355,7 +1375,7 @@ func (s *FlowService) markRunCancelled(ctx context.Context, run *model.FlowRun, 
 	if err := s.flowRepo.UpdateRun(ctx, run); err != nil {
 		return err
 	}
-	return s.clearEpicActiveFlow(ctx, run.TargetID)
+	return s.clearActiveTargetForRun(ctx, run)
 }
 
 func (s *FlowService) clearEpicActiveFlow(ctx context.Context, epicID string) error {
@@ -1399,39 +1419,29 @@ func (s *FlowService) publishNodeEvent(nodeRun *model.FlowNodeRun, workspaceID, 
 }
 
 func flowSpec(templateID string) model.FlowSpec {
-	switch templateID {
-	case model.FlowTemplateEpicPlanningV1:
-		return model.FlowSpec{
-			TemplateID:        model.FlowTemplateEpicPlanningV1,
-			TemplateVersion:   1,
-			TargetType:        "epic",
-			SupportedTriggers: []string{model.FlowTriggerManual, model.FlowTriggerInternalDomainHook},
-			Nodes: []model.FlowNodeSpec{
-				{ID: model.FlowNodeEnsureSpecDoc, Type: model.FlowNodeTypeSystemAction},
-				{ID: model.FlowNodeSpecPlanning, Type: model.FlowNodeTypeInteractiveAgent, RequiredMode: model.InvocationModeInteractive, Actions: []string{model.FlowActionFinalize}},
-				{ID: model.FlowNodeSpecApproval, Type: model.FlowNodeTypeApprovalGate, Actions: []string{model.FlowActionApprove, model.FlowActionReject}},
-				{ID: model.FlowNodeStoryPlanning, Type: model.FlowNodeTypeAgentTask, RequiredMode: model.InvocationModeAutonomous},
-				{ID: model.FlowNodePlanApproval, Type: model.FlowNodeTypeApprovalGate, Actions: []string{model.FlowActionApprove, model.FlowActionReject}},
-				{ID: model.FlowNodeCreateStories, Type: model.FlowNodeTypeSystemAction},
-				{ID: model.FlowNodeDone, Type: model.FlowNodeTypeTerminal},
-			},
-		}
-	default:
+	def, ok := lookupFlowTemplate(templateID)
+	if !ok {
 		return model.FlowSpec{}
 	}
+	return def.spec
 }
 
-func (s *FlowService) supportsNodeAction(nodeRun *model.FlowNodeRun, action string) bool {
-	switch {
-	case nodeRun == nil:
-		return false
-	case nodeRun.NodeType == model.FlowNodeTypeInteractiveAgent && action == model.FlowActionFinalize:
-		return true
-	case nodeRun.NodeType == model.FlowNodeTypeApprovalGate && (action == model.FlowActionApprove || action == model.FlowActionReject):
-		return true
-	default:
+func (s *FlowService) supportsNodeAction(templateID string, nodeRun *model.FlowNodeRun, action string) bool {
+	if nodeRun == nil {
 		return false
 	}
+	spec := flowSpec(templateID)
+	for _, node := range spec.Nodes {
+		if node.ID != nodeRun.NodeID {
+			continue
+		}
+		for _, supported := range node.Actions {
+			if supported == action {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func latestNodeRun(items []model.FlowNodeRun, nodeID string) *model.FlowNodeRun {

@@ -68,6 +68,34 @@ func extractOrchestrationProposal(messages []Message, epicID string, tokensUsed 
 	return extractPlanningProposalFromResponseText(responseText, epicID, "", tokensUsed)
 }
 
+func extractStoryCompletionAssessmentFromResponseText(responseText string) (*model.StoryCompletionAssessment, error) {
+	if strings.TrimSpace(responseText) == "" {
+		return nil, fmt.Errorf("story completion assessment returned no text")
+	}
+	var assessment model.StoryCompletionAssessment
+	if err := unmarshalLatestJSON(responseText, &assessment); err != nil {
+		return nil, fmt.Errorf("failed to parse story completion assessment: %w", err)
+	}
+	if strings.TrimSpace(assessment.Summary) == "" {
+		return nil, fmt.Errorf("story completion assessment is missing a summary")
+	}
+	return &assessment, nil
+}
+
+func extractCRMDealReviewActionPlanFromResponseText(responseText string) (*model.CRMDealReviewActionPlan, error) {
+	if strings.TrimSpace(responseText) == "" {
+		return nil, fmt.Errorf("CRM deal review returned no text")
+	}
+	var plan model.CRMDealReviewActionPlan
+	if err := unmarshalLatestJSON(responseText, &plan); err != nil {
+		return nil, fmt.Errorf("failed to parse CRM deal review plan: %w", err)
+	}
+	if strings.TrimSpace(plan.Summary) == "" {
+		return nil, fmt.Errorf("CRM deal review plan is missing a summary")
+	}
+	return &plan, nil
+}
+
 func latestAssistantText(messages []Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role != "assistant" {
@@ -192,4 +220,17 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func flowOutputKindFromRunInput(input json.RawMessage) string {
+	if len(input) == 0 {
+		return ""
+	}
+	var payload struct {
+		FlowOutputKind string `json:"flow_output_kind"`
+	}
+	if err := json.Unmarshal(input, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.FlowOutputKind)
 }

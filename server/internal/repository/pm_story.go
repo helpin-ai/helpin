@@ -218,6 +218,21 @@ func (r *PMStoryRepository) ListByIDs(ctx context.Context, workspaceID string, i
 	return stories, nil
 }
 
+// ListByEpicAndExternalIDs returns raw stories for an epic keyed by external IDs.
+func (r *PMStoryRepository) ListByEpicAndExternalIDs(ctx context.Context, workspaceID, epicID string, externalIDs []string) ([]model.PMStory, error) {
+	if len(externalIDs) == 0 {
+		return []model.PMStory{}, nil
+	}
+
+	var stories []model.PMStory
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND epic_id = ? AND external_id IN ?", workspaceID, epicID, externalIDs).
+		Find(&stories).Error; err != nil {
+		return nil, fmt.Errorf("list stories by epic/external ids: %w", err)
+	}
+	return stories, nil
+}
+
 // Create inserts a story and auto-populates display_id per workspace.
 func (r *PMStoryRepository) Create(ctx context.Context, story *model.PMStory) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

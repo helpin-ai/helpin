@@ -18,7 +18,7 @@ import {
 
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useWorkspaceAccess, usePermissions, useEpics } from '@/hooks/queries';
+import { useWorkspaceAccess, usePermissions, useEpics, useStories, useDeals } from '@/hooks/queries';
 import {
   useFlowRuns,
   useFlowTemplates,
@@ -40,10 +40,15 @@ import type {
   FlowNodeType,
   Agent,
   EpicWithStats,
+  FlowApprovalDecision,
   StartFlowRunRequest,
+  StartCRMDealReviewFlowInput,
   StartEpicPlanningFlowInput,
+  StartStoryCompletionFlowInput,
   PlanningSessionMessage,
+  Story,
 } from '@/lib/pmTypes';
+import type { CRMDeal } from '@/lib/crmTypes';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -79,11 +84,32 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 const NODE_LABELS: Record<string, string> = {
   ensure_spec_doc: 'Ensure Spec Document',
   spec_planning: 'Plan Specification',
+  spec_draft: 'Draft Specification',
   spec_approval: 'Approve Specification',
   story_planning: 'Plan Stories',
+  story_plan: 'Plan Stories',
   plan_approval: 'Approve Story Plan',
   create_stories: 'Create Stories',
+  completion_assessment: 'Assess Completion',
+  completion_review: 'Review Follow-Ups',
+  create_followups: 'Create Follow-Ups',
+  deal_review: 'Review Deal',
+  deal_review_approval: 'Approve Deal Actions',
+  apply_deal_actions: 'Apply Deal Actions',
   done: 'Complete',
+};
+
+const TEMPLATE_LABELS: Record<string, string> = {
+  'pm.epic_planning_v1': 'Epic Planning v1',
+  'pm.epic_planning_v2': 'Epic Planning v2',
+  'pm.story_completion_v1': 'Story Completion',
+  'crm.deal_review_v1': 'Deal Review',
+};
+
+const TARGET_LABELS: Record<string, string> = {
+  epic: 'Epic',
+  story: 'Story',
+  crm_deal: 'CRM deal',
 };
 
 const NODE_ICONS: Record<FlowNodeType, typeof Wrench> = {
@@ -123,6 +149,22 @@ const NODE_STATUS_DOT: Record<FlowNodeStatus, string> = {
 };
 
 const ACTIVE_FLOW_STATUSES = new Set<FlowStatus>(['running', 'awaiting_input', 'awaiting_approval']);
+
+function templateLabel(templateId: string) {
+  return TEMPLATE_LABELS[templateId] ?? templateId;
+}
+
+function targetLabel(targetType: string) {
+  return TARGET_LABELS[targetType] ?? targetType;
+}
+
+function formatJSON(value: unknown) {
+  return JSON.stringify(value, null, 2);
+}
+
+function hasObjectContent(value: Record<string, unknown> | undefined) {
+  return Boolean(value && Object.keys(value).length > 0);
+}
 
 // ---------------------------------------------------------------------------
 // FlowPipeline — Vertical timeline of flow nodes
@@ -213,16 +255,14 @@ function FlowPipeline({
 // ---------------------------------------------------------------------------
 
 function FlowTemplateCard({ spec, onStart }: { spec: FlowSpec; onStart: () => void }) {
-  const templateName = spec.template_id === 'pm.epic_planning_v1' ? 'Epic Planning' : spec.template_id;
-
   return (
     <Card className="overflow-hidden">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold">{templateName}</h3>
+            <h3 className="text-sm font-semibold">{templateLabel(spec.template_id)}</h3>
             <p className="text-[12px] text-muted-foreground mt-0.5">
-              Target: {spec.target_type} · Triggers: {spec.supported_triggers.join(', ')}
+              Target: {targetLabel(spec.target_type)} · Triggers: {spec.supported_triggers.join(', ')}
             </p>
           </div>
           <Badge variant="outline" className="text-[11px] shrink-0">
@@ -252,20 +292,40 @@ function StartFlowDialog({
   onOpenChange,
   workspaceId,
   templates,
+  preferredTemplateId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
   templates: FlowSpec[];
+  preferredTemplateId?: string | null;
 }) {
-  const [templateId, setTemplateId] = useState(templates[0]?.template_id ?? '');
+  const [templateId, setTemplateId] = useState(preferredTemplateId ?? templates[0]?.template_id ?? '');
   const [targetEpicId, setTargetEpicId] = useState('');
+  const [targetStoryId, setTargetStoryId] = useState('');
+  const [targetDealId, setTargetDealId] = useState('');
   const [specPlannerId, setSpecPlannerId] = useState('');
   const [storyPlannerId, setStoryPlannerId] = useState('');
   const [context, setContext] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
 
-  const { data: epics } = useEpics(workspaceId);
+  const plannerAgents = useMemo(
+    () => agents.filter((a) => a.agent_class === 'product_planner'),
+    [agents],
+  );
+
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.template_id === templateId) ?? templates[0],
+    [templateId, templates],
+  );
+  const selectedTargetType = selectedTemplate?.target_type ?? 'epic';
+  const epicsWorkspaceId = open && selectedTargetType === 'epic' ? workspaceId : '';
+  const storiesWorkspaceId = open && selectedTargetType === 'story' ? workspaceId : '';
+  const dealsWorkspaceId = open && selectedTargetType === 'crm_deal' ? workspaceId : '';
+
+  const { data: epics } = useEpics(epicsWorkspaceId);
+  const { data: storiesPage } = useStories(storiesWorkspaceId, { per_page: 100, archived: false });
+  const { data: dealsPage } = useDeals(dealsWorkspaceId, { per_page: 100 });
   const startMutation = useStartFlowRun(workspaceId);
 
   useEffect(() => {
@@ -275,30 +335,65 @@ function StartFlowDialog({
     });
   }, [open, workspaceId]);
 
-  const plannerAgents = useMemo(
-    () => agents.filter((a) => a.agent_class === 'product_planner'),
-    [agents],
-  );
+  useEffect(() => {
+    if (!open) return;
+    setTemplateId(preferredTemplateId ?? templates[0]?.template_id ?? '');
+  }, [open, preferredTemplateId, templates]);
+
+  const stories = storiesPage?.data ?? [];
+  const deals = dealsPage?.data ?? [];
 
   const handleStart = async () => {
-    if (!targetEpicId || !specPlannerId) return;
-    const input: StartEpicPlanningFlowInput = {
-      spec_planner_agent_id: specPlannerId,
-      ...(storyPlannerId ? { story_planner_agent_id: storyPlannerId } : {}),
-      ...(context.trim() ? { additional_context: context.trim() } : {}),
-    };
+    if (!selectedTemplate) return;
+    let targetId = '';
+    let input: StartEpicPlanningFlowInput | StartStoryCompletionFlowInput | StartCRMDealReviewFlowInput;
+
+    if (selectedTargetType === 'epic') {
+      if (!targetEpicId || !specPlannerId) return;
+      targetId = targetEpicId;
+      input = {
+        spec_planner_agent_id: specPlannerId,
+        ...(storyPlannerId ? { story_planner_agent_id: storyPlannerId } : {}),
+        ...(context.trim() ? { additional_context: context.trim() } : {}),
+      };
+    } else if (selectedTargetType === 'story') {
+      if (!targetStoryId || !specPlannerId) return;
+      targetId = targetStoryId;
+      input = {
+        agent_id: specPlannerId,
+        ...(context.trim() ? { additional_context: context.trim() } : {}),
+      };
+    } else {
+      if (!targetDealId || !specPlannerId) return;
+      targetId = targetDealId;
+      input = {
+        agent_id: specPlannerId,
+        ...(context.trim() ? { additional_context: context.trim() } : {}),
+      };
+    }
+
     const req: StartFlowRunRequest = {
-      template_id: templateId,
-      target_type: 'epic',
-      target_id: targetEpicId,
-      input: input as unknown as Record<string, unknown>,
+      template_id: selectedTemplate.template_id,
+      target_type: selectedTargetType,
+      target_id: targetId,
+      input,
     };
     await startMutation.mutateAsync(req);
     onOpenChange(false);
-    // Reset
     setTargetEpicId('');
+    setTargetStoryId('');
+    setTargetDealId('');
+    setSpecPlannerId('');
+    setStoryPlannerId('');
     setContext('');
   };
+
+  const isStartDisabled =
+    startMutation.isPending ||
+    !selectedTemplate ||
+    (selectedTargetType === 'epic' && (!targetEpicId || !specPlannerId)) ||
+    (selectedTargetType === 'story' && (!targetStoryId || !specPlannerId)) ||
+    (selectedTargetType === 'crm_deal' && (!targetDealId || !specPlannerId));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -315,7 +410,53 @@ function StartFlowDialog({
                 <SelectContent>
                   {templates.map((t) => (
                     <SelectItem key={t.template_id} value={t.template_id}>
-                      {t.template_id === 'pm.epic_planning_v1' ? 'Epic Planning v1' : t.template_id}
+                      {templateLabel(t.template_id)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {selectedTargetType === 'epic' && (
+            <div className="space-y-1.5">
+              <Label>Target Epic</Label>
+              <Select value={targetEpicId} onValueChange={setTargetEpicId}>
+                <SelectTrigger><SelectValue placeholder="Select an epic..." /></SelectTrigger>
+                <SelectContent>
+                  {(epics ?? []).map((epic: EpicWithStats) => (
+                    <SelectItem key={epic.epic.id} value={epic.epic.id}>{epic.epic.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {selectedTargetType === 'story' && (
+            <div className="space-y-1.5">
+              <Label>Target Story</Label>
+              <Select value={targetStoryId} onValueChange={setTargetStoryId}>
+                <SelectTrigger><SelectValue placeholder="Select a story..." /></SelectTrigger>
+                <SelectContent>
+                  {stories.map((story: Story) => (
+                    <SelectItem key={story.id} value={story.id}>
+                      {story.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {selectedTargetType === 'crm_deal' && (
+            <div className="space-y-1.5">
+              <Label>Target Deal</Label>
+              <Select value={targetDealId} onValueChange={setTargetDealId}>
+                <SelectTrigger><SelectValue placeholder="Select a deal..." /></SelectTrigger>
+                <SelectContent>
+                  {deals.map((deal: CRMDeal) => (
+                    <SelectItem key={deal.id} value={deal.id}>
+                      {deal.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -324,19 +465,7 @@ function StartFlowDialog({
           )}
 
           <div className="space-y-1.5">
-            <Label>Target Epic</Label>
-            <Select value={targetEpicId} onValueChange={setTargetEpicId}>
-              <SelectTrigger><SelectValue placeholder="Select an epic..." /></SelectTrigger>
-              <SelectContent>
-                {(epics ?? []).map((e: EpicWithStats) => (
-                  <SelectItem key={e.epic.id} value={e.epic.id}>{e.epic.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Spec Planner Agent</Label>
+            <Label>{selectedTargetType === 'epic' ? 'Spec Planner Agent' : 'Planner Agent'}</Label>
             <Select value={specPlannerId} onValueChange={setSpecPlannerId}>
               <SelectTrigger><SelectValue placeholder="Select a planner agent..." /></SelectTrigger>
               <SelectContent>
@@ -347,18 +476,20 @@ function StartFlowDialog({
             </Select>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Story Planner Agent <span className="text-muted-foreground font-normal">(optional)</span></Label>
-            <Select value={storyPlannerId || '_none'} onValueChange={(v) => setStoryPlannerId(v === '_none' ? '' : v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">Same as spec planner</SelectItem>
-                {plannerAgents.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {selectedTargetType === 'epic' && (
+            <div className="space-y-1.5">
+              <Label>Story Planner Agent <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Select value={storyPlannerId || '_none'} onValueChange={(value) => setStoryPlannerId(value === '_none' ? '' : value)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Same as spec planner</SelectItem>
+                  {plannerAgents.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label>Additional Context <span className="text-muted-foreground font-normal">(optional)</span></Label>
@@ -374,7 +505,7 @@ function StartFlowDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
             onClick={handleStart}
-            disabled={!targetEpicId || !specPlannerId || startMutation.isPending}
+            disabled={isStartDisabled}
           >
             {startMutation.isPending ? (
               <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Starting...</>
@@ -400,7 +531,6 @@ function FlowRunRow({
   onClick: (run: FlowRunView) => void;
 }) {
   const status = RUN_STATUS_CONFIG[run.run.status] ?? RUN_STATUS_CONFIG.running;
-  const templateName = run.spec.template_id === 'pm.epic_planning_v1' ? 'Epic Planning' : run.spec.template_id;
 
   // Find current node label
   const currentNodeLabel = run.run.current_node_id
@@ -416,9 +546,9 @@ function FlowRunRow({
       <Badge variant="secondary" className={`text-[11px] shrink-0 ${status.className}`}>
         {status.label}
       </Badge>
-      <span className="text-sm font-medium min-w-[100px] shrink-0">{templateName}</span>
+      <span className="text-sm font-medium min-w-[140px] shrink-0">{templateLabel(run.spec.template_id)}</span>
       <span className="text-sm text-muted-foreground truncate flex-1">
-        {currentNodeLabel}
+        {targetLabel(run.run.target_type)} · {currentNodeLabel}
       </span>
       <span className="text-[12px] text-muted-foreground shrink-0">
         {formatDistanceToNow(new Date(run.run.created_at), { addSuffix: true })}
@@ -520,7 +650,7 @@ function FlowRunDetailSheet({
   if (!data) return null;
 
   const status = RUN_STATUS_CONFIG[data.run.status] ?? RUN_STATUS_CONFIG.running;
-  const templateName = data.spec.template_id === 'pm.epic_planning_v1' ? 'Epic Planning' : data.spec.template_id;
+  const templateName = templateLabel(data.spec.template_id);
   const isActive = ACTIVE_FLOW_STATUSES.has(data.run.status);
 
   // Find the active node run for interactive/approval actions
@@ -594,9 +724,14 @@ function FlowRunDetailSheet({
                   {NODE_LABELS[activeNodeRun.node_id] ?? activeNodeRun.node_id}
                 </h4>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Review the output and approve or reject to continue the flow.
+                  Review the output and approve, request changes, or reject to continue the flow.
                 </p>
-                <ApprovalButtons wsId={workspaceId} flowRunId={flowRunId} nodeRunId={activeNodeRun.id} />
+                <ApprovalButtons
+                  wsId={workspaceId}
+                  flowRunId={flowRunId}
+                  nodeRunId={activeNodeRun.id}
+                  actions={activeNodeSpec.actions ?? []}
+                />
               </div>
             )}
 
@@ -638,6 +773,13 @@ function FlowRunDetailSheet({
                 <p className="text-[12px] mt-1">Processing...</p>
               </div>
             )}
+
+            <div className="px-5 py-4 border-t border-border/60">
+              <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                Node History
+              </h4>
+              <NodeRunHistoryList nodeRuns={data.node_runs} />
+            </div>
           </div>
 
           {/* Cancel button */}
@@ -681,29 +823,212 @@ function FinalizeButton({ wsId, flowRunId, nodeRunId }: { wsId: string; flowRunI
   );
 }
 
-function ApprovalButtons({ wsId, flowRunId, nodeRunId }: { wsId: string; flowRunId: string; nodeRunId: string }) {
-  const sendAction = useSendFlowNodeAction(wsId, flowRunId, nodeRunId);
+function NodeRunHistoryList({ nodeRuns }: { nodeRuns: FlowNodeRun[] }) {
+  const orderedRuns = [...nodeRuns].sort((a, b) => {
+    const createdA = new Date(a.created_at).getTime();
+    const createdB = new Date(b.created_at).getTime();
+    return createdB - createdA;
+  });
+
+  if (orderedRuns.length === 0) {
+    return <p className="text-sm text-muted-foreground">No node attempts recorded yet.</p>;
+  }
+
   return (
-    <div className="flex gap-2">
-      <Button
-        size="sm"
-        onClick={() => sendAction.mutate({ actionType: 'approve' })}
-        disabled={sendAction.isPending}
-        className="flex-1"
-      >
-        {sendAction.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />}
-        Approve
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className="flex-1 text-destructive hover:text-destructive"
-        onClick={() => sendAction.mutate({ actionType: 'reject' })}
-        disabled={sendAction.isPending}
-      >
-        <XCircle className="mr-1.5 h-3.5 w-3.5" />
-        Reject
-      </Button>
+    <div className="space-y-3">
+      {orderedRuns.map((nodeRun) => {
+        const output = hasObjectContent(nodeRun.output) ? formatJSON(nodeRun.output) : '';
+        const input = hasObjectContent(nodeRun.input) ? formatJSON(nodeRun.input) : '';
+        const approvalDecision = nodeRun.output as unknown as FlowApprovalDecision | undefined;
+
+        return (
+          <div key={nodeRun.id} className="rounded-lg border border-border/60 bg-muted/15 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">
+                  {NODE_LABELS[nodeRun.node_id] ?? nodeRun.node_id}
+                </div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  Attempt {nodeRun.attempt_count} · {NODE_TYPE_LABELS[nodeRun.node_type]}
+                </div>
+              </div>
+              <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+                {nodeRun.status.replace(/_/g, ' ')}
+              </Badge>
+            </div>
+
+            {approvalDecision?.decision && (
+              <div className="mt-2 rounded-md bg-background/80 px-2.5 py-2 text-xs">
+                <span className="font-medium">Decision:</span> {approvalDecision.decision.replace(/_/g, ' ')}
+                {approvalDecision.comment && (
+                  <div className="mt-1 text-muted-foreground whitespace-pre-wrap">{approvalDecision.comment}</div>
+                )}
+              </div>
+            )}
+
+            {nodeRun.error_message && (
+              <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive">
+                {nodeRun.error_message}
+              </div>
+            )}
+
+            {input && (
+              <div className="mt-2">
+                <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Input</div>
+                <pre className="overflow-auto rounded-md bg-background px-2.5 py-2 text-[11px]">{input}</pre>
+              </div>
+            )}
+
+            {output && (
+              <div className="mt-2">
+                <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Output</div>
+                <pre className="overflow-auto rounded-md bg-background px-2.5 py-2 text-[11px]">{output}</pre>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ApprovalButtons({
+  wsId,
+  flowRunId,
+  nodeRunId,
+  actions,
+}: {
+  wsId: string;
+  flowRunId: string;
+  nodeRunId: string;
+  actions: string[];
+}) {
+  const sendAction = useSendFlowNodeAction(wsId, flowRunId, nodeRunId);
+  const [overrideText, setOverrideText] = useState('');
+  const [requestComment, setRequestComment] = useState('');
+  const [feedbackText, setFeedbackText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const parseOptionalJSON = (value: string, label: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    try {
+      return JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      throw new Error(`${label} must be valid JSON`);
+    }
+  };
+
+  const handleApprove = () => {
+    try {
+      const payload = parseOptionalJSON(overrideText, 'Override payload');
+      setError(null);
+      sendAction.mutate({ actionType: 'approve', payload });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid approve payload');
+    }
+  };
+
+  const handleRequestChanges = () => {
+    if (!requestComment.trim()) {
+      setError('A reviewer comment is required to request changes.');
+      return;
+    }
+    try {
+      const structuredFeedback = parseOptionalJSON(feedbackText, 'Structured feedback');
+      setError(null);
+      sendAction.mutate({
+        actionType: 'request_changes',
+        payload: {
+          comment: requestComment.trim(),
+          ...(structuredFeedback ? { structured_feedback: structuredFeedback } : {}),
+        },
+      });
+      setRequestComment('');
+      setFeedbackText('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid request changes payload');
+    }
+  };
+
+  const handleReject = () => {
+    setError(null);
+    sendAction.mutate({ actionType: 'reject' });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label>Approve Override Payload <span className="text-muted-foreground font-normal">(optional JSON)</span></Label>
+        <Textarea
+          value={overrideText}
+          onChange={(event) => setOverrideText(event.target.value)}
+          rows={4}
+          placeholder='{"proposed_stories":[...]}'
+        />
+      </div>
+
+      {actions.includes('request_changes') && (
+        <>
+          <div className="space-y-1.5">
+            <Label>Request Changes Comment</Label>
+            <Textarea
+              value={requestComment}
+              onChange={(event) => setRequestComment(event.target.value)}
+              rows={3}
+              placeholder="Explain what needs to change before approval..."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Structured Feedback <span className="text-muted-foreground font-normal">(optional JSON)</span></Label>
+            <Textarea
+              value={feedbackText}
+              onChange={(event) => setFeedbackText(event.target.value)}
+              rows={4}
+              placeholder='{"focus":"trim scope"}'
+            />
+          </div>
+        </>
+      )}
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <div className="flex flex-wrap gap-2">
+        {actions.includes('approve') && (
+          <Button
+            size="sm"
+            onClick={handleApprove}
+            disabled={sendAction.isPending}
+            className="flex-1 min-w-[140px]"
+          >
+            {sendAction.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />}
+            Approve
+          </Button>
+        )}
+        {actions.includes('request_changes') && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleRequestChanges}
+            disabled={sendAction.isPending}
+            className="flex-1 min-w-[140px]"
+          >
+            Request Changes
+          </Button>
+        )}
+        {actions.includes('reject') && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 min-w-[140px] text-destructive hover:text-destructive"
+            onClick={handleReject}
+            disabled={sendAction.isPending}
+          >
+            <XCircle className="mr-1.5 h-3.5 w-3.5" />
+            Reject
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -738,6 +1063,7 @@ export function FlowsPage() {
   const { data: runsData, isLoading: runsLoading } = useFlowRuns(workspaceId);
 
   const [startDialogOpen, setStartDialogOpen] = useState(false);
+  const [preferredTemplateId, setPreferredTemplateId] = useState<string | null>(null);
   const [selectedRun, setSelectedRun] = useState<FlowRunView | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -758,7 +1084,10 @@ export function FlowsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Flows</h1>
         {canEdit && (
-          <Button size="sm" onClick={() => setStartDialogOpen(true)}>
+          <Button size="sm" onClick={() => {
+            setPreferredTemplateId(null);
+            setStartDialogOpen(true);
+          }}>
             <Play className="mr-1.5 h-4 w-4" />
             Start Flow
           </Button>
@@ -776,7 +1105,10 @@ export function FlowsPage() {
               <FlowTemplateCard
                 key={spec.template_id}
                 spec={spec}
-                onStart={() => setStartDialogOpen(true)}
+                onStart={() => {
+                  setPreferredTemplateId(spec.template_id);
+                  setStartDialogOpen(true);
+                }}
               />
             ))}
           </div>
@@ -813,9 +1145,13 @@ export function FlowsPage() {
       {templates && (
         <StartFlowDialog
           open={startDialogOpen}
-          onOpenChange={setStartDialogOpen}
+          onOpenChange={(open) => {
+            setStartDialogOpen(open);
+            if (!open) setPreferredTemplateId(null);
+          }}
           workspaceId={workspaceId}
           templates={templates}
+          preferredTemplateId={preferredTemplateId}
         />
       )}
 

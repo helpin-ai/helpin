@@ -598,6 +598,8 @@ func main() {
 	flowService := service.NewFlowService(
 		flowRepo,
 		pmEpicRepo,
+		pmStoryRepo,
+		crmDealRepo,
 		agentRepo,
 		agentRunRepo,
 		planningSessionRepo,
@@ -672,6 +674,17 @@ func main() {
 	crmSequenceService := service.NewCRMSequenceService(crmSequenceRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
+	commandService := service.NewInternalCommandService(
+		agentService,
+		pmStoryService,
+		crmDealService,
+		crmActivityService,
+		docsContentService,
+		docsLinkService,
+		pmStoryRepo,
+		pmStoryLinkRepo,
+	)
+	flowService.SetCommandService(commandService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)

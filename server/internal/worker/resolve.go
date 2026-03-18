@@ -127,6 +127,7 @@ func hasCrossModuleTools(tools []string) bool {
 				modules++
 			}
 		case "list_documents", "read_document", "create_document", "update_document",
+			"write_document_content", "link_document_to_object",
 			"search_documents":
 			if !hasDocs {
 				hasDocs = true

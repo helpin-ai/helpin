@@ -423,6 +423,44 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"query"},
 	}, toolSearchDocuments)
 
+	r.register("write_document_content", "Write structured JSON content to a document in Helpin Docs.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID to update",
+			},
+			"content": map[string]interface{}{
+				"type":        "object",
+				"description": "The structured document content JSON to save",
+			},
+		},
+		"required": []string{"document_id", "content"},
+	}, toolWriteDocumentContent)
+
+	r.register("link_document_to_object", "Create a Helpin Docs link between a document and another internal object.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID to link",
+			},
+			"linked_object_type": map[string]interface{}{
+				"type":        "string",
+				"description": "The linked object type such as epic or story",
+			},
+			"linked_object_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The linked object ID",
+			},
+			"link_context": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional link context, defaults to attached",
+			},
+		},
+		"required": []string{"document_id", "linked_object_type", "linked_object_id"},
+	}, toolLinkDocumentToObject)
+
 	return r
 }
 

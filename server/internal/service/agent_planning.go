@@ -346,6 +346,22 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, err
 	}
 
+	externalIDs := make([]string, 0, len(proposedStories))
+	for idx, ps := range proposedStories {
+		externalIDs = append(externalIDs, planningStoryExternalID(runID, idx, ps.Ref))
+	}
+	existingStories, err := s.storyRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
+	if err != nil {
+		return nil, fmt.Errorf("lookup existing planned stories: %w", err)
+	}
+	existingByExternalID := make(map[string]model.PMStory, len(existingStories))
+	for _, story := range existingStories {
+		if story.ExternalID == nil || strings.TrimSpace(*story.ExternalID) == "" {
+			continue
+		}
+		existingByExternalID[*story.ExternalID] = story
+	}
+
 	created := make([]model.PMStory, 0, len(proposedStories))
 	createdIDs := make([]string, 0, len(proposedStories))
 	createdDetails := make([]createdPlanningStory, 0, len(proposedStories))
@@ -357,18 +373,28 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 			storyType = model.PMStoryTypeFeature
 		}
 
-		desc := renderPlannedStoryDescription(ps)
-		detail, err := s.storyService.Create(ctx, model.CreateStoryRequest{
-			WorkspaceID: workspaceID,
-			Name:        strings.TrimSpace(ps.Name),
-			Description: strPtr(desc),
-			StoryType:   storyType,
-			EpicID:      &epicID,
-			Estimate:    ps.Estimate,
-			Priority:    ps.Priority,
-		}, actorID)
-		if err != nil {
-			return nil, fmt.Errorf("create story %d: %w", idx+1, err)
+		externalID := planningStoryExternalID(runID, idx, ps.Ref)
+		var detail *model.StoryDetail
+		if existing, ok := existingByExternalID[externalID]; ok {
+			detail, err = s.storyService.GetByID(ctx, existing.ID)
+			if err != nil {
+				return nil, fmt.Errorf("reload existing story %d: %w", idx+1, err)
+			}
+		} else {
+			desc := renderPlannedStoryDescription(ps)
+			detail, err = s.storyService.Create(ctx, model.CreateStoryRequest{
+				WorkspaceID: workspaceID,
+				Name:        strings.TrimSpace(ps.Name),
+				Description: strPtr(desc),
+				StoryType:   storyType,
+				EpicID:      &epicID,
+				Estimate:    ps.Estimate,
+				Priority:    ps.Priority,
+				ExternalID:  strPtr(externalID),
+			}, actorID)
+			if err != nil {
+				return nil, fmt.Errorf("create story %d: %w", idx+1, err)
+			}
 		}
 
 		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" {
@@ -480,6 +506,14 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	s.publishRunEvent(run, actorID)
 
 	return created, nil
+}
+
+func planningStoryExternalID(runID string, index int, ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref != "" {
+		return fmt.Sprintf("planning:%s:%s", runID, ref)
+	}
+	return fmt.Sprintf("planning:%s:%03d", runID, index+1)
 }
 
 // KickoffEpicExecution starts story-level execution runs for selected stories from an approved plan.

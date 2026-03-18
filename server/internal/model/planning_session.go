@@ -47,6 +47,7 @@ type PlanningSession struct {
 	AgentID             string          `json:"agent_id" gorm:"type:uuid;not null"`
 	Status              string          `json:"status" gorm:"not null;default:'active'"`
 	PlanningMethodology string          `json:"planning_methodology" gorm:"not null;default:'structured_v1'"`
+	AllowedTools        json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	SpecDocumentID      *string         `json:"spec_document_id,omitempty" gorm:"type:uuid"`
 	SpecDraft           string          `json:"spec_draft" gorm:"type:text;not null;default:''"`
 	SpecSections        json.RawMessage `json:"spec_sections" gorm:"type:jsonb;not null;default:'[]'"` // deprecated: kept for migration compat
@@ -109,6 +110,7 @@ type StartPlanningSessionRequest struct {
 	AdditionalContext *string `json:"additional_context,omitempty"`
 	FlowRunID         *string `json:"flow_run_id,omitempty"`
 	FlowNodeRunID     *string `json:"flow_node_run_id,omitempty"`
+	AllowedTools      json.RawMessage `json:"allowed_tools,omitempty"`
 }
 
 // SendPlanningMessageRequest is the request to send a message in a planning session.
