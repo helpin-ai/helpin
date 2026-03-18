@@ -44,6 +44,9 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		Icon:        req.Icon,
 		CreatedBy:   userID,
 	}
+	if req.Slug != nil && *req.Slug != "" {
+		coll.Slug = *req.Slug
+	}
 	return s.collectionRepo.Create(ctx, coll)
 }
 
