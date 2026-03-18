@@ -627,6 +627,7 @@ export function Sidebar() {
         label: 'Support & Docs',
         items: [
           { link: `/w/${wsSlug}/settings/helpcenter`, label: 'Help Center', icon: Globe },
+          { link: `/w/${wsSlug}/settings/redirects`, label: 'Redirects', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
           { link: `/w/${wsSlug}/settings/chat-ai`, label: 'AI & Routing', icon: Bot },
         ],
