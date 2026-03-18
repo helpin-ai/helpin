@@ -505,6 +505,37 @@ func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspa
 	return s.hcRepo.GetPublicCollectionBySlug(ctx, workspaceID, collectionSlug)
 }
 
+// ListRedirects returns paginated redirects for a workspace.
+func (s *DocsHelpcenterService) ListRedirects(ctx context.Context, workspaceID string, filter model.DocsRedirectFilter) ([]model.DocsRedirect, int64, error) {
+	return s.redirectRepo.List(ctx, workspaceID, filter)
+}
+
+// CreateRedirect creates a manual redirect.
+func (s *DocsHelpcenterService) CreateRedirect(ctx context.Context, workspaceID string, req model.CreateDocsRedirectRequest) (*model.DocsRedirect, error) {
+	if req.SourcePath == "" || req.SourcePath[0] != '/' {
+		return nil, fmt.Errorf("source_path must start with /")
+	}
+	if req.TargetCollectionSlug == "" {
+		return nil, fmt.Errorf("target_collection_slug is required")
+	}
+	redirect := &model.DocsRedirect{
+		WorkspaceID:          workspaceID,
+		SourcePath:           req.SourcePath,
+		TargetCollectionSlug: req.TargetCollectionSlug,
+		TargetArticleSlug:    req.TargetArticleSlug,
+		Type:                 model.RedirectTypeManual,
+	}
+	if err := s.redirectRepo.Create(ctx, redirect); err != nil {
+		return nil, err
+	}
+	return redirect, nil
+}
+
+// DeleteRedirect removes a redirect by ID.
+func (s *DocsHelpcenterService) DeleteRedirect(ctx context.Context, id string) error {
+	return s.redirectRepo.Delete(ctx, id)
+}
+
 // ResolvePublicPath resolves a legacy or imported URL path to a redirect target.
 func (s *DocsHelpcenterService) ResolvePublicPath(ctx context.Context, workspaceID, path string) (*model.DocsRedirect, error) {
 	return s.redirectRepo.GetBySourcePath(ctx, workspaceID, path)
