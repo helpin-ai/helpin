@@ -25,7 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { TiptapEditor } from "@/components/ui/tiptap-editor";
@@ -1249,49 +1249,37 @@ export function CreateStoryModal({
 
         {!isTemplateMode && (
           <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
-            <DialogContent className="max-w-2xl">
-              <div className="space-y-4">
-                <div>
-                  <h2 className="text-lg font-semibold">Configure recurrence</h2>
-                  <p className="text-sm text-muted-foreground">
-                    This creates future stories from the story you are creating now.
-                  </p>
-                </div>
-                <RecurringTemplateForm
-                  initialValue={recurringDraft ?? {
-                    title: form.name.trim() || 'Recurring story',
-                    description: '',
-                    config: {
-                      schedule_type: 'time',
-                      frequency: 'weekly',
-                      interval: 1,
-                      weekdays: [1],
-                      due_date_mode: 'scheduled_date',
-                      sprint_assignment_mode: 'none',
-                    },
-                  }}
-                  submitLabel="Use recurrence"
-                  onCancel={() => setRecurringDialogOpen(false)}
-                  onSubmit={(value) => {
-                    setRecurringDraft(value);
-                    setRecurringDialogOpen(false);
-                  }}
-                />
-                {recurringDraft ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => {
-                      setRecurringDraft(null);
-                      setRecurringDialogOpen(false);
-                    }}
-                  >
-                    Remove recurrence
-                  </Button>
-                ) : null}
-              </div>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Configure recurrence</DialogTitle>
+                <DialogDescription>
+                  Automatically create copies of this story on a schedule.
+                </DialogDescription>
+              </DialogHeader>
+              <RecurringTemplateForm
+                initialValue={recurringDraft ?? {
+                  title: form.name.trim() || 'Recurring story',
+                  description: '',
+                  config: {
+                    schedule_type: 'time',
+                    frequency: 'weekly',
+                    interval: 1,
+                    weekdays: [1],
+                    due_date_mode: 'scheduled_date',
+                    sprint_assignment_mode: 'none',
+                  },
+                }}
+                submitLabel="Apply"
+                onCancel={() => setRecurringDialogOpen(false)}
+                onSubmit={(value) => {
+                  setRecurringDraft(value);
+                  setRecurringDialogOpen(false);
+                }}
+                onRemove={recurringDraft ? () => {
+                  setRecurringDraft(null);
+                  setRecurringDialogOpen(false);
+                } : undefined}
+              />
             </DialogContent>
           </Dialog>
         )}

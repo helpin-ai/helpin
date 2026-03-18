@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { CalendarDays, CheckCircle2, Clock3, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import type {
   RecurringCompletionEvent,
   RecurringDueDateMode,
@@ -25,6 +25,7 @@ interface RecurringTemplateFormProps {
   saving?: boolean;
   onSubmit: (value: RecurringTemplateFormValue) => void;
   onCancel?: () => void;
+  onRemove?: () => void;
 }
 
 const weekdayOptions = [
@@ -41,7 +42,7 @@ function toDateInput(value?: string) {
   return value ? value.slice(0, 10) : '';
 }
 
-function buttonClass(active: boolean) {
+function chip(active: boolean) {
   return cn(
     'rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
     active
@@ -56,10 +57,10 @@ export function RecurringTemplateForm({
   saving = false,
   onSubmit,
   onCancel,
+  onRemove,
 }: RecurringTemplateFormProps) {
   const initialConfig = initialValue?.config;
   const [title, setTitle] = useState(initialValue?.title ?? '');
-  const [description, setDescription] = useState(initialValue?.description ?? '');
   const [scheduleType, setScheduleType] = useState<RecurringScheduleType>(initialConfig?.schedule_type ?? 'time');
   const [frequency, setFrequency] = useState<RecurringFrequency>(initialConfig?.frequency ?? 'weekly');
   const [interval, setInterval] = useState(initialConfig?.interval ?? 1);
@@ -79,7 +80,7 @@ export function RecurringTemplateForm({
   );
 
   const normalizedWeekdays = useMemo(
-    () => [...weekdays].sort((left, right) => weekdayOptions.findIndex((option) => option.value === left) - weekdayOptions.findIndex((option) => option.value === right)),
+    () => [...weekdays].sort((left, right) => weekdayOptions.findIndex((o) => o.value === left) - weekdayOptions.findIndex((o) => o.value === right)),
     [weekdays],
   );
 
@@ -87,7 +88,7 @@ export function RecurringTemplateForm({
     setWeekdays((current) => {
       if (current.includes(weekday)) {
         if (current.length === 1) return current;
-        return current.filter((value) => value !== weekday);
+        return current.filter((v) => v !== weekday);
       }
       return [...current, weekday];
     });
@@ -106,126 +107,94 @@ export function RecurringTemplateForm({
     if (scheduleType === 'time') {
       config.frequency = frequency;
       config.interval = Math.max(1, interval || 1);
-      if (frequency === 'weekly') {
-        config.weekdays = normalizedWeekdays;
-      }
-      if (frequency === 'monthly' || frequency === 'yearly') {
-        config.day_of_month = Math.min(31, Math.max(1, dayOfMonth || 1));
-      }
+      if (frequency === 'weekly') config.weekdays = normalizedWeekdays;
+      if (frequency === 'monthly' || frequency === 'yearly') config.day_of_month = Math.min(31, Math.max(1, dayOfMonth || 1));
     } else {
       config.completion_event = completionEvent;
     }
 
-    if (dueDateMode === 'offset_days') {
-      config.due_offset_days = Math.max(1, dueOffsetDays || 1);
-    }
-    if (startsOn) {
-      config.starts_on = `${startsOn}T00:00:00Z`;
-    }
-    if (endMode === 'date' && endsOn) {
-      config.ends_on = `${endsOn}T00:00:00Z`;
-    }
-    if (endMode === 'count') {
-      config.ends_after_occurrences = Math.max(1, endsAfterOccurrences || 1);
-    }
+    if (dueDateMode === 'offset_days') config.due_offset_days = Math.max(1, dueOffsetDays || 1);
+    if (startsOn) config.starts_on = `${startsOn}T00:00:00Z`;
+    if (endMode === 'date' && endsOn) config.ends_on = `${endsOn}T00:00:00Z`;
+    if (endMode === 'count') config.ends_after_occurrences = Math.max(1, endsAfterOccurrences || 1);
 
-    onSubmit({
-      title: trimmedTitle,
-      description: description.trim(),
-      config,
-    });
+    onSubmit({ title: trimmedTitle, description: '', config });
   };
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground">Template title</label>
+    <div className="space-y-4">
+      {/* Template name */}
+      <div className="space-y-1.5">
+        <Label>Name</Label>
         <Input
           value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Weekly planning review"
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g. Weekly planning review"
         />
       </div>
 
-      <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground">Internal note</label>
-        <Textarea
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          placeholder="Optional note for operators"
-          className="min-h-20 resize-none"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <div className="text-xs font-medium text-muted-foreground">Trigger</div>
+      {/* Trigger type */}
+      <div className="space-y-1.5">
+        <Label>Trigger</Label>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={buttonClass(scheduleType === 'time')} onClick={() => setScheduleType('time')}>
-            <Clock3 className="mr-1 inline h-3 w-3" />
-            Time-based
+          <button type="button" className={chip(scheduleType === 'time')} onClick={() => setScheduleType('time')}>
+            <Clock3 className="mr-1 inline h-3 w-3" /> Time-based
           </button>
-          <button type="button" className={buttonClass(scheduleType === 'completion')} onClick={() => setScheduleType('completion')}>
-            <CheckCircle2 className="mr-1 inline h-3 w-3" />
-            On completion
+          <button type="button" className={chip(scheduleType === 'completion')} onClick={() => setScheduleType('completion')}>
+            <CheckCircle2 className="mr-1 inline h-3 w-3" /> On completion
           </button>
         </div>
+        <p className="text-[11px] text-muted-foreground">
+          {scheduleType === 'time'
+            ? 'Creates a new story on a fixed schedule (daily, weekly, etc.)'
+            : 'Creates a new story when the current one is marked done'}
+        </p>
       </div>
 
+      {/* Schedule config */}
       {scheduleType === 'time' ? (
-        <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-3">
-          <div className="space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">Frequency</div>
+        <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+          <div className="space-y-1.5">
+            <Label>Frequency</Label>
             <div className="flex flex-wrap gap-2">
-              {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={buttonClass(frequency === value)}
-                  onClick={() => setFrequency(value)}
-                >
-                  {value[0].toUpperCase() + value.slice(1)}
+              {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((v) => (
+                <button key={v} type="button" className={chip(frequency === v)} onClick={() => setFrequency(v)}>
+                  {v[0].toUpperCase() + v.slice(1)}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Every</label>
-              <Input
-                type="number"
-                min={1}
-                value={interval}
-                onChange={(event) => setInterval(Number(event.target.value) || 1)}
-              />
-            </div>
-
-            {(frequency === 'monthly' || frequency === 'yearly') && (
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">Day of month</label>
+            <div className="space-y-1.5">
+              <Label>Repeat every</Label>
+              <div className="flex items-center gap-2">
                 <Input
                   type="number"
                   min={1}
-                  max={31}
-                  value={dayOfMonth}
-                  onChange={(event) => setDayOfMonth(Number(event.target.value) || 1)}
+                  className="w-20"
+                  value={interval}
+                  onChange={(e) => setInterval(Number(e.target.value) || 1)}
                 />
+                <span className="text-xs text-muted-foreground">{frequency === 'daily' ? 'day(s)' : frequency === 'weekly' ? 'week(s)' : frequency === 'monthly' ? 'month(s)' : 'year(s)'}</span>
+              </div>
+            </div>
+
+            {(frequency === 'monthly' || frequency === 'yearly') && (
+              <div className="space-y-1.5">
+                <Label>Day of month</Label>
+                <Input type="number" min={1} max={31} className="w-20" value={dayOfMonth} onChange={(e) => setDayOfMonth(Number(e.target.value) || 1)} />
               </div>
             )}
           </div>
 
           {frequency === 'weekly' && (
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">Weekdays</div>
-              <div className="flex flex-wrap gap-2">
-                {weekdayOptions.map((option) => (
-                  <button
-                    key={option.label}
-                    type="button"
-                    className={buttonClass(weekdays.includes(option.value))}
-                    onClick={() => handleWeekdayToggle(option.value)}
-                  >
-                    {option.label}
+            <div className="space-y-1.5">
+              <Label>On days</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {weekdayOptions.map((o) => (
+                  <button key={o.label} type="button" className={chip(weekdays.includes(o.value))} onClick={() => handleWeekdayToggle(o.value)}>
+                    {o.label}
                   </button>
                 ))}
               </div>
@@ -233,122 +202,92 @@ export function RecurringTemplateForm({
           )}
         </div>
       ) : (
-        <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
-          <div className="text-xs font-medium text-muted-foreground">Completion event</div>
+        <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-3">
+          <Label>Event</Label>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={buttonClass(completionEvent === 'done_state')}
-              onClick={() => setCompletionEvent('done_state')}
-            >
-              Done state
+            <button type="button" className={chip(completionEvent === 'done_state')} onClick={() => setCompletionEvent('done_state')}>
+              Moved to Done
             </button>
-            <button
-              type="button"
-              className={buttonClass(completionEvent === 'completed')}
-              onClick={() => setCompletionEvent('completed')}
-            >
-              Completed flag
+            <button type="button" className={chip(completionEvent === 'completed')} onClick={() => setCompletionEvent('completed')}>
+              Marked complete
             </button>
           </div>
         </div>
       )}
 
-      <div className="space-y-2">
-        <div className="text-xs font-medium text-muted-foreground">Due date</div>
+      {/* Due date */}
+      <div className="space-y-1.5">
+        <Label>Due date</Label>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={buttonClass(dueDateMode === 'none')} onClick={() => setDueDateMode('none')}>
-            No due date
-          </button>
-          <button
-            type="button"
-            className={buttonClass(dueDateMode === 'scheduled_date')}
-            onClick={() => setDueDateMode('scheduled_date')}
-          >
-            On schedule
-          </button>
-          <button
-            type="button"
-            className={buttonClass(dueDateMode === 'offset_days')}
-            onClick={() => setDueDateMode('offset_days')}
-          >
-            Offset days
-          </button>
+          <button type="button" className={chip(dueDateMode === 'none')} onClick={() => setDueDateMode('none')}>None</button>
+          <button type="button" className={chip(dueDateMode === 'scheduled_date')} onClick={() => setDueDateMode('scheduled_date')}>Same as schedule</button>
+          <button type="button" className={chip(dueDateMode === 'offset_days')} onClick={() => setDueDateMode('offset_days')}>Days after creation</button>
         </div>
         {dueDateMode === 'offset_days' && (
-          <Input
-            type="number"
-            min={1}
-            value={dueOffsetDays}
-            onChange={(event) => setDueOffsetDays(Number(event.target.value) || 1)}
-          />
+          <div className="flex items-center gap-2 pt-1">
+            <Input type="number" min={1} className="w-20" value={dueOffsetDays} onChange={(e) => setDueOffsetDays(Number(e.target.value) || 1)} />
+            <span className="text-xs text-muted-foreground">days after story is created</span>
+          </div>
         )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground">Starts on</label>
+      {/* Start / End */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label>Starts on</Label>
           <div className="relative">
             <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input type="date" value={startsOn} onChange={(event) => setStartsOn(event.target.value)} className="pl-9" />
+            <Input type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} className="pl-9" />
           </div>
+          <p className="text-[11px] text-muted-foreground">Leave empty to start immediately</p>
         </div>
 
-        <div className="space-y-2">
-          <div className="text-xs font-medium text-muted-foreground">End condition</div>
+        <div className="space-y-1.5">
+          <Label>Ends</Label>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={buttonClass(endMode === 'never')} onClick={() => setEndMode('never')}>
-              Never
-            </button>
-            <button type="button" className={buttonClass(endMode === 'date')} onClick={() => setEndMode('date')}>
-              On date
-            </button>
-            <button type="button" className={buttonClass(endMode === 'count')} onClick={() => setEndMode('count')}>
-              After count
-            </button>
+            <button type="button" className={chip(endMode === 'never')} onClick={() => setEndMode('never')}>Never</button>
+            <button type="button" className={chip(endMode === 'date')} onClick={() => setEndMode('date')}>On date</button>
+            <button type="button" className={chip(endMode === 'count')} onClick={() => setEndMode('count')}>After</button>
           </div>
-          {endMode === 'date' && (
-            <Input type="date" value={endsOn} onChange={(event) => setEndsOn(event.target.value)} />
-          )}
+          {endMode === 'date' && <Input type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} className="mt-1" />}
           {endMode === 'count' && (
-            <Input
-              type="number"
-              min={1}
-              value={endsAfterOccurrences}
-              onChange={(event) => setEndsAfterOccurrences(Number(event.target.value) || 1)}
-            />
+            <div className="flex items-center gap-2 mt-1">
+              <Input type="number" min={1} className="w-20" value={endsAfterOccurrences} onChange={(e) => setEndsAfterOccurrences(Number(e.target.value) || 1)} />
+              <span className="text-xs text-muted-foreground">occurrences</span>
+            </div>
           )}
         </div>
       </div>
 
-      <div className="space-y-2">
-        <div className="text-xs font-medium text-muted-foreground">Sprint assignment</div>
+      {/* Sprint assignment */}
+      <div className="space-y-1.5">
+        <Label>Sprint assignment</Label>
         <div className="flex flex-wrap gap-2">
           {([
             { value: 'none', label: 'No sprint' },
             { value: 'current_sprint', label: 'Current sprint' },
             { value: 'by_due_date', label: 'By due date' },
-          ] as const).map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={buttonClass(sprintAssignmentMode === option.value)}
-              onClick={() => setSprintAssignmentMode(option.value)}
-            >
-              <RotateCw className="mr-1 inline h-3 w-3" />
-              {option.label}
+          ] as const).map((o) => (
+            <button key={o.value} type="button" className={chip(sprintAssignmentMode === o.value)} onClick={() => setSprintAssignmentMode(o.value)}>
+              {o.label}
             </button>
           ))}
         </div>
+        <p className="text-[11px] text-muted-foreground">
+          {sprintAssignmentMode === 'none' ? 'Story will not be assigned to any sprint' : sprintAssignmentMode === 'current_sprint' ? 'Assigned to whichever sprint is active when created' : 'Assigned to the sprint that contains the due date'}
+        </p>
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        {onCancel ? (
-          <Button type="button" variant="ghost" onClick={onCancel}>
-            Cancel
+      {/* Actions */}
+      <div className="flex items-center gap-2 pt-1">
+        {onRemove && (
+          <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={onRemove}>
+            Remove
           </Button>
-        ) : null}
-        <Button type="button" disabled={saving || !title.trim()} onClick={handleSubmit}>
+        )}
+        <div className="flex-1" />
+        {onCancel && <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>}
+        <Button type="button" size="sm" disabled={saving || !title.trim()} onClick={handleSubmit}>
           {submitLabel}
         </Button>
       </div>
