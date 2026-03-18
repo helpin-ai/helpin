@@ -22,15 +22,19 @@ BEGIN
             ALTER TABLE agent_runs ADD COLUMN target_type text;
         END IF;
 
-        -- Backfill from story_id
-        UPDATE agent_runs
-           SET target_type = 'story', target_id = story_id::uuid
-         WHERE target_id IS NULL AND story_id IS NOT NULL;
+        -- Backfill from story_id (only if legacy column exists)
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='agent_runs' AND column_name='story_id') THEN
+            UPDATE agent_runs
+               SET target_type = 'story', target_id = story_id::uuid
+             WHERE target_id IS NULL AND story_id IS NOT NULL;
+        END IF;
 
-        -- Backfill from ticket_id (now called conversation_id)
-        UPDATE agent_runs
-           SET target_type = 'support_conversation', target_id = ticket_id::uuid
-         WHERE target_id IS NULL AND ticket_id IS NOT NULL;
+        -- Backfill from ticket_id (only if legacy column exists)
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='agent_runs' AND column_name='ticket_id') THEN
+            UPDATE agent_runs
+               SET target_type = 'support_conversation', target_id = ticket_id::uuid
+             WHERE target_id IS NULL AND ticket_id IS NOT NULL;
+        END IF;
 
         -- Rename legacy target_type values
         UPDATE agent_runs
