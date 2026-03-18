@@ -1,6 +1,7 @@
 package helpscout
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -206,31 +207,61 @@ func (c *Client) fetchAllPages(
 }
 
 // extractPage pulls pagination metadata and the named items array from a raw
-// HelpScout API response.
+// HelpScout API response. The Docs API nests pagination inside the items key:
+//
+//	{"collections": {"page": 1, "pages": 1, "items": [...]}}
 func extractPage(raw json.RawMessage, itemsKey string) (*paginatedResponse, error) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return nil, fmt.Errorf("unmarshal envelope: %w", err)
 	}
 
-	items, ok := envelope[itemsKey]
+	inner, ok := envelope[itemsKey]
 	if !ok {
 		return nil, fmt.Errorf("missing %q key in response", itemsKey)
 	}
 
-	// Extract page/pages from the envelope (they sit at the top level).
+	// HelpScout nests pagination inside the items key as an object:
+	//   {"items": [...], "page": 1, "pages": 1}
+	// OR it may return a direct array (older API versions).
+	// Try object format first, fall back to treating inner as the array itself.
+
+	// Check if inner is an object or array.
+	trimmed := bytes.TrimSpace(inner)
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		// Object format: {"items": [...], "page": 1, "pages": 1}
+		var wrapper struct {
+			Items json.RawMessage `json:"items"`
+			Page  int             `json:"page"`
+			Pages int             `json:"pages"`
+		}
+		if err := json.Unmarshal(inner, &wrapper); err != nil {
+			return nil, fmt.Errorf("unmarshal %s wrapper: %w", itemsKey, err)
+		}
+		items := wrapper.Items
+		if items == nil {
+			// No "items" key — the entire inner object might be a single item
+			items = inner
+		}
+		return &paginatedResponse{
+			Items: items,
+			Page:  wrapper.Page,
+			Pages: wrapper.Pages,
+		}, nil
+	}
+
+	// Array format: treat inner directly as items, get pagination from top-level
 	var pagination struct {
 		Page  int `json:"page"`
 		Pages int `json:"pages"`
 	}
-	if err := json.Unmarshal(raw, &pagination); err != nil {
-		return nil, fmt.Errorf("unmarshal pagination: %w", err)
-	}
+	// Re-parse the full response for pagination
+	_ = json.Unmarshal([]byte(raw), &pagination)
 
 	return &paginatedResponse{
-		Items: items,
-		Page:  pagination.Page,
-		Pages: pagination.Pages,
+		Items: inner,
+		Page:  max(pagination.Page, 1),
+		Pages: max(pagination.Pages, 1),
 	}, nil
 }
 
