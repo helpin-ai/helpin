@@ -31,6 +31,8 @@ export function HelpCenterImportSection({
   workspaceId: string;
   editable: boolean;
 }) {
+  const STORAGE_KEY = `helpin_docs_import_job_${workspaceId}`;
+
   const [step, setStep] = useState<WizardStep>(0);
   const [apiKey, setApiKey] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -46,11 +48,29 @@ export function HelpCenterImportSection({
 
   const { data: spaces } = useDocsSpaces(workspaceId);
 
+  // Resume active import job on mount
   useEffect(() => {
+    const savedJobId = localStorage.getItem(STORAGE_KEY);
+    if (savedJobId) {
+      docsImportService.getStatus(workspaceId, savedJobId).then(({ data }) => {
+        if (data && (data.status === 'running' || data.status === 'pending')) {
+          setJobId(savedJobId);
+          setJobStatus(data);
+          setStep(2);
+          startPolling(savedJobId);
+        } else if (data && (data.status === 'done' || data.status === 'failed')) {
+          setJobId(savedJobId);
+          setJobStatus(data);
+          setStep(2);
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      });
+    }
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, []);
+  }, [workspaceId]);
 
   const handleConnect = async () => {
     if (!apiKey.trim()) {
@@ -99,6 +119,7 @@ export function HelpCenterImportSection({
       setJobId(data.job_id);
       setJobStatus(null);
       setStep(2);
+      localStorage.setItem(STORAGE_KEY, data.job_id);
       startPolling(data.job_id);
     }
   };
@@ -136,6 +157,7 @@ export function HelpCenterImportSection({
   const handleReset = () => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
+    localStorage.removeItem(STORAGE_KEY);
     setStep(0);
     setApiKey('');
     setPreview(null);
