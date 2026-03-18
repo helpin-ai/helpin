@@ -199,6 +199,7 @@ func main() {
 		&model.DocsHelpcenterConfig{},
 		&model.DocsHelpcenterArticle{},
 		&model.DocsSlugAlias{},
+		&model.DocsRedirect{},
 		&model.DocsReviewQueue{},
 		&model.DocsArticleFeedback{},
 		&model.DocsComment{},
