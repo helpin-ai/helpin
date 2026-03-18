@@ -24,6 +24,7 @@ type DocsHandler struct {
 	linkSvc       *service.DocsLinkService
 	helpcenterSvc *service.DocsHelpcenterService
 	searchSvc     *service.DocsSearchService
+	importService *service.DocsImportService
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -36,6 +37,7 @@ func NewDocsHandler(
 	linkSvc *service.DocsLinkService,
 	helpcenterSvc *service.DocsHelpcenterService,
 	searchSvc *service.DocsSearchService,
+	importService *service.DocsImportService,
 ) *DocsHandler {
 	return &DocsHandler{
 		spaceSvc:      spaceSvc,
@@ -46,6 +48,7 @@ func NewDocsHandler(
 		linkSvc:       linkSvc,
 		helpcenterSvc: helpcenterSvc,
 		searchSvc:     searchSvc,
+		importService: importService,
 	}
 }
 

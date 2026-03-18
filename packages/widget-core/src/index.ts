@@ -31,6 +31,9 @@ export { BottomNav } from './components/BottomNav';
 export { HomeView } from './components/HomeView';
 export { MessagesView } from './components/MessagesView';
 export { HelpView } from './components/HelpView';
+export { HelpSpaceView } from './components/HelpSpaceView';
+export { HelpCollectionView } from './components/HelpCollectionView';
+export { HelpArticleView } from './components/HelpArticleView';
 export { ConversationView } from './components/ConversationView';
 export { ConversationListView } from './components/ConversationListView';
 
@@ -62,6 +65,12 @@ export interface MountWidgetOptions {
   onSelectConversation?: (conversationId: string) => void;
   onStartNewConversation?: () => void;
   onViewChange?: (view: WidgetView) => void;
+  widgetKey?: string;
+  host?: string;
+  openArticleRequest?: {
+    key: number;
+    articleSlug: string;
+  };
 }
 
 export function mountWidget(container: HTMLElement, options: MountWidgetOptions): void {
@@ -88,6 +97,9 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     onSelectConversation = () => {},
     onStartNewConversation = () => {},
     onViewChange,
+    widgetKey,
+    host,
+    openArticleRequest,
   } = options;
 
   const tree = h(
@@ -113,6 +125,9 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       onSelectConversation,
       onStartNewConversation,
       onViewChange,
+      widgetKey,
+      host,
+      openArticleRequest,
     }),
     showLauncher
       ? h(WidgetLauncher, {

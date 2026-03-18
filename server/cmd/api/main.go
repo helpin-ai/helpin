@@ -202,6 +202,7 @@ func main() {
 		&model.DocsReviewQueue{},
 		&model.DocsArticleFeedback{},
 		&model.DocsComment{},
+		&model.DocsImportJob{},
 		// Notifications module
 		&model.Notification{},
 		&model.NotificationEvent{},
@@ -435,6 +436,7 @@ func main() {
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
+	docsImportRepo := repository.NewDocsImportRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
@@ -470,7 +472,7 @@ func main() {
 	}()
 
 	// Initialize services.
-	authService := service.NewAuthService(userRepo, jwtManager)
+	authService := service.NewAuthService(userRepo, orgRepo, jwtManager, s3Client)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
 	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
@@ -481,21 +483,21 @@ func main() {
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, emailClient, cfg.AppBaseURL)
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
-	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
+	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmAttachmentRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
 	pmRoadmapRepo := repository.NewPMRoadmapRepository(db)
-	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmRoadmapService := service.NewPMRoadmapService(pmEpicService, pmRoadmapRepo)
-	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher, notificationService)
+	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
-	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, pmStoryRepo, wsPublisher, notificationService, workspaceRepo)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo)
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
 	searchService := service.NewSearchService(searchRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
-	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo)
+	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -622,6 +624,7 @@ func main() {
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, s3Client)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
+	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, s3Client)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
@@ -688,7 +691,7 @@ func main() {
 	_ = signalDetectionService // Used by Temporal workers
 
 	orgService := service.NewOrganizationService(orgRepo)
-	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, crmDealService, supportInboxService)
+	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
@@ -788,6 +791,7 @@ func main() {
 			docsLinkService,
 			docsHelpcenterService,
 			docsSearchService,
+			docsImportService,
 		),
 	}
 

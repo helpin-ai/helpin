@@ -1,3 +1,10 @@
+export interface HelpSpace {
+  id: string;
+  name: string;
+  slug: string;
+  icon?: string;
+}
+
 export interface WidgetConfig {
   workspaceId: string;
   workspaceName?: string;
@@ -18,4 +25,5 @@ export interface WidgetConfig {
     preChatForm: boolean;
     csatRating: boolean;
   };
+  helpSpaces?: HelpSpace[];
 }

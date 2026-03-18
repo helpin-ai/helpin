@@ -1,5 +1,5 @@
 import { HelpinClient } from './core/client';
-import { WidgetManager, type WidgetSettings } from './core/widget';
+import { WidgetManager, type ShowArticleOptions, type WidgetSettings } from './core/widget';
 import { defaultConfig } from './core/config';
 import type { Config } from './core/types';
 import { LogLevel } from './utils/logger';
@@ -204,7 +204,7 @@ function initializeNamespacedClient(
       showMessages: () => widgetManager.showMessages(),
       showNewMessage: (content?: string) => widgetManager.showNewMessage(content),
       showConversation: (id: string) => widgetManager.showConversation(id),
-      showArticle: (id: string) => widgetManager.showArticle(id),
+      showArticle: (id: string, options?: ShowArticleOptions) => widgetManager.showArticle(id, options),
       onShow: (cb: (...args: any[]) => void) => widgetManager.onShow(cb),
       onHide: (cb: (...args: any[]) => void) => widgetManager.onHide(cb),
       onUnreadCountChange: (cb: (...args: any[]) => void) => widgetManager.onUnreadCountChange(cb),
@@ -375,7 +375,7 @@ if (isWindowAvailable()) {
           showMessages: () => widgetManager.showMessages(),
           showNewMessage: (content?: string) => widgetManager.showNewMessage(content),
           showConversation: (id: string) => widgetManager.showConversation(id),
-          showArticle: (id: string) => widgetManager.showArticle(id),
+          showArticle: (id: string, options?: ShowArticleOptions) => widgetManager.showArticle(id, options),
           onShow: (cb: (...a: any[]) => void) => widgetManager.onShow(cb),
           onHide: (cb: (...a: any[]) => void) => widgetManager.onHide(cb),
           onUnreadCountChange: (cb: (...a: any[]) => void) => widgetManager.onUnreadCountChange(cb),

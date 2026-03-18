@@ -144,6 +144,15 @@ export interface HelpinGlobal {
   (command: 'lead', payload: EventPayload, directSend?: boolean): void;
   (command: 'setUserId', userId: string): void;
   (command: 'onLoad', callback: () => void): void;
+  (command: 'show', ...args: never[]): void;
+  (command: 'hide', ...args: never[]): void;
+  (command: 'toggle', ...args: never[]): void;
+  (command: 'showMessages', ...args: never[]): void;
+  (command: 'showNewMessage', content?: string): void;
+  (command: 'showConversation', conversationId: string): void;
+  (command: 'showArticle', articleId: string): void;
+  (command: 'boot', settings: { key: string; host?: string; user?: Record<string, unknown> }): void;
+  (command: 'shutdown', ...args: never[]): void;
 
   // Object-oriented API
   track(eventName: string, payload?: any): void;
@@ -162,5 +171,14 @@ export interface HelpinGlobal {
   rawTrack(payload: any): void;
   lead(payload: EventPayload, directSend?: boolean): void;
   setUserId(userId: string): void;
+  boot(settings: { key: string; host?: string; user?: Record<string, unknown> }): void;
+  shutdown(): void;
+  show(): void;
+  hide(): void;
+  toggle(): void;
+  showMessages(): void;
+  showNewMessage(content?: string): void;
+  showConversation(conversationId: string): void;
+  showArticle(articleId: string): void;
   getConfig(): Config | null;
 }

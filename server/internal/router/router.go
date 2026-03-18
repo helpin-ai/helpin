@@ -170,6 +170,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				MaxAge:           3600,
 			}))
 			r.Get("/config", h.SupportInboxWidget.GetConfig)
+			r.Get("/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
+			r.Get("/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+			r.Get("/help/articles/{articleSlug}", h.SupportInboxWidget.GetHelpArticle)
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
 			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
 			r.Post("/messages", h.SupportInboxWidget.SendMessage)
@@ -221,6 +224,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Auth / profile
 			r.Get("/auth/me", h.Auth.Me)
 			r.Put("/auth/me", h.Auth.UpdateProfile)
+			r.Post("/auth/me/avatar", h.Auth.UploadAvatar)
+			r.Delete("/auth/me/avatar", h.Auth.DeleteAvatar)
 			r.Put("/auth/change-password", h.Auth.ChangePassword)
 
 			// User notification settings (account-level, no workspace scope)
@@ -277,7 +282,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Settings management (admin+)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/initialize", h.Settings.Initialize)
-					r.With(requirePerm(authorization.PermSettingsManage)).Put("/job-roles", h.Settings.UpdateJobRoleCriteria)
+				r.With(requirePerm(authorization.PermSettingsManage)).Put("/job-roles", h.Settings.UpdateJobRoleCriteria)
 				r.With(requirePerm(authorization.PermSettingsManage)).Delete("/job-roles", h.Settings.DeleteJobRole)
 				r.With(requirePerm(authorization.PermSettingsManage)).Put("/system", h.Settings.UpdateSystem)
 
@@ -690,6 +695,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Feedback
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/articles/{docId}/feedback", h.Docs.SubmitArticleFeedback)
+
+				// Docs import
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/preview", h.Docs.ImportPreviewHelpscout)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/start", h.Docs.ImportStartHelpscout)
+				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/status", h.Docs.ImportGetStatus)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/{jobId}/retry", h.Docs.ImportRetry)
+				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/redirect-map", h.Docs.ImportGetRedirectMap)
 			})
 
 			// CRM module

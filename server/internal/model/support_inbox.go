@@ -305,8 +305,9 @@ type SupportInboxSettings struct {
 	OutsideHoursMessage   string                      `json:"outside_hours_message"`
 
 	// Widget Identity
-	WidgetName      string `json:"widget_name"`       // display name in widget header (defaults to workspace name)
-	WidgetAvatarURL string `json:"widget_avatar_url"` // custom avatar URL for the widget
+	WidgetName         string   `json:"widget_name"`           // display name in widget header (defaults to workspace name)
+	WidgetAvatarURL    string   `json:"widget_avatar_url"`     // custom avatar URL for the widget
+	WidgetHelpSpaceIDs []string `json:"widget_help_space_ids"` // selected external-capable docs spaces shown in widget help
 
 	// Branding
 	BrandColor      string `json:"brand_color"` // hex "#6366F1"
@@ -353,6 +354,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		OutsideHoursMessage: "We're currently offline. Leave a message and we'll get back to you!",
 		WidgetName:          "",
 		WidgetAvatarURL:     "",
+		WidgetHelpSpaceIDs:  []string{},
 		BrandColor:          "#6366F1",
 		ShowBranding:        true,
 		ColorScheme:         "light",
@@ -385,6 +387,7 @@ type UpdateInstallationSettingsRequest struct {
 	OutsideHoursMessage    *string                     `json:"outside_hours_message,omitempty"`
 	WidgetName             *string                     `json:"widget_name,omitempty"`
 	WidgetAvatarURL        *string                     `json:"widget_avatar_url,omitempty"`
+	WidgetHelpSpaceIDs     []string                    `json:"widget_help_space_ids,omitempty"`
 	BrandColor             *string                     `json:"brand_color,omitempty"`
 	ShowBranding           *bool                       `json:"show_branding,omitempty"`
 	ColorScheme            *string                     `json:"color_scheme,omitempty"`
@@ -430,6 +433,42 @@ type WidgetConfigFeatures struct {
 	CSATRating  bool `json:"csatRating"`
 }
 
+// WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.
+type WidgetHelpSpace struct {
+	ID   string  `json:"id"`
+	Name string  `json:"name"`
+	Slug string  `json:"slug"`
+	Icon *string `json:"icon,omitempty"`
+}
+
+// WidgetHelpCollection is a widget help collection row.
+type WidgetHelpCollection struct {
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Slug         string  `json:"slug"`
+	Icon         *string `json:"icon,omitempty"`
+	ArticleCount int     `json:"article_count"`
+}
+
+// WidgetHelpArticleSummary is a widget help article list row.
+type WidgetHelpArticleSummary struct {
+	ID      string  `json:"id"`
+	Title   string  `json:"title"`
+	Slug    string  `json:"slug"`
+	Excerpt *string `json:"excerpt,omitempty"`
+	Icon    *string `json:"icon,omitempty"`
+}
+
+// WidgetHelpArticle is a widget help article detail response.
+type WidgetHelpArticle struct {
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Slug        string  `json:"slug"`
+	Excerpt     *string `json:"excerpt,omitempty"`
+	Icon        *string `json:"icon,omitempty"`
+	ContentHTML *string `json:"content_html"`
+}
+
 // WidgetConfigResponse is the public-facing widget config matching the
 // TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
@@ -437,6 +476,7 @@ type WidgetConfigResponse struct {
 	WorkspaceName string               `json:"workspaceName,omitempty"`
 	Branding      WidgetConfigBranding `json:"branding"`
 	Features      WidgetConfigFeatures `json:"features"`
+	HelpSpaces    []WidgetHelpSpace    `json:"helpSpaces"`
 }
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.

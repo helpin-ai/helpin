@@ -3,4 +3,4 @@ export type { Message, AiSource, Attachment } from './types/message';
 export type { Organization } from './types/organization';
 export type { User } from './types/user';
 export type { Workspace, WorkspaceBranding } from './types/workspace';
-export type { WidgetConfig } from './types/widget-config';
+export type { WidgetConfig, HelpSpace } from './types/widget-config';

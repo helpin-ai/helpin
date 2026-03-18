@@ -1,33 +1,36 @@
 import { FunctionComponent } from 'preact';
 import type { WidgetConfig } from '../types';
-import { SearchIcon, MailIcon, FileTextIcon, ChevronRightIcon } from './icons';
+import { MailIcon, FileTextIcon, ChevronRightIcon } from './icons';
+import { HelpSpaceView } from './HelpSpaceView';
 
 interface HelpViewProps {
   config: WidgetConfig;
-  onNavigate: (view: 'conversation' | 'messages') => void;
+  host?: string;
+  widgetKey?: string;
+  onContact: () => void;
+  onSelectSpace: (spaceSlug: string) => void;
+  onSelectCollection: (collectionSlug: string) => void;
 }
 
 export const HelpView: FunctionComponent<HelpViewProps> = ({
-  config: _config,
-  onNavigate,
+  config,
+  host,
+  widgetKey,
+  onContact,
+  onSelectSpace,
+  onSelectCollection,
 }) => {
+  const helpSpaces = config.helpSpaces ?? [];
+  const canBrowseDocs = !!host && !!widgetKey && helpSpaces.length > 0;
+
   return (
     <div className="helpin-help-view">
       <div className="helpin-help-header">
         <span className="helpin-help-title">Help</span>
       </div>
       <div className="helpin-help-content">
-        <div className="helpin-help-search">
-          <SearchIcon size={18} class="helpin-help-search-icon" />
-          <input
-            type="text"
-            className="helpin-help-search-input"
-            placeholder="Search for help..."
-          />
-        </div>
-
         <div className="helpin-help-links">
-          <button className="helpin-help-link" onClick={() => onNavigate('conversation')}>
+          <button className="helpin-help-link" onClick={onContact}>
             <MailIcon size={20} />
             <div className="helpin-help-link-text">
               <span className="helpin-help-link-title">Contact us</span>
@@ -35,18 +38,54 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
             </div>
             <ChevronRightIcon size={16} class="helpin-help-link-arrow" />
           </button>
-
-          <div className="helpin-help-divider" />
-
-          <a className="helpin-help-link" href="#" target="_blank" rel="noopener noreferrer">
-            <FileTextIcon size={20} />
-            <div className="helpin-help-link-text">
-              <span className="helpin-help-link-title">Browse our docs</span>
-              <span className="helpin-help-link-desc">Find detailed guides and documentation</span>
-            </div>
-            <ChevronRightIcon size={16} class="helpin-help-link-arrow" />
-          </a>
         </div>
+
+        {!canBrowseDocs && (
+          <p className="helpin-help-empty">Articles are not available in this widget yet.</p>
+        )}
+
+        {canBrowseDocs && helpSpaces.length === 1 && host && widgetKey && (
+          <div className="helpin-help-inline-section">
+            <div className="helpin-help-section-label">
+              <FileTextIcon size={16} />
+              <span>Help Center</span>
+            </div>
+            <HelpSpaceView
+              host={host}
+              widgetKey={widgetKey}
+              space={helpSpaces[0]}
+              showBack={false}
+              showHeader={false}
+              onBack={() => {}}
+              onSelectCollection={onSelectCollection}
+            />
+          </div>
+        )}
+
+        {canBrowseDocs && helpSpaces.length > 1 && (
+          <div className="helpin-help-inline-section">
+            <div className="helpin-help-section-label">
+              <FileTextIcon size={16} />
+              <span>Help Center</span>
+            </div>
+            <div className="helpin-help-list">
+              {helpSpaces.map((space) => (
+                <button
+                  key={space.id}
+                  className="helpin-help-link"
+                  onClick={() => onSelectSpace(space.slug)}
+                >
+                  <FileTextIcon size={20} />
+                  <div className="helpin-help-link-text">
+                    <span className="helpin-help-link-title">{space.name}</span>
+                    <span className="helpin-help-link-desc">Browse collections and articles</span>
+                  </div>
+                  <ChevronRightIcon size={16} class="helpin-help-link-arrow" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

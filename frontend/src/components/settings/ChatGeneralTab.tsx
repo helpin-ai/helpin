@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound } from 'lucide-react';
-import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey } from '@/hooks/queries';
+import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { WidgetPreview } from './WidgetPreview';
 import { CodeBlock } from '@/components/ui/code-block';
@@ -53,6 +53,7 @@ function PreviewLayout({ children, preview }: { children: ReactNode; preview: Re
 export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data, isLoading } = useChatSettings(workspaceId);
+  const { data: docsSpaces = [], isLoading: docsSpacesLoading } = useDocsSpaces(workspaceId);
   const updateMutation = useUpdateChatSettings(workspaceId);
   const regenerateKeyMutation = useRegenerateWidgetKey(workspaceId);
 
@@ -77,6 +78,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [logoUrl, setLogoUrl] = useState('');
   const [widgetName, setWidgetName] = useState('');
   const [widgetAvatarUrl, setWidgetAvatarUrl] = useState('');
+  const [widgetHelpSpaceIds, setWidgetHelpSpaceIds] = useState<string[]>([]);
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -101,6 +103,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setLogoUrl(s.logo_url || '');
       setWidgetName(s.widget_name || '');
       setWidgetAvatarUrl(s.widget_avatar_url || '');
+      setWidgetHelpSpaceIds(s.widget_help_space_ids || []);
     }
   }, [data]);
 
@@ -114,6 +117,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       auto_promote_to_lead: autoPromote,
       widget_name: widgetName,
       widget_avatar_url: widgetAvatarUrl,
+      widget_help_space_ids: widgetHelpSpaceIds,
       brand_color: brandColor,
       show_branding: showBranding,
       launcher_position: launcherPosition,
@@ -126,6 +130,16 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       onSuccess: () => toast.success('Settings saved'),
       onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Failed to save'),
     });
+  };
+
+  const externalDocsSpaces = docsSpaces.filter((space) => space.type === 'external_capable');
+
+  const toggleHelpSpace = (spaceId: string, enabled: boolean) => {
+    setWidgetHelpSpaceIds((current) => (
+      enabled
+        ? current.includes(spaceId) ? current : [...current, spaceId]
+        : current.filter((id) => id !== spaceId)
+    ));
   };
 
 
@@ -640,6 +654,46 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               </div>
               <Switch checked={autoPromote} onCheckedChange={setAutoPromote} />
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className={LINEAR_CARD_CLASS}>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base">Help Center</CardTitle>
+            <CardDescription>Select which external docs spaces customers can browse from the widget Help tab.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {docsSpacesLoading && (
+              <p className="text-sm text-muted-foreground">Loading available spaces...</p>
+            )}
+
+            {!docsSpacesLoading && externalDocsSpaces.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Create an external space in Docs to show articles in the widget.
+              </p>
+            )}
+
+            {!docsSpacesLoading && externalDocsSpaces.length > 0 && (
+              <div className="space-y-3">
+                {externalDocsSpaces.map((space) => {
+                  const enabled = widgetHelpSpaceIds.includes(space.id);
+                  return (
+                    <div key={space.id} className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">{space.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          /{space.slug}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={enabled}
+                        onCheckedChange={(checked) => toggleHelpSpace(space.id, checked)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -263,6 +263,147 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 	return result, nil
 }
 
+// ListWidgetCollections returns widget help collections for a space, including article counts.
+func (r *DocsHelpcenterRepository) ListWidgetCollections(ctx context.Context, spaceID string) ([]model.WidgetHelpCollection, error) {
+	type collectionRow struct {
+		ID           string  `gorm:"column:id"`
+		Name         string  `gorm:"column:name"`
+		Icon         *string `gorm:"column:icon"`
+		ArticleCount int     `gorm:"column:article_count"`
+	}
+
+	var rows []collectionRow
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT c.id, c.name, c.icon, COUNT(d.id) AS article_count
+		FROM docs_collections c
+		JOIN docs_documents d ON d.collection_id = c.id
+		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		WHERE c.space_id = ?
+		  AND c.deleted_at IS NULL
+		  AND d.status = 'published'
+		  AND d.deleted_at IS NULL
+		  AND ha.public_published_at IS NOT NULL
+		  AND ha.slug != ''
+		GROUP BY c.id, c.name, c.icon, c.position, c.created_at
+		ORDER BY c.position ASC, c.created_at ASC
+	`, spaceID).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list widget collections: %w", err)
+	}
+
+	result := make([]model.WidgetHelpCollection, 0, len(rows)+1)
+	for _, row := range rows {
+		result = append(result, model.WidgetHelpCollection{
+			ID:           row.ID,
+			Name:         row.Name,
+			Slug:         row.ID,
+			Icon:         row.Icon,
+			ArticleCount: row.ArticleCount,
+		})
+	}
+
+	var uncategorizedCount int64
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT COUNT(d.id)
+		FROM docs_documents d
+		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		WHERE d.space_id = ?
+		  AND d.collection_id IS NULL
+		  AND d.status = 'published'
+		  AND d.deleted_at IS NULL
+		  AND ha.public_published_at IS NOT NULL
+		  AND ha.slug != ''
+	`, spaceID).Scan(&uncategorizedCount).Error; err != nil {
+		return nil, fmt.Errorf("count uncategorized widget articles: %w", err)
+	}
+
+	if uncategorizedCount > 0 {
+		slug := fmt.Sprintf("uncategorized:%s", spaceID)
+		result = append(result, model.WidgetHelpCollection{
+			ID:           slug,
+			Name:         "General",
+			Slug:         slug,
+			ArticleCount: int(uncategorizedCount),
+		})
+	}
+
+	return result, nil
+}
+
+// ListWidgetArticlesByCollectionID returns externally published articles in a collection.
+func (r *DocsHelpcenterRepository) ListWidgetArticlesByCollectionID(ctx context.Context, collectionID string) ([]model.WidgetHelpArticleSummary, error) {
+	type articleRow struct {
+		ID      string  `gorm:"column:id"`
+		Title   string  `gorm:"column:title"`
+		Excerpt *string `gorm:"column:excerpt"`
+		Icon    *string `gorm:"column:icon"`
+	}
+
+	var rows []articleRow
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT d.id, d.title, d.excerpt, d.icon
+		FROM docs_documents d
+		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		WHERE d.collection_id = ?
+		  AND d.status = 'published'
+		  AND d.deleted_at IS NULL
+		  AND ha.public_published_at IS NOT NULL
+		  AND ha.slug != ''
+		ORDER BY d.is_pinned DESC, d.created_at ASC
+	`, collectionID).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list widget articles by collection: %w", err)
+	}
+
+	result := make([]model.WidgetHelpArticleSummary, len(rows))
+	for i, row := range rows {
+		result[i] = model.WidgetHelpArticleSummary{
+			ID:      row.ID,
+			Title:   row.Title,
+			Slug:    row.ID,
+			Excerpt: row.Excerpt,
+			Icon:    row.Icon,
+		}
+	}
+	return result, nil
+}
+
+// ListWidgetArticlesBySpaceUncategorized returns externally published uncategorized articles in a space.
+func (r *DocsHelpcenterRepository) ListWidgetArticlesBySpaceUncategorized(ctx context.Context, spaceID string) ([]model.WidgetHelpArticleSummary, error) {
+	type articleRow struct {
+		ID      string  `gorm:"column:id"`
+		Title   string  `gorm:"column:title"`
+		Excerpt *string `gorm:"column:excerpt"`
+		Icon    *string `gorm:"column:icon"`
+	}
+
+	var rows []articleRow
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT d.id, d.title, d.excerpt, d.icon
+		FROM docs_documents d
+		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		WHERE d.space_id = ?
+		  AND d.collection_id IS NULL
+		  AND d.status = 'published'
+		  AND d.deleted_at IS NULL
+		  AND ha.public_published_at IS NOT NULL
+		  AND ha.slug != ''
+		ORDER BY d.is_pinned DESC, d.created_at ASC
+	`, spaceID).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list uncategorized widget articles: %w", err)
+	}
+
+	result := make([]model.WidgetHelpArticleSummary, len(rows))
+	for i, row := range rows {
+		result[i] = model.WidgetHelpArticleSummary{
+			ID:      row.ID,
+			Title:   row.Title,
+			Slug:    row.ID,
+			Excerpt: row.Excerpt,
+			Icon:    row.Icon,
+		}
+	}
+	return result, nil
+}
+
 // GetPublicArticleBySlug finds a publicly published article by space and slug.
 func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, spaceID, slug string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
 	// Find the helpcenter article by slug.
@@ -291,6 +432,45 @@ func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, s
 			return nil, nil, nil, fmt.Errorf("get article content: %w", err)
 		}
 		return &doc, &ha, nil, nil
+	}
+
+	return &doc, &ha, &content, nil
+}
+
+// GetPublicArticleByDocumentIDInSpaces finds a public article by document ID constrained to allowed spaces.
+func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx context.Context, spaceIDs []string, documentID string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
+	if len(spaceIDs) == 0 {
+		return nil, nil, nil, nil
+	}
+
+	var ha model.DocsHelpcenterArticle
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN docs_documents d ON d.id = docs_helpcenter_articles.document_id").
+		Where(`
+			docs_helpcenter_articles.document_id = ?
+			AND d.space_id IN ?
+			AND d.status = 'published'
+			AND d.deleted_at IS NULL
+			AND docs_helpcenter_articles.public_published_at IS NOT NULL
+		`, documentID, spaceIDs).
+		First(&ha).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, nil
+		}
+		return nil, nil, nil, fmt.Errorf("get public article by document id: %w", err)
+	}
+
+	var doc model.DocsDocument
+	if err := r.db.WithContext(ctx).Where("id = ?", ha.DocumentID).First(&doc).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("get article document: %w", err)
+	}
+
+	var content model.DocsContent
+	if err := r.db.WithContext(ctx).Where("document_id = ?", ha.DocumentID).First(&content).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &doc, &ha, nil, nil
+		}
+		return nil, nil, nil, fmt.Errorf("get article content: %w", err)
 	}
 
 	return &doc, &ha, &content, nil

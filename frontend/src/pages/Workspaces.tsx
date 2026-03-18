@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useOrganizationStore } from '@/stores/organizationStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useOrganizations, useCreateOrganization, useWorkspaces } from '@/hooks/queries';
 import { useQueryClient } from '@tanstack/react-query';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { settingsService } from '@/lib/services/settingsService';
+import { inviteService } from '@/lib/services/inviteService';
 import { generateWorkspaceSlug } from '@/lib/slugUtils';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import type { OrganizationWithRole } from '@/lib/types';
@@ -18,6 +20,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { Plus, X } from 'lucide-react';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import {
@@ -54,6 +58,7 @@ function OrgFormFields({
 type TeamDraft = {
   id: string;
   name: string;
+  handle: string;
   teamType: TeamType;
   selected: boolean;
   isCustom: boolean;
@@ -63,6 +68,7 @@ const createInitialTeamDrafts = (): TeamDraft[] =>
   WORKSPACE_TEAM_SUGGESTIONS.map((team, index) => ({
     id: `preset-${index}`,
     name: team.name,
+    handle: slugifyTeamHandle(team.name),
     teamType: team.teamType,
     selected: team.selected,
     isCustom: false,
@@ -72,8 +78,9 @@ export default function Workspaces() {
   useTitle('Workspaces');
   const { data: organizations = [], isLoading: orgsLoading } = useOrganizations();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const { currentOrganization, setCurrentOrganization } = useOrganizationStore();
-  const { data: workspaces = [], isLoading: wsLoading } = useWorkspaces(currentOrganization?.id);
+  const { data: allWorkspaces = [], isLoading: wsLoading } = useWorkspaces();
   const createOrgMutation = useCreateOrganization();
   const queryClient = useQueryClient();
   const { create } = useSearch({ from: '/_authenticated/workspaces' });
@@ -83,12 +90,31 @@ export default function Workspaces() {
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
-  const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams'>('details');
+  const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams' | 'invite'>('details');
+  const [createdWorkspace, setCreatedWorkspace] = useState<{ id: string; slug: string } | null>(null);
+  const [createdTeamIds, setCreatedTeamIds] = useState<string[]>([]);
+  const [inviteEmails, setInviteEmails] = useState('');
+  const [inviteRole, setInviteRole] = useState('member');
+  const [sendingInvites, setSendingInvites] = useState(false);
   const [teamDrafts, setTeamDrafts] = useState<TeamDraft[]>(createInitialTeamDrafts);
 
-  // Org creation state
-  const [orgName, setOrgName] = useState('');
-  const [orgSlug, setOrgSlug] = useState('');
+  // Org creation state — pre-fill from user's first name for first-time users
+  const firstName = user?.full_name?.split(' ')[0] ?? '';
+  const defaultOrgName = firstName ? `${firstName}'s Organization` : '';
+  const [orgName, setOrgName] = useState(defaultOrgName);
+  const [orgSlug, setOrgSlug] = useState(defaultOrgName ? generateWorkspaceSlug(defaultOrgName) : '');
+
+  // Pre-fill org name from user's name when it becomes available
+  useEffect(() => {
+    if (user?.full_name && !orgName && organizations.length === 0) {
+      const first = user.full_name.split(' ')[0];
+      if (first) {
+        const name = `${first}'s Organization`;
+        setOrgName(name);
+        setOrgSlug(generateWorkspaceSlug(name));
+      }
+    }
+  }, [user?.full_name, orgName, organizations.length]);
 
   // Auto-select first org when organizations load and none is selected
   useEffect(() => {
@@ -122,6 +148,10 @@ export default function Workspaces() {
     setSlug('');
     setDescription('');
     setTeamDrafts(createInitialTeamDrafts());
+    setCreatedWorkspace(null);
+    setCreatedTeamIds([]);
+    setInviteEmails('');
+    setInviteRole('member');
   };
 
   const openWorkspaceDialog = () => {
@@ -149,7 +179,9 @@ export default function Workspaces() {
     }
   };
 
-  const handleContinueToTeams = (e: FormEvent) => {
+  const [checkingSlug, setCheckingSlug] = useState(false);
+
+  const handleContinueToTeams = async (e: FormEvent) => {
     e.preventDefault();
     if (!currentOrganization) {
       toast.error('Please select an organization first');
@@ -157,6 +189,14 @@ export default function Workspaces() {
     }
     if (!name.trim() || !slug.trim()) {
       toast.error('Enter a workspace name and slug');
+      return;
+    }
+    // Check slug availability
+    setCheckingSlug(true);
+    const { data: existing } = await workspacesService.getBySlug(slug.trim());
+    setCheckingSlug(false);
+    if (existing) {
+      toast.error(`The slug "${slug.trim()}" is already taken. Please choose a different one.`);
       return;
     }
     setWorkspaceStep('teams');
@@ -172,6 +212,7 @@ export default function Workspaces() {
       ...current,
       {
         id: nextId,
+        handle: '',
         name: '',
         teamType: 'custom',
         selected: true,
@@ -221,7 +262,7 @@ export default function Workspaces() {
           const teamRes = await settingsService.createTeam({
             workspace_id: workspace.id,
             name: team.name,
-            handle: slugifyTeamHandle(team.name),
+            handle: team.handle ? slugifyTeamHandle(team.handle) : slugifyTeamHandle(team.name),
             team_type: team.teamType,
             default_story_type: TEAM_TYPE_PRESETS[team.teamType].defaultStoryType,
           });
@@ -238,16 +279,16 @@ export default function Workspaces() {
           if (estimateRes.error || visibilityRes.error) {
             throw new Error(estimateRes.error ?? visibilityRes.error ?? `Failed to finish setup for ${team.name}`);
           }
+          return teamRes.data.id;
         }),
       );
 
       createdTeamCount = results.filter((result) => result.status === 'fulfilled').length;
       failedTeamCount = results.length - createdTeamCount;
+      setCreatedTeamIds(results.filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled').map((r) => r.value));
     }
 
     setCreating(false);
-    setDialogOpen(false);
-    resetWorkspaceDialog();
     queryClient.invalidateQueries({ queryKey: ['workspaces'] });
 
     if (failedTeamCount > 0) {
@@ -258,15 +299,81 @@ export default function Workspaces() {
       toast.success('Workspace created');
     }
 
-    // Auto-navigate to the new workspace
     if (workspace) {
-      void navigate({ to: `/w/${workspace.slug}/pm/my-work` });
+      setCreatedWorkspace({ id: workspace.id, slug: workspace.slug });
+      setWorkspaceStep('invite');
+    }
+  };
+
+  const parseInviteEmails = (raw: string): string[] =>
+    raw.split(/[,\n\s]+/).map((s) => s.trim().toLowerCase()).filter((s) => s && s.includes('@'));
+
+  const handleSendInvites = async () => {
+    if (!createdWorkspace) return;
+    const emails = parseInviteEmails(inviteEmails);
+    if (emails.length === 0) {
+      finishWorkspaceSetup();
+      return;
+    }
+    setSendingInvites(true);
+    let sent = 0;
+    const failedEmails: string[] = [];
+    await Promise.all(
+      emails.map(async (email) => {
+        const { data, error } = await inviteService.send({ workspace_id: createdWorkspace.id, email, role: inviteRole });
+        if (error) {
+          failedEmails.push(email);
+        } else {
+          sent++;
+          // Preassign non-admin invitees to all created teams
+          if (data?.id && inviteRole !== 'admin' && createdTeamIds.length > 0) {
+            await Promise.all(
+              createdTeamIds.map((teamId) => settingsService.addTeamInvitation(createdWorkspace.id, teamId, data.id)),
+            );
+          }
+        }
+      }),
+    );
+    setSendingInvites(false);
+    if (sent > 0 && failedEmails.length > 0) {
+      toast.warning(`${sent} of ${emails.length} invitations sent. Failed: ${failedEmails.join(', ')}`);
+    } else if (sent > 0) {
+      toast.success(`${sent} invitation${sent === 1 ? '' : 's'} sent`);
+    } else {
+      toast.error(`Failed to send invitations: ${failedEmails.join(', ')}`);
+    }
+    finishWorkspaceSetup();
+  };
+
+  const finishWorkspaceSetup = () => {
+    const ws = createdWorkspace;
+    setDialogOpen(false);
+    resetWorkspaceDialog();
+    if (ws) {
+      void navigate({ to: `/w/${ws.slug}/pm/my-work` });
     }
   };
 
   const handleOrgSwitch = (org: OrganizationWithRole) => {
     setCurrentOrganization(org);
   };
+
+  // Group workspaces by organization for display
+  const workspacesByOrg = useMemo(() => {
+    const groups: { org: OrganizationWithRole; workspaces: typeof allWorkspaces }[] = [];
+    for (const org of organizations) {
+      const orgWorkspaces = allWorkspaces.filter((ws) => ws.organization_id === org.id);
+      if (orgWorkspaces.length > 0) {
+        groups.push({ org, workspaces: orgWorkspaces });
+      }
+    }
+    // Include workspaces with no matching org (edge case)
+    const ungrouped = allWorkspaces.filter((ws) => !organizations.some((o) => o.id === ws.organization_id));
+    if (ungrouped.length > 0) {
+      groups.push({ org: { id: '', name: 'Other', slug: '', owner_id: '', created_at: '', updated_at: '', role: 'member' as const }, workspaces: ungrouped });
+    }
+    return groups;
+  }, [allWorkspaces, organizations]);
 
   const isLoading = wsLoading || orgsLoading;
   const selectedTeamCount = useMemo(
@@ -275,91 +382,41 @@ export default function Workspaces() {
   );
   const hasSelectedTeamWithoutName = teamDrafts.some((team) => team.selected && !team.name.trim());
 
-  // Show create org screen if user has no organizations
-  if (!orgsLoading && organizations.length === 0) {
-    return (
-      <div className="min-h-screen bg-background">
-        <div className="max-w-md mx-auto px-4 py-24">
-          <div className="text-center mb-8">
-            <div className="mx-auto mb-4">
-              <UserAvatar name="Organization" className="h-14 w-14 rounded-full" fallbackClassName="text-xl rounded-full" />
-            </div>
-            <h1 className="text-2xl font-bold">Create your Organization</h1>
-            <p className="text-muted-foreground mt-2">
-              Organizations group your workspaces and team members together.
-            </p>
-          </div>
-          <form onSubmit={handleCreateOrg} className="space-y-4">
-            <OrgFormFields
-              name={orgName} slug={orgSlug}
-              onNameChange={handleOrgNameChange} onSlugChange={setOrgSlug}
-              nameId="org-name" slugId="org-slug"
-            />
-            <Button type="submit" className="w-full" disabled={createOrgMutation.isPending}>
-              {createOrgMutation.isPending ? 'Creating...' : 'Create Organization'}
-            </Button>
-          </form>
-        </div>
-      </div>
-    );
-  }
+  // Auto-create org if user has none (edge case — signup normally handles this).
+  useEffect(() => {
+    if (!orgsLoading && organizations.length === 0 && !createOrgMutation.isPending && user) {
+      const first = user.full_name?.split(' ')[0] || 'My';
+      const name = `${first}'s Organization`;
+      createOrgMutation.mutateAsync({ name, slug: generateWorkspaceSlug(name) }).then((org) => {
+        setCurrentOrganization(org);
+      }).catch(() => {});
+    }
+  }, [orgsLoading, organizations.length, createOrgMutation.isPending, user]);
 
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto px-4 py-12">
-        {/* Organization switcher */}
-        {organizations.length > 0 && (
-          <div className="flex items-center gap-3 mb-6">
-            <UserAvatar name={currentOrganization?.name} avatarUrl={currentOrganization?.logo_url} className="h-6 w-6 rounded" fallbackClassName="text-[9px] rounded" />
-            {organizations.length === 1 ? (
-              <span className="text-sm font-medium">{currentOrganization?.name}</span>
-            ) : (
-              <Select
-                value={currentOrganization?.id ?? ''}
-                onValueChange={(id) => {
-                  const org = organizations.find(o => o.id === id);
-                  if (org) handleOrgSwitch(org);
-                }}
-              >
-                <SelectTrigger className="w-[240px] h-8">
-                  <SelectValue placeholder="Select organization" />
-                </SelectTrigger>
-                <SelectContent>
-                  {organizations.map(org => (
-                    <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Dialog open={orgDialogOpen} onOpenChange={setOrgDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  New Org
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <form onSubmit={handleCreateOrg}>
-                  <DialogHeader>
-                    <DialogTitle>Create Organization</DialogTitle>
-                    <DialogDescription>Create a new organization to group workspaces.</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <OrgFormFields
-                      name={orgName} slug={orgSlug}
-                      onNameChange={handleOrgNameChange} onSlugChange={setOrgSlug}
-                      nameId="new-org-name" slugId="new-org-slug"
-                    />
-                  </div>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setOrgDialogOpen(false)}>Cancel</Button>
-                    <Button type="submit" disabled={createOrgMutation.isPending}>{createOrgMutation.isPending ? 'Creating...' : 'Create'}</Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-        )}
+        <Dialog open={orgDialogOpen} onOpenChange={setOrgDialogOpen}>
+          <DialogContent>
+            <form onSubmit={handleCreateOrg}>
+              <DialogHeader>
+                <DialogTitle>Create Organization</DialogTitle>
+                <DialogDescription>Create a new organization to group workspaces.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <OrgFormFields
+                  name={orgName} slug={orgSlug}
+                  onNameChange={handleOrgNameChange} onSlugChange={setOrgSlug}
+                  nameId="new-org-name" slugId="new-org-slug"
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setOrgDialogOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={createOrgMutation.isPending}>{createOrgMutation.isPending ? 'Creating...' : 'Create'}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -374,19 +431,55 @@ export default function Workspaces() {
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-2xl">
-              <form onSubmit={workspaceStep === 'details' ? handleContinueToTeams : (e) => { e.preventDefault(); void completeWorkspaceSetup(false); }}>
+              <form onSubmit={
+                workspaceStep === 'details' ? handleContinueToTeams
+                : workspaceStep === 'teams' ? (e) => { e.preventDefault(); void completeWorkspaceSetup(false); }
+                : (e) => { e.preventDefault(); void handleSendInvites(); }
+              }>
                 <DialogHeader>
-                  <DialogTitle>{workspaceStep === 'details' ? 'Create Workspace' : 'Set Up Teams'}</DialogTitle>
+                  <DialogTitle>
+                    {workspaceStep === 'details' ? 'Create Workspace' : workspaceStep === 'teams' ? 'Set Up Teams' : 'Invite Members'}
+                  </DialogTitle>
                   <DialogDescription>
                     {workspaceStep === 'details'
-                      ? `Set up a new workspace in ${currentOrganization?.name}.`
-                      : 'Pick the teams you need. You can always add more later.'}
+                      ? 'Set up a new workspace.'
+                      : workspaceStep === 'teams'
+                      ? 'Pick the teams you need. You can always add more later.'
+                      : 'Invite your team to collaborate. You can always do this later.'}
                   </DialogDescription>
                 </DialogHeader>
-                {workspaceStep === 'details' ? (
+                {workspaceStep === 'details' && (
                   <div className="space-y-4 py-4">
+                    {organizations.length > 0 && (
+                      <div className="space-y-2">
+                        <Label>Organization</Label>
+                        <Select
+                          value={currentOrganization?.id ?? ''}
+                          onValueChange={(id) => {
+                            if (id === '__new_org__') {
+                              setOrgDialogOpen(true);
+                              return;
+                            }
+                            const org = organizations.find(o => o.id === id);
+                            if (org) handleOrgSwitch(org);
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select organization" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {organizations.map(org => (
+                              <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
+                            ))}
+                            <SelectItem value="__new_org__" className="text-primary">
+                              <span className="flex items-center gap-1.5"><Plus className="h-3.5 w-3.5" /> New Organization</span>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                     <div className="space-y-2">
-                      <Label htmlFor="ws-name">Name</Label>
+                      <Label htmlFor="ws-name">Workspace Name</Label>
                       <Input id="ws-name" placeholder="Acme Corporation" value={name} onChange={e => handleNameChange(e.target.value)} required />
                     </div>
                     <div className="space-y-2">
@@ -399,7 +492,8 @@ export default function Workspaces() {
                       <Textarea id="ws-desc" placeholder="A brief description of this workspace" value={description} onChange={e => setDescription(e.target.value)} />
                     </div>
                   </div>
-                ) : (
+                )}
+                {workspaceStep === 'teams' && (
                   <div className="space-y-4 py-4">
                     <ScrollArea className="max-h-[min(380px,50vh)] pr-4">
                       <div className="space-y-2">
@@ -415,18 +509,41 @@ export default function Workspaces() {
                             {team.isCustom ? (
                               <Input
                                 value={team.name}
-                                onChange={(event) => updateTeamDraft(team.id, { name: event.target.value })}
+                                onChange={(event) => {
+                                  const newName = event.target.value;
+                                  updateTeamDraft(team.id, { name: newName, handle: slugifyTeamHandle(newName) });
+                                }}
                                 placeholder="Team name"
                                 className="h-8 min-w-0 flex-1 text-sm"
                               />
                             ) : (
                               <button
                                 type="button"
-                                className="min-w-0 flex-1 text-left text-sm font-medium"
+                                className="min-w-0 text-left text-sm font-medium truncate"
                                 onClick={() => updateTeamDraft(team.id, { selected: !team.selected })}
                               >
                                 {team.name}
                               </button>
+                            )}
+                            {team.selected && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                                    <Checkbox
+                                      id={`eng-${team.id}`}
+                                      checked={team.teamType === 'engineering'}
+                                      onCheckedChange={(checked) => updateTeamDraft(team.id, { teamType: checked ? 'engineering' : 'custom' })}
+                                      className="h-3.5 w-3.5"
+                                    />
+                                    <Label htmlFor={`eng-${team.id}`} className="text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
+                                      Eng / dev
+                                    </Label>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-[260px] text-xs">
+                                  Engineering teams get development workflows, GitHub integration, and pre-defined settings. Non-engineering teams start with a simpler setup.
+                                </TooltipContent>
+                              </Tooltip>
                             )}
                             {team.isCustom && (
                               <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeCustomTeam(team.id)}>
@@ -447,26 +564,92 @@ export default function Workspaces() {
                     </button>
                   </div>
                 )}
+                {workspaceStep === 'invite' && (
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Emails</Label>
+                      <Textarea
+                        placeholder="name@example.com, name2@example.com"
+                        value={inviteEmails}
+                        onChange={(e) => {
+                          setInviteEmails(e.target.value);
+                          const el = e.target;
+                          el.style.height = 'auto';
+                          el.style.height = `${el.scrollHeight}px`;
+                        }}
+                        rows={1}
+                        className="resize-none text-sm min-h-[36px] overflow-hidden break-all w-full"
+                        autoComplete="off"
+                      />
+                      <p className="text-xs text-muted-foreground">Separate multiple emails with commas, spaces, or new lines</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Role</Label>
+                      <div className="space-y-2">
+                        {([
+                          { value: 'admin', label: 'Admin', description: 'Full access across all teams. Can manage settings, workflows, labels, and members.' },
+                          { value: 'member', label: 'Member', description: 'Can create and edit stories in their teams. Can be promoted to team manager.' },
+                          { value: 'viewer', label: 'Viewer', description: 'Read-only access to stories, epics, and sprints in their assigned teams only.' },
+                        ] as const).map((role) => (
+                          <button
+                            key={role.value}
+                            type="button"
+                            onClick={() => setInviteRole(role.value)}
+                            className={cn(
+                              'flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors',
+                              inviteRole === role.value
+                                ? 'border-primary bg-primary/5'
+                                : 'border-border hover:bg-muted/50'
+                            )}
+                          >
+                            <div className={cn(
+                              'mt-0.5 h-4 w-4 shrink-0 rounded-full border-2',
+                              inviteRole === role.value
+                                ? 'border-primary bg-primary'
+                                : 'border-muted-foreground/40'
+                            )} />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{role.label}</p>
+                              <p className="text-xs text-muted-foreground">{role.description}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <DialogFooter>
-                  {workspaceStep === 'details' ? (
+                  {workspaceStep === 'details' && (
                     <>
                       <Button type="button" variant="outline" onClick={() => handleWorkspaceDialogChange(false)}>Cancel</Button>
-                      <Button type="submit">Continue</Button>
+                      <Button type="submit" disabled={checkingSlug}>{checkingSlug ? 'Checking...' : 'Continue'}</Button>
                     </>
-                  ) : (
+                  )}
+                  {workspaceStep === 'teams' && (
                     <>
                       <Button type="button" variant="outline" onClick={() => setWorkspaceStep('details')} disabled={creating}>Back</Button>
                       <div className="flex-1" />
-                      <button
+                      <Button
                         type="button"
-                        className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                        variant="ghost"
                         onClick={() => void completeWorkspaceSetup(true)}
                         disabled={creating}
                       >
                         Skip
-                      </button>
+                      </Button>
                       <Button type="submit" disabled={creating || hasSelectedTeamWithoutName}>
                         {creating ? 'Creating...' : `Create${selectedTeamCount > 0 ? ` with ${selectedTeamCount} team${selectedTeamCount === 1 ? '' : 's'}` : ''}`}
+                      </Button>
+                    </>
+                  )}
+                  {workspaceStep === 'invite' && (
+                    <>
+                      <div className="flex-1" />
+                      <Button type="button" variant="ghost" onClick={finishWorkspaceSetup} disabled={sendingInvites}>
+                        Skip
+                      </Button>
+                      <Button type="submit" disabled={sendingInvites || !inviteEmails.trim()}>
+                        {sendingInvites ? 'Sending...' : 'Send Invites'}
                       </Button>
                     </>
                   )}
@@ -482,16 +665,28 @@ export default function Workspaces() {
               <Skeleton key={i} className="h-24 rounded-lg" />
             ))}
           </div>
-        ) : workspaces.length === 0 ? (
+        ) : allWorkspaces.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-muted-foreground mb-4">No workspaces in this organization yet.</p>
+            <p className="text-muted-foreground mb-4">No workspaces yet.</p>
             <Button onClick={openWorkspaceDialog} disabled={!currentOrganization}>
               <Plus className="h-4 w-4 mr-2" />
               Create your first workspace
             </Button>
           </div>
+        ) : organizations.length <= 1 ? (
+          <WorkspaceSelector workspaces={allWorkspaces} />
         ) : (
-          <WorkspaceSelector workspaces={workspaces} />
+          <div className="space-y-8">
+            {workspacesByOrg.map(({ org, workspaces: orgWs }) => (
+              <div key={org.id}>
+                <div className="flex items-center gap-2 mb-4">
+                  <UserAvatar name={org.name} avatarUrl={org.logo_url} className="h-5 w-5 rounded" fallbackClassName="text-[8px] rounded" />
+                  <h2 className="text-sm font-medium text-muted-foreground">{org.name} Organization</h2>
+                </div>
+                <WorkspaceSelector workspaces={orgWs} />
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

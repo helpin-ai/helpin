@@ -22,10 +22,10 @@ export const TEAM_TYPE_PRESETS: Record<TeamType, TeamPreset> = {
 
 export const WORKSPACE_TEAM_SUGGESTIONS: { name: string; teamType: TeamType; selected: boolean }[] = [
   { name: 'Engineering', teamType: 'engineering', selected: true },
-  { name: 'Product', teamType: 'custom', selected: true },
+  { name: 'Product', teamType: 'engineering', selected: true },
   { name: 'Design', teamType: 'custom', selected: false },
   { name: 'Support', teamType: 'custom', selected: false },
-  { name: 'Marketing', teamType: 'custom', selected: false },
+  { name: 'Marketing', teamType: 'custom', selected: true },
 ];
 
 export function slugifyTeamHandle(name: string): string {
