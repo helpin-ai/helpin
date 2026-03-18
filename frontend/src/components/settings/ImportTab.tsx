@@ -54,6 +54,18 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
     );
   }
 
+  if (selected === 'helpscout') {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => setSelected(null)}>
+          <ChevronRight className="h-4 w-4 rotate-180" />
+          Back to sources
+        </Button>
+        <HelpCenterImportSection workspaceId={workspaceId} editable={editable} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Project Management */}
@@ -93,33 +105,23 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
       {/* Help Center */}
       <div className="space-y-4">
         <h3 className="text-sm font-semibold">Help Center</h3>
-        {selected === 'helpscout' ? (
-          <div className="space-y-4">
-            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => setSelected(null)}>
-              <ChevronRight className="h-4 w-4 rotate-180" />
-              Back to sources
-            </Button>
-            <HelpCenterImportSection workspaceId={workspaceId} editable={editable} />
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border bg-background">
-            <button
-              type="button"
-              disabled={!editable}
-              onClick={() => setSelected('helpscout')}
-              className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <Import className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">HelpScout</p>
-                <p className="text-sm text-muted-foreground">Import articles, categories, and images from HelpScout Docs.</p>
-              </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
-          </div>
-        )}
+        <div className="overflow-hidden rounded-lg border border-border bg-background">
+          <button
+            type="button"
+            disabled={!editable}
+            onClick={() => setSelected('helpscout')}
+            className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <Import className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">HelpScout</p>
+              <p className="text-sm text-muted-foreground">Import articles, categories, and images from HelpScout Docs.</p>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+        </div>
       </div>
     </div>
   );
