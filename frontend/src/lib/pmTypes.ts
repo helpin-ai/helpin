@@ -198,6 +198,8 @@ export interface Story {
   assigned_agent_id?: string;
   template_id?: string;
   external_id?: string;
+  slice_type?: string;
+  implementation_brief?: StoryImplementationBrief;
   created_at: string;
   updated_at: string;
   // Enriched by board/list endpoints
@@ -1076,6 +1078,26 @@ export interface AgentRun {
   updated_at: string;
 }
 
+export interface StoryImplementationBrief {
+  approach: string;
+  files_to_modify: FileChange[];
+  test_strategy: string;
+  vertical_layers?: string[];
+  depends_on_files?: string[];
+}
+
+export interface FileChange {
+  path: string;
+  action: 'create' | 'modify' | 'delete';
+  description: string;
+}
+
+export interface VerticalCoverageEntry {
+  behavior: string;
+  story_refs: string[];
+  full_slice: boolean;
+}
+
 export interface ProposedStory {
   ref?: string;
   name: string;
@@ -1087,6 +1109,8 @@ export interface ProposedStory {
   dependency_refs?: string[];
   source_refs?: PlanningSourceRef[];
   assign_agent_id?: string;
+  slice_type?: 'vertical' | 'enabler' | 'spike';
+  implementation_brief?: StoryImplementationBrief;
 }
 
 export interface PlanningSourceRef {
@@ -1102,6 +1126,7 @@ export interface OrchestrationProposal {
   proposed_stories: ProposedStory[];
   open_questions?: string[];
   risks?: string[];
+  vertical_coverage?: VerticalCoverageEntry[];
   tokens_used: number;
 }
 
@@ -1112,22 +1137,6 @@ export interface ApprovedSpecSummary {
   summary?: string;
   clarifications?: SpecClarification[];
   pending_clarify_count?: number;
-}
-
-export interface PlanningExecutionStart {
-  story_id: string;
-  run_id: string;
-  started_at: string;
-}
-
-export interface PlanningExecutionSkip {
-  story_id: string;
-  reason: string;
-}
-
-export interface KickoffExecutionResult {
-  started: PlanningExecutionStart[];
-  skipped: PlanningExecutionSkip[];
 }
 
 export interface AgentRunArtifact {
@@ -1612,11 +1621,6 @@ export interface PlanningStreamEvent {
   output_summary?: string;
   duration_ms?: number;
   error?: string;
-}
-
-export interface StartPlanningSessionRequest {
-  agent_id: string;
-  additional_context?: string;
 }
 
 export type FlowStatus = 'running' | 'awaiting_input' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';

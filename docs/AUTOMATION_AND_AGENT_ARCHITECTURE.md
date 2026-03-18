@@ -37,11 +37,11 @@ graph TD
 
 1. **Built-in automations**
    Product-owned automation Teampulse ships itself.
-   Examples: CRM buyer-signal ingestion, CRM summary refresh, PM epic auto-start, PM sprint auto-create.
+   Examples: CRM buyer-signal ingestion, CRM summary refresh.
 
 2. **Automation rules**
-   User-configured trigger -> action rules, mostly used today for PM workflow pipelines.
-   Examples: "when a story enters In Progress, run engineer agent", "when an agent run is approved, move the story to the next state".
+   User-configured trigger -> action rules, used for PM workflow pipelines and PM built-in automations.
+   Examples: "when a story enters In Progress, run engineer agent", "when an agent run is approved, move the story to the next state", "when any story enters a started state, auto-start its epic".
 
 3. **Agents**
    Explicit LLM executors that can be assigned, configured, run, approved, handed off, and audited.
@@ -67,6 +67,8 @@ flowchart TD
     B --> C["run_agent"]
     B --> H["move_to_state"]
     B --> I["merge_branch"]
+    B --> J["run_command"]
+    J --> K["InternalCommandService"]
     C --> D["AgentRun created"]
     D --> E["Temporal AgentRunWorkflow"]
     E --> F["Runtime executes tools/work"]
@@ -127,8 +129,8 @@ Where they are configured:
 Where they run:
 
 - CRM background jobs: mostly **Temporal-backed**
-- PM epic auto-start / auto-complete: **inline in API/service code** on story state changes
-- PM sprint automations: **hourly ticker in the API server**, not a `FlowRun`
+- PM epic auto-start / auto-complete: **inline in API/service code** on story state changes, and also via `run_command` automation rules (both paths fire during transition; idempotent)
+- PM sprint automations: **Temporal cron workflow** (`SprintAutomationCronWorkflow`) on the `automation-default` queue, running hourly
 
 Important: not all automation in Teampulse is a flow or an agent.
 
@@ -138,14 +140,17 @@ Automation rules are stored in `automation_rules` and evaluated by `AutomationRu
 
 Current active trigger types:
 
-- `story.state_entered`
-- `agent_run.approved`
+- `story.state_entered` — fires when a story enters a workflow state (supports matching by exact `state_id` or by `state_type` like `"started"` or `"done"`)
+- `agent_run.approved` — fires when an agent run is approved
+- `cron` — fires on a scheduled category (e.g. `"sprint_hourly"`), evaluated by `EvaluateCronRules`
 
 Current active action types:
 
-- `run_agent`
-- `move_to_state`
-- `merge_branch`
+- `run_agent` — assigns an agent and starts an agent run
+- `move_to_state` — moves the story to a target workflow state
+- `merge_branch` — merges the story's working branch into a target branch
+- `run_command` — dispatches to `InternalCommandService.Execute()` with a command name and input payload
+- `start_flow` — (defined, not yet implemented) will dispatch via `FlowService.StartRun()`
 
 Current main UI:
 
@@ -160,6 +165,8 @@ What the pipeline builder actually does:
 - enabling merge branch creates a `story.state_entered -> merge_branch` rule
 
 So the "pipeline" is not a separate runtime. It is a structured UI on top of automation rules.
+
+Additionally, PM built-in automations (epic auto-start/complete, sprint auto-create, sprint move-unfinished) are now also stored as `automation_rules` with `run_command` actions that dispatch through `InternalCommandService`.
 
 ## 3.3 Agents
 
@@ -357,7 +364,7 @@ Used for deterministic internal commands.
 Current behavior:
 
 - no child agent run is created
-- the node executes an internal command directly
+- the node dispatches to `InternalCommandService.Execute()` — the same dispatch layer used by `run_command` rule actions
 
 Current command examples:
 
@@ -365,6 +372,11 @@ Current command examples:
 - `pm.approve_epic_spec`
 - `pm.create_story_batch`
 - `pm.create_followup_stories`
+- `pm.auto_start_epic`
+- `pm.auto_complete_epic`
+- `pm.sprint_auto_create`
+- `pm.sprint_move_unfinished`
+- `delivery.merge_branch`
 - `crm.apply_deal_actions`
 
 #### `terminal`
@@ -534,7 +546,7 @@ So the final tool boundary is:
 | --- | --- | --- |
 | Agents | `PM > Agents` | `agents` |
 | Workflow-stage pipeline | `Settings > Teams > Workflow` / workflow manager | `automation_rules` |
-| PM built-in automations | `Settings > Automations` | `pm_automations` |
+| PM built-in automations | `Settings > Automations` | `automation_rules` (migrated from `pm_automations`) |
 | Flow start/run inspection | `PM > Flows` | `flow_runs`, `flow_node_runs` |
 | Runner health | project delivery / runner health views | Temporal queues + active `agent_runs` |
 | Support AI auto-reply | `Settings > Chat AI` | support settings + support agent run trigger |
@@ -548,10 +560,12 @@ flowchart LR
     subgraph TRIGGERS["What starts what"]
         direction TB
         S1["Story state change"] -->|"rule"| AGENT_RUN["AgentRun"]
+        S1 -->|"rule"| COMMANDS["run_command<br/><i>epic auto-start/complete,<br/>merge_branch, etc.</i>"]
         S2["Agent approved"] -->|"rule"| ACTIONS["move_to_state / merge_branch"]
         S3["Manual UI action"] --> AGENT_RUN
         S4["Agent assigned to story"] --> AGENT_RUN
         S5["Cron schedule"] --> AGENT_RUN
+        S5C["Cron rule"] -->|"run_command"| COMMANDS
         S6["Support widget"] --> AGENT_RUN
         S7["Flow agent_task node"] --> AGENT_RUN
         S8["Manual from Flows UI"] --> FLOW_RUN["FlowRun"]
@@ -560,6 +574,7 @@ flowchart LR
     style AGENT_RUN fill:#f4e8e8,stroke:#a66
     style FLOW_RUN fill:#e8e8f4,stroke:#66a
     style ACTIONS fill:#e8f4e8,stroke:#4a9
+    style COMMANDS fill:#f4f4e8,stroke:#aa6
 ```
 
 ## 8.1 What starts automation rules
@@ -567,10 +582,11 @@ flowchart LR
 Current active triggers:
 
 - story creation enters an initial state
-- story moved to a new workflow state
+- story moved to a new workflow state (via Create, Update, or MoveToState)
 - agent run approved
+- cron category tick (e.g. `sprint_hourly` — evaluated by `EvaluateCronRules`)
 
-These are evaluated inline in the PM story/agent services.
+These are evaluated inline in the PM story/agent services. Cron rules are loaded across all workspaces by `ListEnabledCronRules`.
 
 ## 8.2 What starts agent runs
 
@@ -593,10 +609,10 @@ Current active start path:
 Important current-state note:
 
 - flow templates declare supported triggers such as `manual`, `internal_domain_hook`, `story.state_entered`, and `cron`
-- there is also a `flow_triggers` table in the schema
-- but in the current codebase there is **not** a general workspace-level flow-trigger dispatcher wired up yet
+- the rule engine defines a `start_flow` action type but it is not yet wired to a dispatcher
+- the `flow_triggers` table is scheduled for removal (migration 054); when flow auto-start is needed, the rule engine's `start_flow` action will be the entry point
 
-So today, durable `FlowRun` execution is real, but generalized auto-triggered flow launching is still mostly groundwork.
+So today, durable `FlowRun` execution is real, but generalized auto-triggered flow launching is not yet wired.
 
 ## 9. Where everything runs
 
@@ -605,9 +621,8 @@ This is the question that causes the most confusion.
 ```mermaid
 flowchart TB
     subgraph API["API Server (inline)"]
-        EPIC_AUTO["Epic auto-start/complete"]
+        EPIC_AUTO["Epic auto-start/complete<br/><i>(legacy path, transitioning to rules)</i>"]
         RULE_EVAL["AutomationRuleEngine"]
-        SPRINT["Sprint hourly ticker"]
     end
 
     subgraph TEMPORAL["Temporal Workers"]
@@ -622,10 +637,12 @@ flowchart TB
         end
         ARW["AgentRunWorkflow"]
         FRW["FlowRunWorkflow"]
+        SPRINT_WF["SprintAutomationCronWorkflow<br/><i>hourly cron</i>"]
         CRM_WF["CRM Workflows<br/><i>EmailSync, SignalDetection,<br/>DealManagement</i>"]
     end
 
     RULE_EVAL -->|"launches"| ARW
+    RULE_EVAL -->|"run_command"| CMD["InternalCommandService"]
     API -->|"starts"| FRW
     FRW -->|"child"| ARW
 
@@ -636,6 +653,7 @@ flowchart TB
     style API fill:#e8f4e8,stroke:#4a9
     style TEMPORAL fill:#e8e8f4,stroke:#66a
     style QUEUES fill:#f4f4e8,stroke:#aa6
+    style CMD fill:#f4f4e8,stroke:#aa6
 ```
 
 ## 9.1 Are flows always run in Temporal?
@@ -705,9 +723,8 @@ Planning sessions also run in Temporal workers, with a Temporal session used to 
 
 These are not offloaded into `FlowRun` orchestration:
 
-- PM epic auto-start / auto-complete logic
-- automation-rule evaluation
-- sprint hourly ticker
+- automation-rule evaluation (including epic auto-start/complete via `run_command` rules)
+- legacy `OnStoryStateChange` epic path (kept during transition, will be removed after migration validation)
 - some settings/inventory/health assembly
 
 Inline code can still launch Temporal work after making a decision.
@@ -769,7 +786,6 @@ erDiagram
 
 - `flow_runs`
 - `flow_node_runs`
-- `flow_triggers` (schema exists; general trigger dispatcher is not broadly wired yet)
 
 ### Interactive planning
 
@@ -778,8 +794,8 @@ erDiagram
 
 ### Rules and built-ins
 
-- `automation_rules`
-- `pm_automations`
+- `automation_rules` — unified rule table for all trigger→action rules (including migrated epic/sprint automations)
+- `pm_automations` — legacy table, data migrated to `automation_rules` via migration 052; will be dropped after validation
 - `automation_health`
 
 ## 11. The main "what should I use?" guide
@@ -820,17 +836,20 @@ Use this when deciding how a new automation should fit into the platform:
 - runtime profiles and queue routing
 - per-agent tool/command/target overrides
 - runner health reporting
-- workflow-stage automation rules
+- workflow-stage automation rules (with `run_command`, `cron`, and `state_type` matching)
 - durable flow runs and node runs
 - interactive planning session child workflows
 - story completion flow
 - CRM deal review flow
 - epic planning flows
 - schedule-based Temporal cron launcher for agents
+- sprint automation via Temporal cron workflow (`SprintAutomationCronWorkflow`)
+- unified command dispatch via `InternalCommandService` (used by both rules and flows)
+- epic auto-start/complete via `automation_rules` `run_command` actions
 
 ### Present in schema/model but not yet broadly wired as a general platform
 
-- generalized `flow_triggers` dispatch
+- `start_flow` rule action type (defined, dispatcher not wired)
 - generalized `auto_on_event` agent execution
 - general use of `trigger_events`
 - general use of `target_selector`
@@ -839,125 +858,69 @@ Use this when deciding how a new automation should fit into the platform:
 
 If you only remember one thing, remember this:
 
-- **Built-ins** are shipped product automation
-- **Automation rules** are lightweight trigger -> action logic, mostly for PM pipelines
+- **Automation rules** are the single trigger → action system for PM pipelines, epic lifecycle, and sprint scheduling
+- **Rules dispatch through `InternalCommandService`** — one command registry shared by rules and flows
 - **Agents** are executable actors with runs, approvals, tools, and artifacts
 - **Flows** are durable multi-step orchestrations made of nodes
-- **Flow nodes** can launch planning sessions, agent runs, approval gates, or internal commands
+- **All scheduled work uses Temporal** — sprint automation, CRM sync, deal management, scheduled agents
 - **Agent runs and flow runs are Temporal-backed**
 - **Not all automation is a flow**
-- **The API server decides many things inline, then launches Temporal work when needed**
+- **The API server evaluates rules inline, then launches Temporal work when needed**
 
-## 14. Known Problems & Simplification Roadmap
+## 14. Simplification Roadmap
 
-This section captures architectural problems identified through code review, along with a phased simplification plan. Problems are ordered by recommended execution sequence, not by severity.
+This section tracks the automation unification effort. Completed items are marked; remaining work follows.
 
-### 14.1 Problem: Sprint ticker in main.go
+### Completed
 
-**Priority: highest — low risk, high value.**
+**Sprint ticker → Temporal cron** (was 14.1)
+Sprint auto-create and move-unfinished now run via `SprintAutomationCronWorkflow` on the `automation-default` queue. The hourly `time.Ticker` goroutine has been removed from `cmd/api/main.go`. Sweep logic in `pm_automation.go` is unchanged.
 
-The sprint auto-create and move-unfinished-stories automations run on an hourly `time.Ticker` goroutine inside the API server process (`server/cmd/api/main.go:815`). The actual sweep logic is in `server/internal/service/pm_automation.go:307`.
+**Unified command dispatch** (was 14.2)
+`AutomationRuleEngine` now dispatches `run_command` actions through `InternalCommandService.Execute()`. New commands (`pm.auto_start_epic`, `pm.auto_complete_epic`, `pm.sprint_auto_create`, `pm.sprint_move_unfinished`, `delivery.merge_branch`) are registered alongside existing flow commands. Both rule actions and flow `system_action` nodes share the same dispatch layer.
 
-Problems:
-- **No durability** — if the API server restarts mid-tick, the work is lost silently
-- **No observability** — no run records, no health reporting, no retry tracking
-- **Inconsistent** — every other scheduled automation (CRM sync, deal management, scheduled agents) uses Temporal cron workflows
+**Generalized rule engine** (was 14.4)
+`AutomationRuleEngine` now supports:
+- `cron` trigger type with category-based matching
+- `run_command` action type dispatching to `InternalCommandService`
+- `start_flow` action type (defined, not yet wired)
+- `state_type` matching on `story.state_entered` triggers (e.g. match any `"started"` or `"done"` state)
+- Non-story event context via `TargetType`, `TargetID`, `TeamID` fields on `AutomationEvent`
+- Conditional story loading — cron triggers skip the story lookup entirely
 
-**Recommendation:** Move to a Temporal cron workflow (`SprintAutomationCronWorkflow`) on the `automation-default` queue. The sweep logic in `pm_automation.go` stays unchanged — only the scheduler moves. This gives durability, automatic retries, visibility in the Temporal UI, and consistency with all other scheduled work in the platform.
+**pm_automations → automation_rules migration** (was 14.4)
+Migration 052 backfills all four `pm_automations` types into `automation_rules`:
+- Epic auto-start → `story.state_entered` (state_type=started) + `run_command` (pm.auto_start_epic)
+- Epic auto-complete → `story.state_entered` (state_type=done) + `run_command` (pm.auto_complete_epic)
+- Sprint auto-create → `cron` (sprint_hourly) + `run_command` (pm.sprint_auto_create)
+- Sprint move-unfinished → `cron` (sprint_hourly) + `run_command` (pm.sprint_move_unfinished)
 
-### 14.2 Problem: Duplicate action concepts
+The legacy `OnStoryStateChange` path is kept during transition for safe deploy. Both paths fire but epic mutations are idempotent.
 
-**Priority: highest leverage refactor.**
+### Remaining: cleanup after production validation
 
-Flow `system_action` commands and rule actions overlap but are not interchangeable:
+**Drop `pm_automations` table** — Migration 053 is ready. Run after verifying all workspaces have corresponding `automation_rules` rows and the legacy `OnStoryStateChange` calls can be removed from `pm_story.go`.
 
-- `move_to_state` exists as both a rule action and a concept within flow system actions
-- Flow-only commands like `pm.create_followup_stories`, `pm.create_story_batch`, `crm.apply_deal_actions`, `docs.ensure_spec_doc`, and `pm.approve_epic_spec` are not available to rules
-- Rule-only actions like `run_agent` and `merge_branch` are not available as flow system action commands
+**Drop `flow_triggers` table** — Migration 054 is ready. Verify with `SELECT count(*) FROM flow_triggers` in prod first. When flow auto-start is needed, use the rule engine's `start_flow` action type.
 
-This means adding a new capability requires deciding which system gets it, and cross-system use requires duplicating the implementation.
+**Remove legacy code** — After dropping `pm_automations`: remove `model/pm_automation.go`, `repository/pm_automation.go`, the `automationService` field from `PMStoryService`, and the `OnStoryStateChange` method.
 
-**Code locations:**
-- `server/internal/service/internal_command_service.go:14` — `InternalCommandDefinition` struct and `InternalCommandService`, already has most of the abstraction needed
-- `server/internal/service/internal_command_service.go:221` — `pm.create_followup_stories` command
-- `server/internal/service/internal_command_service.go:410` — `crm.apply_deal_actions` command
-- `server/internal/service/automation_rule_engine.go` — rule action execution (separate dispatch)
-- `server/internal/worker/flow_run_workflow.go` — flow system action execution (separate dispatch)
+**Update seeding and settings surfaces** — `SeedWorkspaceDefaults` still writes to `pm_automations`. The PM automation handler and inventory service still read from it. These should be migrated to read/write `automation_rules` directly.
 
-**Recommendation:** Extend `InternalCommandService` into the shared dispatch layer rather than inventing a new registry. It already defines `InternalCommandDefinition` with `Name`, `Module`, `SupportedTargetTypes`, and an `Execute` function — the same contract needed by both flow nodes and rule actions. Wire `AutomationRuleEngine` and `FlowRunWorkflow` system action execution to dispatch through `InternalCommandService.Execute()`. New capabilities are added once and available everywhere.
+### Not yet actionable
 
-### 14.3 Problem: Dead `flow_triggers` schema
+**Simple flows (story completion, deal review)** — These remain as flows. Demoting them to rule chains would require:
+1. Rich approval behavior (`request_changes`, `reject`) in the rule/agent system
+2. Non-story approval event triggers
+3. Override/payload passing in rule chains
+4. Equivalent manual-launch and review UX
 
-**Priority: low-risk cleanup (after a data check).**
-
-The `flow_triggers` table exists in the database schema and trigger types are defined in the model, but no dispatcher is wired. `FlowTrigger` is defined in `server/internal/model/flow.go:116` and the repository can create rows (`flow.go:148`), but no code reads or evaluates them.
-
-**Important caveat:** Code inspection alone cannot prove whether rows exist in production. Before dropping the table, verify with a `SELECT count(*) FROM flow_triggers` in prod/staging.
-
-**Code locations:**
-- `server/internal/model/flow.go:116` — `FlowTrigger` model definition
-- `server/migrations/` — migration that creates the table
-
-**Recommendation:** After confirming no meaningful prod data exists, remove the `flow_triggers` table. When flow auto-start is needed, use the existing rule engine with a new `start_flow` action type. This keeps trigger evaluation in one place (`AutomationRuleEngine`) rather than building a parallel trigger dispatcher.
-
-### 14.4 Problem: Two rule systems
-
-**Priority: phased effort — start with epic lifecycle only.**
-
-The platform has two independent rule systems that both fire on story state changes:
-
-- **`pm_automations`** — rigid schema with `ConfigInt`, `ConfigInt2`, `ConfigInt3` columns, inline evaluation in story/epic services, own health observability via `automation_health`
-- **`automation_rules`** — extensible JSONB config, evaluated by `AutomationRuleEngine`, own health observability
-
-Both run inline in the API server. Both react to story state changes. The overlap is most visible in epic lifecycle management: epic auto-start and epic auto-complete in `pm_automations` are textbook trigger→action rules (`all stories started → start epic`, `all stories done → complete epic`) that predate the rule engine.
-
-**Code locations:**
-- `server/internal/service/pm_automation.go` — `pm_automations` evaluation
-- `server/internal/service/automation_rule_engine.go:93` — `AutomationRuleEngine.EvaluateEvent`, story-centric event model
-- `server/internal/model/pm_automation.go` — rigid `ConfigInt`/`ConfigInt2`/`ConfigInt3` schema
-- `server/internal/model/automation_rule.go:8` — only two trigger types (`story.state_entered`, `agent_run.approved`) and three action types (`run_agent`, `move_to_state`, `merge_branch`)
-
-**Scope constraint:** `automation_rules` is currently story-centric. The `AutomationEvent` struct carries `StoryID`, the engine always loads a story, and only story-related triggers and actions exist. Epic auto-start/complete can migrate with moderate work (they already fire on story state changes). Sprint auto-create and move-unfinished-stories **cannot** migrate without first adding cron triggers and non-story execution context to the rule engine.
-
-**Recommendation — phased:**
-
-1. **Phase 1:** Migrate epic auto-start and epic auto-complete into `automation_rules` with new action types `update_epic_state`. These already fire on story state changes and fit the existing event model.
-2. **Phase 2 (after 14.1):** Once sprint scheduling is in Temporal, evaluate whether sprint automations should become rule-triggered or remain as Temporal cron activities. This requires adding a `cron` trigger type and non-story execution context to `AutomationRuleEngine`.
-3. **Phase 3:** Retire `pm_automations` table and its evaluation path once all automations have migrated.
-
-### 14.5 Observation: Simple flows use flow-only capabilities
-
-**Status: not actionable yet.**
-
-Story completion (`pm.story_completion_v1`) and deal review (`crm.deal_review_v1`) are both 3-node linear sequences:
-
-```
-agent_task → approval_gate → system_action → done
-```
-
-On paper this looks like it could be a rule chain (`run_agent → agent_run.approved → system_action`). In practice, these flows depend on capabilities that only exist in the flow system today:
-
-- **Rich approval behavior:** `request_changes` with loopback reruns and `reject` actions are defined in flow templates (`server/internal/service/flow_templates.go:200`). Plain agent approval (`server/internal/service/agent.go`) only supports approve with `send_message`.
-- **Override payloads:** Approval gate nodes pass structured payloads to the next system action node.
-- **Manual launch and review UI:** Story completion and deal review are first-class entries in the Flows page, with dedicated launch and review surfaces.
-- **Non-story targets:** Rule approval events only fire for story targets (`server/internal/service/agent.go:715` — `run.TargetType == "story" && run.StoryID != nil`). Deal review targets `crm_deal`, which the rule engine cannot handle.
-
-**Prerequisite work before this could be revisited:**
-1. Extend agent approval to support `request_changes` and `reject` actions
-2. Add non-story approval event triggers to `AutomationRuleEngine`
-3. Support override/payload passing in rule chains
-4. Provide equivalent manual-launch and review UX outside of the Flows page
-
-Until these prerequisites exist, demoting these flows would lose real functionality.
-
-### 14.6 Target architecture (north star)
-
-This diagram represents the long-term direction, not a single milestone. The phased plan above converges toward this state incrementally.
+### Architecture (current state)
 
 ```mermaid
 graph TD
     subgraph "Trigger Layer"
-        EV["Events<br/><i>story.state_entered, agent_run.approved,<br/>cron, manual</i>"]
+        EV["Events<br/><i>story.state_entered, agent_run.approved,<br/>cron</i>"]
     end
 
     subgraph "Rule Layer (unified)"
@@ -965,24 +928,24 @@ graph TD
     end
 
     subgraph "Command Layer"
-        CR["InternalCommandService<br/><i>shared dispatch for<br/>move_to_state, merge_branch,<br/>create_followup_stories,<br/>apply_deal_actions, etc.</i>"]
+        CR["InternalCommandService<br/><i>shared dispatch for rules and flows:<br/>epic auto-start/complete, sprint create,<br/>merge_branch, create_followups, etc.</i>"]
     end
 
     subgraph "Execution Layer"
         AG["Agent Runs<br/><i>Temporal-backed</i>"]
-        FL["Flow Runs<br/><i>multi-step orchestrations<br/>with branching/loopbacks/sessions</i>"]
+        FL["Flow Runs<br/><i>multi-step orchestrations</i>"]
     end
 
     subgraph "Temporal Scheduled"
-        SPRINT["Sprint Automation<br/><i>cron workflow</i>"]
-        CRM["CRM Intelligence<br/><i>email sync, signal detection,<br/>deal management</i>"]
+        SPRINT["Sprint Automation<br/><i>hourly cron</i>"]
+        CRM["CRM Intelligence<br/><i>email sync, signals, deals</i>"]
         SCHED["Scheduled Agents<br/><i>cron launcher</i>"]
     end
 
     EV --> RE
     RE -->|"run_agent"| AG
-    RE -->|"start_flow"| FL
-    RE -->|"direct action"| CR
+    RE -->|"run_command"| CR
+    RE -->|"start_flow<br/>(future)"| FL
     FL -->|"system_action nodes"| CR
     AG -->|"completion triggers"| EV
 
@@ -995,14 +958,3 @@ graph TD
     style CRM fill:#e8e8f4,stroke:#66a
     style SCHED fill:#e8e8f4,stroke:#66a
 ```
-
-### 14.7 Recommended execution order
-
-| Step | Problem | What to do | Risk |
-|------|---------|-----------|------|
-| 1 | 14.1 Sprint ticker | Move scheduler to Temporal cron. Sweep logic unchanged. | Low |
-| 2 | 14.2 Duplicate actions | Wire `AutomationRuleEngine` and `FlowRunWorkflow` to dispatch through `InternalCommandService`. | Medium |
-| 3 | 14.3 Dead `flow_triggers` | Verify no prod data, then drop table. Add `start_flow` rule action. | Low |
-| 4 | 14.4 Two rule systems (phase 1) | Migrate epic auto-start/complete into `automation_rules`. | Medium |
-| 5 | 14.4 Two rule systems (phase 2+) | Extend rule engine for cron triggers and non-story context. Migrate remaining `pm_automations`. | High |
-| 6 | 14.5 Simple flows | Revisit only after agent approvals support `request_changes`/`reject` and rule events fire for non-story targets. | High |

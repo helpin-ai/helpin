@@ -116,6 +116,8 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			archived BOOLEAN NOT NULL DEFAULT false,
 			blocked BOOLEAN NOT NULL DEFAULT false,
 			blocker TEXT,
+			slice_type TEXT,
+			implementation_brief TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

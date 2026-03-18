@@ -40,6 +40,7 @@ type AutomationRuleEngine struct {
 	agentService    *AgentService
 	storyService    *PMStoryService
 	gitService      *GitService
+	commandService  *InternalCommandService
 	notificationSvc *NotificationService
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
@@ -89,6 +90,12 @@ func (e *AutomationRuleEngine) SetHealthObserver(obs AutomationHealthObserver) *
 	return e
 }
 
+// SetCommandService sets the internal command service for run_command actions.
+func (e *AutomationRuleEngine) SetCommandService(svc *InternalCommandService) *AutomationRuleEngine {
+	e.commandService = svc
+	return e
+}
+
 // EvaluateEvent finds matching rules for an event and executes their actions.
 func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.AutomationEvent, execCtx *model.RuleExecutionContext) {
 	if e == nil {
@@ -122,8 +129,9 @@ func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.Au
 		return
 	}
 
-	story, err := e.storyRepo.GetRawByID(ctx, event.StoryID)
-	if err != nil || story == nil {
+	// Only load the story for story-based triggers.
+	story, err := e.resolveStoryIfNeeded(ctx, event)
+	if err != nil {
 		e.logger.ErrorContext(ctx, "failed to load story for rule evaluation",
 			"error", err,
 			"story_id", event.StoryID,
@@ -136,11 +144,11 @@ func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.Au
 			continue
 		}
 
-		if !e.matchesTriggerConfig(rule, event) {
+		if !e.matchesTriggerConfig(ctx, rule, event) {
 			continue
 		}
 
-		if !e.matchesScope(rule, story) {
+		if !e.matchesScope(rule, story, event) {
 			continue
 		}
 
@@ -172,14 +180,46 @@ func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.Au
 	}
 }
 
-func (e *AutomationRuleEngine) matchesTriggerConfig(rule model.AutomationRule, event model.AutomationEvent) bool {
+// resolveStoryIfNeeded loads the story for story-based triggers, returns nil for cron triggers.
+func (e *AutomationRuleEngine) resolveStoryIfNeeded(ctx context.Context, event model.AutomationEvent) (*model.PMStory, error) {
+	switch event.TriggerType {
+	case model.TriggerCron:
+		return nil, nil
+	default:
+		if event.StoryID == "" {
+			return nil, nil
+		}
+		story, err := e.storyRepo.GetRawByID(ctx, event.StoryID)
+		if err != nil {
+			return nil, err
+		}
+		if story == nil {
+			return nil, fmt.Errorf("story %s not found", event.StoryID)
+		}
+		return story, nil
+	}
+}
+
+func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule model.AutomationRule, event model.AutomationEvent) bool {
 	switch rule.TriggerType {
 	case model.TriggerStoryStateEntered:
 		var cfg model.TriggerConfigStateEntered
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
 		}
-		return cfg.StateID != "" && cfg.StateID == event.StateID
+		// Match by exact state ID
+		if cfg.StateID != "" {
+			return cfg.StateID == event.StateID
+		}
+		// Match by state type (e.g. "started", "done") — used by epic automations
+		if cfg.StateType != "" && event.StateID != "" {
+			state, err := e.workflowRepo.GetStateByID(ctx, event.StateID)
+			if err != nil || state == nil {
+				return false
+			}
+			return state.StateType == cfg.StateType
+		}
+		return false
 
 	case model.TriggerAgentRunApproved:
 		var cfg model.TriggerConfigRunApproved
@@ -188,19 +228,34 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(rule model.AutomationRule, e
 		}
 		return cfg.StateID != "" && cfg.StateID == event.StateID
 
+	case model.TriggerCron:
+		var cfg model.TriggerConfigCron
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		// Cron rules always match when evaluated during their category's tick
+		return cfg.Category != ""
+
 	default:
 		return false
 	}
 }
 
-func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *model.PMStory) bool {
-	if rule.WorkflowID != nil && *rule.WorkflowID != "" && *rule.WorkflowID != story.WorkflowID {
-		return false
-	}
-	if rule.TeamID != nil && *rule.TeamID != "" {
-		if story.TeamID == nil || *story.TeamID != *rule.TeamID {
+func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, story *model.PMStory, event model.AutomationEvent) bool {
+	if story != nil {
+		if rule.WorkflowID != nil && *rule.WorkflowID != "" && *rule.WorkflowID != story.WorkflowID {
 			return false
 		}
+		if rule.TeamID != nil && *rule.TeamID != "" {
+			if story.TeamID == nil || *story.TeamID != *rule.TeamID {
+				return false
+			}
+		}
+		return true
+	}
+	// No story — match only on TeamID from event
+	if rule.TeamID != nil && *rule.TeamID != "" {
+		return event.TeamID != "" && *rule.TeamID == event.TeamID
 	}
 	return true
 }
@@ -227,6 +282,16 @@ func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.Au
 			return fmt.Errorf("parse merge_branch config: %w", err)
 		}
 		return e.executeMergeBranch(ctx, rule, event, story, cfg)
+
+	case model.ActionRunCommand:
+		var cfg model.ActionConfigRunCommand
+		if err := json.Unmarshal(rule.ActionConfig, &cfg); err != nil {
+			return fmt.Errorf("parse run_command config: %w", err)
+		}
+		return e.executeRunCommand(ctx, rule, event, story, cfg)
+
+	case model.ActionStartFlow:
+		return fmt.Errorf("start_flow action not yet implemented")
 
 	default:
 		return fmt.Errorf("unknown action type: %s", rule.ActionType)
@@ -316,8 +381,8 @@ func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *mod
 	}
 	chainCtx := withRuleExecCtx(ctx, newExecCtx)
 
-	// Move the story. MoveToState triggers OnStoryStateChange (epic automations)
-	// and EvaluateEvent (with chain context from chainCtx) — no separate call needed here.
+	// Move the story. MoveToState triggers EvaluateEvent (with chain context
+	// from chainCtx) — no separate call needed here.
 	_, err := e.storyService.MoveToState(chainCtx, event.StoryID, model.MoveStoryRequest{
 		StateID: cfg.TargetStateID,
 	}, "system")
@@ -391,6 +456,117 @@ func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *mod
 		nil, nil, nil, nil)
 
 	return nil
+}
+
+func (e *AutomationRuleEngine) executeRunCommand(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMStory, cfg model.ActionConfigRunCommand) error {
+	if e.commandService == nil {
+		return fmt.Errorf("command service not configured")
+	}
+	if cfg.CommandName == "" {
+		return fmt.Errorf("command_name is required in run_command config")
+	}
+
+	targetType := event.TargetType
+	targetID := event.TargetID
+	if targetType == "" && story != nil {
+		targetType = "story"
+		targetID = story.ID
+	}
+
+	meta := model.InternalCommandContext{
+		WorkspaceID: event.WorkspaceID,
+		ActorID:     "system",
+		TargetType:  targetType,
+		TargetID:    targetID,
+	}
+
+	// Merge story context into input for epic commands: the command needs the
+	// epic_id, which only the story carries. Inject it so the command can
+	// resolve the correct entity.
+	input := cfg.Input
+	if len(input) == 0 {
+		input = json.RawMessage("{}")
+	}
+	if story != nil && story.EpicID != nil && *story.EpicID != "" {
+		input = e.mergeEpicIDIntoInput(input, *story.EpicID)
+	}
+
+	_, err := e.commandService.Execute(ctx, meta, cfg.CommandName, input)
+	if err != nil {
+		return fmt.Errorf("run command %q: %w", cfg.CommandName, err)
+	}
+	return nil
+}
+
+// mergeEpicIDIntoInput injects epic_id into the input JSON if not already present.
+func (e *AutomationRuleEngine) mergeEpicIDIntoInput(input json.RawMessage, epicID string) json.RawMessage {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(input, &m); err != nil {
+		return input
+	}
+	if _, exists := m["epic_id"]; exists {
+		return input
+	}
+	m["epic_id"] = json.RawMessage(fmt.Sprintf("%q", epicID))
+	merged, err := json.Marshal(m)
+	if err != nil {
+		return input
+	}
+	return merged
+}
+
+// EvaluateCronRules loads and evaluates all enabled cron rules across workspaces.
+// Called by the sprint automation Temporal workflow after pm_automations is fully retired.
+func (e *AutomationRuleEngine) EvaluateCronRules(ctx context.Context, category string) {
+	if e == nil {
+		return
+	}
+	rules, err := e.ruleRepo.ListEnabledCronRules(ctx)
+	if err != nil {
+		e.logger.ErrorContext(ctx, "failed to list cron rules", "error", err)
+		return
+	}
+
+	for _, rule := range rules {
+		var cfg model.TriggerConfigCron
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			continue
+		}
+		if cfg.Category != category {
+			continue
+		}
+
+		event := model.AutomationEvent{
+			WorkspaceID: rule.WorkspaceID,
+			TriggerType: model.TriggerCron,
+		}
+		if rule.TeamID != nil {
+			event.TeamID = *rule.TeamID
+		}
+
+		if !e.matchesScope(rule, nil, event) {
+			continue
+		}
+
+		e.logger.InfoContext(ctx, "executing cron automation rule",
+			"rule_id", rule.ID,
+			"rule_name", rule.Name,
+			"action_type", rule.ActionType,
+			"workspace_id", rule.WorkspaceID,
+		)
+
+		if err := e.executeAction(ctx, &rule, event, nil, &model.RuleExecutionContext{MaxDepth: defaultMaxChainDepth}); err != nil {
+			e.logger.ErrorContext(ctx, "cron automation rule action failed",
+				"error", err,
+				"rule_id", rule.ID,
+				"rule_name", rule.Name,
+				"action_type", rule.ActionType,
+			)
+			e.observeFailure(ctx, event.WorkspaceID, rule.ID, err)
+		} else {
+			e.observeSuccess(ctx, event.WorkspaceID, rule.ID)
+		}
+	}
 }
 
 // --- CRUD methods ---
@@ -511,8 +687,8 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
 		}
-		if cfg.StateID == "" {
-			return fmt.Errorf("state_id is required in trigger_config for %s", triggerType)
+		if cfg.StateID == "" && cfg.StateType == "" {
+			return fmt.Errorf("state_id or state_type is required in trigger_config for %s", triggerType)
 		}
 	case model.TriggerAgentRunApproved:
 		var cfg model.TriggerConfigRunApproved
@@ -521,6 +697,14 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		}
 		if cfg.StateID == "" {
 			return fmt.Errorf("state_id is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerCron:
+		var cfg model.TriggerConfigCron
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if cfg.Category == "" {
+			return fmt.Errorf("category is required in trigger_config for %s", triggerType)
 		}
 	default:
 		return fmt.Errorf("unsupported trigger_type: %s", triggerType)
@@ -550,6 +734,22 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		}
 		if strings.TrimSpace(cfg.TargetBranch) == "" {
 			return fmt.Errorf("target_branch is required in action_config for %s", actionType)
+		}
+	case model.ActionRunCommand:
+		var cfg model.ActionConfigRunCommand
+		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid action_config for %s: %w", actionType, err)
+		}
+		if cfg.CommandName == "" {
+			return fmt.Errorf("command_name is required in action_config for %s", actionType)
+		}
+	case model.ActionStartFlow:
+		var cfg model.ActionConfigStartFlow
+		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid action_config for %s: %w", actionType, err)
+		}
+		if cfg.TemplateID == "" {
+			return fmt.Errorf("template_id is required in action_config for %s", actionType)
 		}
 	default:
 		return fmt.Errorf("unsupported action_type: %s", actionType)

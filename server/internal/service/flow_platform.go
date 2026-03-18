@@ -649,11 +649,8 @@ func (s *FlowService) buildApproveSpecCommandInput(payload json.RawMessage) (jso
 }
 
 func (s *FlowService) buildCreateStoriesCommandInput(ctx context.Context, run *model.FlowRun) (json.RawMessage, error) {
-	storyNodeID := model.FlowNodeStoryPlanning
+	storyNodeID := model.FlowNodeStoryPlan
 	approvalNodeID := model.FlowNodePlanApproval
-	if run.TemplateID == model.FlowTemplateEpicPlanningV2 {
-		storyNodeID = model.FlowNodeStoryPlan
-	}
 	storyNode, err := s.flowRepo.GetLatestNodeRunByNodeID(ctx, run.ID, storyNodeID)
 	if err != nil {
 		return nil, err

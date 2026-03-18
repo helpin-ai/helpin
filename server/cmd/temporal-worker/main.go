@@ -110,6 +110,8 @@ func main() {
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
+	pmAutomationRepo := repository.NewPMAutomationRepository(db)
+	sprintRepo := repository.NewPMSprintRepository(db)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -157,6 +159,15 @@ func main() {
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
+	pmAutomationService := service.NewPMAutomationService(
+		pmAutomationRepo,
+		epicRepo,
+		storyRepo,
+		sprintRepo,
+		workflowRepo,
+		pmActivityService,
+		wsPublisher,
+	)
 	pmStoryService := service.NewPMStoryService(
 		storyRepo,
 		workspaceRepo,
@@ -268,10 +279,13 @@ func main() {
 
 	scheduleActivities := temporalapp.NewScheduledAgentActivities(agentRepo, runRepo)
 
+	// Sprint automation activities.
+	sprintAutomationActivities := temporalapp.NewSprintAutomationActivities(pmAutomationService)
+
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, sprintAutomationActivities))
 	}
 
 	// Planning session worker — separate queue with session pinning.
@@ -342,9 +356,6 @@ func main() {
 		planningWorker.RegisterActivityWithOptions(planningActivities.CleanupWorkspaceActivity, activity.RegisterOptions{
 			Name: "PlanningSessionActivities.CleanupWorkspaceActivity",
 		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.BootstrapEpicPlanningRunActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.BootstrapEpicPlanningRunActivity",
-		})
 		flowWorker.RegisterActivityWithOptions(flowActivities.BootstrapRunActivity, activity.RegisterOptions{
 			Name: "FlowRuntimeActivities.BootstrapRunActivity",
 		})
@@ -353,15 +364,6 @@ func main() {
 		})
 		flowWorker.RegisterActivityWithOptions(flowActivities.HandleApprovalActionActivity, activity.RegisterOptions{
 			Name: "FlowRuntimeActivities.HandleApprovalActionActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.ApproveSpecNodeActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.ApproveSpecNodeActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.ApprovePlanNodeActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.ApprovePlanNodeActivity",
-		})
-		flowWorker.RegisterActivityWithOptions(flowActivities.RejectApprovalNodeActivity, activity.RegisterOptions{
-			Name: "FlowRuntimeActivities.RejectApprovalNodeActivity",
 		})
 		flowWorker.RegisterActivityWithOptions(flowActivities.RetryNodeActivity, activity.RegisterOptions{
 			Name: "FlowRuntimeActivities.RetryNodeActivity",
@@ -404,7 +406,7 @@ func main() {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, sprintActivities *temporalapp.SprintAutomationActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 	}
@@ -464,6 +466,14 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	if scheduleActivities != nil {
 		w.RegisterActivityWithOptions(scheduleActivities.CreateScheduledRun, activity.RegisterOptions{
 			Name: "ScheduledAgentActivities.CreateScheduledRun",
+		})
+	}
+
+	// Register sprint automation cron workflow and activities.
+	w.RegisterWorkflow(temporalapp.SprintAutomationCronWorkflow)
+	if sprintActivities != nil {
+		w.RegisterActivityWithOptions(sprintActivities.RunSprintAutomationsActivity, activity.RegisterOptions{
+			Name: "SprintAutomationActivities.RunSprintAutomationsActivity",
 		})
 	}
 

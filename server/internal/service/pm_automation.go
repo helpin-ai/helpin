@@ -216,11 +216,10 @@ func (s *PMAutomationService) OnStoryStateChange(ctx context.Context, story *mod
 	}
 }
 
-func (s *PMAutomationService) handleEpicAutoStart(ctx context.Context, auto model.PMAutomation, epicID string, newState *model.PMWorkflowState) (bool, error) {
-	if newState.StateType != model.PMStateTypeStarted {
-		return false, nil
-	}
-	if auto.ConfigStateID == nil || *auto.ConfigStateID == "" {
+// HandleEpicAutoStart checks whether the given epic should be auto-started and updates it.
+// Returns true if the epic was mutated.
+func (s *PMAutomationService) HandleEpicAutoStart(ctx context.Context, workspaceID, epicID, targetStateID string) (bool, error) {
+	if targetStateID == "" {
 		return false, nil
 	}
 
@@ -233,15 +232,12 @@ func (s *PMAutomationService) handleEpicAutoStart(ctx context.Context, auto mode
 	}
 	epic := epicWithStats.Epic
 
-	// Only auto-start if epic hasn't started yet
 	if epic.Started {
 		return false, nil
 	}
 
-	// Resolve the target epic state to verify it exists
-	// (ConfigStateID points to a pm_epic_workflow_states row)
 	now := time.Now().UTC()
-	epic.EpicStateID = auto.ConfigStateID
+	epic.EpicStateID = &targetStateID
 	epic.Started = true
 	epic.StartedAt = &now
 
@@ -256,11 +252,10 @@ func (s *PMAutomationService) handleEpicAutoStart(ctx context.Context, auto mode
 	return true, nil
 }
 
-func (s *PMAutomationService) handleEpicAutoComplete(ctx context.Context, auto model.PMAutomation, epicID string, newState *model.PMWorkflowState) (bool, error) {
-	if newState.StateType != model.PMStateTypeDone {
-		return false, nil
-	}
-	if auto.ConfigStateID == nil || *auto.ConfigStateID == "" {
+// HandleEpicAutoComplete checks whether the given epic should be auto-completed and updates it.
+// Returns true if the epic was mutated.
+func (s *PMAutomationService) HandleEpicAutoComplete(ctx context.Context, workspaceID, epicID, targetStateID string) (bool, error) {
+	if targetStateID == "" {
 		return false, nil
 	}
 
@@ -274,18 +269,15 @@ func (s *PMAutomationService) handleEpicAutoComplete(ctx context.Context, auto m
 	epic := epicWithStats.Epic
 	stats := epicWithStats.Stats
 
-	// Only auto-complete if ALL stories are done
 	if stats.StoryCount == 0 || stats.DoneStoryCount != stats.StoryCount {
 		return false, nil
 	}
-
-	// Already completed
 	if epic.Completed {
 		return false, nil
 	}
 
 	now := time.Now().UTC()
-	epic.EpicStateID = auto.ConfigStateID
+	epic.EpicStateID = &targetStateID
 	epic.Completed = true
 	epic.CompletedAt = &now
 	epic.Started = true
@@ -304,6 +296,26 @@ func (s *PMAutomationService) handleEpicAutoComplete(ctx context.Context, auto m
 	return true, nil
 }
 
+func (s *PMAutomationService) handleEpicAutoStart(ctx context.Context, auto model.PMAutomation, epicID string, newState *model.PMWorkflowState) (bool, error) {
+	if newState.StateType != model.PMStateTypeStarted {
+		return false, nil
+	}
+	if auto.ConfigStateID == nil || *auto.ConfigStateID == "" {
+		return false, nil
+	}
+	return s.HandleEpicAutoStart(ctx, auto.WorkspaceID, epicID, *auto.ConfigStateID)
+}
+
+func (s *PMAutomationService) handleEpicAutoComplete(ctx context.Context, auto model.PMAutomation, epicID string, newState *model.PMWorkflowState) (bool, error) {
+	if newState.StateType != model.PMStateTypeDone {
+		return false, nil
+	}
+	if auto.ConfigStateID == nil || *auto.ConfigStateID == "" {
+		return false, nil
+	}
+	return s.HandleEpicAutoComplete(ctx, auto.WorkspaceID, epicID, *auto.ConfigStateID)
+}
+
 // RunSprintAutomations runs background sprint automations.
 // Called periodically (e.g., hourly). Looks at sprints that ended recently.
 func (s *PMAutomationService) RunSprintAutomations(ctx context.Context) {
@@ -311,6 +323,16 @@ func (s *PMAutomationService) RunSprintAutomations(ctx context.Context) {
 	s.runSprintAutoCreate(ctx)
 	s.runSprintMoveUnfinished(ctx)
 	s.logger.InfoContext(ctx, "sprint automations completed")
+}
+
+// RunSprintAutoCreate runs only the sprint auto-create logic.
+func (s *PMAutomationService) RunSprintAutoCreate(ctx context.Context) {
+	s.runSprintAutoCreate(ctx)
+}
+
+// RunSprintMoveUnfinished runs only the move-unfinished-stories logic.
+func (s *PMAutomationService) RunSprintMoveUnfinished(ctx context.Context) {
+	s.runSprintMoveUnfinished(ctx)
 }
 
 func (s *PMAutomationService) runSprintAutoCreate(ctx context.Context) {

@@ -347,11 +347,13 @@ func (s *PMStoryService) Create(ctx context.Context, req model.CreateStoryReques
 		return nil, err
 	}
 
+	// Legacy path: evaluate epic automations from pm_automations table.
+	// Kept during transition until migration 052 is validated and pm_automations dropped.
 	if s.automationService != nil {
 		s.automationService.OnStoryStateChange(ctx, story, story.WorkflowStateID)
 	}
 
-	// Evaluate automation rules for the initial state entry
+	// Evaluate automation rules for the initial state entry.
 	if s.ruleEngine != nil {
 		s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
 			WorkspaceID: story.WorkspaceID,
@@ -613,8 +615,18 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 			return nil, err
 		}
+		// Legacy path: evaluate epic automations from pm_automations table.
 		if s.automationService != nil {
 			s.automationService.OnStoryStateChange(ctx, current, current.WorkflowStateID)
+		}
+		// Evaluate automation rules for the state change (epic auto-start/complete, etc.)
+		if s.ruleEngine != nil {
+			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
+				WorkspaceID: current.WorkspaceID,
+				TriggerType: model.TriggerStoryStateEntered,
+				StoryID:     current.ID,
+				StateID:     current.WorkflowStateID,
+			}, nil)
 		}
 	}
 
@@ -795,6 +807,7 @@ func (s *PMStoryService) MoveToState(ctx context.Context, id string, req model.M
 	if err := s.storyRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
 		return nil, err
 	}
+	// Legacy path: evaluate epic automations from pm_automations table.
 	if s.automationService != nil {
 		s.automationService.OnStoryStateChange(ctx, current, req.StateID)
 	}

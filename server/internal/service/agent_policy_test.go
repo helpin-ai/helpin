@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -98,17 +97,6 @@ func TestNormalizeAgentRecordPreservesExplicitCustomCapabilityProfile(t *testing
 
 	if agent.CapabilityProfile != "planner_with_docs_focus" {
 		t.Fatalf("expected explicit capability profile to be preserved, got %q", agent.CapabilityProfile)
-	}
-}
-
-func TestResolvePlanningMethodologyDefaults(t *testing.T) {
-	svc := &AgentService{}
-
-	if got := svc.resolvePlanningMethodology(context.Background(), "ws_123", ""); got != model.PlanningMethodologyStructuredV1 {
-		t.Fatalf("expected default methodology %q, got %q", model.PlanningMethodologyStructuredV1, got)
-	}
-	if got := svc.resolvePlanningMethodology(context.Background(), "ws_123", model.PlanningMethodologyBasicV1); got != model.PlanningMethodologyBasicV1 {
-		t.Fatalf("expected explicit methodology %q, got %q", model.PlanningMethodologyBasicV1, got)
 	}
 }
 

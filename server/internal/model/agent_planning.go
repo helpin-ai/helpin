@@ -3,7 +3,6 @@ package model
 import (
 	"encoding/json"
 	"strings"
-	"time"
 )
 
 const (
@@ -28,27 +27,8 @@ const (
 	SpecClarificationDispositionRejected = "rejected"
 )
 
-// OrchestrateRequest is the legacy request to decompose an epic into stories.
-// Stage defaults to draft_spec for the new staged planner.
-type OrchestrateRequest struct {
-	AdditionalContext string `json:"additional_context"`
-	Stage             string `json:"stage,omitempty"`
-}
-
-type DraftEpicSpecRequest struct {
-	AdditionalContext string `json:"additional_context"`
-}
-
 type ApproveEpicSpecRequest struct {
 	VersionID *string `json:"version_id,omitempty"`
-}
-
-type ClarifyEpicSpecRequest struct {
-	Clarifications []SpecClarificationItem `json:"clarifications"`
-}
-
-type PlanEpicStoriesRequest struct {
-	AdditionalContext string `json:"additional_context"`
 }
 
 type SpecClarificationItem struct {
@@ -70,7 +50,25 @@ type ProposedStory struct {
 	AcceptanceCriteria []string            `json:"acceptance_criteria,omitempty"`
 	DependencyRefs     []string            `json:"dependency_refs,omitempty"`
 	SourceRefs         []PlanningSourceRef `json:"source_refs,omitempty"`
-	AssignAgentID      *string             `json:"assign_agent_id,omitempty"`
+	AssignAgentID       *string                  `json:"assign_agent_id,omitempty"`
+	SliceType           string                   `json:"slice_type,omitempty"`
+	ImplementationBrief *StoryImplementationBrief `json:"implementation_brief,omitempty"`
+}
+
+// StoryImplementationBrief gives the coding agent a concrete build plan for a story.
+type StoryImplementationBrief struct {
+	Approach       string       `json:"approach"`
+	FilesToModify  []FileChange `json:"files_to_modify"`
+	TestStrategy   string       `json:"test_strategy"`
+	VerticalLayers []string     `json:"vertical_layers,omitempty"`
+	DependsOnFiles []string     `json:"depends_on_files,omitempty"`
+}
+
+// FileChange describes a single file-level action in an implementation brief.
+type FileChange struct {
+	Path        string `json:"path"`
+	Action      string `json:"action"`
+	Description string `json:"description"`
 }
 
 type PlanningSourceRef struct {
@@ -85,8 +83,16 @@ type OrchestrationProposal struct {
 	SpecVersionID   string          `json:"spec_version_id,omitempty"`
 	ProposedStories []ProposedStory `json:"proposed_stories"`
 	OpenQuestions   []string        `json:"open_questions,omitempty"`
-	Risks           []string        `json:"risks,omitempty"`
-	TokensUsed      int             `json:"tokens_used"`
+	Risks            []string                `json:"risks,omitempty"`
+	VerticalCoverage []VerticalCoverageEntry `json:"vertical_coverage,omitempty"`
+	TokensUsed       int                     `json:"tokens_used"`
+}
+
+// VerticalCoverageEntry maps a user-facing behavior to the stories that deliver it.
+type VerticalCoverageEntry struct {
+	Behavior  string   `json:"behavior"`
+	StoryRefs []string `json:"story_refs"`
+	FullSlice bool     `json:"full_slice"`
 }
 
 type ProductSpecDraft struct {
@@ -110,30 +116,6 @@ type PlanningResearchSource struct {
 type ConfirmPlanningRequest struct {
 	RunID           string          `json:"run_id"`
 	ProposedStories []ProposedStory `json:"proposed_stories"`
-}
-
-// ConfirmOrchestrationRequest remains as a backward-compatible alias.
-type ConfirmOrchestrationRequest = ConfirmPlanningRequest
-
-type KickoffPlanningExecutionRequest struct {
-	RunID    string   `json:"run_id"`
-	StoryIDs []string `json:"story_ids,omitempty"`
-}
-
-type KickoffExecutionResult struct {
-	Started []PlanningExecutionStart `json:"started"`
-	Skipped []PlanningExecutionSkip  `json:"skipped"`
-}
-
-type PlanningExecutionStart struct {
-	StoryID   string    `json:"story_id"`
-	RunID     string    `json:"run_id"`
-	StartedAt time.Time `json:"started_at"`
-}
-
-type PlanningExecutionSkip struct {
-	StoryID string `json:"story_id"`
-	Reason  string `json:"reason"`
 }
 
 type ApprovedSpecSummary struct {
