@@ -84,6 +84,9 @@ func main() {
 	commentRepo := repository.NewPMCommentRepository(db)
 	checklistRepo := repository.NewPMChecklistItemRepository(db)
 	externalLinkRepo := repository.NewPMExternalLinkRepository(db)
+	attachRepo := repository.NewPMAttachmentRepository(db)
+	recurringRepo := repository.NewPMRecurringTemplateRepository(db)
+	sprintRepo := repository.NewPMSprintRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
@@ -156,6 +159,16 @@ func main() {
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
+	pmRecurringTemplateService := service.NewPMRecurringTemplateService(
+		recurringRepo,
+		storyRepo,
+		workflowRepo,
+		sprintRepo,
+		workspaceRepo,
+		checklistRepo,
+		externalLinkRepo,
+		pmActivityService,
+	)
 	pmStoryService := service.NewPMStoryService(
 		storyRepo,
 		workspaceRepo,
@@ -170,6 +183,8 @@ func main() {
 		nil,
 		nil,
 	)
+	pmStoryService.SetRecurringService(pmRecurringTemplateService)
+	pmRecurringTemplateService.SetStoryService(pmStoryService)
 	gitService := service.NewGitService(
 		gitIntRepo,
 		gitRepo,
@@ -266,11 +281,12 @@ func main() {
 	_ = crmCompanyRepo // available for future enrichment activities
 
 	scheduleActivities := temporalapp.NewScheduledAgentActivities(agentRepo, runRepo)
+	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
 
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, recurringActivities))
 	}
 
 	// Planning session worker — separate queue with session pinning.
@@ -403,7 +419,7 @@ func main() {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, recurringActivities *service.PMRecurringTemplateActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 	}
@@ -463,6 +479,14 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	if scheduleActivities != nil {
 		w.RegisterActivityWithOptions(scheduleActivities.CreateScheduledRun, activity.RegisterOptions{
 			Name: "ScheduledAgentActivities.CreateScheduledRun",
+		})
+	}
+
+	// Register recurring template scheduler workflow and activities.
+	w.RegisterWorkflow(temporalapp.PMRecurringTemplateSchedulerWorkflow)
+	if recurringActivities != nil {
+		w.RegisterActivityWithOptions(recurringActivities.ProcessDueTemplatesActivity, activity.RegisterOptions{
+			Name: "PMRecurringTemplateActivities.ProcessDueTemplatesActivity",
 		})
 	}
 

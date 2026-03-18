@@ -52,6 +52,7 @@ import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import {
   TABLE_CONTAINER,
   TABLE_HEADER,
@@ -457,13 +458,16 @@ export function StoryListView({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="flex max-w-full cursor-pointer items-center gap-1.5 truncate text-left text-sm hover:text-primary"
+            className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-sm hover:text-primary"
             onClick={(e) => {
               e.stopPropagation();
               onOpenStory(info.row.original);
             }}
           >
-            <span className="truncate">{info.getValue()}</span>
+            {info.row.original.recurring_template_id ? (
+              <RecurringTemplateBadge compact occurrenceNumber={info.row.original.recurring_occurrence_number} />
+            ) : null}
+            <span className="min-w-0 truncate">{info.getValue()}</span>
             {info.row.original.assigned_agent_id && (
               <Bot className="h-3 w-3 shrink-0 text-violet-500" />
             )}

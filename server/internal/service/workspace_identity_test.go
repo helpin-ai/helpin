@@ -734,6 +734,9 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			archived BOOLEAN NOT NULL DEFAULT 0,
 			assigned_agent_id TEXT,
 			template_id TEXT,
+			recurring_template_id TEXT,
+			recurring_run_id TEXT,
+			recurring_occurrence_number INTEGER,
 			external_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
