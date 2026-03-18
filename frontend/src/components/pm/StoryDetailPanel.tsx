@@ -19,14 +19,18 @@ import {
   Loader2,
   Maximize2,
   MoreVertical,
+  Pause,
   Paperclip,
   Play,
+  RefreshCw,
   ShieldAlert,
+  StepForward,
   Tag,
   Target,
   User,
   Users,
   X,
+  Zap,
 } from 'lucide-react';
 import {
   PRIORITY_CONFIG,
@@ -39,6 +43,7 @@ import {
   StoryTypeIcon,
 } from '@/lib/pmConstants';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -65,6 +70,7 @@ import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
+import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -81,6 +87,9 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { StorySidebarIdRow } from '@/components/pm/StorySidebarIdRow';
+import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
+import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
+import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSummary';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
@@ -99,12 +108,15 @@ import type {
   SprintWithStats,
   Label,
   Priority,
+  RecurringTemplateDetail,
   Severity,
   StoryDetail,
+  StoryRecurringSummary,
   StoryType,
   UpdateStoryRequest,
   WorkflowState,
 } from '@/lib/pmTypes';
+import { toast } from 'sonner';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -318,6 +330,10 @@ function StoryDetailPanelBody({
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [hasGitIntegration, setHasGitIntegration] = useState(false);
+  const [recurringSummary, setRecurringSummary] = useState<StoryRecurringSummary | null>(null);
+  const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
+  const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
+  const [recurringSaving, setRecurringSaving] = useState(false);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
 
   // Check if GitHub is connected
@@ -326,6 +342,81 @@ function StoryDetailPanelBody({
       setHasGitIntegration((res.data ?? []).some((i) => i.active));
     });
   }, [workspaceId]);
+
+  const loadRecurringSummary = useCallback(async (currentStoryId: string) => {
+    const { data, error, status } = await pmRecurringTemplateService.getByStory(workspaceId, currentStoryId);
+    if (error && status !== 204) {
+      toast.error(error);
+      return;
+    }
+    setRecurringSummary(data ?? null);
+  }, [workspaceId]);
+
+  const openRecurringDialog = useCallback(async () => {
+    if (recurringSummary?.template_id) {
+      const { data, error } = await pmRecurringTemplateService.get(workspaceId, recurringSummary.template_id);
+      if (error || !data) {
+        toast.error(error ?? 'Failed to load recurring template');
+        return;
+      }
+      setRecurringDetail(data);
+    } else {
+      setRecurringDetail(null);
+    }
+    setRecurringDialogOpen(true);
+  }, [workspaceId, recurringSummary?.template_id]);
+
+  const runRecurringAction = useCallback(
+    async (
+      action: () => Promise<{ data: RecurringTemplateDetail | null; error: string | null }>,
+      successMessage: string,
+    ) => {
+      setRecurringSaving(true);
+      const { data, error } = await action();
+      setRecurringSaving(false);
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      if (data) {
+        setRecurringDetail(data);
+      }
+      await loadRecurringSummary(storyDetail.story.id);
+      toast.success(successMessage);
+    },
+    [loadRecurringSummary, storyDetail.story.id],
+  );
+
+  const handleRecurringSubmit = useCallback(async (value: RecurringTemplateFormValue) => {
+    setRecurringSaving(true);
+    const response = recurringSummary?.template_id
+      ? await pmRecurringTemplateService.update(workspaceId, recurringSummary.template_id, {
+          title: value.title,
+          description: value.description || undefined,
+          story_id: storyDetail.story.id,
+          config: value.config,
+        })
+      : await pmRecurringTemplateService.create({
+          workspace_id: workspaceId,
+          story_id: storyDetail.story.id,
+          title: value.title,
+          description: value.description || undefined,
+          config: value.config,
+        });
+    setRecurringSaving(false);
+    if (response.error || !response.data) {
+      toast.error(response.error ?? 'Failed to save recurring template');
+      return;
+    }
+    setRecurringDetail(response.data);
+    await loadRecurringSummary(storyDetail.story.id);
+    setRecurringDialogOpen(false);
+    toast.success(recurringSummary?.template_id ? 'Recurring template updated' : 'Story is now recurring');
+  }, [workspaceId, storyDetail.story.id, recurringSummary?.template_id, loadRecurringSummary]);
+
+  useEffect(() => {
+    void loadRecurringSummary(storyDetail.story.id);
+  }, [storyDetail.story.id, loadRecurringSummary]);
 
   // ── Delivery (sidebar rows) ──────────────────────────────────────
   const delivery = useStoryDelivery(workspaceId, storyDetail, onStoryUpdated);
@@ -661,6 +752,12 @@ function StoryDetailPanelBody({
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
           <span className="shrink-0 font-medium text-foreground">{storyDetail.story.display_id}</span>
+          {storyDetail.story.recurring_template_id ? (
+            <RecurringTemplateBadge
+              compact
+              occurrenceNumber={storyDetail.story.recurring_occurrence_number}
+            />
+          ) : null}
         </div>
 
         <div className="ml-auto flex items-center gap-1">
@@ -684,6 +781,10 @@ function StoryDetailPanelBody({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => { void openRecurringDialog(); }}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {recurringSummary ? 'Edit recurring' : 'Make recurring'}
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
                 <Archive className="mr-2 h-4 w-4 text-amber-500" />
                 Archive
@@ -935,6 +1036,95 @@ function StoryDetailPanelBody({
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5 pb-40">
           <StorySidebarIdRow displayId={storyDetail.story.display_id} />
+
+          <div className="mb-4">
+            {recurringSummary ? (
+              <>
+                <RecurringTemplateSummary
+                  title={recurringSummary.template_title}
+                  status={recurringSummary.status}
+                  ruleSummary={recurringSummary.rule_summary}
+                  nextRunAt={recurringSummary.next_run_at}
+                  generatedCount={recurringSummary.generated_count}
+                  occurrenceNumber={recurringSummary.occurrence_number}
+                  lastError={recurringSummary.last_error}
+                  lastGeneratedStory={recurringSummary.last_generated_story ?? null}
+                  compact
+                  actions={
+                    <Button type="button" variant="ghost" size="xs" onClick={() => void openRecurringDialog()}>
+                      Edit
+                    </Button>
+                  }
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {recurringSummary.status === 'active' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      disabled={recurringSaving}
+                      onClick={() => void runRecurringAction(
+                        () => pmRecurringTemplateService.pause(workspaceId, recurringSummary.template_id),
+                        'Recurring template paused',
+                      )}
+                    >
+                      <Pause className="h-3 w-3" />
+                      Pause
+                    </Button>
+                  ) : null}
+                  {recurringSummary.status === 'paused' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      disabled={recurringSaving}
+                      onClick={() => void runRecurringAction(
+                        () => pmRecurringTemplateService.resume(workspaceId, recurringSummary.template_id),
+                        'Recurring template resumed',
+                      )}
+                    >
+                      <Play className="h-3 w-3" />
+                      Resume
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    disabled={recurringSaving}
+                    onClick={() => void runRecurringAction(
+                      () => pmRecurringTemplateService.skipNext(workspaceId, recurringSummary.template_id),
+                      'Next occurrence skipped',
+                    )}
+                  >
+                    <StepForward className="h-3 w-3" />
+                    Skip next
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    disabled={recurringSaving}
+                    onClick={() => void runRecurringAction(
+                      () => pmRecurringTemplateService.generateNow(workspaceId, recurringSummary.template_id),
+                      'Recurring story generated',
+                    )}
+                  >
+                    <Zap className="h-3 w-3" />
+                    Generate now
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="w-full rounded-lg border border-dashed border-border/60 px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:border-border hover:bg-muted/30"
+                onClick={() => void openRecurringDialog()}
+              >
+                Make this story recurring
+              </button>
+            )}
+          </div>
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}
@@ -1286,6 +1476,37 @@ function StoryDetailPanelBody({
           />
         </aside>
       </div>
+
+      <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{recurringSummary ? 'Edit recurring template' : 'Make story recurring'}</DialogTitle>
+            <DialogDescription>
+              {recurringSummary
+                ? 'Update the schedule and future generation behavior for this recurring story.'
+                : 'Create a recurring template from this story so future occurrences are generated automatically.'}
+            </DialogDescription>
+          </DialogHeader>
+          <RecurringTemplateForm
+            initialValue={{
+              title: recurringDetail?.template.title ?? recurringSummary?.template_title ?? form.name,
+              description: recurringDetail?.template.description ?? '',
+              config: recurringDetail?.config ?? recurringSummary?.config ?? {
+                schedule_type: 'time',
+                frequency: 'weekly',
+                interval: 1,
+                weekdays: [1],
+                due_date_mode: 'scheduled_date',
+                sprint_assignment_mode: 'none',
+              },
+            }}
+            submitLabel={recurringSummary ? 'Save changes' : 'Create recurring template'}
+            saving={recurringSaving}
+            onCancel={() => setRecurringDialogOpen(false)}
+            onSubmit={(value) => void handleRecurringSubmit(value)}
+          />
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={archiveConfirmOpen}

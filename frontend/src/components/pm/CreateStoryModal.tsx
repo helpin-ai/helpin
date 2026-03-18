@@ -15,6 +15,7 @@ import {
   Loader2,
   Paperclip,
   Plus,
+  RefreshCw,
   Sparkles,
   Tag,
   Trash2,
@@ -63,8 +64,12 @@ import { filterMentionTeams } from "@/components/pm/mentionSuggestions";
 import { extractInlineAttachmentIds } from "@/components/pm/editorImageAttachments";
 import { buildAssignableMemberNameMap, findAssignableMember } from "@/lib/assignableMembers";
 import { pmAttachmentService } from "@/lib/services/pmAttachmentService";
+import { pmRecurringTemplateService } from "@/lib/services/pmRecurringTemplateService";
 import { uploadToS3 } from "@/lib/api";
 import { toast } from "sonner";
+import { RecurringTemplateForm, type RecurringTemplateFormValue } from "@/components/pm/RecurringTemplateForm";
+import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUtils";
+import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
 
 interface CreateStoryModalProps {
   open: boolean;
@@ -213,6 +218,8 @@ export function CreateStoryModal({
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
+  const [recurringDraft, setRecurringDraft] = useState<RecurringTemplateFormValue | null>(null);
+  const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
@@ -288,6 +295,8 @@ export function CreateStoryModal({
     setShowChecklist(isTemplateMode);
     setShowExternalLinks(isTemplateMode);
     setShowAttachments(false);
+    setRecurringDraft(null);
+    setRecurringDialogOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial story type; including it causes form reset on background refetch
   }, [open, initialStateId, initialTeamId, initialOwnerMemberId, currentMemberId, isTemplateMode, editingTemplate]);
 
@@ -380,6 +389,11 @@ export function CreateStoryModal({
     if (!form.requester_member_id) return "No requester";
     return memberNameMap.get(form.requester_member_id) ?? "No requester";
   }, [form.requester_member_id, memberNameMap]);
+
+  const recurringDraftSummary = useMemo(() => {
+    if (!recurringDraft) return 'Not recurring';
+    return formatRecurringRuleSummary(recurringDraft.config);
+  }, [recurringDraft]);
 
   const resolveSubmitWorkflow = useCallback(async () => {
     if (!workflow) {
@@ -502,6 +516,20 @@ export function CreateStoryModal({
           }
         }
 
+        let recurringSetupError: string | null = null;
+        if (result?.id && recurringDraft) {
+          const { error: recurringError } = await pmRecurringTemplateService.create({
+            workspace_id: workspaceId,
+            story_id: result.id,
+            title: recurringDraft.title.trim() || form.name.trim(),
+            description: recurringDraft.description.trim() || undefined,
+            config: recurringDraft.config,
+          });
+          if (recurringError) {
+            recurringSetupError = recurringError;
+          }
+        }
+
         if (createMore) {
           const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
           setDescriptionEditorKey((current) => current + 1);
@@ -515,8 +543,15 @@ export function CreateStoryModal({
           setStoryTypeDirty(false);
           setStateId(initialStateId ?? '');
           setPendingFiles([]);
+          setRecurringDraft(null);
         } else {
           onOpenChange(false);
+        }
+
+        if (recurringSetupError) {
+          toast.error(`Story created, but recurring setup failed: ${recurringSetupError}`);
+        } else if (recurringDraft) {
+          toast.success('Story created with recurring schedule');
         }
       }
     } catch (err) {
@@ -935,6 +970,19 @@ export function CreateStoryModal({
                 </MetadataRow>
                 )}
 
+                {!isTemplateMode && (
+                  <MetadataRow icon={RefreshCw} label="Recurring">
+                    <button
+                      type="button"
+                      className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
+                      onClick={() => setRecurringDialogOpen(true)}
+                    >
+                      {recurringDraft ? <RecurringTemplateBadge compact /> : null}
+                      <span className="truncate">{recurringDraftSummary}</span>
+                    </button>
+                  </MetadataRow>
+                )}
+
                 {/* ── People ── */}
                 <div className="col-span-3 h-px bg-border/40 my-1" />
 
@@ -1182,6 +1230,55 @@ export function CreateStoryModal({
             </Button>
           </div>
         </div>
+
+        {!isTemplateMode && (
+          <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
+            <DialogContent className="max-w-2xl">
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold">Configure recurrence</h2>
+                  <p className="text-sm text-muted-foreground">
+                    This creates future stories from the story you are creating now.
+                  </p>
+                </div>
+                <RecurringTemplateForm
+                  initialValue={recurringDraft ?? {
+                    title: form.name.trim() || 'Recurring story',
+                    description: '',
+                    config: {
+                      schedule_type: 'time',
+                      frequency: 'weekly',
+                      interval: 1,
+                      weekdays: [1],
+                      due_date_mode: 'scheduled_date',
+                      sprint_assignment_mode: 'none',
+                    },
+                  }}
+                  submitLabel="Use recurrence"
+                  onCancel={() => setRecurringDialogOpen(false)}
+                  onSubmit={(value) => {
+                    setRecurringDraft(value);
+                    setRecurringDialogOpen(false);
+                  }}
+                />
+                {recurringDraft ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setRecurringDraft(null);
+                      setRecurringDialogOpen(false);
+                    }}
+                  >
+                    Remove recurrence
+                  </Button>
+                ) : null}
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </DialogContent>
     </Dialog>
   );

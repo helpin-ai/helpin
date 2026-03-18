@@ -1,0 +1,115 @@
+import { Copy, Pause, Play, Square, StepForward, Zap } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import type { RecurringTemplateDetail } from '@/lib/pmTypes';
+import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSummary';
+
+interface RecurringTemplateListProps {
+  templates: RecurringTemplateDetail[];
+  teamNames?: Map<string, string>;
+  ownerNames?: Map<string, string>;
+  onView?: (template: RecurringTemplateDetail) => void;
+  onEdit?: (template: RecurringTemplateDetail) => void;
+  onPause?: (template: RecurringTemplateDetail) => void;
+  onResume?: (template: RecurringTemplateDetail) => void;
+  onStop?: (template: RecurringTemplateDetail) => void;
+  onSkipNext?: (template: RecurringTemplateDetail) => void;
+  onGenerateNow?: (template: RecurringTemplateDetail) => void;
+  onDuplicate?: (template: RecurringTemplateDetail) => void;
+}
+
+export function RecurringTemplateList({
+  templates,
+  teamNames,
+  ownerNames,
+  onView,
+  onEdit,
+  onPause,
+  onResume,
+  onStop,
+  onSkipNext,
+  onGenerateNow,
+  onDuplicate,
+}: RecurringTemplateListProps) {
+  if (templates.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border/60 px-4 py-8 text-center text-sm text-muted-foreground">
+        No recurring templates match the current filters.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {templates.map((item) => {
+        const teamName = item.template.team_id ? teamNames?.get(item.template.team_id) : undefined;
+        const ownerName = item.template.owner_member_id ? ownerNames?.get(item.template.owner_member_id) : undefined;
+
+        return (
+          <div key={item.template.id} className="rounded-lg border border-border/60 bg-background p-4">
+            <RecurringTemplateSummary
+              title={item.template.title}
+              status={item.template.status}
+              ruleSummary={item.rule_summary}
+              nextRunAt={item.template.next_run_at}
+              generatedCount={item.template.generated_count}
+              lastError={item.template.last_error}
+              lastGeneratedStory={item.last_generated_story ?? null}
+              compact
+              actions={
+                <>
+                  {onView ? (
+                    <Button type="button" variant="ghost" size="xs" onClick={() => onView(item)}>
+                      View
+                    </Button>
+                  ) : null}
+                  {onEdit ? (
+                    <Button type="button" variant="ghost" size="xs" onClick={() => onEdit(item)}>
+                      Edit
+                    </Button>
+                  ) : null}
+                </>
+              }
+            />
+
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {teamName ? <span>Team: {teamName}</span> : null}
+              {ownerName ? <span>Owner: {ownerName}</span> : null}
+              {item.seed.name ? <span>Story seed: {item.seed.name}</span> : null}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {item.template.status === 'active' ? (
+                <Button type="button" variant="outline" size="xs" onClick={() => onPause?.(item)}>
+                  <Pause className="h-3 w-3" />
+                  Pause
+                </Button>
+              ) : null}
+              {item.template.status === 'paused' ? (
+                <Button type="button" variant="outline" size="xs" onClick={() => onResume?.(item)}>
+                  <Play className="h-3 w-3" />
+                  Resume
+                </Button>
+              ) : null}
+              <Button type="button" variant="outline" size="xs" onClick={() => onGenerateNow?.(item)}>
+                <Zap className="h-3 w-3" />
+                Generate now
+              </Button>
+              <Button type="button" variant="outline" size="xs" onClick={() => onSkipNext?.(item)}>
+                <StepForward className="h-3 w-3" />
+                Skip next
+              </Button>
+              <Button type="button" variant="outline" size="xs" onClick={() => onDuplicate?.(item)}>
+                <Copy className="h-3 w-3" />
+                Duplicate
+              </Button>
+              <Button type="button" variant="destructive" size="xs" onClick={() => onStop?.(item)}>
+                <Square className="h-3 w-3" />
+                Stop
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

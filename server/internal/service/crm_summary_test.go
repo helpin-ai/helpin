@@ -84,6 +84,15 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE crm_pipelines (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			is_default BOOLEAN NOT NULL DEFAULT 0,
+			position INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE crm_pipeline_stages (
 			id TEXT PRIMARY KEY,
 			pipeline_id TEXT NOT NULL,

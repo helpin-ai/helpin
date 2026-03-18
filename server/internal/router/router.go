@@ -35,6 +35,7 @@ type Handlers struct {
 	PMView             *handler.PMViewHandler
 	PMAutomation       *handler.PMAutomationHandler
 	PMStoryTemplate    *handler.PMStoryTemplateHandler
+	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search             *handler.SearchHandler
 	Agent              *handler.AgentHandler
 	SupportInbox       *handler.SupportInboxHandler
@@ -440,6 +441,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/story-templates/{id}", h.PMStoryTemplate.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/story-templates/{id}", h.PMStoryTemplate.Delete)
 
+				// Recurring Templates — pm.read / pm.edit
+				r.With(requirePerm(authorization.PermPMRead)).Get("/recurring-templates", h.PMRecurringTemplate.List)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/recurring-templates/{id}", h.PMRecurringTemplate.Get)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates", h.PMRecurringTemplate.Create)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/recurring-templates/{id}", h.PMRecurringTemplate.Update)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/pause", h.PMRecurringTemplate.Pause)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/resume", h.PMRecurringTemplate.Resume)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/stop", h.PMRecurringTemplate.Stop)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/skip-next", h.PMRecurringTemplate.SkipNext)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/generate-now", h.PMRecurringTemplate.GenerateNow)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/recurring-templates/{id}/duplicate", h.PMRecurringTemplate.Duplicate)
+
 				// Roadmap — pm.read
 				r.With(requirePerm(authorization.PermPMRead)).Get("/roadmap", h.PMRoadmap.Get)
 
@@ -511,6 +524,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/followers", h.PMStory.RemoveFollower)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/labels", h.PMStory.AddLabel)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/stories/{id}/labels/{labelId}", h.PMStory.RemoveLabel)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{storyId}/recurring-template", h.PMRecurringTemplate.GetByStory)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/stories/{id}/associations", h.Associations.ListStoryAssociations)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/relationships", h.Associations.CreateStoryRelationship)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/story-relationships/{id}", h.Associations.DeleteStoryRelationship)

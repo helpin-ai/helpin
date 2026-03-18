@@ -134,6 +134,7 @@ func main() {
 		&model.WorkspaceTeam{},
 		&model.TeamWorkspaceMembership{},
 		&model.WorkspaceManager{},
+		&model.JobRoleCriteria{},
 		&model.PMWorkflow{},
 		&model.PMWorkflowState{},
 		&model.PMEpicWorkflowState{},

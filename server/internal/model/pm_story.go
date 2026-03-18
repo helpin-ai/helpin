@@ -51,6 +51,9 @@ type PMStory struct {
 	Archived          bool                   `json:"archived" gorm:"not null;default:false"`
 	AssignedAgentID   *string                `json:"assigned_agent_id" gorm:"type:uuid;index"`
 	TemplateID        *string                `json:"template_id"`
+	RecurringTemplateID *string              `json:"recurring_template_id" gorm:"type:uuid;index"`
+	RecurringRunID    *string                `json:"recurring_run_id" gorm:"type:uuid;index"`
+	RecurringOccurrenceNumber *int           `json:"recurring_occurrence_number"`
 	ExternalID        *string                `json:"external_id"`
 	IsBlockedByStory  bool                   `json:"is_blocked_by_story" gorm:"-"`
 	BlockedByCount    int                    `json:"blocked_by_count" gorm:"-"`

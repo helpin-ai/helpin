@@ -6,6 +6,7 @@ import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { settingsService } from '@/lib/services/settingsService';
 import type { WorkspaceSettings } from '@/lib/types';
 import { LabelsSettings } from '@/components/pm/LabelsSettings';
+import { RecurringTemplatesSettings } from '@/components/pm/RecurringTemplatesSettings';
 import { StoryTemplatesSettings } from '@/components/pm/StoryTemplatesSettings';
 import { PipelineSettings } from '@/components/crm/PipelineSettings';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,7 +28,7 @@ import {
   RedirectsTab,
 } from '@/components/settings';
 
-export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'account';
+export type SettingsSection = 'general' | 'members' | 'teams' | 'notifications' | 'workflows' | 'labels' | 'story-templates' | 'recurring-tasks' | 'automations' | 'delivery' | 'ai' | 'import' | 'helpcenter' | 'redirects' | 'crm-pipelines' | 'crm-email' | 'crm-autonomy' | 'ai-automations' | 'chat-general' | 'chat-ai' | 'account';
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string; icon: LucideIcon; group: string }[] = [
   {
@@ -63,6 +64,13 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
     label: 'Story Templates',
     description: 'Define reusable templates for quick story creation.',
     icon: FileText,
+    group: 'Project Settings',
+  },
+  {
+    id: 'recurring-tasks',
+    label: 'Recurring Tasks',
+    description: 'Manage recurring work templates, schedules, failures, and generated stories.',
+    icon: RefreshCw,
     group: 'Project Settings',
   },
   {
@@ -284,6 +292,8 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <LabelsSettings workspaceId={workspaceId} initialTeamId={initialTeamId} editable={canAdminLabels} />;
       case 'story-templates':
         return <StoryTemplatesSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
+      case 'recurring-tasks':
+        return <RecurringTemplatesSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
       case 'automations':
         return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} editable={canAdminAutomations} />;
       case 'import':
