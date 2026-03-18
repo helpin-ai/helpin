@@ -1,5 +1,15 @@
 import { Link } from '@tanstack/react-router';
-import { Globe, Monitor, MessageSquare, User } from 'lucide-react';
+import {
+  Chrome,
+  Globe,
+  Laptop,
+  Mail,
+  MessageSquare,
+  Monitor,
+  Smartphone,
+  Tablet,
+  User,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from './CollapsibleSection';
 import { STATUS_COLORS, STATUS_LABELS } from './constants';
@@ -12,15 +22,81 @@ interface SidebarVisitorContextProps {
   conversationId: string;
 }
 
-function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
+function InfoRow({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string | null | undefined;
+  icon?: React.ElementType;
+}) {
   if (!value) return null;
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-muted-foreground shrink-0">{label}</span>
+      <span className="text-muted-foreground shrink-0 flex items-center gap-1.5">
+        {Icon && <Icon className="h-3 w-3" />}
+        {label}
+      </span>
       <span className="truncate text-right" title={value}>{value}</span>
     </div>
   );
 }
+
+function DeviceIcon({ type }: { type: string }) {
+  switch (type) {
+    case 'mobile': return <Smartphone className="h-3 w-3" />;
+    case 'tablet': return <Tablet className="h-3 w-3" />;
+    default: return <Laptop className="h-3 w-3" />;
+  }
+}
+
+function BrowserIcon({ browser }: { browser: string }) {
+  // Chrome icon exists in lucide; for others fall back to Globe
+  switch (browser.toLowerCase()) {
+    case 'chrome': return <Chrome className="h-3 w-3" />;
+    default: return <Globe className="h-3 w-3" />;
+  }
+}
+
+function OSIcon({ os }: { os: string }) {
+  // Use Monitor for all OS — lucide doesn't have Apple/Windows/Linux icons
+  switch (os.toLowerCase()) {
+    case 'macos': return <Monitor className="h-3 w-3" />;
+    case 'windows': return <Monitor className="h-3 w-3" />;
+    case 'linux': return <Monitor className="h-3 w-3" />;
+    case 'ios': return <Smartphone className="h-3 w-3" />;
+    case 'android': return <Smartphone className="h-3 w-3" />;
+    default: return <Monitor className="h-3 w-3" />;
+  }
+}
+
+const LIFECYCLE_COLORS: Record<string, string> = {
+  subscriber: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  lead: 'bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400',
+  opportunity: 'bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400',
+  customer: 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400',
+  evangelist: 'bg-purple-100 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400',
+  other: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+};
+
+const SOURCE_ICONS: Record<string, React.ElementType> = {
+  live_chat: MessageSquare,
+  support: MessageSquare,
+  email: Mail,
+  widget: MessageSquare,
+  api: Globe,
+  manual: User,
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  live_chat: 'Live Chat',
+  support: 'Support',
+  email: 'Email',
+  widget: 'Widget',
+  api: 'API',
+  manual: 'Manual',
+};
 
 export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVisitorContextProps) {
   const { data, isLoading } = useVisitorContext(workspaceId, conversationId);
@@ -41,20 +117,29 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
     <div>
       {/* Device */}
       {hasDevice && (
-        <CollapsibleSection title="Device" icon={Monitor} count={0} >
-          <div className="space-y-1.5">
-            <InfoRow label="Browser" value={device.browser_version ? `${device.browser} ${device.browser_version}` : device.browser} />
-            <InfoRow label="OS" value={device.os_version ? `${device.os} ${device.os_version}` : device.os} />
-            <InfoRow label="Device" value={device.device_type} />
+        <CollapsibleSection title="Device" icon={Monitor} count={0}>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs">
+              <BrowserIcon browser={device.browser} />
+              <span>{device.browser}{device.browser_version ? ` ${device.browser_version}` : ''}</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <OSIcon os={device.os} />
+              <span>{device.os}{device.os_version ? ` ${device.os_version}` : ''}</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <DeviceIcon type={device.device_type} />
+              <span className="capitalize">{device.device_type}</span>
+            </div>
           </div>
         </CollapsibleSection>
       )}
 
       {/* Location */}
       {hasLocation && (
-        <CollapsibleSection title="Location" icon={Globe} count={0} >
+        <CollapsibleSection title="Location" icon={Globe} count={0}>
           <div className="space-y-1.5">
-            <InfoRow label="Timezone" value={location.timezone} />
+            <InfoRow label="Timezone" value={location.timezone} icon={Globe} />
             <InfoRow label="Locale" value={location.locale} />
             {location.last_page_url && (
               <div className="text-xs">
@@ -76,12 +161,31 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
 
       {/* Contact Details */}
       {hasContact && (
-        <CollapsibleSection title="Contact Details" icon={User} count={0} >
-          <div className="space-y-1.5">
-            <InfoRow label="Job title" value={contact.job_title} />
-            <InfoRow label="Lifecycle" value={contact.lifecycle_stage} />
-            <InfoRow label="Lead status" value={contact.lead_status} />
-            <InfoRow label="Source" value={contact.source || undefined} />
+        <CollapsibleSection title="Contact Details" icon={User} count={0}>
+          <div className="space-y-2">
+            {contact.job_title && (
+              <InfoRow label="Job title" value={contact.job_title} />
+            )}
+            {contact.lifecycle_stage && (
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground shrink-0">Lifecycle</span>
+                <Badge variant="secondary" className={`h-4 px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
+                  {contact.lifecycle_stage}
+                </Badge>
+              </div>
+            )}
+            {contact.source && (
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground shrink-0">Source</span>
+                <span className="flex items-center gap-1 truncate text-right capitalize">
+                  {(() => {
+                    const SourceIcon = SOURCE_ICONS[contact.source] ?? Globe;
+                    return <SourceIcon className="h-3 w-3 text-muted-foreground shrink-0" />;
+                  })()}
+                  {SOURCE_LABELS[contact.source] ?? contact.source.replace(/_/g, ' ')}
+                </span>
+              </div>
+            )}
             {contact.custom_properties && Object.keys(contact.custom_properties).length > 0 && (
               <>
                 <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider pt-1">Custom data</div>
