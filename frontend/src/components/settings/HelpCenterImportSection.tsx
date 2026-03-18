@@ -183,8 +183,8 @@ export function HelpCenterImportSection({
 
   return (
     <div className="space-y-6">
-      {/* Step indicator — shown after connecting */}
-      {step > 0 && <div className="flex items-center justify-center gap-2">
+      {/* Step indicator */}
+      <div className="flex items-center justify-center gap-2">
         {STEP_LABELS.map((label, i) => (
           <div key={label} className="flex items-center gap-2">
             {i > 0 && <div className="h-px w-8 bg-border" />}
@@ -207,11 +207,11 @@ export function HelpCenterImportSection({
             </div>
           </div>
         ))}
-      </div>}
+      </div>
 
       {/* Step 0: Connect */}
       {step === 0 && (
-        <div className="mx-auto max-w-md space-y-4">
+        <div className="mx-auto max-w-md rounded-lg border border-border bg-card p-6 space-y-4">
           <div className="space-y-2">
             <Label>Source</Label>
             <Select value="helpscout" disabled>
@@ -246,25 +246,12 @@ export function HelpCenterImportSection({
 
       {/* Step 1: Configure */}
       {step === 1 && (
-        <div className="space-y-4">
-          {selectedCollectionData && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">{selectedCollectionData.name}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Found {selectedCollectionData.category_count} categories and {selectedCollectionData.article_count} articles
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {preview && preview.collections.length > 1 && (
+        <div className="mx-auto max-w-md rounded-lg border border-border bg-card p-6 space-y-4">
+          {preview && preview.collections.length > 0 && (
             <div className="space-y-2">
               <Label>Collection</Label>
-              <Select value={selectedCollection} onValueChange={setSelectedCollection}>
-                <SelectTrigger className="w-full">
+              <Select value={selectedCollection} onValueChange={setSelectedCollection} disabled={preview.collections.length === 1}>
+                <SelectTrigger>
                   <SelectValue placeholder="Select collection" />
                 </SelectTrigger>
                 <SelectContent>
@@ -341,7 +328,7 @@ export function HelpCenterImportSection({
 
       {/* Step 2: Import Progress */}
       {step === 2 && (
-        <div className="space-y-4">
+        <div className="mx-auto max-w-md rounded-lg border border-border bg-card p-6 space-y-4">
           <div className="space-y-2">
             <Progress value={progressPercent} className="h-2" />
             <p className="text-sm text-muted-foreground">
