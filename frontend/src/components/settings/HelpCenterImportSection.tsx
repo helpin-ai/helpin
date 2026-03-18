@@ -161,8 +161,8 @@ export function HelpCenterImportSection({
 
   return (
     <div className="space-y-6">
-      {/* Step indicator */}
-      <div className="flex items-center gap-2">
+      {/* Step indicator — shown after connecting */}
+      {step > 0 && <div className="flex items-center justify-center gap-2">
         {STEP_LABELS.map((label, i) => (
           <div key={label} className="flex items-center gap-2">
             {i > 0 && <div className="h-px w-8 bg-border" />}
@@ -185,7 +185,7 @@ export function HelpCenterImportSection({
             </div>
           </div>
         ))}
-      </div>
+      </div>}
 
       {/* Step 0: Connect */}
       {step === 0 && (
