@@ -146,6 +146,7 @@ type DocsCollection struct {
 	SpaceID     string     `json:"space_id" gorm:"type:uuid;not null;index:idx_docs_collection_space_pos,priority:1"`
 	WorkspaceID string     `json:"workspace_id" gorm:"type:uuid;not null"`
 	Name        string     `json:"name" gorm:"not null"`
+	Slug        string     `json:"slug" gorm:"not null;default:''"`
 	Description *string    `json:"description"`
 	Icon        *string    `json:"icon"`
 	Position    int        `json:"position" gorm:"not null;default:0;index:idx_docs_collection_space_pos,priority:2"`
@@ -407,6 +408,7 @@ type UpdateDocsSpaceRequest struct {
 // CreateDocsCollectionRequest is the payload for creating a collection.
 type CreateDocsCollectionRequest struct {
 	Name        string  `json:"name"`
+	Slug        *string `json:"slug"`
 	Description *string `json:"description"`
 	Icon        *string `json:"icon"`
 }
