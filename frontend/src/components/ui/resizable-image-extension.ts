@@ -39,7 +39,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       src: { default: null },
       alt: { default: null },
       title: { default: null },
-      width: { default: '35%' },
+      width: { default: '75%' },
       height: { default: 'auto' },
       aspectRatio: { default: null },
       attachmentId: { default: null },

@@ -162,30 +162,11 @@ function CommentAttachments({
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
 
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
+    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
       {visibleAttachments.map((entry) => {
         const ext = getFileExtension(entry.attachment.file_name);
         const isImage = entry.attachment.content_type.startsWith('image/') && !entry.attachment.content_type.includes('svg');
         const url = resolveUrl(entry);
-
-        if (isImage) {
-          return (
-            <a
-              key={entry.attachment.id}
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block overflow-hidden rounded-md border border-border/60 transition-colors hover:border-border"
-            >
-              <img
-                src={url}
-                alt={entry.attachment.file_name}
-                className="h-20 w-auto max-w-[160px] object-cover"
-                loading="lazy"
-              />
-            </a>
-          );
-        }
 
         return (
           <a
@@ -193,14 +174,24 @@ function CommentAttachments({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5 text-xs transition-colors hover:bg-muted/40"
+            className="group block overflow-hidden rounded-lg border border-border/60 transition-colors hover:border-border"
           >
-            <img src={getFileTypeIcon(ext)} alt={ext} className="h-5 w-5 shrink-0" />
-            <div className="min-w-0">
-              <p className="truncate font-medium text-foreground max-w-[140px]">{entry.attachment.file_name}</p>
-              <p className="text-muted-foreground">{formatFileSize(entry.attachment.file_size)}</p>
-            </div>
-            <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
+            {isImage ? (
+              <img
+                src={url}
+                alt={entry.attachment.file_name}
+                className="h-20 w-full object-cover transition-transform group-hover:scale-105"
+                loading="lazy"
+              />
+            ) : (
+              <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
+                <img src={getFileTypeIcon(ext)} alt={ext} className="h-8 w-8" />
+                <span className="text-[9px] font-medium uppercase text-muted-foreground tracking-wide">{ext || 'FILE'}</span>
+              </div>
+            )}
+            <p className="truncate px-1.5 py-1 text-[10px] text-muted-foreground" title={entry.attachment.file_name}>
+              {entry.attachment.file_name}
+            </p>
           </a>
         );
       })}
