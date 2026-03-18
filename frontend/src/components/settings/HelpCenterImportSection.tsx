@@ -148,10 +148,19 @@ export function HelpCenterImportSection({
     startPolling(jobId);
   };
 
-  const handleDownloadRedirectMap = () => {
-    const url = docsImportService.getRedirectMapUrl(workspaceId, jobId);
-    const token = localStorage.getItem('access_token');
-    window.open(`${url}&token=${encodeURIComponent(token || '')}`, '_blank');
+  const handleDownloadRedirectMap = async () => {
+    const { data, error } = await docsImportService.getRedirectMap(workspaceId, jobId);
+    if (error || !data) {
+      toast.error(error || 'Failed to download redirect map');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'redirect-map.json';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleReset = () => {

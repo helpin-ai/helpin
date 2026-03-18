@@ -48,6 +48,6 @@ export const docsImportService = {
   retry: (workspaceId: string, jobId: string, apiKey: string) =>
     api.post(`/docs/import/${jobId}/retry${qs(workspaceId)}`, { api_key: apiKey }),
 
-  getRedirectMapUrl: (workspaceId: string, jobId: string) =>
-    `/api/docs/import/${jobId}/redirect-map${qs(workspaceId)}`,
+  getRedirectMap: (workspaceId: string, jobId: string) =>
+    api.get<unknown>(`/docs/import/${jobId}/redirect-map${qs(workspaceId)}`),
 };
