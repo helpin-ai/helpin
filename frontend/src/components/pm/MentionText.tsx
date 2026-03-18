@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
 import { UserAvatar } from '@/components/pm/UserAvatar'
+import { getMemberMentionHandle } from '@/components/pm/mentionSuggestions'
 
 interface MentionTextProps {
   text: string
@@ -92,7 +93,7 @@ export function MentionText({ text, members = [], teams = [], className }: Menti
   const membersByHandle = useMemo(() => {
     const map = new Map<string, AssignableMember>()
     for (const m of members) {
-      const handle = m.display_name.toLowerCase().replace(/\s+/g, '.')
+      const handle = getMemberMentionHandle(m)
       map.set(handle, m)
     }
     return map

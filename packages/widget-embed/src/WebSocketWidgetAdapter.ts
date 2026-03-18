@@ -31,6 +31,7 @@ export class WebSocketWidgetAdapter implements WidgetAdapter {
         aiEnabled: true,
         fileUploads: true,
         preChatForm: false,
+        requireName: false,
         csatRating: false,
       },
     };
