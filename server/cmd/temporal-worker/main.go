@@ -1,17 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/redis/go-redis/v9"
 	"go.temporal.io/sdk/activity"
 	tclient "go.temporal.io/sdk/client"
 	tworker "go.temporal.io/sdk/worker"
@@ -56,11 +54,22 @@ func main() {
 		log.Fatalf("failed to ping database: %v", err)
 	}
 
+	realtimeInstanceID := ws.ResolveRealtimeInstanceID()
+	natsConn, jetstream, err := ws.ConnectJetStream(cfg.NatsURL, "helpin-temporal-worker-"+realtimeInstanceID)
+	if err != nil {
+		log.Fatalf("failed to connect to NATS: %v", err)
+	}
+	defer natsConn.Close()
+	if err := ws.EnsureJetStreamInfrastructure(jetstream); err != nil {
+		log.Fatalf("failed to ensure JetStream infrastructure: %v", err)
+	}
+
 	temporalClient, err := tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
 		log.Fatalf("failed to connect to Temporal: %v", err)
 	}
 	defer temporalClient.Close()
+	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
 
 	runRepo := repository.NewAgentRunRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
@@ -68,15 +77,22 @@ func main() {
 	storyRepo := repository.NewPMStoryRepository(db)
 	storyLinkRepo := repository.NewPMStoryLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	workflowRepo := repository.NewPMWorkflowRepository(db)
+	labelRepo := repository.NewPMLabelRepository(db)
 	conversationRepo := repository.NewSupportConversationRepository(db)
 	commentRepo := repository.NewPMCommentRepository(db)
 	checklistRepo := repository.NewPMChecklistItemRepository(db)
+	externalLinkRepo := repository.NewPMExternalLinkRepository(db)
+	pmActivityRepo := repository.NewPMActivityRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	gitLinkRepo := repository.NewStoryGitLinkRepository(db)
 	deliveryRepo := repository.NewStoryDeliveryTargetRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
+	handoffRepo := repository.NewAgentHandoffRepository(db)
+	flowRepo := repository.NewFlowRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
@@ -121,6 +137,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize github app client: %v", err)
 	}
+	wsPublisher := ws.NewJetStreamPublisher(jetstream)
 	activities := temporalapp.NewAgentRunActivities(
 		runRepo,
 		agentRepo,
@@ -147,8 +164,10 @@ func main() {
 		crmContactRepo,
 		crmSignalRepo,
 		crmActivityRepo,
+		wsPublisher,
 		runtimes,
 		githubAppClient,
+		runEngine,
 	)
 
 	// Email sync activities (may be nil if Gmail not configured).
@@ -165,32 +184,58 @@ func main() {
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
-	// Build a WebSocket publisher for the Temporal worker. When Redis is
-	// available, events are published directly to Redis Pub/Sub so all
-	// API server pods receive them. Otherwise, fall back to a local Hub
-	// that cannot reach any browser clients (best-effort for dev mode).
-	var wsPublisher *ws.Publisher
-	var redisEventPublisher *ws.RedisRelay
-	if cfg.RedisURL != "" {
-		redisOpts, err := redis.ParseURL(cfg.RedisURL)
-		if err != nil {
-			log.Fatalf("invalid REDIS_URL: %v", err)
-		}
-		redisClient := redis.NewClient(redisOpts)
-		podID := os.Getenv("HOSTNAME")
-		if podID == "" {
-			podID = fmt.Sprintf("worker-%d", time.Now().UnixNano()%10000)
-		}
-		redisEventPublisher = ws.NewRedisEventPublisher(redisClient, podID)
-		wsPublisher = ws.NewPublisher(ws.NewHub(), redisEventPublisher)
-		log.Printf("Redis connected for temporal-worker event publishing (pod=%s)", podID)
-	} else {
-		wsHub := ws.NewHub()
-		wsPublisher = ws.NewPublisher(wsHub, nil) // local-only mode (dev)
-	}
-
-	// Wire the run notifier so runRepo.Notify() publishes via the wsPublisher.
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
+	pmActivityService := service.NewPMActivityService(pmActivityRepo)
+	pmStoryService := service.NewPMStoryService(
+		storyRepo,
+		workspaceRepo,
+		workflowRepo,
+		labelRepo,
+		checklistRepo,
+		externalLinkRepo,
+		pmActivityService,
+		wsPublisher,
+		nil,
+		nil,
+		nil,
+	)
+	gitService := service.NewGitService(
+		gitIntRepo,
+		gitRepo,
+		gitLinkRepo,
+		deliveryRepo,
+		settingsRepo,
+		workspaceRepo,
+		storyRepo,
+		pmActivityService,
+		wsPublisher,
+		githubAppClient,
+		cfg.AppBaseURL,
+		cfg.GitHubAppSlug,
+		cfg.JWTSecret,
+	)
+	agentService := service.NewAgentService(
+		agentRepo,
+		runRepo,
+		artifactRepo,
+		storyRepo,
+		storyLinkRepo,
+		epicRepo,
+		conversationRepo,
+		supportMessageRepo,
+		handoffRepo,
+		settingsRepo,
+		docsSpaceRepo,
+		docsDocumentRepo,
+		docsContentRepo,
+		docsVersionRepo,
+		docsLinkRepo,
+		runEngine,
+		gitService,
+		pmStoryService,
+		pmActivityService,
+		wsPublisher,
+	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
@@ -212,55 +257,43 @@ func main() {
 	}
 
 	// Planning session worker — separate queue with session pinning.
-	// Uses Redis Pub/Sub to stream tokens cross-process to the API server's WS hub.
-	// Falls back to a local Hub in dev mode (no Redis).
-	planningProviders := make(map[string]workerpkg.StreamingProvider)
-	if cfg.AnthropicAPIKey != "" {
-		planningProviders["anthropic"] = workerpkg.NewClaudeClient(cfg.AnthropicAPIKey)
-	}
-	if cfg.OpenAIAPIKey != "" {
-		planningProviders["openai"] = workerpkg.NewOpenAIStreamingClient(cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, "")
-	}
-	if cfg.OpenRouterAPIKey != "" {
-		baseURL := cfg.OpenRouterBaseURL
-		if baseURL == "" {
-			baseURL = "https://openrouter.ai/api/v1"
-		}
-		planningProviders["openrouter"] = workerpkg.NewOpenAIStreamingClient(cfg.OpenRouterAPIKey, baseURL, "")
+	// Uses JetStream to relay events cross-process to the API server's WS hub.
+	planningModels := &workerpkg.EinoModelFactory{
+		AnthropicAPIKey: cfg.AnthropicAPIKey,
+		OpenAIAPIKey:    cfg.OpenAIAPIKey,
+		OpenAIBaseURL:   cfg.OpenAIBaseURL,
+		OpenRouterKey:   cfg.OpenRouterAPIKey,
+		OpenRouterURL:   cfg.OpenRouterBaseURL,
 	}
 
-	if len(planningProviders) > 0 {
+	if cfg.AnthropicAPIKey != "" || cfg.OpenAIAPIKey != "" || cfg.OpenRouterAPIKey != "" {
 		planningSessionRepo := repository.NewPlanningSessionRepository(db)
 
 		var webSearchClient workerpkg.WebSearchClient
 		toolRegistry := workerpkg.NewToolRegistry(webSearchClient)
 
-		// Build session streamer and event publisher for planning sessions.
-		// When Redis is available, tokens stream via Redis Pub/Sub.
-		// Otherwise, fall back to a local Hub (dev-only).
-		var planningStreamer ws.SessionStreamer
-		var planningPublisher ws.EventPublisher
-		if cfg.RedisURL != "" && redisEventPublisher != nil {
-			redisOpts, _ := redis.ParseURL(cfg.RedisURL)
-			streamerRedis := redis.NewClient(redisOpts)
-			podID := os.Getenv("HOSTNAME")
-			if podID == "" {
-				podID = fmt.Sprintf("worker-%d", time.Now().UnixNano()%10000)
-			}
-			planningStreamer = ws.NewRedisSessionStreamer(streamerRedis, podID)
-			planningPublisher = wsPublisher
-		} else {
-			planningStreamer = ws.NewHub()
-			planningPublisher = wsPublisher
-		}
+		jsStreamer := ws.NewJetStreamSessionStreamer(jetstream)
 
 		planningService := service.NewPlanningSessionService(
 			planningSessionRepo, epicRepo, agentRepo, settingsRepo,
 			docsContentRepo, docsVersionRepo, docsLinkRepo,
 			docsDocumentRepo, docsSpaceRepo,
-			planningProviders, toolRegistry,
-			planningStreamer, planningPublisher,
+			planningModels, toolRegistry,
+			jsStreamer, wsPublisher,
 		)
+		planningService.SetWorkflowStarter(&planningWorkflowAdapter{engine: runEngine})
+		flowService := service.NewFlowService(
+			flowRepo,
+			epicRepo,
+			agentRepo,
+			runRepo,
+			planningSessionRepo,
+			agentService,
+			planningService,
+			runEngine,
+			wsPublisher,
+		)
+		flowActivities := service.NewFlowRuntimeActivities(flowService)
 
 		planningActivities := temporalapp.NewPlanningSessionActivities(
 			planningSessionRepo, epicRepo, gitIntRepo, gitRepo, githubAppClient,
@@ -271,7 +304,11 @@ func main() {
 			MaxConcurrentActivityExecutionSize: 4,
 			EnableSessionWorker:                true,
 		})
+		flowWorker := tworker.New(temporalClient, temporalapp.QueueFlowOrchestrator, tworker.Options{
+			MaxConcurrentActivityExecutionSize: 4,
+		})
 		planningWorker.RegisterWorkflow(temporalapp.PlanningSessionWorkflow)
+		flowWorker.RegisterWorkflow(temporalapp.FlowRunWorkflow)
 		planningWorker.RegisterActivityWithOptions(planningActivities.PrepareWorkspaceActivity, activity.RegisterOptions{
 			Name: "PlanningSessionActivities.PrepareWorkspaceActivity",
 		})
@@ -284,8 +321,39 @@ func main() {
 		planningWorker.RegisterActivityWithOptions(planningActivities.CleanupWorkspaceActivity, activity.RegisterOptions{
 			Name: "PlanningSessionActivities.CleanupWorkspaceActivity",
 		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.BootstrapEpicPlanningRunActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.BootstrapEpicPlanningRunActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.FinalizeInteractiveNodeActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.FinalizeInteractiveNodeActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.ApproveSpecNodeActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.ApproveSpecNodeActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.ApprovePlanNodeActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.ApprovePlanNodeActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.RejectApprovalNodeActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.RejectApprovalNodeActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.RetryNodeActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.RetryNodeActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.CancelRunActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.CancelRunActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.ProgressRunStateActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.ProgressRunStateActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.LoadRunStateActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.LoadRunStateActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.HandleChildStateActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.HandleChildStateActivity",
+		})
 		workers = append(workers, planningWorker)
-		log.Printf("planning session worker registered on queue %s", temporalapp.QueuePlanningInteractive)
+		workers = append(workers, flowWorker)
+		log.Printf("planning session worker registered on queues %s and %s", temporalapp.QueuePlanningInteractive, temporalapp.QueueFlowOrchestrator)
 	}
 
 	for _, sharedWorker := range workers {
@@ -403,6 +471,43 @@ func selectedQueues() []temporalapp.QueueConfig {
 		log.Fatal("TEMPORAL_WORKER_QUEUES did not contain any valid queues")
 	}
 	return selected
+}
+
+type planningWorkflowAdapter struct {
+	engine *temporalapp.RunEngine
+}
+
+func (a *planningWorkflowAdapter) StartPlanningSession(ctx context.Context, sessionID string) error {
+	return a.engine.StartPlanningSession(ctx, sessionID)
+}
+
+func (a *planningWorkflowAdapter) SignalPlanningMessage(ctx context.Context, sessionID string) error {
+	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
+		Type: temporalapp.PlanningSessionSignalTypeMessage,
+	})
+}
+
+func (a *planningWorkflowAdapter) SignalPlanningFinalize(ctx context.Context, sessionID, actorID string) error {
+	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
+		Type:    temporalapp.PlanningSessionSignalTypeFinalize,
+		ActorID: actorID,
+	})
+}
+
+func (a *planningWorkflowAdapter) SignalPlanningAbandon(ctx context.Context, sessionID string) error {
+	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
+		Type: temporalapp.PlanningSessionSignalTypeAbandon,
+	})
+}
+
+func (a *planningWorkflowAdapter) SignalFlowChildState(ctx context.Context, flowRunID, nodeRunID, childType, childID, childStatus string) error {
+	return a.engine.SignalFlowRun(ctx, flowRunID, temporalapp.FlowRunSignal{
+		Type:        temporalapp.FlowSignalTypeChildState,
+		NodeRunID:   nodeRunID,
+		ChildType:   childType,
+		ChildID:     childID,
+		ChildStatus: childStatus,
+	})
 }
 
 func queueNames(queues []temporalapp.QueueConfig) []string {

@@ -46,6 +46,7 @@ import {
   Trash2,
   User,
   Users,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -114,6 +115,7 @@ function deriveActiveRail(pathname: string): RailId {
   if (pathname.includes('/settings')) return 'settings';
   if (pathname.includes('/support')) return 'support';
   if (pathname.includes('/crm')) return 'crm';
+  if (pathname.includes('/pm/agents') || pathname.includes('/pm/flows')) return 'agents';
   if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
   if (pathname.includes('/docs')) return 'docs';
   return 'projects';
@@ -536,7 +538,7 @@ export function Sidebar() {
     { id: 'projects', label: 'Projects', icon: FolderKanban, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: MessageSquare, defaultLink: `/w/${wsSlug}/support`, badge: unreadStats?.total || undefined },
-    { id: 'agents', label: 'Agents', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agents` },
+    { id: 'agents', label: 'Automation', icon: Bot, defaultLink: `/w/${wsSlug}/pm/agents` },
     { id: 'docs', label: 'Docs', icon: FileText, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Settings, defaultLink: `/w/${wsSlug}/settings/profile` },
   ];
@@ -579,7 +581,8 @@ export function Sidebar() {
       {
         label: '',
         items: [
-          { link: `/w/${wsSlug}/pm/agents`, label: 'All Agents', icon: Bot },
+          { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
+          { link: `/w/${wsSlug}/pm/flows`, label: 'Flows', icon: Workflow },
         ],
       },
     ],

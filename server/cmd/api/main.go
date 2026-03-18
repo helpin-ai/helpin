@@ -161,6 +161,9 @@ func main() {
 		&model.PMView{},
 		&model.PMAutomation{},
 		&model.AutomationRule{},
+		&model.FlowRun{},
+		&model.FlowNodeRun{},
+		&model.FlowTrigger{},
 		&model.PlanningSession{},
 		&model.PlanningSessionMessage{},
 		&model.WorkspaceInvitation{},
@@ -362,6 +365,27 @@ func main() {
 	wsPublisher := ws.NewPublisher(wsHub, redisRelay)
 	wsHandler := ws.NewHandler(wsHub, jwtManager)
 
+	// Start JetStream -> WS bridge for cross-process events (e.g. Temporal worker).
+	realtimeCtx, realtimeCancel := context.WithCancel(context.Background())
+	realtimeInstanceID := ws.ResolveRealtimeInstanceID()
+	natsConn, jetstream, err := ws.ConnectJetStream(cfg.NatsURL, "helpin-api-"+realtimeInstanceID)
+	if err != nil {
+		slog.Error("failed to connect to NATS", "error", err, "url", cfg.NatsURL)
+		os.Exit(1)
+	}
+	defer natsConn.Close()
+	if err := ws.EnsureJetStreamInfrastructure(jetstream); err != nil {
+		slog.Error("failed to ensure JetStream infrastructure", "error", err)
+		os.Exit(1)
+	}
+	jetstreamBridge := ws.NewJetStreamBridge(jetstream, wsHub, realtimeInstanceID)
+	go func() {
+		if err := jetstreamBridge.Start(realtimeCtx); err != nil {
+			slog.Error("jetstream bridge stopped", "error", err)
+			os.Exit(1)
+		}
+	}()
+
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
@@ -383,10 +407,12 @@ func main() {
 	pmViewRepo := repository.NewPMViewRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
 	automationRuleRepo := repository.NewAutomationRuleRepository(db)
+	flowRepo := repository.NewFlowRepository(db)
 	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 	planningSessionRepo := repository.NewPlanningSessionRepository(db)
+	wsHandler.SetPlanningSessionRepository(planningSessionRepo)
 	agentRepo := repository.NewAgentRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
 	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
@@ -525,6 +551,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
+	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 
 	// Automation Rule Engine — wired after agent + story services to break circular deps.
 	ruleEngine := service.NewAutomationRuleEngine(
@@ -556,7 +583,7 @@ func main() {
 		docsLinkRepo,
 		docsDocumentRepo,
 		docsSpaceRepo,
-		nil, // llmProviders — activities run in temporal-worker
+		nil, // modelFactory — activities run in temporal-worker
 		nil, // toolRegistry — activities run in temporal-worker
 		nil, // streamer — activities run in temporal-worker
 		wsPublisher,
@@ -566,6 +593,17 @@ func main() {
 	if temporalClient != nil {
 		planningSessionService.SetWorkflowStarter(&planningWorkflowAdapter{engine: runEngine})
 	}
+	flowService := service.NewFlowService(
+		flowRepo,
+		pmEpicRepo,
+		agentRepo,
+		agentRunRepo,
+		planningSessionRepo,
+		agentService,
+		planningSessionService,
+		runEngine,
+		wsPublisher,
+	)
 
 	// Log orchestration availability.
 	if cfg.AnthropicAPIKey != "" {
@@ -691,6 +729,7 @@ func main() {
 		PMView:             handler.NewPMViewHandler(pmViewService),
 		Search:             handler.NewSearchHandler(searchService),
 		PMAutomation:       handler.NewPMAutomationHandler(pmAutomationService),
+		Flow:               handler.NewFlowHandler(flowService),
 		PlanningSession:    handler.NewPlanningSessionHandler(planningSessionService),
 		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
 		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
@@ -862,6 +901,7 @@ func main() {
 
 	<-done
 	slog.Info("server shutting down")
+	realtimeCancel()
 	close(automationDone)
 	close(digestDone)
 	close(cleanupDone)
@@ -903,5 +943,15 @@ func (a *planningWorkflowAdapter) SignalPlanningFinalize(ctx context.Context, se
 func (a *planningWorkflowAdapter) SignalPlanningAbandon(ctx context.Context, sessionID string) error {
 	return a.engine.SignalPlanningSession(ctx, sessionID, temporalapp.PlanningSessionSignal{
 		Type: temporalapp.PlanningSessionSignalTypeAbandon,
+	})
+}
+
+func (a *planningWorkflowAdapter) SignalFlowChildState(ctx context.Context, flowRunID, nodeRunID, childType, childID, childStatus string) error {
+	return a.engine.SignalFlowRun(ctx, flowRunID, temporalapp.FlowRunSignal{
+		Type:        temporalapp.FlowSignalTypeChildState,
+		NodeRunID:   nodeRunID,
+		ChildType:   childType,
+		ChildID:     childID,
+		ChildStatus: childStatus,
 	})
 }

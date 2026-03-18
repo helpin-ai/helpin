@@ -86,6 +86,9 @@ func NewAgentRunRepository(db *gorm.DB) *AgentRunRepository {
 // SetNotifier sets the event notifier used by Notify(). This breaks a
 // circular dependency: the repository is created before the publisher exists.
 func (r *AgentRunRepository) SetNotifier(n AgentRunNotifier) {
+	if r == nil {
+		return
+	}
 	r.notifier = n
 }
 
@@ -252,7 +255,7 @@ func (r *AgentRunRepository) AddTokens(ctx context.Context, workspaceID, runID s
 // (via SetNotifier), the event is published through it (Redis Pub/Sub
 // in production). Safe to call when no notifier is set — it is a no-op.
 func (r *AgentRunRepository) Notify(ctx context.Context, run *model.AgentRun) {
-	if r.notifier == nil {
+	if r == nil || run == nil || r.notifier == nil {
 		return
 	}
 	r.notifier.PublishRunEvent(ctx, run)

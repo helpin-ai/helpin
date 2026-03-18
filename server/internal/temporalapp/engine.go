@@ -192,6 +192,43 @@ func (e *RunEngine) CancelPlanningSession(ctx context.Context, sessionID string)
 	return e.client.CancelWorkflow(ctx, workflowID, "")
 }
 
+// StartFlowRun starts the Temporal workflow for a durable flow run.
+func (e *RunEngine) StartFlowRun(ctx context.Context, flowRunID, actorID string) error {
+	if e == nil || e.client == nil {
+		return fmt.Errorf("temporal run engine is not configured")
+	}
+	options := tclient.StartWorkflowOptions{
+		ID:                       WorkflowIDForFlowRun(flowRunID),
+		TaskQueue:                QueueFlowOrchestrator,
+		WorkflowExecutionTimeout: FlowMaxLifetime,
+	}
+	_, err := e.client.ExecuteWorkflow(ctx, options, FlowRunWorkflow, FlowRunWorkflowInput{
+		FlowRunID: flowRunID,
+		ActorID:   actorID,
+	})
+	if err != nil {
+		return fmt.Errorf("start flow workflow: %w", err)
+	}
+	return nil
+}
+
+// TerminateFlowRun forcefully terminates a flow run workflow.
+func (e *RunEngine) TerminateFlowRun(ctx context.Context, flowRunID, reason string) error {
+	if e == nil || e.client == nil {
+		return nil
+	}
+	workflowID := WorkflowIDForFlowRun(flowRunID)
+	return e.client.TerminateWorkflow(ctx, workflowID, "", reason)
+}
+
+// SignalFlowRun notifies an in-flight flow workflow of a user action.
+func (e *RunEngine) SignalFlowRun(ctx context.Context, flowRunID string, signal FlowRunSignal) error {
+	if e == nil || e.client == nil {
+		return fmt.Errorf("temporal run engine is not configured")
+	}
+	return e.client.SignalWorkflow(ctx, WorkflowIDForFlowRun(flowRunID), "", WorkflowSignalFlowRun, signal)
+}
+
 // WorkflowIDForRun returns the temporal workflow ID for a run.
 func WorkflowIDForRun(runID string) string {
 	return "agent-run-" + runID

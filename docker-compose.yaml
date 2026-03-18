@@ -81,6 +81,17 @@ services:
       redis:
         condition: service_healthy
 
+  temporal-worker:
+    build: ./server
+    command: ["./temporal-worker"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=dev-secret-change-in-prod
+      - NATS_URL=nats://nats:4222
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-localhost:7233}
+    depends_on:
+      - nats
+
   frontend:
     build:
       context: ./frontend

@@ -14,39 +14,40 @@ const (
 
 // PMEpic represents an epic.
 type PMEpic struct {
-	ID                    string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID           string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name                  string          `json:"name" gorm:"not null"`
-	Description           *string         `json:"description"`
-	ExternalID            *string         `json:"external_id" gorm:"index"`
-	EpicStateID           *string         `json:"epic_state_id" gorm:"type:uuid;index"`
-	OwnerID               *string         `json:"owner_id" gorm:"type:uuid;index"`
-	OwnerMemberID         *string         `json:"owner_member_id" gorm:"type:uuid;index"`
-	TeamID                *string         `json:"team_id" gorm:"type:uuid;index"`
-	PlannedStartDate      *time.Time      `json:"planned_start_date" gorm:"type:date"`
-	Deadline              *time.Time      `json:"deadline" gorm:"type:date"`
-	Started               bool            `json:"started" gorm:"not null;default:false"`
-	StartedAt             *time.Time      `json:"started_at"`
-	Completed             bool            `json:"completed" gorm:"not null;default:false"`
-	CompletedAt           *time.Time      `json:"completed_at"`
-	Position              int             `json:"position" gorm:"not null;default:0"`
-	Color                 *string         `json:"color"`
-	Health                string          `json:"health" gorm:"not null;default:'no_health'"`
-	HealthComment         *string         `json:"health_comment"`
-	Archived              bool            `json:"archived" gorm:"not null;default:false"`
-	OrchestratorAgentID   *string         `json:"orchestrator_agent_id" gorm:"type:uuid;index"`
-	SpecDocumentID        *string         `json:"spec_document_id" gorm:"type:uuid;index"`
-	PlanningRepositoryID  *string         `json:"planning_repository_id" gorm:"type:uuid;index"`
-	PlanningState         string          `json:"planning_state" gorm:"not null;default:'not_started'"`
-	SpecClarifications    json.RawMessage `json:"spec_clarifications" gorm:"type:jsonb;not null;default:'[]'"`
-	SpecClarifiedAt       *time.Time      `json:"spec_clarified_at"`
-	SpecClarifiedBy       *string         `json:"spec_clarified_by" gorm:"type:uuid"`
-	ApprovedSpecVersionID *string         `json:"approved_spec_version_id" gorm:"type:uuid;index"`
-	ActivePlanningSessionID *string       `json:"active_planning_session_id,omitempty" gorm:"type:uuid;index"`
-	LastPlanningRunID     *string         `json:"last_planning_run_id" gorm:"type:uuid;index"`
-	CreatedBy             *string         `json:"created_by" gorm:"type:uuid"`
-	CreatedAt             time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt             time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                      string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID             string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name                    string          `json:"name" gorm:"not null"`
+	Description             *string         `json:"description"`
+	ExternalID              *string         `json:"external_id" gorm:"index"`
+	EpicStateID             *string         `json:"epic_state_id" gorm:"type:uuid;index"`
+	OwnerID                 *string         `json:"owner_id" gorm:"type:uuid;index"`
+	OwnerMemberID           *string         `json:"owner_member_id" gorm:"type:uuid;index"`
+	TeamID                  *string         `json:"team_id" gorm:"type:uuid;index"`
+	PlannedStartDate        *time.Time      `json:"planned_start_date" gorm:"type:date"`
+	Deadline                *time.Time      `json:"deadline" gorm:"type:date"`
+	Started                 bool            `json:"started" gorm:"not null;default:false"`
+	StartedAt               *time.Time      `json:"started_at"`
+	Completed               bool            `json:"completed" gorm:"not null;default:false"`
+	CompletedAt             *time.Time      `json:"completed_at"`
+	Position                int             `json:"position" gorm:"not null;default:0"`
+	Color                   *string         `json:"color"`
+	Health                  string          `json:"health" gorm:"not null;default:'no_health'"`
+	HealthComment           *string         `json:"health_comment"`
+	Archived                bool            `json:"archived" gorm:"not null;default:false"`
+	OrchestratorAgentID     *string         `json:"orchestrator_agent_id" gorm:"type:uuid;index"`
+	SpecDocumentID          *string         `json:"spec_document_id" gorm:"type:uuid;index"`
+	PlanningRepositoryID    *string         `json:"planning_repository_id" gorm:"type:uuid;index"`
+	PlanningState           string          `json:"planning_state" gorm:"not null;default:'not_started'"`
+	SpecClarifications      json.RawMessage `json:"spec_clarifications" gorm:"type:jsonb;not null;default:'[]'"`
+	SpecClarifiedAt         *time.Time      `json:"spec_clarified_at"`
+	SpecClarifiedBy         *string         `json:"spec_clarified_by" gorm:"type:uuid"`
+	ApprovedSpecVersionID   *string         `json:"approved_spec_version_id" gorm:"type:uuid;index"`
+	ActivePlanningSessionID *string         `json:"active_planning_session_id,omitempty" gorm:"type:uuid;index"`
+	ActiveFlowRunID         *string         `json:"active_flow_run_id,omitempty" gorm:"type:uuid;index"`
+	LastPlanningRunID       *string         `json:"last_planning_run_id" gorm:"type:uuid;index"`
+	CreatedBy               *string         `json:"created_by" gorm:"type:uuid"`
+	CreatedAt               time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt               time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMEpic) TableName() string { return "pm_epics" }

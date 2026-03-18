@@ -290,6 +290,7 @@ type SupportInboxSettings struct {
 
 	// AI Auto-Reply
 	AIEnabled             bool    `json:"ai_enabled"`
+	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
@@ -334,6 +335,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		DefaultLifecycleStage:  "subscriber",
 		AutoPromoteToLead:      false,
 		AIEnabled:              false,
+		AIAgentID:              nil,
 		AIConfidenceThreshold:  0.7,
 		ShowTalkToHuman:        true,
 		HandoffBehavior:        "unassigned",
@@ -374,6 +376,7 @@ type UpdateInstallationSettingsRequest struct {
 	DefaultLifecycleStage  *string                     `json:"default_lifecycle_stage,omitempty"`
 	AutoPromoteToLead      *bool                       `json:"auto_promote_to_lead,omitempty"`
 	AIEnabled              *bool                       `json:"ai_enabled,omitempty"`
+	AIAgentID              *string                     `json:"ai_agent_id,omitempty"`
 	AIConfidenceThreshold  *float64                    `json:"ai_confidence_threshold,omitempty"`
 	ShowTalkToHuman        *bool                       `json:"show_talk_to_human,omitempty"`
 	HandoffBehavior        *string                     `json:"handoff_behavior,omitempty"`

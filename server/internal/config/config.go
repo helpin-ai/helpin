@@ -17,6 +17,7 @@ type Config struct {
 	TemporalAPIKey        string
 	TemporalTLSEnabled    bool
 	TemporalTLSServerName string
+	NatsURL               string
 
 	// S3 / object storage (optional — attachments disabled if not set)
 	AWSAccessKeyID     string
@@ -113,6 +114,7 @@ func Load() (*Config, error) {
 		TemporalAPIKey:        temporalAPIKey,
 		TemporalTLSEnabled:    temporalTLSEnabled,
 		TemporalTLSServerName: strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
+		NatsURL:               strings.TrimSpace(firstNonEmpty(os.Getenv("NATS_URL"), "nats://localhost:4222")),
 		AWSAccessKeyID:        os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:    os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		AWSBucket:             os.Getenv("AWS_S3_BUCKET_NAME"),

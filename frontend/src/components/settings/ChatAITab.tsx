@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useChatSettings, useUpdateChatSettings } from '@/hooks/queries';
+import { useSupportAgents } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
@@ -41,12 +42,16 @@ const COMMON_TIMEZONES = [
   'UTC',
 ];
 
+const NO_AGENT_VALUE = '__none__';
+
 export function ChatAITab({ workspaceId }: { workspaceId: string }) {
   const { data, isLoading } = useChatSettings(workspaceId);
   const updateMutation = useUpdateChatSettings(workspaceId);
   const { teams } = useWorkspaceTeams(workspaceId);
+  const { data: supportAgents = [] } = useSupportAgents(workspaceId);
 
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiAgentId, setAiAgentId] = useState(NO_AGENT_VALUE);
   const [confidenceThreshold, setConfidenceThreshold] = useState('0.7');
   const [showTalkToHuman, setShowTalkToHuman] = useState(true);
   const [handoffBehavior, setHandoffBehavior] = useState('unassigned');
@@ -61,6 +66,7 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
     if (data?.settings) {
       const s = data.settings;
       setAiEnabled(s.ai_enabled);
+      setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
       setConfidenceThreshold(String(s.ai_confidence_threshold));
       setShowTalkToHuman(s.show_talk_to_human);
       setHandoffBehavior(s.handoff_behavior);
@@ -76,6 +82,7 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
   const handleSave = () => {
     updateMutation.mutate({
       ai_enabled: aiEnabled,
+      ai_agent_id: aiAgentId === NO_AGENT_VALUE ? '' : aiAgentId,
       ai_confidence_threshold: parseFloat(confidenceThreshold),
       show_talk_to_human: showTalkToHuman,
       handoff_behavior: handoffBehavior,
@@ -129,6 +136,24 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
               <p className="text-xs text-muted-foreground">AI will attempt to answer questions using your knowledge base.</p>
             </div>
             <Switch checked={aiEnabled} onCheckedChange={setAiEnabled} />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm">Support Agent</Label>
+            <Select value={aiAgentId} onValueChange={setAiAgentId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a support agent..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_AGENT_VALUE}>No support agent selected</SelectItem>
+                {supportAgents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Chat auto-replies will run this support agent on new visitor messages.
+            </p>
           </div>
 
           <div className="space-y-2">

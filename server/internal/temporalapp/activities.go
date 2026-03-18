@@ -20,6 +20,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
@@ -53,35 +54,49 @@ type planningRunSummary struct {
 	Proposal            *model.OrchestrationProposal  `json:"proposal,omitempty"`
 }
 
+type supportRunActivitySummary struct {
+	DraftReply    *supportRunActivityDraft `json:"draft_reply,omitempty"`
+	SentMessageID *string                  `json:"sent_message_id,omitempty"`
+}
+
+type supportRunActivityDraft struct {
+	Content           string  `json:"content"`
+	IsInternal        bool    `json:"is_internal"`
+	SenderDisplayName *string `json:"sender_display_name,omitempty"`
+	ApprovalRequired  bool    `json:"approval_required"`
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
-	runRepo         *repository.AgentRunRepository
-	agentRepo       *repository.AgentRepository
-	artifactRepo    *repository.AgentRunArtifactRepository
-	storyRepo       *repository.PMStoryRepository
-	storyLinkRepo   *repository.PMStoryLinkRepository
-	epicRepo        *repository.PMEpicRepository
+	runRepo          *repository.AgentRunRepository
+	agentRepo        *repository.AgentRepository
+	artifactRepo     *repository.AgentRunArtifactRepository
+	storyRepo        *repository.PMStoryRepository
+	storyLinkRepo    *repository.PMStoryLinkRepository
+	epicRepo         *repository.PMEpicRepository
 	conversationRepo *repository.SupportConversationRepository
 	commentRepo      *repository.PMCommentRepository
 	checklistRepo    *repository.PMChecklistItemRepository
 	messageRepo      *repository.SupportMessageRepository
-	gitIntRepo      *repository.GitIntegrationRepository
-	gitRepo         *repository.GitRepositoryRepository
-	gitLinkRepo     *repository.StoryGitLinkRepository
-	deliveryRepo    *repository.StoryDeliveryTargetRepository
-	settingsRepo    *repository.SettingsRepository
-	docsSpaceRepo   *repository.DocsSpaceRepository
-	docsDocRepo     *repository.DocsDocumentRepository
-	docsContentRepo *repository.DocsContentRepository
-	docsVersionRepo *repository.DocsVersionRepository
-	docsLinkRepo    *repository.DocsLinkRepository
-	docsSearchRepo  *repository.DocsSearchRepository
-	crmDealRepo     *repository.CRMDealRepository
-	crmContactRepo  *repository.CRMContactRepository
-	crmSignalRepo   *repository.CRMSignalRepository
-	crmActivityRepo *repository.CRMActivityRepository
-	runtimes        *workerpkg.RuntimeRegistry
-	githubApp       *githubapp.Client
+	gitIntRepo       *repository.GitIntegrationRepository
+	gitRepo          *repository.GitRepositoryRepository
+	gitLinkRepo      *repository.StoryGitLinkRepository
+	deliveryRepo     *repository.StoryDeliveryTargetRepository
+	settingsRepo     *repository.SettingsRepository
+	docsSpaceRepo    *repository.DocsSpaceRepository
+	docsDocRepo      *repository.DocsDocumentRepository
+	docsContentRepo  *repository.DocsContentRepository
+	docsVersionRepo  *repository.DocsVersionRepository
+	docsLinkRepo     *repository.DocsLinkRepository
+	docsSearchRepo   *repository.DocsSearchRepository
+	crmDealRepo      *repository.CRMDealRepository
+	crmContactRepo   *repository.CRMContactRepository
+	crmSignalRepo    *repository.CRMSignalRepository
+	crmActivityRepo  *repository.CRMActivityRepository
+	wsPublisher      websocket.EventPublisher
+	runtimes         *workerpkg.RuntimeRegistry
+	githubApp        *githubapp.Client
+	runEngine        *RunEngine
 }
 
 // NewAgentRunActivities creates the activity set used by shared Temporal workers.
@@ -111,37 +126,41 @@ func NewAgentRunActivities(
 	crmContactRepo *repository.CRMContactRepository,
 	crmSignalRepo *repository.CRMSignalRepository,
 	crmActivityRepo *repository.CRMActivityRepository,
+	wsPublisher websocket.EventPublisher,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
+	runEngine *RunEngine,
 ) *AgentRunActivities {
 	return &AgentRunActivities{
-		runRepo:         runRepo,
-		agentRepo:       agentRepo,
-		artifactRepo:    artifactRepo,
-		storyRepo:       storyRepo,
-		storyLinkRepo:   storyLinkRepo,
-		epicRepo:        epicRepo,
+		runRepo:          runRepo,
+		agentRepo:        agentRepo,
+		artifactRepo:     artifactRepo,
+		storyRepo:        storyRepo,
+		storyLinkRepo:    storyLinkRepo,
+		epicRepo:         epicRepo,
 		conversationRepo: conversationRepo,
 		commentRepo:      commentRepo,
 		checklistRepo:    checklistRepo,
 		messageRepo:      messageRepo,
-		gitIntRepo:      gitIntRepo,
-		gitRepo:         gitRepo,
-		gitLinkRepo:     gitLinkRepo,
-		deliveryRepo:    deliveryRepo,
-		settingsRepo:    settingsRepo,
-		docsSpaceRepo:   docsSpaceRepo,
-		docsDocRepo:     docsDocRepo,
-		docsContentRepo: docsContentRepo,
-		docsVersionRepo: docsVersionRepo,
-		docsLinkRepo:    docsLinkRepo,
-		docsSearchRepo:  docsSearchRepo,
-		crmDealRepo:     crmDealRepo,
-		crmContactRepo:  crmContactRepo,
-		crmSignalRepo:   crmSignalRepo,
-		crmActivityRepo: crmActivityRepo,
-		runtimes:        runtimes,
-		githubApp:       githubApp,
+		gitIntRepo:       gitIntRepo,
+		gitRepo:          gitRepo,
+		gitLinkRepo:      gitLinkRepo,
+		deliveryRepo:     deliveryRepo,
+		settingsRepo:     settingsRepo,
+		docsSpaceRepo:    docsSpaceRepo,
+		docsDocRepo:      docsDocRepo,
+		docsContentRepo:  docsContentRepo,
+		docsVersionRepo:  docsVersionRepo,
+		docsLinkRepo:     docsLinkRepo,
+		docsSearchRepo:   docsSearchRepo,
+		crmDealRepo:      crmDealRepo,
+		crmContactRepo:   crmContactRepo,
+		crmSignalRepo:    crmSignalRepo,
+		crmActivityRepo:  crmActivityRepo,
+		wsPublisher:      wsPublisher,
+		runtimes:         runtimes,
+		githubApp:        githubApp,
+		runEngine:        runEngine,
 	}
 }
 
@@ -152,7 +171,7 @@ type resolvedRunState struct {
 	epic           *model.PMEpic
 	epicStories    []model.PMStory
 	conversation   *model.SupportConversation
-	profile        model.RuntimeProfile   // class-level profile (kept for RuntimeProfile passthrough)
+	profile        model.RuntimeProfile      // class-level profile (kept for RuntimeProfile passthrough)
 	resolved       workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
 	deliveryTarget *model.StoryDeliveryTarget
 	repository     *model.GitRepository
@@ -331,6 +350,10 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	if err := a.finalizeSupportConversationRun(ctx, state); err != nil {
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
+	}
 
 	if state.story != nil && execCtx.WorkingBranch != "" {
 		state.run.WorkingBranch = &execCtx.WorkingBranch
@@ -356,12 +379,80 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 	a.runRepo.Notify(ctx, state.run)
+	a.signalParentFlow(ctx, state.run, state.run.Status)
 
 	if err := a.markAgentIdle(ctx, state.run.WorkspaceID, state.run.AgentID, state.run.TokensUsed); err != nil {
 		return ExecuteRunResult{}, err
 	}
 
 	return ExecuteRunResult{WaitForApproval: waitForApproval}, nil
+}
+
+func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context, state *resolvedRunState) error {
+	if state == nil || state.run == nil || state.run.TargetType != "support_conversation" || state.conversation == nil {
+		return nil
+	}
+	if state.run.ApprovalState == "pending" {
+		return nil
+	}
+
+	var summary supportRunActivitySummary
+	if len(state.run.OutputSummary) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(state.run.OutputSummary, &summary); err != nil {
+		return fmt.Errorf("parse support run summary: %w", err)
+	}
+	if summary.SentMessageID != nil && strings.TrimSpace(*summary.SentMessageID) != "" {
+		return nil
+	}
+	if summary.DraftReply == nil || strings.TrimSpace(summary.DraftReply.Content) == "" {
+		return nil
+	}
+
+	messageID := state.run.ID
+	existing, err := a.messageRepo.GetByID(ctx, messageID)
+	if err != nil {
+		return fmt.Errorf("lookup support reply message: %w", err)
+	}
+	createdMessage := false
+	if existing == nil {
+		createdMessage = true
+		existing = &model.SupportMessage{
+			ID:                messageID,
+			WorkspaceID:       state.run.WorkspaceID,
+			ConversationID:    state.conversation.ID,
+			SenderType:        "agent",
+			SenderAgentID:     &state.run.AgentID,
+			SenderDisplayName: summary.DraftReply.SenderDisplayName,
+			Content:           strings.TrimSpace(summary.DraftReply.Content),
+			IsInternal:        summary.DraftReply.IsInternal,
+			MessageType:       "reply",
+		}
+		if err := a.messageRepo.Create(ctx, existing); err != nil {
+			return fmt.Errorf("create support reply message: %w", err)
+		}
+	}
+
+	summary.SentMessageID = &existing.ID
+	payload, err := json.Marshal(summary)
+	if err != nil {
+		return fmt.Errorf("marshal support run summary: %w", err)
+	}
+	state.run.OutputSummary = payload
+	if err := a.runRepo.Update(ctx, state.run); err != nil {
+		return fmt.Errorf("persist support run summary: %w", err)
+	}
+
+	if a.wsPublisher != nil {
+		event := websocket.SupportMessageEvent(state.run.WorkspaceID, existing, "")
+		if !createdMessage {
+			event.Data = nil
+		}
+		a.wsPublisher.Publish(event)
+	}
+	a.pushVisitorConversationRefresh(ctx, state.run.WorkspaceID, state.conversation)
+	return nil
 }
 
 func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*resolvedRunState, error) {
@@ -2026,7 +2117,18 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return fmt.Errorf("conversation not found")
 			}
 			conversation.Status = status
-			return a.conversationRepo.Update(ctx, conversation)
+			if err := a.conversationRepo.Update(ctx, conversation); err != nil {
+				return err
+			}
+			if a.wsPublisher != nil {
+				a.wsPublisher.Publish(websocket.Event{
+					Action:      "updated",
+					Entity:      "support_conversation",
+					EntityID:    conversationID,
+					WorkspaceID: workspaceID,
+				})
+			}
+			return nil
 		},
 
 		// CRM
@@ -2094,6 +2196,30 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 	}
 }
 
+func (a *AgentRunActivities) pushVisitorConversationRefresh(ctx context.Context, workspaceID string, conversation *model.SupportConversation) {
+	if conversation == nil || conversation.AnonymousID == nil || strings.TrimSpace(*conversation.AnonymousID) == "" || a.wsPublisher == nil {
+		return
+	}
+	conversations, err := a.conversationRepo.ListByAnonymousID(ctx, workspaceID, *conversation.AnonymousID)
+	if err != nil {
+		return
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	listJSON, err := json.Marshal(map[string]any{"conversations": conversations})
+	if err != nil {
+		return
+	}
+	a.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_visitor_conversations",
+		EntityID:    *conversation.AnonymousID,
+		WorkspaceID: workspaceID,
+		Data:        listJSON,
+	})
+}
+
 func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunState, errMsg string) error {
 	now := time.Now()
 	state.run.Status = "failed"
@@ -2105,6 +2231,7 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 		return err
 	}
 	a.runRepo.Notify(ctx, state.run)
+	a.signalParentFlow(ctx, state.run, state.run.Status)
 	if state.deliveryTarget != nil {
 		state.deliveryTarget.DeliveryState = "failed"
 		state.deliveryTarget.LastRunID = &state.run.ID
@@ -2117,6 +2244,22 @@ func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunStat
 		_ = a.agentRepo.Update(ctx, agent)
 	}
 	return nil
+}
+
+func (a *AgentRunActivities) signalParentFlow(ctx context.Context, run *model.AgentRun, status string) {
+	if a == nil || a.runEngine == nil || run == nil || run.FlowRunID == nil || run.FlowNodeRunID == nil {
+		return
+	}
+	if status == "" {
+		status = run.Status
+	}
+	_ = a.runEngine.SignalFlowRun(ctx, *run.FlowRunID, FlowRunSignal{
+		Type:        FlowSignalTypeChildState,
+		NodeRunID:   *run.FlowNodeRunID,
+		ChildType:   FlowChildTypeAgentRun,
+		ChildID:     run.ID,
+		ChildStatus: status,
+	})
 }
 
 func ensureRunNotTerminal(run *model.AgentRun) error {

@@ -105,8 +105,64 @@ func TestAgentDefaultsDerivedFromClass(t *testing.T) {
 	if got := defaultRoleForAgentClass(model.AgentClassReviewer); got != "Reviewer" {
 		t.Fatalf("expected reviewer role label, got %q", got)
 	}
-	if got := defaultRuntimeKindForAgentClass(model.AgentClassSupport); got != "opencode" {
-		t.Fatalf("expected support runtime default opencode, got %q", got)
+	if got := defaultRuntimeKindForAgentClass(model.AgentClassProductPlanner); got != "native_sdk" {
+		t.Fatalf("expected planner runtime default native_sdk, got %q", got)
+	}
+	if got := defaultRuntimeKindForAgentClass(model.AgentClassSupport); got != "native_sdk" {
+		t.Fatalf("expected support runtime default native_sdk, got %q", got)
+	}
+}
+
+func TestValidateRuntimeKindAllowsOnlyImplementedRuntimes(t *testing.T) {
+	valid := []string{"opencode", "native_sdk"}
+	for _, runtimeKind := range valid {
+		if err := validateRuntimeKind(runtimeKind); err != nil {
+			t.Fatalf("expected runtime %q to be valid, got %v", runtimeKind, err)
+		}
+	}
+
+	invalid := []string{"native_claude", "claude_code", "openclaw", "zeroclaw"}
+	for _, runtimeKind := range invalid {
+		if err := validateRuntimeKind(runtimeKind); err == nil {
+			t.Fatalf("expected runtime %q to be rejected", runtimeKind)
+		}
+	}
+}
+
+func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
+	tests := []struct {
+		name      string
+		agent     model.Agent
+		supported bool
+	}{
+		{
+			name: "native sdk supports interactive",
+			agent: model.Agent{
+				AgentKind:   "llm",
+				AgentClass:  model.AgentClassProductPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			supported: true,
+		},
+		{
+			name: "opencode does not support interactive",
+			agent: model.Agent{
+				AgentKind:   "llm",
+				AgentClass:  model.AgentClassProductPlanner,
+				RuntimeKind: "opencode",
+			},
+			supported: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			normalizeAgentRecord(&tc.agent)
+			got := agentSupportsMode(&tc.agent, model.InvocationModeInteractive)
+			if got != tc.supported {
+				t.Fatalf("expected interactive support=%v, got %v (runtime=%q)", tc.supported, got, tc.agent.RuntimeKind)
+			}
+		})
 	}
 }
 

@@ -30,9 +30,9 @@ export function PlanningSpecPreview({ session }: Props) {
     <div className="h-full overflow-y-auto p-4">
       <div className="mb-3 flex items-center gap-2">
         <FileText className="h-4 w-4 text-muted-foreground" />
-        <h3 className="text-sm font-semibold">Product Specification</h3>
+        <h3 className="text-xs font-semibold">Product Specification</h3>
       </div>
-      <div className="prose prose-sm dark:prose-invert max-w-none">
+      <div className="prose prose-sm dark:prose-invert max-w-none text-xs [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-xs [&_h4]:text-xs [&_p]:text-xs [&_li]:text-xs [&_code]:text-[11px] [&_pre]:text-[11px]">
         <ReactMarkdown>{draft}</ReactMarkdown>
       </div>
     </div>

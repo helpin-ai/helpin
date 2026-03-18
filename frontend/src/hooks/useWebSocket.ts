@@ -4,6 +4,8 @@ import { API_BASE } from '@/lib/api'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 
 export interface WSEvent {
+  event_id?: string
+  sent_at?: string
   action: 'created' | 'updated' | 'deleted' | 'moved' | 'typing_started' | 'typing_stopped' | 'viewing_started' | 'viewing_stopped' | 'visitor_online' | 'visitor_offline'
   entity: string
   entity_id: string
@@ -95,7 +97,11 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot }: UseWe
           onSnapshotRef.current?.('', snapshot)
         } else if (parsed.action && parsed.entity) {
           // Standard event (has action/entity fields)
-          onEventRef.current(parsed as WSEvent)
+          const event = parsed as WSEvent
+          onEventRef.current(event)
+          if (event.entity === 'planning_session_message') {
+            window.dispatchEvent(new CustomEvent('planning-session-message', { detail: event }))
+          }
         }
       } catch {
         // ignore malformed messages
