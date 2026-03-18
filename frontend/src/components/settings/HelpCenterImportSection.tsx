@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Check } from 'lucide-react';
@@ -178,7 +178,6 @@ export function HelpCenterImportSection({
     setJobStatus(null);
   };
 
-  const selectedCollectionData = preview?.collections.find((c) => c.id === selectedCollection);
   const isFinished = jobStatus?.status === 'done' || jobStatus?.status === 'failed';
   const progressPercent = jobStatus && jobStatus.total > 0
     ? Math.round(((jobStatus.completed + jobStatus.failed) / jobStatus.total) * 100)

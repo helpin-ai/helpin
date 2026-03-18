@@ -3,6 +3,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
+import { diffRemovedInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
 import {
   Bold,
   Code2,
@@ -451,4 +452,3 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     </div>
   );
 }
-import { diffRemovedInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
