@@ -186,6 +186,8 @@ func main() {
 		&model.StoryGitLink{},
 		&model.AgentHandoff{},
 		&model.PMStoryTemplate{},
+		&model.PMRecurringTemplate{},
+		&model.PMRecurringRun{},
 		&model.PMImportJob{},
 		&authorization.AuthorizationRelation{},
 		// Docs module
@@ -411,6 +413,7 @@ func main() {
 	automationRuleRepo := repository.NewAutomationRuleRepository(db)
 	flowRepo := repository.NewFlowRepository(db)
 	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
+	pmRecurringTemplateRepo := repository.NewPMRecurringTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 	planningSessionRepo := repository.NewPlanningSessionRepository(db)
@@ -478,6 +481,7 @@ func main() {
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
 	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
+	pmRecurringTemplateService := service.NewPMRecurringTemplateService(pmRecurringTemplateRepo, pmStoryRepo, pmWorkflowRepo, pmSprintRepo, workspaceRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmActivityService)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
@@ -485,14 +489,14 @@ func main() {
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, emailClient, cfg.AppBaseURL)
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
-	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
+	pmStoryService := service.NewPMStoryService(pmStoryRepo, workspaceRepo, pmWorkflowRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmAttachmentRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
 	pmRoadmapRepo := repository.NewPMRoadmapRepository(db)
-	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmStoryRepo, pmLabelRepo, gitRepositoryRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmRoadmapService := service.NewPMRoadmapService(pmEpicService, pmRoadmapRepo)
-	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmActivityService, wsPublisher, notificationService)
+	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmStoryRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
-	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, pmStoryRepo, wsPublisher, notificationService, workspaceRepo)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo)
@@ -573,7 +577,10 @@ func main() {
 	ruleEngine.SetHealthObserver(automationHealthService)
 	pmStoryService.SetRuleEngine(ruleEngine)
 	pmStoryService.SetAgentService(agentService)
+	pmStoryService.SetRecurringService(pmRecurringTemplateService)
+	pmRecurringTemplateService.SetStoryService(pmStoryService)
 	agentService.SetRuleEngine(ruleEngine)
+	pmRecurringTemplateService.SetTemporalClient(temporalClient)
 
 	// Planning session service — HTTP-only (activities run in cmd/temporal-worker).
 	// No claudeClient/toolRegistry/streamer needed: streaming runs in the worker process.
@@ -697,6 +704,9 @@ func main() {
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
+	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
+		slog.Error("failed to ensure PM recurring scheduler", "error", err)
+	}
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
 	orchestrationService := service.NewOrchestrationService(pmEpicRepo, agentRepo, pmActivityService, wsPublisher)
 
@@ -751,6 +761,7 @@ func main() {
 		PlanningSession:    handler.NewPlanningSessionHandler(planningSessionService),
 		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
 		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
+		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:              handler.NewAgentHandler(agentService),
 		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),
 		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),
