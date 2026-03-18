@@ -18,7 +18,7 @@ interface ConversationViewProps {
   onBack: () => void;
   onClose?: () => void;
   showPreChatForm?: boolean;
-  onPreChatSubmit?: (data: { name: string; email: string }) => void;
+  onPreChatSubmit?: (data: { phone: string; email: string }) => void;
 }
 
 export const ConversationView: FunctionComponent<ConversationViewProps> = ({

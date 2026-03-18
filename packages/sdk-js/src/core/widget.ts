@@ -335,7 +335,9 @@ export class WidgetManager {
 }`;
     }
 
-    const showPreChat = this.widgetConfig.features?.preChatForm && !this.sessionToken;
+    // Show pre-chat form only when: feature is enabled AND session is anonymous (no email yet)
+    const alreadyIdentified = !!this.currentEmail || !!this.config?.user?.email;
+    const showPreChat = !!this.widgetConfig.features?.preChatForm && !alreadyIdentified;
 
     const mountOptions: Parameters<typeof mountWidget>[1] & {
       openArticleRequest?: {
@@ -352,7 +354,7 @@ export class WidgetManager {
       onQuickReply: (content: string) => this.handleSendMessage(content),
       onTyping: (content: string) => this.handleTyping(content),
       showPreChatForm: showPreChat,
-      onPreChatSubmit: (data: { name: string; email: string }) => this.handlePreChatSubmit(data),
+      onPreChatSubmit: (data: { phone: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
       typingAgentName: this.typingAgentName,
       typingAgentAvatar: this.typingAgentAvatar,
@@ -543,13 +545,18 @@ export class WidgetManager {
     }
   }
 
-  private handlePreChatSubmit(data: { name: string; email: string }): void {
+  private handlePreChatSubmit(data: { phone: string; email: string }): void {
     this.triggerCallback('onUserEmailSupplied', data.email);
     this.currentEmail = data.email;
 
-    // Upgrade session via WS
+    // Upgrade session via WS with source=prechat
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('session:upgrade', { email: data.email, name: data.name });
+      this.wsSend('session:upgrade', { email: data.email, phone: data.phone, source: 'widget_prechat' });
+    }
+
+    // Fire lead tracking event to events pipeline (ClickHouse)
+    if ((globalThis as any).helpin?.track) {
+      (globalThis as any).helpin.track('lead', { email: data.email });
     }
   }
 
@@ -761,11 +768,17 @@ export class WidgetManager {
           }
         }, 60_000);
 
-        // If user data was provided at boot, upgrade the session
+        // If session was restored as identified, store email to skip pre-chat
+        if (!payload.is_anonymous && payload.customer_email) {
+          this.currentEmail = payload.customer_email;
+        }
+
+        // If user data was provided at boot, upgrade the session (source=identify for SDK)
         if (this.config?.user?.email && payload.is_anonymous) {
           this.wsSend('session:upgrade', {
             email: this.config.user.email,
             name: this.config.user.name || '',
+            source: 'sdk_identify',
           });
           this.currentEmail = this.config.user.email;
         }

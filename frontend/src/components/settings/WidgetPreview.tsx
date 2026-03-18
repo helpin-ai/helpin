@@ -65,7 +65,7 @@ export function WidgetPreview({
           aiEnabled: false,
           fileUploads: false,
           preChatForm: false,
-          requireName: false,
+          requirePhone: false,
           csatRating: false,
         },
       },

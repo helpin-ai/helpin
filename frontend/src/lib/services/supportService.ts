@@ -32,6 +32,12 @@ export const supportService = {
     api.get<UnreadStats>(`/support/inbox/unread-stats${qs(workspaceId)}`),
   markConversationRead: (workspaceId: string, conversationId: string) =>
     api.post(`/support/inbox/conversations/${conversationId}/read${qs(workspaceId)}`, {}),
+  markConversationUnread: (workspaceId: string, conversationId: string) =>
+    api.post(`/support/inbox/conversations/${conversationId}/unread${qs(workspaceId)}`, {}),
+  updateConversationSubject: (workspaceId: string, conversationId: string, subject: string) =>
+    api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/subject${qs(workspaceId)}`, { subject }),
+  deleteConversation: (workspaceId: string, conversationId: string) =>
+    api.del(`/support/inbox/conversations/${conversationId}${qs(workspaceId)}`),
 
   // Installation settings
   getInstallation: (workspaceId: string) =>

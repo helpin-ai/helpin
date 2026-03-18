@@ -181,6 +181,54 @@ func (h *SupportInboxHandler) MarkConversationRead(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// MarkConversationUnread handles POST /api/support/inbox/conversations/{id}/unread.
+func (h *SupportInboxHandler) MarkConversationUnread(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	if err := h.supportService.MarkConversationUnread(r.Context(), workspaceID, conversationID, userID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdateConversationSubject handles PUT /api/support/inbox/conversations/{id}/subject.
+func (h *SupportInboxHandler) UpdateConversationSubject(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req struct {
+		Subject string `json:"subject"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	conv, err := h.supportService.UpdateConversationSubject(r.Context(), workspaceID, conversationID, req.Subject, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, conv)
+}
+
+// DeleteConversation handles DELETE /api/support/inbox/conversations/{id}.
+func (h *SupportInboxHandler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	if err := h.supportService.DeleteConversation(r.Context(), workspaceID, conversationID, actorID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // GetUnreadStats handles GET /api/support/inbox/unread-stats.
 func (h *SupportInboxHandler) GetUnreadStats(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

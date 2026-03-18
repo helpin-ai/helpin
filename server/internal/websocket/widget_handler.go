@@ -21,7 +21,7 @@ type WidgetService interface {
 	GetVisitorConversations(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error)
 	ListConversationMessages(ctx context.Context, workspaceID, conversationID string, includeInternal bool) ([]model.SupportMessage, error)
 	WidgetCreateMessage(ctx context.Context, sessionToken, content string) (*model.SupportMessage, error)
-	UpgradeWidgetSession(ctx context.Context, sessionToken, email, name string) error
+	UpgradeWidgetSession(ctx context.Context, sessionToken, email, name, source string) error
 	RevokeWidgetSession(ctx context.Context, sessionToken string) error
 	ClearSessionConversation(ctx context.Context, sessionToken string) error
 	SetSessionConversation(ctx context.Context, sessionToken, conversationID string) error
@@ -297,10 +297,16 @@ func (h *WidgetHandler) sendSessionJoined(ctx context.Context, conn *websocket.C
 		messages = []model.SupportMessage{}
 	}
 
+	var customerEmail string
+	if session.CustomerEmail != nil {
+		customerEmail = *session.CustomerEmail
+	}
+
 	return SendToClient(conn, "session:joined", model.WidgetSessionJoinedPayload{
 		SessionToken:  session.SessionToken,
 		ExpiresAt:     session.ExpiresAt.Format(time.RFC3339),
 		IsAnonymous:   session.IsAnonymous,
+		CustomerEmail: customerEmail,
 		Conversations: conversations,
 		Messages:      messages,
 	})
@@ -452,7 +458,11 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 			email := typed.Email
 			name := typed.Name
-			err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name)
+			source := typed.Source
+			if source == "" {
+				source = "widget_prechat"
+			}
+			err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name, source)
 			if err != nil {
 				SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": err.Error()})
 				continue

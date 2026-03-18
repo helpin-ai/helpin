@@ -30,20 +30,11 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.RequireEmailBeforeChat != nil {
 		current.RequireEmailBeforeChat = *patch.RequireEmailBeforeChat
 	}
-	if patch.RequireNameAfterEmail != nil {
-		current.RequireNameAfterEmail = *patch.RequireNameAfterEmail
+	if patch.RequirePhoneAfterEmail != nil {
+		current.RequirePhoneAfterEmail = *patch.RequirePhoneAfterEmail
 	}
 	if patch.WelcomeMessage != nil {
 		current.WelcomeMessage = *patch.WelcomeMessage
-	}
-	if patch.AutoCreateCRMContact != nil {
-		current.AutoCreateCRMContact = *patch.AutoCreateCRMContact
-	}
-	if patch.DefaultLifecycleStage != nil {
-		current.DefaultLifecycleStage = *patch.DefaultLifecycleStage
-	}
-	if patch.AutoPromoteToLead != nil {
-		current.AutoPromoteToLead = *patch.AutoPromoteToLead
 	}
 	if patch.AIEnabled != nil {
 		current.AIEnabled = *patch.AIEnabled
@@ -153,10 +144,6 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	validIcon := map[string]bool{"chat_bubble": true, "question_mark": true, "help": true}
 	if !validIcon[settings.LauncherIcon] {
 		return fmt.Errorf("launcher_icon must be chat_bubble, question_mark, or help")
-	}
-	validLifecycle := map[string]bool{"subscriber": true, "lead": true, "opportunity": true}
-	if !validLifecycle[settings.DefaultLifecycleStage] {
-		return fmt.Errorf("default_lifecycle_stage must be subscriber, lead, or opportunity")
 	}
 	if settings.AIEnabled {
 		if settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {

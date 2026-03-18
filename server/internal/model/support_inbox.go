@@ -15,6 +15,7 @@ type SupportConversation struct {
 	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
 	CustomerName      *string    `json:"customer_name"`
 	CustomerEmail     *string    `json:"customer_email"`
+	CustomerPhone     *string    `json:"customer_phone"`
 	OpenedByUserID    *string    `json:"opened_by_user_id" gorm:"type:uuid"`
 	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid"`
 	LinkedStoryID     *string    `json:"linked_story_id" gorm:"type:uuid"`
@@ -115,6 +116,7 @@ type SupportWidgetSession struct {
 	IsAnonymous    bool       `json:"is_anonymous" gorm:"default:true"`
 	CustomerName   *string    `json:"customer_name"`
 	CustomerEmail  *string    `json:"customer_email"`
+	CustomerPhone  *string    `json:"customer_phone"`
 	UserAgent      *string    `json:"-"`
 	LastPageURL    *string    `json:"last_page_url"`
 	RevokedAt      *time.Time `json:"-" gorm:"index"`
@@ -206,8 +208,18 @@ type WidgetSessionRestoreData struct {
 
 // WidgetSessionUpgradeData is the payload for session:upgrade.
 type WidgetSessionUpgradeData struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
+	Email  string `json:"email"`
+	Name   string `json:"name"`
+	Source string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
+}
+
+// WidgetIdentifyRequest is the HTTP payload for POST /api/widget/identify (headless SDK path).
+type WidgetIdentifyRequest struct {
+	APIKey      string `json:"api_key"`
+	AnonymousID string `json:"anonymous_id"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	Source      string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
 }
 
 // WidgetMessageSendData is the payload for message:send.
@@ -230,6 +242,7 @@ type WidgetSessionJoinedPayload struct {
 	SessionToken  string                `json:"session_token"`
 	ExpiresAt     string                `json:"expires_at"`
 	IsAnonymous   bool                  `json:"is_anonymous"`
+	CustomerEmail string                `json:"customer_email,omitempty"`
 	Conversations []SupportConversation `json:"conversations"`
 	Messages      []SupportMessage      `json:"messages"`
 }
@@ -280,7 +293,7 @@ type BusinessHoursDay struct {
 type SupportInboxSettings struct {
 	// Identity Capture
 	RequireEmailBeforeChat bool   `json:"require_email_before_chat"`
-	RequireNameAfterEmail  bool   `json:"require_name_after_email"`
+	RequirePhoneAfterEmail bool   `json:"require_phone_after_email"`
 	WelcomeMessage         string `json:"welcome_message"`
 
 	// CRM Integration
@@ -329,7 +342,7 @@ type SupportInboxSettings struct {
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
 		RequireEmailBeforeChat: true,
-		RequireNameAfterEmail:  false,
+		RequirePhoneAfterEmail: false,
 		WelcomeMessage:         "Hi there! How can we help you today?",
 		AutoCreateCRMContact:   true,
 		DefaultLifecycleStage:  "subscriber",
@@ -370,7 +383,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
 	RequireEmailBeforeChat *bool                       `json:"require_email_before_chat,omitempty"`
-	RequireNameAfterEmail  *bool                       `json:"require_name_after_email,omitempty"`
+	RequirePhoneAfterEmail *bool                       `json:"require_phone_after_email,omitempty"`
 	WelcomeMessage         *string                     `json:"welcome_message,omitempty"`
 	AutoCreateCRMContact   *bool                       `json:"auto_create_crm_contact,omitempty"`
 	DefaultLifecycleStage  *string                     `json:"default_lifecycle_stage,omitempty"`
@@ -430,7 +443,7 @@ type WidgetConfigFeatures struct {
 	AIEnabled   bool `json:"aiEnabled"`
 	FileUploads bool `json:"fileUploads"`
 	PreChatForm bool `json:"preChatForm"`
-	RequireName bool `json:"requireName"`
+	RequirePhone bool `json:"requirePhone"`
 	CSATRating  bool `json:"csatRating"`
 }
 

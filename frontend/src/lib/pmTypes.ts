@@ -1272,7 +1272,7 @@ export interface RunnerActiveRun {
 
 // ── Support ─────────────────────────────────────────────────────────
 
-export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed';
+export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed' | 'spam';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TicketSource = 'widget' | 'internal' | 'email' | 'api';
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
@@ -1365,11 +1365,8 @@ export interface BusinessHoursDay {
 
 export interface SupportInboxSettings {
   require_email_before_chat: boolean;
-  require_name_after_email: boolean;
+  require_phone_after_email: boolean;
   welcome_message: string;
-  auto_create_crm_contact: boolean;
-  default_lifecycle_stage: string;
-  auto_promote_to_lead: boolean;
   ai_enabled: boolean;
   ai_agent_id: string | null;
   ai_confidence_threshold: number;

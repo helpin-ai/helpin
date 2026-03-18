@@ -51,7 +51,7 @@ export interface MountWidgetOptions {
   onQuickReply?: (content: string) => void;
   onTyping?: (content: string) => void;
   showPreChatForm?: boolean;
-  onPreChatSubmit?: (data: { name: string; email: string }) => void;
+  onPreChatSubmit?: (data: { phone: string; email: string }) => void;
   isTyping?: boolean;
   typingAgentName?: string;
   typingAgentAvatar?: string;

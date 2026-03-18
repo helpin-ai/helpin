@@ -1,5 +1,18 @@
 /* Helpin Widget Styles — Tailwind-compatible design tokens */
 
+/* Screen-reader only — visually hidden but accessible */
+.helpin-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
 .helpin-widget {
   /* Brand colors - primary matches Tailwind indigo-500 */
   --helpin-primary: #6366f1;
@@ -1499,6 +1512,19 @@
   border: 1px solid var(--helpin-border);
   border-radius: 10px;
   background: var(--helpin-bg);
+}
+
+.helpin-inline-prechat-input-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.helpin-inline-prechat-icon {
+  flex-shrink: 0;
+  color: var(--helpin-fg-muted);
 }
 
 .helpin-inline-prechat-input {

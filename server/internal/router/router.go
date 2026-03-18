@@ -209,6 +209,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
 			r.Get("/messages", h.SupportInboxWidget.GetMessages)
 			r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
+			r.Post("/identify", h.SupportInboxWidget.Identify) // Headless SDK identify/lead path
 		})
 
 		// ---- Internal service-to-service routes (bearer token auth) ----
@@ -374,6 +375,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/read", h.SupportInbox.MarkConversationRead)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/unread", h.SupportInbox.MarkConversationUnread)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/subject", h.SupportInbox.UpdateConversationSubject)
+				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/conversations/{id}", h.SupportInbox.DeleteConversation)
 
 				// Installation settings
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/installations", h.SupportInbox.GetInstallation)

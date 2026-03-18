@@ -183,6 +183,40 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, messages)
 }
 
+// Identify handles POST /api/widget/identify (headless SDK path).
+// When the widget is not open, the SDK sends identity data via HTTP instead of WebSocket.
+func (h *SupportInboxWidgetHandler) Identify(w http.ResponseWriter, r *http.Request) {
+	var req model.WidgetIdentifyRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.APIKey == "" {
+		writeError(w, http.StatusBadRequest, "api_key is required")
+		return
+	}
+	if req.AnonymousID == "" {
+		writeError(w, http.StatusBadRequest, "anonymous_id is required")
+		return
+	}
+	if req.Email == "" {
+		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+
+	source := req.Source
+	if source == "" {
+		source = "sdk_identify"
+	}
+
+	if err := h.supportService.IdentifyByAnonymousID(r.Context(), req.APIKey, req.AnonymousID, req.Email, req.Name, source); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
 // GetHelpCollections handles GET /api/widget/support/help/spaces/{spaceSlug}/collections?widget_key=...
 func (h *SupportInboxWidgetHandler) GetHelpCollections(w http.ResponseWriter, r *http.Request) {
 	widgetKey := widgetKeyFromRequest(r)

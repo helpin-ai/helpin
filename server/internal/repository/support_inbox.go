@@ -424,6 +424,33 @@ func (r *SupportConversationRepository) MarkInternalRead(ctx context.Context, co
 	return nil
 }
 
+// MarkUnread resets team_last_seen_at to epoch so the conversation appears unread again.
+// Uses raw SQL to avoid GORM's autoUpdateTime touching updated_at.
+func (r *SupportConversationRepository) MarkUnread(ctx context.Context, conversationID string) error {
+	result := r.db.WithContext(ctx).Exec(fmt.Sprintf(`
+		UPDATE support_conversations
+		SET team_last_seen_at = %s
+		WHERE id = ?
+	`, r.epochExpr()), conversationID)
+	if result.Error != nil {
+		return fmt.Errorf("mark unread: %w", result.Error)
+	}
+	return nil
+}
+
+// Delete permanently removes a conversation and its messages.
+func (r *SupportConversationRepository) Delete(ctx context.Context, workspaceID, conversationID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID).Delete(&model.SupportMessage{}).Error; err != nil {
+			return fmt.Errorf("delete conversation messages: %w", err)
+		}
+		if err := tx.Where("workspace_id = ? AND id = ?", workspaceID, conversationID).Delete(&model.SupportConversation{}).Error; err != nil {
+			return fmt.Errorf("delete conversation: %w", err)
+		}
+		return nil
+	})
+}
+
 // MarkContactRead sets contact_last_seen_at = NOW() if unread messages exist beyond the current cursor.
 // Uses raw SQL to avoid GORM's autoUpdateTime touching updated_at (which would re-sort the conversation).
 func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, conversationID string) error {
@@ -471,6 +498,86 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		return stats, fmt.Errorf("get unread stats: %w", err)
 	}
 	return stats, nil
+}
+
+// UpdateIdentityByAnonymousID batch-updates all anonymous conversations for a visitor
+// with the provided email, name, and CRM contact ID. Returns the IDs of updated conversations.
+func (r *SupportConversationRepository) UpdateIdentityByAnonymousID(ctx context.Context, workspaceID, anonymousID, email, name string, crmContactID *string) ([]string, error) {
+	// Build the update map
+	updates := map[string]interface{}{
+		"customer_email": email,
+		"customer_name":  name,
+	}
+
+	query := r.db.WithContext(ctx).
+		Model(&model.SupportConversation{}).
+		Where("workspace_id = ? AND anonymous_id = ? AND (customer_email IS NULL OR customer_email = '')", workspaceID, anonymousID)
+
+	// First, get the IDs of conversations that will be updated
+	var ids []string
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportConversation{}).
+		Where("workspace_id = ? AND anonymous_id = ? AND (customer_email IS NULL OR customer_email = '')", workspaceID, anonymousID).
+		Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("find anonymous conversations: %w", err)
+	}
+
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Apply CRM contact ID only where not already set
+	if crmContactID != nil {
+		// Use raw SQL to handle COALESCE for crm_contact_id
+		if err := r.db.WithContext(ctx).Exec(
+			"UPDATE support_conversations SET customer_email = ?, customer_name = ?, crm_contact_id = COALESCE(crm_contact_id, ?) WHERE id IN ? AND (customer_email IS NULL OR customer_email = '')",
+			email, name, *crmContactID, ids,
+		).Error; err != nil {
+			return nil, fmt.Errorf("backfill conversation identity: %w", err)
+		}
+	} else {
+		if err := query.Updates(updates).Error; err != nil {
+			return nil, fmt.Errorf("backfill conversation identity: %w", err)
+		}
+	}
+
+	return ids, nil
+}
+
+// UpdateSessionsByAnonymousID batch-updates all anonymous sessions for a visitor
+// with the provided email and name.
+func (r *SupportInboxSessionRepository) UpdateSessionsByAnonymousID(ctx context.Context, workspaceID, anonymousID, email, name string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("workspace_id = ? AND anonymous_id = ? AND is_anonymous = true", workspaceID, anonymousID).
+		Updates(map[string]interface{}{
+			"customer_email": email,
+			"customer_name":  name,
+			"is_anonymous":   false,
+		}).Error; err != nil {
+		return fmt.Errorf("backfill session identity: %w", err)
+	}
+	return nil
+}
+
+// DB returns the underlying *gorm.DB for transaction support.
+func (r *SupportConversationRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// WithTx returns a new SupportConversationRepository using the given transaction.
+func (r *SupportConversationRepository) WithTx(tx *gorm.DB) *SupportConversationRepository {
+	return &SupportConversationRepository{db: tx}
+}
+
+// WithTx returns a new SupportInboxSessionRepository using the given transaction.
+func (r *SupportInboxSessionRepository) WithTx(tx *gorm.DB) *SupportInboxSessionRepository {
+	return &SupportInboxSessionRepository{db: tx}
+}
+
+// WithTx returns a new CRMContactRepository using the given transaction.
+func (r *CRMContactRepository) WithTx(tx *gorm.DB) *CRMContactRepository {
+	return &CRMContactRepository{db: tx}
 }
 
 // SupportCannedResponseRepository handles canned responses.

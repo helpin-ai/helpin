@@ -32,7 +32,7 @@ export function InboxNavSidebar({ teams }: InboxNavSidebarProps) {
   const { navFilter, setNavFilter, statusFilter, setStatusFilter } = useSupportInboxStore();
 
   return (
-    <div className="flex w-[200px] flex-col border-r bg-muted/30">
+    <div className="flex w-[170px] flex-col border-r bg-muted/30">
       <div className="flex-1 space-y-1 p-2 overflow-y-auto">
         <h3 className="mb-2 px-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Inbox

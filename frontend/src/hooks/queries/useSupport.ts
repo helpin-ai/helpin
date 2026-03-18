@@ -178,3 +178,48 @@ export function useSupportAgents(workspaceId: string) {
     staleTime: 60_000,
   });
 }
+
+export function useMarkConversationUnread(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      supportService.markConversationUnread(workspaceId, conversationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to mark as unread', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateConversationSubject(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, subject }: { conversationId: string; subject: string }) =>
+      supportService.updateConversationSubject(workspaceId, conversationId, subject).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update subject', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteConversation(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      supportService.deleteConversation(workspaceId, conversationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete conversation', { description: error.message });
+    },
+  });
+}

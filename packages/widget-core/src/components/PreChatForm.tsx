@@ -1,11 +1,11 @@
 import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import type { WidgetConfig } from '../types';
-import { ChevronRightIcon } from './icons';
+import { ChevronRightIcon, MailIcon, PhoneIcon } from './icons';
 
 interface PreChatFormProps {
   config: WidgetConfig;
-  onSubmit: (data: { name: string; email: string }) => void;
+  onSubmit: (data: { phone: string; email: string }) => void;
 }
 
 export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
@@ -13,8 +13,8 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
   onSubmit,
 }) => {
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [step, setStep] = useState<'email' | 'name' | 'done'>('email');
+  const [phone, setPhone] = useState('');
+  const [step, setStep] = useState<'email' | 'phone' | 'done'>('email');
   const formRef = useRef<HTMLDivElement>(null);
   const brandColor = config.branding?.primaryColor || '#6366f1';
   const workspaceName = config.workspaceName || 'Support';
@@ -26,22 +26,22 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
     }
   }, [step]);
 
-  const requireName = config.features?.requireName !== false;
+  const requirePhone = config.features?.requirePhone !== false;
 
   const handleEmailSubmit = (e: Event) => {
     e.preventDefault();
     if (!email.trim()) return;
-    if (requireName) {
-      setStep('name');
+    if (requirePhone) {
+      setStep('phone');
     } else {
-      onSubmit({ name: '', email: email.trim() });
+      onSubmit({ phone: '', email: email.trim() });
       setStep('done');
     }
   };
 
-  const handleNameSubmit = (e: Event) => {
+  const handlePhoneSubmit = (e: Event) => {
     e.preventDefault();
-    onSubmit({ name: name.trim(), email: email.trim() });
+    onSubmit({ phone: phone.trim(), email: email.trim() });
     setStep('done');
   };
 
@@ -69,16 +69,19 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
                 </div>
                 <form onSubmit={handleEmailSubmit} className="helpin-inline-prechat-form">
                   <label className="helpin-sr-only" htmlFor="helpin-prechat-email">Email address</label>
-                  <input
-                    id="helpin-prechat-email"
-                    type="email"
-                    className="helpin-inline-prechat-input"
-                    placeholder="Your e-mail"
-                    value={email}
-                    onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
-                    required
-                    autoFocus
-                  />
+                  <div className="helpin-inline-prechat-input-wrap">
+                    <MailIcon size={14} class="helpin-inline-prechat-icon" />
+                    <input
+                      id="helpin-prechat-email"
+                      type="email"
+                      className="helpin-inline-prechat-input"
+                      placeholder="you@example.com"
+                      value={email}
+                      onInput={(e) => setEmail((e.target as HTMLInputElement).value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
                   <button
                     type="submit"
                     className="helpin-inline-prechat-btn"
@@ -91,27 +94,30 @@ export const PreChatForm: FunctionComponent<PreChatFormProps> = ({
                 </form>
               </>
             )}
-            {step === 'name' && (
+            {step === 'phone' && (
               <>
                 <div className="helpin-message-content">
-                  Thanks! What's your name?
+                  Thanks! What's your phone number?
                 </div>
-                <form onSubmit={handleNameSubmit} className="helpin-inline-prechat-form">
-                  <label className="helpin-sr-only" htmlFor="helpin-prechat-name">Your name</label>
-                  <input
-                    id="helpin-prechat-name"
-                    type="text"
-                    className="helpin-inline-prechat-input"
-                    placeholder="Your name"
-                    value={name}
-                    onInput={(e) => setName((e.target as HTMLInputElement).value)}
-                    autoFocus
-                  />
+                <form onSubmit={handlePhoneSubmit} className="helpin-inline-prechat-form">
+                  <label className="helpin-sr-only" htmlFor="helpin-prechat-phone">Your phone number</label>
+                  <div className="helpin-inline-prechat-input-wrap">
+                    <PhoneIcon size={14} class="helpin-inline-prechat-icon" />
+                    <input
+                      id="helpin-prechat-phone"
+                      type="tel"
+                      className="helpin-inline-prechat-input"
+                      placeholder="+1 (555) 000-0000"
+                      value={phone}
+                      onInput={(e) => setPhone((e.target as HTMLInputElement).value)}
+                      autoFocus
+                    />
+                  </div>
                   <button
                     type="submit"
                     className="helpin-inline-prechat-btn"
                     style={{ backgroundColor: brandColor }}
-                    aria-label="Submit name"
+                    aria-label="Submit phone number"
                   >
                     <ChevronRightIcon size={16} color="white" />
                   </button>
