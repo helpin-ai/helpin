@@ -5,6 +5,9 @@ import { BottomNav, type WidgetBaseView, WidgetView } from './BottomNav';
 import { HomeView } from './HomeView';
 import { MessagesView } from './MessagesView';
 import { HelpView } from './HelpView';
+import { HelpSpaceView } from './HelpSpaceView';
+import { HelpCollectionView } from './HelpCollectionView';
+import { HelpArticleView } from './HelpArticleView';
 import { ConversationView } from './ConversationView';
 import { ConversationListView } from './ConversationListView';
 import { XIcon } from './icons';
@@ -33,6 +36,12 @@ interface ChatWindowProps {
   onSelectConversation?: (conversationId: string) => void;
   onStartNewConversation?: () => void;
   onViewChange?: (view: WidgetView) => void;
+  widgetKey?: string;
+  host?: string;
+  openArticleRequest?: {
+    key: number;
+    articleSlug: string;
+  };
 }
 
 export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
@@ -57,11 +66,21 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   onSelectConversation = () => {},
   onStartNewConversation,
   onViewChange,
+  widgetKey,
+  host,
+  openArticleRequest,
 }) => {
+  const initialPreviousView: WidgetBaseView =
+    initialView === 'messages' || initialView === 'help' || initialView === 'home'
+      ? initialView
+      : initialView === 'conversation'
+        ? 'home'
+        : 'help';
   const [activeView, setActiveView] = useState<WidgetView>(initialView);
-  const [previousView, setPreviousView] = useState<WidgetBaseView>(
-    initialView === 'conversation' ? 'home' : initialView,
-  );
+  const [previousView, setPreviousView] = useState<WidgetBaseView>(initialPreviousView);
+  const [activeHelpSpaceSlug, setActiveHelpSpaceSlug] = useState<string | null>(null);
+  const [activeCollectionSlug, setActiveCollectionSlug] = useState<string | null>(null);
+  const [activeArticleSlug, setActiveArticleSlug] = useState<string | null>(null);
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(isOpen);
 
@@ -69,6 +88,18 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   useEffect(() => {
     setActiveView(initialView);
   }, [initialView]);
+
+  useEffect(() => {
+    if (!openArticleRequest) {
+      return;
+    }
+
+    setActiveArticleSlug(openArticleRequest.articleSlug);
+    setActiveCollectionSlug(null);
+    setActiveHelpSpaceSlug(null);
+    setActiveView('help-article');
+    onViewChange?.('help-article');
+  }, [onViewChange, openArticleRequest]);
 
   useEffect(() => {
     let frameId: number | undefined;
@@ -102,11 +133,19 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const brandColor = config.branding?.primaryColor || '#6366f1';
   const showBranding = config.branding?.showBranding ?? true;
   const colorScheme = config.branding?.colorScheme || 'light';
+  const helpSpaces = config.helpSpaces ?? [];
+  const activeHelpSpace = helpSpaces.find((space) => space.slug === activeHelpSpaceSlug) || null;
   const positionClass = position.includes('left')
     ? 'helpin-chat-window--left'
     : 'helpin-chat-window--right';
+  const expandedClass = activeView === 'help-article' ? 'helpin-chat-window--expanded' : '';
 
   const handleNavigate = (view: WidgetBaseView) => {
+    if (view !== 'help') {
+      setActiveHelpSpaceSlug(null);
+      setActiveCollectionSlug(null);
+      setActiveArticleSlug(null);
+    }
     setActiveView(view as WidgetView);
     onViewChange?.(view as WidgetView);
   };
@@ -121,9 +160,31 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     handleStartConversation('home');
   };
 
+  const handleOpenHelpSpace = (spaceSlug: string) => {
+    setActiveHelpSpaceSlug(spaceSlug);
+    setActiveCollectionSlug(null);
+    setActiveArticleSlug(null);
+    setActiveView('help-space');
+    onViewChange?.('help-space');
+  };
+
+  const handleOpenHelpCollection = (collectionSlug: string) => {
+    setActiveHelpSpaceSlug((current) => current ?? helpSpaces[0]?.slug ?? null);
+    setActiveCollectionSlug(collectionSlug);
+    setActiveArticleSlug(null);
+    setActiveView('help-collection');
+    onViewChange?.('help-collection');
+  };
+
+  const handleOpenHelpArticle = (articleSlug: string) => {
+    setActiveArticleSlug(articleSlug);
+    setActiveView('help-article');
+    onViewChange?.('help-article');
+  };
+
   return (
     <div
-      className={`helpin-chat-window ${positionClass} ${isVisible ? 'helpin-chat-window--visible' : 'helpin-chat-window--hidden'} helpin-theme-${colorScheme}`}
+      className={`helpin-chat-window ${positionClass} ${expandedClass} ${isVisible ? 'helpin-chat-window--visible' : 'helpin-chat-window--hidden'} helpin-theme-${colorScheme}`}
     >
       {/* Close button — hidden in conversation view (has its own) and messages view with conversation list */}
       {activeView !== 'conversation' && !(activeView === 'messages' && conversations.length > 0) && (
@@ -213,12 +274,55 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         {activeView === 'help' && (
           <HelpView
             config={config}
-            onNavigate={(view) => {
-              if (view === 'conversation') {
-                handleStartConversation('help');
+            host={host}
+            widgetKey={widgetKey}
+            onContact={() => handleStartConversation('help')}
+            onSelectSpace={handleOpenHelpSpace}
+            onSelectCollection={handleOpenHelpCollection}
+          />
+        )}
+        {activeView === 'help-space' && activeHelpSpace && host && widgetKey && (
+          <HelpSpaceView
+            host={host}
+            widgetKey={widgetKey}
+            space={activeHelpSpace}
+            showBack={helpSpaces.length > 1}
+            onBack={() => handleNavigate('help')}
+            onSelectCollection={handleOpenHelpCollection}
+          />
+        )}
+        {activeView === 'help-collection' && activeCollectionSlug && host && widgetKey && (
+          <HelpCollectionView
+            host={host}
+            widgetKey={widgetKey}
+            collectionSlug={activeCollectionSlug}
+            onBack={() => {
+              setActiveArticleSlug(null);
+              if (helpSpaces.length > 1 && activeHelpSpaceSlug) {
+                setActiveView('help-space');
+                onViewChange?.('help-space');
                 return;
               }
-              handleNavigate(view);
+              setActiveView('help');
+              onViewChange?.('help');
+            }}
+            onSelectArticle={handleOpenHelpArticle}
+          />
+        )}
+        {activeView === 'help-article' && activeArticleSlug && host && widgetKey && (
+          <HelpArticleView
+            host={host}
+            widgetKey={widgetKey}
+            articleSlug={activeArticleSlug}
+            onBack={() => {
+              if (activeCollectionSlug) {
+                setActiveView('help-collection');
+                onViewChange?.('help-collection');
+                return;
+              }
+              setActiveArticleSlug(null);
+              setActiveView('help');
+              onViewChange?.('help');
             }}
           />
         )}

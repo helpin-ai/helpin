@@ -12,6 +12,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -28,6 +29,9 @@ type SupportInboxService struct {
 	wsPublisher        *websocket.Publisher
 	contactRepo        *repository.CRMContactRepository
 	userRepo           *repository.UserRepository
+	docsSpaceRepo      *repository.DocsSpaceRepository
+	docsCollectionRepo *repository.DocsCollectionRepository
+	docsHelpcenterRepo *repository.DocsHelpcenterRepository
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -43,6 +47,9 @@ func NewSupportInboxService(
 	wsPublisher *websocket.Publisher,
 	contactRepo *repository.CRMContactRepository,
 	userRepo *repository.UserRepository,
+	docsSpaceRepo *repository.DocsSpaceRepository,
+	docsCollectionRepo *repository.DocsCollectionRepository,
+	docsHelpcenterRepo *repository.DocsHelpcenterRepository,
 ) *SupportInboxService {
 	return &SupportInboxService{
 		conversationRepo:   conversationRepo,
@@ -56,7 +63,23 @@ func NewSupportInboxService(
 		wsPublisher:        wsPublisher,
 		contactRepo:        contactRepo,
 		userRepo:           userRepo,
+		docsSpaceRepo:      docsSpaceRepo,
+		docsCollectionRepo: docsCollectionRepo,
+		docsHelpcenterRepo: docsHelpcenterRepo,
 	}
+}
+
+func renderWidgetArticleHTML(content json.RawMessage) *string {
+	if len(content) == 0 {
+		return nil
+	}
+
+	rendered, err := tiptap.RenderHTML(content)
+	if err != nil || rendered == "" {
+		return nil
+	}
+
+	return &rendered
 }
 
 // ListConversations returns conversations with optional filters.

@@ -1381,6 +1381,7 @@ export interface SupportInboxSettings {
   launcher_icon: string;
   widget_name: string;
   widget_avatar_url: string;
+  widget_help_space_ids: string[];
   csat_enabled: boolean;
 }
 

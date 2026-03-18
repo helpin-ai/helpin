@@ -2,7 +2,7 @@ import { FunctionComponent } from 'preact';
 import { HomeIcon, MessageSquareIcon, CircleHelpIcon } from './icons';
 
 export type WidgetBaseView = 'home' | 'messages' | 'help';
-export type WidgetView = WidgetBaseView | 'conversation';
+export type WidgetView = WidgetBaseView | 'conversation' | 'help-space' | 'help-collection' | 'help-article';
 
 interface BottomNavProps {
   activeView: WidgetView;

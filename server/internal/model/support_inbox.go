@@ -6,21 +6,21 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
-	ID              string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	DisplayID       int        `json:"display_id" gorm:"not null;index"`
-	Subject         string     `json:"subject" gorm:"not null"`
-	Status          string     `json:"status" gorm:"not null;default:'open'"`     // open, in_progress, waiting, resolved, closed
-	Priority        string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
-	Channel         string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
-	CustomerName    *string    `json:"customer_name"`
-	CustomerEmail   *string    `json:"customer_email"`
-	OpenedByUserID  *string    `json:"opened_by_user_id" gorm:"type:uuid"`
-	AssignedAgentID *string    `json:"assigned_agent_id" gorm:"type:uuid"`
-	LinkedStoryID   *string    `json:"linked_story_id" gorm:"type:uuid"`
-	Source          string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
-	AnonymousID     *string    `json:"anonymous_id" gorm:"index"`
-	CRMContactID    *string    `json:"crm_contact_id" gorm:"type:uuid;index"`
+	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	DisplayID         int        `json:"display_id" gorm:"not null;index"`
+	Subject           string     `json:"subject" gorm:"not null"`
+	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, in_progress, waiting, resolved, closed
+	Priority          string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
+	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
+	CustomerName      *string    `json:"customer_name"`
+	CustomerEmail     *string    `json:"customer_email"`
+	OpenedByUserID    *string    `json:"opened_by_user_id" gorm:"type:uuid"`
+	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid"`
+	LinkedStoryID     *string    `json:"linked_story_id" gorm:"type:uuid"`
+	Source            string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
+	AnonymousID       *string    `json:"anonymous_id" gorm:"index"`
+	CRMContactID      *string    `json:"crm_contact_id" gorm:"type:uuid;index"`
 	ResolvedAt        *time.Time `json:"resolved_at"`
 	ClosedAt          *time.Time `json:"closed_at"`
 	TeamLastSeenAt    *time.Time `json:"team_last_seen_at" gorm:"type:timestamptz"`
@@ -185,7 +185,7 @@ type WidgetSessionRevokeRequest struct {
 
 // WidgetWSMessage is the envelope for all widget WS messages.
 type WidgetWSMessage struct {
-	Type string                 `json:"type"`
+	Type string         `json:"type"`
 	Data map[string]any `json:"data,omitempty"`
 }
 
@@ -304,8 +304,9 @@ type SupportInboxSettings struct {
 	OutsideHoursMessage   string                      `json:"outside_hours_message"`
 
 	// Widget Identity
-	WidgetName      string `json:"widget_name"`       // display name in widget header (defaults to workspace name)
-	WidgetAvatarURL string `json:"widget_avatar_url"` // custom avatar URL for the widget
+	WidgetName         string   `json:"widget_name"`           // display name in widget header (defaults to workspace name)
+	WidgetAvatarURL    string   `json:"widget_avatar_url"`     // custom avatar URL for the widget
+	WidgetHelpSpaceIDs []string `json:"widget_help_space_ids"` // selected external-capable docs spaces shown in widget help
 
 	// Branding
 	BrandColor      string `json:"brand_color"` // hex "#6366F1"
@@ -351,6 +352,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		OutsideHoursMessage: "We're currently offline. Leave a message and we'll get back to you!",
 		WidgetName:          "",
 		WidgetAvatarURL:     "",
+		WidgetHelpSpaceIDs:  []string{},
 		BrandColor:          "#6366F1",
 		ShowBranding:        true,
 		ColorScheme:         "light",
@@ -382,6 +384,7 @@ type UpdateInstallationSettingsRequest struct {
 	OutsideHoursMessage    *string                     `json:"outside_hours_message,omitempty"`
 	WidgetName             *string                     `json:"widget_name,omitempty"`
 	WidgetAvatarURL        *string                     `json:"widget_avatar_url,omitempty"`
+	WidgetHelpSpaceIDs     []string                    `json:"widget_help_space_ids,omitempty"`
 	BrandColor             *string                     `json:"brand_color,omitempty"`
 	ShowBranding           *bool                       `json:"show_branding,omitempty"`
 	ColorScheme            *string                     `json:"color_scheme,omitempty"`
@@ -408,14 +411,14 @@ type WidgetTokensResponse struct {
 
 // WidgetConfigBranding matches the widget-core WidgetConfig.branding shape.
 type WidgetConfigBranding struct {
-	PrimaryColor   string `json:"primaryColor"`
-	LogoURL        string `json:"logoUrl,omitempty"`
-	WelcomeMessage string `json:"welcomeMessage"`
-	WidgetPosition string `json:"widgetPosition"`
-	ShowBranding   bool   `json:"showBranding"`
-	LauncherIcon   string `json:"launcherIcon,omitempty"`
-	ColorScheme    string `json:"colorScheme,omitempty"`
-	ButtonColor    string `json:"buttonColor,omitempty"`
+	PrimaryColor    string `json:"primaryColor"`
+	LogoURL         string `json:"logoUrl,omitempty"`
+	WelcomeMessage  string `json:"welcomeMessage"`
+	WidgetPosition  string `json:"widgetPosition"`
+	ShowBranding    bool   `json:"showBranding"`
+	LauncherIcon    string `json:"launcherIcon,omitempty"`
+	ColorScheme     string `json:"colorScheme,omitempty"`
+	ButtonColor     string `json:"buttonColor,omitempty"`
 	ButtonIconColor string `json:"buttonIconColor,omitempty"`
 }
 
@@ -427,13 +430,50 @@ type WidgetConfigFeatures struct {
 	CSATRating  bool `json:"csatRating"`
 }
 
+// WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.
+type WidgetHelpSpace struct {
+	ID   string  `json:"id"`
+	Name string  `json:"name"`
+	Slug string  `json:"slug"`
+	Icon *string `json:"icon,omitempty"`
+}
+
+// WidgetHelpCollection is a widget help collection row.
+type WidgetHelpCollection struct {
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Slug         string  `json:"slug"`
+	Icon         *string `json:"icon,omitempty"`
+	ArticleCount int     `json:"article_count"`
+}
+
+// WidgetHelpArticleSummary is a widget help article list row.
+type WidgetHelpArticleSummary struct {
+	ID      string  `json:"id"`
+	Title   string  `json:"title"`
+	Slug    string  `json:"slug"`
+	Excerpt *string `json:"excerpt,omitempty"`
+	Icon    *string `json:"icon,omitempty"`
+}
+
+// WidgetHelpArticle is a widget help article detail response.
+type WidgetHelpArticle struct {
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Slug        string  `json:"slug"`
+	Excerpt     *string `json:"excerpt,omitempty"`
+	Icon        *string `json:"icon,omitempty"`
+	ContentHTML *string `json:"content_html"`
+}
+
 // WidgetConfigResponse is the public-facing widget config matching the
 // TypeScript WidgetConfig interface in packages/shared/src/types/widget-config.ts.
 type WidgetConfigResponse struct {
 	WorkspaceID   string               `json:"workspaceId"`
 	WorkspaceName string               `json:"workspaceName,omitempty"`
-	Branding      WidgetConfigBranding  `json:"branding"`
-	Features      WidgetConfigFeatures  `json:"features"`
+	Branding      WidgetConfigBranding `json:"branding"`
+	Features      WidgetConfigFeatures `json:"features"`
+	HelpSpaces    []WidgetHelpSpace    `json:"helpSpaces"`
 }
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.
