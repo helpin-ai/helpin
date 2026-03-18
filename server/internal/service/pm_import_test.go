@@ -720,6 +720,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,
+			logo_url TEXT,
 			timezone TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -846,6 +847,16 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
 			orchestrator_agent_id TEXT,
+			spec_document_id TEXT,
+			planning_repository_id TEXT,
+			planning_state TEXT NOT NULL DEFAULT 'not_started',
+			spec_clarifications BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
+			spec_clarified_at DATETIME,
+			spec_clarified_by TEXT,
+			approved_spec_version_id TEXT,
+			active_planning_session_id TEXT,
+			active_flow_run_id TEXT,
+			last_planning_run_id TEXT,
 			created_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -929,6 +940,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			text TEXT NOT NULL,
 			completed BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
+			assignee_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

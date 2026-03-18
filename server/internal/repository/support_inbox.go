@@ -190,6 +190,34 @@ func NewSupportConversationRepository(db *gorm.DB) *SupportConversationRepositor
 	return &SupportConversationRepository{db: db}
 }
 
+func (r *SupportConversationRepository) epochExpr() string {
+	if r.db != nil && r.db.Dialector.Name() == "sqlite" {
+		return "'1970-01-01 00:00:00'"
+	}
+	return "'1970-01-01'::timestamptz"
+}
+
+func (r *SupportConversationRepository) nowExpr() string {
+	if r.db != nil && r.db.Dialector.Name() == "sqlite" {
+		return "CURRENT_TIMESTAMP"
+	}
+	return "NOW()"
+}
+
+func (r *SupportConversationRepository) textPrefixExpr(column string, limit int) string {
+	if r.db != nil && r.db.Dialector.Name() == "sqlite" {
+		return fmt.Sprintf("substr(%s, 1, %d)", column, limit)
+	}
+	return fmt.Sprintf("LEFT(%s, %d)", column, limit)
+}
+
+func (r *SupportConversationRepository) maybeAcquireWorkspaceDisplayIDLock(tx *gorm.DB, workspaceID string) {
+	if tx == nil || tx.Dialector.Name() != "postgres" {
+		return
+	}
+	tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", workspaceID)
+}
+
 // List returns conversations with optional filters and pagination.
 func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
 	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("workspace_id = ?", workspaceID)
@@ -227,8 +255,8 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 
 	var conversations []model.SupportConversation
 	if err := fetch.
-		Select(`support_conversations.*, (
-			SELECT CASE WHEN m.is_internal THEN 'Note: ' || LEFT(m.content, 100) ELSE LEFT(m.content, 100) END
+		Select(fmt.Sprintf(`support_conversations.*, (
+			SELECT CASE WHEN m.is_internal THEN 'Note: ' || %s ELSE %s END
 			FROM support_messages m
 			WHERE m.conversation_id = support_conversations.id
 			ORDER BY m.created_at DESC LIMIT 1
@@ -239,8 +267,8 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 			  AND sm.is_internal = false
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
-			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, '1970-01-01'::timestamptz)
-		) AS unread_count`).
+			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
+		) AS unread_count`, r.textPrefixExpr("m.content", 100), r.textPrefixExpr("m.content", 100), r.epochExpr())).
 		Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
@@ -263,7 +291,7 @@ func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID
 func (r *SupportConversationRepository) Create(ctx context.Context, conversation *model.SupportConversation) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Advisory lock on workspace to prevent duplicate display_id under concurrency.
-		tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", conversation.WorkspaceID)
+		r.maybeAcquireWorkspaceDisplayIDLock(tx, conversation.WorkspaceID)
 
 		var maxDisplayID int
 		tx.Model(&model.SupportConversation{}).Where("workspace_id = ?", conversation.WorkspaceID).
@@ -356,7 +384,7 @@ func (r *SupportConversationRepository) ListByContact(ctx context.Context, works
 func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error) {
 	var conversations []model.SupportConversation
 	if err := r.db.WithContext(ctx).
-		Select(`support_conversations.*,
+		Select(fmt.Sprintf(`support_conversations.*,
 		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.is_internal = false ORDER BY created_at DESC LIMIT 1) AS last_message,
 		(SELECT COUNT(*)
 			FROM support_messages sm
@@ -364,8 +392,8 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 			  AND sm.is_internal = false
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
 			  AND sm.message_type = 'reply'
-			  AND sm.created_at > COALESCE(support_conversations.contact_last_seen_at, '1970-01-01'::timestamptz)
-		) AS unread_count`).
+			  AND sm.created_at > COALESCE(support_conversations.contact_last_seen_at, %s)
+		) AS unread_count`, r.epochExpr())).
 		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID).
 		Order("updated_at DESC").
 		Find(&conversations).Error; err != nil {
@@ -377,9 +405,9 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 // MarkInternalRead sets team_last_seen_at = NOW() if unread messages exist beyond the current cursor.
 // Uses raw SQL to avoid GORM's autoUpdateTime touching updated_at (which would re-sort the conversation).
 func (r *SupportConversationRepository) MarkInternalRead(ctx context.Context, conversationID string) error {
-	result := r.db.WithContext(ctx).Exec(`
+	result := r.db.WithContext(ctx).Exec(fmt.Sprintf(`
 		UPDATE support_conversations
-		SET team_last_seen_at = NOW()
+		SET team_last_seen_at = %s
 		WHERE id = ?
 		  AND EXISTS (
 			SELECT 1 FROM support_messages sm
@@ -387,9 +415,9 @@ func (r *SupportConversationRepository) MarkInternalRead(ctx context.Context, co
 			  AND sm.is_internal = false
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
-			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, '1970-01-01'::timestamptz)
+			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
 		  )
-	`, conversationID)
+	`, r.nowExpr(), r.epochExpr()), conversationID)
 	if result.Error != nil {
 		return fmt.Errorf("mark internal read: %w", result.Error)
 	}
@@ -399,9 +427,9 @@ func (r *SupportConversationRepository) MarkInternalRead(ctx context.Context, co
 // MarkContactRead sets contact_last_seen_at = NOW() if unread messages exist beyond the current cursor.
 // Uses raw SQL to avoid GORM's autoUpdateTime touching updated_at (which would re-sort the conversation).
 func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, conversationID string) error {
-	result := r.db.WithContext(ctx).Exec(`
+	result := r.db.WithContext(ctx).Exec(fmt.Sprintf(`
 		UPDATE support_conversations
-		SET contact_last_seen_at = NOW()
+		SET contact_last_seen_at = %s
 		WHERE id = ?
 		  AND EXISTS (
 			SELECT 1 FROM support_messages sm
@@ -409,9 +437,9 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 			  AND sm.is_internal = false
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
 			  AND sm.message_type = 'reply'
-			  AND sm.created_at > COALESCE(support_conversations.contact_last_seen_at, '1970-01-01'::timestamptz)
+			  AND sm.created_at > COALESCE(support_conversations.contact_last_seen_at, %s)
 		  )
-	`, conversationID)
+	`, r.nowExpr(), r.epochExpr()), conversationID)
 	if result.Error != nil {
 		return fmt.Errorf("mark contact read: %w", result.Error)
 	}
@@ -421,7 +449,7 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 // GetUnreadStats returns aggregate unread conversation counts for a workspace.
 func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, workspaceID, userID string) (model.UnreadStats, error) {
 	var stats model.UnreadStats
-	err := r.db.WithContext(ctx).Raw(`
+	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT
 			COUNT(*) FILTER (WHERE u.unread > 0) AS total,
 			COUNT(*) FILTER (WHERE u.unread > 0 AND sc.opened_by_user_id = ?) AS my_inbox,
@@ -434,11 +462,11 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 			  AND sm.is_internal = false
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
-			  AND sm.created_at > COALESCE(sc.team_last_seen_at, '1970-01-01'::timestamptz)
+			  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
 		) u
 		WHERE sc.workspace_id = ?
 		  AND sc.status != 'closed'
-	`, userID, workspaceID).Scan(&stats).Error
+	`, r.epochExpr()), userID, workspaceID).Scan(&stats).Error
 	if err != nil {
 		return stats, fmt.Errorf("get unread stats: %w", err)
 	}

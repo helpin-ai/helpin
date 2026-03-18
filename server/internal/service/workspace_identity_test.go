@@ -890,6 +890,8 @@ func createPMEpicObjectiveTables(t *testing.T, db *gorm.DB) {
 			spec_clarified_at DATETIME,
 			spec_clarified_by TEXT,
 			approved_spec_version_id TEXT,
+			active_planning_session_id TEXT,
+			active_flow_run_id TEXT,
 			last_planning_run_id TEXT,
 			created_by TEXT,
 			created_at DATETIME,

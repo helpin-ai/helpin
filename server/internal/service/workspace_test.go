@@ -41,7 +41,11 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 		`CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agent_handoffs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS team_workspace_memberships (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS team_workspace_memberships (
+			id TEXT PRIMARY KEY,
+			team_id TEXT NOT NULL,
+			workspace_member_id TEXT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS workspace_managers (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS job_role_criteria (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS bonus_tiers (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
