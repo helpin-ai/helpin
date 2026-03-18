@@ -211,11 +211,11 @@ export function HelpCenterImportSection({
 
       {/* Step 0: Connect */}
       {step === 0 && (
-        <div className="space-y-4">
+        <div className="mx-auto max-w-md space-y-4">
           <div className="space-y-2">
             <Label>Source</Label>
             <Select value="helpscout" disabled>
-              <SelectTrigger className="w-full">
+              <SelectTrigger>
                 <SelectValue placeholder="Select source" />
               </SelectTrigger>
               <SelectContent>
@@ -236,7 +236,7 @@ export function HelpCenterImportSection({
               Find your API key in HelpScout → Manage → API Keys
             </p>
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-center">
             <Button onClick={handleConnect} disabled={!editable || connecting || !apiKey.trim()}>
               {connecting ? 'Connecting...' : 'Connect & Preview'}
             </Button>
