@@ -833,23 +833,39 @@ export function CreateStoryModal({
                   </div>
                   <div className="px-4 py-2 space-y-2">
                     {pendingFiles.length > 0 && (
-                      <div className="space-y-1">
-                        {pendingFiles.map((file, idx) => (
-                          <div key={idx} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent/50 transition-colors">
-                            <Paperclip className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-                            <span className="flex-1 text-sm text-foreground truncate">{file.name}</span>
-                            <span className="text-[11px] text-muted-foreground shrink-0">
-                              {file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
-                            </span>
-                            <button
-                              type="button"
-                              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
-                              onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                        {pendingFiles.map((file, idx) => {
+                          const isImage = file.type.startsWith('image/');
+                          const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
+                          return (
+                            <div key={idx} className="group relative">
+                              <div className="overflow-hidden rounded-lg border border-border/60">
+                                {isImage ? (
+                                  <img
+                                    src={URL.createObjectURL(file)}
+                                    alt={file.name}
+                                    className="h-20 w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
+                                    <Paperclip className="h-6 w-6 text-muted-foreground/50" />
+                                    <span className="text-[9px] font-medium uppercase text-muted-foreground tracking-wide">{ext}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  className="flex h-6 w-6 items-center justify-center rounded bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-destructive"
+                                  onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                              <p className="mt-1 truncate text-[10px] text-muted-foreground" title={file.name}>{file.name}</p>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     <label className="flex items-center justify-center gap-2 rounded-md border border-dashed border-border/60 px-3 py-2 cursor-pointer hover:border-border hover:bg-muted/30 transition-colors">
