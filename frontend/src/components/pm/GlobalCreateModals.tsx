@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   CalendarDays,
@@ -32,13 +32,18 @@ import { pmStoryService } from '@/lib/services/pmStoryService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { toast } from 'sonner';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { EpicHealth, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
-import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
+import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
+import { extractInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
+import { MemberPickerPopover, MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { UserAvatar } from '@/components/pm/UserAvatar';
+import { findAssignableMember } from '@/lib/assignableMembers';
 import {
   dismissSprintAutomationPrompt,
   shouldPromptSprintAutomation,
@@ -100,7 +105,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   const { data: epicStates = [] } = useEpicStates(workspaceId);
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
-  const ownerOptions = buildAssignableMemberOptions(assignableMembers);
   const storeTeamId = useGlobalCreateStore((s) => s.initialTeamId);
 
   const [form, setForm] = useState({
@@ -114,10 +118,22 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     targetDate: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const mentionTeams = useMemo(
+    () => filterMentionTeams(teams, form.teamId ? [form.teamId] : []),
+    [teams, form.teamId],
+  );
+  const cleanupInlineDraftUploads = useCallback(async () => {
+    const attachmentIds = extractInlineAttachmentIds(form.description);
+    if (attachmentIds.length === 0) return;
+    await Promise.allSettled(
+      attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+    );
+  }, [form.description, workspaceId]);
 
   const create = async () => {
-    if (!form.name.trim() || !form.teamId || submitting) return;
+    if (!form.name.trim() || !form.teamId || submitting || descriptionPendingUploads > 0) return;
     setSubmitting(true);
     const { error: createError } = await pmEpicService.create({
       workspace_id: workspaceId,
@@ -145,6 +161,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     if (hasUnsavedChanges) {
       if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
     }
+    void cleanupInlineDraftUploads();
     onClose();
   };
 
@@ -189,7 +206,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
                   placeholder="Add a description..."
                   className="border-transparent shadow-none"
-                  teams={teams}
+                  uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+                  onUploadStateChange={setDescriptionPendingUploads}
+                  teams={mentionTeams}
                   members={assignableMembers}
                 />
               </div>
@@ -215,17 +234,28 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
                 <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Owner</span>
-                <Select value={form.ownerMemberId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, ownerMemberId: v === '__none__' ? '' : v }))}>
-                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {ownerOptions.map((o) => (
-                      <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MemberPickerPopover
+                  value={form.ownerMemberId || '__none__'}
+                  members={assignableMembers}
+                  noneLabel="None"
+                  onChange={(value) => setForm((f) => ({ ...f, ownerMemberId: value === '__none__' ? '' : value }))}
+                  renderTrigger={() => {
+                    const selectedMember = findAssignableMember(assignableMembers, form.ownerMemberId);
+                    return (
+                      <>
+                        {selectedMember ? (
+                          <UserAvatar
+                            name={selectedMember.display_name || selectedMember.email}
+                            avatarUrl={selectedMember.avatar_url}
+                            className="h-4 w-4"
+                            fallbackClassName="text-[7px]"
+                          />
+                        ) : null}
+                        <span>{selectedMember?.display_name || selectedMember?.email || 'None'}</span>
+                      </>
+                    );
+                  }}
+                />
 
                 <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">State</span>
@@ -282,7 +312,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
               Discard
             </Button>
-            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || submitting}>
+            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Epic'}
             </Button>
@@ -308,13 +338,25 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
     teamId: storeTeamId ?? '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [automationPrompt, setAutomationPrompt] = useState<SprintAutomationPromptState | null>(null);
   const [enablingAutomation, setEnablingAutomation] = useState(false);
   const [dismissingAutomation, setDismissingAutomation] = useState(false);
+  const mentionTeams = useMemo(
+    () => filterMentionTeams(teams, form.teamId ? [form.teamId] : []),
+    [teams, form.teamId],
+  );
+  const cleanupInlineDraftUploads = useCallback(async () => {
+    const attachmentIds = extractInlineAttachmentIds(form.description);
+    if (attachmentIds.length === 0) return;
+    await Promise.allSettled(
+      attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+    );
+  }, [form.description, workspaceId]);
 
   const create = async () => {
-    if (!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting) return;
+    if (!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting || descriptionPendingUploads > 0) return;
     setSubmitting(true);
     const { error: createError } = await pmSprintService.create({
       workspace_id: workspaceId,
@@ -530,6 +572,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
     if (hasUnsavedChanges) {
       if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
     }
+    void cleanupInlineDraftUploads();
     onClose();
   };
 
@@ -573,8 +616,10 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
                   placeholder="Add a description..."
+                  uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+                  onUploadStateChange={setDescriptionPendingUploads}
                   className="border-transparent shadow-none"
-                  teams={teams}
+                  teams={mentionTeams}
                   members={assignableMembers}
                 />
               </div>
@@ -624,7 +669,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
               Discard
             </Button>
-            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting}>
+            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Sprint'}
             </Button>
@@ -703,7 +748,6 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
   const { canEdit } = usePermissions(access);
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
-  const ownerOptions = buildAssignableMemberOptions(assignableMembers);
 
   // Close immediately if the user lacks edit permission
   useEffect(() => {
@@ -721,10 +765,22 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
     targetDate: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const mentionTeams = useMemo(
+    () => filterMentionTeams(teams, form.teamIds),
+    [teams, form.teamIds],
+  );
+  const cleanupInlineDraftUploads = useCallback(async () => {
+    const attachmentIds = extractInlineAttachmentIds(form.description);
+    if (attachmentIds.length === 0) return;
+    await Promise.allSettled(
+      attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+    );
+  }, [form.description, workspaceId]);
 
   const create = async () => {
-    if (!form.name.trim() || submitting) return;
+    if (!form.name.trim() || submitting || descriptionPendingUploads > 0) return;
     setSubmitting(true);
     const { error: createError } = await pmObjectiveService.create({
       workspace_id: workspaceId,
@@ -752,6 +808,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
     if (hasUnsavedChanges) {
       if (!window.confirm('You have unsaved changes. Are you sure you want to discard them?')) return;
     }
+    void cleanupInlineDraftUploads();
     onClose();
   };
 
@@ -795,8 +852,10 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
                   placeholder="Add a description..."
+                  uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+                  onUploadStateChange={setDescriptionPendingUploads}
                   className="border-transparent shadow-none"
-                  teams={teams}
+                  teams={mentionTeams}
                   members={assignableMembers}
                 />
               </div>
@@ -868,11 +927,38 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 
                 <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                 <span className="text-xs text-muted-foreground self-center">Owners</span>
-                <MultiSelectPopover
-                  items={ownerOptions}
-                  selected={form.ownerMemberIds}
+                <MultiMemberPickerPopover
+                  values={form.ownerMemberIds}
+                  members={assignableMembers}
                   onChange={(ids) => setForm((f) => ({ ...f, ownerMemberIds: ids }))}
-                  placeholder="Select owners"
+                  renderTrigger={() => {
+                    const selectedMembers = assignableMembers.filter((member) => form.ownerMemberIds.includes(member.id));
+                    if (selectedMembers.length === 0) {
+                      return <span className="text-muted-foreground">Select owners</span>;
+                    }
+
+                    const label = selectedMembers
+                      .map((member) => member.display_name || member.email)
+                      .join(', ');
+
+                    return (
+                      <>
+                        <div className="flex items-center -space-x-1">
+                          {selectedMembers.slice(0, 2).map((member) => (
+                            <UserAvatar
+                              key={member.id}
+                              name={member.display_name || member.email}
+                              avatarUrl={member.avatar_url}
+                              className="h-4 w-4"
+                              fallbackClassName="text-[7px]"
+                            />
+                          ))}
+                        </div>
+                        <span className="truncate">{label}</span>
+                      </>
+                    );
+                  }}
+                  contentClassName="w-[260px]"
                 />
 
                 <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
@@ -901,7 +987,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
             <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
               Discard
             </Button>
-            <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting}>
+            <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Objective'}
             </Button>

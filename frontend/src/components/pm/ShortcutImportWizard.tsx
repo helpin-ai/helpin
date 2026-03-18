@@ -437,7 +437,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
   return (
     <div className="space-y-6">
       {/* Step indicator */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-center gap-2">
         {STEP_LABELS.map((label, i) => (
           <div key={label} className="flex items-center gap-2">
             {i > 0 && <div className="h-px w-8 bg-border" />}

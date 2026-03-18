@@ -20,9 +20,27 @@ interface Props {
   onConfirmPlan: () => void;
   confirmingPlan: boolean;
   canConfirm: boolean;
+  canRequestChanges?: boolean;
+  requestChangesComment?: string;
+  onRequestChangesCommentChange?: (value: string) => void;
+  onRequestChanges?: () => void;
+  requestingChanges?: boolean;
 }
 
-export function ReviewStoriesStep({ status, proposal, editedStories, onUpdateStory, onConfirmPlan, confirmingPlan, canConfirm }: Props) {
+export function ReviewStoriesStep({
+  status,
+  proposal,
+  editedStories,
+  onUpdateStory,
+  onConfirmPlan,
+  confirmingPlan,
+  canConfirm,
+  canRequestChanges = false,
+  requestChangesComment = '',
+  onRequestChangesCommentChange,
+  onRequestChanges,
+  requestingChanges = false,
+}: Props) {
   const [expanded, setExpanded] = useState(status === 'current');
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
 
@@ -115,10 +133,32 @@ export function ReviewStoriesStep({ status, proposal, editedStories, onUpdateSto
           ))}
 
           <div className="pt-2">
-            <Button size="sm" onClick={onConfirmPlan} disabled={!canConfirm || confirmingPlan} className="w-full sm:w-auto">
-              {confirmingPlan ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-              Create {editedStories.length} {editedStories.length === 1 ? 'story' : 'stories'}
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+              <Button size="sm" onClick={onConfirmPlan} disabled={!canConfirm || confirmingPlan} className="w-full sm:w-auto">
+                {confirmingPlan ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                Create {editedStories.length} {editedStories.length === 1 ? 'story' : 'stories'}
+              </Button>
+              {canRequestChanges && onRequestChanges && onRequestChangesCommentChange && (
+                <div className="flex-1 space-y-2">
+                  <Textarea
+                    value={requestChangesComment}
+                    onChange={(event) => onRequestChangesCommentChange(event.target.value)}
+                    className="min-h-[88px] text-xs"
+                    placeholder="Explain what the planner should revise before these stories are approved..."
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onRequestChanges}
+                    disabled={requestingChanges || !requestChangesComment.trim()}
+                    className="w-full sm:w-auto"
+                  >
+                    {requestingChanges ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    Request changes
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

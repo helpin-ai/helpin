@@ -18,6 +18,7 @@ type PMEpicService struct {
 	storyRepo           *repository.PMStoryRepository
 	labelRepo           *repository.PMLabelRepository
 	gitRepo             *repository.GitRepositoryRepository
+	attachmentRepo      *repository.PMAttachmentRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
@@ -26,12 +27,13 @@ type PMEpicService struct {
 }
 
 // NewPMEpicService creates a new PMEpicService.
-func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, gitRepo *repository.GitRepositoryRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMEpicService {
+func NewPMEpicService(epicRepo *repository.PMEpicRepository, storyRepo *repository.PMStoryRepository, labelRepo *repository.PMLabelRepository, gitRepo *repository.GitRepositoryRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMEpicService {
 	return &PMEpicService{
 		epicRepo:            epicRepo,
 		storyRepo:           storyRepo,
 		labelRepo:           labelRepo,
 		gitRepo:             gitRepo,
+		attachmentRepo:      attachmentRepo,
 		workspaceRepo:       workspaceRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
@@ -159,6 +161,11 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 		s.logger.ErrorContext(ctx, "failed to create epic", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
+	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "epic", epic.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to epic", "error", err, "epic_id", epic.ID, "attachment_ids", req.AttachmentIDs)
+		}
+	}
 	if len(req.LabelIDs) > 0 {
 		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
 			return nil, err
@@ -192,6 +199,22 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit epic created notification", "error", err, "epic_id", epic.ID)
+		}
+		if epic.Description != nil {
+			if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:     epic.WorkspaceID,
+				ActorID:         actorID,
+				Body:            *epic.Description,
+				EventType:       "epic.mention",
+				EntityType:      "epic",
+				EntityID:        epic.ID,
+				Title:           "mentioned you in epic " + epic.Name,
+				TeamID:          derefString(epic.TeamID),
+				ReadableTeamIDs: mentionScopeForTeamID(epic.TeamID),
+				EntitySnapshot:  model.JSONB{"title": epic.Name},
+			}); err != nil {
+				s.logger.ErrorContext(ctx, "failed to emit epic mention notification", "error", err, "epic_id", epic.ID)
+			}
 		}
 	}
 
@@ -304,6 +327,22 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 			},
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to emit epic updated notification", "error", err, "epic_id", epic.ID)
+		}
+		if req.Description != nil {
+			if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:     epic.WorkspaceID,
+				ActorID:         actorID,
+				Body:            *req.Description,
+				EventType:       "epic.mention",
+				EntityType:      "epic",
+				EntityID:        epic.ID,
+				Title:           "mentioned you in epic " + epic.Name,
+				TeamID:          derefString(epic.TeamID),
+				ReadableTeamIDs: mentionScopeForTeamID(epic.TeamID),
+				EntitySnapshot:  model.JSONB{"title": epic.Name},
+			}); err != nil {
+				s.logger.ErrorContext(ctx, "failed to emit epic mention notification", "error", err, "epic_id", epic.ID)
+			}
 		}
 	}
 

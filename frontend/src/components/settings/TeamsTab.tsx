@@ -1510,32 +1510,64 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex -space-x-1.5">
-                            {teamMembers.slice(0, 4).map(({ membership, user }) => (
-                              <UserAvatar
-                                key={membership.id}
-                                name={user?.full_name ?? user?.email ?? '?'}
-                                className="h-5 w-5 ring-1 ring-background"
-                              />
-                            ))}
-                          </div>
-                          {memberCount > 4 && (
-                            <span className="text-xs text-muted-foreground">+{memberCount - 4}</span>
-                          )}
-                          {memberCount === 0 && (
-                            <span className="text-xs text-muted-foreground/50">&mdash;</span>
-                          )}
-                        </div>
+                        {memberCount > 0 ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-1.5 cursor-default">
+                                <div className="flex -space-x-1.5">
+                                  {teamMembers.slice(0, 4).map(({ membership, user }) => (
+                                    <UserAvatar
+                                      key={membership.id}
+                                      name={user?.full_name ?? user?.email ?? '?'}
+                                      avatarUrl={user?.avatar_url ?? undefined}
+                                      className="h-5 w-5 ring-1 ring-background"
+                                    />
+                                  ))}
+                                </div>
+                                {memberCount > 4 && (
+                                  <span className="text-xs text-muted-foreground">+{memberCount - 4}</span>
+                                )}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="p-2">
+                              <div className="space-y-1.5">
+                                {teamMembers.map(({ membership, user }) => (
+                                  <div key={membership.id} className="flex items-center gap-2">
+                                    <UserAvatar
+                                      name={user?.full_name ?? user?.email ?? '?'}
+                                      avatarUrl={user?.avatar_url ?? undefined}
+                                      className="h-5 w-5"
+                                    />
+                                    <span className="text-xs">{user?.full_name ?? user?.email ?? '?'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50">&mdash;</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {(() => {
                           const managers = teamMembers.filter(({ membership }) => membership.role === 'owner');
                           if (managers.length === 0) return <span className="text-xs text-muted-foreground/50">&mdash;</span>;
                           return (
-                            <span className="text-sm text-muted-foreground truncate">
-                              {managers.map(({ user }) => user?.full_name || user?.email || 'Unknown').join(', ')}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <div className="flex -space-x-1.5">
+                                {managers.map(({ membership, user }) => (
+                                  <UserAvatar
+                                    key={membership.id}
+                                    name={user?.full_name ?? user?.email ?? '?'}
+                                    avatarUrl={user?.avatar_url ?? undefined}
+                                    className="h-5 w-5 ring-1 ring-background"
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-sm text-muted-foreground truncate">
+                                {managers.map(({ user }) => user?.full_name || user?.email || 'Unknown').join(', ')}
+                              </span>
+                            </div>
                           );
                         })()}
                       </TableCell>

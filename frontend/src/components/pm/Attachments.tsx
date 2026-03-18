@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Download, Loader2, Paperclip, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { LoadingImage } from '@/components/ui/loading-image';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
 import type { AttachmentResponse } from '@/lib/pmTypes';
@@ -26,9 +27,10 @@ import defaultIcon from '@/assets/attachment/default-icon.png';
 
 interface AttachmentsProps {
   workspaceId: string;
-  entityType: 'story' | 'epic' | 'comment';
+  entityType: 'story' | 'epic' | 'objective' | 'sprint' | 'comment';
   entityId: string;
   memberNameMap?: Map<string, string>;
+  onDeleteAttachment?: (attachment: AttachmentResponse) => Promise<'handled' | 'prevent' | 'fallback'>;
 }
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -80,7 +82,7 @@ function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/') && !contentType.includes('svg');
 }
 
-export function Attachments({ workspaceId, entityType, entityId, memberNameMap }: AttachmentsProps) {
+export function Attachments({ workspaceId, entityType, entityId, memberNameMap, onDeleteAttachment }: AttachmentsProps) {
   const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -152,13 +154,24 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
     [workspaceId, entityType, entityId],
   );
 
-  const handleDelete = async (id: string) => {
-    const { error: delError } = await pmAttachmentService.remove(workspaceId, id);
+  const handleDelete = async (entry: AttachmentResponse) => {
+    if (onDeleteAttachment) {
+      const action = await onDeleteAttachment(entry);
+      if (action === 'handled') {
+        setAttachments((prev) => prev.filter((item) => item.attachment.id !== entry.attachment.id));
+        return;
+      }
+      if (action === 'prevent') {
+        return;
+      }
+    }
+
+    const { error: delError } = await pmAttachmentService.remove(workspaceId, entry.attachment.id);
     if (delError) {
       setError(delError);
       return;
     }
-    setAttachments((prev) => prev.filter((a) => a.attachment.id !== id));
+    setAttachments((prev) => prev.filter((a) => a.attachment.id !== entry.attachment.id));
   };
 
   const onDragOver = (e: React.DragEvent) => {
@@ -219,7 +232,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
 
       {/* Unified attachment grid — images + files as consistent cards */}
       {attachments.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
           {attachments.map((entry) => {
             const isImage = isImageType(entry.attachment.content_type);
             const ext = getFileExtension(entry.attachment.file_name);
@@ -231,20 +244,21 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
                   onClick={() => isImage ? setPreviewEntry(entry) : window.open(resolveUrl(entry), '_blank')}
                 >
                   {isImage ? (
-                    <img
+                    <LoadingImage
                       src={resolveUrl(entry)}
                       alt={entry.attachment.file_name}
-                      className="h-28 w-full object-cover transition-transform group-hover:scale-105"
+                      containerClassName="block h-20 w-full overflow-hidden"
+                      className="h-20 w-full object-cover transition-transform group-hover:scale-105"
                       loading="lazy"
                     />
                   ) : (
-                    <div className="flex h-28 flex-col items-center justify-center gap-2 bg-muted/30">
+                    <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
                       <img
                         src={getFileTypeIcon(ext)}
                         alt={ext}
-                        className="h-10 w-10"
+                        className="h-8 w-8"
                       />
-                      <span className="text-[10px] font-medium uppercase text-muted-foreground tracking-wide">
+                      <span className="text-[9px] font-medium uppercase text-muted-foreground tracking-wide">
                         {ext || 'FILE'}
                       </span>
                     </div>
@@ -266,17 +280,17 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
                       variant="secondary"
                       size="icon"
                       className="h-6 w-6 bg-background/80 backdrop-blur-sm"
-                      onClick={(e) => { e.stopPropagation(); handleDelete(entry.attachment.id); }}
+                      onClick={(e) => { e.stopPropagation(); void handleDelete(entry); }}
                     >
                       <Trash2 className="h-3 w-3 text-destructive" />
                     </Button>
                   </QuickTooltip>
                 </div>
-                <p className="mt-1.5 truncate text-[11px] text-muted-foreground" title={entry.attachment.file_name}>
+                <p className="mt-1 truncate text-[10px] text-muted-foreground" title={entry.attachment.file_name}>
                   {entry.attachment.file_name}
                 </p>
                 {memberNameMap && (
-                  <p className="truncate text-[10px] text-muted-foreground/70">
+                  <p className="truncate text-[9px] text-muted-foreground/70">
                     {memberNameMap.get(entry.attachment.uploaded_by_id) ?? 'Unknown'}
                   </p>
                 )}
@@ -336,9 +350,10 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap }
               </Button>
             )}
 
-            <img
+            <LoadingImage
               src={resolveUrl(previewEntry)}
               alt={previewEntry.attachment.file_name}
+              containerClassName="max-h-[50vh] max-w-[60vw] overflow-hidden rounded-lg"
               className="max-h-[50vh] max-w-[60vw] rounded-lg object-contain"
               onClick={(e) => e.stopPropagation()}
             />

@@ -1,5 +1,7 @@
 import type { AssignableMember } from './types';
 
+type AssignableMemberValueGetter = (member: AssignableMember) => string;
+
 export function formatAssignableMemberName(member: AssignableMember): string {
   const displayName = member.display_name?.trim() || member.email;
   if (member.status !== 'pending') {
@@ -28,4 +30,28 @@ export function buildAssignableMemberNameMap(members: AssignableMember[]) {
     }
   }
   return map;
+}
+
+export function matchesAssignableMemberValue(
+  member: AssignableMember,
+  value: string | null | undefined,
+  getMemberValue?: AssignableMemberValueGetter,
+) {
+  if (!value) {
+    return false;
+  }
+
+  return (
+    member.id === value ||
+    member.user_id === value ||
+    (getMemberValue ? getMemberValue(member) === value : false)
+  );
+}
+
+export function findAssignableMember(
+  members: AssignableMember[],
+  value: string | null | undefined,
+  getMemberValue?: AssignableMemberValueGetter,
+) {
+  return members.find((member) => matchesAssignableMemberValue(member, value, getMemberValue));
 }

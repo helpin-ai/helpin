@@ -88,6 +88,15 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE team_workspace_memberships (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			team_id TEXT NOT NULL,
+			workspace_member_id TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'member',
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE(team_id, workspace_member_id)
+		)`,
 		`CREATE TABLE workspace_settings (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL UNIQUE,
@@ -197,6 +206,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			spec_clarified_at DATETIME,
 			spec_clarified_by TEXT,
 			approved_spec_version_id TEXT,
+			active_planning_session_id TEXT,
+			active_flow_run_id TEXT,
 			last_planning_run_id TEXT,
 			created_by TEXT,
 			created_at DATETIME,
@@ -287,6 +298,16 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			PRIMARY KEY (story_id, user_id)
 		)`,
+		`CREATE TABLE pm_story_links (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			source_story_id TEXT NOT NULL,
+			target_story_id TEXT NOT NULL,
+			link_type TEXT NOT NULL,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE pm_activity_log (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
@@ -302,7 +323,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE pm_comments (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-			workspace_id TEXT NOT NULL,
+			workspace_id TEXT,
 			entity_type TEXT NOT NULL,
 			entity_id TEXT NOT NULL,
 			author_id TEXT NOT NULL,
@@ -310,6 +331,13 @@ func newTestDB(t *testing.T) *gorm.DB {
 			parent_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE pm_comment_reactions (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			comment_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			emoji TEXT NOT NULL,
+			created_at DATETIME
 		)`,
 		`CREATE TABLE pm_attachments (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -319,9 +347,10 @@ func newTestDB(t *testing.T) *gorm.DB {
 			file_name TEXT NOT NULL,
 			file_size INTEGER NOT NULL DEFAULT 0,
 			content_type TEXT NOT NULL DEFAULT '',
-			s3_key TEXT NOT NULL,
+			storage_key TEXT NOT NULL,
 			url TEXT,
-			uploaded_by TEXT,
+			is_uploaded BOOLEAN NOT NULL DEFAULT 0,
+			uploaded_by_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -330,18 +359,16 @@ func newTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			quarter_id TEXT,
-			owner_id TEXT,
-			owner_member_id TEXT,
-			parent_id TEXT,
-			progress REAL NOT NULL DEFAULT 0,
-			status TEXT NOT NULL DEFAULT 'not_started',
-			level TEXT NOT NULL DEFAULT 'team',
+			external_id TEXT,
+			objective_type TEXT NOT NULL DEFAULT 'tactical',
+			state TEXT NOT NULL DEFAULT 'not_started',
+			planned_start_date TEXT,
+			deadline TEXT,
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
-			started_at DATETIME,
-			completed_at DATETIME,
+			position INTEGER NOT NULL DEFAULT 0,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			created_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -349,13 +376,16 @@ func newTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			objective_id TEXT NOT NULL,
 			name TEXT NOT NULL,
-			description TEXT,
-			target_value REAL NOT NULL DEFAULT 100,
+			result_type TEXT NOT NULL DEFAULT 'boolean',
+			initial_value REAL NOT NULL DEFAULT 0,
 			current_value REAL NOT NULL DEFAULT 0,
-			unit TEXT NOT NULL DEFAULT 'percent',
-			owner_id TEXT,
-			owner_member_id TEXT,
-			status TEXT NOT NULL DEFAULT 'not_started',
+			target_value REAL NOT NULL DEFAULT 100,
+			progress REAL NOT NULL DEFAULT 0,
+			note TEXT,
+			note_updated_by TEXT,
+			note_updated_at DATETIME,
+			position INTEGER NOT NULL DEFAULT 0,
+			updated_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -367,9 +397,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE pm_objective_owners (
 			objective_id TEXT NOT NULL,
-			user_id TEXT NOT NULL,
+			workspace_member_id TEXT NOT NULL,
 			created_at DATETIME,
-			PRIMARY KEY (objective_id, user_id)
+			PRIMARY KEY (objective_id, workspace_member_id)
 		)`,
 		`CREATE TABLE pm_objective_labels (
 			objective_id TEXT NOT NULL,
@@ -380,9 +410,10 @@ func newTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE pm_checklist_items (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			story_id TEXT NOT NULL,
-			content TEXT NOT NULL,
+			text TEXT NOT NULL,
 			completed BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
+			assignee_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -545,6 +576,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			crm_contact_id TEXT,
 			resolved_at DATETIME,
 			closed_at DATETIME,
+			team_last_seen_at DATETIME,
+			contact_last_seen_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -558,6 +591,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			sender_user_id TEXT,
 			sender_agent_id TEXT,
 			sender_display_name TEXT,
+			sender_avatar_url TEXT,
 			content TEXT NOT NULL,
 			is_internal BOOLEAN NOT NULL DEFAULT 0,
 			metadata TEXT DEFAULT '{}',

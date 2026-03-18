@@ -17,7 +17,7 @@ func newAuthService(t *testing.T) (*AuthService, *repository.UserRepository) {
 	db := newTestDB(t)
 	userRepo := repository.NewUserRepository(db)
 	jwtMgr := auth.NewJWTManager("test-secret")
-	svc := NewAuthService(userRepo, nil, jwtMgr)
+	svc := NewAuthService(userRepo, nil, jwtMgr, nil)
 	return svc, userRepo
 }
 

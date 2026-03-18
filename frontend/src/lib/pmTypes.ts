@@ -541,6 +541,7 @@ export interface CreateEpicRequest {
   workspace_id: string;
   name: string;
   description?: string;
+  attachment_ids?: string[];
   epic_state_id?: string;
   owner_member_id?: string;
   team_id?: string;
@@ -580,6 +581,7 @@ export interface CreateSprintRequest {
   workspace_id: string;
   name: string;
   description?: string;
+  attachment_ids?: string[];
   start_date: string;
   end_date: string;
   team_id?: string;
@@ -600,6 +602,7 @@ export interface CreateStoryRequest {
   workspace_id: string;
   name: string;
   description?: string;
+  attachment_ids?: string[];
   story_type?: StoryType;
   workflow_id?: string;
   workflow_state_id?: string;
@@ -720,7 +723,7 @@ export interface UpdateExternalLinkRequest {
 export interface Attachment {
   id: string;
   workspace_id: string;
-  entity_type: 'story' | 'epic' | 'comment';
+  entity_type: 'story' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;
@@ -738,7 +741,7 @@ export interface AttachmentResponse {
 }
 
 export interface CreateAttachmentRequest {
-  entity_type: 'story' | 'epic' | 'comment' | 'editor_upload';
+  entity_type: 'story' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;
@@ -826,6 +829,7 @@ export interface CreateObjectiveRequest {
   workspace_id: string;
   name: string;
   description?: string;
+  attachment_ids?: string[];
   objective_type: ObjectiveType;
   state?: ObjectiveState;
   planned_start_date?: string;
@@ -1680,6 +1684,9 @@ export interface FlowNodeSpec {
   type: FlowNodeType;
   required_mode?: 'interactive' | 'autonomous';
   actions?: string[];
+  allowed_tools?: string[];
+  loopback_node_id?: string;
+  command_name?: string;
 }
 
 export interface FlowSpec {
@@ -1702,11 +1709,39 @@ export interface StartEpicPlanningFlowInput {
   additional_context?: string;
 }
 
+export interface StartStoryCompletionFlowInput {
+  agent_id: string;
+  additional_context?: string;
+}
+
+export interface StartCRMDealReviewFlowInput {
+  agent_id: string;
+  additional_context?: string;
+}
+
+export interface FlowRequestChangesPayload {
+  comment: string;
+  structured_feedback?: Record<string, unknown>;
+}
+
+export interface FlowApprovalDecision {
+  decision: string;
+  actor_id?: string;
+  comment?: string;
+  structured_feedback?: Record<string, unknown>;
+  override_payload?: Record<string, unknown>;
+  decided_at?: string;
+}
+
 export interface StartFlowRunRequest {
   template_id: string;
   target_type: string;
   target_id: string;
-  input?: StartEpicPlanningFlowInput | Record<string, unknown>;
+  input?:
+    | StartEpicPlanningFlowInput
+    | StartStoryCompletionFlowInput
+    | StartCRMDealReviewFlowInput
+    | Record<string, unknown>;
   trigger_type?: string;
   trigger_payload?: Record<string, unknown>;
 }

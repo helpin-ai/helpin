@@ -138,37 +138,7 @@ func main() {
 		log.Fatalf("failed to initialize github app client: %v", err)
 	}
 	wsPublisher := ws.NewJetStreamPublisher(jetstream)
-	activities := temporalapp.NewAgentRunActivities(
-		runRepo,
-		agentRepo,
-		artifactRepo,
-		storyRepo,
-		storyLinkRepo,
-		epicRepo,
-		conversationRepo,
-		commentRepo,
-		checklistRepo,
-		supportMessageRepo,
-		gitIntRepo,
-		gitRepo,
-		gitLinkRepo,
-		deliveryRepo,
-		settingsRepo,
-		docsSpaceRepo,
-		docsDocumentRepo,
-		docsContentRepo,
-		docsVersionRepo,
-		docsLinkRepo,
-		docsSearchRepo,
-		crmDealRepo,
-		crmContactRepo,
-		crmSignalRepo,
-		crmActivityRepo,
-		wsPublisher,
-		runtimes,
-		githubAppClient,
-		runEngine,
-	)
+	var activities *temporalapp.AgentRunActivities
 
 	// Email sync activities (may be nil if Gmail not configured).
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
@@ -193,6 +163,7 @@ func main() {
 		labelRepo,
 		checklistRepo,
 		externalLinkRepo,
+		attachRepo,
 		pmActivityService,
 		wsPublisher,
 		nil,
@@ -236,6 +207,52 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
+	docsContentService := service.NewDocsContentService(docsContentRepo)
+	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo)
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
+	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	commandService := service.NewInternalCommandService(
+		agentService,
+		pmStoryService,
+		crmDealService,
+		crmActivityService,
+		docsContentService,
+		docsLinkService,
+		storyRepo,
+		storyLinkRepo,
+	)
+	activities = temporalapp.NewAgentRunActivities(
+		runRepo,
+		agentRepo,
+		artifactRepo,
+		storyRepo,
+		storyLinkRepo,
+		epicRepo,
+		conversationRepo,
+		commentRepo,
+		checklistRepo,
+		supportMessageRepo,
+		gitIntRepo,
+		gitRepo,
+		gitLinkRepo,
+		deliveryRepo,
+		settingsRepo,
+		docsSpaceRepo,
+		docsDocumentRepo,
+		docsContentRepo,
+		docsVersionRepo,
+		docsLinkRepo,
+		docsSearchRepo,
+		crmDealRepo,
+		crmContactRepo,
+		crmSignalRepo,
+		crmActivityRepo,
+		commandService,
+		wsPublisher,
+		runtimes,
+		githubAppClient,
+		runEngine,
+	)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
@@ -285,6 +302,8 @@ func main() {
 		flowService := service.NewFlowService(
 			flowRepo,
 			epicRepo,
+			storyRepo,
+			crmDealRepo,
 			agentRepo,
 			runRepo,
 			planningSessionRepo,
@@ -293,6 +312,7 @@ func main() {
 			runEngine,
 			wsPublisher,
 		)
+		flowService.SetCommandService(commandService)
 		flowActivities := service.NewFlowRuntimeActivities(flowService)
 
 		planningActivities := temporalapp.NewPlanningSessionActivities(
@@ -324,8 +344,14 @@ func main() {
 		flowWorker.RegisterActivityWithOptions(flowActivities.BootstrapEpicPlanningRunActivity, activity.RegisterOptions{
 			Name: "FlowRuntimeActivities.BootstrapEpicPlanningRunActivity",
 		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.BootstrapRunActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.BootstrapRunActivity",
+		})
 		flowWorker.RegisterActivityWithOptions(flowActivities.FinalizeInteractiveNodeActivity, activity.RegisterOptions{
 			Name: "FlowRuntimeActivities.FinalizeInteractiveNodeActivity",
+		})
+		flowWorker.RegisterActivityWithOptions(flowActivities.HandleApprovalActionActivity, activity.RegisterOptions{
+			Name: "FlowRuntimeActivities.HandleApprovalActionActivity",
 		})
 		flowWorker.RegisterActivityWithOptions(flowActivities.ApproveSpecNodeActivity, activity.RegisterOptions{
 			Name: "FlowRuntimeActivities.ApproveSpecNodeActivity",

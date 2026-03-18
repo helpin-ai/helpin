@@ -17,19 +17,32 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { MentionText } from '@/components/pm/MentionText';
+import {
+  getMentionSuggestions,
+  type MentionSuggestionItem,
+} from '@/components/pm/mentionSuggestions';
 import type { ChecklistItem } from '@/lib/pmTypes';
-import type { AssignableMember } from '@/lib/types';
+import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 
 interface ChecklistItemsProps {
   workspaceId: string;
   storyId: string;
   members?: AssignableMember[];
+  teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
 }
 
-function buildMemberHandle(member: AssignableMember): string {
-  return member.display_name.toLowerCase().replace(/\s+/g, '.');
+export type ChecklistMentionOption = MentionSuggestionItem;
+
+export function buildChecklistMentionOptions(
+  mentionQuery: string | null,
+  members: AssignableMember[],
+  teams: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[] = [],
+): ChecklistMentionOption[] {
+  return getMentionSuggestions(mentionQuery, members, teams, 6);
 }
 
 function SortableItem({
@@ -38,33 +51,23 @@ function SortableItem({
   onDelete,
   onAssigneeChange,
   members = [],
+  teams = [],
 }: {
   item: ChecklistItem;
   onToggle: (item: ChecklistItem) => void;
   onDelete: (id: string) => void;
   onAssigneeChange: (id: string, assigneeId: string | null) => void;
   members?: AssignableMember[];
+  teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
   });
-  const [showPicker, setShowPicker] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
 
   const assignee = useMemo(
     () => members.find((m) => (m.user_id || m.id) === item.assignee_id),
     [members, item.assignee_id],
   );
-
-  // Close picker on outside click.
-  useEffect(() => {
-    if (!showPicker) return;
-    const handler = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowPicker(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showPicker]);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -96,73 +99,47 @@ function SortableItem({
           item.completed ? 'line-through text-muted-foreground' : 'text-foreground'
         }`}
       >
-        <MentionText text={item.text} members={members} />
+        <MentionText text={item.text} members={members} teams={teams} />
       </span>
 
       {/* Assignee avatar / picker */}
-      <div className="relative" ref={pickerRef}>
-        {assignee ? (
-          <button
-            type="button"
-            className="flex items-center gap-1 cursor-pointer group/assignee"
-            onClick={() => setShowPicker(!showPicker)}
-            title={assignee.display_name}
-          >
+      <div className="flex items-center gap-1">
+        <MemberPickerPopover
+          value={item.assignee_id || '__none__'}
+          members={members}
+          noneLabel="Unassigned"
+          getMemberValue={(member) => member.user_id || member.id}
+          onChange={(value) => {
+            onAssigneeChange(item.id, value === '__none__' ? null : value);
+          }}
+          align="end"
+          triggerClassName={assignee
+            ? 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-80'
+            : 'h-5 w-5 shrink-0 flex items-center justify-center rounded-full border border-dashed border-border/60 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground hover:border-foreground/40'
+          }
+          contentClassName="w-[220px]"
+          renderTrigger={() => assignee ? (
             <UserAvatar
               name={assignee.display_name}
               avatarUrl={assignee.avatar_url}
               className="h-5 w-5 text-[8px]"
             />
-            <button
-              type="button"
-              className="h-3.5 w-3.5 flex items-center justify-center rounded-full opacity-0 group-hover/assignee:opacity-100 text-muted-foreground hover:text-foreground transition-opacity cursor-pointer"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAssigneeChange(item.id, null);
-              }}
-            >
-              <X className="h-2.5 w-2.5" />
-            </button>
-          </button>
-        ) : (
+          ) : (
+            <Plus className="h-2.5 w-2.5" />
+          )}
+        />
+        {assignee ? (
           <button
             type="button"
-            className="h-5 w-5 shrink-0 flex items-center justify-center rounded-full border border-dashed border-border/60 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground hover:border-foreground/40 cursor-pointer"
-            onClick={() => setShowPicker(!showPicker)}
-            title="Assign member"
+            className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+            onClick={(event) => {
+              event.stopPropagation();
+              onAssigneeChange(item.id, null);
+            }}
           >
-            <Plus className="h-2.5 w-2.5" />
+            <X className="h-2.5 w-2.5" />
           </button>
-        )}
-        {showPicker && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-border/60 bg-popover shadow-lg overflow-hidden">
-            <div className="max-h-48 overflow-y-auto py-1">
-              {members
-                .filter((m) => m.status === 'active')
-                .map((m) => {
-                  const uid = m.user_id || m.id;
-                  return (
-                    <button
-                      key={uid}
-                      type="button"
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() => {
-                        onAssigneeChange(item.id, uid);
-                        setShowPicker(false);
-                      }}
-                    >
-                      <UserAvatar
-                        name={m.display_name}
-                        avatarUrl={m.avatar_url}
-                        className="h-5 w-5 text-[8px]"
-                      />
-                      <span className="truncate">{m.display_name}</span>
-                    </button>
-                  );
-                })}
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
 
       <button
@@ -176,7 +153,7 @@ function SortableItem({
   );
 }
 
-export function ChecklistItems({ workspaceId, storyId, members = [] }: ChecklistItemsProps) {
+export function ChecklistItems({ workspaceId, storyId, members = [], teams = [] }: ChecklistItemsProps) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [newText, setNewText] = useState('');
   const [adding, setAdding] = useState(false);
@@ -188,20 +165,10 @@ export function ChecklistItems({ workspaceId, storyId, members = [] }: Checklist
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
 
-  const mentionResults = useMemo(() => {
-    if (mentionQuery === null) return [];
-    const q = mentionQuery.toLowerCase();
-    return members
-      .filter(
-        (m) =>
-          m.status === 'active' &&
-          (!q ||
-            m.display_name.toLowerCase().includes(q) ||
-            buildMemberHandle(m).includes(q) ||
-            m.email.toLowerCase().includes(q)),
-      )
-      .slice(0, 6);
-  }, [mentionQuery, members]);
+  const mentionResults = useMemo(
+    () => buildChecklistMentionOptions(mentionQuery, members, teams),
+    [mentionQuery, members, teams],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -237,11 +204,10 @@ export function ChecklistItems({ workspaceId, storyId, members = [] }: Checklist
     }
   };
 
-  const insertMention = (member: AssignableMember) => {
-    const handle = buildMemberHandle(member);
+  const insertMention = (item: ChecklistMentionOption) => {
     const text = newText.replace(/(?:^|\s)@[a-z0-9._-]*$/i, (match) => {
       const prefix = match.startsWith(' ') ? ' ' : '';
-      return `${prefix}@${handle} `;
+      return `${prefix}@${item.handle} `;
     });
     setNewText(text);
     setMentionQuery(null);
@@ -346,6 +312,7 @@ export function ChecklistItems({ workspaceId, storyId, members = [] }: Checklist
                 onDelete={handleDelete}
                 onAssigneeChange={handleAssigneeChange}
                 members={members}
+                teams={teams}
               />
             ))}
           </div>
@@ -404,32 +371,11 @@ export function ChecklistItems({ workspaceId, storyId, members = [] }: Checklist
         {/* Mention autocomplete dropdown */}
         {mentionQuery !== null && mentionResults.length > 0 && (
           <div className="absolute left-6 bottom-full z-50 mb-1 w-52 rounded-lg border border-border/60 bg-popover shadow-lg overflow-hidden">
-            <div className="py-1">
-              <div className="mb-1 px-3 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Mention
-              </div>
-              {mentionResults.map((m, idx) => (
-                <button
-                  key={m.user_id || m.id}
-                  type="button"
-                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors cursor-pointer ${
-                    idx === mentionIndex ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                  }`}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    insertMention(m);
-                  }}
-                >
-                  <UserAvatar
-                    name={m.display_name}
-                    avatarUrl={m.avatar_url}
-                    className="h-5 w-5 text-[8px]"
-                  />
-                  <span className="flex-1 truncate">{m.display_name}</span>
-                  <span className="font-mono text-xs text-muted-foreground">@{buildMemberHandle(m)}</span>
-                </button>
-              ))}
-            </div>
+            <MentionSuggestionsList
+              items={mentionResults}
+              selectedIndex={mentionIndex}
+              onSelect={insertMention}
+            />
           </div>
         )}
       </div>

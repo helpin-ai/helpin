@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
@@ -16,6 +16,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from '@/lib/utils';
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
 import { pmStoryService } from '@/lib/services/pmStoryService';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from './UserAvatar';
 import type { Priority, Severity, Story } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
@@ -23,6 +24,7 @@ import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimateP
 import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
+import { findAssignableMember } from '@/lib/assignableMembers';
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -49,7 +51,7 @@ interface StoryCardProps {
   showStateBadge?: boolean;
 }
 
-export function StoryCard({
+function StoryCardComponent({
   story,
   onOpen,
   isOverlay = false,
@@ -77,7 +79,6 @@ export function StoryCard({
     transition,
   };
 
-  const [memberOpen, setMemberOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId ?? '', story.team_id);
@@ -134,10 +135,9 @@ export function StoryCard({
     return ownerNameMap?.get(ownerKey) ?? story.owner_name ?? null;
   }, [story.owner_member_id, story.owner_name, ownerNameMap]);
   const handleAssignOwner = useCallback(
-    async (member: AssignableMember) => {
+    async (value: string) => {
       if (!workspaceId) return;
-      const isSelected = story.owner_member_id === member.id;
-      const newOwnerId = isSelected ? '' : member.id;
+      const newOwnerId = value === '__none__' ? '' : value;
       try {
         const result = await pmStoryService.update(workspaceId, story.id, { owner_member_id: newOwnerId });
         if (result.data?.story) {
@@ -146,9 +146,8 @@ export function StoryCard({
       } catch {
         // Board will show stale data until next refresh
       }
-      setMemberOpen(false);
     },
-    [workspaceId, story.id, story.owner_member_id, onOwnerChanged],
+    [workspaceId, story.id, onOwnerChanged],
   );
 
   const handleChangePriority = useCallback(
@@ -485,68 +484,31 @@ export function StoryCard({
         <span className="flex-1" />
         {/* Assignee avatar / assign button */}
         {vis.assignee && (assignableMembers && workspaceId ? (
-          <Popover open={memberOpen} onOpenChange={setMemberOpen}>
-            <Tooltip open={memberOpen ? false : undefined}>
-              <TooltipTrigger asChild>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded-full transition-opacity hover:opacity-80"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setMemberOpen(true);
-                    }}
-                  >
-                    {currentOwnerName ? (
-                      <UserAvatar name={currentOwnerName} className="h-5 w-5" />
-                    ) : (
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
-                        <UserPlus className="h-2.5 w-2.5" />
-                      </span>
-                    )}
-                  </button>
-                </PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top">{currentOwnerName || 'Assign member'}</TooltipContent>
-            </Tooltip>
-            {memberOpen && (
-              <PopoverContent
-                className="w-[220px] p-0"
-                align="end"
-                side="bottom"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-              >
-                <Command>
-                  <CommandInput placeholder="Search members..." className="h-8 text-xs" />
-                  <CommandList>
-                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
-                      No members found
-                    </CommandEmpty>
-                    <CommandGroup>
-                      {assignableMembers.map((m) => {
-                        const optionName = ownerNameMap?.get(m.id) ?? m.display_name ?? m.email;
-                        const isSelected = story.owner_member_id === m.id;
-                        return (
-                        <CommandItem
-                          key={m.id}
-                          value={optionName}
-                          onSelect={() => handleAssignOwner(m)}
-                          className="flex items-center gap-2 text-xs"
-                        >
-                          <UserAvatar name={optionName} className="h-5 w-5" />
-                          <span className="truncate">{optionName}</span>
-                          {isSelected && (
-                            <Check className="ml-auto h-3.5 w-3.5 text-primary" />
-                          )}
-                        </CommandItem>
-                      )})}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            )}
-          </Popover>
+          <MemberPickerPopover
+            value={story.owner_member_id || '__none__'}
+            members={assignableMembers}
+            noneLabel="Unassigned"
+            onChange={(value) => {
+              void handleAssignOwner(value);
+            }}
+            align="end"
+            triggerClassName="shrink-0 rounded-full transition-opacity hover:opacity-80"
+            contentClassName="w-[220px]"
+            renderTrigger={() => {
+              const selectedMember = findAssignableMember(assignableMembers, story.owner_member_id);
+              return selectedMember ? (
+                <UserAvatar
+                  name={selectedMember.display_name || selectedMember.email}
+                  avatarUrl={selectedMember.avatar_url}
+                  className="h-5 w-5"
+                />
+              ) : (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
+                  <UserPlus className="h-2.5 w-2.5" />
+                </span>
+              );
+            }}
+          />
         ) : (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -562,3 +524,6 @@ export function StoryCard({
     </article>
   );
 }
+
+export const StoryCard = memo(StoryCardComponent);
+StoryCard.displayName = 'StoryCard';

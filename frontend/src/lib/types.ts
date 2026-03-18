@@ -81,6 +81,7 @@ export type Permission =
   | 'docs.edit'
   | 'docs.publish'
   | 'docs.admin'
+  | 'docs.import'
   | 'crm.read'
   | 'crm.edit'
   | 'crm.admin'

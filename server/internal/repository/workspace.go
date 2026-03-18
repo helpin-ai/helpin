@@ -636,6 +636,76 @@ func (r *WorkspaceRepository) GetUserIDByHandle(ctx context.Context, workspaceID
 	return userID, nil
 }
 
+// GetTeamByHandle resolves a persisted team handle within a workspace.
+func (r *WorkspaceRepository) GetTeamByHandle(ctx context.Context, workspaceID, handle string) (*model.WorkspaceTeam, error) {
+	team := &model.WorkspaceTeam{}
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND LOWER(handle) = LOWER(?)", workspaceID, handle).
+		First(team).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get team by handle: %w", err)
+	}
+	return team, nil
+}
+
+// ListActiveTeamUserIDs returns active linked user accounts for a team in a workspace.
+func (r *WorkspaceRepository) ListActiveTeamUserIDs(ctx context.Context, workspaceID, teamID string) ([]string, error) {
+	var userIDs []string
+	err := r.db.WithContext(ctx).
+		Table("team_workspace_memberships twm").
+		Joins("JOIN workspace_members wm ON wm.id = twm.workspace_member_id").
+		Where("twm.team_id = ? AND wm.workspace_id = ? AND wm.status = ? AND wm.user_id IS NOT NULL",
+			teamID, workspaceID, model.WorkspaceMemberStatusActive).
+		Distinct().
+		Order("wm.user_id ASC").
+		Pluck("wm.user_id", &userIDs).Error
+	if err != nil {
+		return nil, fmt.Errorf("list active team user ids: %w", err)
+	}
+	return userIDs, nil
+}
+
+// CanUserAccessPMTeams reports whether the user can read a PM entity scoped to the given teams.
+// Admins and owners can read all entities. Members and viewers can only read entities in their teams.
+// An empty team scope represents an admin-only entity.
+func (r *WorkspaceRepository) CanUserAccessPMTeams(ctx context.Context, workspaceID, userID string, teamIDs []string) (bool, error) {
+	var member struct {
+		ID   string
+		Role string
+	}
+	err := r.db.WithContext(ctx).
+		Table("workspace_members").
+		Select("id, role").
+		Where("workspace_id = ? AND user_id = ? AND status = ?", workspaceID, userID, model.WorkspaceMemberStatusActive).
+		Limit(1).
+		Scan(&member).Error
+	if err != nil {
+		return false, fmt.Errorf("check workspace member access: %w", err)
+	}
+	if member.ID == "" {
+		return false, nil
+	}
+	if member.Role == model.RoleOwner || member.Role == model.RoleAdmin {
+		return true, nil
+	}
+	if len(teamIDs) == 0 {
+		return false, nil
+	}
+
+	var count int64
+	err = r.db.WithContext(ctx).
+		Table("team_workspace_memberships").
+		Where("workspace_member_id = ? AND team_id IN ?", member.ID, teamIDs).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("check team membership access: %w", err)
+	}
+	return count > 0, nil
+}
+
 func stringPtr(value string) *string {
 	if strings.TrimSpace(value) == "" {
 		return nil

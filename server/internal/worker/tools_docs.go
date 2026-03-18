@@ -99,3 +99,49 @@ func toolSearchDocuments(ctx *ExecutionContext, input json.RawMessage) (string, 
 	result, _ := json.MarshalIndent(hits, "", "  ")
 	return string(result), nil
 }
+
+func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.Services == nil || ctx.Services.WriteDocumentContent == nil {
+		return "", fmt.Errorf("docs mutation is not available for this agent")
+	}
+	var params struct {
+		DocumentID string          `json:"document_id"`
+		Content    json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	if strings.TrimSpace(params.DocumentID) == "" {
+		return "", fmt.Errorf("document_id is required")
+	}
+	if err := ctx.Services.WriteDocumentContent(ctx.Context, ctx.WorkspaceID, params.DocumentID, params.Content); err != nil {
+		return "", fmt.Errorf("write document content: %w", err)
+	}
+	return fmt.Sprintf("Document %s updated.", params.DocumentID), nil
+}
+
+func toolLinkDocumentToObject(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.Services == nil || ctx.Services.LinkDocumentToObject == nil {
+		return "", fmt.Errorf("docs mutation is not available for this agent")
+	}
+	var params struct {
+		DocumentID       string  `json:"document_id"`
+		LinkedObjectType string  `json:"linked_object_type"`
+		LinkedObjectID   string  `json:"linked_object_id"`
+		LinkContext      *string `json:"link_context"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	if strings.TrimSpace(params.DocumentID) == "" || strings.TrimSpace(params.LinkedObjectType) == "" || strings.TrimSpace(params.LinkedObjectID) == "" {
+		return "", fmt.Errorf("document_id, linked_object_type, and linked_object_id are required")
+	}
+	linkContext := "attached"
+	if params.LinkContext != nil && strings.TrimSpace(*params.LinkContext) != "" {
+		linkContext = strings.TrimSpace(*params.LinkContext)
+	}
+	if err := ctx.Services.LinkDocumentToObject(ctx.Context, ctx.WorkspaceID, params.DocumentID, params.LinkedObjectType, params.LinkedObjectID, linkContext, ctx.AgentID); err != nil {
+		return "", fmt.Errorf("link document: %w", err)
+	}
+	return "Document linked successfully.", nil
+}

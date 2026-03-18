@@ -3,6 +3,7 @@ import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
 import { Maximize2, Download, Copy, Link2, Trash2, X } from 'lucide-react';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { LoadingImage } from '@/components/ui/loading-image';
 import { useImageActions } from '@/hooks/useImageActions';
 
 const MIN_WIDTH = 100;
@@ -141,13 +142,14 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
           ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
         }}
       >
-        <img
+        <LoadingImage
           ref={imageRef}
           src={src}
           alt={alt ?? ''}
           crossOrigin="anonymous"
           onLoad={handleImageLoad}
           draggable={false}
+          containerClassName="block max-w-full overflow-hidden rounded-md"
           className="block max-w-full rounded-md"
           style={{
             width: currentWidth,
@@ -251,9 +253,10 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
               <X className="h-5 w-5" />
             </button>
           </QuickTooltip>
-          <img
+          <LoadingImage
             src={src}
             alt={alt ?? ''}
+            containerClassName="max-h-[90vh] max-w-[90vw] overflow-hidden rounded-lg"
             className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
             onClick={(e) => e.stopPropagation()}
           />

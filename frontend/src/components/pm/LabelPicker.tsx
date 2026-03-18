@@ -43,7 +43,7 @@ export function LabelBadge({ label, onRemove, className }: LabelBadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium text-foreground/80',
+        'inline-flex h-5 max-w-full min-w-0 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium text-foreground/80',
         className,
       )}
       style={{
@@ -55,7 +55,7 @@ export function LabelBadge({ label, onRemove, className }: LabelBadgeProps) {
         className="h-2 w-2 shrink-0 rounded-full"
         style={{ backgroundColor: color ?? 'var(--muted-foreground)' }}
       />
-      {label.name}
+      <span className="min-w-0 truncate">{label.name}</span>
       {onRemove && (
         <button
           type="button"
@@ -143,7 +143,7 @@ export function LabelPicker({
   };
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-1', className)}>
+    <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
       {selectedLabels.map((label) => (
         <LabelBadge key={label.id} label={label} onRemove={() => removeLabel(label.id)} />
       ))}

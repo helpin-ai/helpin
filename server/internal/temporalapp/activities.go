@@ -32,13 +32,15 @@ const (
 )
 
 type planningRunInput struct {
-	Stage                     string `json:"stage,omitempty"`
-	AdditionalContext         string `json:"additional_context,omitempty"`
-	SpecDocumentID            string `json:"spec_document_id,omitempty"`
-	SpecVersionID             string `json:"spec_version_id,omitempty"`
-	PlanningMethodology       string `json:"planning_methodology,omitempty"`
-	PlanningWebSearchEnabled  bool   `json:"planning_web_search_enabled,omitempty"`
-	PlanningWebSearchProvider string `json:"planning_web_search_provider,omitempty"`
+	Stage                     string   `json:"stage,omitempty"`
+	AdditionalContext         string   `json:"additional_context,omitempty"`
+	SpecDocumentID            string   `json:"spec_document_id,omitempty"`
+	SpecVersionID             string   `json:"spec_version_id,omitempty"`
+	PlanningMethodology       string   `json:"planning_methodology,omitempty"`
+	PlanningWebSearchEnabled  bool     `json:"planning_web_search_enabled,omitempty"`
+	PlanningWebSearchProvider string   `json:"planning_web_search_provider,omitempty"`
+	AllowedTools              []string `json:"allowed_tools,omitempty"`
+	FlowOutputKind            string   `json:"flow_output_kind,omitempty"`
 }
 
 type planningRunSummary struct {
@@ -64,6 +66,10 @@ type supportRunActivityDraft struct {
 	IsInternal        bool    `json:"is_internal"`
 	SenderDisplayName *string `json:"sender_display_name,omitempty"`
 	ApprovalRequired  bool    `json:"approval_required"`
+}
+
+type InternalCommandExecutor interface {
+	Execute(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error)
 }
 
 // AgentRunActivities contains the Temporal activities that execute an agent run.
@@ -93,6 +99,7 @@ type AgentRunActivities struct {
 	crmContactRepo   *repository.CRMContactRepository
 	crmSignalRepo    *repository.CRMSignalRepository
 	crmActivityRepo  *repository.CRMActivityRepository
+	commandExecutor  InternalCommandExecutor
 	wsPublisher      websocket.EventPublisher
 	runtimes         *workerpkg.RuntimeRegistry
 	githubApp        *githubapp.Client
@@ -126,6 +133,7 @@ func NewAgentRunActivities(
 	crmContactRepo *repository.CRMContactRepository,
 	crmSignalRepo *repository.CRMSignalRepository,
 	crmActivityRepo *repository.CRMActivityRepository,
+	commandExecutor InternalCommandExecutor,
 	wsPublisher websocket.EventPublisher,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
@@ -157,6 +165,7 @@ func NewAgentRunActivities(
 		crmContactRepo:   crmContactRepo,
 		crmSignalRepo:    crmSignalRepo,
 		crmActivityRepo:  crmActivityRepo,
+		commandExecutor:  commandExecutor,
 		wsPublisher:      wsPublisher,
 		runtimes:         runtimes,
 		githubApp:        githubApp,
@@ -262,6 +271,9 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	}
 
 	allowedTools := resolvedAllowedToolSet(state.resolved)
+	if len(planningInput.AllowedTools) > 0 {
+		allowedTools = stringSliceToSet(planningInput.AllowedTools)
+	}
 	if input := planningInput; input.Stage != model.PlanningStageDraftSpec || !input.PlanningWebSearchEnabled {
 		delete(allowedTools, "web_search")
 	}
@@ -839,6 +851,7 @@ func (a *AgentRunActivities) resolvePlanningRunInput(ctx context.Context, state 
 	input.SpecVersionID = strings.TrimSpace(input.SpecVersionID)
 	input.PlanningMethodology = model.NormalizePlanningMethodology(strings.TrimSpace(input.PlanningMethodology))
 	input.PlanningWebSearchProvider = model.NormalizePlanningWebSearchProvider(strings.TrimSpace(input.PlanningWebSearchProvider))
+	input.FlowOutputKind = strings.TrimSpace(input.FlowOutputKind)
 
 	if state.run.TargetType != "epic" || state.epic == nil {
 		return input, nil
@@ -891,6 +904,9 @@ func (a *AgentRunActivities) resolvePlanningRunInput(ctx context.Context, state 
 }
 
 func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	if strings.TrimSpace(input.FlowOutputKind) != "" {
+		return a.buildFlowOutputInstructions(ctx, state, input)
+	}
 	if state.run.TargetType != "epic" || state.epic == nil {
 		return runInputAdditionalContext(state.run.Input), nil
 	}
@@ -903,6 +919,78 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 	default:
 		return runInputAdditionalContext(state.run.Input), nil
 	}
+}
+
+func (a *AgentRunActivities) buildFlowOutputInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	switch strings.TrimSpace(input.FlowOutputKind) {
+	case "pm.story_completion_followups":
+		return a.buildStoryCompletionInstructions(state, input), nil
+	case "crm.deal_review_actions":
+		return a.buildCRMDealReviewInstructions(ctx, state, input)
+	default:
+		return runInputAdditionalContext(state.run.Input), nil
+	}
+}
+
+func (a *AgentRunActivities) buildStoryCompletionInstructions(state *resolvedRunState, input planningRunInput) string {
+	var sections []string
+	sections = append(sections, "Review this completed story and return JSON only with the shape {\"summary\":\"...\",\"followups\":[{\"title\":\"...\",\"description\":\"...\",\"story_type\":\"chore\",\"priority\":\"medium\"}]}.")
+	sections = append(sections, "Only propose internal PM/docs/support follow-up work. Do not publish customer-facing docs or website changes directly.")
+	if state.story != nil {
+		sections = append(sections, fmt.Sprintf("Story: %s", state.story.Name))
+		if state.story.Description != nil && strings.TrimSpace(*state.story.Description) != "" {
+			sections = append(sections, "Story description:\n"+truncatePlanningText(*state.story.Description, 8000))
+		}
+		if state.story.EpicID != nil && *state.story.EpicID != "" {
+			sections = append(sections, fmt.Sprintf("Epic ID: %s", *state.story.EpicID))
+		}
+	}
+	if strings.TrimSpace(input.AdditionalContext) != "" {
+		sections = append(sections, "Operator notes:\n"+input.AdditionalContext)
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+func (a *AgentRunActivities) buildCRMDealReviewInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	deal, err := a.crmDealRepo.GetByID(ctx, state.run.TargetID)
+	if err != nil {
+		return "", err
+	}
+	if deal == nil {
+		return "", fmt.Errorf("deal not found")
+	}
+	dealID := deal.ID
+	signals, _, err := a.crmSignalRepo.ListSignals(ctx, state.run.WorkspaceID, model.CRMBuyerSignalListFilters{
+		DealID: &dealID,
+	}, model.PMPagination{Page: 1, PerPage: 20})
+	if err != nil {
+		return "", err
+	}
+	var sections []string
+	sections = append(sections, "Review this CRM deal and return JSON only with the shape {\"summary\":\"...\",\"recommended_stage_id\":\"optional-stage-id\",\"note\":\"optional internal note\"}.")
+	sections = append(sections, "Do not propose outbound messaging, contact creation, or sequence enrollment in this run.")
+	sections = append(sections, fmt.Sprintf("Deal: %s", deal.Name))
+	if deal.Stage != nil {
+		sections = append(sections, fmt.Sprintf("Current stage: %s (%s)", deal.Stage.Name, deal.Stage.ID))
+	}
+	if deal.Pipeline != nil && len(deal.Pipeline.Stages) > 0 {
+		lines := make([]string, 0, len(deal.Pipeline.Stages))
+		for _, stage := range deal.Pipeline.Stages {
+			lines = append(lines, fmt.Sprintf("- %s (%s)", stage.Name, stage.ID))
+		}
+		sections = append(sections, "Available stages:\n"+strings.Join(lines, "\n"))
+	}
+	if len(signals) > 0 {
+		lines := make([]string, 0, len(signals))
+		for _, signal := range signals {
+			lines = append(lines, fmt.Sprintf("- %s: %s (confidence %.2f)", signal.SignalType, signal.Summary, signal.Confidence))
+		}
+		sections = append(sections, "Recent buyer signals:\n"+strings.Join(lines, "\n"))
+	}
+	if strings.TrimSpace(input.AdditionalContext) != "" {
+		sections = append(sections, "Operator notes:\n"+input.AdditionalContext)
+	}
+	return strings.Join(sections, "\n\n"), nil
 }
 
 func (a *AgentRunActivities) buildDraftSpecInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
@@ -1088,6 +1176,9 @@ func (a *AgentRunActivities) preparePlanningRepository(ctx context.Context, stat
 }
 
 func (a *AgentRunActivities) finalizePlanningRun(ctx context.Context, state *resolvedRunState, input planningRunInput) error {
+	if strings.TrimSpace(input.FlowOutputKind) != "" {
+		return a.finalizeFlowOutputRun(ctx, state, input)
+	}
 	if state.run.TargetType != "epic" || state.epic == nil {
 		return nil
 	}
@@ -1097,6 +1188,31 @@ func (a *AgentRunActivities) finalizePlanningRun(ctx context.Context, state *res
 		return a.finalizeDraftSpecRun(ctx, state, input)
 	case model.PlanningStagePlanStories:
 		return a.finalizePlanStoriesRun(ctx, state, input)
+	default:
+		return nil
+	}
+}
+
+func (a *AgentRunActivities) finalizeFlowOutputRun(ctx context.Context, state *resolvedRunState, input planningRunInput) error {
+	switch strings.TrimSpace(input.FlowOutputKind) {
+	case "pm.story_completion_followups":
+		var assessment model.StoryCompletionAssessment
+		if err := json.Unmarshal(state.run.OutputSummary, &assessment); err != nil {
+			return fmt.Errorf("decode story completion assessment: %w", err)
+		}
+		if strings.TrimSpace(assessment.Summary) == "" {
+			return fmt.Errorf("story completion assessment is missing a summary")
+		}
+		return nil
+	case "crm.deal_review_actions":
+		var plan model.CRMDealReviewActionPlan
+		if err := json.Unmarshal(state.run.OutputSummary, &plan); err != nil {
+			return fmt.Errorf("decode CRM deal review plan: %w", err)
+		}
+		if strings.TrimSpace(plan.Summary) == "" {
+			return fmt.Errorf("CRM deal review plan is missing a summary")
+		}
+		return nil
 	default:
 		return nil
 	}
@@ -2092,6 +2208,18 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			return a.commentRepo.Create(ctx, comment)
 		},
 		UpdateStoryState: func(ctx context.Context, workspaceID, storyID, stateID string) error {
+			if a.commandExecutor != nil {
+				_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+					WorkspaceID: workspaceID,
+					TargetType:  "story",
+					TargetID:    storyID,
+				}, "pm.update_story_state", mustJSON(map[string]any{
+					"story_id": storyID,
+					"state_id": stateID,
+				}))
+				return err
+			}
+			// TODO(flow-platform): remove direct fallback once all native runs are command-backed.
 			story, err := a.storyRepo.GetRawByID(ctx, storyID)
 			if err != nil {
 				return err
@@ -2140,6 +2268,17 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			return a.crmDealRepo.GetByID(ctx, id)
 		},
 		UpdateDealStage: func(ctx context.Context, dealID, stageID string) error {
+			if a.commandExecutor != nil {
+				_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+					TargetType: "crm_deal",
+					TargetID:   dealID,
+				}, "crm.update_deal_stage", mustJSON(map[string]any{
+					"deal_id":  dealID,
+					"stage_id": stageID,
+				}))
+				return err
+			}
+			// TODO(flow-platform): remove direct fallback once all native runs are command-backed.
 			deal, err := a.crmDealRepo.GetByID(ctx, dealID)
 			if err != nil {
 				return err
@@ -2151,6 +2290,19 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			return a.crmDealRepo.Update(ctx, deal)
 		},
 		AddDealNote: func(ctx context.Context, workspaceID, dealID, agentID, content string) error {
+			if a.commandExecutor != nil {
+				_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+					WorkspaceID: workspaceID,
+					AgentID:     agentID,
+					TargetType:  "crm_deal",
+					TargetID:    dealID,
+				}, "crm.add_deal_note", mustJSON(map[string]any{
+					"deal_id": dealID,
+					"content": content,
+				}))
+				return err
+			}
+			// TODO(flow-platform): remove direct fallback once all native runs are command-backed.
 			now := time.Now()
 			activity := &model.CRMActivity{
 				WorkspaceID:  workspaceID,
@@ -2192,6 +2344,37 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				}
 			}
 			return hits, nil
+		},
+		WriteDocumentContent: func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error {
+			if a.commandExecutor == nil {
+				return fmt.Errorf("document commands are not available")
+			}
+			_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+				WorkspaceID: workspaceID,
+				TargetType:  "story",
+				TargetID:    documentID,
+			}, "docs.write_document_content", mustJSON(map[string]any{
+				"document_id": documentID,
+				"content":     json.RawMessage(content),
+			}))
+			return err
+		},
+		LinkDocumentToObject: func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error {
+			if a.commandExecutor == nil {
+				return fmt.Errorf("document commands are not available")
+			}
+			_, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+				WorkspaceID: workspaceID,
+				ActorID:     actorID,
+				TargetType:  linkedObjectType,
+				TargetID:    linkedObjectID,
+			}, "docs.link_document_to_object", mustJSON(map[string]any{
+				"document_id":        documentID,
+				"linked_object_type": linkedObjectType,
+				"linked_object_id":   linkedObjectID,
+				"link_context":       linkContext,
+			}))
+			return err
 		},
 	}
 }
@@ -2420,4 +2603,23 @@ func resolvedAllowedToolSet(resolved workerpkg.ResolvedProfile) map[string]bool 
 		set[toolName] = true
 	}
 	return set
+}
+
+func stringSliceToSet(items []string) map[string]bool {
+	set := make(map[string]bool, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			set[item] = true
+		}
+	}
+	return set
+}
+
+func mustJSON(value any) json.RawMessage {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return raw
 }

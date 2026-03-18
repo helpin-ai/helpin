@@ -134,6 +134,7 @@ func main() {
 		&model.WorkspaceTeam{},
 		&model.TeamWorkspaceMembership{},
 		&model.WorkspaceManager{},
+		&model.JobRoleCriteria{},
 		&model.PMWorkflow{},
 		&model.PMWorkflowState{},
 		&model.PMEpicWorkflowState{},
@@ -202,6 +203,7 @@ func main() {
 		&model.DocsReviewQueue{},
 		&model.DocsArticleFeedback{},
 		&model.DocsComment{},
+		&model.DocsImportJob{},
 		// Notifications module
 		&model.Notification{},
 		&model.NotificationEvent{},
@@ -435,6 +437,7 @@ func main() {
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
+	docsImportRepo := repository.NewDocsImportRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
@@ -470,7 +473,7 @@ func main() {
 	}()
 
 	// Initialize services.
-	authService := service.NewAuthService(userRepo, orgRepo, jwtManager)
+	authService := service.NewAuthService(userRepo, orgRepo, jwtManager, s3Client)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
 	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
@@ -596,6 +599,8 @@ func main() {
 	flowService := service.NewFlowService(
 		flowRepo,
 		pmEpicRepo,
+		pmStoryRepo,
+		crmDealRepo,
 		agentRepo,
 		agentRunRepo,
 		planningSessionRepo,
@@ -620,6 +625,7 @@ func main() {
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, s3Client)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
+	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, s3Client)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
@@ -669,6 +675,17 @@ func main() {
 	crmSequenceService := service.NewCRMSequenceService(crmSequenceRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
+	commandService := service.NewInternalCommandService(
+		agentService,
+		pmStoryService,
+		crmDealService,
+		crmActivityService,
+		docsContentService,
+		docsLinkService,
+		pmStoryRepo,
+		pmStoryLinkRepo,
+	)
+	flowService.SetCommandService(commandService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
@@ -775,6 +792,7 @@ func main() {
 			docsLinkService,
 			docsHelpcenterService,
 			docsSearchService,
+			docsImportService,
 		),
 	}
 

@@ -161,8 +161,12 @@ func normalizeAgentRecord(agent *model.Agent) {
 	if strings.TrimSpace(agent.Role) == "" {
 		agent.Role = defaultRoleForAgentClass(agent.AgentClass)
 	}
-	if strings.TrimSpace(agent.CapabilityProfile) == "" {
+	switch normalizedProfile := worker.NormalizeCapabilityProfile(strings.TrimSpace(agent.CapabilityProfile)); {
+	case strings.TrimSpace(agent.CapabilityProfile) == "":
 		agent.CapabilityProfile = capabilityProfileForAgentClass(agent.AgentClass)
+	case normalizedProfile != strings.TrimSpace(agent.CapabilityProfile):
+		// Preserve explicit custom profiles, but normalize known legacy aliases like "orchestrator".
+		agent.CapabilityProfile = normalizedProfile
 	}
 	if strings.TrimSpace(agent.RuntimeKind) == "" {
 		agent.RuntimeKind = defaultRuntimeKindForAgentClass(agent.AgentClass)

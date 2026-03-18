@@ -9,7 +9,7 @@ export function useCopyToClipboard(resetMs = 2000) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const copy = useCallback(
-    (text: string) => {
+    async (text: string) => {
       const onSuccess = () => {
         setCopied(true);
         if (timeoutRef.current) {
@@ -18,14 +18,35 @@ export function useCopyToClipboard(resetMs = 2000) {
         timeoutRef.current = setTimeout(() => setCopied(false), resetMs);
       };
 
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(text).then(onSuccess, () => {
-          fallbackCopy(text);
+      const onFailure = () => {
+        setCopied(false);
+      };
+
+      const canUseAsyncClipboard =
+        typeof window !== 'undefined' &&
+        window.isSecureContext === true &&
+        typeof navigator.clipboard?.writeText === 'function';
+
+      if (!canUseAsyncClipboard) {
+        if (fallbackCopy(text)) {
           onSuccess();
-        });
-      } else {
-        fallbackCopy(text);
+          return true;
+        }
+        onFailure();
+        return false;
+      }
+
+      try {
+        await navigator.clipboard.writeText(text);
         onSuccess();
+        return true;
+      } catch {
+        if (fallbackCopy(text)) {
+          onSuccess();
+          return true;
+        }
+        onFailure();
+        return false;
       }
     },
     [resetMs],
@@ -42,6 +63,12 @@ function fallbackCopy(text: string) {
   document.body.appendChild(ta);
   ta.focus();
   ta.select();
-  document.execCommand('copy');
-  document.body.removeChild(ta);
+
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    document.body.removeChild(ta);
+  }
 }

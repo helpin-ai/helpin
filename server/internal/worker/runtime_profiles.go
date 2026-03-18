@@ -21,10 +21,10 @@ var runtimeProfiles = []model.RuntimeProfile{
 	{
 		Name:               model.AgentClassProductPlanner,
 		RuntimeKind:        "native_sdk",
-		Description:        "Epic-only product spec and story planning with repository-aware read access, optional web research, and no mutation tools.",
-		AllowedTools:       []string{"read_file", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search", "add_story_comment", "list_story_checklist"},
+		Description:        "Cross-module product planning and review with repository-aware read access, docs/CRM read tools, optional web research, and no default mutation tools.",
+		AllowedTools:       []string{"read_file", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search", "add_story_comment", "list_story_checklist", "list_documents", "read_document", "search_documents", "list_deals", "list_contacts", "list_buyer_signals"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
-		AllowedTargetTypes: []string{"epic"},
+		AllowedTargetTypes: []string{"epic", "story", "crm_deal"},
 		ApprovalRequired:   true,
 		RequiresRepo:       false,
 	},

@@ -1,15 +1,15 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { CalendarDays, Check, UserPlus } from 'lucide-react';
+import { CalendarDays, UserPlus } from 'lucide-react';
 import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { StageTypeIcon } from '@/lib/crmConstants';
 import { crmDealService } from '@/lib/services/crmService';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { findAssignableMember } from '@/lib/assignableMembers';
 import { useDealDisplayStore } from '@/stores/dealDisplayStore';
 import type { CRMDeal } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
@@ -49,7 +49,6 @@ export function DealCard({
     transition,
   };
 
-  const [memberOpen, setMemberOpen] = useState(false);
   const displayProps = useDealDisplayStore((s) => s.properties);
 
   const closeDate = useMemo(() => {
@@ -73,18 +72,16 @@ export function DealCard({
   }, [deal.owner_member_id, ownerNameMap]);
 
   const handleAssignOwner = useCallback(
-    async (member: AssignableMember) => {
-      const isSelected = deal.owner_member_id === member.id;
-      const newOwnerId = isSelected ? '' : member.id;
+    async (value: string) => {
+      const newOwnerId = value === '__none__' ? '' : value;
       try {
         const result = await crmDealService.update(workspaceId, deal.id, { owner_member_id: newOwnerId });
         if (result.data) {
           onOwnerChanged?.(result.data);
         }
       } catch {}
-      setMemberOpen(false);
     },
-    [workspaceId, deal.id, deal.owner_member_id, onOwnerChanged],
+    [workspaceId, deal.id, onOwnerChanged],
   );
 
   return (
@@ -171,69 +168,31 @@ export function DealCard({
 
         {/* Owner avatar / assign button */}
         {displayProps.owner && (assignableMembers && workspaceId ? (
-          <Popover open={memberOpen} onOpenChange={setMemberOpen}>
-            <Tooltip open={memberOpen ? false : undefined}>
-              <TooltipTrigger asChild>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded-full transition-opacity hover:opacity-80"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setMemberOpen(true);
-                    }}
-                  >
-                    {currentOwnerName ? (
-                      <UserAvatar name={currentOwnerName} className="h-5 w-5" />
-                    ) : (
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
-                        <UserPlus className="h-2.5 w-2.5" />
-                      </span>
-                    )}
-                  </button>
-                </PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top">{currentOwnerName || 'Assign member'}</TooltipContent>
-            </Tooltip>
-            {memberOpen && (
-              <PopoverContent
-                className="w-[220px] p-0"
-                align="end"
-                side="bottom"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-              >
-                <Command>
-                  <CommandInput placeholder="Search members..." className="h-8 text-xs" />
-                  <CommandList>
-                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
-                      No members found
-                    </CommandEmpty>
-                    <CommandGroup>
-                      {assignableMembers.map((m) => {
-                        const optionName = ownerNameMap?.get(m.id) ?? m.display_name ?? m.email;
-                        const isSelected = deal.owner_member_id === m.id;
-                        return (
-                          <CommandItem
-                            key={m.id}
-                            value={optionName}
-                            onSelect={() => handleAssignOwner(m)}
-                            className="flex items-center gap-2 text-xs"
-                          >
-                            <UserAvatar name={optionName} className="h-5 w-5" />
-                            <span className="truncate">{optionName}</span>
-                            {isSelected && (
-                              <Check className="ml-auto h-3.5 w-3.5 text-primary" />
-                            )}
-                          </CommandItem>
-                        );
-                      })}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            )}
-          </Popover>
+          <MemberPickerPopover
+            value={deal.owner_member_id || '__none__'}
+            members={assignableMembers}
+            noneLabel="Unassigned"
+            onChange={(value) => {
+              void handleAssignOwner(value);
+            }}
+            align="end"
+            triggerClassName="shrink-0 rounded-full transition-opacity hover:opacity-80"
+            contentClassName="w-[220px]"
+            renderTrigger={() => {
+              const selectedMember = findAssignableMember(assignableMembers, deal.owner_member_id);
+              return selectedMember ? (
+                <UserAvatar
+                  name={selectedMember.display_name || selectedMember.email}
+                  avatarUrl={selectedMember.avatar_url}
+                  className="h-5 w-5"
+                />
+              ) : (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
+                  <UserPlus className="h-2.5 w-2.5" />
+                </span>
+              );
+            }}
+          />
         ) : currentOwnerName ? (
           <Tooltip>
             <TooltipTrigger asChild>
