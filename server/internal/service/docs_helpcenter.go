@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -178,11 +179,33 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 
 	// Alias the old slug if it changed (so old URLs redirect).
 	if art.Slug != "" && art.Slug != slug {
+		oldSlug := art.Slug
 		_ = s.hcRepo.CreateSlugAlias(ctx, &model.DocsSlugAlias{
 			WorkspaceID: doc.WorkspaceID,
 			DocumentID:  documentID,
-			OldSlug:     art.Slug,
+			OldSlug:     oldSlug,
 		})
+
+		// Also create a DocsRedirect for canonical path-based redirect resolution.
+		collectionSlug := ""
+		if doc.CollectionID != nil {
+			collection, _ := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
+			if collection != nil {
+				collectionSlug = collection.Slug
+			}
+		}
+		newSlug := slug
+		redirect := &model.DocsRedirect{
+			WorkspaceID:          doc.WorkspaceID,
+			SourcePath:           "/" + collectionSlug + "/" + oldSlug,
+			TargetCollectionSlug: collectionSlug,
+			TargetArticleSlug:    &newSlug,
+			Type:                 model.RedirectTypeSlugChange,
+		}
+		if err := s.redirectRepo.Create(ctx, redirect); err != nil {
+			slog.ErrorContext(ctx, "create slug change redirect", "error", err, "document_id", documentID)
+			// Non-fatal: continue
+		}
 	}
 
 	// Set slug and public_published_at.
