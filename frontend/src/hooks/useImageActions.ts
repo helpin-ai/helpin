@@ -7,12 +7,13 @@ import { toast } from 'sonner'
 export function useImageActions() {
   const copyImage = useCallback(async (src: string) => {
     try {
-      // Load image onto a canvas to get a PNG blob — avoids CORS fetch issues
-      // since we load via an Image element with crossOrigin.
-      const blob = await imageSrcToPngBlob(src)
+      const blob = await imageSrcToClipboardBlob(src)
+      if (typeof navigator.clipboard?.write !== 'function' || typeof ClipboardItem === 'undefined') {
+        throw new Error('Clipboard image copy is unavailable')
+      }
 
       await navigator.clipboard.write([
-        new ClipboardItem({ 'image/png': blob }),
+        new ClipboardItem({ [blob.type || 'image/png']: blob }),
       ])
       toast.success('Image copied to clipboard')
     } catch {
@@ -49,6 +50,24 @@ export function useImageActions() {
   }, [])
 
   return { copyImage, downloadImage, openInNewTab }
+}
+
+async function imageSrcToClipboardBlob(src: string): Promise<Blob> {
+  try {
+    const response = await fetch(src)
+    if (!response.ok) {
+      throw new Error('Failed to fetch image')
+    }
+
+    const blob = await response.blob()
+    if (blob.size > 0 && blob.type.startsWith('image/')) {
+      return blob
+    }
+  } catch {
+    // Fall through to the canvas path for sources that can render but not fetch cleanly.
+  }
+
+  return imageSrcToPngBlob(src)
 }
 
 /** Load an image URL onto a canvas and return a PNG blob for clipboard use. */
