@@ -2,9 +2,10 @@ import { Link } from '@tanstack/react-router';
 import { Globe, Monitor, MessageSquare, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from './CollapsibleSection';
+import { STATUS_COLORS, STATUS_LABELS } from './constants';
 import { useVisitorContext } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { VisitorContextResponse } from '@/lib/pmTypes';
+import type { ConversationStatus } from '@/lib/pmTypes';
 
 interface SidebarVisitorContextProps {
   workspaceId: string;
@@ -21,24 +22,13 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
   );
 }
 
-function statusColor(status: string) {
-  switch (status) {
-    case 'open': return 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400';
-    case 'in_progress': return 'bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400';
-    case 'waiting': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-400';
-    case 'resolved': return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
-    case 'closed': return 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500';
-    default: return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
-  }
-}
-
 export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVisitorContextProps) {
   const { data, isLoading } = useVisitorContext(workspaceId, conversationId);
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
 
   if (isLoading || !data) return null;
 
-  const { device, location, contact, other_conversations, total_conversations } = data as VisitorContextResponse;
+  const { device, location, contact, other_conversations, total_conversations } = data;
 
   const hasDevice = device && device.browser !== 'Unknown';
   const hasLocation = location && (location.timezone || location.locale || location.last_page_url);
@@ -117,8 +107,8 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
               >
                 <span className="text-muted-foreground shrink-0">#{conv.display_id}</span>
                 <span className="truncate flex-1 font-medium">{conv.subject}</span>
-                <Badge variant="secondary" className={`h-4 px-1 text-[9px] shrink-0 ${statusColor(conv.status)}`}>
-                  {conv.status.replace('_', ' ')}
+                <Badge variant="secondary" className={`h-4 px-1 text-[9px] shrink-0 ${STATUS_COLORS[conv.status as ConversationStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                  {STATUS_LABELS[conv.status as ConversationStatus] ?? conv.status}
                 </Badge>
               </Link>
             ))}

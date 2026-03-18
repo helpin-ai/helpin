@@ -180,6 +180,18 @@ func (r *SupportInboxSessionRepository) Update(ctx context.Context, session *mod
 	return nil
 }
 
+// UpdatePageURL updates only the last_page_url on a session by token in a single query.
+func (r *SupportInboxSessionRepository) UpdatePageURL(ctx context.Context, sessionToken, url string) error {
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("session_token = ? AND revoked_at IS NULL", sessionToken).
+		Update("last_page_url", url)
+	if result.Error != nil {
+		return fmt.Errorf("update session page url: %w", result.Error)
+	}
+	return nil
+}
+
 // GetLatestByConversation returns the most recent session for a conversation.
 func (r *SupportInboxSessionRepository) GetLatestByConversation(ctx context.Context, workspaceID, conversationID string) (*model.SupportWidgetSession, error) {
 	var session model.SupportWidgetSession

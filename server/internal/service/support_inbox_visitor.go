@@ -108,6 +108,10 @@ func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID
 		if err != nil {
 			slog.ErrorContext(ctx, "visitor context: list anonymous conversations failed", "error", err)
 		}
+		// Cap to avoid unbounded results; ListByAnonymousID has no LIMIT.
+		if len(convs) > 6 {
+			convs = convs[:6]
+		}
 		otherConvs = convs
 	}
 
@@ -185,15 +189,6 @@ func parseUserAgent(ua string) model.VisitorDeviceInfo {
 			}
 		}
 	case reBrowserSafari.MatchString(ua):
-		m := reBrowserSafari.FindStringSubmatch(ua)
-		info.Browser = "Safari"
-		if len(m) > 1 {
-			info.BrowserVersion = m[1]
-		}
-	}
-
-	// If still "Unknown" for browser and Chrome wasn't matched above, try Safari fallback
-	if info.Browser == "Unknown" && reBrowserSafari.MatchString(ua) {
 		m := reBrowserSafari.FindStringSubmatch(ua)
 		info.Browser = "Safari"
 		if len(m) > 1 {

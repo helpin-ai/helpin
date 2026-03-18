@@ -209,14 +209,9 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 	return nil
 }
 
-// UpdateSessionPageURL updates the last_page_url on a session.
+// UpdateSessionPageURL updates the last_page_url on a session using a targeted query.
 func (s *SupportInboxService) UpdateSessionPageURL(ctx context.Context, sessionToken, url string) error {
-	session, err := s.GetWidgetSession(ctx, sessionToken)
-	if err != nil {
-		return err
-	}
-	session.LastPageURL = &url
-	return s.sessionRepo.Update(ctx, session)
+	return s.sessionRepo.UpdatePageURL(ctx, sessionToken, url)
 }
 
 // RevokeWidgetSession marks a session as revoked.

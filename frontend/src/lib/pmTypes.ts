@@ -1787,7 +1787,7 @@ export interface VisitorOtherConversation {
   id: string;
   display_id: number;
   subject: string;
-  status: string;
+  status: ConversationStatus;
   created_at: string;
 }
 
