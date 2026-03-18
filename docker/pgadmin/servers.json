@@ -1,0 +1,15 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Helpin Local",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "helpin",
+      "Username": "helpin",
+      "Password": "helpin",
+      "SSLMode": "disable",
+      "PassFile": "/pgadmin4/pgpassfile"
+    }
+  }
+}
