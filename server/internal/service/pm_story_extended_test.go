@@ -623,17 +623,17 @@ func TestPMStoryService_Update(t *testing.T) {
 		}
 	})
 
-	t.Run("forbidden for member role", func(t *testing.T) {
-		memberID := "user-member-upd-001"
-		seedUser(t, env.db, memberID, "member-upd@test.com", "Member User", "hash")
-		seedWorkspaceMember(t, env.db, "wm-member-upd-001", env.wsID, memberID, "member-upd@test.com", "Member User", "member")
+	t.Run("forbidden for viewer role", func(t *testing.T) {
+		viewerID := "user-viewer-upd-001"
+		seedUser(t, env.db, viewerID, "viewer-upd@test.com", "Viewer User", "hash")
+		seedWorkspaceMember(t, env.db, "wm-viewer-upd-001", env.wsID, viewerID, "viewer-upd@test.com", "Viewer User", model.RoleViewer)
 
 		newName := "Forbidden Update"
 		_, err := env.svc.Update(ctx, created.Story.ID, model.UpdateStoryRequest{
 			Name: &newName,
-		}, memberID)
+		}, viewerID)
 		if err == nil {
-			t.Fatal("expected forbidden error for member role")
+			t.Fatal("expected forbidden error for viewer role")
 		}
 	})
 }

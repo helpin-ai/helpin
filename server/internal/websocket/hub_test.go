@@ -28,7 +28,12 @@ func TestShouldReceive_WidgetClient_MatchingConversation(t *testing.T) {
 	client := &Client{UserID: "widget:sess-1", WorkspaceID: "ws-1", IsWidget: true, ConversationID: &convID}
 
 	// Widget client receives messages for its conversation
-	event := Event{Entity: "support_conversation_message", ParentID: "conv-1", WorkspaceID: "ws-1"}
+	event := Event{
+		Entity:      "support_conversation_message",
+		ParentID:    "conv-1",
+		WorkspaceID: "ws-1",
+		Data:        []byte(`{"id":"msg-1"}`),
+	}
 	if !hub.shouldReceive(client, event) {
 		t.Error("widget client should receive message for its conversation")
 	}
@@ -281,6 +286,7 @@ func TestShouldReceive_WidgetClient_DoesNotEchoOwnMessages(t *testing.T) {
 		ActorID:     "user-1",
 		ParentType:  "support_conversation",
 		ParentID:    "conv-1",
+		Data:        []byte(`{"id":"msg-2"}`),
 	}
 	if !hub.shouldReceive(client, agentMessage) {
 		t.Error("widget client should receive agent messages for its conversation")
