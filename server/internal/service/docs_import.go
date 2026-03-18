@@ -180,6 +180,7 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	}
 
 	categoryToCollection := make(map[string]string, len(categories))
+	categoryToCollectionSlug := make(map[string]string, len(categories))
 	for _, cat := range categories {
 		slug := cat.Slug
 		coll, err := s.collectionSvc.Create(ctx, workspaceID, spaceID, model.CreateDocsCollectionRequest{
@@ -191,6 +192,21 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 			return
 		}
 		categoryToCollection[cat.ID] = coll.ID
+		categoryToCollectionSlug[cat.ID] = slug
+
+		// Create legacy redirect for HelpScout category URL.
+		catRedirect := &model.DocsRedirect{
+			WorkspaceID:          workspaceID,
+			SourcePath:           fmt.Sprintf("/category/%d-%s", cat.Number, cat.Slug),
+			TargetCollectionSlug: slug,
+			Type:                 model.RedirectTypeImported,
+			SourceSystem:         stringPtr("helpscout"),
+			SourceObjectType:     stringPtr("category"),
+			SourceObjectID:       stringPtr(cat.ID),
+		}
+		if err := s.redirectRepo.Create(ctx, catRedirect); err != nil {
+			s.logger.Error("create category redirect", "error", err, "category_id", cat.ID)
+		}
 	}
 
 	// Fetch article list.
@@ -219,7 +235,7 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	)
 
 	for i, ref := range articleRefs {
-		if err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, categoryToCollection, uploader, req.ImportStatus, &redirects); err != nil {
+		if err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, categoryToCollection, categoryToCollectionSlug, uploader, req.ImportStatus, &redirects); err != nil {
 			s.logger.Error("article import failed",
 				"job_id", jobID,
 				"article_id", ref.ID,
@@ -283,6 +299,7 @@ func (s *DocsImportService) importArticle(
 	ref helpscout.ArticleRef,
 	spaceID, workspaceID, userID string,
 	categoryToCollection map[string]string,
+	categoryToCollectionSlug map[string]string,
 	uploader helpscout.ImageUploader,
 	importStatus string,
 	redirects *[]redirectEntry,
@@ -315,11 +332,15 @@ func (s *DocsImportService) importArticle(
 		return fmt.Errorf("convert HTML for article %s: %w", ref.ID, err)
 	}
 
-	// Determine collection ID from first category.
+	// Determine collection ID and slug from first category.
 	var collectionID *string
+	var collectionSlug string
 	if len(ref.Categories) > 0 {
 		if cID, ok := categoryToCollection[ref.Categories[0]]; ok {
 			collectionID = &cID
+		}
+		if slug, ok := categoryToCollectionSlug[ref.Categories[0]]; ok {
+			collectionSlug = slug
 		}
 	}
 
@@ -350,6 +371,25 @@ func (s *DocsImportService) importArticle(
 	}
 	if _, err := s.helpcenterSvc.CreateArticle(ctx, hcArticle); err != nil {
 		return fmt.Errorf("create helpcenter article for %s: %w", ref.ID, err)
+	}
+
+	// Create legacy redirect for HelpScout article URL.
+	if collectionSlug != "" {
+		articleSlug := ref.Slug
+		articleRedirect := &model.DocsRedirect{
+			WorkspaceID:          workspaceID,
+			SourcePath:           fmt.Sprintf("/article/%d-%s", ref.Number, ref.Slug),
+			TargetCollectionSlug: collectionSlug,
+			TargetArticleSlug:    &articleSlug,
+			Type:                 model.RedirectTypeImported,
+			SourceSystem:         stringPtr("helpscout"),
+			SourceObjectType:     stringPtr("article"),
+			SourceObjectID:       stringPtr(ref.ID),
+		}
+		if err := s.redirectRepo.Create(ctx, articleRedirect); err != nil {
+			s.logger.Error("create article redirect", "error", err, "article_id", ref.ID)
+			// Non-fatal.
+		}
 	}
 
 	// Publish if the source article is published and import_status allows it.
@@ -458,7 +498,7 @@ func (s *DocsImportService) runRetry(jobID, apiKey string, failures []model.Impo
 		}
 
 		ref := article.ArticleRef
-		if err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, nil, uploader, "", &redirects); err != nil {
+		if err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, nil, nil, uploader, "", &redirects); err != nil {
 			s.logger.Error("retry article import failed", "article_id", f.ArticleID, "error", err)
 			retryFailed++
 			newFailures = append(newFailures, model.ImportFailure{
