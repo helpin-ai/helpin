@@ -224,6 +224,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Auth / profile
 			r.Get("/auth/me", h.Auth.Me)
 			r.Put("/auth/me", h.Auth.UpdateProfile)
+			r.Post("/auth/me/avatar", h.Auth.UploadAvatar)
+			r.Delete("/auth/me/avatar", h.Auth.DeleteAvatar)
 			r.Put("/auth/change-password", h.Auth.ChangePassword)
 
 			// User notification settings (account-level, no workspace scope)
@@ -693,6 +695,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Feedback
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/articles/{docId}/feedback", h.Docs.SubmitArticleFeedback)
+
+				// Docs import
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/preview", h.Docs.ImportPreviewHelpscout)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/helpscout/start", h.Docs.ImportStartHelpscout)
+				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/status", h.Docs.ImportGetStatus)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/{jobId}/retry", h.Docs.ImportRetry)
+				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/redirect-map", h.Docs.ImportGetRedirectMap)
 			})
 
 			// CRM module

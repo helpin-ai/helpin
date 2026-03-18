@@ -436,6 +436,7 @@ func main() {
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
+	docsImportRepo := repository.NewDocsImportRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
@@ -621,6 +622,7 @@ func main() {
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, s3Client)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
+	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, s3Client)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
@@ -776,6 +778,7 @@ func main() {
 			docsLinkService,
 			docsHelpcenterService,
 			docsSearchService,
+			docsImportService,
 		),
 	}
 
