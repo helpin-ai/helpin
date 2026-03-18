@@ -198,7 +198,7 @@ export function EpicOrchestrationPanel({ epic, workspaceId, workspaceSlug, onSto
     const res = await agentService.list(workspaceId);
     if (res.error) { toast.error(res.error); return; }
     const data = Array.isArray(res.data) ? res.data : [];
-    setAgents(data.filter((agent) => agent.agent_kind === 'llm' && agent.agent_class === 'product_planner'));
+    setAgents(data.filter((agent) => agent.agent_class === 'product_planner'));
   }, [workspaceId]);
 
   const fetchRuns = useCallback(async () => {

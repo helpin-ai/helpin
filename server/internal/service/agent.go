@@ -181,9 +181,6 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
-	if strings.TrimSpace(req.AgentKind) != "" && req.AgentKind != "human" && req.AgentKind != "llm" {
-		return nil, fmt.Errorf("agent_kind must be 'human' or 'llm'")
-	}
 
 	tools := req.Tools
 	if tools == nil {
@@ -195,11 +192,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		skills = json.RawMessage("[]")
 	}
 
-	agentClass := normalizeAgentClass(stringOrDefault(req.AgentClass, ""), stringOrDefault(req.CapabilityProfile, ""), req.Role, req.AgentKind)
-	agentKind := strings.TrimSpace(req.AgentKind)
-	if agentKind == "" {
-		agentKind = agentKindForAgentClass(agentClass)
-	}
+	agentClass := normalizeAgentClass(stringOrDefault(req.AgentClass, ""), stringOrDefault(req.CapabilityProfile, ""), req.Role)
 	role := strings.TrimSpace(req.Role)
 	if role == "" {
 		role = defaultRoleForAgentClass(agentClass)
@@ -215,12 +208,6 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 	if err := validateTriggerModeForAgentClass(triggerMode, agentClass); err != nil {
 		return nil, err
 	}
-	if agentKind == "human" && agentClass != model.AgentClassHuman {
-		return nil, fmt.Errorf("human agents must use agent_class human")
-	}
-	if agentKind == "llm" && agentClass == model.AgentClassHuman {
-		return nil, fmt.Errorf("agent_class human requires agent_kind human")
-	}
 
 	approvalMode := "class_default"
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
@@ -234,11 +221,9 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 	agent := &model.Agent{
 		WorkspaceID:        req.WorkspaceID,
 		Name:               strings.TrimSpace(req.Name),
-		AgentKind:          agentKind,
 		AgentClass:         agentClass,
 		Role:               role,
 		Status:             "idle",
-		BackingUserID:      trimPtr(req.BackingUserID),
 		RuntimeKind:        runtimeKind,
 		CapabilityProfile:  capabilityProfileForAgentClass(agentClass),
 		Skills:             skills,
@@ -306,9 +291,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	}
 	if req.Status != nil {
 		agent.Status = *req.Status
-	}
-	if req.BackingUserID != nil {
-		agent.BackingUserID = req.BackingUserID
 	}
 	if req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" {
 		if err := validateRuntimeKind(*req.RuntimeKind); err != nil {
@@ -396,12 +378,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if err := validateAgentClass(agent.AgentClass); err != nil {
 		return nil, err
 	}
-	if agent.AgentKind == "human" && agent.AgentClass != model.AgentClassHuman {
-		return nil, fmt.Errorf("human agents must use agent_class human")
-	}
-	if agent.AgentKind != "human" && agent.AgentClass == model.AgentClassHuman {
-		return nil, fmt.Errorf("agent_class human requires agent_kind human")
-	}
 	if err := validateTriggerModeForAgentClass(agent.TriggerMode, agent.AgentClass); err != nil {
 		return nil, err
 	}
@@ -484,13 +460,11 @@ func (s *AgentService) AssignAgentToStory(ctx context.Context, workspaceID, stor
 
 	s.publishSimpleEvent("updated", "story", storyID, workspaceID, actorID)
 
-	if agent.AgentKind == "llm" {
-		if _, err := s.RunAgent(ctx, workspaceID, storyID, actorID); err != nil {
-			if errors.Is(err, ErrStoryDeliveryTargetRequired) {
-				return nil
-			}
-			return err
+	if _, err := s.RunAgent(ctx, workspaceID, storyID, actorID); err != nil {
+		if errors.Is(err, ErrStoryDeliveryTargetRequired) {
+			return nil
 		}
+		return err
 	}
 
 	return nil
@@ -918,9 +892,6 @@ func (s *AgentService) requireRunnableAgent(ctx context.Context, workspaceID, ag
 		return nil, fmt.Errorf("assigned agent not found")
 	}
 	normalizeAgentRecord(agent)
-	if agent.AgentKind != "llm" {
-		return nil, fmt.Errorf("only LLM agents can be run")
-	}
 	if err := validateAgentTarget(agent, targetType); err != nil {
 		return nil, err
 	}
@@ -1012,8 +983,6 @@ func defaultCapabilityProfileForRole(role string) string {
 		return model.AgentClassReviewer
 	case "orchestrator":
 		return model.AgentClassProductPlanner
-	case "human_proxy", "human":
-		return model.AgentClassHuman
 	default:
 		return model.AgentClassEngineer
 	}
@@ -1192,7 +1161,7 @@ func derefString(value *string) string {
 }
 
 func (s *AgentService) validateModelRouting(agent *model.Agent) error {
-	if agent == nil || agent.AgentKind == "human" {
+	if agent == nil {
 		return nil
 	}
 	if agent.Provider == nil {

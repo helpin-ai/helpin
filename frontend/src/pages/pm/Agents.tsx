@@ -97,7 +97,6 @@ const ADVANCED_DEFAULT_RUNTIME: Record<AgentClass, AgentRuntimeKind> = {
   engineer: 'opencode',
   reviewer: 'opencode',
   support: 'native_sdk',
-  human: 'opencode',
 };
 const ENGINE_TRIGGER_MODE_OPTIONS: AgentTriggerMode[] = ['manual', 'auto_on_assignment', 'auto_on_event'];
 
@@ -112,7 +111,6 @@ const AGENT_CLASS_LABELS: Record<AgentClass, string> = {
   engineer: 'Coder',
   reviewer: 'Reviewer',
   support: 'Support',
-  human: 'Team Member',
 };
 
 const AGENT_CLASS_DESCRIPTIONS: Record<AgentClass, string> = {
@@ -120,7 +118,6 @@ const AGENT_CLASS_DESCRIPTIONS: Record<AgentClass, string> = {
   engineer: 'Writes code, implements features, and fixes bugs.',
   reviewer: 'Reviews work, runs tests, and checks quality.',
   support: 'Handles support conversations and drafts replies.',
-  human: 'Represents a real person for manual handoffs.',
 };
 
 const TOOL_GROUPS = [
@@ -222,7 +219,6 @@ interface AgentFormData {
   agent_class: AgentClass;
   runtime_kind: AgentRuntimeKind;
   trigger_mode: AgentTriggerMode;
-  backing_user_id: string;
   skills: string;
   provider: AgentModelProvider;
   model: string;
@@ -248,7 +244,6 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
     agent_class: agentClass,
     runtime_kind: ADVANCED_DEFAULT_RUNTIME[agentClass],
     trigger_mode: 'manual',
-    backing_user_id: '',
     skills: '',
     provider: 'anthropic',
     model: '',
@@ -261,10 +256,6 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
     max_concurrent_runs: '1',
     allowed_tools: [],
   };
-}
-
-function isLLMAgentClass(agentClass: AgentClass): boolean {
-  return agentClass !== 'human';
 }
 
 function showsTriggerMode(agentClass: AgentClass): boolean {
@@ -283,7 +274,7 @@ function parseSkills(skills: string): string[] {
 }
 
 function hasConfiguredAdvancedFields(agent: Agent | null): boolean {
-  if (!agent || agent.agent_class === 'human') return false;
+  if (!agent) return false;
   return (
     agent.runtime_kind !== ADVANCED_DEFAULT_RUNTIME[agent.agent_class] ||
     Boolean(agent.system_prompt?.trim()) ||
@@ -293,44 +284,28 @@ function hasConfiguredAdvancedFields(agent: Agent | null): boolean {
 }
 
 function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentFormData {
-  const next: AgentFormData = {
-    ...current,
-    agent_class: nextClass,
-    runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
-    trigger_mode: allowedTriggerModesForClass(nextClass)[0] ?? 'manual',
-  };
-
-  if (nextClass === 'human') {
-    return {
-      ...next,
-      runtime_kind: ADVANCED_DEFAULT_RUNTIME[nextClass],
-      provider: 'anthropic',
-      model: '',
-      system_prompt: '',
-      planning_notes: '',
-      skills: '',
-      monthly_token_budget: '',
-    };
-  }
-
   if (nextClass === 'product_planner') {
     return {
-      ...next,
-      backing_user_id: '',
+      ...current,
+      agent_class: nextClass,
+      runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
+      trigger_mode: allowedTriggerModesForClass(nextClass)[0] ?? 'manual',
       provider: 'anthropic',
       system_prompt: '',
     };
   }
 
   return {
-    ...next,
-    backing_user_id: '',
+    ...current,
+    agent_class: nextClass,
+    runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
+    trigger_mode: allowedTriggerModesForClass(nextClass)[0] ?? 'manual',
     planning_notes: '',
   };
 }
 
 function buildAdvancedFields(form: AgentFormData, advancedOpen: boolean): Partial<CreateAgentRequest> {
-  if (!advancedOpen || form.agent_class === 'human') {
+  if (!advancedOpen) {
     return {};
   }
 
@@ -345,7 +320,6 @@ function buildAdvancedFields(form: AgentFormData, advancedOpen: boolean): Partia
 }
 
 function buildAutomationFields(form: AgentFormData): Partial<CreateAgentRequest> {
-  if (form.agent_class === 'human') return {};
   return {
     trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : 'manual',
     team_id: form.team_id,
@@ -361,9 +335,8 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     workspace_id: workspaceId,
     name: form.name.trim(),
     agent_class: form.agent_class,
-    backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : undefined,
-    provider: isLLMAgentClass(form.agent_class) ? form.provider : undefined,
-    model: isLLMAgentClass(form.agent_class) ? form.model.trim() : undefined,
+    provider: form.provider,
+    model: form.model.trim() || undefined,
     planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
     ...buildAdvancedFields(form, advancedOpen),
     ...buildAutomationFields(form),
@@ -374,10 +347,9 @@ function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean): UpdateA
   return {
     name: form.name.trim(),
     agent_class: form.agent_class,
-    backing_user_id: form.agent_class === 'human' ? form.backing_user_id.trim() : '',
     trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : 'manual',
-    provider: isLLMAgentClass(form.agent_class) ? (form.provider || undefined) : undefined,
-    model: isLLMAgentClass(form.agent_class) ? form.model.trim() : '',
+    provider: form.provider || undefined,
+    model: form.model.trim() || undefined,
     planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : '',
     ...buildAdvancedFields(form, advancedOpen),
     ...buildAutomationFields(form),
@@ -452,7 +424,7 @@ function AgentCard({
   canEdit: boolean;
 }) {
   const budgetPct =
-    agent.agent_kind === 'llm' && agent.monthly_token_budget
+    agent.monthly_token_budget
       ? Math.min(
           100,
           Math.round((agent.tokens_used_this_month / agent.monthly_token_budget) * 100)
@@ -501,7 +473,7 @@ function AgentCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
-        {agent.agent_kind === 'llm' && (agent.provider || agent.model) && (
+        {(agent.provider || agent.model) && (
           <p className="text-xs text-muted-foreground">
             {[agent.provider, agent.model].filter(Boolean).join(' / ')}
           </p>
@@ -744,7 +716,6 @@ export function AgentsPage() {
       agent_class: agent.agent_class,
       runtime_kind: agent.runtime_kind,
       trigger_mode: agent.trigger_mode ?? 'manual',
-      backing_user_id: agent.backing_user_id ?? '',
       skills: agent.skills.join(', '),
       provider: agent.provider ?? 'anthropic',
       model: agent.model ?? '',
@@ -1105,11 +1076,6 @@ export function AgentsPage() {
                 onValueChange={(value) => {
                   const nextClass = value as AgentClass;
                   setForm((current) => nextFormForClass(current, nextClass));
-                  if (nextClass === 'human') {
-                    setAdvancedOpen(false);
-                    setAutomationOpen(false);
-                    setToolsOpen(false);
-                  }
                 }}
               >
                 <SelectTrigger>
@@ -1153,62 +1119,41 @@ export function AgentsPage() {
               </div>
             )}
 
-            {/* Human agent: linked member */}
-            {form.agent_class === 'human' ? (
+            <Separator />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
+                <Select
+                  value={form.provider}
+                  onValueChange={(value) => setForm((current) => ({ ...current, provider: value as AgentModelProvider }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {providerOptions.map((provider) => (
+                      <SelectItem key={provider.value} value={provider.value}>
+                        {provider.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <FieldLabel
-                  htmlFor="agent-backing-user"
-                  tooltip="The workspace member this agent represents. Handoffs will be routed to this person."
+                  htmlFor="agent-model"
+                  tooltip="Leave blank to use the recommended model. Only change this if you need a specific model."
                 >
-                  Linked team member
+                  Model
                 </FieldLabel>
                 <Input
-                  id="agent-backing-user"
-                  value={form.backing_user_id}
-                  onChange={(e) => setForm((current) => ({ ...current, backing_user_id: e.target.value }))}
-                  placeholder="User ID of the team member"
+                  id="agent-model"
+                  value={form.model}
+                  onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
+                  placeholder={providerOptions.find((o) => o.value === form.provider)?.model_placeholder ?? 'Auto'}
                 />
               </div>
-            ) : (
-              <>
-                {/* AI provider + model */}
-                <Separator />
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
-                    <Select
-                      value={form.provider}
-                      onValueChange={(value) => setForm((current) => ({ ...current, provider: value as AgentModelProvider }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {providerOptions.map((provider) => (
-                          <SelectItem key={provider.value} value={provider.value}>
-                            {provider.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <FieldLabel
-                      htmlFor="agent-model"
-                      tooltip="Leave blank to use the recommended model. Only change this if you need a specific model."
-                    >
-                      Model
-                    </FieldLabel>
-                    <Input
-                      id="agent-model"
-                      value={form.model}
-                      onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                      placeholder={providerOptions.find((o) => o.value === form.provider)?.model_placeholder ?? 'Auto'}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
+            </div>
 
             {/* Trigger mode */}
             {showsTriggerMode(form.agent_class) && (
@@ -1254,248 +1199,240 @@ export function AgentsPage() {
             )}
 
             {/* ---- Scheduling & Approval ---- */}
-            {form.agent_class !== 'human' && (
-              <>
-                <Separator />
-                <Collapsible.Root open={automationOpen} onOpenChange={setAutomationOpen}>
-                  <Collapsible.Trigger asChild>
-                    <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
-                      <span className="flex items-center gap-2 text-sm">
-                        {automationOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        Scheduling & Approval
-                      </span>
-                      {form.schedule.trim() && !automationOpen && (
-                        <Badge variant="outline" className="text-[11px] gap-1">
-                          <Clock className="h-3 w-3" />
-                          Scheduled
-                        </Badge>
-                      )}
-                    </Button>
-                  </Collapsible.Trigger>
-                  <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
-                    <div className="space-y-2">
-                      <FieldLabel
-                        htmlFor="agent-schedule"
-                        tooltip="Use a cron expression to run this agent on a recurring schedule. For example: '0 9 * * 1-5' means weekdays at 9am UTC."
-                      >
-                        Recurring schedule
-                      </FieldLabel>
-                      <Input
-                        id="agent-schedule"
-                        value={form.schedule}
-                        onChange={(e) => setForm((current) => ({ ...current, schedule: e.target.value }))}
-                        placeholder="e.g. 0 9 * * 1-5 (weekdays at 9am)"
-                      />
-                      <p className="text-[11px] text-muted-foreground">
-                        Leave empty if you only want to run this agent manually or via triggers.
-                      </p>
-                    </div>
+            <Separator />
+            <Collapsible.Root open={automationOpen} onOpenChange={setAutomationOpen}>
+              <Collapsible.Trigger asChild>
+                <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
+                  <span className="flex items-center gap-2 text-sm">
+                    {automationOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    Scheduling & Approval
+                  </span>
+                  {form.schedule.trim() && !automationOpen && (
+                    <Badge variant="outline" className="text-[11px] gap-1">
+                      <Clock className="h-3 w-3" />
+                      Scheduled
+                    </Badge>
+                  )}
+                </Button>
+              </Collapsible.Trigger>
+              <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
+                <div className="space-y-2">
+                  <FieldLabel
+                    htmlFor="agent-schedule"
+                    tooltip="Use a cron expression to run this agent on a recurring schedule. For example: '0 9 * * 1-5' means weekdays at 9am UTC."
+                  >
+                    Recurring schedule
+                  </FieldLabel>
+                  <Input
+                    id="agent-schedule"
+                    value={form.schedule}
+                    onChange={(e) => setForm((current) => ({ ...current, schedule: e.target.value }))}
+                    placeholder="e.g. 0 9 * * 1-5 (weekdays at 9am)"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Leave empty if you only want to run this agent manually or via triggers.
+                  </p>
+                </div>
 
-                    <div className="space-y-2">
-                      <FieldLabel tooltip="When set to 'always review first', a team member must approve each run before the agent starts working.">
-                        Requires approval?
-                      </FieldLabel>
-                      <Select
-                        value={form.approval_mode}
-                        onValueChange={(value) => setForm((current) => ({ ...current, approval_mode: value as AgentApprovalMode }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {APPROVAL_MODE_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-[11px] text-muted-foreground">
-                        {APPROVAL_MODE_OPTIONS.find((o) => o.value === form.approval_mode)?.description}
-                      </p>
-                    </div>
+                <div className="space-y-2">
+                  <FieldLabel tooltip="When set to 'always review first', a team member must approve each run before the agent starts working.">
+                    Requires approval?
+                  </FieldLabel>
+                  <Select
+                    value={form.approval_mode}
+                    onValueChange={(value) => setForm((current) => ({ ...current, approval_mode: value as AgentApprovalMode }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {APPROVAL_MODE_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    {APPROVAL_MODE_OPTIONS.find((o) => o.value === form.approval_mode)?.description}
+                  </p>
+                </div>
 
-                    <div className="space-y-2">
-                      <FieldLabel
-                        htmlFor="agent-concurrency"
-                        tooltip="How many tasks this agent can work on at the same time. Keep at 1 unless you need parallel processing."
-                      >
-                        Parallel tasks
-                      </FieldLabel>
-                      <Input
-                        id="agent-concurrency"
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={form.max_concurrent_runs}
-                        onChange={(e) => setForm((current) => ({ ...current, max_concurrent_runs: e.target.value }))}
-                      />
-                    </div>
-                  </Collapsible.Content>
-                </Collapsible.Root>
-              </>
-            )}
+                <div className="space-y-2">
+                  <FieldLabel
+                    htmlFor="agent-concurrency"
+                    tooltip="How many tasks this agent can work on at the same time. Keep at 1 unless you need parallel processing."
+                  >
+                    Parallel tasks
+                  </FieldLabel>
+                  <Input
+                    id="agent-concurrency"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={form.max_concurrent_runs}
+                    onChange={(e) => setForm((current) => ({ ...current, max_concurrent_runs: e.target.value }))}
+                  />
+                </div>
+              </Collapsible.Content>
+            </Collapsible.Root>
 
             {/* ---- Capabilities / Tools ---- */}
-            {form.agent_class !== 'human' && (
-              <Collapsible.Root open={toolsOpen} onOpenChange={setToolsOpen}>
-                <Collapsible.Trigger asChild>
-                  <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
-                    <span className="flex items-center gap-2 text-sm">
-                      {toolsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                      Capabilities
-                    </span>
-                    {form.allowed_tools.length > 0 && !toolsOpen && (
-                      <Badge variant="outline" className="text-[11px]">
-                        {form.allowed_tools.length} selected
-                      </Badge>
-                    )}
-                  </Button>
-                </Collapsible.Trigger>
-                <Collapsible.Content className="space-y-3 rounded-md border bg-muted/30 p-3 mt-2">
-                  <p className="text-[11px] text-muted-foreground">
-                    Choose what this agent is allowed to do. Leave all unselected to use the standard set for its role.
-                  </p>
-                  {TOOL_GROUPS.map((group) => {
-                    const allSelected = group.tools.every((t) => form.allowed_tools.includes(t.id));
-                    return (
-                      <div key={group.label} className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-muted-foreground">{group.label}</span>
-                          <button
-                            type="button"
-                            className="text-[11px] text-primary hover:underline"
-                            onClick={() => {
-                              const groupIds = group.tools.map((t) => t.id);
-                              setForm((current) => ({
-                                ...current,
-                                allowed_tools: allSelected
-                                  ? current.allowed_tools.filter((id) => !groupIds.includes(id))
-                                  : [...new Set([...current.allowed_tools, ...groupIds])],
-                              }));
-                            }}
-                          >
-                            {allSelected ? 'Remove all' : 'Add all'}
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {group.tools.map((tool) => {
-                            const selected = form.allowed_tools.includes(tool.id);
-                            return (
-                              <button
-                                key={tool.id}
-                                type="button"
-                                className={`rounded-md border px-2 py-1 text-xs transition-colors ${
-                                  selected
-                                    ? 'border-primary bg-primary/10 text-primary'
-                                    : 'border-border bg-background text-muted-foreground hover:border-primary/50'
-                                }`}
-                                onClick={() =>
-                                  setForm((current) => ({
-                                    ...current,
-                                    allowed_tools: selected
-                                      ? current.allowed_tools.filter((id) => id !== tool.id)
-                                      : [...current.allowed_tools, tool.id],
-                                  }))
-                                }
-                              >
-                                {tool.label}
-                              </button>
-                            );
-                          })}
-                        </div>
+            <Collapsible.Root open={toolsOpen} onOpenChange={setToolsOpen}>
+              <Collapsible.Trigger asChild>
+                <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
+                  <span className="flex items-center gap-2 text-sm">
+                    {toolsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    Capabilities
+                  </span>
+                  {form.allowed_tools.length > 0 && !toolsOpen && (
+                    <Badge variant="outline" className="text-[11px]">
+                      {form.allowed_tools.length} selected
+                    </Badge>
+                  )}
+                </Button>
+              </Collapsible.Trigger>
+              <Collapsible.Content className="space-y-3 rounded-md border bg-muted/30 p-3 mt-2">
+                <p className="text-[11px] text-muted-foreground">
+                  Choose what this agent is allowed to do. Leave all unselected to use the standard set for its role.
+                </p>
+                {TOOL_GROUPS.map((group) => {
+                  const allSelected = group.tools.every((t) => form.allowed_tools.includes(t.id));
+                  return (
+                    <div key={group.label} className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-muted-foreground">{group.label}</span>
+                        <button
+                          type="button"
+                          className="text-[11px] text-primary hover:underline"
+                          onClick={() => {
+                            const groupIds = group.tools.map((t) => t.id);
+                            setForm((current) => ({
+                              ...current,
+                              allowed_tools: allSelected
+                                ? current.allowed_tools.filter((id) => !groupIds.includes(id))
+                                : [...new Set([...current.allowed_tools, ...groupIds])],
+                            }));
+                          }}
+                        >
+                          {allSelected ? 'Remove all' : 'Add all'}
+                        </button>
                       </div>
-                    );
-                  })}
-                </Collapsible.Content>
-              </Collapsible.Root>
-            )}
+                      <div className="flex flex-wrap gap-1.5">
+                        {group.tools.map((tool) => {
+                          const selected = form.allowed_tools.includes(tool.id);
+                          return (
+                            <button
+                              key={tool.id}
+                              type="button"
+                              className={`rounded-md border px-2 py-1 text-xs transition-colors ${
+                                selected
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-border bg-background text-muted-foreground hover:border-primary/50'
+                              }`}
+                              onClick={() =>
+                                setForm((current) => ({
+                                  ...current,
+                                  allowed_tools: selected
+                                    ? current.allowed_tools.filter((id) => id !== tool.id)
+                                    : [...current.allowed_tools, tool.id],
+                                }))
+                              }
+                            >
+                              {tool.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </Collapsible.Content>
+            </Collapsible.Root>
 
             {/* ---- Advanced (engine internals) ---- */}
-            {form.agent_class !== 'human' && (
-              <Collapsible.Root open={advancedOpen} onOpenChange={setAdvancedOpen}>
-                <Collapsible.Trigger asChild>
-                  <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
-                    <span className="flex items-center gap-2 text-sm">
-                      {advancedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                      Advanced
-                    </span>
-                    {advancedConfigured && !advancedOpen && (
-                      <Badge variant="outline" className="text-[11px]">Customised</Badge>
-                    )}
-                  </Button>
-                </Collapsible.Trigger>
-                <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
-                  <div className="space-y-2">
-                    <FieldLabel tooltip="The execution engine that runs this agent. Only change this if you know what you're doing.">
-                      Execution engine
-                    </FieldLabel>
-                    <Select
-                      value={form.runtime_kind}
-                      onValueChange={(value) => setForm((current) => ({ ...current, runtime_kind: value as AgentRuntimeKind }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {RUNTIME_KIND_OPTIONS.map((runtimeKind) => (
-                          <SelectItem key={runtimeKind} value={runtimeKind}>
-                            {AGENT_RUNTIME_LABELS[runtimeKind]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+            <Collapsible.Root open={advancedOpen} onOpenChange={setAdvancedOpen}>
+              <Collapsible.Trigger asChild>
+                <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
+                  <span className="flex items-center gap-2 text-sm">
+                    {advancedOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    Advanced
+                  </span>
+                  {advancedConfigured && !advancedOpen && (
+                    <Badge variant="outline" className="text-[11px]">Customised</Badge>
+                  )}
+                </Button>
+              </Collapsible.Trigger>
+              <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
+                <div className="space-y-2">
+                  <FieldLabel tooltip="The execution engine that runs this agent. Only change this if you know what you're doing.">
+                    Execution engine
+                  </FieldLabel>
+                  <Select
+                    value={form.runtime_kind}
+                    onValueChange={(value) => setForm((current) => ({ ...current, runtime_kind: value as AgentRuntimeKind }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RUNTIME_KIND_OPTIONS.map((runtimeKind) => (
+                        <SelectItem key={runtimeKind} value={runtimeKind}>
+                          {AGENT_RUNTIME_LABELS[runtimeKind]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                  <div className="space-y-2">
-                    <FieldLabel
-                      htmlFor="agent-skills"
-                      tooltip="Skill packs extend the agent's abilities. Separate multiple values with commas."
-                    >
-                      Skill packs
-                    </FieldLabel>
-                    <Input
-                      id="agent-skills"
-                      value={form.skills}
-                      onChange={(e) => setForm((current) => ({ ...current, skills: e.target.value }))}
-                      placeholder="e.g. testing, documentation"
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <FieldLabel
+                    htmlFor="agent-skills"
+                    tooltip="Skill packs extend the agent's abilities. Separate multiple values with commas."
+                  >
+                    Skill packs
+                  </FieldLabel>
+                  <Input
+                    id="agent-skills"
+                    value={form.skills}
+                    onChange={(e) => setForm((current) => ({ ...current, skills: e.target.value }))}
+                    placeholder="e.g. testing, documentation"
+                  />
+                </div>
 
-                  <div className="space-y-2">
-                    <FieldLabel
-                      htmlFor="agent-prompt"
-                      tooltip="Custom instructions that shape how this agent behaves. These are added to the agent's base instructions."
-                    >
-                      Custom instructions
-                    </FieldLabel>
-                    <Textarea
-                      id="agent-prompt"
-                      value={form.system_prompt}
-                      onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
-                      placeholder="e.g. Always write unit tests. Follow our coding style guide."
-                      rows={3}
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <FieldLabel
+                    htmlFor="agent-prompt"
+                    tooltip="Custom instructions that shape how this agent behaves. These are added to the agent's base instructions."
+                  >
+                    Custom instructions
+                  </FieldLabel>
+                  <Textarea
+                    id="agent-prompt"
+                    value={form.system_prompt}
+                    onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
+                    placeholder="e.g. Always write unit tests. Follow our coding style guide."
+                    rows={3}
+                  />
+                </div>
 
-                  <div className="space-y-2">
-                    <FieldLabel
-                      htmlFor="agent-budget"
-                      tooltip="Set a monthly limit on how much this agent can process. Measured in AI tokens. Leave empty for unlimited."
-                    >
-                      Monthly usage limit
-                    </FieldLabel>
-                    <Input
-                      id="agent-budget"
-                      type="number"
-                      value={form.monthly_token_budget}
-                      onChange={(e) => setForm((current) => ({ ...current, monthly_token_budget: e.target.value }))}
-                      placeholder="No limit"
-                    />
-                  </div>
-                </Collapsible.Content>
-              </Collapsible.Root>
-            )}
+                <div className="space-y-2">
+                  <FieldLabel
+                    htmlFor="agent-budget"
+                    tooltip="Set a monthly limit on how much this agent can process. Measured in AI tokens. Leave empty for unlimited."
+                  >
+                    Monthly usage limit
+                  </FieldLabel>
+                  <Input
+                    id="agent-budget"
+                    type="number"
+                    value={form.monthly_token_budget}
+                    onChange={(e) => setForm((current) => ({ ...current, monthly_token_budget: e.target.value }))}
+                    placeholder="No limit"
+                  />
+                </div>
+              </Collapsible.Content>
+            </Collapsible.Root>
           </div>
 
           {/* ---- Footer ---- */}

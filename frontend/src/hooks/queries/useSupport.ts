@@ -172,7 +172,7 @@ export function useSupportAgents(workspaceId: string) {
     queryFn: async () => {
       const res = await agentService.list(workspaceId);
       if (res.error) throw new Error(res.error);
-      return (res.data ?? []).filter((a) => a.agent_kind === 'llm' && a.agent_class === 'support');
+      return (res.data ?? []).filter((a) => a.agent_class === 'support');
     },
     enabled: !!workspaceId,
     staleTime: 60_000,

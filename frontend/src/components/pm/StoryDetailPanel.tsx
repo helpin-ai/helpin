@@ -1090,11 +1090,7 @@ function StoryDetailPanelBody({
                     }}
                     renderTrigger={() => (
                       <>
-                        {delivery.selectedAgent && (
-                          delivery.selectedAgent.agent_kind === 'human'
-                            ? <User className="h-3.5 w-3.5 text-muted-foreground" />
-                            : <Bot className="h-3.5 w-3.5 text-muted-foreground" />
-                        )}
+                        {delivery.selectedAgent && <Bot className="h-3.5 w-3.5 text-muted-foreground" />}
                         <span>{delivery.selectedAgent?.name ?? 'No agent'}</span>
                         {delivery.savingAssignment && <Loader2 className="h-3 w-3 animate-spin" />}
                       </>
@@ -1102,9 +1098,7 @@ function StoryDetailPanelBody({
                     renderOption={(v) => {
                       const a = delivery.agents.find((ag) => ag.id === v);
                       if (!a) return null;
-                      return a.agent_kind === 'human'
-                        ? <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        : <Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
+                      return <Bot className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
                     }}
                   />
                 </MetadataRow>

@@ -316,7 +316,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
     agentService.list(workspaceId).then((res) => { if (res.data) setAgents(res.data); });
   }, [workspaceId]);
 
-  const llmAgents = useMemo(() => agents.filter((a) => a.agent_kind === 'llm'), [agents]);
+  const llmAgents = useMemo(() => agents, [agents]);
 
   // Rules grouped by state_id for quick lookup
   const rulesByStateId = useMemo(() => {

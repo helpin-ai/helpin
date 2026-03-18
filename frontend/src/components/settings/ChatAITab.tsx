@@ -174,7 +174,7 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-sm">Show "Talk to Human" button</Label>
-              <p className="text-xs text-muted-foreground">Let visitors escalate to a human agent at any time.</p>
+              <p className="text-xs text-muted-foreground">Let visitors request help from a team member at any time.</p>
             </div>
             <Switch checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
           </div>
@@ -185,7 +185,7 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader className="pb-4">
           <CardTitle className="text-base">Handoff Routing</CardTitle>
-          <CardDescription>How conversations are assigned when a human agent is needed.</CardDescription>
+          <CardDescription>How conversations are assigned when human help is needed.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">

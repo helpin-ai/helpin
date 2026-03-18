@@ -992,8 +992,7 @@ export interface UpdateViewRequest {
 
 // ── Agents ──────────────────────────────────────────────────────────
 
-export type AgentKind = 'human' | 'llm';
-export type AgentClass = 'product_planner' | 'engineer' | 'reviewer' | 'support' | 'human';
+export type AgentClass = 'product_planner' | 'engineer' | 'reviewer' | 'support';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'native_sdk';
@@ -1007,11 +1006,9 @@ export interface Agent {
   id: string;
   workspace_id: string;
   name: string;
-  agent_kind: AgentKind;
   agent_class: AgentClass;
   role: string;
   status: AgentStatus;
-  backing_user_id?: string;
   runtime_kind: AgentRuntimeKind;
   capability_profile: string;
   skills: string[];
@@ -1146,10 +1143,8 @@ export interface AgentRunArtifact {
 export interface CreateAgentRequest {
   workspace_id: string;
   name: string;
-  agent_kind?: AgentKind;
   agent_class?: AgentClass;
   role?: string;
-  backing_user_id?: string;
   runtime_kind?: AgentRuntimeKind;
   capability_profile?: string;
   skills?: string[];
@@ -1176,7 +1171,6 @@ export interface UpdateAgentRequest {
   agent_class?: AgentClass;
   role?: string;
   status?: AgentStatus;
-  backing_user_id?: string;
   runtime_kind?: AgentRuntimeKind;
   capability_profile?: string;
   skills?: string[];

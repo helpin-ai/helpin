@@ -1,5 +1,9 @@
 # Teampulse: Agents And Automation
 
+For the current shipped architecture across built-ins, automation rules, agents, flows, node types, runtimes, queues, and Temporal execution, start with:
+
+- `docs/AUTOMATION_AND_AGENT_ARCHITECTURE.md`
+
 This document remains the source of truth for the current explicit agent model.
 
 For the broader cross-app automation control-plane taxonomy introduced in Phase 1c, see:
@@ -94,14 +98,14 @@ The control-plane model is also intentionally narrow:
 
 | Concept | Meaning |
 |---|---|
-| `agent` | A workspace-scoped human or LLM participant |
+| `agent` | A workspace-scoped LLM executor |
 | `agent_class` | The user-visible class that defines intended target surface |
 | `agent_run` | A single execution against one target |
 | `target_type` / `target_id` | Canonical run target: story, epic, or support ticket |
 | `story_delivery_target` | The current repo lane for a story |
 | `story_git_link` | Historical branch, commit, and PR output for a story |
 | `artifact` | A stored run output such as logs, diffs, or PR metadata |
-| `handoff` | Explicit transfer from one agent to another agent or a human |
+| `handoff` | Explicit transfer from one agent to another agent or a user/member |
 
 ## Current System Boundaries
 
@@ -174,7 +178,6 @@ Current user-visible agent classes:
 - `engineer`
 - `reviewer`
 - `support`
-- `human`
 
 Intent by class:
 
@@ -182,13 +185,11 @@ Intent by class:
 - `engineer`: story-only implementation and delivery
 - `reviewer`: story-only review, testing, and readiness checks
 - `support`: support-ticket triage and draft replies
-- `human`: non-runnable assignment and handoff target only
 
 Important:
 
 - `planner` and `orchestrator` are legacy aliases that normalize to `product_planner`
 - `reviewer_tester` is a legacy alias that normalizes to `reviewer`
-- `human_proxy` is a legacy alias that normalizes to `human`
 
 The UI should only expose the canonical classes above.
 
@@ -202,7 +203,6 @@ Allowed mappings:
 - `engineer` -> `story`
 - `reviewer` -> `story`
 - `support` -> `support_conversation`
-- `human` -> not runnable
 
 This means:
 
@@ -210,12 +210,9 @@ This means:
 - an engineer cannot run on an epic
 - a product planner cannot run directly on a support ticket
 
-## Agent Kinds
+## Agent Identity
 
-- `llm`: executable agents
-- `human`: assignment and handoff only, never executed
-
-`human` class requires `agent_kind = human`. All other classes require `agent_kind = llm`.
+Agents are always LLM executors. Humans are represented as users or workspace members, not as agents.
 
 ## Runtime Kinds
 
@@ -243,7 +240,6 @@ Current canonical runtime profiles:
 - `engineer`
 - `reviewer`
 - `support`
-- `human`
 
 Profile intent:
 
@@ -251,7 +247,6 @@ Profile intent:
 - `engineer`: repo mutation, commit, push, PR creation
 - `reviewer`: read-heavy validation and test execution
 - `support`: support triage and draft replies with approval boundary
-- `human`: explicit handoff only
 
 ## Trigger Modes
 
@@ -261,7 +256,6 @@ Profile intent:
 
 Current behavior:
 
-- `human` agents never execute
 - `product_planner` runs are manual
 - `support` runs are manual
 - `engineer` and `reviewer` can use `manual`, `auto_on_assignment`, or `auto_on_event`
@@ -1006,5 +1000,5 @@ Frontend:
 - Use `engineer` for story implementation, branching, commits, and PRs.
 - Use `reviewer` for validation and read-heavy QA runs.
 - Use `support` for ticket triage and draft replies.
-- Use `human` to represent explicit human ownership or handoff targets.
-- Prefer explicit handoffs over adding more product-visible agent classes.
+- Use users and workspace members to represent explicit human ownership or handoff targets.
+- Prefer explicit handoffs and member assignment over adding more product-visible agent classes.

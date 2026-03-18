@@ -48,16 +48,6 @@ var runtimeProfiles = []model.RuntimeProfile{
 		ApprovalRequired:   true,
 		RequiresRepo:       false,
 	},
-	{
-		Name:               model.AgentClassHuman,
-		RuntimeKind:        "opencode",
-		Description:        "Non-executable placeholder used for explicit assignment and handoffs to human participants.",
-		AllowedTools:       []string{},
-		AllowedCommands:    []string{},
-		AllowedTargetTypes: []string{},
-		ApprovalRequired:   false,
-		RequiresRepo:       false,
-	},
 }
 
 // ListRuntimeProfiles returns the supported runtime profiles.
@@ -88,8 +78,6 @@ func NormalizeCapabilityProfile(name string) string {
 		return model.AgentClassReviewer
 	case "support":
 		return model.AgentClassSupport
-	case "human", "human_proxy":
-		return model.AgentClassHuman
 	default:
 		return strings.TrimSpace(name)
 	}
