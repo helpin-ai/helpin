@@ -61,7 +61,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
     </div>
   );
 
-  // ── System message: centered pill (Crisp-style) ──
+  // ── System message: right-aligned pill with avatar (Crisp-style) ──
   if (message.message_type === 'system') {
     const isResolved = message.content.toLowerCase().includes('resolved');
     const isReopened = message.content.toLowerCase().includes('reopened');
@@ -75,7 +75,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
     const avatarUrl = message.sender_avatar_url;
 
     return (
-      <div className="my-4 flex items-center justify-center gap-2 animate-in fade-in duration-300">
+      <div className="my-4 flex items-center justify-end gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-2.5 rounded-full bg-slate-700 px-4 py-2 text-white shadow-sm" style={{ border: 'none' }}>
@@ -83,7 +83,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
               <span className="text-sm font-medium">{message.content}</span>
             </div>
           </TooltipTrigger>
-          <TooltipContent>
+          <TooltipContent side="left">
             <div className="space-y-0.5 text-xs">
               <div className="font-medium">{senderName}</div>
               <div className="text-muted-foreground">{fullTimestamp}</div>

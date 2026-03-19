@@ -83,6 +83,15 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
       );
     }
 
+    // Sort: unresolved/open on top, resolved/closed at bottom, then by updated_at desc
+    result.sort((a, b) => {
+      const resolvedStatuses = new Set(['resolved', 'closed']);
+      const aResolved = resolvedStatuses.has(a.status) ? 1 : 0;
+      const bResolved = resolvedStatuses.has(b.status) ? 1 : 0;
+      if (aResolved !== bResolved) return aResolved - bResolved;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+
     return result;
   }, [conversations, navFilter, userId, searchQuery]);
 
