@@ -94,7 +94,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   const avatarEl = isCustomer ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground shadow-sm">
           {getInitial(senderName)}
         </div>
       </TooltipTrigger>
@@ -103,14 +103,14 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   ) : avatarUrl ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <img src={avatarUrl} alt={senderName} className="h-7 w-7 shrink-0 rounded-full object-cover" />
+        <img src={avatarUrl} alt={senderName} className="h-7 w-7 shrink-0 rounded-full object-cover shadow-sm" />
       </TooltipTrigger>
       <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
     </Tooltip>
   ) : isAgent ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary shadow-sm">
           <Bot className="h-3.5 w-3.5" />
         </div>
       </TooltipTrigger>
@@ -119,7 +119,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   ) : (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow-sm">
           {getInitial(senderName)}
         </div>
       </TooltipTrigger>
@@ -128,7 +128,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   );
 
   return (
-    <div className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} ${isConsecutive ? 'mt-0.5' : 'mt-5'}`}>
+    <div className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} ${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
       {/* Left side: avatar or spacer (customer messages) */}
       {isCustomer && (
         <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">

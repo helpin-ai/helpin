@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo, memo } from 'react';
 import { toast } from 'sonner';
 import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, CircleX, Link2, MailOpen, ShieldAlert, Trash2, Pencil } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -41,10 +41,10 @@ function TypingIndicatorBar({ conversationId }: { conversationId: string | null 
   );
   if (typingState === false || typingState === undefined) return null;
   return (
-    <div className="flex justify-start mt-2 animate-in fade-in duration-200">
+    <div className="flex justify-start mt-2 animate-in fade-in slide-in-from-left-2 duration-200">
       {/* Avatar placeholder matching customer bubble layout */}
       <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950/30">
+        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950/30 shadow-sm">
           <span className="flex gap-0.5 text-sm leading-none text-blue-400">
             <span className="animate-bounce [animation-delay:0ms]">·</span>
             <span className="animate-bounce [animation-delay:150ms]">·</span>
@@ -80,7 +80,7 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
         const member = members.find((m) => m.user_id === actorId);
         const name = member?.full_name || member?.email || 'Agent';
         return (
-          <div key={actorId} className="flex justify-end mt-2 animate-in fade-in duration-200">
+          <div key={actorId} className="flex justify-end mt-2 animate-in fade-in slide-in-from-right-2 duration-200">
             <div className="max-w-[70%]">
               <div className="mb-1 pr-1 text-right">
                 <span className="text-[11px] font-medium text-blue-600/70 dark:text-blue-400/70">
@@ -109,9 +109,9 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
             </div>
             <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
               {member?.avatar_url ? (
-                <img src={member.avatar_url} alt={name} title={name} className="h-7 w-7 rounded-full object-cover" />
+                <img src={member.avatar_url} alt={name} title={name} className="h-7 w-7 rounded-full object-cover shadow-sm" />
               ) : (
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white" title={name}>
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow-sm" title={name}>
                   {getInitial(name)}
                 </div>
               )}
@@ -125,13 +125,45 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
 
 function DaySeparator({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-3 py-4">
-      <div className="h-px flex-1 bg-border" />
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
-      <div className="h-px flex-1 bg-border" />
+    <div className="sticky top-0 z-[1] flex items-center justify-center py-3">
+      <div className="absolute inset-x-0 top-1/2 h-px bg-border/50" />
+      <span className="relative rounded-full bg-muted/80 px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 backdrop-blur-sm">
+        {label}
+      </span>
     </div>
   );
 }
+
+/** Skeleton message bubbles shown while loading */
+const MessageSkeleton = memo(function MessageSkeleton() {
+  return (
+    <div className="space-y-6 py-8">
+      {/* Customer message group */}
+      <div className="flex items-end gap-2" style={{ width: '55%' }}>
+        <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-muted" />
+        <div className="flex flex-1 flex-col gap-1.5">
+          <div className="h-10 animate-pulse rounded-2xl rounded-bl-sm bg-muted" />
+          <div className="h-6 w-3/4 animate-pulse rounded-2xl bg-muted" />
+        </div>
+      </div>
+      {/* Agent message group */}
+      <div className="flex items-end gap-2 self-end ml-auto" style={{ width: '60%' }}>
+        <div className="flex flex-1 flex-col items-end gap-1.5">
+          <div className="h-14 w-full animate-pulse rounded-2xl rounded-br-sm bg-blue-100 dark:bg-blue-900/20" />
+          <div className="h-8 w-4/5 animate-pulse rounded-2xl bg-blue-100 dark:bg-blue-900/20" />
+        </div>
+        <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-blue-100 dark:bg-blue-900/20" />
+      </div>
+      {/* Another customer message */}
+      <div className="flex items-end gap-2" style={{ width: '45%' }}>
+        <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-muted" />
+        <div className="flex flex-1 flex-col gap-1.5">
+          <div className="h-8 animate-pulse rounded-2xl rounded-bl-sm bg-muted" />
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export function MessageThread({ workspaceId, conversationId }: MessageThreadProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -255,7 +287,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
   if (!conversationId) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-muted/30 text-muted-foreground">
         <MessageSquare className="h-12 w-12 opacity-20" />
         <p className="text-sm">Select a conversation to view</p>
       </div>
@@ -264,9 +296,12 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
   return (
     <div className="flex flex-1 flex-col min-w-0 min-h-0">
-      {/* Action header bar */}
+      {/* Topbar with subtle bottom shadow (Crisp-style) */}
       {conversation && (
-        <div className="flex items-center justify-between border-b px-4 py-2.5">
+        <div className="relative z-10 flex items-center justify-between border-b px-4 py-2.5 bg-background">
+          {/* Gradient shadow below topbar */}
+          <div className="absolute top-full left-0 right-0 h-1.5 bg-gradient-to-b from-black/[0.025] to-transparent pointer-events-none" />
+
           <div className="flex items-center gap-2 min-w-0">
             <h2 className="text-sm font-semibold text-muted-foreground">#{conversation.display_id}</h2>
           </div>
@@ -384,14 +419,10 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         </div>
       )}
 
-      {/* Messages with day separators */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="px-4 pb-4">
-          {isLoading && (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          )}
+      {/* Messages area with light background (Crisp-style) */}
+      <ScrollArea className="flex-1 min-h-0 bg-muted/20">
+        <div className="px-4 pb-4 pt-2">
+          {isLoading && <MessageSkeleton />}
           {!isLoading && messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
               <MessageSquare className="h-8 w-8 opacity-30" />
