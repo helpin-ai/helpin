@@ -287,45 +287,141 @@ The actual support settings API uses installation-based routes (not workspace-ne
 
 Frontend uses `supportService.updateInstallationSettings(workspaceId, settings)` → `useChatSettings(workspaceId)` / `useUpdateChatSettings(workspaceId)` hooks.
 
-## 7. Email Templates
+## 7. Email Format & Delivery Specification
 
-### Outbound Notification
+Reference: Crisp's email notification pattern (screenshot: `crisp-email-screenshot.png`). The email should feel like a personal reply from the agent — not a system notification. This is critical for open rates and reply engagement.
 
-**Subject**: `{conversation_subject} — {workspace_name}` (prefixed with `Re:` after first email)
+### 7.1 Subject Line
 
-**Headers**:
-- `Reply-To: conv-{conversation_id}@replies.helpin.ai`
-- `Message-ID: <msg-{last_message_id}@helpin.ai>`
-- `In-Reply-To: <msg-{previous_email_message_id}@helpin.ai>`
-- `References: <msg-{first_id}@helpin.ai> ... <msg-{prev_id}@helpin.ai>`
-- `X-Conversation-ID: {conversation_id}`
-- `List-Unsubscribe: <mailto:unsubscribe-{conversation_id}@replies.helpin.ai>`
+| Scenario | Format | Example |
+|----------|--------|---------|
+| First email in conversation | `{conversation_subject} (#{short_id})` | `Pricing question (#a3f)` |
+| Subsequent emails (threading) | `Re: {conversation_subject} (#{short_id})` | `Re: Pricing question (#a3f)` |
 
-**HTML Body**:
+- `short_id` = first 3–6 chars of conversation UUID (for human reference, like Crisp's `#7f2`)
+- If no explicit subject exists, derive from the visitor's first message (truncated at 60 chars + `...`)
+- The `Re:` prefix is critical for Gmail/Outlook to thread correctly alongside RFC 2822 headers
+
+### 7.2 From Address
+
+**Format**: `{Agent Name} - {Workspace Name} <messages@replies.helpin.ai>`
+
+| Component | Source | Example |
+|-----------|--------|---------|
+| Agent Name | `SupportMessage.SenderDisplayName` or agent's profile name | `Sarah Chen` |
+| Workspace Name | `workspace.Name` or `settings.EmailFallbackFromName` override | `Acme Support` |
+| Email Address | Static Postmark-verified sender on reply domain | `messages@replies.helpin.ai` |
+
+**Rendered**: `Sarah Chen - Acme Support <messages@replies.helpin.ai>`
+
+This matches Crisp's pattern (`Fabi Pina - Usermaven <messages@crisp.usermaven.com>`). The visitor sees a real person's name in their inbox, not "noreply" or a generic system address.
+
+**Custom email domain** (future, not v1): Workspaces could configure `messages@support.acme.com` via Postmark's custom domain feature + DNS verification. For v1, all workspaces share the `replies.helpin.ai` domain.
+
+### 7.3 Email Body — Layout
+
+The email uses a minimal, personal layout — no heavy branding, marketing headers, or card UI. It should look like a human sent it.
+
 ```
-[Workspace Logo / Name]
-
-{Agent Name} replied to your conversation:
-
-─────────────────────────────
-{Message 1 content}
-{Agent Name} · {timestamp}
-
-{Message 2 content}  (if batched)
-{Agent Name} · {timestamp}
-─────────────────────────────
-
-[View Conversation] button → {OriginalPageURL}#helpin-conv={conversation_id}
-
-You can reply directly to this email.
-
-Footer: "You're receiving this because you contacted {workspace_name} support."
+┌─────────────────────────────────────────────┐
+│                                             │
+│  {Message content — plain text/basic HTML}  │
+│                                             │
+│  {Message 2 content}        (if batched)    │
+│                                             │
+│  --                                         │
+│                                             │
+│  ● {Agent Name} via {Workspace Name}.       │
+│                                             │
+│  Reply directly to this email, or go to     │
+│  chat.                                      │
+│                                             │
+│  Sent from Helpin. Unsubscribe from these   │
+│  emails.                                    │
+│                                             │
+└─────────────────────────────────────────────┘
 ```
 
-**CTA deep-link strategy**: The widget is an embedded component, not a standalone routed page — there is no `/widget/conversation/{id}` route. Instead:
-- The CTA links to the **original page URL** (stored on the conversation as `page_url` at creation time) with a hash fragment `#helpin-conv={conversation_id}`.
-- The SDK (`packages/sdk-js/src/core/widget.ts`) checks `window.location.hash` on init. If it contains `helpin-conv=`, it auto-opens the widget and navigates to that conversation via `openConversation(conversationId)`.
-- If `page_url` is not available, the CTA falls back to the workspace's base URL. The email copy emphasizes "reply directly to this email" as the primary action.
+#### Body Content
+
+- **Message text**: Rendered as-is (plain text with line breaks preserved). No "X replied to your conversation:" wrapper — the message IS the email body, like a real email.
+- **Batched messages**: If multiple agent messages accumulated during debounce, include all sequentially separated by a blank line. No per-message headers or timestamps — keep it natural.
+- **Signature separator**: `--` (standard email signature delimiter, RFC 3676)
+- **No conversation history quoted in body**: Gmail/Outlook handle quoting via `In-Reply-To` header threading. Including prior messages in the body would duplicate what the email client already shows.
+
+#### Footer Block
+
+| Element | Format | Notes |
+|---------|--------|-------|
+| Agent identity | `● {Agent Name} via {Workspace Name}.` | Small avatar circle (CSS) + agent name + "via" + workspace. Mirrors Crisp's "Fabi Pina via Usermaven." |
+| Reply CTA | `Reply directly to this email, or go to chat.` | "chat" is a hyperlink to `{OriginalPageURL}#helpin-conv={conversation_id}` |
+| Attribution | `Sent from Helpin. Unsubscribe from these emails.` | "Helpin" links to `https://helpin.ai`. "Unsubscribe" is a `mailto:` link (see §7.6) |
+
+#### Chat Deep-Link
+
+The "chat" link in the footer points to `{OriginalPageURL}#helpin-conv={conversation_id}`:
+- `OriginalPageURL` = the page URL stored on the conversation at creation time
+- The SDK (`packages/sdk-js/src/core/widget.ts`) checks `window.location.hash` on init — if it contains `helpin-conv=`, it auto-opens the widget and navigates to that conversation via `openConversation(conversationId)`
+- Fallback: if `page_url` is unavailable, link to the workspace's base URL
+- The email copy emphasizes "Reply directly to this email" as the **primary** action — the chat link is secondary
+
+### 7.4 RFC 2822 Headers (Email Threading)
+
+These headers ensure all emails for a conversation thread correctly in Gmail, Outlook, and Apple Mail:
+
+```
+Reply-To: conv-{conversation_id}@replies.helpin.ai
+Message-ID: <helpin-{email_log_id}@replies.helpin.ai>
+In-Reply-To: <helpin-{previous_email_log_id}@replies.helpin.ai>
+References: <helpin-{first_email_log_id}@replies.helpin.ai> ... <helpin-{prev_email_log_id}@replies.helpin.ai>
+X-Conversation-ID: {conversation_id}
+List-Unsubscribe: <mailto:unsubscribe-{conversation_id}@replies.helpin.ai>
+```
+
+| Header | Purpose | Source |
+|--------|---------|--------|
+| `Reply-To` | Routes visitor replies to Postmark inbound webhook | Conversation-specific address with `MailboxHash` |
+| `Message-ID` | Unique ID for this email (used by future `In-Reply-To`) | Generated from `SupportEmailLog.ID` |
+| `In-Reply-To` | Points to the previous email in this conversation thread | Previous `SupportEmailLog.RFCMessageID` for this conversation |
+| `References` | Full chain of message IDs (required by some clients) | All prior `RFCMessageID` values for this conversation |
+| `X-Conversation-ID` | Internal tracking | Conversation UUID |
+| `List-Unsubscribe` | One-click unsubscribe (Gmail shows button) | RFC 2369 |
+
+### 7.5 Plain Text Version
+
+Every email includes both HTML and plain-text bodies (Postmark requires both for deliverability). The plain-text version:
+
+```
+{Message content}
+
+{Message 2 content}
+
+--
+{Agent Name} via {Workspace Name}
+
+Reply directly to this email, or go to chat:
+{OriginalPageURL}#helpin-conv={conversation_id}
+
+Sent from Helpin (https://helpin.ai).
+Unsubscribe: mailto:unsubscribe-{conversation_id}@replies.helpin.ai
+```
+
+### 7.6 Unsubscribe Handling (v1)
+
+For v1, unsubscribe is a `mailto:` link that creates an inbound email to `unsubscribe-{conversation_id}@replies.helpin.ai`. The inbound webhook recognizes the `unsubscribe-` prefix and sets a flag on the conversation (`email_unsubscribed = true`). Future emails for that conversation are suppressed.
+
+This is per-conversation, not per-visitor. Full visitor-level unsubscribe is a non-goal for v1.
+
+### 7.7 HTML Template Guidelines
+
+- **No images or logos in header** — keeps it personal, avoids spam filters
+- **System font stack**: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+- **Max width**: 600px (email standard)
+- **Background**: White (`#ffffff`), text: dark grey (`#1a1a1a`)
+- **Footer text**: Light grey (`#6b7280`), 13px
+- **Links**: Workspace accent color (falls back to `#2563eb`)
+- **Agent avatar**: 24px circle with initials (CSS-generated, no image dependency)
+- **No tracking pixels** — respect visitor privacy
 
 ### Postmark Client Extension
 
@@ -343,19 +439,21 @@ func (c *Client) SendEmailWithHeaders(from, to, subject, htmlBody, textBody, rep
 
 **From field composition** (in `EmailFallbackService.fireEmail()`):
 
-The existing `email.Client` stores a static `fromEmail` (e.g., `support@helpin.ai`) set at construction. For fallback emails, the `From` header needs a dynamic display name per workspace:
+The existing `email.Client` stores a static `fromEmail` (e.g., `messages@replies.helpin.ai`) set at construction. For fallback emails, the `From` header uses the format defined in §7.2:
 
 ```go
-// Compose the From field with display name:
-fromName := settings.EmailFallbackFromName
-if fromName == "" {
-    fromName = workspace.Name  // falls back to workspace name
+// Compose the From field per §7.2: "{Agent Name} - {Workspace Name} <address>"
+agentName := lastMessage.SenderDisplayName
+workspaceName := settings.EmailFallbackFromName
+if workspaceName == "" {
+    workspaceName = workspace.Name
 }
-// RFC 5322 display name format: "Display Name <address>"
-from := fmt.Sprintf("%s <%s>", fromName, c.emailClient.FromEmail())
+// RFC 5322 display name format
+from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, c.emailClient.FromEmail())
+// Result: "Sarah Chen - Acme Support <messages@replies.helpin.ai>"
 ```
 
-This requires exposing `FromEmail()` as a getter on `email.Client` (currently private `fromEmail` field). The actual sending address stays the same (verified in Postmark), only the display name changes per workspace.
+This requires exposing `FromEmail()` as a getter on `email.Client` (currently private `fromEmail` field). The actual sending address stays the same (verified in Postmark), only the display name changes per workspace/agent.
 
 ## 8. Inbound Processing
 

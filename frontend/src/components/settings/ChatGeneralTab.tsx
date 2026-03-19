@@ -359,14 +359,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
   return (
     <PreviewLayout preview={previewElement}>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div />
-          <Button onClick={handleSave} disabled={updateMutation.isPending} size="sm">
-            {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-          </Button>
-        </div>
-
+      <div className="space-y-3 pb-20">
         {/* Widget Installation */}
         <div className="overflow-hidden rounded-lg border border-border bg-background">
           <button
@@ -1106,6 +1099,54 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Sticky Footer */}
+        <div className="fixed bottom-0 left-0 right-0 z-10 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="mx-auto flex h-14 max-w-5xl items-center justify-end gap-3 px-6">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (data?.settings) {
+                  const s = data.settings;
+                  setRequireEmail(s.require_email_before_chat);
+                  setRequirePhone(s.require_phone_after_email);
+                  setWelcomeMessage(s.welcome_message);
+                  setBrandColor(s.brand_color);
+                  setShowBranding(s.show_branding);
+                  setLauncherPosition(s.launcher_position);
+                  setLauncherIcon(s.launcher_icon);
+                  setColorScheme(s.color_scheme || 'light');
+                  setButtonColor(s.button_color || '#000000');
+                  setButtonIconColor(s.button_icon_color || '#FFFFFF');
+                  setLogoUrl(s.logo_url || '');
+                  setWidgetName(s.widget_name || '');
+                  setWidgetAvatarUrl(s.widget_avatar_url || '');
+                  setWidgetHelpSpaceIds(s.widget_help_space_ids || []);
+                  setAiEnabled(s.ai_enabled);
+                  setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
+                  setConfidenceThreshold(String(s.ai_confidence_threshold));
+                  setAiResponseMode(s.ai_response_mode ?? 'off');
+                  setAiMaxFollowups(s.ai_max_followups ?? 3);
+                  setShowTalkToHuman(s.show_talk_to_human);
+                  setHandoffBehavior(s.handoff_behavior);
+                  setHandoffTeamId(s.handoff_team_id);
+                  setBusinessHoursEnabled(s.business_hours_enabled);
+                  setTimezone(s.business_hours_timezone);
+                  setSchedule(s.business_hours_schedule);
+                  setOutsideMessage(s.outside_hours_message);
+                  setCsatEnabled(s.csat_enabled);
+                  toast.success('Changes discarded');
+                }
+              }}
+            >
+              Discard
+            </Button>
+            <Button onClick={handleSave} disabled={updateMutation.isPending} size="sm">
+              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </Button>
           </div>
         </div>
     </PreviewLayout>
