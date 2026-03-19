@@ -205,17 +205,11 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
                   lastGeneratedStory={viewTemplate.last_generated_story ?? null}
                   runs={viewTemplate.runs}
                   compact
+                  onOpenStory={(storyId) => handleOpenStory(storyId)}
                 />
               ) : (
                 <p className="py-6 text-center text-sm text-muted-foreground">No runs yet. Stories will appear here after the first scheduled run.</p>
               )}
-              {viewTemplate.last_generated_story ? (
-                <div className="flex justify-end">
-                  <Button type="button" variant="outline" size="sm" onClick={() => handleOpenStory(viewTemplate.last_generated_story?.id)}>
-                    Open last generated story
-                  </Button>
-                </div>
-              ) : null}
             </>
           ) : null}
         </DialogContent>

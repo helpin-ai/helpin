@@ -17,6 +17,7 @@ interface RecurringTemplateSummaryProps {
   runs?: RecurringRun[];
   actions?: ReactNode;
   compact?: boolean;
+  onOpenStory?: (storyId: string) => void;
 }
 
 const statusClasses: Record<RecurringTemplateStatus, string> = {
@@ -60,6 +61,7 @@ export function RecurringTemplateSummary({
   runs,
   actions,
   compact = false,
+  onOpenStory,
 }: RecurringTemplateSummaryProps) {
   return (
     <section className={cn('rounded-lg border border-border/60 bg-background', compact ? 'p-3' : 'p-4')}>
@@ -113,12 +115,21 @@ export function RecurringTemplateSummary({
         <div className="mt-4 border-t border-border/50 pt-3">
           <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent runs</div>
           <div className="space-y-2">
-            {runs.slice(0, compact ? 3 : 5).map((run) => (
+            {runs.slice(0, compact ? 3 : 10).map((run) => (
               <div key={run.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-xs">
                 <PlayCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate">{formatRunLabel(run)}</span>
                 <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
                 <span className="shrink-0 text-muted-foreground">{formatRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
+                {run.generated_story_id && onOpenStory ? (
+                  <button
+                    type="button"
+                    className="shrink-0 text-primary hover:underline"
+                    onClick={() => onOpenStory(run.generated_story_id!)}
+                  >
+                    View story
+                  </button>
+                ) : null}
               </div>
             ))}
           </div>
