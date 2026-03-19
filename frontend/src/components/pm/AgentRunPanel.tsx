@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bot, Loader2, Play } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Bot, ExternalLink, Loader2, Play, Workflow } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { agentService } from '@/lib/services/agentService';
+import { flowService } from '@/lib/services/flowService';
 import type { AgentRun, AgentRunArtifact } from '@/lib/pmTypes';
 import { ACTIVE_RUN_STATUSES } from './agentRunConstants';
 import { AgentRunTable } from './AgentRunTable';
@@ -12,6 +14,7 @@ interface Props {
   storyId: string;
   workspaceId: string;
   assignedAgentId?: string;
+  slug?: string;
 }
 
 function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifact[] {
@@ -67,7 +70,7 @@ function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifa
   return displayArtifacts;
 }
 
-export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) {
+export function AgentRunPanel({ storyId, workspaceId, assignedAgentId, slug }: Props) {
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [selectedRun, setSelectedRun] = useState<AgentRun | null>(null);
   const [artifacts, setArtifacts] = useState<AgentRunArtifact[]>([]);
@@ -138,7 +141,12 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
   const handleRunAgent = async () => {
     setTriggering(true);
     try {
-      await agentService.runAgent(workspaceId, storyId);
+      await flowService.startRun(workspaceId, {
+        template_id: 'pm.agent_story_run',
+        target_type: 'story',
+        target_id: storyId,
+        input: assignedAgentId ? { agent_id: assignedAgentId } : undefined,
+      });
       await fetchRuns();
     } finally {
       setTriggering(false);
@@ -180,6 +188,17 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
     }
   }, [runs.length]);
 
+  // Detect if the active/selected run is part of a flow
+  const activeFlowRunId = useMemo(() => {
+    // Prefer the selected run's flow_run_id, then fall back to the latest run
+    if (selectedRun?.flow_run_id) return selectedRun.flow_run_id;
+    const latestRun = runs[0];
+    if (latestRun?.flow_run_id) return latestRun.flow_run_id;
+    return undefined;
+  }, [selectedRun, runs]);
+
+  const hasActiveFlowRun = !!activeFlowRunId;
+
   if (!assignedAgentId) return null;
 
   return (
@@ -200,6 +219,24 @@ export function AgentRunPanel({ storyId, workspaceId, assignedAgentId }: Props) 
           Run Agent
         </Button>
       </div>
+
+      {/* Flow run banner */}
+      {hasActiveFlowRun && slug && (
+        <div className="mb-3 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+          <div className="flex items-center gap-2 text-sm text-primary">
+            <Workflow className="h-4 w-4" />
+            <span>This run is part of a flow.</span>
+          </div>
+          <Link
+            to="/w/$slug/pm/flows"
+            params={{ slug }}
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+          >
+            View Flow
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
 
       {/* Master-detail vertical split */}
       <div className="flex flex-col rounded-md border border-border/60 overflow-hidden">

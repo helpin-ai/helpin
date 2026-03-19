@@ -45,7 +45,14 @@ type ExecutionContext struct {
 	Heartbeat                 func(stage string) error
 	OnGitPush                 func(branch, sha string) error
 	OnPROpen                  func(metadata PRMetadata, title string) error
+	PlanningTurnKind          string
+	PlanningTurnAttempt       int
 }
+
+const (
+	PlanningTurnKindInitial = "initial"
+	PlanningTurnKindMessage = "message"
+)
 
 // WorkflowConfig holds settings from WORKFLOW.md or defaults.
 type WorkflowConfig struct {
@@ -69,26 +76,26 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 // ServiceBridge provides access to Helpin services from within tool execution.
 type ServiceBridge struct {
 	// PM / Stories
-	AddComment         func(ctx context.Context, workspaceID, storyID, agentID, content string) error
-	UpdateStoryState   func(ctx context.Context, workspaceID, storyID, stateID string) error
-	ListChecklist      func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error)
+	AddComment       func(ctx context.Context, workspaceID, storyID, agentID, content string) error
+	UpdateStoryState func(ctx context.Context, workspaceID, storyID, stateID string) error
+	ListChecklist    func(ctx context.Context, workspaceID, storyID string) ([]model.PMChecklistItem, error)
 
 	// Support
 	ListConversationMessages func(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error)
 	UpdateConversationStatus func(ctx context.Context, workspaceID, conversationID, status string) error
 
 	// CRM
-	ListDeals          func(ctx context.Context, workspaceID string, limit int) ([]model.CRMDeal, error)
-	GetDeal            func(ctx context.Context, id string) (*model.CRMDeal, error)
-	UpdateDealStage    func(ctx context.Context, dealID, stageID string) error
-	AddDealNote        func(ctx context.Context, workspaceID, dealID, agentID, content string) error
-	ListContacts       func(ctx context.Context, workspaceID string, limit int) ([]model.CRMContact, error)
-	ListBuyerSignals   func(ctx context.Context, workspaceID string, dealID *string, limit int) ([]model.CRMBuyerSignal, error)
+	ListDeals        func(ctx context.Context, workspaceID string, limit int) ([]model.CRMDeal, error)
+	GetDeal          func(ctx context.Context, id string) (*model.CRMDeal, error)
+	UpdateDealStage  func(ctx context.Context, dealID, stageID string) error
+	AddDealNote      func(ctx context.Context, workspaceID, dealID, agentID, content string) error
+	ListContacts     func(ctx context.Context, workspaceID string, limit int) ([]model.CRMContact, error)
+	ListBuyerSignals func(ctx context.Context, workspaceID string, dealID *string, limit int) ([]model.CRMBuyerSignal, error)
 
 	// Docs
-	GetDocument        func(ctx context.Context, id string) (*model.DocsDocument, error)
-	ListDocuments      func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
-	SearchDocuments    func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
+	GetDocument          func(ctx context.Context, id string) (*model.DocsDocument, error)
+	ListDocuments        func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
+	SearchDocuments      func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
 	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
 	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
 }

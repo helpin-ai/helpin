@@ -140,20 +140,6 @@ func (h *AgentHandler) AssignAgentToStory(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
 }
 
-// RunAgent handles POST /api/pm/stories/{id}/run-agent.
-func (h *AgentHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	storyID := chi.URLParam(r, "id")
-	actorID := middleware.GetUserID(r.Context())
-
-	run, err := h.agentService.RunAgent(r.Context(), workspaceID, storyID, actorID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, run)
-}
-
 // CancelRun handles POST /api/pm/agent-runs/{id}/cancel.
 func (h *AgentHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -264,4 +250,3 @@ func (h *AgentHandler) ListRunArtifacts(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, artifacts)
 }
-

@@ -8,7 +8,7 @@ import (
 )
 
 func TestFlowTemplateRegistryIncludesCrossModuleTemplates(t *testing.T) {
-	specs := flowTemplateSpecs()
+	specs := hardcodedFlowTemplateSpecs()
 	templateIDs := make([]string, 0, len(specs))
 	for _, spec := range specs {
 		templateIDs = append(templateIDs, spec.TemplateID)
@@ -27,7 +27,7 @@ func TestFlowTemplateRegistryIncludesCrossModuleTemplates(t *testing.T) {
 }
 
 func TestEpicPlanningV2ApprovalNodesSupportRequestChanges(t *testing.T) {
-	def, ok := lookupFlowTemplate(model.FlowTemplateEpicPlanningV2)
+	def, ok := lookupHardcodedFlowTemplate(model.FlowTemplateEpicPlanningV2)
 	if !ok {
 		t.Fatalf("expected epic planning v2 template to be registered")
 	}
@@ -50,7 +50,7 @@ func TestEpicPlanningV2ApprovalNodesSupportRequestChanges(t *testing.T) {
 }
 
 func TestCrossModuleTemplatesExposeExpectedApplyCommands(t *testing.T) {
-	storyCompletion, ok := lookupFlowTemplate(model.FlowTemplateStoryCompletionV1)
+	storyCompletion, ok := lookupHardcodedFlowTemplate(model.FlowTemplateStoryCompletionV1)
 	if !ok {
 		t.Fatalf("expected story completion template to be registered")
 	}
@@ -61,7 +61,7 @@ func TestCrossModuleTemplatesExposeExpectedApplyCommands(t *testing.T) {
 		t.Fatalf("expected story completion target type story, got %q", storyCompletion.spec.TargetType)
 	}
 
-	dealReview, ok := lookupFlowTemplate(model.FlowTemplateCRMDealReviewV1)
+	dealReview, ok := lookupHardcodedFlowTemplate(model.FlowTemplateCRMDealReviewV1)
 	if !ok {
 		t.Fatalf("expected deal review template to be registered")
 	}

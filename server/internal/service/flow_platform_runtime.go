@@ -12,7 +12,7 @@ import (
 )
 
 func (s *FlowService) genericHandleApprovalAction(ctx context.Context, run *model.FlowRun, nodeRun *model.FlowNodeRun, actorID, action string, payload json.RawMessage) error {
-	def, nodeDef, err := s.lookupNode(run.TemplateID, nodeRun.NodeID)
+	def, nodeDef, err := s.lookupNodeForRun(ctx, run, nodeRun.NodeID)
 	if err != nil {
 		return err
 	}
@@ -95,11 +95,11 @@ func (s *FlowService) genericHandleApprovalAction(ctx context.Context, run *mode
 				return s.markRunFailed(ctx, run, nodeRun, errMsg)
 			}
 			nodeRun.Output = mustJSON(map[string]any{
-				"decision":       decision.Decision,
-				"actor_id":       decision.ActorID,
-				"decided_at":     decision.DecidedAt,
+				"decision":         decision.Decision,
+				"actor_id":         decision.ActorID,
+				"decided_at":       decision.DecidedAt,
 				"override_payload": normalizeRawJSON(decision.OverridePayload),
-				"command_result": json.RawMessage(commandOutput),
+				"command_result":   json.RawMessage(commandOutput),
 			})
 			if err := s.flowRepo.UpdateNodeRun(ctx, nodeRun); err != nil {
 				return err
@@ -117,7 +117,7 @@ func (s *FlowService) genericHandleApprovalAction(ctx context.Context, run *mode
 }
 
 func (s *FlowService) genericRetryNode(ctx context.Context, run *model.FlowRun, nodeRun *model.FlowNodeRun, actorID string) error {
-	_, nodeDef, err := s.lookupNode(run.TemplateID, nodeRun.NodeID)
+	_, nodeDef, err := s.lookupNodeForRun(ctx, run, nodeRun.NodeID)
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func (s *FlowService) genericProgressRunState(ctx context.Context, flowRunID str
 	}
 	waitingChild := false
 	if state.CurrentNodeID != "" {
-		_, nodeDef, lookupErr := s.lookupNode(run.TemplateID, state.CurrentNodeID)
+		_, nodeDef, lookupErr := s.lookupNodeForRun(ctx, run, state.CurrentNodeID)
 		if lookupErr == nil && run.Status == model.FlowStatusRunning && nodeDef.spec.Type == model.FlowNodeTypeAgentTask {
 			waitingChild = true
 		}
@@ -200,10 +200,13 @@ func (s *FlowService) genericSyncRunState(ctx context.Context, run *model.FlowRu
 		return nil
 	}
 	nodeRun, err := s.flowRepo.GetLatestNodeRunByNodeID(ctx, run.ID, currentNodeID)
-	if err != nil || nodeRun == nil {
+	if err != nil {
 		return err
 	}
-	_, nodeDef, err := s.lookupNode(run.TemplateID, currentNodeID)
+	if nodeRun == nil {
+		return s.ensureCurrentNodeAttempt(ctx, run, "")
+	}
+	_, nodeDef, err := s.lookupNodeForRun(ctx, run, currentNodeID)
 	if err != nil {
 		return err
 	}
@@ -235,7 +238,7 @@ func (s *FlowService) applyPlanningSessionStateGeneric(ctx context.Context, run 
 	if run == nil || nodeRun == nil || session == nil {
 		return nil
 	}
-	_, nodeDef, err := s.lookupNode(run.TemplateID, nodeRun.NodeID)
+	_, nodeDef, err := s.lookupNodeForRun(ctx, run, nodeRun.NodeID)
 	if err != nil {
 		return err
 	}
@@ -285,7 +288,7 @@ func (s *FlowService) applyAgentRunStateGeneric(ctx context.Context, run *model.
 	if run == nil || nodeRun == nil || childRun == nil {
 		return nil
 	}
-	_, nodeDef, err := s.lookupNode(run.TemplateID, nodeRun.NodeID)
+	_, nodeDef, err := s.lookupNodeForRun(ctx, run, nodeRun.NodeID)
 	if err != nil {
 		return err
 	}

@@ -167,6 +167,8 @@ func main() {
 		&model.FlowRun{},
 		&model.FlowNodeRun{},
 		&model.FlowTrigger{},
+		&model.FlowTemplate{},
+		&model.FlowTemplateNode{},
 		&model.PlanningSession{},
 		&model.PlanningSessionMessage{},
 		&model.WorkspaceInvitation{},
@@ -412,6 +414,7 @@ func main() {
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
 	automationRuleRepo := repository.NewAutomationRuleRepository(db)
 	flowRepo := repository.NewFlowRepository(db)
+	flowTemplateRepo := repository.NewFlowTemplateRepository(db)
 	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
@@ -600,6 +603,7 @@ func main() {
 	}
 	flowService := service.NewFlowService(
 		flowRepo,
+		flowTemplateRepo,
 		pmEpicRepo,
 		pmStoryRepo,
 		crmDealRepo,
@@ -688,9 +692,12 @@ func main() {
 		pmStoryLinkRepo,
 	)
 	flowService.SetCommandService(commandService)
+	flowService.BackfillBuiltinPrompts(context.Background())
+	agentService.SetFlowService(flowService)
 	commandService.SetPMAutomationService(pmAutomationService)
 	commandService.SetGitService(gitService)
 	ruleEngine.SetCommandService(commandService)
+	ruleEngine.SetFlowService(flowService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
@@ -750,6 +757,7 @@ func main() {
 		Search:             handler.NewSearchHandler(searchService),
 		PMAutomation:       handler.NewPMAutomationHandler(pmAutomationService),
 		Flow:               handler.NewFlowHandler(flowService),
+		FlowTemplate:       handler.NewFlowTemplateHandler(flowService),
 		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
 		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
 		Agent:              handler.NewAgentHandler(agentService),

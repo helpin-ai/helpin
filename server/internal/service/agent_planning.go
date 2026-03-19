@@ -141,6 +141,11 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 
 // ConfirmEpicRun confirms a story plan, creates stories, and writes dependency links.
 func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, runID, actorID string, req model.ConfirmPlanningRequest) ([]model.PMStory, error) {
+	// Interactive path: stories provided directly, no agent run to validate.
+	if runID == "" && len(req.ProposedStories) > 0 {
+		return s.createStoriesFromProposal(ctx, workspaceID, epicID, actorID, req.ProposedStories)
+	}
+
 	run, err := s.GetAgentRun(ctx, workspaceID, runID)
 	if err != nil {
 		return nil, err
@@ -410,6 +415,146 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	_ = s.saveArtifact(ctx, run, "handoff_note", "markdown", summary, 999998)
 	_ = s.runEngine.SignalApprove(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
 	s.publishRunEvent(run, actorID)
+
+	return created, nil
+}
+
+// createStoriesFromProposal creates stories from proposed stories without requiring an agent run.
+// Used by the interactive story planning path.
+func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceID, epicID, actorID string, proposedStories []model.ProposedStory) ([]model.PMStory, error) {
+	if s.storyService == nil {
+		return nil, fmt.Errorf("story service is not configured")
+	}
+	if len(proposedStories) == 0 {
+		return nil, fmt.Errorf("at least one proposed story is required")
+	}
+	if err := validatePlanningStories(proposedStories); err != nil {
+		return nil, err
+	}
+
+	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, fmt.Errorf("get epic: %w", err)
+	}
+	if epicWithStats == nil {
+		return nil, fmt.Errorf("epic not found")
+	}
+	epic := &epicWithStats.Epic
+
+	// Use a stable key for external IDs in the interactive path.
+	syntheticRunID := "interactive-" + epicID
+
+	externalIDs := make([]string, 0, len(proposedStories))
+	for idx, ps := range proposedStories {
+		externalIDs = append(externalIDs, planningStoryExternalID(syntheticRunID, idx, ps.Ref))
+	}
+	existingStories, err := s.storyRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
+	if err != nil {
+		return nil, fmt.Errorf("lookup existing planned stories: %w", err)
+	}
+	existingByExternalID := make(map[string]model.PMStory, len(existingStories))
+	for _, story := range existingStories {
+		if story.ExternalID == nil || strings.TrimSpace(*story.ExternalID) == "" {
+			continue
+		}
+		existingByExternalID[*story.ExternalID] = story
+	}
+
+	created := make([]model.PMStory, 0, len(proposedStories))
+	refToStory := make(map[string]model.PMStory, len(proposedStories))
+
+	for idx, ps := range proposedStories {
+		storyType := strings.ToLower(strings.TrimSpace(ps.StoryType))
+		if !isValidStoryType(storyType) {
+			storyType = model.PMStoryTypeFeature
+		}
+
+		externalID := planningStoryExternalID(syntheticRunID, idx, ps.Ref)
+		var detail *model.StoryDetail
+		if existing, ok := existingByExternalID[externalID]; ok {
+			detail, err = s.storyService.GetByID(ctx, existing.ID)
+			if err != nil {
+				return nil, fmt.Errorf("reload existing story %d: %w", idx+1, err)
+			}
+		} else {
+			desc := renderPlannedStoryDescription(ps)
+			detail, err = s.storyService.Create(ctx, model.CreateStoryRequest{
+				WorkspaceID: workspaceID,
+				Name:        strings.TrimSpace(ps.Name),
+				Description: strPtr(desc),
+				StoryType:   storyType,
+				EpicID:      &epicID,
+				Estimate:    ps.Estimate,
+				Priority:    ps.Priority,
+				ExternalID:  strPtr(externalID),
+			}, actorID)
+			if err != nil {
+				return nil, fmt.Errorf("create story %d: %w", idx+1, err)
+			}
+		}
+
+		briefFields := map[string]interface{}{}
+		if ps.SliceType != "" {
+			briefFields["slice_type"] = ps.SliceType
+		}
+		if ps.ImplementationBrief != nil {
+			if b, marshalErr := json.Marshal(ps.ImplementationBrief); marshalErr != nil {
+				slog.WarnContext(ctx, "marshal implementation brief", "error", marshalErr, "story_ref", ps.Ref)
+			} else {
+				briefFields["implementation_brief"] = b
+			}
+		}
+		if len(briefFields) > 0 {
+			if err := s.storyRepo.UpdateFields(ctx, detail.Story.ID, briefFields); err != nil {
+				slog.WarnContext(ctx, "failed to persist story brief fields",
+					"story_id", detail.Story.ID, "error", err)
+			}
+		}
+
+		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" && isValidUUID(*ps.AssignAgentID) {
+			if err := s.AssignAgentToStory(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
+				slog.WarnContext(ctx, "skipping agent assignment for planned story",
+					"story", detail.Story.Name, "agent_id", *ps.AssignAgentID, "error", err)
+			} else {
+				detail, err = s.storyService.GetByID(ctx, detail.Story.ID)
+				if err != nil {
+					return nil, fmt.Errorf("reload story %q: %w", ps.Name, err)
+				}
+			}
+		}
+
+		created = append(created, detail.Story)
+		if strings.TrimSpace(ps.Ref) != "" {
+			refToStory[ps.Ref] = detail.Story
+		}
+	}
+
+	for _, ps := range proposedStories {
+		targetStory, ok := refToStory[ps.Ref]
+		if !ok || len(ps.DependencyRefs) == 0 {
+			continue
+		}
+		for _, depRef := range ps.DependencyRefs {
+			sourceStory, exists := refToStory[depRef]
+			if !exists {
+				return nil, fmt.Errorf("dependency %q does not reference a known story ref", depRef)
+			}
+			if err := s.storyLinkRepo.Create(ctx, &model.PMStoryLink{
+				WorkspaceID:   workspaceID,
+				SourceStoryID: sourceStory.ID,
+				TargetStoryID: targetStory.ID,
+				LinkType:      model.PMStoryLinkTypeBlocks,
+				CreatedBy:     actorID,
+			}); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	epic.PlanningState = model.EpicPlanningStateStoriesCreated
+	if err := s.epicRepo.Update(ctx, epic); err != nil {
+		return nil, err
+	}
 
 	return created, nil
 }

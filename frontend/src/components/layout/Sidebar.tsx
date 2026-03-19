@@ -115,7 +115,7 @@ function deriveActiveRail(pathname: string): RailId {
   if (pathname.includes('/settings')) return 'settings';
   if (pathname.includes('/support')) return 'support';
   if (pathname.includes('/crm')) return 'crm';
-  if (pathname.includes('/pm/agents') || pathname.includes('/pm/flows')) return 'agents';
+  if (pathname.includes('/pm/agents') || pathname.includes('/pm/flows') || pathname.includes('/pm/flow-templates')) return 'agents';
   if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
   if (pathname.includes('/docs')) return 'docs';
   return 'projects';
@@ -581,8 +581,9 @@ export function Sidebar() {
       {
         label: '',
         items: [
-          { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
           { link: `/w/${wsSlug}/pm/flows`, label: 'Flows', icon: Workflow },
+          { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: Bot },
+          { link: `/w/${wsSlug}/pm/flow-templates`, label: 'Templates', icon: Layers },
         ],
       },
     ],

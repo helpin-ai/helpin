@@ -33,7 +33,6 @@ type Agent struct {
 	Model               *string         `json:"model"`
 	SystemPrompt        *string         `json:"system_prompt"`
 	PlanningNotes       *string         `json:"planning_notes"`
-	Tools               json.RawMessage `json:"tools" gorm:"type:jsonb;not null;default:'[]'"`
 	MonthlyTokenBudget  *int            `json:"monthly_token_budget"`
 	TokensUsedThisMonth int             `json:"tokens_used_this_month" gorm:"not null;default:0"`
 	ActiveStoryID       *string         `json:"active_story_id" gorm:"type:uuid"`
@@ -42,8 +41,6 @@ type Agent struct {
 	AllowedCommands     json.RawMessage `json:"allowed_commands" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedTargets      json.RawMessage `json:"allowed_targets" gorm:"type:jsonb;not null;default:'[]'"`
 	Schedule            *string         `json:"schedule"`
-	TargetSelector      json.RawMessage `json:"target_selector" gorm:"type:jsonb"`
-	TriggerEvents       json.RawMessage `json:"trigger_events" gorm:"type:jsonb;not null;default:'[]'"`
 	ApprovalMode        string          `json:"approval_mode" gorm:"not null;default:'class_default'"`
 	MaxConcurrentRuns   int             `json:"max_concurrent_runs" gorm:"not null;default:1"`
 	SupportedModes      []string        `json:"supported_modes" gorm:"-"`
@@ -124,15 +121,12 @@ type CreateAgentRequest struct {
 	Model              *string         `json:"model"`
 	SystemPrompt       *string         `json:"system_prompt"`
 	PlanningNotes      *string         `json:"planning_notes"`
-	Tools              json.RawMessage `json:"tools"`
 	MonthlyTokenBudget *int            `json:"monthly_token_budget"`
 	TeamID             *string         `json:"team_id"`
 	AllowedTools       json.RawMessage `json:"allowed_tools"`
 	AllowedCommands    json.RawMessage `json:"allowed_commands"`
 	AllowedTargets     json.RawMessage `json:"allowed_targets"`
 	Schedule           *string         `json:"schedule"`
-	TargetSelector     json.RawMessage `json:"target_selector"`
-	TriggerEvents      json.RawMessage `json:"trigger_events"`
 	ApprovalMode       *string         `json:"approval_mode"`
 	MaxConcurrentRuns  *int            `json:"max_concurrent_runs"`
 }
@@ -151,7 +145,6 @@ type UpdateAgentRequest struct {
 	Model              *string         `json:"model"`
 	SystemPrompt       *string         `json:"system_prompt"`
 	PlanningNotes      *string         `json:"planning_notes"`
-	Tools              json.RawMessage `json:"tools"`
 	MonthlyTokenBudget *int            `json:"monthly_token_budget"`
 	ActiveStoryID      *string         `json:"active_story_id"`
 	TeamID             *string         `json:"team_id"`
@@ -159,8 +152,6 @@ type UpdateAgentRequest struct {
 	AllowedCommands    json.RawMessage `json:"allowed_commands"`
 	AllowedTargets     json.RawMessage `json:"allowed_targets"`
 	Schedule           *string         `json:"schedule"`
-	TargetSelector     json.RawMessage `json:"target_selector"`
-	TriggerEvents      json.RawMessage `json:"trigger_events"`
 	ApprovalMode       *string         `json:"approval_mode"`
 	MaxConcurrentRuns  *int            `json:"max_concurrent_runs"`
 }

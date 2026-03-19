@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	FlowTemplateEpicPlanningV2 = "pm.epic_planning_v2"
+	FlowTemplateEpicPlanningV2    = "pm.epic_planning_v2"
 	FlowTemplateStoryCompletionV1 = "pm.story_completion_v1"
+	FlowTemplateAgentStoryRun     = "pm.agent_story_run"
 	FlowTemplateCRMDealReviewV1   = "crm.deal_review_v1"
 
 	FlowStatusRunning          = "running"
@@ -127,6 +128,7 @@ func (FlowTrigger) TableName() string { return "flow_triggers" }
 
 type FlowNodeSpec struct {
 	ID             string   `json:"id"`
+	Label          string   `json:"label,omitempty"`
 	Type           string   `json:"type"`
 	RequiredMode   string   `json:"required_mode,omitempty"`
 	Actions        []string `json:"actions,omitempty"`
@@ -137,6 +139,8 @@ type FlowNodeSpec struct {
 
 type FlowSpec struct {
 	TemplateID        string         `json:"template_id"`
+	Name              string         `json:"name,omitempty"`
+	Description       string         `json:"description,omitempty"`
 	TemplateVersion   int            `json:"template_version"`
 	TargetType        string         `json:"target_type"`
 	SupportedTriggers []string       `json:"supported_triggers"`

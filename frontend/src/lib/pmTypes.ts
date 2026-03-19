@@ -932,7 +932,7 @@ export interface AutomationRule {
   trigger_type: string;
   trigger_config: Record<string, string>;
   action_type: string;
-  action_config: Record<string, string>;
+  action_config: Record<string, unknown>;
   position: number;
   stop_on_match: boolean;
   created_by?: string;
@@ -949,7 +949,7 @@ export interface CreateAutomationRuleRequest {
   trigger_type: string;
   trigger_config: Record<string, string>;
   action_type: string;
-  action_config: Record<string, string>;
+  action_config: Record<string, unknown>;
   position?: number;
   stop_on_match?: boolean;
 }
@@ -961,7 +961,7 @@ export interface UpdateAutomationRuleRequest {
   trigger_type?: string;
   trigger_config?: Record<string, string>;
   action_type?: string;
-  action_config?: Record<string, string>;
+  action_config?: Record<string, unknown>;
   position?: number;
   stop_on_match?: boolean;
 }
@@ -1605,6 +1605,8 @@ export interface PlanningStreamEvent {
   event_id?: string;
   sent_at?: string;
   type:
+    | 'turn_started'
+    | 'turn_retrying'
     | 'assistant_message_started'
     | 'assistant_message_delta'
     | 'tool_call_started'
@@ -1679,6 +1681,7 @@ export interface FlowNodeRun {
 
 export interface FlowNodeSpec {
   id: string;
+  label?: string;
   type: FlowNodeType;
   required_mode?: 'interactive' | 'autonomous';
   actions?: string[];
@@ -1689,9 +1692,11 @@ export interface FlowNodeSpec {
 
 export interface FlowSpec {
   template_id: string;
+  name?: string;
+  description?: string;
   template_version: number;
   target_type: string;
-  supported_triggers: string[];
+  supported_triggers?: string[];
   nodes: FlowNodeSpec[];
 }
 
@@ -1742,6 +1747,112 @@ export interface StartFlowRunRequest {
     | Record<string, unknown>;
   trigger_type?: string;
   trigger_payload?: Record<string, unknown>;
+}
+
+// --- Flow Template (DB-backed) ---
+
+export interface FlowTemplate {
+  id: string;
+  workspace_id?: string;
+  name: string;
+  description?: string;
+  template_slug: string;
+  version: number;
+  target_type: string;
+  initial_node_slug: string;
+  is_builtin: boolean;
+  status: 'active' | 'archived';
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  nodes?: FlowTemplateNode[];
+}
+
+export interface FlowTemplateNode {
+  id: string;
+  template_id: string;
+  node_slug: string;
+  label: string;
+  node_type: FlowNodeType;
+  position: number;
+  next_node_slug?: string;
+  loopback_node_slug?: string;
+  agent_input_key?: string;
+  default_agent_id?: string;
+  system_prompt?: string;
+  allowed_tools: string[];
+  output_tag?: string;
+  actions: string[];
+  retryable: boolean;
+  command_name?: string;
+  approve_command_name?: string;
+  feedback_from_node?: string;
+  additional_context_key?: string;
+  fallback_agent_key?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlowTemplateView {
+  template: FlowTemplate;
+  nodes: FlowTemplateNode[];
+}
+
+export interface CreateFlowTemplateRequest {
+  name: string;
+  description?: string;
+  template_slug: string;
+  target_type: string;
+  initial_node_slug: string;
+  nodes: CreateFlowTemplateNodeRequest[];
+}
+
+export interface CreateFlowTemplateNodeRequest {
+  node_slug: string;
+  label: string;
+  node_type: FlowNodeType;
+  position: number;
+  next_node_slug?: string;
+  loopback_node_slug?: string;
+  agent_input_key?: string;
+  default_agent_id?: string;
+  system_prompt?: string;
+  allowed_tools?: string[];
+  output_tag?: string;
+  actions?: string[];
+  retryable?: boolean;
+  command_name?: string;
+  approve_command_name?: string;
+  feedback_from_node?: string;
+  additional_context_key?: string;
+  fallback_agent_key?: string;
+}
+
+export interface UpdateFlowTemplateRequest {
+  name?: string;
+  description?: string;
+  initial_node_slug?: string;
+  status?: string;
+}
+
+export interface UpdateFlowTemplateNodeRequest {
+  label?: string;
+  node_type?: FlowNodeType;
+  position?: number;
+  next_node_slug?: string;
+  loopback_node_slug?: string;
+  agent_input_key?: string;
+  default_agent_id?: string;
+  system_prompt?: string;
+  allowed_tools?: string[];
+  output_tag?: string;
+  actions?: string[];
+  retryable?: boolean;
+  command_name?: string;
+  approve_command_name?: string;
+  feedback_from_node?: string;
+  additional_context_key?: string;
+  fallback_agent_key?: string;
 }
 
 export interface StructuredQuestionOption {

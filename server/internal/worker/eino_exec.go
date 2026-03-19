@@ -23,7 +23,10 @@ const (
 	ExecutionBlockTypeToolResult = "tool_result"
 )
 
-var ErrMaxToolStepsReached = errors.New("agent reached max tool steps")
+var (
+	ErrMaxToolStepsReached    = errors.New("agent reached max tool steps")
+	ErrInitialResponseTimeout = errors.New("initial_response_timeout")
+)
 
 type ExecutionBlock struct {
 	Type       string          `json:"type"`

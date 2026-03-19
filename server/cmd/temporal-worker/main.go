@@ -93,6 +93,7 @@ func main() {
 	settingsRepo := repository.NewSettingsRepository(db)
 	handoffRepo := repository.NewAgentHandoffRepository(db)
 	flowRepo := repository.NewFlowRepository(db)
+	flowTemplateRepo := repository.NewFlowTemplateRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
@@ -316,6 +317,7 @@ func main() {
 		planningService.SetWorkflowStarter(&planningWorkflowAdapter{engine: runEngine})
 		flowService := service.NewFlowService(
 			flowRepo,
+			flowTemplateRepo,
 			epicRepo,
 			storyRepo,
 			crmDealRepo,
@@ -347,11 +349,17 @@ func main() {
 		planningWorker.RegisterActivityWithOptions(planningActivities.PrepareWorkspaceActivity, activity.RegisterOptions{
 			Name: "PlanningSessionActivities.PrepareWorkspaceActivity",
 		})
+		planningWorker.RegisterActivityWithOptions(planningActivities.RunInitialTurnActivity, activity.RegisterOptions{
+			Name: "PlanningSessionActivities.RunInitialTurnActivity",
+		})
 		planningWorker.RegisterActivityWithOptions(planningActivities.RunTurnActivity, activity.RegisterOptions{
 			Name: "PlanningSessionActivities.RunTurnActivity",
 		})
 		planningWorker.RegisterActivityWithOptions(planningActivities.FinalizeTurnActivity, activity.RegisterOptions{
 			Name: "PlanningSessionActivities.FinalizeTurnActivity",
+		})
+		planningWorker.RegisterActivityWithOptions(planningActivities.MarkSessionAbandonedActivity, activity.RegisterOptions{
+			Name: "PlanningSessionActivities.MarkSessionAbandonedActivity",
 		})
 		planningWorker.RegisterActivityWithOptions(planningActivities.CleanupWorkspaceActivity, activity.RegisterOptions{
 			Name: "PlanningSessionActivities.CleanupWorkspaceActivity",

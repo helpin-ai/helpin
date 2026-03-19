@@ -47,6 +47,7 @@ type AgentService struct {
 	docsVersionRepo  *repository.DocsVersionRepository
 	docsLinkRepo     *repository.DocsLinkRepository
 	runEngine        *temporalapp.RunEngine
+	flowService      *FlowService
 	gitService       *GitService
 	storyService     *PMStoryService
 	activitySvc      *PMActivityService
@@ -117,6 +118,12 @@ func (s *AgentService) SetRuleEngine(engine *AutomationRuleEngine) *AgentService
 	return s
 }
 
+// SetFlowService sets the flow service used for story execution.
+func (s *AgentService) SetFlowService(flowService *FlowService) *AgentService {
+	s.flowService = flowService
+	return s
+}
+
 // ListAgents returns all agents in a workspace.
 func (s *AgentService) ListAgents(ctx context.Context, workspaceID string) ([]model.Agent, error) {
 	if workspaceID == "" {
@@ -182,11 +189,6 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
 
-	tools := req.Tools
-	if tools == nil {
-		tools = json.RawMessage("[]")
-	}
-
 	skills := req.Skills
 	if skills == nil {
 		skills = json.RawMessage("[]")
@@ -232,15 +234,12 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		Model:              trimPtr(req.Model),
 		SystemPrompt:       trimPtr(req.SystemPrompt),
 		PlanningNotes:      trimPtr(req.PlanningNotes),
-		Tools:              tools,
 		MonthlyTokenBudget: normalizeTokenBudget(req.MonthlyTokenBudget),
 		TeamID:             trimPtr(req.TeamID),
 		AllowedTools:       normalizeJSONSlice(req.AllowedTools),
 		AllowedCommands:    normalizeJSONSlice(req.AllowedCommands),
 		AllowedTargets:     normalizeJSONSlice(req.AllowedTargets),
 		Schedule:           trimPtr(req.Schedule),
-		TargetSelector:     req.TargetSelector,
-		TriggerEvents:      normalizeJSONSlice(req.TriggerEvents),
 		ApprovalMode:       approvalMode,
 		MaxConcurrentRuns:  maxConcurrentRuns,
 	}
@@ -325,9 +324,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if req.PlanningNotes != nil {
 		agent.PlanningNotes = trimPtr(req.PlanningNotes)
 	}
-	if req.Tools != nil {
-		agent.Tools = req.Tools
-	}
 	if req.MonthlyTokenBudget != nil {
 		agent.MonthlyTokenBudget = normalizeTokenBudget(req.MonthlyTokenBudget)
 	}
@@ -358,12 +354,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			newSchedule = *agent.Schedule
 		}
 		scheduleChanged = oldSchedule != newSchedule
-	}
-	if req.TargetSelector != nil {
-		agent.TargetSelector = req.TargetSelector
-	}
-	if req.TriggerEvents != nil {
-		agent.TriggerEvents = normalizeJSONSlice(req.TriggerEvents)
 	}
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		agent.ApprovalMode = *req.ApprovalMode
@@ -520,8 +510,11 @@ func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetTy
 	return s.reconcileStuckRuns(ctx, runs), nil
 }
 
-// RunAgent creates a new story-targeted agent run and starts its Temporal workflow.
-func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actorID string) (*model.AgentRun, error) {
+// RunAgent starts the story's Agent Story Run flow.
+func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actorID string) (*model.FlowRunView, error) {
+	if s.flowService == nil {
+		return nil, fmt.Errorf("flow service is not configured")
+	}
 	story, err := s.storyRepo.GetRawByID(ctx, storyID)
 	if err != nil {
 		return nil, fmt.Errorf("get story: %w", err)
@@ -532,40 +525,7 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, storyID, actor
 	if story.AssignedAgentID == nil || *story.AssignedAgentID == "" {
 		return nil, fmt.Errorf("no agent assigned to this story")
 	}
-
-	agent, err := s.requireRunnableAgent(ctx, workspaceID, *story.AssignedAgentID, "story")
-	if err != nil {
-		return nil, err
-	}
-	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
-	deliveryTarget, err := s.gitService.ResolveStoryDeliveryTargetForRun(ctx, workspaceID, storyID, profile)
-	if err != nil {
-		return nil, err
-	}
-
-	input, _ := json.Marshal(map[string]any{
-		"story_id": storyID,
-	})
-
-	run, err := s.createRun(ctx, createRunParams{
-		workspaceID: workspaceID,
-		agent:       agent,
-		profile:     profile,
-		targetType:  "story",
-		targetID:    storyID,
-		storyID:     &storyID,
-		actorID:     &actorID,
-		input:       input,
-		delivery:    deliveryTarget,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	_ = s.activitySvc.Log(ctx, workspaceID, "story", storyID, &actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
-	s.publishRunEvent(run, actorID)
-
-	return run, nil
+	return s.flowService.StartAgentStoryRun(ctx, workspaceID, actorID, storyID, *story.AssignedAgentID)
 }
 
 // RunConversationAgent creates a new conversation-targeted agent run and starts its Temporal workflow.
@@ -790,18 +750,19 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 }
 
 type createRunParams struct {
-	workspaceID    string
-	agent          *model.Agent
-	profile        model.RuntimeProfile
-	targetType     string
-	targetID       string
-	storyID        *string
-	conversationID *string
-	flowRunID      *string
-	flowNodeRunID  *string
-	actorID        *string
-	input          []byte
-	delivery       *model.StoryDeliveryTarget
+	workspaceID        string
+	agent              *model.Agent
+	profile            model.RuntimeProfile
+	targetType         string
+	targetID           string
+	storyID            *string
+	conversationID     *string
+	flowRunID          *string
+	flowNodeRunID      *string
+	actorID            *string
+	input              []byte
+	delivery           *model.StoryDeliveryTarget
+	customSystemPrompt string
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
@@ -828,6 +789,19 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	approvalState := worker.ResolveApprovalState(resolved)
 	taskQueue := resolved.Queue
 
+	// Embed custom system prompt from flow node config into run input.
+	runInput := json.RawMessage(params.input)
+	if params.customSystemPrompt != "" {
+		var inputMap map[string]json.RawMessage
+		if json.Unmarshal(params.input, &inputMap) == nil {
+			promptJSON, _ := json.Marshal(params.customSystemPrompt)
+			inputMap["custom_system_prompt"] = promptJSON
+			if merged, err := json.Marshal(inputMap); err == nil {
+				runInput = merged
+			}
+		}
+	}
+
 	run := &model.AgentRun{
 		WorkspaceID:       params.workspaceID,
 		AgentID:           params.agent.ID,
@@ -843,7 +817,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		FlowNodeRunID:     params.flowNodeRunID,
 		TaskQueue:         &taskQueue,
 		RunnerPool:        &taskQueue,
-		Input:             json.RawMessage(params.input),
+		Input:             runInput,
 		OutputSummary:     json.RawMessage("{}"),
 	}
 	if params.delivery != nil {

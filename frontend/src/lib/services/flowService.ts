@@ -3,6 +3,13 @@ import type {
   FlowNodeRun,
   FlowRunView,
   FlowSpec,
+  FlowTemplate,
+  FlowTemplateNode,
+  FlowTemplateView,
+  CreateFlowTemplateRequest,
+  UpdateFlowTemplateRequest,
+  UpdateFlowTemplateNodeRequest,
+  CreateFlowTemplateNodeRequest,
   PlanningSessionMessage,
   StartFlowRunRequest,
 } from '../pmTypes';
@@ -36,6 +43,12 @@ export const flowService = {
   cancelRun: (wsId: string, flowRunId: string) =>
     api.post<FlowRunView>(`/pm/flow-runs/${flowRunId}/cancel${qs(wsId)}`, {}),
 
+  cancelActiveByTarget: (wsId: string, targetType: string, targetId: string) =>
+    api.post<FlowRunView | { status: string }>(`/pm/flow-runs/cancel-by-target${qs(wsId)}`, {
+      target_type: targetType,
+      target_id: targetId,
+    }),
+
   retryNode: (wsId: string, flowRunId: string, nodeRunId: string) =>
     api.post<FlowRunView>(`/pm/flow-runs/${flowRunId}/nodes/${nodeRunId}/retry${qs(wsId)}`, {}),
 
@@ -44,4 +57,36 @@ export const flowService = {
 
   listTemplates: (wsId: string) =>
     api.get<FlowSpec[]>(`/pm/flow-templates${qs(wsId)}`),
+
+  // --- Flow Template CRUD ---
+
+  createTemplate: (wsId: string, body: CreateFlowTemplateRequest) =>
+    api.post<FlowTemplateView>(`/pm/flow-templates${qs(wsId)}`, body),
+
+  getTemplate: (wsId: string, templateId: string) =>
+    api.get<FlowTemplateView>(`/pm/flow-templates/${templateId}${qs(wsId)}`),
+
+  updateTemplate: (wsId: string, templateId: string, body: UpdateFlowTemplateRequest) =>
+    api.put<FlowTemplateView>(`/pm/flow-templates/${templateId}${qs(wsId)}`, body),
+
+  deleteTemplate: (wsId: string, templateId: string) =>
+    api.del<{ status: string }>(`/pm/flow-templates/${templateId}${qs(wsId)}`),
+
+  listDBTemplates: (wsId: string) =>
+    api.get<FlowTemplate[]>(`/pm/flow-db-templates${qs(wsId)}`),
+
+  duplicateTemplate: (wsId: string, templateId: string) =>
+    api.post<FlowTemplateView>(`/pm/flow-templates/${templateId}/duplicate${qs(wsId)}`, {}),
+
+  duplicateFromSlug: (wsId: string, templateSlug: string) =>
+    api.post<FlowTemplateView>(`/pm/flow-templates/duplicate-from-slug${qs(wsId)}`, { template_slug: templateSlug }),
+
+  createTemplateNode: (wsId: string, templateId: string, body: CreateFlowTemplateNodeRequest) =>
+    api.post<FlowTemplateNode>(`/pm/flow-templates/${templateId}/nodes${qs(wsId)}`, body),
+
+  updateTemplateNode: (wsId: string, templateId: string, nodeId: string, body: UpdateFlowTemplateNodeRequest) =>
+    api.put<FlowTemplateNode>(`/pm/flow-templates/${templateId}/nodes/${nodeId}${qs(wsId)}`, body),
+
+  deleteTemplateNode: (wsId: string, templateId: string, nodeId: string) =>
+    api.del<{ status: string }>(`/pm/flow-templates/${templateId}/nodes/${nodeId}${qs(wsId)}`),
 };

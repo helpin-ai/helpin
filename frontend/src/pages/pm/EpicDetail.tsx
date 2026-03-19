@@ -53,11 +53,17 @@ import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { agentService } from '@/lib/services/agentService';
 import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
-import { useFlowRun, useStartFlowRun } from '@/hooks/queries/useFlow';
+import {
+  useFlowRun,
+  useFlowTemplates,
+  useFlowDBTemplates,
+  useFlowDBTemplate,
+  useStartFlowRun,
+} from '@/hooks/queries/useFlow';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Story, SprintWithStats, UpdateEpicRequest, StateType, Agent, StartFlowRunRequest, StartEpicPlanningFlowInput } from '@/lib/pmTypes';
+import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Story, SprintWithStats, UpdateEpicRequest, StateType, Agent, FlowSpec, FlowTemplate, StartFlowRunRequest } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
@@ -66,7 +72,8 @@ import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
-import { FlowRunDetailSheet, RUN_STATUS_CONFIG, NODE_LABELS } from '@/pages/pm/Flows';
+import { FlowRunDetailSheet } from '@/components/pm/FlowRunDetailSheet';
+import { RUN_STATUS_CONFIG, nodeLabel, extractAgentInputKeys } from '@/components/pm/flowConstants';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -652,7 +659,9 @@ export function EpicDetailPage() {
                   <div className="flex items-center gap-2">
                     <Bot className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span className="text-sm font-medium flex-1 truncate">
-                      {NODE_LABELS[flowRunView.run.current_node_id ?? ''] ?? flowRunView.run.current_node_id ?? 'Planning flow'}
+                      {flowRunView.run.current_node_id
+                        ? nodeLabel(flowRunView.run.current_node_id, flowRunView.spec.nodes.find((n) => n.id === flowRunView.run.current_node_id)?.label)
+                        : 'Planning flow'}
                     </span>
                     <Badge variant="secondary" className={`text-[10px] shrink-0 ${RUN_STATUS_CONFIG[flowRunView.run.status]?.className ?? ''}`}>
                       {RUN_STATUS_CONFIG[flowRunView.run.status]?.label ?? flowRunView.run.status}
@@ -844,7 +853,7 @@ export function EpicDetailPage() {
 }
 
 // ---------------------------------------------------------------------------
-// StartEpicFlowDialog — Simplified dialog for starting epic planning from epic detail
+// StartEpicFlowDialog — Dynamic dialog for starting epic flows from epic detail
 // ---------------------------------------------------------------------------
 
 function StartEpicFlowDialog({
@@ -860,14 +869,46 @@ function StartEpicFlowDialog({
   epicId: string;
   onStarted: (runId: string) => void;
 }) {
-  const [specPlannerId, setSpecPlannerId] = useState('');
-  const [storyPlannerId, setStoryPlannerId] = useState('');
+  const [flowInput, setFlowInput] = useState<Record<string, unknown>>({});
   const [context, setContext] = useState('');
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
 
-  const plannerAgents = useMemo(
-    () => agents.filter((a) => a.agent_class === 'product_planner'),
-    [agents],
+  // Load templates filtered by target_type=epic
+  const { data: allTemplates } = useFlowTemplates(open ? workspaceId : '');
+  const epicTemplates = useMemo(
+    () => (allTemplates ?? []).filter((t: FlowSpec) => t.target_type === 'epic'),
+    [allTemplates],
+  );
+
+  // Auto-select the first (or only) epic template
+  useEffect(() => {
+    if (!open) return;
+    if (epicTemplates.length > 0 && !selectedTemplateId) {
+      setSelectedTemplateId(epicTemplates[0].template_id);
+    }
+  }, [open, epicTemplates, selectedTemplateId]);
+
+  const selectedTemplate = useMemo(
+    () => epicTemplates.find((t: FlowSpec) => t.template_id === selectedTemplateId) ?? epicTemplates[0] ?? null,
+    [epicTemplates, selectedTemplateId],
+  );
+
+  // Load DB template to get nodes with agent_input_key
+  const { data: dbTemplates } = useFlowDBTemplates(open ? workspaceId : '');
+  const matchingDbTemplate = useMemo(
+    () => dbTemplates?.find((t: FlowTemplate) => t.template_slug === selectedTemplateId) ?? null,
+    [dbTemplates, selectedTemplateId],
+  );
+  const { data: dbTemplateView } = useFlowDBTemplate(
+    open ? workspaceId : '',
+    matchingDbTemplate?.id,
+  );
+
+  // Derive agent input keys from DB template nodes or hardcoded fallback
+  const agentInputKeys = useMemo(
+    () => extractAgentInputKeys(selectedTemplateId, dbTemplateView?.nodes),
+    [selectedTemplateId, dbTemplateView?.nodes],
   );
 
   const startMutation = useStartFlowRun(workspaceId);
@@ -879,58 +920,116 @@ function StartEpicFlowDialog({
     });
   }, [open, workspaceId]);
 
+  // Reset state when dialog opens/closes or template changes
+  useEffect(() => {
+    if (!open) {
+      setFlowInput({});
+      setContext('');
+      setSelectedTemplateId('');
+    }
+  }, [open]);
+
+  useEffect(() => {
+    setFlowInput({});
+  }, [selectedTemplateId]);
+
+  const setInputField = (key: string, value: unknown) => {
+    setFlowInput((prev) => ({ ...prev, [key]: value }));
+  };
+
   const handleStart = async () => {
-    if (!specPlannerId) return;
-    const input: StartEpicPlanningFlowInput = {
-      spec_planner_agent_id: specPlannerId,
-      ...(storyPlannerId ? { story_planner_agent_id: storyPlannerId } : {}),
-      ...(context.trim() ? { additional_context: context.trim() } : {}),
-    };
+    if (!selectedTemplate) return;
+
+    // Build input from dynamic agent keys + context
+    const input: Record<string, unknown> = {};
+    for (const keyConfig of agentInputKeys) {
+      const value = flowInput[keyConfig.key];
+      if (keyConfig.required && !value) return;
+      if (value) input[keyConfig.key] = value;
+    }
+    if (context.trim()) input.additional_context = context.trim();
+
     const req: StartFlowRunRequest = {
-      template_id: 'pm.epic_planning_v2',
+      template_id: selectedTemplate.template_id,
       target_type: 'epic',
       target_id: epicId,
       input,
     };
     const result = await startMutation.mutateAsync(req);
     onOpenChange(false);
-    setSpecPlannerId('');
-    setStoryPlannerId('');
-    setContext('');
     onStarted(result.run.id);
   };
+
+  const hasRequiredAgents = agentInputKeys
+    .filter((k) => k.required)
+    .every((k) => !!flowInput[k.key]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Start Epic Planning</DialogTitle>
+          <DialogTitle>
+            {selectedTemplate ? `Start ${selectedTemplate.name || 'Flow'}` : 'Start Epic Planning'}
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Spec Planner Agent</Label>
-            <Select value={specPlannerId} onValueChange={setSpecPlannerId}>
-              <SelectTrigger><SelectValue placeholder="Select a planner agent..." /></SelectTrigger>
-              <SelectContent>
-                {plannerAgents.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {epicTemplates.length > 1 && (
+            <div className="space-y-1.5">
+              <Label>Template</Label>
+              <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {epicTemplates.map((t: FlowSpec) => (
+                    <SelectItem key={t.template_id} value={t.template_id}>
+                      {t.name || t.template_id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-          <div className="space-y-1.5">
-            <Label>Story Planner Agent <span className="text-muted-foreground font-normal">(optional)</span></Label>
-            <Select value={storyPlannerId || '_none'} onValueChange={(v) => setStoryPlannerId(v === '_none' ? '' : v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">Same as spec planner</SelectItem>
-                {plannerAgents.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Dynamic agent pickers */}
+          {agentInputKeys.map((keyConfig) => {
+            const filteredAgents = keyConfig.agentClassFilter
+              ? agents.filter((a) => a.agent_class === keyConfig.agentClassFilter)
+              : agents;
+            const currentValue = (flowInput[keyConfig.key] as string) || '';
+
+            return (
+              <div key={keyConfig.key} className="space-y-1.5">
+                <Label>
+                  {keyConfig.label}
+                  {!keyConfig.required && (
+                    <span className="text-muted-foreground font-normal"> (optional)</span>
+                  )}
+                </Label>
+                {keyConfig.required ? (
+                  <Select value={currentValue} onValueChange={(v) => setInputField(keyConfig.key, v)}>
+                    <SelectTrigger><SelectValue placeholder="Select an agent..." /></SelectTrigger>
+                    <SelectContent>
+                      {filteredAgents.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Select
+                    value={currentValue || '_none'}
+                    onValueChange={(v) => setInputField(keyConfig.key, v === '_none' ? '' : v)}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">{keyConfig.optionalHint ?? 'None'}</SelectItem>
+                      {filteredAgents.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            );
+          })}
 
           <div className="space-y-1.5">
             <Label>Additional Context <span className="text-muted-foreground font-normal">(optional)</span></Label>
@@ -944,7 +1043,7 @@ function StartEpicFlowDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleStart} disabled={!specPlannerId || startMutation.isPending}>
+          <Button onClick={handleStart} disabled={!hasRequiredAgents || startMutation.isPending}>
             {startMutation.isPending ? (
               <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Starting...</>
             ) : (

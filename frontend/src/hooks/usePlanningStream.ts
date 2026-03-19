@@ -4,12 +4,41 @@ import { useWSStore, type WSEvent } from './useWebSocket';
 import { queryKeys } from '@/lib/queryKeys';
 import type { PlanningStreamEvent, ToolInvocation } from '@/lib/pmTypes';
 
+export type PlanningPendingState = 'idle' | 'message' | 'starting' | 'retrying';
+
+export function planningPendingLabel(state: PlanningPendingState): string {
+  switch (state) {
+    case 'starting':
+      return 'Starting planner...';
+    case 'retrying':
+      return 'Planner stalled, retrying once...';
+    default:
+      return 'Thinking...';
+  }
+}
+
+export function shouldShowPlanningEmptyState({
+  messageCount,
+  isStreaming,
+  turnPending,
+  streamError,
+}: {
+  messageCount: number;
+  isStreaming: boolean;
+  turnPending: boolean;
+  streamError: string | null;
+}) {
+  return messageCount === 0 && !isStreaming && !turnPending && !streamError;
+}
+
 export function usePlanningStream(wsId: string, sessionId: string | undefined) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [turnPending, setTurnPending] = useState(false);
+  const [pendingState, setPendingState] = useState<PlanningPendingState>('idle');
   const [activeToolCall, setActiveToolCall] = useState<{ tool_name: string } | null>(null);
   const [toolResults, setToolResults] = useState<ToolInvocation[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState('');
   const send = useWSStore((s) => s.send);
   const qc = useQueryClient();
   const receivedAnyEvent = useRef(false);
@@ -17,7 +46,11 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
 
   // Mark that we're waiting for the agent to respond (bridges the gap
   // between sending a message and the first stream token arriving).
-  const markTurnPending = () => setTurnPending(true);
+  const markTurnPending = () => {
+    setTurnPending(true);
+    setPendingState('message');
+    setError(null);
+  };
 
   const settleTurn = () => {
     if (!sessionId) return;
@@ -26,8 +59,10 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
     setTimeout(() => {
       setIsStreaming(false);
       setTurnPending(false);
+      setPendingState('idle');
       setToolResults([]);
       setActiveToolCall(null);
+      setStreamingText('');
     }, 300);
   };
 
@@ -68,19 +103,42 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
       receivedAnyEvent.current = true;
 
       switch (event.type) {
+        case 'turn_started':
+          setIsStreaming(false);
+          setTurnPending(true);
+          setPendingState('starting');
+          setStreamingText('');
+          setActiveToolCall(null);
+          setToolResults([]);
+          setError(null);
+          break;
+        case 'turn_retrying':
+          setIsStreaming(false);
+          setTurnPending(true);
+          setPendingState('retrying');
+          setStreamingText('');
+          setActiveToolCall(null);
+          setToolResults([]);
+          setError(null);
+          break;
         case 'assistant_message_started':
           setIsStreaming(true);
           setTurnPending(false);
+          setPendingState('idle');
+          setStreamingText('');
           setError(null);
           break;
         case 'assistant_message_delta':
           setIsStreaming(true);
           setTurnPending(false);
+          setPendingState('idle');
+          setStreamingText((prev) => prev + (event.text ?? ''));
           setError(null);
           break;
         case 'tool_call_started':
           setIsStreaming(true);
           setTurnPending(false);
+          setPendingState('idle');
           setActiveToolCall({ tool_name: event.tool_name ?? '' });
           break;
         case 'tool_call_finished':
@@ -105,6 +163,7 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
         case 'error':
           setIsStreaming(false);
           setTurnPending(false);
+          setPendingState('idle');
           setError(event.error ?? 'Unknown error');
           break;
       }
@@ -126,5 +185,5 @@ export function usePlanningStream(wsId: string, sessionId: string | undefined) {
     return () => window.removeEventListener('planning-session-message', handler);
   }, [sessionId, settleTurn]);
 
-  return { isStreaming, turnPending, markTurnPending, activeToolCall, toolResults, error };
+  return { isStreaming, turnPending, pendingState, markTurnPending, activeToolCall, toolResults, error, streamingText };
 }

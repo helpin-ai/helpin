@@ -157,10 +157,6 @@ func normalizeAgentRecord(agent *model.Agent) {
 	if agent.Skills == nil {
 		agent.Skills = json.RawMessage("[]")
 	}
-	if agent.Tools == nil {
-		agent.Tools = json.RawMessage("[]")
-	}
-
 	if agent.Provider != nil {
 		normalized := normalizeModelProvider(*agent.Provider)
 		if normalized == "" {

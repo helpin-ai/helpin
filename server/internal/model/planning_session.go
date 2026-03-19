@@ -23,6 +23,9 @@ const (
 	PlanningMessageTypeMessage      = "message"
 
 	EpicPlanningStateInSession = "in_session"
+
+	PlanningSessionStageDraftSpec   = "draft_spec"
+	PlanningSessionStagePlanStories = "plan_stories"
 )
 
 // PlanningSessionAllowedTools defines the read-only tools available during planning sessions.
@@ -49,7 +52,9 @@ type PlanningSession struct {
 	PlanningMethodology string          `json:"planning_methodology" gorm:"not null;default:'structured_v1'"`
 	AllowedTools        json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	SpecDocumentID      *string         `json:"spec_document_id,omitempty" gorm:"type:uuid"`
+	Stage               string          `json:"stage" gorm:"not null;default:'draft_spec'"`
 	SpecDraft           string          `json:"spec_draft" gorm:"type:text;not null;default:''"`
+	PlanDraft           string          `json:"plan_draft" gorm:"type:text;not null;default:''"`
 	SpecSections        json.RawMessage `json:"spec_sections" gorm:"type:jsonb;not null;default:'[]'"` // deprecated: kept for migration compat
 	ContextSnapshot     json.RawMessage `json:"context_snapshot" gorm:"type:jsonb;not null;default:'{}'"`
 	TokenUsage          json.RawMessage `json:"token_usage" gorm:"type:jsonb;not null;default:'{\"input\":0,\"output\":0}'"`
@@ -106,11 +111,13 @@ type SessionTokenUsage struct {
 
 // StartPlanningSessionRequest is the request to start a new planning session.
 type StartPlanningSessionRequest struct {
-	AgentID           string  `json:"agent_id"`
-	AdditionalContext *string `json:"additional_context,omitempty"`
-	FlowRunID         *string `json:"flow_run_id,omitempty"`
-	FlowNodeRunID     *string `json:"flow_node_run_id,omitempty"`
-	AllowedTools      json.RawMessage `json:"allowed_tools,omitempty"`
+	AgentID            string          `json:"agent_id"`
+	AdditionalContext  *string         `json:"additional_context,omitempty"`
+	FlowRunID          *string         `json:"flow_run_id,omitempty"`
+	FlowNodeRunID      *string         `json:"flow_node_run_id,omitempty"`
+	AllowedTools       json.RawMessage `json:"allowed_tools,omitempty"`
+	Stage              string          `json:"stage,omitempty"`
+	CustomSystemPrompt string          `json:"custom_system_prompt,omitempty"`
 }
 
 // SendPlanningMessageRequest is the request to send a message in a planning session.

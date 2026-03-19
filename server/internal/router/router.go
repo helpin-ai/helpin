@@ -65,6 +65,7 @@ type Handlers struct {
 	AutomationRule     *handler.AutomationRuleHandler
 	PMRoadmap          *handler.PMRoadmapHandler
 	Flow               *handler.FlowHandler
+	FlowTemplate       *handler.FlowTemplateHandler
 	SDKAssets          *handler.SDKAssetsHandler
 }
 
@@ -445,7 +446,20 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-runs", h.Flow.ListRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-templates", h.Flow.ListTemplates)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-db-templates", h.FlowTemplate.ListTemplates)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-templates", h.FlowTemplate.CreateTemplate)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-templates/duplicate-from-slug", h.FlowTemplate.DuplicateFromSlug)
+				r.Route("/flow-templates/{templateId}", func(r chi.Router) {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.FlowTemplate.GetTemplate)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.FlowTemplate.UpdateTemplate)
+					r.With(requirePerm(authorization.PermPMEdit)).Delete("/", h.FlowTemplate.DeleteTemplate)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/nodes", h.FlowTemplate.CreateNode)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/duplicate", h.FlowTemplate.DuplicateTemplate)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/nodes/{nodeId}", h.FlowTemplate.UpdateNode)
+					r.With(requirePerm(authorization.PermPMEdit)).Delete("/nodes/{nodeId}", h.FlowTemplate.DeleteNode)
+				})
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-runs", h.Flow.StartRun)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-runs/cancel-by-target", h.Flow.CancelActiveRunByTarget)
 				r.Route("/flow-runs/{flowRunId}", func(r chi.Router) {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Flow.GetRun)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/nodes", h.Flow.ListNodeRuns)
@@ -564,7 +578,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}", h.Agent.DeleteAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/runs", h.Agent.ListAgentRuns)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/assign-agent", h.Agent.AssignAgentToStory)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/run-agent", h.Agent.RunAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)

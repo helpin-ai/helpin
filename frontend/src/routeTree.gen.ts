@@ -41,6 +41,7 @@ import { Route as AuthenticatedWSlugPmReportsRouteImport } from './routes/_authe
 import { Route as AuthenticatedWSlugPmMyWorkRouteImport } from './routes/_authenticated/w/$slug/pm/my-work'
 import { Route as AuthenticatedWSlugPmLabelsRouteImport } from './routes/_authenticated/w/$slug/pm/labels'
 import { Route as AuthenticatedWSlugPmFlowsRouteImport } from './routes/_authenticated/w/$slug/pm/flows'
+import { Route as AuthenticatedWSlugPmFlowTemplatesRouteImport } from './routes/_authenticated/w/$slug/pm/flow-templates'
 import { Route as AuthenticatedWSlugPmAgentsRouteImport } from './routes/_authenticated/w/$slug/pm/agents'
 import { Route as AuthenticatedWSlugDocsRecentRouteImport } from './routes/_authenticated/w/$slug/docs/recent'
 import { Route as AuthenticatedWSlugDocsMyRouteImport } from './routes/_authenticated/w/$slug/docs/my'
@@ -243,6 +244,12 @@ const AuthenticatedWSlugPmFlowsRoute =
     path: '/pm/flows',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugPmFlowTemplatesRoute =
+  AuthenticatedWSlugPmFlowTemplatesRouteImport.update({
+    id: '/pm/flow-templates',
+    path: '/pm/flow-templates',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugPmAgentsRoute =
   AuthenticatedWSlugPmAgentsRouteImport.update({
     id: '/pm/agents',
@@ -419,6 +426,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
+  '/w/$slug/pm/flow-templates': typeof AuthenticatedWSlugPmFlowTemplatesRoute
   '/w/$slug/pm/flows': typeof AuthenticatedWSlugPmFlowsRoute
   '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/my-work': typeof AuthenticatedWSlugPmMyWorkRoute
@@ -475,6 +483,7 @@ export interface FileRoutesByTo {
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
   '/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
+  '/w/$slug/pm/flow-templates': typeof AuthenticatedWSlugPmFlowTemplatesRoute
   '/w/$slug/pm/flows': typeof AuthenticatedWSlugPmFlowsRoute
   '/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/w/$slug/pm/my-work': typeof AuthenticatedWSlugPmMyWorkRoute
@@ -535,6 +544,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
   '/_authenticated/w/$slug/docs/recent': typeof AuthenticatedWSlugDocsRecentRoute
   '/_authenticated/w/$slug/pm/agents': typeof AuthenticatedWSlugPmAgentsRoute
+  '/_authenticated/w/$slug/pm/flow-templates': typeof AuthenticatedWSlugPmFlowTemplatesRoute
   '/_authenticated/w/$slug/pm/flows': typeof AuthenticatedWSlugPmFlowsRoute
   '/_authenticated/w/$slug/pm/labels': typeof AuthenticatedWSlugPmLabelsRoute
   '/_authenticated/w/$slug/pm/my-work': typeof AuthenticatedWSlugPmMyWorkRoute
@@ -595,6 +605,7 @@ export interface FileRouteTypes {
     | '/w/$slug/docs/my'
     | '/w/$slug/docs/recent'
     | '/w/$slug/pm/agents'
+    | '/w/$slug/pm/flow-templates'
     | '/w/$slug/pm/flows'
     | '/w/$slug/pm/labels'
     | '/w/$slug/pm/my-work'
@@ -651,6 +662,7 @@ export interface FileRouteTypes {
     | '/w/$slug/docs/my'
     | '/w/$slug/docs/recent'
     | '/w/$slug/pm/agents'
+    | '/w/$slug/pm/flow-templates'
     | '/w/$slug/pm/flows'
     | '/w/$slug/pm/labels'
     | '/w/$slug/pm/my-work'
@@ -710,6 +722,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/docs/my'
     | '/_authenticated/w/$slug/docs/recent'
     | '/_authenticated/w/$slug/pm/agents'
+    | '/_authenticated/w/$slug/pm/flow-templates'
     | '/_authenticated/w/$slug/pm/flows'
     | '/_authenticated/w/$slug/pm/labels'
     | '/_authenticated/w/$slug/pm/my-work'
@@ -982,6 +995,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmFlowsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/pm/flow-templates': {
+      id: '/_authenticated/w/$slug/pm/flow-templates'
+      path: '/pm/flow-templates'
+      fullPath: '/w/$slug/pm/flow-templates'
+      preLoaderRoute: typeof AuthenticatedWSlugPmFlowTemplatesRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/pm/agents': {
       id: '/_authenticated/w/$slug/pm/agents'
       path: '/pm/agents'
@@ -1197,6 +1217,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugCrmInsightsRoute: typeof AuthenticatedWSlugCrmInsightsRoute
   AuthenticatedWSlugCrmReviewRoute: typeof AuthenticatedWSlugCrmReviewRoute
   AuthenticatedWSlugPmAgentsRoute: typeof AuthenticatedWSlugPmAgentsRoute
+  AuthenticatedWSlugPmFlowTemplatesRoute: typeof AuthenticatedWSlugPmFlowTemplatesRoute
   AuthenticatedWSlugPmFlowsRoute: typeof AuthenticatedWSlugPmFlowsRoute
   AuthenticatedWSlugPmLabelsRoute: typeof AuthenticatedWSlugPmLabelsRoute
   AuthenticatedWSlugPmMyWorkRoute: typeof AuthenticatedWSlugPmMyWorkRoute
@@ -1239,6 +1260,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugCrmInsightsRoute: AuthenticatedWSlugCrmInsightsRoute,
   AuthenticatedWSlugCrmReviewRoute: AuthenticatedWSlugCrmReviewRoute,
   AuthenticatedWSlugPmAgentsRoute: AuthenticatedWSlugPmAgentsRoute,
+  AuthenticatedWSlugPmFlowTemplatesRoute:
+    AuthenticatedWSlugPmFlowTemplatesRoute,
   AuthenticatedWSlugPmFlowsRoute: AuthenticatedWSlugPmFlowsRoute,
   AuthenticatedWSlugPmLabelsRoute: AuthenticatedWSlugPmLabelsRoute,
   AuthenticatedWSlugPmMyWorkRoute: AuthenticatedWSlugPmMyWorkRoute,

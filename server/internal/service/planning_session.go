@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -27,21 +28,38 @@ type PlanningWorkflowStarter interface {
 
 // PlanningSessionService manages interactive planning sessions.
 type PlanningSessionService struct {
-	sessionRepo      *repository.PlanningSessionRepository
-	epicRepo         *repository.PMEpicRepository
-	agentRepo        *repository.AgentRepository
-	settingsRepo     *repository.SettingsRepository
-	docsContentRepo  *repository.DocsContentRepository
-	docsVersionRepo  *repository.DocsVersionRepository
-	docsLinkRepo     *repository.DocsLinkRepository
-	docsDocumentRepo *repository.DocsDocumentRepository
-	docsSpaceRepo    *repository.DocsSpaceRepository
-	modelFactory     *worker.EinoModelFactory
-	toolRegistry     *worker.ToolRegistry
-	streamer         websocket.SessionStreamer // sends stream events (tokens, tool results) to WS clients
-	publisher        websocket.EventPublisher  // broadcasts entity events for query invalidation
-	workflow         PlanningWorkflowStarter
+	sessionRepo            *repository.PlanningSessionRepository
+	epicRepo               *repository.PMEpicRepository
+	agentRepo              *repository.AgentRepository
+	settingsRepo           *repository.SettingsRepository
+	docsContentRepo        *repository.DocsContentRepository
+	docsVersionRepo        *repository.DocsVersionRepository
+	docsLinkRepo           *repository.DocsLinkRepository
+	docsDocumentRepo       *repository.DocsDocumentRepository
+	docsSpaceRepo          *repository.DocsSpaceRepository
+	modelFactory           *worker.EinoModelFactory
+	toolRegistry           *worker.ToolRegistry
+	streamer               websocket.SessionStreamer // sends stream events (tokens, tool results) to WS clients
+	publisher              websocket.EventPublisher  // broadcasts entity events for query invalidation
+	workflow               PlanningWorkflowStarter
+	executeWithEino        planningExecutionFunc
+	initialResponseTimeout time.Duration
 }
+
+const defaultPlanningInitialResponseTimeout = 60 * time.Second
+
+type planningExecutionFunc func(
+	ctx context.Context,
+	factory *worker.EinoModelFactory,
+	agent *model.Agent,
+	systemPrompt string,
+	history []worker.ExecutionMessage,
+	tools []worker.ToolDefinition,
+	execCtx *worker.ExecutionContext,
+	registry *worker.ToolRegistry,
+	maxSteps int,
+	onEvent func(worker.ExecutionEvent),
+) (*worker.ExecutionResult, error)
 
 // NewPlanningSessionService creates a new service.
 func NewPlanningSessionService(
@@ -60,19 +78,21 @@ func NewPlanningSessionService(
 	publisher websocket.EventPublisher,
 ) *PlanningSessionService {
 	return &PlanningSessionService{
-		sessionRepo:      sessionRepo,
-		epicRepo:         epicRepo,
-		agentRepo:        agentRepo,
-		settingsRepo:     settingsRepo,
-		docsContentRepo:  docsContentRepo,
-		docsVersionRepo:  docsVersionRepo,
-		docsLinkRepo:     docsLinkRepo,
-		docsDocumentRepo: docsDocumentRepo,
-		docsSpaceRepo:    docsSpaceRepo,
-		modelFactory:     modelFactory,
-		toolRegistry:     toolRegistry,
-		streamer:         streamer,
-		publisher:        publisher,
+		sessionRepo:            sessionRepo,
+		epicRepo:               epicRepo,
+		agentRepo:              agentRepo,
+		settingsRepo:           settingsRepo,
+		docsContentRepo:        docsContentRepo,
+		docsVersionRepo:        docsVersionRepo,
+		docsLinkRepo:           docsLinkRepo,
+		docsDocumentRepo:       docsDocumentRepo,
+		docsSpaceRepo:          docsSpaceRepo,
+		modelFactory:           modelFactory,
+		toolRegistry:           toolRegistry,
+		streamer:               streamer,
+		publisher:              publisher,
+		executeWithEino:        worker.ExecuteWithEino,
+		initialResponseTimeout: defaultPlanningInitialResponseTimeout,
 	}
 }
 
@@ -141,9 +161,24 @@ func (s *PlanningSessionService) StartSession(ctx context.Context, workspaceID, 
 		methodology = settings.PlanningMethodology
 	}
 
+	// Resolve stage.
+	stage := strings.TrimSpace(req.Stage)
+	if stage == "" {
+		stage = model.PlanningSessionStageDraftSpec
+	}
+
 	// Build context snapshot.
 	contextSnapshot := s.buildContextSnapshot(ctx, epic, req.AdditionalContext)
 	contextJSON, _ := json.Marshal(contextSnapshot)
+
+	// Embed custom system prompt from flow node config into context snapshot.
+	if req.CustomSystemPrompt != "" {
+		var snapMap map[string]any
+		if err := json.Unmarshal(contextJSON, &snapMap); err == nil {
+			snapMap["custom_system_prompt"] = req.CustomSystemPrompt
+			contextJSON, _ = json.Marshal(snapMap)
+		}
+	}
 
 	// Create session.
 	session := &model.PlanningSession{
@@ -153,6 +188,7 @@ func (s *PlanningSessionService) StartSession(ctx context.Context, workspaceID, 
 		FlowRunID:           req.FlowRunID,
 		FlowNodeRunID:       req.FlowNodeRunID,
 		Status:              model.PlanningSessionStatusActive,
+		Stage:               stage,
 		PlanningMethodology: methodology,
 		AllowedTools:        normalizeJSONSlice(req.AllowedTools),
 		SpecDocumentID:      epic.SpecDocumentID,
@@ -167,17 +203,22 @@ func (s *PlanningSessionService) StartSession(ctx context.Context, workspaceID, 
 	}
 
 	// Update epic state.
+	previousPlanningState := epic.PlanningState
+	previousActivePlanningSessionID := epic.ActivePlanningSessionID
 	epic.PlanningState = model.EpicPlanningStateInSession
 	epic.ActivePlanningSessionID = &session.ID
 	if err := s.epicRepo.Update(ctx, epic); err != nil {
+		s.rollbackFailedSessionStart(ctx, session, epic, previousPlanningState, previousActivePlanningSessionID)
 		return nil, fmt.Errorf("update epic: %w", err)
 	}
 
 	// Start the Temporal workflow (clones repo, runs initial agent turn).
 	if s.workflow == nil {
+		s.rollbackFailedSessionStart(ctx, session, epic, previousPlanningState, previousActivePlanningSessionID)
 		return nil, fmt.Errorf("interactive planning sessions require Temporal to be configured")
 	}
 	if err := s.workflow.StartPlanningSession(ctx, session.ID); err != nil {
+		s.rollbackFailedSessionStart(ctx, session, epic, previousPlanningState, previousActivePlanningSessionID)
 		return nil, fmt.Errorf("start planning workflow: %w", err)
 	}
 
@@ -188,6 +229,20 @@ func (s *PlanningSessionService) StartSession(ctx context.Context, workspaceID, 
 	})
 
 	return session, nil
+}
+
+func (s *PlanningSessionService) rollbackFailedSessionStart(ctx context.Context, session *model.PlanningSession, epic *model.PMEpic, previousPlanningState string, previousActivePlanningSessionID *string) {
+	if session != nil {
+		now := time.Now()
+		session.Status = model.PlanningSessionStatusAbandoned
+		session.CompletedAt = &now
+		_ = s.sessionRepo.Update(ctx, session)
+	}
+	if epic != nil {
+		epic.PlanningState = previousPlanningState
+		epic.ActivePlanningSessionID = previousActivePlanningSessionID
+		_ = s.epicRepo.Update(ctx, epic)
+	}
 }
 
 // SendMessage saves a human message and triggers the agent's streaming response.
@@ -264,39 +319,65 @@ func (s *PlanningSessionService) FinalizeSession(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("planning session is not active")
 	}
 
-	// Validate that a spec draft exists — nothing to finalize without one.
-	if strings.TrimSpace(session.SpecDraft) == "" {
-		return nil, fmt.Errorf("no spec draft to finalize — ask the agent to produce a draft first")
-	}
-
-	// Ensure a spec doc exists on the epic (create if needed, like DraftEpicSpec did).
 	epicWithStats, err := s.epicRepo.GetByID(ctx, session.EpicID)
 	if err != nil || epicWithStats == nil {
 		return nil, fmt.Errorf("epic not found: %s", session.EpicID)
 	}
 	epic := &epicWithStats.Epic
 
-	specDoc, err := s.ensureEpicSpecDocument(ctx, workspaceID, epic, actorID)
-	if err != nil {
-		return nil, fmt.Errorf("ensure spec document: %w", err)
-	}
-	session.SpecDocumentID = &specDoc.ID
-
-	// Write spec_draft to the doc.
-	s.writeSpecToDoc(ctx, specDoc.ID, session.SpecDraft, actorID)
-
-	// Complete the session.
-	now := time.Now()
-	session.Status = model.PlanningSessionStatusCompleted
-	session.CompletedAt = &now
-	if err := s.sessionRepo.Update(ctx, session); err != nil {
-		return nil, err
+	stage := session.Stage
+	if stage == "" {
+		stage = model.PlanningSessionStageDraftSpec
 	}
 
-	// Update epic state.
-	epic.PlanningState = model.EpicPlanningStateAwaitingSpecApproval
-	epic.ActivePlanningSessionID = nil
-	_ = s.epicRepo.Update(ctx, epic)
+	switch stage {
+	case model.PlanningSessionStagePlanStories:
+		// Validate that a plan draft exists.
+		if strings.TrimSpace(session.PlanDraft) == "" {
+			return nil, fmt.Errorf("no story plan to finalize — ask the agent to produce a plan first")
+		}
+
+		// Complete the session.
+		now := time.Now()
+		session.Status = model.PlanningSessionStatusCompleted
+		session.CompletedAt = &now
+		if err := s.sessionRepo.Update(ctx, session); err != nil {
+			return nil, err
+		}
+
+		// Update epic state.
+		epic.PlanningState = model.EpicPlanningStateAwaitingPlanApproval
+		epic.ActivePlanningSessionID = nil
+		_ = s.epicRepo.Update(ctx, epic)
+
+	default:
+		// draft_spec stage (original behavior).
+		if strings.TrimSpace(session.SpecDraft) == "" {
+			return nil, fmt.Errorf("no spec draft to finalize — ask the agent to produce a draft first")
+		}
+
+		specDoc, err := s.ensureEpicSpecDocument(ctx, workspaceID, epic, actorID)
+		if err != nil {
+			return nil, fmt.Errorf("ensure spec document: %w", err)
+		}
+		session.SpecDocumentID = &specDoc.ID
+
+		// Write spec_draft to the doc.
+		s.writeSpecToDoc(ctx, specDoc.ID, session.SpecDraft, actorID)
+
+		// Complete the session.
+		now := time.Now()
+		session.Status = model.PlanningSessionStatusCompleted
+		session.CompletedAt = &now
+		if err := s.sessionRepo.Update(ctx, session); err != nil {
+			return nil, err
+		}
+
+		// Update epic state.
+		epic.PlanningState = model.EpicPlanningStateAwaitingSpecApproval
+		epic.ActivePlanningSessionID = nil
+		_ = s.epicRepo.Update(ctx, epic)
+	}
 
 	// Signal Temporal workflow to abandon (cleanup workspace — no agent turn needed).
 	if s.workflow != nil {
@@ -409,8 +490,7 @@ func (s *PlanningSessionService) RunAgentTurnWithContext(ctx context.Context, se
 		return fmt.Errorf("session not found: %s", sessionID)
 	}
 	agent, _ := s.agentRepo.GetByID(ctx, session.WorkspaceID, session.AgentID)
-	s.runAgentTurn(ctx, session, agent, execCtx)
-	return nil
+	return s.runAgentTurn(ctx, session, agent, execCtx)
 }
 
 // RunFinalizationTurnWithContext is kept for backwards compatibility with in-flight workflows
@@ -423,13 +503,24 @@ func (s *PlanningSessionService) RunFinalizationTurnWithContext(ctx context.Cont
 // --- Internal: agent turn execution ---
 
 // runAgentTurn executes a streaming Eino-backed agent turn and pushes events via WebSocket.
-func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *model.PlanningSession, agent *model.Agent, execCtx *worker.ExecutionContext) {
+func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *model.PlanningSession, agent *model.Agent, execCtx *worker.ExecutionContext) error {
 	sessionID := session.ID
+	if execCtx == nil {
+		execCtx = &worker.ExecutionContext{}
+	}
+	if execCtx.Context == nil {
+		execCtx.Context = ctx
+	}
+	initialTurn := execCtx.PlanningTurnKind == worker.PlanningTurnKindInitial
+	turnAttempt := execCtx.PlanningTurnAttempt
+	if initialTurn && turnAttempt <= 0 {
+		turnAttempt = 1
+	}
 
 	if s.modelFactory == nil {
 		slog.Error("planning session: Eino model factory not configured", "session_id", sessionID)
 		s.sendStreamError(sessionID, "LLM provider not configured for agent")
-		return
+		return fmt.Errorf("LLM provider not configured for agent")
 	}
 
 	// Load conversation history.
@@ -437,7 +528,7 @@ func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *mode
 	if err != nil {
 		slog.Error("planning session: failed to load messages", "error", err, "session_id", sessionID)
 		s.sendStreamError(sessionID, "failed to load conversation history")
-		return
+		return fmt.Errorf("load conversation history: %w", err)
 	}
 
 	systemPrompt := s.buildSystemPrompt(session, agent)
@@ -445,16 +536,91 @@ func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *mode
 	if err != nil {
 		slog.Error("planning session: failed to build execution history", "error", err, "session_id", sessionID)
 		s.sendStreamError(sessionID, "failed to prepare conversation history")
-		return
+		return fmt.Errorf("build execution history: %w", err)
 	}
 	tools := s.resolveTools(ctx, session)
-	result, execErr := worker.ExecuteWithEino(ctx, s.modelFactory, agent, systemPrompt, history, tools, execCtx, s.toolRegistry, 25, func(event worker.ExecutionEvent) {
+	if initialTurn {
+		startEvent := "turn_started"
+		startReason := "started"
+		if turnAttempt > 1 {
+			startEvent = "turn_retrying"
+			startReason = "retrying"
+		}
+		s.sendStreamEvent(sessionID, startEvent)
+		slog.InfoContext(ctx, "planning session initial turn starting",
+			"session_id", sessionID,
+			"flow_run_id", derefString(session.FlowRunID),
+			"flow_node_run_id", derefString(session.FlowNodeRunID),
+			"attempt", turnAttempt,
+			"reason", startReason,
+		)
+	}
+	onEvent := func(event worker.ExecutionEvent) {
+		if execCtx.Heartbeat != nil {
+			switch event.Type {
+			case "assistant_message_started":
+				_ = execCtx.Heartbeat("assistant_started")
+			case "assistant_message_delta":
+				_ = execCtx.Heartbeat("assistant_streaming")
+			case "tool_call_started":
+				stage := "tool_started"
+				if event.ToolName != "" {
+					stage = "tool_" + event.ToolName
+				}
+				_ = execCtx.Heartbeat(stage)
+			case "tool_call_finished":
+				_ = execCtx.Heartbeat("tool_finished")
+			case "assistant_message_completed":
+				_ = execCtx.Heartbeat("assistant_completed")
+			}
+		}
 		s.streamExecutionEvent(sessionID, event)
-	})
+	}
+	executor := s.executeWithEino
+	if executor == nil {
+		executor = worker.ExecuteWithEino
+	}
+	execute := func(execCallCtx context.Context, forward func(worker.ExecutionEvent)) (*worker.ExecutionResult, error) {
+		runExecCtx := *execCtx
+		runExecCtx.Context = execCallCtx
+		return executor(execCallCtx, s.modelFactory, agent, systemPrompt, history, tools, &runExecCtx, s.toolRegistry, 25, forward)
+	}
+	var (
+		result  *worker.ExecutionResult
+		execErr error
+	)
+	if initialTurn && s.initialResponseTimeout > 0 {
+		result, execErr = executePlanningTurnWithInitialOutputTimeout(execCtx.Context, s.initialResponseTimeout, execute, onEvent)
+	} else {
+		result, execErr = execute(execCtx.Context, onEvent)
+	}
+	if errors.Is(execErr, worker.ErrInitialResponseTimeout) {
+		slog.WarnContext(ctx, "planning session initial turn stalled",
+			"session_id", sessionID,
+			"flow_run_id", derefString(session.FlowRunID),
+			"flow_node_run_id", derefString(session.FlowNodeRunID),
+			"attempt", turnAttempt,
+			"reason", worker.ErrInitialResponseTimeout.Error(),
+		)
+		if turnAttempt > 1 {
+			s.sendStreamError(sessionID, "Planner did not produce an initial response in time after retrying once.")
+		}
+		return worker.ErrInitialResponseTimeout
+	}
 	if execErr != nil && !errors.Is(execErr, worker.ErrMaxToolStepsReached) {
 		slog.Error("planning session: Eino execution failed", "error", execErr, "session_id", sessionID)
 		s.sendStreamError(sessionID, "failed to get agent response")
-		return
+		if initialTurn {
+			slog.ErrorContext(ctx, "planning session initial turn failed",
+				"session_id", sessionID,
+				"flow_run_id", derefString(session.FlowRunID),
+				"flow_node_run_id", derefString(session.FlowNodeRunID),
+				"attempt", turnAttempt,
+				"reason", "execution_failed",
+				"error", execErr,
+			)
+		}
+		return fmt.Errorf("eino execution: %w", execErr)
 	}
 
 	if errors.Is(execErr, worker.ErrMaxToolStepsReached) {
@@ -480,6 +646,9 @@ func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *mode
 	if draft := extractSpecDraft(result.AssistantText); draft != "" {
 		s.persistSpecDraft(ctx, session, draft)
 	}
+	if plan := extractStoryPlan(result.AssistantText); plan != "" {
+		s.persistPlanDraft(ctx, session, plan)
+	}
 	_ = s.sessionRepo.UpdateLastActive(ctx, sessionID)
 	s.updateSessionTokenUsage(ctx, session, result.Usage)
 	if assistantMsg != nil {
@@ -497,7 +666,23 @@ func (s *PlanningSessionService) runAgentTurn(ctx context.Context, session *mode
 	if assistantMsg != nil {
 		completedEvent.MessageID = assistantMsg.ID
 	}
-	s.streamer.SendToSession(sessionID, completedEvent)
+	if s.streamer != nil {
+		s.streamer.SendToSession(sessionID, completedEvent)
+	}
+	if initialTurn {
+		reason := "completed"
+		if errors.Is(execErr, worker.ErrMaxToolStepsReached) {
+			reason = "max_tool_steps_reached"
+		}
+		slog.InfoContext(ctx, "planning session initial turn completed",
+			"session_id", sessionID,
+			"flow_run_id", derefString(session.FlowRunID),
+			"flow_node_run_id", derefString(session.FlowNodeRunID),
+			"attempt", turnAttempt,
+			"reason", reason,
+		)
+	}
+	return nil
 }
 
 // --- Helpers ---
@@ -563,7 +748,106 @@ func (s *PlanningSessionService) buildContextSnapshot(ctx context.Context, epic 
 	return snapshot
 }
 
+// DefaultSystemPrompt returns the base system prompt for a planning session stage,
+// without agent-specific customizations. Used to populate DB template nodes.
+func (s *PlanningSessionService) DefaultSystemPrompt(stage string) string {
+	return s.buildSystemPrompt(&model.PlanningSession{Stage: stage}, nil)
+}
+
 func (s *PlanningSessionService) buildSystemPrompt(session *model.PlanningSession, agent *model.Agent) string {
+	// Check for a custom system prompt stored in the context snapshot (from DB template node config).
+	if len(session.ContextSnapshot) > 0 {
+		var snapshot map[string]any
+		if err := json.Unmarshal(session.ContextSnapshot, &snapshot); err == nil {
+			if customPrompt, ok := snapshot["custom_system_prompt"].(string); ok && customPrompt != "" {
+				if agent != nil && agent.PlanningNotes != nil && *agent.PlanningNotes != "" {
+					return customPrompt + "\n\n## Planner Notes\n\n" + *agent.PlanningNotes + "\n\n"
+				}
+				return customPrompt
+			}
+		}
+	}
+
+	// Fall back to hardcoded prompts.
+	stage := session.Stage
+	if stage == "" {
+		stage = model.PlanningSessionStageDraftSpec
+	}
+	if stage == model.PlanningSessionStagePlanStories {
+		return s.buildStoryPlanSystemPrompt(session, agent)
+	}
+	return s.buildSpecDraftSystemPrompt(session, agent)
+}
+
+func (s *PlanningSessionService) buildStoryPlanSystemPrompt(session *model.PlanningSession, agent *model.Agent) string {
+	var b strings.Builder
+
+	b.WriteString("You are a technical product planner working interactively with a human product owner. ")
+	b.WriteString("Your job is to decompose an approved product specification into well-defined implementation stories.\n\n")
+
+	b.WriteString("## Your Approach\n\n")
+	b.WriteString("1. Read the approved spec from the linked documents using the available tools.\n")
+	b.WriteString("2. Explore the codebase to understand the current architecture and identify affected areas.\n")
+	b.WriteString("3. Discuss your decomposition strategy with the human — ask about priorities, constraints, and preferences.\n")
+	b.WriteString("4. Propose a story plan, iterating with the human until they're satisfied.\n\n")
+
+	b.WriteString("## Story Decomposition Principles\n\n")
+	b.WriteString("- Each story should be a vertical slice delivering user-visible value when possible.\n")
+	b.WriteString("- Stories should be independently testable and deployable.\n")
+	b.WriteString("- Include enabler stories (infrastructure, refactoring) only when necessary.\n")
+	b.WriteString("- Define clear acceptance criteria for each story.\n")
+	b.WriteString("- Specify dependencies between stories using refs.\n")
+	b.WriteString("- Include an implementation brief with affected files, approach, and test strategy.\n")
+	b.WriteString("- Order stories by dependency graph, with independent stories first.\n\n")
+
+	b.WriteString("## Proposing a Story Plan\n\n")
+	b.WriteString("When you have enough information, propose the story plan using a <story_plan> JSON tag.\n")
+	b.WriteString("The plan is a single JSON object — each time you propose, include the FULL updated plan.\n")
+	b.WriteString("The content inside <story_plan> is rendered live in a preview panel alongside the conversation.\n\n")
+	b.WriteString("Format:\n\n")
+	b.WriteString("<story_plan>\n")
+	b.WriteString("{\n")
+	b.WriteString("  \"summary\": \"Brief overview of the decomposition approach\",\n")
+	b.WriteString("  \"proposed_stories\": [\n")
+	b.WriteString("    {\n")
+	b.WriteString("      \"ref\": \"story_1\",\n")
+	b.WriteString("      \"name\": \"Story name\",\n")
+	b.WriteString("      \"description\": \"What this story delivers\",\n")
+	b.WriteString("      \"story_type\": \"feature|chore|bug|spike\",\n")
+	b.WriteString("      \"estimate\": 3,\n")
+	b.WriteString("      \"priority\": \"high|medium|low\",\n")
+	b.WriteString("      \"acceptance_criteria\": [\"Criterion 1\", \"Criterion 2\"],\n")
+	b.WriteString("      \"dependency_refs\": [\"story_0\"],\n")
+	b.WriteString("      \"implementation_brief\": {\n")
+	b.WriteString("        \"approach\": \"How to implement this story\",\n")
+	b.WriteString("        \"files_to_modify\": [{\"path\": \"server/internal/...\", \"action\": \"modify\", \"description\": \"...\"}],\n")
+	b.WriteString("        \"test_strategy\": \"How to test this story\"\n")
+	b.WriteString("      }\n")
+	b.WriteString("    }\n")
+	b.WriteString("  ]\n")
+	b.WriteString("}\n")
+	b.WriteString("</story_plan>\n\n")
+	b.WriteString("Each <story_plan> replaces the previous one, so always include the complete current state.\n")
+	b.WriteString("You do not need to propose a plan on every turn — only when you have meaningful content to show.\n\n")
+
+	b.WriteString("## Tools\n\n")
+	b.WriteString("You have read-only access to the codebase and documents. Use tools to understand the existing architecture, ")
+	b.WriteString("identify affected files, and validate your decomposition approach.\n\n")
+
+	b.WriteString("## Finalization\n\n")
+	b.WriteString("When you believe the plan is complete, tell the human and summarize the stories. ")
+	b.WriteString("Wait for them to confirm before they finalize. The final plan must be inside a <story_plan> tag.\n\n")
+
+	if agent != nil && agent.PlanningNotes != nil && *agent.PlanningNotes != "" {
+		b.WriteString("## Planner Notes\n\n")
+		b.WriteString(*agent.PlanningNotes)
+		b.WriteString("\n\n")
+	}
+
+	return b.String()
+}
+
+func (s *PlanningSessionService) buildSpecDraftSystemPrompt(session *model.PlanningSession, agent *model.Agent) string {
 	var b strings.Builder
 
 	// --- Identity ---
@@ -780,8 +1064,17 @@ func (s *PlanningSessionService) buildInitialUserMessage(session *model.Planning
 		return "Please begin the planning session for this epic."
 	}
 
+	stage := session.Stage
+	if stage == "" {
+		stage = model.PlanningSessionStageDraftSpec
+	}
+
 	var b strings.Builder
-	b.WriteString("I'd like to plan the following epic interactively with you.\n\n")
+	if stage == model.PlanningSessionStagePlanStories {
+		b.WriteString("I'd like to decompose the following epic into implementation stories with you.\n\n")
+	} else {
+		b.WriteString("I'd like to plan the following epic interactively with you.\n\n")
+	}
 
 	if name, ok := snapshot["epic_name"].(string); ok && name != "" {
 		b.WriteString("## Epic: ")
@@ -824,7 +1117,11 @@ func (s *PlanningSessionService) buildInitialUserMessage(session *model.Planning
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString("Please start by reviewing this information and asking me the most important scope-gating questions before drafting any spec content.")
+	if stage == model.PlanningSessionStagePlanStories {
+		b.WriteString("Please start by reading the approved spec document and exploring the codebase, then discuss your story decomposition approach with me.")
+	} else {
+		b.WriteString("Please start by reviewing this information and asking me the most important scope-gating questions before drafting any spec content.")
+	}
 
 	return b.String()
 }
@@ -867,6 +1164,27 @@ func (s *PlanningSessionService) persistSpecDraft(ctx context.Context, session *
 	if err := s.sessionRepo.Update(ctx, session); err != nil {
 		slog.Error("planning session: failed to persist spec draft", "error", err, "session_id", session.ID)
 	}
+}
+
+// persistPlanDraft replaces the session's plan_draft with the latest story plan content.
+func (s *PlanningSessionService) persistPlanDraft(ctx context.Context, session *model.PlanningSession, plan string) {
+	session.PlanDraft = plan
+	if err := s.sessionRepo.Update(ctx, session); err != nil {
+		slog.Error("planning session: failed to persist plan draft", "error", err, "session_id", session.ID)
+	}
+}
+
+// extractStoryPlan extracts the content of the last <story_plan> tag from text.
+func extractStoryPlan(text string) string {
+	matches := storyPlanRe.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	last := matches[len(matches)-1]
+	if len(last) >= 2 {
+		return strings.TrimSpace(last[1])
+	}
+	return ""
 }
 
 func (s *PlanningSessionService) writeSpecToDoc(ctx context.Context, docID, content, actorID string) {
@@ -975,6 +1293,9 @@ func (s *PlanningSessionService) ensureEpicSpecDocument(ctx context.Context, wor
 }
 
 func (s *PlanningSessionService) sendStreamError(sessionID, errMsg string) {
+	if s.streamer == nil {
+		return
+	}
 	s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
 		Type:      "error",
 		SessionID: sessionID,
@@ -982,7 +1303,20 @@ func (s *PlanningSessionService) sendStreamError(sessionID, errMsg string) {
 	})
 }
 
+func (s *PlanningSessionService) sendStreamEvent(sessionID, eventType string) {
+	if s.streamer == nil {
+		return
+	}
+	s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
+		Type:      eventType,
+		SessionID: sessionID,
+	})
+}
+
 func (s *PlanningSessionService) streamExecutionEvent(sessionID string, event worker.ExecutionEvent) {
+	if s.streamer == nil {
+		return
+	}
 	s.streamer.SendToSession(sessionID, model.PlanningStreamEvent{
 		Type:          event.Type,
 		SessionID:     sessionID,
@@ -994,6 +1328,57 @@ func (s *PlanningSessionService) streamExecutionEvent(sessionID string, event wo
 		DurationMs:    event.DurationMs,
 		Error:         event.Error,
 	})
+}
+
+func executePlanningTurnWithInitialOutputTimeout(
+	ctx context.Context,
+	timeout time.Duration,
+	execute func(context.Context, func(worker.ExecutionEvent)) (*worker.ExecutionResult, error),
+	onEvent func(worker.ExecutionEvent),
+) (*worker.ExecutionResult, error) {
+	if timeout <= 0 {
+		return execute(ctx, onEvent)
+	}
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		sawProgress atomic.Bool
+		timedOut    atomic.Bool
+	)
+	timer := time.AfterFunc(timeout, func() {
+		if sawProgress.Load() {
+			return
+		}
+		timedOut.Store(true)
+		cancel()
+	})
+	defer timer.Stop()
+
+	forward := func(event worker.ExecutionEvent) {
+		if isPlanningFirstOutputEvent(event.Type) && sawProgress.CompareAndSwap(false, true) {
+			timer.Stop()
+		}
+		if onEvent != nil {
+			onEvent(event)
+		}
+	}
+
+	result, err := execute(watchCtx, forward)
+	if timedOut.Load() && !sawProgress.Load() {
+		return nil, worker.ErrInitialResponseTimeout
+	}
+	return result, err
+}
+
+func isPlanningFirstOutputEvent(eventType string) bool {
+	switch eventType {
+	case "assistant_message_started", "assistant_message_delta", "tool_call_started":
+		return true
+	default:
+		return false
+	}
 }
 
 // --- Pure helpers ---
@@ -1009,11 +1394,12 @@ func extractTextFromBlocks(blocks []worker.ExecutionBlock) string {
 }
 
 var specDraftRe = regexp.MustCompile(`<spec_draft>\s*([\s\S]*?)\s*</spec_draft>`)
+var storyPlanRe = regexp.MustCompile(`<story_plan>\s*([\s\S]*?)\s*</story_plan>`)
 var questionsRe = regexp.MustCompile(`<questions>[\s\S]*?</questions>`)
 
 func classifyMessage(text string) string {
-	// Check for spec draft proposal.
-	if specDraftRe.MatchString(text) {
+	// Check for spec draft or story plan proposal.
+	if specDraftRe.MatchString(text) || storyPlanRe.MatchString(text) {
 		return model.PlanningMessageTypeProposal
 	}
 

@@ -11,12 +11,15 @@ type flowInteractiveLaunch struct {
 	AgentID           string
 	AdditionalContext string
 	AllowedTools      []string
+	Stage             string
+	SystemPrompt      string
 }
 
 type flowAgentTaskLaunch struct {
 	AgentID      string
 	Input        json.RawMessage
 	AllowedTools []string
+	SystemPrompt string
 }
 
 type flowNodeDefinition struct {
@@ -40,8 +43,8 @@ type flowTemplateDefinition struct {
 	clearActiveTarget func(ctx context.Context, svc *FlowService, run *model.FlowRun) error
 }
 
-func flowTemplateSpecs() []model.FlowSpec {
-	defs := flowTemplateDefinitions()
+func hardcodedFlowTemplateSpecs() []model.FlowSpec {
+	defs := hardcodedFlowTemplateDefinitions()
 	out := make([]model.FlowSpec, 0, len(defs))
 	for _, def := range defs {
 		out = append(out, def.spec)
@@ -49,16 +52,17 @@ func flowTemplateSpecs() []model.FlowSpec {
 	return out
 }
 
-func lookupFlowTemplate(templateID string) (flowTemplateDefinition, bool) {
-	def, ok := flowTemplateDefinitions()[templateID]
+func lookupHardcodedFlowTemplate(templateID string) (flowTemplateDefinition, bool) {
+	def, ok := hardcodedFlowTemplateDefinitions()[templateID]
 	return def, ok
 }
 
-func flowTemplateDefinitions() map[string]flowTemplateDefinition {
+func hardcodedFlowTemplateDefinitions() map[string]flowTemplateDefinition {
 	return map[string]flowTemplateDefinition{
-		model.FlowTemplateEpicPlanningV2: epicPlanningV2Template(),
+		model.FlowTemplateEpicPlanningV2:    epicPlanningV2Template(),
 		model.FlowTemplateStoryCompletionV1: storyCompletionTemplate(),
-		model.FlowTemplateCRMDealReviewV1: crmDealReviewTemplate(),
+		model.FlowTemplateAgentStoryRun:     agentStoryRunTemplate(),
+		model.FlowTemplateCRMDealReviewV1:   crmDealReviewTemplate(),
 	}
 }
 
@@ -87,11 +91,10 @@ func epicPlanningV2Template() flowTemplateDefinition {
 			},
 		},
 		{
-			spec: makeFlowNodeSpec(model.FlowNodeStoryPlan, model.FlowNodeTypeAgentTask, model.InvocationModeAutonomous, nil, epicStoryPlanningTools(), "", nil),
+			spec: makeFlowNodeSpec(model.FlowNodeStoryPlan, model.FlowNodeTypeInteractiveAgent, model.InvocationModeInteractive, []string{model.FlowActionFinalize}, epicStoryPlanningTools(), "", nil),
 			nextNodeID: model.FlowNodePlanApproval,
-			retryable:  true,
-			buildAgentTaskLaunch: func(ctx context.Context, svc *FlowService, run *model.FlowRun, nodeRun *model.FlowNodeRun, actorID string) (flowAgentTaskLaunch, error) {
-				return svc.buildEpicStoryPlanningLaunch(ctx, run, model.FlowNodePlanApproval)
+			buildInteractiveLaunch: func(ctx context.Context, svc *FlowService, run *model.FlowRun, nodeRun *model.FlowNodeRun, actorID string) (flowInteractiveLaunch, error) {
+				return svc.buildEpicStoryPlanningInteractiveLaunch(ctx, run)
 			},
 		},
 		{
@@ -114,6 +117,7 @@ func epicPlanningV2Template() flowTemplateDefinition {
 	return flowTemplateDefinition{
 		spec: model.FlowSpec{
 			TemplateID:        model.FlowTemplateEpicPlanningV2,
+			Name:              hardcodedTemplateNames[model.FlowTemplateEpicPlanningV2],
 			TemplateVersion:   2,
 			TargetType:        "epic",
 			SupportedTriggers: []string{model.FlowTriggerManual, model.FlowTriggerInternalDomainHook},
@@ -159,6 +163,7 @@ func storyCompletionTemplate() flowTemplateDefinition {
 	return flowTemplateDefinition{
 		spec: model.FlowSpec{
 			TemplateID:        model.FlowTemplateStoryCompletionV1,
+			Name:              hardcodedTemplateNames[model.FlowTemplateStoryCompletionV1],
 			TemplateVersion:   1,
 			TargetType:        "story",
 			SupportedTriggers: []string{model.FlowTriggerManual, model.FlowTriggerInternalDomainHook, model.FlowTriggerStoryStateEntered},
@@ -169,6 +174,30 @@ func storyCompletionTemplate() flowTemplateDefinition {
 		startRun: func(ctx context.Context, svc *FlowService, workspaceID, actorID string, req model.StartFlowRunRequest) (*model.FlowRunView, error) {
 			return svc.startStoryCompletionFlow(ctx, workspaceID, actorID, req)
 		},
+	}
+}
+
+func agentStoryRunTemplate() flowTemplateDefinition {
+	nodes := []flowNodeDefinition{
+		{
+			spec:       makeFlowNodeSpec("implement", model.FlowNodeTypeAgentTask, model.InvocationModeAutonomous, nil, nil, "", nil),
+			nextNodeID: model.FlowNodeDone,
+		},
+		{
+			spec: makeFlowNodeSpec(model.FlowNodeDone, model.FlowNodeTypeTerminal, "", nil, nil, "", nil),
+		},
+	}
+	return flowTemplateDefinition{
+		spec: model.FlowSpec{
+			TemplateID:        model.FlowTemplateAgentStoryRun,
+			Name:              hardcodedTemplateNames[model.FlowTemplateAgentStoryRun],
+			TemplateVersion:   1,
+			TargetType:        "story",
+			SupportedTriggers: []string{model.FlowTriggerManual, model.FlowTriggerStoryStateEntered},
+			Nodes:             publicFlowNodes(nodes),
+		},
+		nodes:         toFlowNodeMap(nodes),
+		initialNodeID: "implement",
 	}
 }
 
@@ -201,6 +230,7 @@ func crmDealReviewTemplate() flowTemplateDefinition {
 	return flowTemplateDefinition{
 		spec: model.FlowSpec{
 			TemplateID:        model.FlowTemplateCRMDealReviewV1,
+			Name:              hardcodedTemplateNames[model.FlowTemplateCRMDealReviewV1],
 			TemplateVersion:   1,
 			TargetType:        "crm_deal",
 			SupportedTriggers: []string{model.FlowTriggerManual, model.FlowTriggerInternalDomainHook},
@@ -222,10 +252,40 @@ func toFlowNodeMap(nodes []flowNodeDefinition) map[string]flowNodeDefinition {
 	return out
 }
 
+// hardcodedNodeLabels maps node IDs to display labels for the hardcoded templates.
+var hardcodedNodeLabels = map[string]string{
+	model.FlowNodeEnsureSpecDoc:        "Ensure Spec Document",
+	model.FlowNodeSpecDraft:            "Draft Specification",
+	model.FlowNodeSpecApproval:         "Approve Specification",
+	model.FlowNodeStoryPlan:            "Plan Stories",
+	model.FlowNodePlanApproval:         "Approve Story Plan",
+	model.FlowNodeCreateStories:        "Create Stories",
+	model.FlowNodeCompletionAssessment: "Assess Completion",
+	model.FlowNodeCompletionReview:     "Review Follow-Ups",
+	model.FlowNodeCreateFollowups:      "Create Follow-Ups",
+	"implement":                         "Implement Story",
+	model.FlowNodeDealReview:           "Review Deal",
+	model.FlowNodeDealReviewApproval:   "Approve Deal Actions",
+	model.FlowNodeApplyDealActions:     "Apply Deal Actions",
+	model.FlowNodeDone:                 "Complete",
+}
+
+// hardcodedTemplateNames maps template IDs to display names.
+var hardcodedTemplateNames = map[string]string{
+	model.FlowTemplateEpicPlanningV2:    "Epic Planning",
+	model.FlowTemplateStoryCompletionV1: "Story Completion",
+	model.FlowTemplateAgentStoryRun:     "Agent Story Run",
+	model.FlowTemplateCRMDealReviewV1:   "Deal Review",
+}
+
 func publicFlowNodes(nodes []flowNodeDefinition) []model.FlowNodeSpec {
 	out := make([]model.FlowNodeSpec, 0, len(nodes))
 	for _, node := range nodes {
-		out = append(out, node.spec)
+		spec := node.spec
+		if spec.Label == "" {
+			spec.Label = hardcodedNodeLabels[spec.ID]
+		}
+		out = append(out, spec)
 	}
 	return out
 }

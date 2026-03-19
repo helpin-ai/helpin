@@ -1,12 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { automationRuleService } from '@/lib/services/automationRuleService';
+import { flowService } from '@/lib/services/flowService';
 import { StateTypeIcon } from '@/lib/pmConstants';
-import type { Agent, AutomationRule, WorkflowState } from '@/lib/pmTypes';
+import type { Agent, AutomationRule, FlowSpec, FlowTemplateNode, WorkflowState } from '@/lib/pmTypes';
+import { extractAgentInputKeys, type AgentInputKeyConfig } from '@/components/pm/flowConstants';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Bot, ChevronRight, GitBranch, X } from 'lucide-react';
+import { Bot, ChevronRight, GitBranch, Workflow, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+const KNOWN_STORY_TEMPLATES: FlowSpec[] = [
+  { template_id: 'pm.agent_story_run', name: 'Agent Story Run', template_version: 1, target_type: 'story', nodes: [] },
+  { template_id: 'pm.story_completion_v1', name: 'Story Completion', template_version: 1, target_type: 'story', nodes: [] },
+];
 
 export function PipelineBuilder({
   workspaceId,
@@ -14,6 +21,7 @@ export function PipelineBuilder({
   states,
   agents,
   rules,
+  flowTemplates,
   editable,
   onChanged,
 }: {
@@ -22,14 +30,26 @@ export function PipelineBuilder({
   states: WorkflowState[];
   agents: Agent[];
   rules: AutomationRule[];
+  flowTemplates?: FlowSpec[];
   editable: boolean;
   onChanged: () => void;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
 
-  // Build a lookup: stateId → { agentRule, advanceRule, mergeRule }
+  // Filter to story-only templates (pipelines operate on stories)
+  const storyTemplates = useMemo(() => {
+    const fromApi = flowTemplates?.filter((ft) => ft.target_type === 'story') ?? [];
+    const apiIds = new Set(fromApi.map((ft) => ft.template_id));
+    const missing = KNOWN_STORY_TEMPLATES.filter((ft) => !apiIds.has(ft.template_id));
+    return [...fromApi, ...missing];
+  }, [flowTemplates]);
+
+  // Cache of template nodes for resolving agent_input_key (keyed by template_id)
+  const [templateNodes, setTemplateNodes] = useState<Map<string, FlowTemplateNode[]>>(new Map());
+
+  // Build a lookup: stateId → { flowRule, advanceRule, mergeRule }
   const stateRuleMap = useMemo(() => {
-    const map = new Map<string, { agentRule?: AutomationRule; advanceRule?: AutomationRule; mergeRule?: AutomationRule }>();
+    const map = new Map<string, { flowRule?: AutomationRule; advanceRule?: AutomationRule; mergeRule?: AutomationRule }>();
     for (const state of states) {
       map.set(state.id, {});
     }
@@ -37,8 +57,8 @@ export function PipelineBuilder({
       const stateId = rule.trigger_config?.state_id;
       if (!stateId || !map.has(stateId)) continue;
       const entry = map.get(stateId)!;
-      if (rule.trigger_type === 'story.state_entered' && rule.action_type === 'run_agent') {
-        entry.agentRule = rule;
+      if (rule.trigger_type === 'story.state_entered' && rule.action_type === 'start_flow') {
+        entry.flowRule = rule;
       } else if (rule.trigger_type === 'agent_run.approved' && rule.action_type === 'move_to_state') {
         entry.advanceRule = rule;
       } else if (rule.trigger_type === 'story.state_entered' && rule.action_type === 'merge_branch') {
@@ -48,25 +68,84 @@ export function PipelineBuilder({
     return map;
   }, [states, rules]);
 
-  const handleAgentChange = async (stateId: string, stateName: string, agentId: string) => {
-    setSaving(stateId);
-    const existing = stateRuleMap.get(stateId)?.agentRule;
+  // Collect unique template slugs in use to fetch their nodes
+  const templateSlugsInUse = useMemo(() => {
+    const slugs = new Set<string>();
+    for (const [, entry] of stateRuleMap) {
+      const tid = entry.flowRule?.action_config?.template_id as string | undefined;
+      if (tid) slugs.add(tid);
+    }
+    return slugs;
+  }, [stateRuleMap]);
 
-    if (!agentId) {
+  // Fetch template details for non-builtin templates that we haven't cached
+  useEffect(() => {
+    for (const slug of templateSlugsInUse) {
+      if (templateNodes.has(slug)) continue;
+      // Find the template entry to get its DB id
+      const ft = storyTemplates.find((t) => t.template_id === slug);
+      if (!ft) continue;
+      flowService.getTemplate(workspaceId, ft.template_id).then((res) => {
+        if (res.data?.nodes) {
+          setTemplateNodes((prev) => new Map(prev).set(slug, res.data!.nodes));
+        }
+      });
+    }
+  }, [templateSlugsInUse, storyTemplates, workspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleFlowTemplateChange = async (stateId: string, stateName: string, templateId: string) => {
+    setSaving(stateId);
+    const entry = stateRuleMap.get(stateId);
+    const existing = entry?.flowRule;
+
+    if (!templateId) {
       if (existing) await automationRuleService.remove(workspaceId, existing.id);
     } else if (existing) {
-      await automationRuleService.update(workspaceId, existing.id, { action_config: { agent_id: agentId } });
+      // When changing template, clear flow_input (agent selections no longer apply)
+      await automationRuleService.update(workspaceId, existing.id, { action_config: { template_id: templateId } });
     } else {
       await automationRuleService.create(workspaceId, {
         workspace_id: workspaceId,
-        name: `Run agent on ${stateName}`,
+        name: `Start flow on ${stateName}`,
         workflow_id: workflowId,
         trigger_type: 'story.state_entered',
         trigger_config: { state_id: stateId },
-        action_type: 'run_agent',
-        action_config: { agent_id: agentId },
+        action_type: 'start_flow',
+        action_config: { template_id: templateId },
       });
     }
+    setSaving(null);
+    onChanged();
+  };
+
+  const handleAgentInputChange = async (stateId: string, key: string, agentId: string) => {
+    setSaving(stateId);
+    const entry = stateRuleMap.get(stateId);
+    const rule = entry?.flowRule;
+    if (!rule) { setSaving(null); return; }
+
+    const existingInput = (rule.action_config?.flow_input as Record<string, string>) ?? {};
+    // Carry over legacy top-level agent_id into flow_input on first edit
+    const legacyAgentId = rule.action_config?.agent_id as string | undefined;
+    const newFlowInput: Record<string, string> = { ...existingInput };
+    if (key === 'agent_id' && legacyAgentId && !existingInput.agent_id) {
+      // Will be overwritten below anyway
+    } else if (legacyAgentId && !existingInput.agent_id) {
+      newFlowInput.agent_id = legacyAgentId;
+    }
+
+    if (agentId) {
+      newFlowInput[key] = agentId;
+    } else {
+      delete newFlowInput[key];
+    }
+
+    await automationRuleService.update(workspaceId, rule.id, {
+      action_config: {
+        template_id: rule.action_config?.template_id as string,
+        flow_input: Object.keys(newFlowInput).length > 0 ? newFlowInput : undefined,
+      },
+    });
     setSaving(null);
     onChanged();
   };
@@ -117,6 +196,23 @@ export function PipelineBuilder({
     onChanged();
   };
 
+  /** Resolve agent input keys for a template, using DB nodes if available */
+  const getAgentInputKeys = (templateId: string): AgentInputKeyConfig[] => {
+    return extractAgentInputKeys(templateId, templateNodes.get(templateId));
+  };
+
+  /** Get the currently selected agent for a given input key from a rule's action_config */
+  const getAgentForKey = (rule: AutomationRule, key: string): string => {
+    // Check flow_input first (new format)
+    const flowInput = rule.action_config?.flow_input as Record<string, string> | undefined;
+    if (flowInput?.[key]) return flowInput[key];
+    // Legacy: top-level agent_id
+    if (key === 'agent_id') {
+      return (rule.action_config?.agent_id as string) ?? '';
+    }
+    return '';
+  };
+
   if (states.length === 0) return null;
 
   return (
@@ -124,25 +220,30 @@ export function PipelineBuilder({
       <div className="flex items-center gap-2">
         <Bot className="h-4 w-4 text-violet-500" />
         <span className="text-sm font-semibold">Pipeline</span>
-        <span className="text-xs text-muted-foreground">Assign agents to workflow stages</span>
+        <span className="text-xs text-muted-foreground">Assign flows to workflow stages</span>
       </div>
 
       <div className="overflow-x-auto">
         <div className="flex items-start gap-0 min-w-max pb-2">
           {states.map((state, idx) => {
             const entry = stateRuleMap.get(state.id);
-            const agentId = entry?.agentRule?.action_config?.agent_id ?? '';
+            const flowRule = entry?.flowRule;
+            const flowTemplateId = (flowRule?.action_config?.template_id as string) ?? '';
             const hasAdvance = !!entry?.advanceRule;
-            const mergeBranch = entry?.mergeRule?.action_config?.target_branch ?? '';
+            const mergeBranch = (entry?.mergeRule?.action_config?.target_branch as string) ?? '';
             const isLast = idx === states.length - 1;
             const isSaving = saving === state.id;
+            const hasExecution = !!flowRule;
+
+            // Resolve agent input keys for the selected template
+            const agentInputKeys = flowTemplateId ? getAgentInputKeys(flowTemplateId) : [];
 
             return (
               <div key={state.id} className="flex items-start">
                 {/* State card */}
                 <div className={cn(
-                  'relative w-[160px] shrink-0 rounded-lg border bg-background p-3 transition-colors',
-                  agentId ? 'border-violet-300 dark:border-violet-800' : 'border-border',
+                  'relative w-[180px] shrink-0 rounded-lg border bg-background p-3 transition-colors',
+                  hasExecution ? 'border-violet-300 dark:border-violet-800' : 'border-border',
                   isSaving && 'opacity-60',
                 )}>
                   {/* State header */}
@@ -155,44 +256,94 @@ export function PipelineBuilder({
                     <span className="text-xs font-semibold truncate">{state.name}</span>
                   </div>
 
-                  {/* Agent selector */}
+                  {/* Execution selector — flow template + inline agent pickers */}
                   {editable ? (
-                    <Select
-                      value={agentId || '__none__'}
-                      onValueChange={(v) => handleAgentChange(state.id, state.name, v === '__none__' ? '' : v)}
-                    >
-                      <SelectTrigger className="h-7 text-xs w-full">
-                        <SelectValue placeholder="No agent" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">
-                          <span className="text-muted-foreground">No agent</span>
-                        </SelectItem>
-                        {agents.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            <span className="flex items-center gap-1.5">
-                              <Bot className="h-3 w-3 text-violet-500" />
-                              {a.name}
-                            </span>
+                    <div className="space-y-1.5">
+                      {/* Flow template picker */}
+                      <Select
+                        value={flowTemplateId || '__none__'}
+                        onValueChange={(v) => handleFlowTemplateChange(state.id, state.name, v === '__none__' ? '' : v)}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-full">
+                          <SelectValue placeholder="No flow" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">
+                            <span className="text-muted-foreground">No flow</span>
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                          {storyTemplates.map((ft) => (
+                            <SelectItem key={ft.template_id} value={ft.template_id}>
+                              <span className="flex items-center gap-1.5">
+                                <Workflow className="h-3 w-3 text-blue-500" />
+                                {ft.name || ft.template_id}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {/* Inline agent pickers driven by template's agent_input_key nodes */}
+                      {flowRule && agentInputKeys.map((aik) => {
+                        const selectedAgent = getAgentForKey(flowRule, aik.key);
+                        const filteredAgents = aik.agentClassFilter
+                          ? agents.filter((a) => a.agent_class === aik.agentClassFilter)
+                          : agents;
+                        return (
+                          <Select
+                            key={aik.key}
+                            value={selectedAgent || '__none__'}
+                            onValueChange={(v) => handleAgentInputChange(state.id, aik.key, v === '__none__' ? '' : v)}
+                          >
+                            <SelectTrigger className="h-7 text-xs w-full">
+                              <SelectValue placeholder={aik.optionalHint ?? `Select ${aik.label}...`} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">
+                                <span className="text-muted-foreground">
+                                  {aik.required ? `Select ${aik.label}...` : (aik.optionalHint ?? 'None')}
+                                </span>
+                              </SelectItem>
+                              {filteredAgents.map((a) => (
+                                <SelectItem key={a.id} value={a.id}>
+                                  <span className="flex items-center gap-1.5">
+                                    <Bot className="h-3 w-3 text-violet-500" />
+                                    {a.name}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        );
+                      })}
+                    </div>
                   ) : (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-1">
-                      {agentId ? (
+                    <div className="space-y-1 text-xs text-muted-foreground px-1">
+                      {flowRule ? (
                         <>
-                          <Bot className="h-3 w-3 text-violet-500" />
-                          <span className="truncate">{agents.find((a) => a.id === agentId)?.name ?? 'Agent'}</span>
+                          <div className="flex items-center gap-1.5">
+                            <Workflow className="h-3 w-3 text-blue-500" />
+                            <span className="truncate">{storyTemplates.find((ft) => ft.template_id === flowTemplateId)?.name ?? flowTemplateId}</span>
+                          </div>
+                          {agentInputKeys.map((aik) => {
+                            const agentId = getAgentForKey(flowRule, aik.key);
+                            const agentName = agents.find((a) => a.id === agentId)?.name;
+                            if (!agentId) return null;
+                            return (
+                              <div key={aik.key} className="flex items-center gap-1.5 ml-4">
+                                <Bot className="h-3 w-3 text-violet-500" />
+                                <span className="truncate">{agentName ?? 'Agent'}</span>
+                              </div>
+                            );
+                          })}
                         </>
                       ) : (
-                        <span>No agent</span>
+                        <span>No flow</span>
                       )}
                     </div>
                   )}
 
-                  {/* Auto-advance toggle (only if agent is assigned and not last state) */}
-                  {agentId && !isLast && (
+                  {/* Auto-advance toggle (only if execution configured and not last state) */}
+                  {hasExecution && !isLast && (
                     <div className="mt-2 flex items-center gap-1.5">
                       <Switch
                         className="h-3.5 w-7 [&>span]:h-2.5 [&>span]:w-2.5"

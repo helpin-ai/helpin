@@ -67,6 +67,22 @@ func (r *FlowRepository) GetActiveRunByTarget(ctx context.Context, workspaceID, 
 	return &run, nil
 }
 
+// GetAnyActiveRunByTarget finds an active flow run for a target regardless of template.
+func (r *FlowRepository) GetAnyActiveRunByTarget(ctx context.Context, workspaceID, targetType, targetID string) (*model.FlowRun, error) {
+	var run model.FlowRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND target_type = ? AND target_id = ? AND status IN ?", workspaceID, targetType, targetID,
+			[]string{model.FlowStatusRunning, model.FlowStatusAwaitingApproval, model.FlowStatusAwaitingInput}).
+		Order("created_at DESC").
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get any active flow run by target: %w", err)
+	}
+	return &run, nil
+}
+
 func (r *FlowRepository) ListRuns(ctx context.Context, workspaceID string, limit, offset int) ([]model.FlowRun, int64, error) {
 	var total int64
 	if err := r.db.WithContext(ctx).Model(&model.FlowRun{}).Where("workspace_id = ?", workspaceID).Count(&total).Error; err != nil {

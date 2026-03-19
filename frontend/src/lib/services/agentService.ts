@@ -34,8 +34,6 @@ export const agentService = {
     api.get<RunnerHealth>(`/pm/runner-health${qs(workspaceId)}`),
   assignToStory: (workspaceId: string, storyId: string, agentId: string) =>
     api.post(`/pm/stories/${storyId}/assign-agent${qs(workspaceId)}`, { agent_id: agentId }),
-  runAgent: (workspaceId: string, storyId: string) =>
-    api.post<AgentRun>(`/pm/stories/${storyId}/run-agent${qs(workspaceId)}`, {}),
   listRuns: (workspaceId: string, agentId: string) =>
     api.get<PaginatedResponse<AgentRun[]>>(`/pm/agents/${agentId}/runs${qs(workspaceId)}`),
   getRun: (workspaceId: string, runId: string) =>

@@ -57,15 +57,62 @@ func (s *FlowService) startStoryCompletionFlow(ctx context.Context, workspaceID,
 		return nil, err
 	}
 	specSnapshot := map[string]any{
-		"template_id":         req.TemplateID,
-		"target_type":         req.TargetType,
-		"target_id":           req.TargetID,
-		"agent_id":            input.AgentID,
-		"additional_context":  input.AdditionalContext,
-		"story_name":          story.Name,
-		"started_by":          actorID,
+		"template_id":        req.TemplateID,
+		"target_type":        req.TargetType,
+		"target_id":          req.TargetID,
+		"agent_id":           input.AgentID,
+		"additional_context": input.AdditionalContext,
+		"story_name":         story.Name,
+		"started_by":         actorID,
 	}
 	return s.startConfiguredRun(ctx, workspaceID, actorID, req, input, specSnapshot)
+}
+
+func (s *FlowService) StartAgentStoryRun(ctx context.Context, workspaceID, actorID, storyID, agentID string) (*model.FlowRunView, error) {
+	if s.storyRepo == nil {
+		return nil, fmt.Errorf("story repository is not configured")
+	}
+	story, err := s.storyRepo.GetRawByID(ctx, storyID)
+	if err != nil {
+		return nil, fmt.Errorf("get story: %w", err)
+	}
+	if story == nil || story.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("story not found")
+	}
+
+	resolvedAgentID := strings.TrimSpace(agentID)
+	if resolvedAgentID == "" {
+		resolvedAgentID = strings.TrimSpace(derefString(story.AssignedAgentID))
+	}
+	if resolvedAgentID == "" {
+		return nil, fmt.Errorf("no agent assigned to this story")
+	}
+
+	if s.agentService == nil {
+		return nil, fmt.Errorf("agent service is not configured")
+	}
+	agent, err := s.agentService.requireRunnableAgent(ctx, workspaceID, resolvedAgentID, "story")
+	if err != nil {
+		return nil, err
+	}
+	if !agentSupportsMode(agent, model.InvocationModeAutonomous) {
+		return nil, fmt.Errorf("selected agent does not support autonomous mode")
+	}
+
+	profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
+	if s.agentService.gitService != nil {
+		if _, err := s.agentService.gitService.ResolveStoryDeliveryTargetForRun(ctx, workspaceID, storyID, profile); err != nil {
+			return nil, err
+		}
+	}
+
+	req := model.StartFlowRunRequest{
+		TemplateID: model.FlowTemplateAgentStoryRun,
+		TargetType: "story",
+		TargetID:   storyID,
+		Input:      mustJSON(map[string]any{"agent_id": resolvedAgentID}),
+	}
+	return s.StartRun(ctx, workspaceID, actorID, req)
 }
 
 func (s *FlowService) startCRMDealReviewFlow(ctx context.Context, workspaceID, actorID string, req model.StartFlowRunRequest) (*model.FlowRunView, error) {
@@ -84,19 +131,19 @@ func (s *FlowService) startCRMDealReviewFlow(ctx context.Context, workspaceID, a
 		return nil, err
 	}
 	specSnapshot := map[string]any{
-		"template_id":         req.TemplateID,
-		"target_type":         req.TargetType,
-		"target_id":           req.TargetID,
-		"agent_id":            input.AgentID,
-		"additional_context":  input.AdditionalContext,
-		"deal_name":           deal.Name,
-		"started_by":          actorID,
+		"template_id":        req.TemplateID,
+		"target_type":        req.TargetType,
+		"target_id":          req.TargetID,
+		"agent_id":           input.AgentID,
+		"additional_context": input.AdditionalContext,
+		"deal_name":          deal.Name,
+		"started_by":         actorID,
 	}
 	return s.startConfiguredRun(ctx, workspaceID, actorID, req, input, specSnapshot)
 }
 
 func (s *FlowService) startConfiguredRun(ctx context.Context, workspaceID, actorID string, req model.StartFlowRunRequest, input any, specSnapshot map[string]any) (*model.FlowRunView, error) {
-	def, ok := lookupFlowTemplate(strings.TrimSpace(req.TemplateID))
+	def, ok := s.resolveTemplate(ctx, workspaceID, strings.TrimSpace(req.TemplateID))
 	if !ok {
 		return nil, fmt.Errorf("unsupported flow template: %s", req.TemplateID)
 	}
@@ -105,6 +152,26 @@ func (s *FlowService) startConfiguredRun(ctx context.Context, workspaceID, actor
 		return nil, err
 	}
 	if active != nil {
+		if err := s.ensureCurrentNodeAttempt(ctx, active, actorID); err != nil {
+			s.logger.WarnContext(ctx, "failed to recover active flow run before reuse",
+				"flow_run_id", active.ID,
+				"template_id", active.TemplateID,
+				"target_type", active.TargetType,
+				"target_id", active.TargetID,
+				"error", err,
+			)
+		}
+		if s.runEngine != nil {
+			if startErr := s.runEngine.StartFlowRun(ctx, active.ID, actorID); startErr != nil {
+				s.logger.WarnContext(ctx, "failed to ensure active flow workflow is running",
+					"flow_run_id", active.ID,
+					"template_id", active.TemplateID,
+					"target_type", active.TargetType,
+					"target_id", active.TargetID,
+					"error", startErr,
+				)
+			}
+		}
 		return s.GetRunView(ctx, workspaceID, active.ID)
 	}
 
@@ -234,7 +301,7 @@ func (s *FlowService) genericBootstrapRun(ctx context.Context, run *model.FlowRu
 	}
 	currentNodeID := derefString(run.CurrentNodeID)
 	if currentNodeID == "" {
-		def, ok := lookupFlowTemplate(run.TemplateID)
+		def, ok := s.resolveTemplate(ctx, run.WorkspaceID, run.TemplateID)
 		if !ok {
 			return fmt.Errorf("unsupported flow template: %s", run.TemplateID)
 		}
@@ -248,7 +315,7 @@ func (s *FlowService) genericBootstrapRun(ctx context.Context, run *model.FlowRu
 }
 
 func (s *FlowService) enterNode(ctx context.Context, run *model.FlowRun, nodeID, actorID string, forceNew bool) error {
-	def, nodeDef, err := s.lookupNode(run.TemplateID, nodeID)
+	def, nodeDef, err := s.lookupNodeForRun(ctx, run, nodeID)
 	if err != nil {
 		return err
 	}
@@ -331,11 +398,13 @@ func (s *FlowService) enterInteractiveNode(ctx context.Context, run *model.FlowR
 	})
 	if nodeRun.ChildSessionID == nil || *nodeRun.ChildSessionID == "" {
 		session, err := s.planningService.StartSession(ctx, run.WorkspaceID, run.TargetID, actorID, model.StartPlanningSessionRequest{
-			AgentID:           launch.AgentID,
-			AdditionalContext: stringPtrOrNil(launch.AdditionalContext),
-			FlowRunID:         &run.ID,
-			FlowNodeRunID:     &nodeRun.ID,
-			AllowedTools:      mustJSON(launch.AllowedTools),
+			AgentID:            launch.AgentID,
+			AdditionalContext:  stringPtrOrNil(launch.AdditionalContext),
+			FlowRunID:          &run.ID,
+			FlowNodeRunID:      &nodeRun.ID,
+			AllowedTools:       mustJSON(launch.AllowedTools),
+			Stage:              launch.Stage,
+			CustomSystemPrompt: launch.SystemPrompt,
 		})
 		if err != nil {
 			errMsg := err.Error()
@@ -500,17 +569,18 @@ func (s *FlowService) startFlowAgentTaskRun(ctx context.Context, run *model.Flow
 		return nil, err
 	}
 	return s.agentService.createRun(ctx, createRunParams{
-		workspaceID:   run.WorkspaceID,
-		agent:         agent,
-		profile:       profile,
-		targetType:    run.TargetType,
-		targetID:      run.TargetID,
-		storyID:       storyID,
-		flowRunID:     &run.ID,
-		flowNodeRunID: &nodeRun.ID,
-		actorID:       &actorID,
-		input:         launch.Input,
-		delivery:      delivery,
+		workspaceID:        run.WorkspaceID,
+		agent:              agent,
+		profile:            profile,
+		targetType:         run.TargetType,
+		targetID:           run.TargetID,
+		storyID:            storyID,
+		flowRunID:          &run.ID,
+		flowNodeRunID:      &nodeRun.ID,
+		actorID:            &actorID,
+		input:              launch.Input,
+		delivery:           delivery,
+		customSystemPrompt: launch.SystemPrompt,
 	})
 }
 
@@ -530,7 +600,15 @@ func (s *FlowService) resolveFlowRunDeliveryTarget(ctx context.Context, run *mod
 }
 
 func (s *FlowService) lookupNode(templateID, nodeID string) (flowTemplateDefinition, flowNodeDefinition, error) {
-	def, ok := lookupFlowTemplate(templateID)
+	return s.lookupNodeWithContext(context.Background(), "", templateID, nodeID)
+}
+
+func (s *FlowService) lookupNodeForRun(ctx context.Context, run *model.FlowRun, nodeID string) (flowTemplateDefinition, flowNodeDefinition, error) {
+	return s.lookupNodeWithContext(ctx, run.WorkspaceID, run.TemplateID, nodeID)
+}
+
+func (s *FlowService) lookupNodeWithContext(ctx context.Context, workspaceID, templateID, nodeID string) (flowTemplateDefinition, flowNodeDefinition, error) {
+	def, ok := s.resolveTemplate(ctx, workspaceID, templateID)
 	if !ok {
 		return flowTemplateDefinition{}, flowNodeDefinition{}, fmt.Errorf("unsupported flow template: %s", templateID)
 	}
@@ -572,6 +650,23 @@ func (s *FlowService) buildEpicSpecInteractiveLaunch(ctx context.Context, run *m
 		AgentID:           strings.TrimSpace(input.SpecPlannerAgentID),
 		AdditionalContext: additionalContext,
 		AllowedTools:      planningReadOnlyTools(),
+		Stage:             model.PlanningSessionStageDraftSpec,
+	}, nil
+}
+
+func (s *FlowService) buildEpicStoryPlanningInteractiveLaunch(ctx context.Context, run *model.FlowRun) (flowInteractiveLaunch, error) {
+	storyPlannerID, additionalContext, err := s.readStoryPlanningContext(run.Input)
+	if err != nil {
+		return flowInteractiveLaunch{}, err
+	}
+	if feedback, err := s.latestReviewFeedback(ctx, run.ID, model.FlowNodePlanApproval); err == nil && feedback != "" {
+		additionalContext = joinFlowContext(additionalContext, "Reviewer feedback:\n"+feedback)
+	}
+	return flowInteractiveLaunch{
+		AgentID:           storyPlannerID,
+		AdditionalContext: additionalContext,
+		AllowedTools:      epicStoryPlanningTools(),
+		Stage:             model.PlanningSessionStagePlanStories,
 	}, nil
 }
 
@@ -655,10 +750,31 @@ func (s *FlowService) buildCreateStoriesCommandInput(ctx context.Context, run *m
 	if err != nil {
 		return nil, err
 	}
-	if storyNode == nil || storyNode.ChildRunID == nil || *storyNode.ChildRunID == "" {
+	if storyNode == nil {
+		return nil, fmt.Errorf("story planning node not found")
+	}
+
+	var req model.ConfirmPlanningRequest
+
+	if storyNode.ChildRunID != nil && *storyNode.ChildRunID != "" {
+		// Autonomous path (legacy).
+		req.RunID = *storyNode.ChildRunID
+	} else if storyNode.ChildSessionID != nil && *storyNode.ChildSessionID != "" {
+		// Interactive path — read proposed stories from node output.
+		var nodeOutput struct {
+			PlanDraft json.RawMessage `json:"plan_draft"`
+		}
+		if err := json.Unmarshal(storyNode.Output, &nodeOutput); err == nil && len(nodeOutput.PlanDraft) > 0 {
+			var proposal model.OrchestrationProposal
+			if err := json.Unmarshal(nodeOutput.PlanDraft, &proposal); err == nil {
+				req.ProposedStories = proposal.ProposedStories
+			}
+		}
+	} else {
 		return nil, fmt.Errorf("story planning run is missing")
 	}
-	req := model.ConfirmPlanningRequest{RunID: *storyNode.ChildRunID}
+
+	// Apply approval overrides.
 	if decision, err := s.latestApprovalDecision(ctx, run.ID, approvalNodeID); err == nil && len(decision.OverridePayload) > 0 {
 		var override model.ConfirmPlanningRequest
 		if err := json.Unmarshal(decision.OverridePayload, &override); err == nil {

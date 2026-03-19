@@ -2,9 +2,11 @@ package temporalapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"go.temporal.io/api/serviceerror"
 	tclient "go.temporal.io/sdk/client"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -169,6 +171,10 @@ func (e *RunEngine) StartPlanningSession(ctx context.Context, sessionID string) 
 		SessionID: sessionID,
 	})
 	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
 		return fmt.Errorf("start planning session workflow: %w", err)
 	}
 	return nil
@@ -207,6 +213,10 @@ func (e *RunEngine) StartFlowRun(ctx context.Context, flowRunID, actorID string)
 		ActorID:   actorID,
 	})
 	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
 		return fmt.Errorf("start flow workflow: %w", err)
 	}
 	return nil

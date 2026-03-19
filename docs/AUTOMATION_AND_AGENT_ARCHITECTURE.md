@@ -293,9 +293,9 @@ A flow is:
 
 Implemented templates:
 
-1. `pm.epic_planning_v1`
-2. `pm.epic_planning_v2`
-3. `pm.story_completion_v1`
+1. `pm.epic_planning_v2`
+2. `pm.story_completion_v1`
+3. `pm.agent_story_run`
 4. `crm.deal_review_v1`
 
 ### Current flow targets
@@ -390,31 +390,11 @@ Marks the end of the flow.
 ```mermaid
 flowchart LR
     A["ensure_spec_doc<br/><i>system_action</i>"] --> B["spec_draft<br/><i>interactive_agent</i>"]
-    B --> C{"spec_approval"}
-    C -->|"approve"| D["story_plan<br/><i>agent_task</i>"]
+    B --> C{"spec_approval<br/><i>approval_gate</i>"}
+    C -->|"approve"| D["story_plan<br/><i>interactive_agent</i>"]
     C -->|"request_changes"| B
-    D --> E{"plan_approval"}
+    D --> E{"plan_approval<br/><i>approval_gate</i>"}
     E -->|"approve"| F["create_stories<br/><i>system_action</i>"]
-    E -->|"request_changes"| D
-    F --> G(["done"])
-
-    style C fill:#f4f4e8,stroke:#aa6
-    style E fill:#f4f4e8,stroke:#aa6
-    style G fill:#ddd,stroke:#999
-```
-
-### Epic Planning v1
-
-Legacy version of the above:
-
-```mermaid
-flowchart LR
-    A["ensure_spec_doc"] --> B["spec_planning"]
-    B --> C{"spec_approval"}
-    C -->|"approve"| D["story_planning"]
-    C -->|"request_changes"| B
-    D --> E{"plan_approval"}
-    E -->|"approve"| F["create_stories"]
     E -->|"request_changes"| D
     F --> G(["done"])
 
@@ -435,6 +415,15 @@ flowchart LR
     style D fill:#ddd,stroke:#999
 ```
 
+### Agent Story Run
+
+```mermaid
+flowchart LR
+    A["implement<br/><i>agent_task</i>"] --> B(["done"])
+
+    style B fill:#ddd,stroke:#999
+```
+
 ### CRM Deal Review
 
 ```mermaid
@@ -449,19 +438,34 @@ flowchart LR
 
 ## 5. Node options: what is configurable and where
 
-Today, **flow nodes are code-defined**, not user-authored in the UI.
+Today, flow templates are DB-backed, but runtime behavior is still mostly driven by:
 
-Their options are set in `server/internal/service/flow_templates.go`.
+- node type
+- per-node metadata on `flow_template_nodes`
+- a small set of hardcoded launch/input builders for known commands and approval flows
+
+There is not yet a first-class producer/consumer contract between nodes.
 
 Each node can define:
 
-- `id`
+- `id` / `node_slug`
+- `label`
 - `type`
+- `next_node_slug`
+- `loopback_node_slug`
 - `required_mode`
 - `actions`
 - `allowed_tools`
-- `loopback_node_id`
+- `agent_input_key`
+- `default_agent_id`
+- `fallback_agent_key`
+- `system_prompt`
+- `output_tag`
 - `command_name`
+- `approve_command_name`
+- `feedback_from_node`
+- `additional_context_key`
+- `retryable`
 
 ### Current per-node tool sets
 
@@ -501,6 +505,457 @@ It depends on the flow:
 - deal review flow start picks one agent
 
 Those are selected at **flow start time** on the PM Flows page and persisted into the run input/spec snapshot.
+
+### Proposed future-state plan: explicit node contracts
+
+This section is a design proposal, not current runtime behavior.
+
+The goal is to make three things explicit:
+
+1. what input is required to start a flow
+2. what each node requires before it can run
+3. what each node guarantees it emits for later nodes
+
+The main principle is: nodes should depend on named artifacts, not on ad hoc knowledge of a previous node's raw JSON shape.
+
+### Why this is needed
+
+Today, node-to-node data flow is a mix of:
+
+- flow start input such as `agent_id` or `spec_planner_agent_id`
+- node metadata such as `feedback_from_node`, `output_tag`, and `command_name`
+- command-specific code that reads prior node runs and parses their output
+- approval overrides stored inside approval node output
+
+That works for the current built-ins, but it does not scale well when:
+
+- a template gains alternative branches
+- the same artifact can come from different node types
+- a new system action needs structured input from two earlier nodes
+- the UI needs to explain why a node cannot run
+- a workspace-authored template should be validated before it is ever started
+
+### The proposed contract model
+
+The future model should have 4 explicit contract layers:
+
+| Layer | Purpose |
+| --- | --- |
+| `flow_input_contract` | Declares fields required or accepted at flow start |
+| `node_runtime_contract` | Declares node-type runtime requirements such as agent mode, approval support, command execution, tool policy |
+| `node_data_contract` | Declares what the node consumes and what it produces |
+| `flow_output_contract` | Declares which artifact becomes the final flow result |
+
+### Proposed data shape
+
+At the template level:
+
+```json
+{
+  "template_slug": "pm.story_completion_v1",
+  "input_contract": {
+    "fields": [
+      { "key": "agent_id", "schema_ref": "core.agent_ref.v1", "required": true },
+      { "key": "additional_context", "schema_ref": "core.text.v1", "required": false }
+    ]
+  },
+  "output_contract": {
+    "primary_artifact": "followup_creation_result",
+    "schema_ref": "pm.followup_creation_result.v1"
+  }
+}
+```
+
+At the node level:
+
+```json
+{
+  "node_slug": "create_followups",
+  "node_type": "system_action",
+  "contract": {
+    "consumes": [
+      {
+        "name": "followups",
+        "from": "artifact.approved_followups",
+        "schema_ref": "pm.story_completion_followups.v1",
+        "required": true
+      }
+    ],
+    "produces": [
+      {
+        "artifact_key": "followup_creation_result",
+        "schema_ref": "pm.followup_creation_result.v1",
+        "required": true
+      }
+    ]
+  }
+}
+```
+
+### Recommended storage model
+
+Keep `flow_node_runs.input` and `flow_node_runs.output` as the low-level audit record.
+
+Add a normalized artifact layer for contracts:
+
+- `flow_run_artifacts`
+  - `id`
+  - `flow_run_id`
+  - `artifact_key`
+  - `schema_ref`
+  - `producer_node_slug`
+  - `producer_node_run_id`
+  - `version`
+  - `status`
+  - `payload`
+  - `created_at`
+
+This gives us two useful levels:
+
+- node run I/O for debugging and raw replay
+- artifact registry for validation, lookup, UI, and future branching
+
+### Artifact lookup rules
+
+Nodes should consume from explicit sources:
+
+- `flow_input.<key>`
+- `artifact.<artifact_key>`
+- `target_context.<key>`
+- `template_default.<key>`
+- `constant.<value>`
+
+For migration only, allow one temporary legacy source:
+
+- `legacy_node_output.<node_slug>`
+
+The engine should prefer `artifact.*` and treat direct parsing of `legacy_node_output.*` as a compatibility bridge to be removed.
+
+### Schema naming and versioning
+
+Every structured artifact should carry a `schema_ref` such as:
+
+- `core.agent_ref.v1`
+- `core.review_feedback.v1`
+- `pm.spec_draft.v1`
+- `pm.story_plan.v1`
+- `pm.story_completion_assessment.v1`
+- `crm.deal_action_plan.v1`
+
+Versioning rule:
+
+- additive fields keep the same major version
+- breaking shape changes create a new major version
+- templates pin the version they consume
+
+That lets future nodes evolve without silently breaking older templates.
+
+### Node-type runtime contracts
+
+Each node type should have a stable runtime contract beyond its data contract.
+
+#### `interactive_agent`
+
+Required runtime contract:
+
+- exactly one resolved agent reference
+- agent supports `interactive`
+- optional stage
+- optional system prompt
+- optional narrowed tool policy
+
+Typical data contract:
+
+- consumes target context, optional prior review feedback, optional prior artifacts
+- produces one primary structured artifact plus a `planning_session_ref`
+
+#### `agent_task`
+
+Required runtime contract:
+
+- exactly one resolved agent reference
+- agent supports `autonomous`
+- optional system prompt
+- optional narrowed tool policy
+
+Typical data contract:
+
+- consumes target context, optional prior review feedback, optional prior artifacts
+- produces one primary structured artifact plus an `agent_run_ref`
+
+#### `approval_gate`
+
+Required runtime contract:
+
+- one review subject artifact to present
+- supported actions such as `approve`, `request_changes`, `reject`
+- optional override schema for approve/reject payloads
+
+Typical data contract:
+
+- consumes one primary subject artifact
+- produces `approval_decision`
+- produces `review_feedback` on `request_changes`
+- may produce an override artifact on `approve`
+
+#### `system_action`
+
+Required runtime contract:
+
+- command name
+- deterministic command input builder based on declared consumed artifacts
+
+Typical data contract:
+
+- consumes one or more structured artifacts
+- produces one command result artifact
+
+#### `terminal`
+
+Required runtime contract:
+
+- knows which artifact or artifact set becomes the flow result
+
+Typical data contract:
+
+- consumes the primary terminal artifact
+- copies it into `flow_runs.output_summary`
+
+### Proposed current artifact catalog
+
+These schema refs are enough to cover the current built-in templates and leave room for future nodes:
+
+| Artifact key | Schema ref | Purpose |
+| --- | --- | --- |
+| `agent_ref` | `core.agent_ref.v1` | Resolved agent identity |
+| `planning_session_ref` | `core.planning_session_ref.v1` | Interactive child linkage |
+| `agent_run_ref` | `core.agent_run_ref.v1` | Autonomous child linkage |
+| `review_feedback` | `core.review_feedback.v1` | Reviewer comment plus structured feedback |
+| `approval_decision` | `core.approval_decision.v1` | Approval outcome metadata |
+| `spec_document_ref` | `pm.spec_document_ref.v1` | Spec doc identity |
+| `spec_draft` | `pm.spec_draft.v1` | Structured spec output |
+| `story_plan` | `pm.story_plan.v1` | Structured story decomposition |
+| `story_batch_request` | `pm.story_batch_request.v1` | Approved stories ready for creation |
+| `story_batch_result` | `pm.story_batch_result.v1` | Story creation result |
+| `story_completion_assessment` | `pm.story_completion_assessment.v1` | Completion summary plus followups |
+| `approved_followups` | `pm.story_completion_followups.v1` | Final followups to create |
+| `followup_creation_result` | `pm.followup_creation_result.v1` | Followup creation result |
+| `deal_action_plan` | `crm.deal_action_plan.v1` | Recommended deal changes |
+| `deal_action_apply_result` | `crm.deal_action_apply_result.v1` | Applied deal action result |
+| `implementation_result` | `pm.story_implementation_result.v1` | Output of `pm.agent_story_run` |
+
+### How the current templates should look under this model
+
+#### `pm.epic_planning_v2`
+
+Flow input contract:
+
+- `spec_planner_agent_id`: required, `core.agent_ref.v1`
+- `story_planner_agent_id`: optional, `core.agent_ref.v1`
+- `additional_context`: optional, `core.text.v1`
+
+Resolver behavior:
+
+- if `story_planner_agent_id` is missing, fall back to `spec_planner_agent_id`
+- if still missing, use the target epic's default orchestrator agent when present
+
+Node contracts:
+
+1. `ensure_spec_doc` (`system_action`)
+   - consumes target epic context
+   - produces `spec_document_ref`
+
+2. `spec_draft` (`interactive_agent`)
+   - consumes `flow_input.spec_planner_agent_id`
+   - consumes `flow_input.additional_context`
+   - consumes `artifact.spec_document_ref`
+   - optionally consumes `artifact.spec_review_feedback`
+   - produces `spec_draft`
+   - produces `planning_session_ref`
+
+3. `spec_approval` (`approval_gate`)
+   - consumes `artifact.spec_draft`
+   - produces `approval_decision`
+   - produces `spec_review_feedback` when requesting changes
+   - may produce `approved_spec` when approving with override payload
+
+4. `story_plan` (`interactive_agent`)
+   - consumes resolved `story_planner_agent_id`
+   - consumes `flow_input.additional_context`
+   - consumes `artifact.spec_draft` or `artifact.approved_spec`
+   - optionally consumes `artifact.story_plan_feedback`
+   - produces `story_plan`
+   - produces `planning_session_ref`
+
+5. `plan_approval` (`approval_gate`)
+   - consumes `artifact.story_plan`
+   - produces `approval_decision`
+   - produces `story_plan_feedback` when requesting changes
+   - may produce `story_batch_request` when approving with override payload
+
+6. `create_stories` (`system_action`)
+   - consumes `artifact.story_batch_request` when present
+   - otherwise consumes `artifact.story_plan`
+   - produces `story_batch_result`
+
+7. `done` (`terminal`)
+   - consumes `artifact.story_batch_result`
+   - exposes it as the flow output
+
+This removes the current command-specific coupling where `create_stories` knows how to inspect earlier node runs and decode their child outputs.
+
+#### `pm.story_completion_v1`
+
+Flow input contract:
+
+- `agent_id`: required, `core.agent_ref.v1`
+- `additional_context`: optional, `core.text.v1`
+
+Node contracts:
+
+1. `completion_assessment` (`agent_task`)
+   - consumes `flow_input.agent_id`
+   - consumes `flow_input.additional_context`
+   - optionally consumes `artifact.completion_review_feedback`
+   - produces `story_completion_assessment`
+   - produces `agent_run_ref`
+
+2. `completion_review` (`approval_gate`)
+   - consumes `artifact.story_completion_assessment`
+   - produces `approval_decision`
+   - produces `completion_review_feedback` when requesting changes
+   - may produce `approved_followups` when approving with override payload
+
+3. `create_followups` (`system_action`)
+   - consumes `artifact.approved_followups` when present
+   - otherwise consumes `artifact.story_completion_assessment`
+   - produces `followup_creation_result`
+
+4. `done` (`terminal`)
+   - consumes `artifact.followup_creation_result`
+   - exposes it as the flow output
+
+#### `crm.deal_review_v1`
+
+Flow input contract:
+
+- `agent_id`: required, `core.agent_ref.v1`
+- `additional_context`: optional, `core.text.v1`
+
+Node contracts:
+
+1. `deal_review` (`agent_task`)
+   - consumes `flow_input.agent_id`
+   - consumes `flow_input.additional_context`
+   - optionally consumes `artifact.deal_review_feedback`
+   - produces `deal_action_plan`
+   - produces `agent_run_ref`
+
+2. `deal_review_approval` (`approval_gate`)
+   - consumes `artifact.deal_action_plan`
+   - produces `approval_decision`
+   - produces `deal_review_feedback` when requesting changes
+   - may produce `approved_deal_action_plan` when approving with override payload
+
+3. `apply_deal_actions` (`system_action`)
+   - consumes `artifact.approved_deal_action_plan` when present
+   - otherwise consumes `artifact.deal_action_plan`
+   - produces `deal_action_apply_result`
+
+4. `done` (`terminal`)
+   - consumes `artifact.deal_action_apply_result`
+   - exposes it as the flow output
+
+#### `pm.agent_story_run`
+
+Flow input contract:
+
+- `agent_id`: required, `core.agent_ref.v1`
+- `additional_context`: optional, `core.text.v1`
+
+Node contracts:
+
+1. `implement` (`agent_task`)
+   - consumes `flow_input.agent_id`
+   - consumes `flow_input.additional_context`
+   - produces `implementation_result`
+   - produces `agent_run_ref`
+
+2. `done` (`terminal`)
+   - consumes `artifact.implementation_result`
+   - exposes it as the flow output
+
+### Validation rules the template editor should enforce
+
+On template save:
+
+- every required `consumes` binding must resolve to one valid source
+- every referenced artifact must be produced earlier on every reachable non-reject path
+- `request_changes` loopbacks must point to a reachable earlier node
+- the consumed `schema_ref` must match the producer's declared `schema_ref`
+- every `interactive_agent` and `agent_task` node must have a resolvable agent source
+- every `system_action` must declare its required input artifacts
+- every template must declare one terminal output contract
+
+On flow start:
+
+- flow input contract must be satisfied
+- agent references must resolve after applying fallbacks
+- resolved agents must support the node's required invocation mode
+- target defaults may fill gaps only when explicitly allowed by the template
+
+At runtime:
+
+- a node should not start if its required artifacts are absent
+- retries should create a new artifact version for the same artifact key
+- the latest successful artifact version becomes the active one for downstream nodes
+
+### Recommended implementation phases
+
+#### Phase 1: add contracts without changing runtime behavior
+
+- add `input_contract` and `output_contract` to `flow_templates`
+- add `consumes_contract` and `produces_contract` to `flow_template_nodes`
+- add schema validation in template CRUD
+- keep current execution path intact
+
+#### Phase 2: add artifact persistence
+
+- add `flow_run_artifacts`
+- when a node completes, write declared produced artifacts into the artifact table
+- continue mirroring raw output into `flow_node_runs.output`
+
+#### Phase 3: adapt current built-ins
+
+- `interactive_agent` adapter maps planning session output into declared artifacts
+- `agent_task` adapter maps `agent_run.output_summary` into declared artifacts using `output_tag` only as a transition aid
+- `approval_gate` adapter writes standard `approval_decision`, `review_feedback`, and override artifacts
+- `system_action` input builders switch from direct node-run parsing to artifact lookup
+
+#### Phase 4: make contracts authoritative
+
+- new templates must declare contracts
+- template editor shows unsatisfied dependencies before save
+- flow start UI renders input form from `flow_input_contract`
+- `legacy_node_output.*` bindings are deprecated and later removed
+
+#### Phase 5: support future node types cleanly
+
+Once the artifact contract layer exists, new node types can plug in without inventing one-off wiring. Examples:
+
+- `branch_gate`: consumes multiple approval artifacts and picks a branch
+- `fork_join`: waits for a set of artifact keys before continuing
+- `webhook_action`: consumes a typed artifact and posts externally
+- `human_task`: produces a typed human-supplied artifact
+- `transform`: converts one schema into another without invoking an agent
+
+Those future nodes stay generic because they only need:
+
+- a runtime adapter for their node type
+- declared `consumes`
+- declared `produces`
+
+They do not need bespoke knowledge of any specific predecessor node.
 
 ## 6. Tool model
 

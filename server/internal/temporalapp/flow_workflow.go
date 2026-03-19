@@ -17,6 +17,7 @@ const (
 
 	FlowSignalTypeNodeAction = "node_action"
 	FlowSignalTypeChildState = "child_state"
+	FlowSignalTypeRefresh    = "refresh"
 	FlowSignalTypeRetry      = "retry"
 	FlowSignalTypeCancel     = "cancel"
 
@@ -118,34 +119,86 @@ func FlowRunWorkflow(ctx workflow.Context, input FlowRunWorkflowInput) error {
 		case model.FlowStatusCompleted, model.FlowStatusCancelled:
 			return nil
 		case model.FlowStatusAwaitingInput:
-			sig, gotSignal, timedOut := waitForSignalState(ctx, signalCh, deadlineEnabled, deadline)
-			if timedOut {
-				if !cancelFlowForReason(ctx, input.FlowRunID, "system:stale-timeout", "stale_timeout", logger) {
+			awaitingReconcileVersion := workflow.GetVersion(ctx, "flow-awaiting-input-reconcile-v1", workflow.DefaultVersion, 1)
+			if awaitingReconcileVersion != workflow.DefaultVersion {
+				// New behavior: use a reconciliation timer so we detect abandoned/completed child sessions.
+				reconcileAfter := nextReconcileDelay(ctx, deadlineEnabled, deadline, reconcileIntervalVersion)
+				timer := workflow.NewTimer(ctx, reconcileAfter)
+				var sig FlowRunSignal
+				gotSignal := false
+				selector := workflow.NewSelector(ctx)
+				selector.AddFuture(timer, func(workflow.Future) {})
+				selector.AddReceive(signalCh, func(c workflow.ReceiveChannel, more bool) {
+					gotSignal = more
+					if more {
+						c.Receive(ctx, &sig)
+					}
+				})
+				selector.Select(ctx)
+
+				if gotSignal {
+					switch sig.Type {
+					case FlowSignalTypeCancel:
+						if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.CancelRunActivity", input.FlowRunID, sig.ActorID, fallbackString(sig.Reason, "cancelled_by_user")).Get(ctx, nil); err != nil {
+							logger.Error("cancel flow activity failed", "flow_run_id", input.FlowRunID, "error", err)
+							continue
+						}
+					case FlowSignalTypeRefresh:
+					case FlowSignalTypeNodeAction:
+						if sig.Action != model.FlowActionFinalize {
+							continue
+						}
+						if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.FinalizeInteractiveNodeActivity", input.FlowRunID, sig.ActorID).Get(ctx, nil); err != nil {
+							logger.Error("finalize interactive node failed", "flow_run_id", input.FlowRunID, "error", err)
+							continue
+						}
+					case FlowSignalTypeChildState:
+						if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.HandleChildStateActivity", input.FlowRunID, sig.NodeRunID, sig.ChildType, sig.ChildID, sig.ChildStatus).Get(ctx, nil); err != nil {
+							logger.Error("handle child state failed", "flow_run_id", input.FlowRunID, "child_id", sig.ChildID, "error", err)
+							continue
+						}
+					}
+				} else {
+					// Reconciliation tick — check if the child session changed state (e.g. abandoned).
+					var progress FlowProgressResult
+					if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.ProgressRunStateActivity", input.FlowRunID).Get(ctx, &progress); err != nil {
+						logger.Error("awaiting_input reconciliation failed", "flow_run_id", input.FlowRunID, "error", err)
+						continue
+					}
+					state = progress.State
 					continue
 				}
-				return nil
-			}
-			if !gotSignal {
-				return nil
-			}
-			switch sig.Type {
-			case FlowSignalTypeCancel:
-				if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.CancelRunActivity", input.FlowRunID, sig.ActorID, fallbackString(sig.Reason, "cancelled_by_user")).Get(ctx, nil); err != nil {
-					logger.Error("cancel flow activity failed", "flow_run_id", input.FlowRunID, "error", err)
-					continue
+			} else {
+				// Legacy behavior: block on signal only (no reconciliation).
+				sig, gotSignal, timedOut := waitForSignalState(ctx, signalCh, deadlineEnabled, deadline)
+				if timedOut {
+					if !cancelFlowForReason(ctx, input.FlowRunID, "system:stale-timeout", "stale_timeout", logger) {
+						continue
+					}
+					return nil
 				}
-			case FlowSignalTypeNodeAction:
-				if sig.Action != model.FlowActionFinalize {
-					continue
+				if !gotSignal {
+					return nil
 				}
-				if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.FinalizeInteractiveNodeActivity", input.FlowRunID, sig.ActorID).Get(ctx, nil); err != nil {
-					logger.Error("finalize interactive node failed", "flow_run_id", input.FlowRunID, "error", err)
-					continue
-				}
-			case FlowSignalTypeChildState:
-				if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.HandleChildStateActivity", input.FlowRunID, sig.NodeRunID, sig.ChildType, sig.ChildID, sig.ChildStatus).Get(ctx, nil); err != nil {
-					logger.Error("handle child state failed", "flow_run_id", input.FlowRunID, "child_id", sig.ChildID, "error", err)
-					continue
+				switch sig.Type {
+				case FlowSignalTypeCancel:
+					if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.CancelRunActivity", input.FlowRunID, sig.ActorID, fallbackString(sig.Reason, "cancelled_by_user")).Get(ctx, nil); err != nil {
+						logger.Error("cancel flow activity failed", "flow_run_id", input.FlowRunID, "error", err)
+						continue
+					}
+				case FlowSignalTypeNodeAction:
+					if sig.Action != model.FlowActionFinalize {
+						continue
+					}
+					if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.FinalizeInteractiveNodeActivity", input.FlowRunID, sig.ActorID).Get(ctx, nil); err != nil {
+						logger.Error("finalize interactive node failed", "flow_run_id", input.FlowRunID, "error", err)
+						continue
+					}
+				case FlowSignalTypeChildState:
+					if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.HandleChildStateActivity", input.FlowRunID, sig.NodeRunID, sig.ChildType, sig.ChildID, sig.ChildStatus).Get(ctx, nil); err != nil {
+						logger.Error("handle child state failed", "flow_run_id", input.FlowRunID, "child_id", sig.ChildID, "error", err)
+						continue
+					}
 				}
 			}
 			if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.LoadRunStateActivity", input.FlowRunID).Get(ctx, &state); err != nil {
@@ -168,6 +221,7 @@ func FlowRunWorkflow(ctx workflow.Context, input FlowRunWorkflowInput) error {
 					logger.Error("cancel flow activity failed", "flow_run_id", input.FlowRunID, "error", err)
 					continue
 				}
+			case FlowSignalTypeRefresh:
 			case FlowSignalTypeNodeAction:
 				switch sig.Action {
 				case model.FlowActionApprove:
@@ -224,6 +278,7 @@ func FlowRunWorkflow(ctx workflow.Context, input FlowRunWorkflowInput) error {
 						logger.Error("cancel flow activity failed", "flow_run_id", input.FlowRunID, "error", err)
 						continue
 					}
+				case FlowSignalTypeRefresh:
 				case FlowSignalTypeRetry:
 					if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.RetryNodeActivity", input.FlowRunID, sig.NodeRunID, sig.ActorID).Get(ctx, nil); err != nil {
 						logger.Error("retry node activity failed", "flow_run_id", input.FlowRunID, "node_run_id", sig.NodeRunID, "error", err)
@@ -270,6 +325,7 @@ func FlowRunWorkflow(ctx workflow.Context, input FlowRunWorkflowInput) error {
 					logger.Error("cancel flow activity failed", "flow_run_id", input.FlowRunID, "error", err)
 					continue
 				}
+			case FlowSignalTypeRefresh:
 			case FlowSignalTypeRetry:
 				if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.RetryNodeActivity", input.FlowRunID, sig.NodeRunID, sig.ActorID).Get(ctx, nil); err != nil {
 					logger.Error("retry node failed", "flow_run_id", input.FlowRunID, "node_run_id", sig.NodeRunID, "error", err)

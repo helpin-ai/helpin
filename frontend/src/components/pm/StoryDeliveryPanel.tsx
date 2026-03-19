@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { agentService } from '@/lib/services/agentService';
+import { flowService } from '@/lib/services/flowService';
 import { gitService } from '@/lib/services/gitService';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import type {
@@ -301,7 +302,12 @@ export function useStoryDelivery(workspaceId: string, storyDetail: StoryDetail, 
     }
 
     setTriggeringRun(true);
-    const { error } = await agentService.runAgent(workspaceId, storyDetail.story.id);
+    const { error } = await flowService.startRun(workspaceId, {
+      template_id: 'pm.agent_story_run',
+      target_type: 'story',
+      target_id: storyDetail.story.id,
+      input: selectedAgentId ? { agent_id: selectedAgentId } : undefined,
+    });
     setTriggeringRun(false);
     if (error) {
       toast.error(error);

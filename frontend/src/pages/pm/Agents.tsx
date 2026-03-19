@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
 import {
@@ -10,16 +10,11 @@ import {
   LayoutGrid,
   LayoutList,
   Pencil,
-  X,
   Plus,
   Users,
-  Wrench,
   Zap,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { AgentRunTable } from '@/components/pm/AgentRunTable';
-import { AgentRunDetail, AgentRunDetailEmpty } from '@/components/pm/AgentRunDetail';
-import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
@@ -29,12 +24,10 @@ import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import type {
   Agent,
   AgentClass,
-  AgentTriggerMode,
   AgentApprovalMode,
   AgentModelProvider,
   AgentModelProviderOption,
   AgentRun,
-  AgentRunArtifact,
   AgentRuntimeKind,
   CreateAgentRequest,
   UpdateAgentRequest,
@@ -43,7 +36,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -53,7 +45,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Tooltip,
   TooltipContent,
@@ -66,12 +57,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -98,13 +83,6 @@ const ADVANCED_DEFAULT_RUNTIME: Record<AgentClass, AgentRuntimeKind> = {
   reviewer: 'opencode',
   support: 'native_sdk',
 };
-const ENGINE_TRIGGER_MODE_OPTIONS: AgentTriggerMode[] = ['manual', 'auto_on_assignment', 'auto_on_event'];
-
-const TRIGGER_MODE_LABELS: Record<AgentTriggerMode, string> = {
-  manual: 'Manually',
-  auto_on_assignment: 'When assigned a story',
-  auto_on_event: 'When an event occurs',
-};
 
 const AGENT_CLASS_LABELS: Record<AgentClass, string> = {
   product_planner: 'Planner',
@@ -120,72 +98,6 @@ const AGENT_CLASS_DESCRIPTIONS: Record<AgentClass, string> = {
   support: 'Handles support conversations and drafts replies.',
 };
 
-const TOOL_GROUPS = [
-  {
-    label: 'Code & Files',
-    tools: [
-      { id: 'read_file', label: 'Read files' },
-      { id: 'write_file', label: 'Write files' },
-      { id: 'list_directory', label: 'Browse folders' },
-      { id: 'search_files', label: 'Find files' },
-      { id: 'read_file_range', label: 'Read file sections' },
-      { id: 'ripgrep', label: 'Search code' },
-      { id: 'grep', label: 'Search text' },
-      { id: 'list_symbols', label: 'Browse code structure' },
-    ],
-  },
-  {
-    label: 'Commands',
-    tools: [{ id: 'run_command', label: 'Run commands' }],
-  },
-  {
-    label: 'Git & Deployment',
-    tools: [
-      { id: 'create_branch', label: 'Create branches' },
-      { id: 'commit_and_push', label: 'Save & publish code' },
-      { id: 'open_pr', label: 'Open pull requests' },
-    ],
-  },
-  {
-    label: 'Project Management',
-    tools: [
-      { id: 'add_story_comment', label: 'Comment on stories' },
-      { id: 'update_story_state', label: 'Update story status' },
-      { id: 'list_story_checklist', label: 'View checklists' },
-    ],
-  },
-  {
-    label: 'Customer Support',
-    tools: [
-      { id: 'list_conversation_messages', label: 'Read conversations' },
-      { id: 'draft_support_reply', label: 'Draft replies' },
-      { id: 'update_conversation_status', label: 'Update status' },
-    ],
-  },
-  {
-    label: 'Sales & CRM',
-    tools: [
-      { id: 'list_deals', label: 'View deals' },
-      { id: 'update_deal_stage', label: 'Move deals forward' },
-      { id: 'add_deal_note', label: 'Add deal notes' },
-      { id: 'list_contacts', label: 'View contacts' },
-      { id: 'list_buyer_signals', label: 'View buying signals' },
-    ],
-  },
-  {
-    label: 'Knowledge Base',
-    tools: [
-      { id: 'list_documents', label: 'Browse documents' },
-      { id: 'read_document', label: 'Read documents' },
-      { id: 'search_documents', label: 'Search documents' },
-    ],
-  },
-  {
-    label: 'Research',
-    tools: [{ id: 'web_search', label: 'Search the web' }],
-  },
-];
-
 const APPROVAL_MODE_OPTIONS: { value: AgentApprovalMode; label: string; description: string }[] = [
   { value: 'class_default', label: 'Default', description: 'Uses the standard setting for this agent role' },
   { value: 'never', label: 'No — run immediately', description: 'Agent starts working right away without waiting' },
@@ -199,14 +111,14 @@ const EMPTY_STATE_CARDS = [
     desc: 'Handle planning, coding, doc updates, support replies, and deal management so your team can focus on what matters.',
   },
   {
-    icon: Wrench,
+    icon: Bot,
     title: 'Cross-module',
     desc: 'Agents can span projects, CRM, support, and docs — just pick the capabilities they need.',
   },
   {
-    icon: Clock,
-    title: 'Schedule or trigger',
-    desc: 'Run on a schedule, on story assignment, or on demand — fully automatic or manual.',
+    icon: Users,
+    title: 'Team-aware',
+    desc: 'Assign agents to teams so they only work on relevant tasks, or let them operate workspace-wide.',
   },
 ];
 
@@ -218,18 +130,13 @@ interface AgentFormData {
   name: string;
   agent_class: AgentClass;
   runtime_kind: AgentRuntimeKind;
-  trigger_mode: AgentTriggerMode;
-  skills: string;
   provider: AgentModelProvider;
   model: string;
-  system_prompt: string;
-  planning_notes: string;
   monthly_token_budget: string;
   team_id: string;
   schedule: string;
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: string;
-  allowed_tools: string[];
 }
 
 const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
@@ -243,91 +150,22 @@ function createEmptyForm(agentClass: AgentClass = 'engineer'): AgentFormData {
     name: '',
     agent_class: agentClass,
     runtime_kind: ADVANCED_DEFAULT_RUNTIME[agentClass],
-    trigger_mode: 'manual',
-    skills: '',
     provider: 'anthropic',
     model: '',
-    system_prompt: '',
-    planning_notes: '',
     monthly_token_budget: '',
     team_id: '',
     schedule: '',
     approval_mode: 'class_default',
     max_concurrent_runs: '1',
-    allowed_tools: [],
   };
-}
-
-function showsTriggerMode(agentClass: AgentClass): boolean {
-  return agentClass === 'engineer' || agentClass === 'reviewer';
-}
-
-function allowedTriggerModesForClass(agentClass: AgentClass): AgentTriggerMode[] {
-  return showsTriggerMode(agentClass) ? ENGINE_TRIGGER_MODE_OPTIONS : ['manual'];
-}
-
-function parseSkills(skills: string): string[] {
-  return skills
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
 }
 
 function hasConfiguredAdvancedFields(agent: Agent | null): boolean {
   if (!agent) return false;
   return (
     agent.runtime_kind !== ADVANCED_DEFAULT_RUNTIME[agent.agent_class] ||
-    Boolean(agent.system_prompt?.trim()) ||
-    agent.skills.length > 0 ||
     Boolean(agent.monthly_token_budget)
   );
-}
-
-function nextFormForClass(current: AgentFormData, nextClass: AgentClass): AgentFormData {
-  if (nextClass === 'product_planner') {
-    return {
-      ...current,
-      agent_class: nextClass,
-      runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
-      trigger_mode: allowedTriggerModesForClass(nextClass)[0] ?? 'manual',
-      provider: 'anthropic',
-      system_prompt: '',
-    };
-  }
-
-  return {
-    ...current,
-    agent_class: nextClass,
-    runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
-    trigger_mode: allowedTriggerModesForClass(nextClass)[0] ?? 'manual',
-    planning_notes: '',
-  };
-}
-
-function buildAdvancedFields(form: AgentFormData, advancedOpen: boolean): Partial<CreateAgentRequest> {
-  if (!advancedOpen) {
-    return {};
-  }
-
-  return {
-    runtime_kind: form.runtime_kind,
-    system_prompt: form.system_prompt,
-    skills: parseSkills(form.skills),
-    monthly_token_budget: form.monthly_token_budget.trim()
-      ? Number.parseInt(form.monthly_token_budget, 10)
-      : 0,
-  };
-}
-
-function buildAutomationFields(form: AgentFormData): Partial<CreateAgentRequest> {
-  return {
-    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : 'manual',
-    team_id: form.team_id,
-    schedule: form.schedule.trim(),
-    approval_mode: form.approval_mode,
-    max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
-    allowed_tools: form.allowed_tools,
-  };
 }
 
 function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOpen: boolean): CreateAgentRequest {
@@ -337,9 +175,19 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     agent_class: form.agent_class,
     provider: form.provider,
     model: form.model.trim() || undefined,
-    planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : undefined,
-    ...buildAdvancedFields(form, advancedOpen),
-    ...buildAutomationFields(form),
+    trigger_mode: 'manual',
+    team_id: form.team_id,
+    schedule: form.schedule.trim(),
+    approval_mode: form.approval_mode,
+    max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
+    ...(advancedOpen
+      ? {
+          runtime_kind: form.runtime_kind,
+          monthly_token_budget: form.monthly_token_budget.trim()
+            ? Number.parseInt(form.monthly_token_budget, 10)
+            : 0,
+        }
+      : {}),
   };
 }
 
@@ -347,12 +195,21 @@ function buildUpdatePayload(form: AgentFormData, advancedOpen: boolean): UpdateA
   return {
     name: form.name.trim(),
     agent_class: form.agent_class,
-    trigger_mode: showsTriggerMode(form.agent_class) ? form.trigger_mode : 'manual',
+    trigger_mode: 'manual',
     provider: form.provider || undefined,
     model: form.model.trim() || undefined,
-    planning_notes: form.agent_class === 'product_planner' ? form.planning_notes : '',
-    ...buildAdvancedFields(form, advancedOpen),
-    ...buildAutomationFields(form),
+    team_id: form.team_id,
+    schedule: form.schedule.trim(),
+    approval_mode: form.approval_mode,
+    max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
+    ...(advancedOpen
+      ? {
+          runtime_kind: form.runtime_kind,
+          monthly_token_budget: form.monthly_token_budget.trim()
+            ? Number.parseInt(form.monthly_token_budget, 10)
+            : 0,
+        }
+      : {}),
   };
 }
 
@@ -413,14 +270,12 @@ function AgentCard({
   teamName,
   stats,
   onEdit,
-  onClick,
   canEdit,
 }: {
   agent: Agent;
   teamName?: string;
   stats?: AgentRunStats;
   onEdit: (agent: Agent) => void;
-  onClick: (agent: Agent) => void;
   canEdit: boolean;
 }) {
   const budgetPct =
@@ -432,10 +287,7 @@ function AgentCard({
       : null;
 
   return (
-    <Card
-      className="group cursor-pointer transition-shadow hover:shadow-md relative"
-      onClick={() => onClick(agent)}
-    >
+    <Card className="group cursor-pointer transition-shadow hover:shadow-md relative">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <span className="truncate font-semibold text-sm">{agent.name}</span>
@@ -524,20 +376,17 @@ function AgentRow({
   teamName,
   stats,
   onEdit,
-  onClick,
   canEdit,
 }: {
   agent: Agent;
   teamName?: string;
   stats?: AgentRunStats;
   onEdit: (agent: Agent) => void;
-  onClick: (agent: Agent) => void;
   canEdit: boolean;
 }) {
   return (
     <div
-      className="group flex items-center gap-3 px-4 py-3 border-b border-border/50 last:border-b-0 cursor-pointer hover:bg-muted/40 transition-colors"
-      onClick={() => onClick(agent)}
+      className="group flex items-center gap-3 px-4 py-3 border-b border-border/50 last:border-b-0 hover:bg-muted/40 transition-colors"
     >
       {/* Status dot + Name */}
       <div className="flex items-center gap-2.5 flex-1 min-w-[120px]">
@@ -557,13 +406,9 @@ function AgentRow({
         {teamName ?? 'All teams'}
       </span>
 
-      {/* Trigger */}
+      {/* Provider / Model */}
       <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden lg:block">
-        {agent.schedule ? (
-          <span className="flex items-center gap-1"><Clock className="h-3 w-3" />Scheduled</span>
-        ) : (
-          TRIGGER_MODE_LABELS[agent.trigger_mode] ?? 'Manual'
-        )}
+        {[agent.provider, agent.model].filter(Boolean).join(' / ') || '—'}
       </span>
 
       {/* Runs */}
@@ -633,18 +478,8 @@ export function AgentsPage() {
   const [form, setForm] = useState<AgentFormData>(createEmptyForm());
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [automationOpen, setAutomationOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-
-  // Runs dialog state
-  const [runsAgent, setRunsAgent] = useState<Agent | null>(null);
-  const [runsDialogOpen, setRunsDialogOpen] = useState(false);
-  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
-  const [selectedRun, setSelectedRun] = useState<AgentRun | null>(null);
-  const [runArtifacts, setRunArtifacts] = useState<AgentRunArtifact[]>([]);
-  const [runsLoading, setRunsLoading] = useState(false);
-  const [actingOnRun, setActingOnRun] = useState<string | null>(null);
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
@@ -701,7 +536,6 @@ export function AgentsPage() {
     setEditingAgent(null);
     setAdvancedOpen(false);
     setAutomationOpen(false);
-    setToolsOpen(false);
     setForm(createEmptyForm());
     setDialogOpen(true);
   };
@@ -710,23 +544,17 @@ export function AgentsPage() {
     setEditingAgent(agent);
     setAdvancedOpen(hasConfiguredAdvancedFields(agent));
     setAutomationOpen(Boolean(agent.schedule || agent.approval_mode !== 'class_default'));
-    setToolsOpen((agent.allowed_tools?.length ?? 0) > 0);
     setForm({
       name: agent.name,
       agent_class: agent.agent_class,
       runtime_kind: agent.runtime_kind,
-      trigger_mode: agent.trigger_mode ?? 'manual',
-      skills: agent.skills.join(', '),
       provider: agent.provider ?? 'anthropic',
       model: agent.model ?? '',
-      system_prompt: agent.system_prompt ?? '',
-      planning_notes: agent.planning_notes ?? '',
       monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
       team_id: agent.team_id ?? '',
       schedule: agent.schedule ?? '',
       approval_mode: agent.approval_mode ?? 'class_default',
       max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
-      allowed_tools: agent.allowed_tools ?? [],
     });
     setDialogOpen(true);
   };
@@ -763,114 +591,6 @@ export function AgentsPage() {
     }
     setSaving(false);
   };
-
-  // -- Runs dialog helpers --------------------------------------------------
-
-  const fetchAgentRuns = useCallback(async (agentId: string) => {
-    if (!workspaceId) return;
-    setRunsLoading(true);
-    const res = await agentService.listRuns(workspaceId, agentId);
-    if (!res.error && res.data) {
-      const paginated = res.data;
-      const runs: AgentRun[] = Array.isArray(paginated) ? paginated : (paginated.data ?? []);
-      setAgentRuns(runs);
-    }
-    setRunsLoading(false);
-  }, [workspaceId]);
-
-  const loadRunArtifacts = useCallback(async (runId: string) => {
-    if (!workspaceId) return;
-    const res = await agentService.listRunArtifacts(workspaceId, runId);
-    setRunArtifacts(res.data ?? []);
-  }, [workspaceId]);
-
-  // Merge stdout/stderr chunks for display
-  const displayArtifacts = useMemo(() => {
-    const display = runArtifacts.filter(
-      (a) => a.artifact_type !== 'opencode_stdout_chunk' && a.artifact_type !== 'opencode_stderr_chunk',
-    );
-    if (!display.find((a) => a.artifact_type === 'opencode_stdout')) {
-      const content = runArtifacts
-        .filter((a) => a.artifact_type === 'opencode_stdout_chunk')
-        .map((a) => a.inline_content ?? '')
-        .join('');
-      if (content && runArtifacts[0]) {
-        display.unshift({
-          id: 'live-stdout', workspace_id: runArtifacts[0].workspace_id, run_id: runArtifacts[0].run_id,
-          artifact_type: 'opencode_stdout', format: 'text', storage_mode: 'inline',
-          inline_content: content, metadata: {}, sequence_no: -2, created_at: runArtifacts[0].created_at,
-        });
-      }
-    }
-    if (!display.find((a) => a.artifact_type === 'opencode_stderr')) {
-      const content = runArtifacts
-        .filter((a) => a.artifact_type === 'opencode_stderr_chunk')
-        .map((a) => a.inline_content ?? '')
-        .join('');
-      if (content && runArtifacts[0]) {
-        display.unshift({
-          id: 'live-stderr', workspace_id: runArtifacts[0].workspace_id, run_id: runArtifacts[0].run_id,
-          artifact_type: 'opencode_stderr', format: 'text', storage_mode: 'inline',
-          inline_content: content, metadata: {}, sequence_no: -1, created_at: runArtifacts[0].created_at,
-        });
-      }
-    }
-    return display;
-  }, [runArtifacts]);
-
-  const openRunsDialog = useCallback((agent: Agent) => {
-    setRunsAgent(agent);
-    setSelectedRun(null);
-    setRunArtifacts([]);
-    setAgentRuns([]);
-    setRunsDialogOpen(true);
-    fetchAgentRuns(agent.id);
-  }, [fetchAgentRuns]);
-
-  const handleSelectRun = async (run: AgentRun) => {
-    setSelectedRun(run);
-    await loadRunArtifacts(run.id);
-  };
-
-  const handleCancelRun = async (runId: string) => {
-    if (!workspaceId) return;
-    setActingOnRun(runId);
-    try {
-      await agentService.cancelRun(workspaceId, runId);
-      if (runsAgent) await fetchAgentRuns(runsAgent.id);
-    } finally {
-      setActingOnRun(null);
-    }
-  };
-
-  const handleApproveRun = async (runId: string) => {
-    if (!workspaceId) return;
-    setActingOnRun(runId);
-    try {
-      await agentService.approveRun(workspaceId, runId, { send_message: true });
-      if (runsAgent) await fetchAgentRuns(runsAgent.id);
-      if (selectedRun?.id === runId) await loadRunArtifacts(runId);
-    } finally {
-      setActingOnRun(null);
-    }
-  };
-
-  // Auto-poll active runs
-  useEffect(() => {
-    if (!selectedRun || !ACTIVE_RUN_STATUSES.has(selectedRun.status) || !runsAgent) return;
-    const interval = window.setInterval(() => {
-      void fetchAgentRuns(runsAgent.id);
-      void loadRunArtifacts(selectedRun.id);
-    }, 2000);
-    return () => window.clearInterval(interval);
-  }, [fetchAgentRuns, loadRunArtifacts, selectedRun, runsAgent]);
-
-  // Keep selectedRun in sync after refetch
-  useEffect(() => {
-    if (!selectedRun) return;
-    const updated = agentRuns.find((r) => r.id === selectedRun.id);
-    if (updated && updated.status !== selectedRun.status) setSelectedRun(updated);
-  }, [agentRuns, selectedRun]);
 
   if (!workspace) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
@@ -949,7 +669,7 @@ export function AgentsPage() {
             <div className="flex-1 min-w-[120px]">Name</div>
             <div className="w-20 shrink-0">Role</div>
             <div className="w-28 shrink-0 hidden md:block">Team</div>
-            <div className="w-28 shrink-0 hidden lg:block">Trigger</div>
+            <div className="w-28 shrink-0 hidden lg:block">Provider</div>
             <div className="w-12 shrink-0 hidden sm:block">Runs</div>
             <div className="w-28 shrink-0 hidden sm:block">Last run</div>
             <div className="w-8 shrink-0" />
@@ -961,7 +681,6 @@ export function AgentsPage() {
               teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
               stats={runStats[agent.id]}
               onEdit={openEditDialog}
-              onClick={openRunsDialog}
               canEdit={canEdit}
             />
           ))}
@@ -977,76 +696,11 @@ export function AgentsPage() {
               teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
               stats={runStats[agent.id]}
               onEdit={openEditDialog}
-              onClick={openRunsDialog}
               canEdit={canEdit}
             />
           ))}
         </div>
       )}
-
-      {/* ---- Runs sidebar sheet ---- */}
-      <Sheet open={runsDialogOpen} onOpenChange={setRunsDialogOpen}>
-        <SheetContent side="right" className="sm:max-w-xl w-full flex flex-col gap-0 p-0" showCloseButton={false}>
-          <SheetHeader className="px-5 py-4 border-b border-border/60">
-            <div className="flex items-center gap-2">
-              <SheetTitle className="flex items-center gap-2 text-base flex-1 min-w-0">
-                <Bot className="h-4 w-4 shrink-0" />
-                <span className="truncate">{runsAgent?.name} — Logs</span>
-              </SheetTitle>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground shrink-0"
-                onClick={() => setRunsDialogOpen(false)}
-              >
-                <span className="sr-only">Close</span>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            {runsAgent && (
-              <div className="flex items-center gap-2 mt-1">
-                <Badge variant="secondary" className="text-[11px]">
-                  {AGENT_CLASS_LABELS[runsAgent.agent_class] ?? runsAgent.agent_class}
-                </Badge>
-                <span className="flex items-center gap-1">
-                  <span className={`h-2 w-2 rounded-full ${STATUS_DOT[runsAgent.status] ?? STATUS_DOT.paused}`} />
-                  <span className="text-[11px] text-muted-foreground">{STATUS_LABEL[runsAgent.status] ?? runsAgent.status}</span>
-                </span>
-                {runsAgent.provider && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {[runsAgent.provider, runsAgent.model].filter(Boolean).join(' / ')}
-                  </span>
-                )}
-              </div>
-            )}
-          </SheetHeader>
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            {/* Run table */}
-            <div className="max-h-[280px] overflow-auto border-b border-border/60">
-              <AgentRunTable
-                runs={agentRuns}
-                selectedRunId={selectedRun?.id ?? null}
-                onSelectRun={handleSelectRun}
-                loading={runsLoading}
-              />
-            </div>
-            {/* Run detail */}
-            <div className="flex-1 overflow-auto">
-              {selectedRun ? (
-                <AgentRunDetail
-                  run={selectedRun}
-                  artifacts={displayArtifacts}
-                  actingOnRun={actingOnRun}
-                  onCancel={handleCancelRun}
-                  onApprove={handleApproveRun}
-                />
-              ) : (
-                <AgentRunDetailEmpty />
-              )}
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
 
       {/* ---- Create / Edit dialog ---- */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -1068,14 +722,18 @@ export function AgentsPage() {
             </div>
 
             <div className="space-y-2">
-              <FieldLabel tooltip="Each role comes with sensible defaults for permissions and behavior. You can customise everything below.">
+              <FieldLabel tooltip="Each role comes with sensible defaults for permissions and behavior.">
                 What does this agent do?
               </FieldLabel>
               <Select
                 value={form.agent_class}
                 onValueChange={(value) => {
                   const nextClass = value as AgentClass;
-                  setForm((current) => nextFormForClass(current, nextClass));
+                  setForm((current) => ({
+                    ...current,
+                    agent_class: nextClass,
+                    runtime_kind: current.runtime_kind || ADVANCED_DEFAULT_RUNTIME[nextClass],
+                  }));
                 }}
               >
                 <SelectTrigger>
@@ -1119,7 +777,6 @@ export function AgentsPage() {
               </div>
             )}
 
-            <Separator />
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
@@ -1155,51 +812,7 @@ export function AgentsPage() {
               </div>
             </div>
 
-            {/* Trigger mode */}
-            {showsTriggerMode(form.agent_class) && (
-              <div className="space-y-2">
-                <FieldLabel tooltip="Controls when this agent starts working. 'Manually' means you must trigger it yourself.">
-                  When should it run?
-                </FieldLabel>
-                <Select
-                  value={form.trigger_mode}
-                  onValueChange={(value) => setForm((current) => ({ ...current, trigger_mode: value as AgentTriggerMode }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allowedTriggerModesForClass(form.agent_class).map((triggerMode) => (
-                      <SelectItem key={triggerMode} value={triggerMode}>
-                        {TRIGGER_MODE_LABELS[triggerMode] ?? triggerMode}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Planning guidelines */}
-            {form.agent_class === 'product_planner' && (
-              <div className="space-y-2">
-                <FieldLabel
-                  htmlFor="agent-planning-notes"
-                  tooltip="Extra context for the planner — like preferred frameworks, constraints, or team conventions."
-                >
-                  Planning guidelines
-                </FieldLabel>
-                <Textarea
-                  id="agent-planning-notes"
-                  value={form.planning_notes}
-                  onChange={(e) => setForm((current) => ({ ...current, planning_notes: e.target.value }))}
-                  placeholder="e.g. Always consider mobile-first. Use our design system components."
-                  rows={3}
-                />
-              </div>
-            )}
-
             {/* ---- Scheduling & Approval ---- */}
-            <Separator />
             <Collapsible.Root open={automationOpen} onOpenChange={setAutomationOpen}>
               <Collapsible.Trigger asChild>
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
@@ -1277,79 +890,6 @@ export function AgentsPage() {
               </Collapsible.Content>
             </Collapsible.Root>
 
-            {/* ---- Capabilities / Tools ---- */}
-            <Collapsible.Root open={toolsOpen} onOpenChange={setToolsOpen}>
-              <Collapsible.Trigger asChild>
-                <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
-                  <span className="flex items-center gap-2 text-sm">
-                    {toolsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                    Capabilities
-                  </span>
-                  {form.allowed_tools.length > 0 && !toolsOpen && (
-                    <Badge variant="outline" className="text-[11px]">
-                      {form.allowed_tools.length} selected
-                    </Badge>
-                  )}
-                </Button>
-              </Collapsible.Trigger>
-              <Collapsible.Content className="space-y-3 rounded-md border bg-muted/30 p-3 mt-2">
-                <p className="text-[11px] text-muted-foreground">
-                  Choose what this agent is allowed to do. Leave all unselected to use the standard set for its role.
-                </p>
-                {TOOL_GROUPS.map((group) => {
-                  const allSelected = group.tools.every((t) => form.allowed_tools.includes(t.id));
-                  return (
-                    <div key={group.label} className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-muted-foreground">{group.label}</span>
-                        <button
-                          type="button"
-                          className="text-[11px] text-primary hover:underline"
-                          onClick={() => {
-                            const groupIds = group.tools.map((t) => t.id);
-                            setForm((current) => ({
-                              ...current,
-                              allowed_tools: allSelected
-                                ? current.allowed_tools.filter((id) => !groupIds.includes(id))
-                                : [...new Set([...current.allowed_tools, ...groupIds])],
-                            }));
-                          }}
-                        >
-                          {allSelected ? 'Remove all' : 'Add all'}
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {group.tools.map((tool) => {
-                          const selected = form.allowed_tools.includes(tool.id);
-                          return (
-                            <button
-                              key={tool.id}
-                              type="button"
-                              className={`rounded-md border px-2 py-1 text-xs transition-colors ${
-                                selected
-                                  ? 'border-primary bg-primary/10 text-primary'
-                                  : 'border-border bg-background text-muted-foreground hover:border-primary/50'
-                              }`}
-                              onClick={() =>
-                                setForm((current) => ({
-                                  ...current,
-                                  allowed_tools: selected
-                                    ? current.allowed_tools.filter((id) => id !== tool.id)
-                                    : [...current.allowed_tools, tool.id],
-                                }))
-                              }
-                            >
-                              {tool.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </Collapsible.Content>
-            </Collapsible.Root>
-
             {/* ---- Advanced (engine internals) ---- */}
             <Collapsible.Root open={advancedOpen} onOpenChange={setAdvancedOpen}>
               <Collapsible.Trigger asChild>
@@ -1383,37 +923,6 @@ export function AgentsPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <FieldLabel
-                    htmlFor="agent-skills"
-                    tooltip="Skill packs extend the agent's abilities. Separate multiple values with commas."
-                  >
-                    Skill packs
-                  </FieldLabel>
-                  <Input
-                    id="agent-skills"
-                    value={form.skills}
-                    onChange={(e) => setForm((current) => ({ ...current, skills: e.target.value }))}
-                    placeholder="e.g. testing, documentation"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <FieldLabel
-                    htmlFor="agent-prompt"
-                    tooltip="Custom instructions that shape how this agent behaves. These are added to the agent's base instructions."
-                  >
-                    Custom instructions
-                  </FieldLabel>
-                  <Textarea
-                    id="agent-prompt"
-                    value={form.system_prompt}
-                    onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
-                    placeholder="e.g. Always write unit tests. Follow our coding style guide."
-                    rows={3}
-                  />
                 </div>
 
                 <div className="space-y-2">

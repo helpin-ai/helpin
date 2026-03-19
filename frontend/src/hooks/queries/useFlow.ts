@@ -1,9 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import { flowService } from '@/lib/services/flowService';
-import type { FlowRunView } from '@/lib/pmTypes';
+import type {
+  FlowRunView,
+  CreateFlowTemplateRequest,
+  UpdateFlowTemplateRequest,
+  UpdateFlowTemplateNodeRequest,
+  CreateFlowTemplateNodeRequest,
+} from '@/lib/pmTypes';
 
 function invalidateFlowTarget(qc: ReturnType<typeof useQueryClient>, wsId: string, run: FlowRunView['run']) {
   switch (run.target_type) {
@@ -52,6 +59,9 @@ export function useStartFlowRun(wsId: string) {
       qc.setQueryData(queryKeys.pm.flowRun(wsId, data.run.id), data);
       qc.invalidateQueries({ queryKey: queryKeys.pm.flowRuns(wsId) });
     },
+    onError: (err: Error) => {
+      toast.error(err.message || 'Failed to start flow');
+    },
   });
 }
 
@@ -77,6 +87,10 @@ export function useSendFlowNodeAction(wsId: string, flowRunId: string, nodeRunId
       qc.setQueryData(queryKeys.pm.flowRun(wsId, flowRunId), data);
       qc.invalidateQueries({ queryKey: queryKeys.pm.flowRuns(wsId) });
     },
+    onError: (err: Error) => {
+      toast.error(err.message || 'Failed to perform action');
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowRun(wsId, flowRunId) });
+    },
   });
 }
 
@@ -99,6 +113,29 @@ export function useCancelFlowRun(wsId: string) {
   });
 }
 
+export function useCancelActiveFlowRunByTarget(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { targetType: string; targetId: string }) =>
+      unwrap(await flowService.cancelActiveByTarget(wsId, vars.targetType, vars.targetId)),
+    onSuccess: (data) => {
+      // Response is either a FlowRunView (cancelled flow run) or { status: "cancelled" } (orphaned session).
+      if ('run' in data) {
+        invalidateFlowTarget(qc, wsId, data.run);
+        qc.removeQueries({ queryKey: queryKeys.pm.flowRun(wsId, data.run.id) });
+        setTimeout(() => {
+          qc.invalidateQueries({ queryKey: queryKeys.pm.flowRun(wsId, data.run.id) });
+          invalidateFlowTarget(qc, wsId, data.run);
+          qc.invalidateQueries({ queryKey: queryKeys.pm.flowRuns(wsId) });
+        }, 1500);
+      } else {
+        // Orphaned session was cleaned up — invalidate flow runs to refresh state.
+        qc.invalidateQueries({ queryKey: queryKeys.pm.flowRuns(wsId) });
+      }
+    },
+  });
+}
+
 export function useFlowRuns(wsId: string) {
   return useQuery({
     queryKey: queryKeys.pm.flowRuns(wsId),
@@ -113,5 +150,126 @@ export function useFlowTemplates(wsId: string) {
     queryFn: async () => unwrap(await flowService.listTemplates(wsId)),
     enabled: !!wsId,
     staleTime: 60_000,
+  });
+}
+
+// --- Flow Template CRUD hooks ---
+
+export function useFlowDBTemplates(wsId: string) {
+  return useQuery({
+    queryKey: queryKeys.pm.flowDBTemplates(wsId),
+    queryFn: async () => unwrap(await flowService.listDBTemplates(wsId)),
+    enabled: !!wsId,
+    staleTime: 60_000,
+  });
+}
+
+export function useFlowDBTemplate(wsId: string, templateId?: string) {
+  return useQuery({
+    queryKey: queryKeys.pm.flowDBTemplate(wsId, templateId ?? ''),
+    queryFn: async () => unwrap(await flowService.getTemplate(wsId, templateId!)),
+    enabled: !!wsId && !!templateId,
+  });
+}
+
+export function useCreateFlowTemplate(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: CreateFlowTemplateRequest) =>
+      unwrap(await flowService.createTemplate(wsId, body)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplates(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowTemplates(wsId) });
+    },
+  });
+}
+
+export function useUpdateFlowTemplate(wsId: string, templateId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: UpdateFlowTemplateRequest) =>
+      unwrap(await flowService.updateTemplate(wsId, templateId, body)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplates(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplate(wsId, templateId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowTemplates(wsId) });
+    },
+  });
+}
+
+export function useDeleteFlowTemplate(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (templateId: string) =>
+      unwrap(await flowService.deleteTemplate(wsId, templateId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplates(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowTemplates(wsId) });
+    },
+  });
+}
+
+export function useDuplicateFlowTemplate(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (templateId: string) =>
+      unwrap(await flowService.duplicateTemplate(wsId, templateId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplates(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowTemplates(wsId) });
+    },
+  });
+}
+
+export function useDuplicateFlowTemplateFromSlug(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (templateSlug: string) =>
+      unwrap(await flowService.duplicateFromSlug(wsId, templateSlug)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplates(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowTemplates(wsId) });
+    },
+  });
+}
+
+// --- Flow Template Node CRUD hooks ---
+
+export function useCreateFlowTemplateNode(wsId: string, templateId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: CreateFlowTemplateNodeRequest) =>
+      unwrap(await flowService.createTemplateNode(wsId, templateId, body)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplate(wsId, templateId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplates(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowTemplates(wsId) });
+    },
+  });
+}
+
+export function useUpdateFlowTemplateNode(wsId: string, templateId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ nodeId, body }: { nodeId: string; body: UpdateFlowTemplateNodeRequest }) =>
+      unwrap(await flowService.updateTemplateNode(wsId, templateId, nodeId, body)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplate(wsId, templateId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplates(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowTemplates(wsId) });
+    },
+  });
+}
+
+export function useDeleteFlowTemplateNode(wsId: string, templateId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (nodeId: string) =>
+      unwrap(await flowService.deleteTemplateNode(wsId, templateId, nodeId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplate(wsId, templateId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowDBTemplates(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.pm.flowTemplates(wsId) });
+    },
   });
 }

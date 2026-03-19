@@ -551,7 +551,12 @@ function StoryDetailPanelBody({
     const ids = new Set<string>();
     if (!pipelineRules) return ids;
     for (const rule of pipelineRules) {
-      if (rule.enabled && rule.trigger_type === 'story.state_entered' && rule.action_type === 'run_agent') {
+      if (
+        rule.enabled &&
+        rule.trigger_type === 'story.state_entered' &&
+        rule.action_type === 'start_flow' &&
+        rule.action_config?.template_id === 'pm.agent_story_run'
+      ) {
         const stateId = rule.trigger_config?.state_id;
         if (stateId) ids.add(stateId);
       }
