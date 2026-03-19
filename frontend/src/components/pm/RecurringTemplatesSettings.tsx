@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { RecurringTemplateList } from '@/components/pm/RecurringTemplateList';
 import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSummary';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
@@ -38,6 +39,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
   const [viewTemplate, setViewTemplate] = useState<RecurringTemplateDetail | null>(null);
   const [editTemplate, setEditTemplate] = useState<RecurringTemplateDetail | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<RecurringTemplateDetail | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -137,7 +139,6 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="paused">Paused</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>
-            <SelectItem value="stopped">Stopped</SelectItem>
           </SelectContent>
         </Select>
         <Select value={teamFilter} onValueChange={setTeamFilter}>
@@ -179,7 +180,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
           } : undefined}
           onPause={editable ? (item) => void runAction(() => pmRecurringTemplateService.pause(workspaceId, item.template.id), 'Recurring template paused') : undefined}
           onResume={editable ? (item) => void runAction(() => pmRecurringTemplateService.resume(workspaceId, item.template.id), 'Recurring template resumed') : undefined}
-          onStop={editable ? (item) => void runAction(() => pmRecurringTemplateService.stop(workspaceId, item.template.id), 'Recurring template stopped') : undefined}
+          onStop={editable ? (item) => setDeleteConfirm(item) : undefined}
           onSkipNext={editable ? (item) => void runAction(() => pmRecurringTemplateService.skipNext(workspaceId, item.template.id), 'Next occurrence skipped') : undefined}
           onGenerateNow={editable ? (item) => void runAction(() => pmRecurringTemplateService.generateNow(workspaceId, item.template.id), 'Recurring story generated') : undefined}
           onDuplicate={editable ? (item) => void runAction(() => pmRecurringTemplateService.duplicate(workspaceId, item.template.id), 'Recurring template duplicated') : undefined}
@@ -239,6 +240,20 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirm !== null}
+        onOpenChange={(open) => { if (!open) setTimeout(() => setDeleteConfirm(null), 150); }}
+        title="Delete recurring template"
+        description={`This will permanently stop "${deleteConfirm?.template.title ?? ''}" from creating new stories. Existing stories will not be affected.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          if (!deleteConfirm) return;
+          void runAction(() => pmRecurringTemplateService.stop(workspaceId, deleteConfirm.template.id), 'Recurring template deleted');
+          setDeleteConfirm(null);
+        }}
+      />
     </div>
   );
 }
