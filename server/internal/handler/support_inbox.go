@@ -29,6 +29,18 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 		return
 	}
 	userID := middleware.GetUserID(r.Context())
+
+	// Mentions filter: return conversations where the user was @mentioned.
+	if r.URL.Query().Get("filter") == "mentions" {
+		resp, err := h.supportService.ListConversationsWithMentions(r.Context(), workspaceID, userID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
 	status := r.URL.Query().Get("status")
 	priority := r.URL.Query().Get("priority")
 	aiState := r.URL.Query().Get("ai_state")

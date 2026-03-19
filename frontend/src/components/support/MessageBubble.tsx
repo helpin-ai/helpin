@@ -1,10 +1,32 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, FileText, RotateCcw, StickyNote, XCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { formatTimestamp, getInitial, getAvatarColor } from './helpers';
+
+/** Splits text on @mention patterns and wraps them in highlight spans. */
+function renderMentionHighlights(content: string): ReactNode[] | null {
+  const regex = /@([a-zA-Z0-9][a-zA-Z0-9._-]*)/g;
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <span key={key++} className="mention-highlight">{match[0]}</span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+  return parts.length > 1 ? parts : null;
+}
 
 const SOURCE_LABELS: Record<string, string> = {
   widget: 'Chat Widget',
@@ -67,6 +89,12 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
       return meta.ai_auto_reply ? meta : null;
     } catch { return null; }
   }, [message.metadata]);
+
+  // Highlight @mentions in internal notes
+  const mentionParts = useMemo(() => {
+    if (!isInternal) return null;
+    return renderMentionHighlights(displayContent);
+  }, [displayContent, isInternal]);
 
   const [sourcesOpen, setSourcesOpen] = useState(false);
 
@@ -137,7 +165,11 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                   </span>
                 </div>
                 <div className="prose-chat text-sm leading-relaxed text-amber-900 dark:text-amber-200">
-                  <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
+                  {mentionParts ? (
+                    <p className="whitespace-pre-wrap">{mentionParts}</p>
+                  ) : (
+                    <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
+                  )}
                 </div>
               </div>
             </TooltipTrigger>

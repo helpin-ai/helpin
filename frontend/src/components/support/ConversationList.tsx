@@ -47,7 +47,12 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     }
   }, [selectConversation, wsSend, workspaceId]);
 
-  const filters = statusFilter !== 'all' ? { status: statusFilter } : undefined;
+  const filters = useMemo(() => {
+    const f: Record<string, string> = {};
+    if (statusFilter !== 'all') f.status = statusFilter;
+    if (navFilter === 'mentions') f.filter = 'mentions';
+    return Object.keys(f).length > 0 ? f : undefined;
+  }, [statusFilter, navFilter]);
   const { data: response, isLoading, error } = useConversations(workspaceId, filters);
   const conversations = response?.data ?? [];
 
@@ -60,7 +65,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     } else if (navFilter === 'unassigned') {
       result = result.filter((c) => !c.assigned_agent_id && !c.opened_by_user_id);
     } else if (navFilter === 'mentions') {
-      // TODO: filter by @mentions once backend supports it — for now show all
+      // Backend filters via API param — no client-side filtering needed
     } else if (navFilter === 'ai_all') {
       result = result.filter((c) => c.ai_state != null);
     } else if (navFilter === 'ai_resolved') {

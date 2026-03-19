@@ -566,6 +566,7 @@ func main() {
 		wsPublisher,
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
+	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 
 	// Automation Rule Engine — wired after agent + story services to break circular deps.
 	ruleEngine := service.NewAutomationRuleEngine(

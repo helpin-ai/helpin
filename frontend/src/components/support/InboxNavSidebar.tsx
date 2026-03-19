@@ -1,4 +1,4 @@
-import { Bot, Inbox, Mail, UserX, Users, Circle, Clock, Pause, CheckCircle2, List, ArrowUpRight } from 'lucide-react';
+import { AtSign, Bot, Inbox, Mail, UserX, Users, Circle, Clock, Pause, CheckCircle2, List, ArrowUpRight } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { cn } from '@/lib/utils';
@@ -40,6 +40,7 @@ export function InboxNavSidebar({ teams }: InboxNavSidebarProps) {
         <NavItem icon={Inbox} label="My Inbox" active={navFilter === 'my_inbox'} onClick={() => setNavFilter('my_inbox')} />
         <NavItem icon={Mail} label="All Conversations" active={navFilter === 'all'} onClick={() => setNavFilter('all')} />
         <NavItem icon={UserX} label="Unassigned" active={navFilter === 'unassigned'} onClick={() => setNavFilter('unassigned')} />
+        <NavItem icon={AtSign} label="Mentions" active={navFilter === 'mentions'} onClick={() => setNavFilter('mentions')} />
 
         <Separator className="my-2" />
         <h3 className="mb-1 px-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

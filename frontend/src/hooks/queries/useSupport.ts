@@ -47,7 +47,7 @@ export function useRegenerateWidgetKey(workspaceId: string) {
 
 // ── Conversations ───────────────────────────────────────────────────
 
-export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string }) {
+export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string; filter?: string }) {
   return useQuery({
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => {

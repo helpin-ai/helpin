@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -387,6 +388,20 @@ func (r *SupportConversationRepository) UpdateSubject(ctx context.Context, id, s
 		return fmt.Errorf("update conversation subject: %w", err)
 	}
 	return nil
+}
+
+// ListConversationIDsWithMentions returns conversation IDs where the given user was mentioned in internal notes.
+func (r *SupportConversationRepository) ListConversationIDsWithMentions(ctx context.Context, workspaceID, userID string) ([]string, error) {
+	filterJSON, _ := json.Marshal(map[string][]string{"mentioned_user_ids": {userID}})
+	var ids []string
+	if err := r.db.WithContext(ctx).
+		Table("support_messages").
+		Where("workspace_id = ? AND is_internal = true AND metadata::jsonb @> ?::jsonb", workspaceID, string(filterJSON)).
+		Distinct().
+		Pluck("conversation_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("list conversations with mentions: %w", err)
+	}
+	return ids, nil
 }
 
 // ListByIDs returns conversations by ID for a workspace.

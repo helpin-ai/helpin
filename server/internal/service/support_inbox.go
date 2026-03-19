@@ -33,7 +33,9 @@ type SupportInboxService struct {
 	docsCollectionRepo      *repository.DocsCollectionRepository
 	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
-	supportAIService        *SupportAIService
+	supportAIService    *SupportAIService
+	notificationService *NotificationService
+	workspaceRepo       *repository.WorkspaceRepository
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -90,6 +92,16 @@ func (s *SupportInboxService) SetSupportAIService(aiService *SupportAIService) *
 		return nil
 	}
 	s.supportAIService = aiService
+	return s
+}
+
+// SetNotificationService injects the notification service and workspace repo for @mention support.
+func (s *SupportInboxService) SetNotificationService(ns *NotificationService, wr *repository.WorkspaceRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.notificationService = ns
+	s.workspaceRepo = wr
 	return s
 }
 
@@ -497,6 +509,16 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
+	// Pre-resolve @mentions for internal notes.
+	var mentionedUserIDs []string
+	if req.IsInternal && s.notificationService != nil && s.workspaceRepo != nil {
+		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(req.Content), derefString(senderUserID), nil)
+		if err != nil {
+			slog.ErrorContext(ctx, "resolve support mentions", "error", err, "conversation_id", ticketID)
+		}
+		mentionedUserIDs = ids
+	}
+
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,
 		ConversationID:    ticketID,
@@ -510,11 +532,26 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		MessageType:       messageType,
 	}
 
+	if len(mentionedUserIDs) > 0 {
+		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
+		msg.Metadata = string(metaJSON)
+	}
+
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
+
+	// Emit mention notifications after message creation.
+	if len(mentionedUserIDs) > 0 {
+		conv, _ := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
+		subject := "Support conversation"
+		if conv != nil {
+			subject = conv.Subject
+		}
+		ProcessSupportMentions(ctx, s.notificationService, workspaceID, ticketID, subject, msg.Content, derefString(senderUserID), mentionedUserIDs)
+	}
 
 	// Push visitor-scoped list refresh for widget unread when an agent/user/AI reply is sent.
 	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" {
@@ -688,6 +725,37 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen-3]) + "..."
+}
+
+// ListConversationsWithMentions returns conversations where the given user was mentioned.
+func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context, workspaceID, userID string) (*model.ConversationListResponse, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	ids, err := s.conversationRepo.ListConversationIDsWithMentions(ctx, workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return &model.ConversationListResponse{
+			Data: []model.SupportConversation{},
+		}, nil
+	}
+	conversations, err := s.conversationRepo.ListByIDs(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	return &model.ConversationListResponse{
+		Data:       conversations,
+		Total:      len(conversations),
+		Page:       1,
+		PerPage:    len(conversations),
+		TotalPages: 1,
+		Meta:       model.ConversationListMeta{},
+	}, nil
 }
 
 func (s *SupportInboxService) assignConversationAgent(ctx context.Context, workspaceID, conversationID, agentID string, actorID *string) error {

@@ -4,10 +4,11 @@ import type { SupportConversation, SupportMessage, CreateConversationRequest, Cr
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const supportService = {
-  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string }) => {
+  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string; filter?: string }) => {
     let path = `/support/inbox/conversations${qs(workspaceId)}`;
     if (filters?.status) path += `&status=${filters.status}`;
     if (filters?.priority) path += `&priority=${filters.priority}`;
+    if (filters?.filter) path += `&filter=${filters.filter}`;
     return api.get<ConversationListResponse>(path);
   },
   getConversation: (workspaceId: string, id: string) =>

@@ -66,8 +66,8 @@ const NO_AGENT_VALUE = '__none__';
 
 function PreviewLayout({ children, preview }: { children: ReactNode; preview: ReactNode }) {
   return (
-    <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="min-w-0">
+    <div className="grid h-full grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="flex min-w-0 flex-col overflow-hidden">
         {children}
       </div>
 
@@ -359,8 +359,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
   return (
     <PreviewLayout preview={previewElement}>
-      <div className="flex h-full flex-col">
-        <div className="flex-1 space-y-3 overflow-auto">
+      <div className="flex flex-1 flex-col overflow-auto">
+        <div className="flex-1 space-y-3 p-4">
         {/* Widget Installation */}
         <div className="overflow-hidden rounded-lg border border-border bg-background">
           <button
@@ -1104,7 +1104,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Sticky Footer */}
-        <div className="sticky bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="sticky bottom-0 z-10 shrink-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="flex h-14 items-center justify-end gap-3 px-4">
             <Button
               variant="outline"
