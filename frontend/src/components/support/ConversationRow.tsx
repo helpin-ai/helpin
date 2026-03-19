@@ -81,11 +81,11 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
     <button
       type="button"
       onClick={onSelect}
-      className={`w-full text-left border-b px-3 py-2.5 transition-colors hover:bg-muted/50 ${
+      className={`w-full overflow-hidden text-left border-b px-3 py-2.5 transition-colors hover:bg-muted/50 ${
         isSelected ? 'bg-muted border-l-2 border-l-primary' : isUnread ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
       }`}
     >
-      <div className="flex items-start gap-2.5">
+      <div className="flex min-w-0 items-start gap-2.5">
         <div className="relative mt-0.5 shrink-0">
           <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
             {getInitial(displayName)}
