@@ -98,6 +98,7 @@ type PMRecurringTemplateConfig struct {
 	Weekdays             []int      `json:"weekdays,omitempty"`
 	DayOfMonth           *int       `json:"day_of_month,omitempty"`
 	CompletionEvent      string     `json:"completion_event,omitempty"`
+	CompletionStateIDs   []string   `json:"completion_state_ids,omitempty"`
 	DueDateMode          string     `json:"due_date_mode,omitempty"`
 	DueOffsetDays        *int       `json:"due_offset_days,omitempty"`
 	StartsOn             *time.Time `json:"starts_on,omitempty"`

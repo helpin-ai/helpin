@@ -515,7 +515,7 @@ func (s *PMRecurringTemplateService) HandleStoryProgress(ctx context.Context, st
 	if cfg.ScheduleType != model.PMRecurringScheduleTypeCompletion {
 		return nil
 	}
-	matched, err := s.storyMatchesCompletionEvent(ctx, story, cfg.CompletionEvent)
+	matched, err := s.storyMatchesCompletionEvent(ctx, story, cfg)
 	if err != nil || !matched {
 		return err
 	}
@@ -1158,8 +1158,19 @@ func optionalString(value string) *string {
 	return &trimmed
 }
 
-func (s *PMRecurringTemplateService) storyMatchesCompletionEvent(ctx context.Context, story *model.PMStory, completionEvent string) (bool, error) {
-	switch completionEvent {
+func (s *PMRecurringTemplateService) storyMatchesCompletionEvent(ctx context.Context, story *model.PMStory, cfg model.PMRecurringTemplateConfig) (bool, error) {
+	// If specific state IDs are configured, check if the story's current state matches any.
+	if len(cfg.CompletionStateIDs) > 0 {
+		for _, id := range cfg.CompletionStateIDs {
+			if story.WorkflowStateID == id {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+
+	// Fallback to legacy completion event matching.
+	switch cfg.CompletionEvent {
 	case model.PMRecurringCompletionEventCompleted:
 		return story.Completed, nil
 	case model.PMRecurringCompletionEventDoneState:

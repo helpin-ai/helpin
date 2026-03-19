@@ -1269,6 +1269,7 @@ export function CreateStoryModal({
                     sprint_assignment_mode: 'none',
                   },
                 }}
+                workflowStates={workflow?.states ?? []}
                 submitLabel="Apply"
                 onCancel={() => setRecurringDialogOpen(false)}
                 onSubmit={(value) => {

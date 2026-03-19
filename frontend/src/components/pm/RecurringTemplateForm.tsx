@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react';
-import { CalendarDays, CheckCircle2, Clock3, RotateCw } from 'lucide-react';
+import { CalendarDays, Clock3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type {
-  RecurringCompletionEvent,
   RecurringDueDateMode,
   RecurringFrequency,
   RecurringScheduleType,
   RecurringSprintAssignmentMode,
   RecurringTemplateConfig,
+  WorkflowState,
 } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +21,7 @@ export interface RecurringTemplateFormValue {
 
 interface RecurringTemplateFormProps {
   initialValue?: Partial<RecurringTemplateFormValue>;
+  workflowStates?: WorkflowState[];
   submitLabel?: string;
   saving?: boolean;
   onSubmit: (value: RecurringTemplateFormValue) => void;
@@ -53,6 +54,7 @@ function chip(active: boolean) {
 
 export function RecurringTemplateForm({
   initialValue,
+  workflowStates = [],
   submitLabel = 'Save recurrence',
   saving = false,
   onSubmit,
@@ -66,7 +68,7 @@ export function RecurringTemplateForm({
   const [interval, setInterval] = useState(initialConfig?.interval ?? 1);
   const [weekdays, setWeekdays] = useState<number[]>(initialConfig?.weekdays ?? [1]);
   const [dayOfMonth, setDayOfMonth] = useState(initialConfig?.day_of_month ?? 1);
-  const [completionEvent, setCompletionEvent] = useState<RecurringCompletionEvent>(initialConfig?.completion_event ?? 'done_state');
+  const [completionStateIDs, setCompletionStateIDs] = useState<string[]>(initialConfig?.completion_state_ids ?? []);
   const [dueDateMode, setDueDateMode] = useState<RecurringDueDateMode>(initialConfig?.due_date_mode ?? 'scheduled_date');
   const [dueOffsetDays, setDueOffsetDays] = useState(initialConfig?.due_offset_days ?? 1);
   const [startsOn, setStartsOn] = useState(toDateInput(initialConfig?.starts_on));
@@ -110,7 +112,11 @@ export function RecurringTemplateForm({
       if (frequency === 'weekly') config.weekdays = normalizedWeekdays;
       if (frequency === 'monthly' || frequency === 'yearly') config.day_of_month = Math.min(31, Math.max(1, dayOfMonth || 1));
     } else {
-      config.completion_event = completionEvent;
+      if (completionStateIDs.length > 0) {
+        config.completion_state_ids = completionStateIDs;
+      } else {
+        config.completion_event = 'done_state';
+      }
     }
 
     if (dueDateMode === 'offset_days') config.due_offset_days = Math.max(1, dueOffsetDays || 1);
@@ -202,16 +208,45 @@ export function RecurringTemplateForm({
           )}
         </div>
       ) : (
-        <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-3">
-          <Label>Event</Label>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={chip(completionEvent === 'done_state')} onClick={() => setCompletionEvent('done_state')}>
-              Moved to Done
-            </button>
-            <button type="button" className={chip(completionEvent === 'completed')} onClick={() => setCompletionEvent('completed')}>
-              Marked complete
-            </button>
-          </div>
+        <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+          <Label>Trigger when story moves to</Label>
+          {workflowStates.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {workflowStates.map((state) => {
+                const selected = completionStateIDs.includes(state.id);
+                return (
+                  <button
+                    key={state.id}
+                    type="button"
+                    onClick={() => {
+                      setCompletionStateIDs((prev) =>
+                        selected ? prev.filter((id) => id !== state.id) : [...prev, state.id]
+                      );
+                    }}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                      selected
+                        ? 'border-primary/40 bg-primary/10 text-primary'
+                        : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
+                    )}
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: state.color || '#9ca3af' }}
+                    />
+                    {state.name}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No workflow states available. Select a team first.</p>
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            {completionStateIDs.length === 0
+              ? 'Select one or more states. A new story is created when the current one enters any selected state.'
+              : `Triggers on: ${completionStateIDs.length} state${completionStateIDs.length === 1 ? '' : 's'} selected`}
+          </p>
         </div>
       )}
 

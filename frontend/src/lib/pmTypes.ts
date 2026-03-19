@@ -519,6 +519,7 @@ export interface RecurringTemplateConfig {
   weekdays?: number[];
   day_of_month?: number;
   completion_event?: RecurringCompletionEvent;
+  completion_state_ids?: string[];
   due_date_mode?: RecurringDueDateMode;
   due_offset_days?: number;
   starts_on?: string;
