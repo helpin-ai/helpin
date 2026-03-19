@@ -95,3 +95,15 @@ func (r *AutomationRuleRepository) ListMatchingRules(ctx context.Context, worksp
 	}
 	return rules, nil
 }
+
+// ListEnabledCronRules returns all enabled cron rules across all workspaces.
+func (r *AutomationRuleRepository) ListEnabledCronRules(ctx context.Context) ([]model.AutomationRule, error) {
+	var rules []model.AutomationRule
+	if err := r.db.WithContext(ctx).
+		Where("trigger_type = ? AND enabled = true", model.TriggerCron).
+		Order("workspace_id ASC, position ASC").
+		Find(&rules).Error; err != nil {
+		return nil, fmt.Errorf("list enabled cron rules: %w", err)
+	}
+	return rules, nil
+}

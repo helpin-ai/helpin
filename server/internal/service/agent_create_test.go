@@ -28,9 +28,6 @@ func TestCreateAgentDerivesDefaultsFromAgentClass(t *testing.T) {
 		t.Fatalf("CreateAgent returned error: %v", err)
 	}
 
-	if created.AgentKind != "llm" {
-		t.Fatalf("expected llm agent kind, got %q", created.AgentKind)
-	}
 	if created.Role != "Engineer" {
 		t.Fatalf("expected default role Engineer, got %q", created.Role)
 	}
@@ -42,7 +39,7 @@ func TestCreateAgentDerivesDefaultsFromAgentClass(t *testing.T) {
 	}
 }
 
-func TestCreateHumanAgentDerivesHumanDefaults(t *testing.T) {
+func TestCreateAgentRejectsHumanClass(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
 	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
@@ -52,19 +49,8 @@ func TestCreateHumanAgentDerivesHumanDefaults(t *testing.T) {
 		wsPublisher: nil,
 	}
 
-	created, err := svc.CreateAgent(context.Background(), modelCreateAgentRequest("human"), "user-1")
-	if err != nil {
-		t.Fatalf("CreateAgent returned error: %v", err)
-	}
-
-	if created.AgentKind != "human" {
-		t.Fatalf("expected human agent kind, got %q", created.AgentKind)
-	}
-	if created.Role != "Human" {
-		t.Fatalf("expected default role Human, got %q", created.Role)
-	}
-	if created.Model != nil || created.SystemPrompt != nil || created.PlanningNotes != nil {
-		t.Fatalf("expected human agent to have no llm-specific fields, got %+v", created)
+	if _, err := svc.CreateAgent(context.Background(), modelCreateAgentRequest("human"), "user-1"); err == nil {
+		t.Fatal("expected human agent class to be rejected")
 	}
 }
 
@@ -91,11 +77,9 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
-			agent_kind TEXT NOT NULL,
 			agent_class TEXT NOT NULL,
 			role TEXT,
 			status TEXT NOT NULL,
-			user_id TEXT,
 			runtime_kind TEXT NOT NULL,
 			capability_profile TEXT NOT NULL,
 			skills TEXT NOT NULL DEFAULT '[]',

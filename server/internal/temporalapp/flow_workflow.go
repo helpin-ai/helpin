@@ -73,7 +73,7 @@ func FlowRunWorkflow(ctx workflow.Context, input FlowRunWorkflowInput) error {
 	// these changes can continue replaying deterministically.
 	signalWaitDeadlineVersion := workflow.GetVersion(ctx, flowChangeIDSignalWaitDeadline, workflow.DefaultVersion, 1)
 	reconcileIntervalVersion := workflow.GetVersion(ctx, flowChangeIDReconcileInterval, workflow.DefaultVersion, 1)
-	genericPlatformVersion := workflow.GetVersion(ctx, flowChangeIDGenericPlatform, workflow.DefaultVersion, 1)
+	_ = workflow.GetVersion(ctx, flowChangeIDGenericPlatform, workflow.DefaultVersion, 1)
 
 	deadlineEnabled := signalWaitDeadlineVersion != workflow.DefaultVersion
 	var deadline time.Time
@@ -97,10 +97,7 @@ func FlowRunWorkflow(ctx workflow.Context, input FlowRunWorkflowInput) error {
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
-	bootstrapActivity := "FlowRuntimeActivities.BootstrapEpicPlanningRunActivity"
-	if genericPlatformVersion != workflow.DefaultVersion {
-		bootstrapActivity = "FlowRuntimeActivities.BootstrapRunActivity"
-	}
+	bootstrapActivity := "FlowRuntimeActivities.BootstrapRunActivity"
 	if err := workflow.ExecuteActivity(ctx, bootstrapActivity, input.FlowRunID, input.ActorID).Get(ctx, nil); err != nil {
 		logger.Error("bootstrap flow run failed", "flow_run_id", input.FlowRunID, "error", err)
 		if loadErr := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.LoadRunStateActivity", input.FlowRunID).Get(ctx, &state); loadErr != nil {
@@ -174,38 +171,17 @@ func FlowRunWorkflow(ctx workflow.Context, input FlowRunWorkflowInput) error {
 			case FlowSignalTypeNodeAction:
 				switch sig.Action {
 				case model.FlowActionApprove:
-					if genericPlatformVersion != workflow.DefaultVersion {
-						if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.HandleApprovalActionActivity", input.FlowRunID, sig.ActorID, sig.Action, sig.Payload).Get(ctx, nil); err != nil {
-							logger.Error("generic approval activity failed", "flow_run_id", input.FlowRunID, "error", err)
-							continue
-						}
-					} else if state.CurrentNodeID == model.FlowNodeSpecApproval {
-						if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.ApproveSpecNodeActivity", input.FlowRunID, sig.ActorID, sig.Payload).Get(ctx, nil); err != nil {
-							logger.Error("approve spec activity failed", "flow_run_id", input.FlowRunID, "error", err)
-							continue
-						}
-					} else if state.CurrentNodeID == model.FlowNodePlanApproval {
-						if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.ApprovePlanNodeActivity", input.FlowRunID, sig.ActorID, sig.Payload).Get(ctx, nil); err != nil {
-							logger.Error("approve plan activity failed", "flow_run_id", input.FlowRunID, "error", err)
-							continue
-						}
-					}
-				case model.FlowActionRequestChanges:
-					if genericPlatformVersion == workflow.DefaultVersion {
+					if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.HandleApprovalActionActivity", input.FlowRunID, sig.ActorID, sig.Action, sig.Payload).Get(ctx, nil); err != nil {
+						logger.Error("generic approval activity failed", "flow_run_id", input.FlowRunID, "error", err)
 						continue
 					}
+				case model.FlowActionRequestChanges:
 					if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.HandleApprovalActionActivity", input.FlowRunID, sig.ActorID, sig.Action, sig.Payload).Get(ctx, nil); err != nil {
 						logger.Error("request changes activity failed", "flow_run_id", input.FlowRunID, "error", err)
 						continue
 					}
 				case model.FlowActionReject:
-					activityName := "FlowRuntimeActivities.RejectApprovalNodeActivity"
-					args := []any{input.FlowRunID, sig.ActorID}
-					if genericPlatformVersion != workflow.DefaultVersion {
-						activityName = "FlowRuntimeActivities.HandleApprovalActionActivity"
-						args = []any{input.FlowRunID, sig.ActorID, sig.Action, sig.Payload}
-					}
-					if err := workflow.ExecuteActivity(ctx, activityName, args...).Get(ctx, nil); err != nil {
+					if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.HandleApprovalActionActivity", input.FlowRunID, sig.ActorID, sig.Action, sig.Payload).Get(ctx, nil); err != nil {
 						logger.Error("reject approval activity failed", "flow_run_id", input.FlowRunID, "error", err)
 						continue
 					}
@@ -225,14 +201,6 @@ func FlowRunWorkflow(ctx workflow.Context, input FlowRunWorkflowInput) error {
 				logger.Error("load flow state failed", "flow_run_id", input.FlowRunID, "error", err)
 			}
 		case model.FlowStatusRunning:
-			if genericPlatformVersion == workflow.DefaultVersion && state.CurrentNodeID != model.FlowNodeStoryPlanning {
-				if err := workflow.ExecuteActivity(ctx, "FlowRuntimeActivities.LoadRunStateActivity", input.FlowRunID).Get(ctx, &state); err != nil {
-					logger.Error("load flow state failed", "flow_run_id", input.FlowRunID, "error", err)
-					workflow.Sleep(ctx, 10*time.Second)
-				}
-				continue
-			}
-
 			// Child executions signal the parent flow on completion. This timer is only
 			// a reconciliation fallback in case a child signal is missed.
 			reconcileAfter := nextReconcileDelay(ctx, deadlineEnabled, deadline, reconcileIntervalVersion)

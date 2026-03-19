@@ -3,12 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 	"github.com/helpin-ai/helpin/server/internal/worker"
@@ -45,130 +46,16 @@ type epicPlanningRunSummary struct {
 }
 
 type createdPlanningStory struct {
-	StoryID            string                    `json:"story_id"`
-	Ref                string                    `json:"ref,omitempty"`
-	Name               string                    `json:"name"`
-	StoryType          string                    `json:"story_type"`
-	Estimate           *int                      `json:"estimate,omitempty"`
-	Priority           *string                   `json:"priority,omitempty"`
-	AcceptanceCriteria []string                  `json:"acceptance_criteria,omitempty"`
-	DependencyRefs     []string                  `json:"dependency_refs,omitempty"`
-	SourceRefs         []model.PlanningSourceRef `json:"source_refs,omitempty"`
-}
-
-// RunEpicAgent retains backward compatibility and defaults epic planning to draft_spec.
-func (s *AgentService) RunEpicAgent(ctx context.Context, workspaceID, epicID, actorID, additionalContext string) (*model.AgentRun, error) {
-	return s.DraftEpicSpec(ctx, workspaceID, epicID, actorID, additionalContext)
-}
-
-// DraftEpicSpec starts a staged planning run that drafts or refreshes the canonical spec doc.
-func (s *AgentService) DraftEpicSpec(ctx context.Context, workspaceID, epicID, actorID, additionalContext string) (*model.AgentRun, error) {
-	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
-	if err != nil {
-		return nil, fmt.Errorf("get epic: %w", err)
-	}
-	if epicWithStats == nil {
-		return nil, fmt.Errorf("epic not found")
-	}
-	epic := &epicWithStats.Epic
-	if epic.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("epic not found")
-	}
-	if epic.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("epic not found")
-	}
-	if epic.OrchestratorAgentID == nil || strings.TrimSpace(*epic.OrchestratorAgentID) == "" {
-		return nil, fmt.Errorf("no product planner assigned to this epic")
-	}
-	if epic.PlanningRepositoryID == nil || strings.TrimSpace(*epic.PlanningRepositoryID) == "" {
-		return nil, fmt.Errorf("drafting a product spec requires an epic planning repository")
-	}
-
-	specDoc, err := s.ensureEpicSpecDocument(ctx, workspaceID, epic, actorID)
-	if err != nil {
-		return nil, err
-	}
-
-	run, err := s.startEpicPlanningRun(ctx, workspaceID, epic, actorID, *epic.OrchestratorAgentID, planningRunInput{
-		Stage:             model.PlanningStageDraftSpec,
-		AdditionalContext: strings.TrimSpace(additionalContext),
-		SpecDocumentID:    specDoc.ID,
-	}, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	_ = s.activitySvc.Log(ctx, workspaceID, "epic", epicID, &actorID, "updated", strPtr("planning_stage"), nil, strPtr(model.PlanningStageDraftSpec), nil)
-	s.publishRunEvent(run, actorID)
-
-	return run, nil
-}
-
-// ClarifyEpicSpec persists human decisions on open questions and assumptions before approval.
-func (s *AgentService) ClarifyEpicSpec(ctx context.Context, workspaceID, epicID, actorID string, req model.ClarifyEpicSpecRequest) (*model.ApprovedSpecSummary, error) {
-	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
-	if err != nil {
-		return nil, fmt.Errorf("get epic: %w", err)
-	}
-	if epicWithStats == nil {
-		return nil, fmt.Errorf("epic not found")
-	}
-	epic := &epicWithStats.Epic
-	if epic.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("epic not found")
-	}
-	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
-		return nil, fmt.Errorf("epic does not have a product spec document yet")
-	}
-
-	current := model.ParseSpecClarifications(epic.SpecClarifications)
-	if len(current) == 0 {
-		epic.PlanningState = model.EpicPlanningStateAwaitingSpecApproval
-		if err := s.epicRepo.Update(ctx, epic); err != nil {
-			return nil, err
-		}
-		return &model.ApprovedSpecSummary{
-			Stage:          model.PlanningStageDraftSpec,
-			SpecDocumentID: *epic.SpecDocumentID,
-			Clarifications: []model.SpecClarificationItem{},
-		}, nil
-	}
-
-	updated, pendingCount, err := validateSpecClarifications(req.Clarifications, current)
-	if err != nil {
-		return nil, err
-	}
-
-	epic.SpecClarifications = model.MarshalSpecClarifications(updated)
-	if pendingCount == 0 {
-		now := time.Now()
-		epic.SpecClarifiedAt = &now
-		epic.SpecClarifiedBy = &actorID
-		epic.PlanningState = model.EpicPlanningStateAwaitingSpecApproval
-	} else {
-		epic.SpecClarifiedAt = nil
-		epic.SpecClarifiedBy = nil
-		epic.PlanningState = model.EpicPlanningStateAwaitingClarification
-	}
-	if err := s.epicRepo.Update(ctx, epic); err != nil {
-		return nil, err
-	}
-
-	_ = s.activitySvc.Log(ctx, workspaceID, "epic", epicID, &actorID, "updated", strPtr("spec_clarifications"), nil, nil, nil)
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "updated",
-		Entity:      "epic",
-		EntityID:    epicID,
-		WorkspaceID: workspaceID,
-		ActorID:     actorID,
-	})
-
-	return &model.ApprovedSpecSummary{
-		Stage:               model.PlanningStageDraftSpec,
-		SpecDocumentID:      *epic.SpecDocumentID,
-		Clarifications:      updated,
-		PendingClarifyCount: pendingCount,
-	}, nil
+	StoryID             string                    `json:"story_id"`
+	Ref                 string                    `json:"ref,omitempty"`
+	Name                string                    `json:"name"`
+	StoryType           string                    `json:"story_type"`
+	Estimate            *int                      `json:"estimate,omitempty"`
+	Priority            *string                   `json:"priority,omitempty"`
+	AcceptanceCriteria  []string                  `json:"acceptance_criteria,omitempty"`
+	DependencyRefs      []string                  `json:"dependency_refs,omitempty"`
+	SourceRefs          []model.PlanningSourceRef `json:"source_refs,omitempty"`
+	ImplementationBrief json.RawMessage           `json:"implementation_brief,omitempty"`
 }
 
 // ApproveEpicSpec approves the current or specified spec version and clears any pending draft-spec run.
@@ -252,44 +139,6 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 	}, nil
 }
 
-// PlanEpicStories starts a staged planning run from an approved product spec.
-func (s *AgentService) PlanEpicStories(ctx context.Context, workspaceID, epicID, actorID, additionalContext string) (*model.AgentRun, error) {
-	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
-	if err != nil {
-		return nil, fmt.Errorf("get epic: %w", err)
-	}
-	if epicWithStats == nil {
-		return nil, fmt.Errorf("epic not found")
-	}
-	epic := &epicWithStats.Epic
-	if epic.OrchestratorAgentID == nil || strings.TrimSpace(*epic.OrchestratorAgentID) == "" {
-		return nil, fmt.Errorf("no product planner assigned to this epic")
-	}
-	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
-		return nil, fmt.Errorf("epic does not have a product spec document yet")
-	}
-	if epic.ApprovedSpecVersionID == nil || strings.TrimSpace(*epic.ApprovedSpecVersionID) == "" {
-		return nil, fmt.Errorf("planning requires an approved spec version")
-	}
-	if epic.PlanningRepositoryID == nil || strings.TrimSpace(*epic.PlanningRepositoryID) == "" {
-		return nil, fmt.Errorf("planning requires an epic planning repository")
-	}
-
-	run, err := s.startEpicPlanningRun(ctx, workspaceID, epic, actorID, *epic.OrchestratorAgentID, planningRunInput{
-		Stage:             model.PlanningStagePlanStories,
-		AdditionalContext: strings.TrimSpace(additionalContext),
-		SpecDocumentID:    *epic.SpecDocumentID,
-		SpecVersionID:     *epic.ApprovedSpecVersionID,
-	}, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	_ = s.activitySvc.Log(ctx, workspaceID, "epic", epicID, &actorID, "updated", strPtr("planning_stage"), nil, strPtr(model.PlanningStagePlanStories), nil)
-	s.publishRunEvent(run, actorID)
-	return run, nil
-}
-
 // ConfirmEpicRun confirms a story plan, creates stories, and writes dependency links.
 func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, runID, actorID string, req model.ConfirmPlanningRequest) ([]model.PMStory, error) {
 	run, err := s.GetAgentRun(ctx, workspaceID, runID)
@@ -346,6 +195,40 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, err
 	}
 
+	enablerCount := 0
+	for _, s := range proposedStories {
+		if s.SliceType == "enabler" {
+			enablerCount++
+		}
+	}
+	if enablerCount > 2 {
+		slog.Warn("high enabler count in story plan",
+			"enabler_count", enablerCount,
+			"total_count", len(proposedStories),
+			"epic_id", epicID)
+	}
+
+	// Warn on overlapping file modifications across non-dependent stories.
+	fileOwners := map[string]string{} // path -> story ref
+	for _, ps := range proposedStories {
+		if ps.ImplementationBrief == nil {
+			continue
+		}
+		depSet := make(map[string]bool, len(ps.DependencyRefs))
+		for _, d := range ps.DependencyRefs {
+			depSet[d] = true
+		}
+		for _, f := range ps.ImplementationBrief.FilesToModify {
+			if owner, exists := fileOwners[f.Path]; exists && !depSet[owner] {
+				slog.Warn("overlapping file modification without dependency edge",
+					"file", f.Path, "story_a", owner, "story_b", ps.Ref, "epic_id", epicID)
+			}
+			if _, exists := fileOwners[f.Path]; !exists {
+				fileOwners[f.Path] = ps.Ref
+			}
+		}
+	}
+
 	externalIDs := make([]string, 0, len(proposedStories))
 	for idx, ps := range proposedStories {
 		externalIDs = append(externalIDs, planningStoryExternalID(runID, idx, ps.Ref))
@@ -368,8 +251,8 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	refToStory := make(map[string]model.PMStory, len(proposedStories))
 
 	for idx, ps := range proposedStories {
-		storyType := strings.TrimSpace(ps.StoryType)
-		if storyType == "" {
+		storyType := strings.ToLower(strings.TrimSpace(ps.StoryType))
+		if !isValidStoryType(storyType) {
 			storyType = model.PMStoryTypeFeature
 		}
 
@@ -397,28 +280,51 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 			}
 		}
 
-		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" {
-			if err := s.AssignAgentToStory(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
-				return nil, fmt.Errorf("assign agent to story %q: %w", detail.Story.Name, err)
+		var briefJSON json.RawMessage
+		briefFields := map[string]interface{}{}
+		if ps.SliceType != "" {
+			briefFields["slice_type"] = ps.SliceType
+		}
+		if ps.ImplementationBrief != nil {
+			if b, marshalErr := json.Marshal(ps.ImplementationBrief); marshalErr != nil {
+				slog.WarnContext(ctx, "marshal implementation brief", "error", marshalErr, "story_ref", ps.Ref)
+			} else {
+				briefFields["implementation_brief"] = b
+				briefJSON = b
 			}
-			detail, err = s.storyService.GetByID(ctx, detail.Story.ID)
-			if err != nil {
-				return nil, fmt.Errorf("reload story %q: %w", ps.Name, err)
+		}
+		if len(briefFields) > 0 {
+			if err := s.storyRepo.UpdateFields(ctx, detail.Story.ID, briefFields); err != nil {
+				slog.WarnContext(ctx, "failed to persist story brief fields",
+					"story_id", detail.Story.ID, "error", err)
+			}
+		}
+
+		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" && isValidUUID(*ps.AssignAgentID) {
+			if err := s.AssignAgentToStory(ctx, workspaceID, detail.Story.ID, *ps.AssignAgentID, actorID); err != nil {
+				slog.WarnContext(ctx, "skipping agent assignment for planned story",
+					"story", detail.Story.Name, "agent_id", *ps.AssignAgentID, "error", err)
+			} else {
+				detail, err = s.storyService.GetByID(ctx, detail.Story.ID)
+				if err != nil {
+					return nil, fmt.Errorf("reload story %q: %w", ps.Name, err)
+				}
 			}
 		}
 
 		created = append(created, detail.Story)
 		createdIDs = append(createdIDs, detail.Story.ID)
 		createdDetails = append(createdDetails, createdPlanningStory{
-			StoryID:            detail.Story.ID,
-			Ref:                ps.Ref,
-			Name:               detail.Story.Name,
-			StoryType:          detail.Story.StoryType,
-			Estimate:           detail.Story.Estimate,
-			Priority:           ps.Priority,
-			AcceptanceCriteria: slices.Clone(ps.AcceptanceCriteria),
-			DependencyRefs:     slices.Clone(ps.DependencyRefs),
-			SourceRefs:         append([]model.PlanningSourceRef(nil), ps.SourceRefs...),
+			StoryID:             detail.Story.ID,
+			Ref:                 ps.Ref,
+			Name:                detail.Story.Name,
+			StoryType:           detail.Story.StoryType,
+			Estimate:            detail.Story.Estimate,
+			Priority:            ps.Priority,
+			AcceptanceCriteria:  slices.Clone(ps.AcceptanceCriteria),
+			DependencyRefs:      slices.Clone(ps.DependencyRefs),
+			SourceRefs:          append([]model.PlanningSourceRef(nil), ps.SourceRefs...),
+			ImplementationBrief: briefJSON,
 		})
 		if strings.TrimSpace(ps.Ref) != "" {
 			refToStory[ps.Ref] = detail.Story
@@ -516,120 +422,6 @@ func planningStoryExternalID(runID string, index int, ref string) string {
 	return fmt.Sprintf("planning:%s:%03d", runID, index+1)
 }
 
-// KickoffEpicExecution starts story-level execution runs for selected stories from an approved plan.
-func (s *AgentService) KickoffEpicExecution(ctx context.Context, workspaceID, epicID, actorID string, req model.KickoffPlanningExecutionRequest) (*model.KickoffExecutionResult, error) {
-	run, err := s.GetAgentRun(ctx, workspaceID, req.RunID)
-	if err != nil {
-		return nil, err
-	}
-	if run.TargetType != "epic" || run.TargetID != epicID {
-		return nil, fmt.Errorf("run does not belong to this epic")
-	}
-
-	summary, err := decodePlanningRunSummary(run.OutputSummary)
-	if err != nil {
-		return nil, fmt.Errorf("run does not contain a valid planning summary")
-	}
-	if len(summary.CreatedStoryIDs) == 0 {
-		return nil, fmt.Errorf("run has not created any stories yet")
-	}
-
-	storyIDs := req.StoryIDs
-	if len(storyIDs) == 0 {
-		storyIDs = append([]string(nil), summary.CreatedStoryIDs...)
-	}
-	selected := make(map[string]createdPlanningStory, len(summary.CreatedStories))
-	for _, item := range summary.CreatedStories {
-		selected[item.StoryID] = item
-	}
-
-	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
-	if err != nil {
-		return nil, err
-	}
-	if epicWithStats == nil {
-		return nil, fmt.Errorf("epic not found")
-	}
-	epic := &epicWithStats.Epic
-
-	var specVersion *model.DocsVersion
-	if epic.ApprovedSpecVersionID != nil && *epic.ApprovedSpecVersionID != "" {
-		specVersion, _ = s.docsVersionRepo.GetByID(ctx, *epic.ApprovedSpecVersionID)
-	}
-
-	result := &model.KickoffExecutionResult{
-		Started: make([]model.PlanningExecutionStart, 0, len(storyIDs)),
-		Skipped: make([]model.PlanningExecutionSkip, 0),
-	}
-
-	for _, storyID := range storyIDs {
-		story, err := s.storyRepo.GetRawByID(ctx, storyID)
-		if err != nil || story == nil || story.EpicID == nil || *story.EpicID != epicID {
-			result.Skipped = append(result.Skipped, model.PlanningExecutionSkip{StoryID: storyID, Reason: "story_not_found"})
-			continue
-		}
-		if story.AssignedAgentID == nil || strings.TrimSpace(*story.AssignedAgentID) == "" {
-			result.Skipped = append(result.Skipped, model.PlanningExecutionSkip{StoryID: storyID, Reason: "story_has_no_assigned_agent"})
-			continue
-		}
-
-		agent, err := s.requireRunnableAgent(ctx, workspaceID, *story.AssignedAgentID, "story")
-		if err != nil {
-			result.Skipped = append(result.Skipped, model.PlanningExecutionSkip{StoryID: storyID, Reason: err.Error()})
-			continue
-		}
-		profile := worker.GetRuntimeProfile(agent.CapabilityProfile)
-		deliveryTarget, err := s.gitService.ResolveStoryDeliveryTargetForRun(ctx, workspaceID, storyID, profile)
-		if err != nil {
-			if errors.Is(err, ErrStoryDeliveryTargetRequired) {
-				result.Skipped = append(result.Skipped, model.PlanningExecutionSkip{StoryID: storyID, Reason: "story_has_no_delivery_target"})
-				continue
-			}
-			result.Skipped = append(result.Skipped, model.PlanningExecutionSkip{StoryID: storyID, Reason: err.Error()})
-			continue
-		}
-
-		planned := selected[storyID]
-		input, _ := json.Marshal(map[string]any{
-			"story_id":           storyID,
-			"additional_context": buildStoryExecutionBrief(epic, specVersion, planned),
-		})
-
-		run, err := s.createRun(ctx, createRunParams{
-			workspaceID: workspaceID,
-			agent:       agent,
-			profile:     profile,
-			targetType:  "story",
-			targetID:    storyID,
-			storyID:     &storyID,
-			actorID:     &actorID,
-			input:       input,
-			delivery:    deliveryTarget,
-		})
-		if err != nil {
-			result.Skipped = append(result.Skipped, model.PlanningExecutionSkip{StoryID: storyID, Reason: err.Error()})
-			continue
-		}
-		s.publishRunEvent(run, actorID)
-		result.Started = append(result.Started, model.PlanningExecutionStart{
-			StoryID:   storyID,
-			RunID:     run.ID,
-			StartedAt: run.CreatedAt,
-		})
-	}
-
-	if len(result.Started) > 0 {
-		epic.PlanningState = model.EpicPlanningStateExecutionStarted
-	} else {
-		epic.PlanningState = model.EpicPlanningStateReadyForExecution
-	}
-	if err := s.epicRepo.Update(ctx, epic); err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
 func (s *AgentService) StartEpicStoryPlanningForFlow(ctx context.Context, workspaceID, epicID, actorID, agentID, additionalContext, flowRunID, flowNodeRunID string) (*model.AgentRun, error) {
 	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
 	if err != nil {
@@ -691,14 +483,6 @@ func (s *AgentService) startEpicPlanningRun(ctx context.Context, workspaceID str
 		return nil, err
 	}
 	return run, nil
-}
-
-func (s *AgentService) resolvePlanningMethodology(ctx context.Context, workspaceID, requested string) string {
-	settings := s.resolvePlanningWorkspaceAISettings(ctx, workspaceID)
-	if strings.TrimSpace(requested) != "" {
-		return normalizePlanningMethodology(requested)
-	}
-	return settings.methodology
 }
 
 type planningWorkspaceAISettings struct {
@@ -975,41 +759,6 @@ func renderPlannedStoryDescription(story model.ProposedStory) string {
 	}
 	if len(sections) == 0 {
 		return ""
-	}
-	return strings.Join(sections, "\n\n")
-}
-
-func buildStoryExecutionBrief(epic *model.PMEpic, specVersion *model.DocsVersion, story createdPlanningStory) string {
-	var sections []string
-	sections = append(sections, "This story was created from an approved epic planning run. Use the context below while implementing it.")
-	if epic != nil {
-		sections = append(sections, fmt.Sprintf("Epic: %s", epic.Name))
-		if clarifications := resolvedSpecClarifications(model.ParseSpecClarifications(epic.SpecClarifications)); len(clarifications) > 0 {
-			sections = append(sections, "Resolved spec clarifications:\n"+renderSpecClarificationsBrief(clarifications))
-		}
-	}
-	if strings.TrimSpace(story.Name) != "" {
-		sections = append(sections, fmt.Sprintf("Planned story: %s", story.Name))
-	}
-	if len(story.AcceptanceCriteria) > 0 {
-		sections = append(sections, "Acceptance criteria:\n- "+strings.Join(story.AcceptanceCriteria, "\n- "))
-	}
-	if len(story.DependencyRefs) > 0 {
-		sections = append(sections, "Dependencies:\n- "+strings.Join(story.DependencyRefs, "\n- "))
-	}
-	if len(story.SourceRefs) > 0 {
-		lines := make([]string, 0, len(story.SourceRefs))
-		for _, ref := range story.SourceRefs {
-			label := strings.TrimSpace(ref.Title)
-			if label == "" {
-				label = ref.Type
-			}
-			lines = append(lines, "- "+label)
-		}
-		sections = append(sections, "Traceability:\n"+strings.Join(lines, "\n"))
-	}
-	if specVersion != nil && strings.TrimSpace(specVersion.ContentText) != "" {
-		sections = append(sections, "Approved spec snapshot:\n"+truncateString(specVersion.ContentText, 12000))
 	}
 	return strings.Join(sections, "\n\n")
 }
@@ -1331,4 +1080,10 @@ func decodePlanningRunSummary(raw json.RawMessage) (epicPlanningRunSummary, erro
 		return summary, err
 	}
 	return summary, nil
+}
+
+// isValidUUID checks whether s is a valid UUID string.
+func isValidUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
 }

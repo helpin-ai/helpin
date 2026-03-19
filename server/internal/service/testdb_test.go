@@ -277,6 +277,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			assigned_agent_id TEXT,
 			template_id TEXT,
 			external_id TEXT,
+			slice_type TEXT,
+			implementation_brief TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

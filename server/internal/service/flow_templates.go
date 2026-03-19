@@ -56,76 +56,9 @@ func lookupFlowTemplate(templateID string) (flowTemplateDefinition, bool) {
 
 func flowTemplateDefinitions() map[string]flowTemplateDefinition {
 	return map[string]flowTemplateDefinition{
-		model.FlowTemplateEpicPlanningV1: legacyEpicPlanningTemplate(),
 		model.FlowTemplateEpicPlanningV2: epicPlanningV2Template(),
 		model.FlowTemplateStoryCompletionV1: storyCompletionTemplate(),
 		model.FlowTemplateCRMDealReviewV1: crmDealReviewTemplate(),
-	}
-}
-
-func legacyEpicPlanningTemplate() flowTemplateDefinition {
-	nodes := []flowNodeDefinition{
-		{
-			spec: makeFlowNodeSpec(model.FlowNodeEnsureSpecDoc, model.FlowNodeTypeSystemAction, "", nil, nil, "docs.ensure_spec_doc", nil),
-			nextNodeID:  model.FlowNodeSpecPlanning,
-			commandName: "docs.ensure_spec_doc",
-		},
-		{
-			spec: makeFlowNodeSpec(model.FlowNodeSpecPlanning, model.FlowNodeTypeInteractiveAgent, model.InvocationModeInteractive, []string{model.FlowActionFinalize}, planningReadOnlyTools(), "", nil),
-			nextNodeID: model.FlowNodeSpecApproval,
-			buildInteractiveLaunch: func(ctx context.Context, svc *FlowService, run *model.FlowRun, nodeRun *model.FlowNodeRun, actorID string) (flowInteractiveLaunch, error) {
-				return svc.buildEpicSpecInteractiveLaunch(ctx, run, false)
-			},
-		},
-		{
-			spec: makeFlowNodeSpec(model.FlowNodeSpecApproval, model.FlowNodeTypeApprovalGate, "", []string{model.FlowActionApprove, model.FlowActionReject}, nil, "", nil),
-			nextNodeID:         model.FlowNodeStoryPlanning,
-			approveCommandName: "pm.approve_epic_spec",
-			buildApproveCommandInput: func(ctx context.Context, svc *FlowService, run *model.FlowRun, nodeRun *model.FlowNodeRun, actorID string, payload json.RawMessage) (json.RawMessage, error) {
-				return svc.buildApproveSpecCommandInput(payload)
-			},
-		},
-		{
-			spec: makeFlowNodeSpec(model.FlowNodeStoryPlanning, model.FlowNodeTypeAgentTask, model.InvocationModeAutonomous, nil, epicStoryPlanningTools(), "", nil),
-			nextNodeID: model.FlowNodePlanApproval,
-			retryable:  true,
-			buildAgentTaskLaunch: func(ctx context.Context, svc *FlowService, run *model.FlowRun, nodeRun *model.FlowNodeRun, actorID string) (flowAgentTaskLaunch, error) {
-				return svc.buildEpicStoryPlanningLaunch(ctx, run, model.FlowNodePlanApproval)
-			},
-		},
-		{
-			spec: makeFlowNodeSpec(model.FlowNodePlanApproval, model.FlowNodeTypeApprovalGate, "", []string{model.FlowActionApprove, model.FlowActionReject}, nil, "", nil),
-			nextNodeID: model.FlowNodeCreateStories,
-		},
-		{
-			spec: makeFlowNodeSpec(model.FlowNodeCreateStories, model.FlowNodeTypeSystemAction, "", nil, nil, "pm.create_story_batch", nil),
-			nextNodeID:  model.FlowNodeDone,
-			retryable:   true,
-			commandName: "pm.create_story_batch",
-			buildCommandInput: func(ctx context.Context, svc *FlowService, run *model.FlowRun, nodeRun *model.FlowNodeRun, actorID string) (json.RawMessage, error) {
-				return svc.buildCreateStoriesCommandInput(ctx, run)
-			},
-		},
-		{
-			spec: makeFlowNodeSpec(model.FlowNodeDone, model.FlowNodeTypeTerminal, "", nil, nil, "", nil),
-		},
-	}
-	return flowTemplateDefinition{
-		spec: model.FlowSpec{
-			TemplateID:        model.FlowTemplateEpicPlanningV1,
-			TemplateVersion:   1,
-			TargetType:        "epic",
-			SupportedTriggers: []string{model.FlowTriggerManual, model.FlowTriggerInternalDomainHook},
-			Nodes:             publicFlowNodes(nodes),
-		},
-		nodes:             toFlowNodeMap(nodes),
-		initialNodeID:     model.FlowNodeEnsureSpecDoc,
-		startRun: func(ctx context.Context, svc *FlowService, workspaceID, actorID string, req model.StartFlowRunRequest) (*model.FlowRunView, error) {
-			return svc.startConfiguredEpicPlanningFlow(ctx, workspaceID, actorID, req)
-		},
-		clearActiveTarget: func(ctx context.Context, svc *FlowService, run *model.FlowRun) error {
-			return svc.clearActiveTargetForRun(ctx, run)
-		},
 	}
 }
 

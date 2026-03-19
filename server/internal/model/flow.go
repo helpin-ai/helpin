@@ -6,7 +6,6 @@ import (
 )
 
 const (
-	FlowTemplateEpicPlanningV1 = "pm.epic_planning_v1"
 	FlowTemplateEpicPlanningV2 = "pm.epic_planning_v2"
 	FlowTemplateStoryCompletionV1 = "pm.story_completion_v1"
 	FlowTemplateCRMDealReviewV1   = "crm.deal_review_v1"
@@ -49,9 +48,7 @@ const (
 	InvocationModeAutonomous  = "autonomous"
 
 	FlowNodeEnsureSpecDoc = "ensure_spec_doc"
-	FlowNodeSpecPlanning  = "spec_planning"
 	FlowNodeSpecApproval  = "spec_approval"
-	FlowNodeStoryPlanning = "story_planning"
 	FlowNodePlanApproval  = "plan_approval"
 	FlowNodeCreateStories = "create_stories"
 	FlowNodeDone          = "done"

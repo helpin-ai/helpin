@@ -40,7 +40,6 @@ type Handlers struct {
 	SupportInbox       *handler.SupportInboxHandler
 	SupportInboxWidget *handler.SupportInboxWidgetHandler
 	Git                *handler.GitHandler
-	Orchestration      *handler.OrchestrationHandler
 	Docs               *handler.DocsHandler
 	Notification       *handler.NotificationHandler
 	UserNotifSettings  *handler.UserNotificationSettingsHandler
@@ -63,7 +62,6 @@ type Handlers struct {
 	CRMWritingProfile  *handler.CRMWritingProfileHandler
 	CRMSearch          *handler.CRMSearchHandler
 	CRMDealAutomation  *handler.CRMDealAutomationHandler
-	PlanningSession    *handler.PlanningSessionHandler
 	AutomationRule     *handler.AutomationRuleHandler
 	PMRoadmap          *handler.PMRoadmapHandler
 	Flow               *handler.FlowHandler
@@ -454,7 +452,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/stories", h.PMEpic.ListStories)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/agent-runs", h.Agent.ListEpicRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-runs", h.Flow.ListRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/flow-templates", h.Flow.ListTemplates)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/flow-runs", h.Flow.StartRun)
@@ -467,24 +464,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/nodes/{nodeRunId}/messages", h.Flow.ListInteractiveMessages)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/nodes/{nodeRunId}/messages", h.Flow.SendInteractiveMessage)
 				})
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/draft-spec", h.Agent.DraftEpicSpec)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/clarify-spec", h.Agent.ClarifyEpicSpec)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/approve-spec", h.Agent.ApproveEpicSpec)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/plan-stories", h.Agent.PlanEpicStories)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/kickoff-execution", h.Agent.KickoffEpicExecution)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/assign-orchestrator", h.Orchestration.AssignOrchestrator)
-
-				// Planning sessions (interactive epic planning)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{epicId}/planning-session", h.PlanningSession.Start)
-				r.Route("/planning-sessions/{sessionId}", func(r chi.Router) {
-					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.PlanningSession.Get)
-					r.With(requirePerm(authorization.PermPMRead)).Get("/messages", h.PlanningSession.GetMessages)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/messages", h.PlanningSession.SendMessage)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/finalize", h.PlanningSession.Finalize)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/abandon", h.PlanningSession.Abandon)
-				})
-
 				// Sprints (PM) — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints", h.PMSprint.List)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/sprints", h.PMSprint.Create)
@@ -603,7 +582,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/approve", h.Agent.ApproveRun)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/confirm-orchestration", h.Agent.ConfirmEpicRun)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/handoff", h.Agent.HandoffRun)
 			})
 

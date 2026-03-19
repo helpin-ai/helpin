@@ -21,15 +21,27 @@ type InternalCommandDefinition struct {
 }
 
 type InternalCommandService struct {
-	agentService      *AgentService
-	storyService      *PMStoryService
-	crmDealService    *CRMDealService
-	crmActivityService *CRMActivityService
-	docsContentService *DocsContentService
-	docsLinkService    *DocsLinkService
-	storyRepo         *repository.PMStoryRepository
-	storyLinkRepo     *repository.PMStoryLinkRepository
-	definitions       map[string]InternalCommandDefinition
+	agentService        *AgentService
+	storyService        *PMStoryService
+	crmDealService      *CRMDealService
+	crmActivityService  *CRMActivityService
+	docsContentService  *DocsContentService
+	docsLinkService     *DocsLinkService
+	pmAutomationService *PMAutomationService
+	gitService          *GitService
+	storyRepo           *repository.PMStoryRepository
+	storyLinkRepo       *repository.PMStoryLinkRepository
+	definitions         map[string]InternalCommandDefinition
+}
+
+// SetPMAutomationService sets the PM automation service (breaks circular dependency).
+func (s *InternalCommandService) SetPMAutomationService(svc *PMAutomationService) {
+	s.pmAutomationService = svc
+}
+
+// SetGitService sets the git service for delivery commands.
+func (s *InternalCommandService) SetGitService(svc *GitService) {
+	s.gitService = svc
 }
 
 func NewInternalCommandService(
@@ -404,6 +416,132 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, err
 			}
 			return mustJSON(map[string]any{"activity_id": activity.ID, "deal_id": dealID}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.auto_start_epic",
+		Module:               "pm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"epic", "story"},
+		ExposeAsTool:         false,
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.pmAutomationService == nil {
+				return nil, fmt.Errorf("pm automation service not configured")
+			}
+			var req struct {
+				EpicID        string `json:"epic_id"`
+				TargetStateID string `json:"target_state_id"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse auto_start_epic input: %w", err)
+				}
+			}
+			epicID := firstNonEmptyCommand(req.EpicID, meta.TargetID)
+			if epicID == "" {
+				return nil, fmt.Errorf("epic_id is required")
+			}
+			if req.TargetStateID == "" {
+				return nil, fmt.Errorf("target_state_id is required")
+			}
+			mutated, err := s.pmAutomationService.HandleEpicAutoStart(ctx, meta.WorkspaceID, epicID, req.TargetStateID)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{"epic_id": epicID, "mutated": mutated}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.auto_complete_epic",
+		Module:               "pm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"epic", "story"},
+		ExposeAsTool:         false,
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.pmAutomationService == nil {
+				return nil, fmt.Errorf("pm automation service not configured")
+			}
+			var req struct {
+				EpicID        string `json:"epic_id"`
+				TargetStateID string `json:"target_state_id"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse auto_complete_epic input: %w", err)
+				}
+			}
+			epicID := firstNonEmptyCommand(req.EpicID, meta.TargetID)
+			if epicID == "" {
+				return nil, fmt.Errorf("epic_id is required")
+			}
+			if req.TargetStateID == "" {
+				return nil, fmt.Errorf("target_state_id is required")
+			}
+			mutated, err := s.pmAutomationService.HandleEpicAutoComplete(ctx, meta.WorkspaceID, epicID, req.TargetStateID)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{"epic_id": epicID, "mutated": mutated}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.sprint_auto_create",
+		Module:               "pm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"sprint"},
+		ExposeAsTool:         false,
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.pmAutomationService == nil {
+				return nil, fmt.Errorf("pm automation service not configured")
+			}
+			s.pmAutomationService.RunSprintAutoCreate(ctx)
+			return mustJSON(map[string]any{"status": "completed"}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.sprint_move_unfinished",
+		Module:               "pm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"sprint"},
+		ExposeAsTool:         false,
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.pmAutomationService == nil {
+				return nil, fmt.Errorf("pm automation service not configured")
+			}
+			s.pmAutomationService.RunSprintMoveUnfinished(ctx)
+			return mustJSON(map[string]any{"status": "completed"}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "delivery.merge_branch",
+		Module:               "delivery",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"story"},
+		ExposeAsTool:         false,
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.gitService == nil {
+				return nil, fmt.Errorf("git service not configured")
+			}
+			var req struct {
+				StoryID      string `json:"story_id"`
+				TargetBranch string `json:"target_branch"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse merge_branch input: %w", err)
+				}
+			}
+			storyID := firstNonEmptyCommand(req.StoryID, meta.TargetID)
+			if storyID == "" {
+				return nil, fmt.Errorf("story_id is required")
+			}
+			if strings.TrimSpace(req.TargetBranch) == "" {
+				return nil, fmt.Errorf("target_branch is required")
+			}
+			if err := s.gitService.MergeBranch(ctx, meta.WorkspaceID, storyID, req.TargetBranch); err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{"story_id": storyID, "target_branch": req.TargetBranch}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
