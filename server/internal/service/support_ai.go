@@ -167,6 +167,15 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	if conv.AIState != nil && *conv.AIState == "escalated" {
 		return nil // already escalated
 	}
+	// Reopen resolved AI conversations — customer returned with a new message
+	if conv.AIState != nil && *conv.AIState == "resolved" {
+		pending := "pending"
+		_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+			"ai_state":            &pending,
+			"ai_resolved_at":      nil,
+			"ai_resolution_type":  nil,
+		})
+	}
 
 	// 3. Durable dedupe
 	processing, proceed := s.processingRepo.BeginAttempt(ctx, workspaceID, msg.ID, conversationID)
@@ -437,14 +446,39 @@ func (s *SupportAIService) generateResponse(
 		return nil, 0, err
 	}
 
+	// Strip markdown code fences that LLMs commonly wrap JSON in.
+	rawJSON := strings.TrimSpace(resp.Content)
+	if strings.HasPrefix(rawJSON, "```") {
+		// Remove opening fence (```json or ```)
+		if idx := strings.Index(rawJSON, "\n"); idx != -1 {
+			rawJSON = rawJSON[idx+1:]
+		}
+		// Remove closing fence
+		if idx := strings.LastIndex(rawJSON, "```"); idx != -1 {
+			rawJSON = rawJSON[:idx]
+		}
+		rawJSON = strings.TrimSpace(rawJSON)
+	}
+
 	var contract AIResponseContract
-	if err := json.Unmarshal([]byte(resp.Content), &contract); err != nil {
-		// If JSON parsing fails, treat as can't answer
+	if err := json.Unmarshal([]byte(rawJSON), &contract); err != nil {
+		slog.ErrorContext(ctx, "AI response JSON parse failed — treating as conversational reply",
+			"error", err,
+			"raw_content_prefix", truncateLog(resp.Content, 200),
+		)
+		// If JSON parsing fails, still use the raw content as a conversational reply.
 		return &AIResponseContract{
 			Content:   resp.Content,
-			CanAnswer: false,
+			CanAnswer: true,
+			Confidence: 0.8,
 		}, resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens, nil
 	}
+
+	slog.Info("AI response parsed",
+		"can_answer", contract.CanAnswer,
+		"confidence", contract.Confidence,
+		"source_count", len(contract.SourceDocIDs),
+	)
 
 	totalTokens := resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens
 	return &contract, totalTokens, nil
@@ -667,6 +701,14 @@ var piiRegexes = []*regexp.Regexp{
 	regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`), // email
 	regexp.MustCompile(`\b\d{3}[-.]?\d{3}[-.]?\d{4}\b`),                        // US phone
 	regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`),                                // SSN
+}
+
+// truncateLog truncates a string for safe logging.
+func truncateLog(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // stripPII removes common PII patterns from text.

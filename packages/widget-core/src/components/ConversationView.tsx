@@ -18,6 +18,7 @@ interface ConversationViewProps {
   typingAgentAvatar?: string;
   onBack: () => void;
   onClose?: () => void;
+  onEscalateToHuman?: () => void;
   showPreChatForm?: boolean;
   onPreChatSubmit?: (data: { phone: string; email: string }) => void;
 }
@@ -33,6 +34,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   typingAgentAvatar,
   onBack,
   onClose,
+  onEscalateToHuman,
   showPreChatForm = false,
   onPreChatSubmit,
 }) => {
@@ -174,6 +176,13 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           </div>
           <span className="helpin-ai-thinking-text">Thinking</span>
           <span className="helpin-ai-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+        </div>
+      )}
+      {config.features?.showTalkToHuman && onEscalateToHuman && messages.length > 0 && (
+        <div className="helpin-talk-to-human">
+          <button type="button" className="helpin-talk-to-human-btn" onClick={onEscalateToHuman}>
+            Talk to a human
+          </button>
         </div>
       )}
       <ComposeBar onSend={onSendMessage} onTyping={onTyping} />

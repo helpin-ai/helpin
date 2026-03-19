@@ -261,7 +261,7 @@ func (r *SupportConversationRepository) maybeAcquireWorkspaceDisplayIDLock(tx *g
 }
 
 // List returns conversations with optional filters and pagination.
-func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, aiState ...string) ([]model.SupportConversation, int64, error) {
 	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("workspace_id = ?", workspaceID)
 
 	if status != "" {
@@ -269,6 +269,14 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	}
 	if priority != "" {
 		base = base.Where("priority = ?", priority)
+	}
+	// AI state filter: "any" = ai_state IS NOT NULL, specific value = exact match
+	if len(aiState) > 0 && aiState[0] != "" {
+		if aiState[0] == "any" {
+			base = base.Where("ai_state IS NOT NULL")
+		} else {
+			base = base.Where("ai_state = ?", aiState[0])
+		}
 	}
 
 	var total int64
@@ -293,6 +301,13 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	}
 	if priority != "" {
 		fetch = fetch.Where("priority = ?", priority)
+	}
+	if len(aiState) > 0 && aiState[0] != "" {
+		if aiState[0] == "any" {
+			fetch = fetch.Where("ai_state IS NOT NULL")
+		} else {
+			fetch = fetch.Where("ai_state = ?", aiState[0])
+		}
 	}
 
 	var conversations []model.SupportConversation
@@ -533,7 +548,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		SELECT
 			COUNT(*) FILTER (WHERE u.unread > 0) AS total,
 			COUNT(*) FILTER (WHERE u.unread > 0 AND sc.opened_by_user_id = ?) AS my_inbox,
-			COUNT(*) FILTER (WHERE u.unread > 0 AND sc.assigned_agent_id IS NULL) AS unassigned
+			COUNT(*) FILTER (WHERE u.unread > 0 AND (sc.assigned_agent_id IS NULL OR sc.ai_state = 'escalated')) AS unassigned
 		FROM support_conversations sc
 		CROSS JOIN LATERAL (
 			SELECT COUNT(*) AS unread

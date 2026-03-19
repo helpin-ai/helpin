@@ -99,6 +99,9 @@ func main() {
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
+	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
+	aiMessageProcessingRepo := repository.NewAIMessageProcessingRepository(db)
+	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
@@ -152,6 +155,22 @@ func main() {
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
+	// AI Support Agent consumer — runs alongside Temporal workers.
+	supportAIService := service.NewSupportAIService(
+		llmProvider, docsSearchRepo, docsContentRepo, docsSpaceRepo,
+		agentKnowledgeSourceRepo, aiMessageProcessingRepo,
+		conversationRepo, supportMessageRepo,
+		agentRepo, handoffRepo, supportInstallRepo,
+		wsPublisher, jetstream, nil, db,
+	)
+	aiConsumerCtx, aiConsumerCancel := context.WithCancel(context.Background())
+	go func() {
+		if err := supportAIService.StartNATSConsumer(aiConsumerCtx); err != nil {
+			log.Printf("support AI consumer stopped: %v", err)
+		}
+	}()
+	_ = aiConsumerCancel // used at shutdown
+
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
@@ -395,6 +414,7 @@ func main() {
 	<-stopCh
 
 	log.Println("shutting down temporal workers")
+	aiConsumerCancel() // stop AI support consumer
 	for _, sharedWorker := range workers {
 		sharedWorker.Stop()
 	}

@@ -111,11 +111,11 @@ func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID
 }
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
-func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination) (*model.ConversationListResponse, error) {
+func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, aiState ...string) (*model.ConversationListResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination)
+	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, aiState...)
 	if err != nil {
 		return nil, err
 	}

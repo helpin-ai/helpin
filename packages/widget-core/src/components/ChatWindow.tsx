@@ -29,6 +29,7 @@ interface ChatWindowProps {
   isAIThinking?: boolean;
   typingAgentName?: string;
   typingAgentAvatar?: string;
+  onEscalateToHuman?: () => void;
   quickReplies?: string[];
   initialView?: WidgetView;
   connectionStatus?: ConnectionStatus;
@@ -60,6 +61,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   isAIThinking = false,
   typingAgentName,
   typingAgentAvatar,
+  onEscalateToHuman,
   quickReplies = [],
   initialView = 'home',
   connectionStatus = 'idle',
@@ -240,6 +242,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onTyping={onTyping}
             isTyping={isTyping}
             isAIThinking={isAIThinking}
+            onEscalateToHuman={onEscalateToHuman}
             typingAgentName={typingAgentName}
             typingAgentAvatar={typingAgentAvatar}
             onBack={() => setActiveView(previousView)}

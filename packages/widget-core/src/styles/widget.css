@@ -1709,6 +1709,30 @@
   }
 }
 
+/* Talk to Human Button */
+.helpin-talk-to-human {
+  display: flex;
+  justify-content: center;
+  padding: 6px 16px;
+}
+
+.helpin-talk-to-human-btn {
+  font-size: 12px;
+  color: var(--helpin-fg-secondary);
+  background: none;
+  border: 1px solid var(--helpin-border);
+  border-radius: 16px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.helpin-talk-to-human-btn:hover {
+  color: var(--helpin-fg-primary);
+  border-color: var(--helpin-fg-secondary);
+  background: var(--helpin-bg-muted);
+}
+
 /* AI Thinking Indicator */
 .helpin-ai-thinking {
   display: flex;

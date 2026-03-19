@@ -360,6 +360,7 @@ export class WidgetManager {
       onPreChatSubmit: (data: { phone: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
       isAIThinking: this.isAIThinking,
+      onEscalateToHuman: () => this.handleEscalateToHuman(),
       typingAgentName: this.typingAgentName,
       typingAgentAvatar: this.typingAgentAvatar,
       initialView: this.currentView,
@@ -562,6 +563,20 @@ export class WidgetManager {
     if ((globalThis as any).helpin?.track) {
       (globalThis as any).helpin.track('lead', { email: data.email });
     }
+  }
+
+  // ─── Escalation ────────────────────────────────────────────
+
+  private handleEscalateToHuman(): void {
+    if (!this.activeConversationId || !this.sessionToken) return;
+
+    const url = `https://${this.host}/api/widget/support/${this.activeConversationId}/escalate`;
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Token': this.sessionToken },
+    }).catch((err) => {
+      console.error('Failed to escalate to human:', err);
+    });
   }
 
   // ─── Conversation Switching ─────────────────────────────────

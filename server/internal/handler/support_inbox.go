@@ -31,9 +31,10 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 	userID := middleware.GetUserID(r.Context())
 	status := r.URL.Query().Get("status")
 	priority := r.URL.Query().Get("priority")
+	aiState := r.URL.Query().Get("ai_state")
 	pagination := queryPagination(r)
 
-	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination)
+	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination, aiState)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -4,7 +4,8 @@ import { queryKeys } from '@/lib/queryKeys';
 import { supportService } from '@/lib/services/supportService';
 import { agentService } from '@/lib/services/agentService';
 import { unwrap } from '@/lib/queryUtils';
-import type { SupportInboxSettings, ConversationStatus, ConversationListResponse, VisitorContextResponse } from '@/lib/pmTypes';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import type { SupportInboxSettings, ConversationStatus, ConversationListResponse, SupportConversation, VisitorContextResponse } from '@/lib/pmTypes';
 
 // ── Installation settings ───────────────────────────────────────────
 
@@ -127,8 +128,26 @@ export function useUpdateConversationStatus(workspaceId: string) {
     mutationFn: ({ conversationId, status }: { conversationId: string; status: ConversationStatus }) =>
       supportService.updateConversationStatus(workspaceId, conversationId, status).then(unwrap),
     onSuccess: (_data, variables) => {
+      const { conversationId, status } = variables;
+
+      // Auto-advance: when resolving/spamming, select the next conversation in the list
+      if (status === 'resolved' || status === 'spam' || status === 'closed') {
+        const { selectedConversationId, selectConversation } = useSupportInboxStore.getState();
+        if (selectedConversationId === conversationId) {
+          // Find the next conversation from the cached list (before invalidation)
+          const cached = queryClient.getQueriesData<ConversationListResponse>({
+            queryKey: queryKeys.support.conversations(workspaceId),
+          });
+          const conversations: SupportConversation[] = cached.flatMap(([, data]) => data?.data ?? []);
+          const currentIdx = conversations.findIndex((c) => c.id === conversationId);
+          // Pick the next one below, or the one above, or clear selection
+          const next = conversations[currentIdx + 1] ?? conversations[currentIdx - 1];
+          selectConversation(next?.id ?? null);
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
     },
     onError: (error: Error) => {
       toast.error('Failed to update conversation status', { description: error.message });
