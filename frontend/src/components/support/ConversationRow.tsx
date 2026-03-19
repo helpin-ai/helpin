@@ -99,7 +99,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
             <span className={`truncate max-w-[160px] text-sm ${isUnread ? 'font-semibold' : 'font-medium'}`}>{displayName}</span>
             <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(conversation.updated_at)}</span>
           </div>
-          <div className="mt-0.5 flex items-center gap-1.5">
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
             <p className={`min-w-0 flex-1 truncate text-sm ${isUnread ? 'font-medium text-foreground' : 'text-foreground/80'}`}>
               {isCustomerTyping ? (
                 <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
