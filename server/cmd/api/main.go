@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
+	"go.temporal.io/api/serviceerror"
 	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -248,6 +250,9 @@ func main() {
 		// CRM Email Sync Settings
 		&model.CRMEmailSyncSettings{},
 		&model.AutomationHealthSnapshot{},
+		// AI Support Agent
+		&model.AgentKnowledgeSource{},
+		&model.AIMessageProcessing{},
 	); err != nil {
 		slog.Error("failed to auto-migrate", "error", err)
 		os.Exit(1)
@@ -328,13 +333,14 @@ func main() {
 
 	// Initialize Redis relay for cross-pod event broadcasting (optional).
 	var redisRelay *ws.RedisRelay
+	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)
 		if err != nil {
 			slog.Error("invalid REDIS_URL", "error", err)
 			os.Exit(1)
 		}
-		redisClient := redis.NewClient(redisOpts)
+		redisClient = redis.NewClient(redisOpts)
 		if err := redisClient.Ping(context.Background()).Err(); err != nil {
 			slog.Error("Redis unreachable at startup — cannot run multi-pod", "error", err)
 			os.Exit(1)
@@ -505,6 +511,11 @@ func main() {
 	searchService := service.NewSearchService(searchRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+
+	// AI Support Agent — new repositories and service
+	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
+	aiMessageProcessingRepo := repository.NewAIMessageProcessingRepository(db)
+	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceService(agentKnowledgeSourceRepo, docsSpaceRepo)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -695,10 +706,23 @@ func main() {
 		pmStoryLinkRepo,
 	)
 	flowService.SetCommandService(commandService)
+	commandService.SetPMAutomationService(pmAutomationService)
+	commandService.SetGitService(gitService)
+	ruleEngine.SetCommandService(commandService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	_ = signalDetectionService // Used by Temporal workers
+
+	// AI Support Agent — wire SupportAIService with LLM provider and JetStream.
+	supportAIService := service.NewSupportAIService(
+		llmProvider, docsSearchRepo, docsContentRepo, docsSpaceRepo,
+		agentKnowledgeSourceRepo, aiMessageProcessingRepo,
+		supportConversationRepo, supportMessageRepo,
+		agentRepo, agentHandoffRepo, supportInstallRepo,
+		wsPublisher, jetstream, redisClient, db,
+	)
+	supportInboxService.SetSupportAIService(supportAIService)
 
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService)
@@ -709,8 +733,6 @@ func main() {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
-	orchestrationService := service.NewOrchestrationService(pmEpicRepo, agentRepo, pmActivityService, wsPublisher)
-
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo)
@@ -759,15 +781,14 @@ func main() {
 		Search:             handler.NewSearchHandler(searchService),
 		PMAutomation:       handler.NewPMAutomationHandler(pmAutomationService),
 		Flow:               handler.NewFlowHandler(flowService),
-		PlanningSession:    handler.NewPlanningSessionHandler(planningSessionService),
 		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
 		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:              handler.NewAgentHandler(agentService),
 		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),
 		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),
+		SupportAI:          handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService),
 		Git:                handler.NewGitHandler(gitService),
-		Orchestration:      handler.NewOrchestrationHandler(orchestrationService),
 		Notification:       handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:  handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		CRMContact:         handler.NewCRMContactHandler(crmContactService),
@@ -825,20 +846,12 @@ func main() {
 		slog.Error("failed to ensure crm summary daily reconciliation workflow", "error", err)
 	}
 
-	// Start background ticker for iteration automations.
-	automationDone := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				pmAutomationService.RunSprintAutomations(context.Background())
-			case <-automationDone:
-				return
-			}
+	// Start sprint automation cron workflow via Temporal (replaces local ticker).
+	if temporalClient != nil {
+		if err := ensureSprintCronWorkflow(temporalClient); err != nil {
+			slog.Error("failed to ensure sprint cron workflow", "error", err)
 		}
-	}()
+	}
 
 	// Start background ticker for digest email delivery.
 	digestDone := make(chan struct{})
@@ -933,7 +946,6 @@ func main() {
 	<-done
 	slog.Info("server shutting down")
 	realtimeCancel()
-	close(automationDone)
 	close(digestDone)
 	close(cleanupDone)
 
@@ -985,4 +997,26 @@ func (a *planningWorkflowAdapter) SignalFlowChildState(ctx context.Context, flow
 		ChildID:     childID,
 		ChildStatus: childStatus,
 	})
+}
+
+// ensureSprintCronWorkflow starts the sprint automation cron workflow if not already running.
+func ensureSprintCronWorkflow(client tclient.Client) error {
+	if client == nil {
+		return nil
+	}
+	_, err := client.ExecuteWorkflow(context.Background(), tclient.StartWorkflowOptions{
+		ID:           "sprint-automation-cron",
+		TaskQueue:    temporalapp.QueueAutomation,
+		CronSchedule: "0 * * * *",
+	}, temporalapp.SprintAutomationCronWorkflow, temporalapp.SprintAutomationInput{})
+	if err != nil {
+		// Already running is not an error.
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
+		return fmt.Errorf("start sprint cron workflow: %w", err)
+	}
+	slog.Info("sprint automation cron workflow started")
+	return nil
 }

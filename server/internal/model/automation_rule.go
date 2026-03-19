@@ -9,6 +9,7 @@ import (
 const (
 	TriggerStoryStateEntered = "story.state_entered"
 	TriggerAgentRunApproved  = "agent_run.approved"
+	TriggerCron              = "cron"
 )
 
 // Action type constants.
@@ -16,6 +17,8 @@ const (
 	ActionRunAgent    = "run_agent"
 	ActionMoveToState = "move_to_state"
 	ActionMergeBranch = "merge_branch"
+	ActionRunCommand  = "run_command"
+	ActionStartFlow   = "start_flow"
 )
 
 // AutomationRule represents a user-configured trigger → action mapping.
@@ -44,7 +47,24 @@ func (AutomationRule) TableName() string { return "automation_rules" }
 
 // TriggerConfigStateEntered holds config for story.state_entered triggers.
 type TriggerConfigStateEntered struct {
-	StateID string `json:"state_id"`
+	StateID   string `json:"state_id,omitempty"`
+	StateType string `json:"state_type,omitempty"` // "started", "done" — match any state of this type
+}
+
+// TriggerConfigCron holds config for cron triggers.
+type TriggerConfigCron struct {
+	Category string `json:"category"` // e.g. "sprint_hourly"
+}
+
+// ActionConfigRunCommand holds config for run_command actions.
+type ActionConfigRunCommand struct {
+	CommandName string          `json:"command_name"`
+	Input       json.RawMessage `json:"input,omitempty"`
+}
+
+// ActionConfigStartFlow holds config for start_flow actions.
+type ActionConfigStartFlow struct {
+	TemplateID string `json:"template_id"`
 }
 
 // TriggerConfigRunApproved holds config for agent_run.approved triggers.
@@ -101,10 +121,15 @@ type UpdateAutomationRuleRequest struct {
 type AutomationEvent struct {
 	WorkspaceID string
 	TriggerType string
-	StoryID     string
-	StateID     string
-	AgentID     string
-	RunID       string
+	// Story-specific (existing, kept for backward compat)
+	StoryID string
+	StateID string
+	AgentID string
+	RunID   string
+	// Generic fields for non-story triggers
+	TargetType string // "story", "epic", "sprint", ""
+	TargetID   string // entity UUID
+	TeamID     string // for scope matching without a story
 }
 
 // RuleExecutionContext tracks chain depth and prevents loops.

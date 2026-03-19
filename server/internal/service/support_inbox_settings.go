@@ -30,20 +30,11 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.RequireEmailBeforeChat != nil {
 		current.RequireEmailBeforeChat = *patch.RequireEmailBeforeChat
 	}
-	if patch.RequireNameAfterEmail != nil {
-		current.RequireNameAfterEmail = *patch.RequireNameAfterEmail
+	if patch.RequirePhoneAfterEmail != nil {
+		current.RequirePhoneAfterEmail = *patch.RequirePhoneAfterEmail
 	}
 	if patch.WelcomeMessage != nil {
 		current.WelcomeMessage = *patch.WelcomeMessage
-	}
-	if patch.AutoCreateCRMContact != nil {
-		current.AutoCreateCRMContact = *patch.AutoCreateCRMContact
-	}
-	if patch.DefaultLifecycleStage != nil {
-		current.DefaultLifecycleStage = *patch.DefaultLifecycleStage
-	}
-	if patch.AutoPromoteToLead != nil {
-		current.AutoPromoteToLead = *patch.AutoPromoteToLead
 	}
 	if patch.AIEnabled != nil {
 		current.AIEnabled = *patch.AIEnabled
@@ -58,6 +49,15 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	}
 	if patch.AIConfidenceThreshold != nil {
 		current.AIConfidenceThreshold = *patch.AIConfidenceThreshold
+	}
+	if patch.AIResponseMode != nil {
+		current.AIResponseMode = *patch.AIResponseMode
+	}
+	if patch.AIMaxFollowups != nil {
+		current.AIMaxFollowups = *patch.AIMaxFollowups
+	}
+	if patch.AIAutoResolveTimeout != nil {
+		current.AIAutoResolveTimeout = *patch.AIAutoResolveTimeout
 	}
 	if patch.ShowTalkToHuman != nil {
 		current.ShowTalkToHuman = *patch.ShowTalkToHuman
@@ -154,9 +154,15 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	if !validIcon[settings.LauncherIcon] {
 		return fmt.Errorf("launcher_icon must be chat_bubble, question_mark, or help")
 	}
-	validLifecycle := map[string]bool{"subscriber": true, "lead": true, "opportunity": true}
-	if !validLifecycle[settings.DefaultLifecycleStage] {
-		return fmt.Errorf("default_lifecycle_stage must be subscriber, lead, or opportunity")
+	validResponseMode := map[string]bool{"ai_first": true, "off": true}
+	if settings.AIResponseMode != "" && !validResponseMode[settings.AIResponseMode] {
+		return fmt.Errorf("ai_response_mode must be ai_first or off")
+	}
+	if settings.AIMaxFollowups < 0 || settings.AIMaxFollowups > 50 {
+		return fmt.Errorf("ai_max_followups must be between 0 and 50")
+	}
+	if settings.AIAutoResolveTimeout < 0 {
+		return fmt.Errorf("ai_auto_resolve_timeout must be >= 0")
 	}
 	if settings.AIEnabled {
 		if settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {

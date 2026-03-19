@@ -98,6 +98,7 @@ import type {
   StoryDetail,
   StoryRecurringSummary,
   RecurringTemplateDetail,
+  StoryImplementationBrief,
   StoryType,
   UpdateStoryRequest,
   WorkflowState,
@@ -795,6 +796,11 @@ export function StoryDetailPage() {
             />
           </div>
 
+          {/* Implementation Brief (from planning) */}
+          {storyDetail?.story.implementation_brief && (
+            <StoryImplementationBriefPanel brief={storyDetail.story.implementation_brief} />
+          )}
+
           {/* Action bar — "Add to Story" */}
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <button
@@ -1344,6 +1350,35 @@ export function StoryDetailPage() {
         variant="default"
         onConfirm={archiveStory}
       />
+    </div>
+  );
+}
+
+function StoryImplementationBriefPanel({ brief }: { brief: StoryImplementationBrief }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-4 rounded-md border border-border/60 p-3">
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} />
+        Implementation Brief ({brief.files_to_modify.length} files)
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5 text-xs">
+          <p>{brief.approach}</p>
+          {brief.files_to_modify.map((f) => (
+            <div key={`${f.path}-${f.action}`} className="flex items-baseline gap-1.5 font-mono text-[11px]">
+              <span className="shrink-0 rounded border border-border/60 bg-muted/30 px-1 text-[9px] uppercase">{f.action}</span>
+              <span className="break-all">{f.path}</span>
+              <span className="text-muted-foreground">{'\u2014'} {f.description}</span>
+            </div>
+          ))}
+          <p className="text-muted-foreground">Tests: {brief.test_strategy}</p>
+        </div>
+      )}
     </div>
   );
 }

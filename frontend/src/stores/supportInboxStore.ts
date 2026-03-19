@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type NavFilter = 'my_inbox' | 'all' | 'unassigned';
+export type NavFilter = 'my_inbox' | 'all' | 'unassigned' | 'mentions' | 'ai_all' | 'ai_resolved' | 'ai_escalated' | 'ai_pending';
 export type ReplyMode = 'reply' | 'note';
 export type ActivePanel = 'nav' | 'list' | 'thread' | 'detail';
 

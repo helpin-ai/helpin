@@ -1,12 +1,13 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { toast } from 'sonner';
+import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, CircleX, Link2, MailOpen, ShieldAlert, Trash2, Pencil } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -14,13 +15,16 @@ import {
   useConversationMessages,
   useUpdateConversationStatus,
   useRunConversationAgent,
+  useMarkConversationUnread,
+  useUpdateConversationSubject,
+  useDeleteConversation,
 } from '@/hooks/queries/useSupport';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
-import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS } from './constants';
 import { getDayLabel, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
@@ -135,6 +139,9 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const runAgent = useRunConversationAgent(workspaceId);
+  const markUnread = useMarkConversationUnread(workspaceId);
+  const updateSubject = useUpdateConversationSubject(workspaceId);
+  const deleteConversation = useDeleteConversation(workspaceId);
 
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
 
@@ -191,6 +198,28 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   };
 
   // Group messages with day separators and consecutive sender detection
+  // Find the last outbound reply message (for read receipt display)
+  const receiptMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg.is_internal && msg.sender_type !== 'customer' && (!msg.message_type || msg.message_type === 'reply')) {
+        return msg.id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  // Derive delivered/read status from conversation's contact_last_seen_at cursor
+  const receiptStatus = useMemo<'delivered' | 'read' | null>(() => {
+    if (!receiptMessageId || !conversation) return null;
+    if (conversation.source !== 'widget') return null;
+    const msg = messages.find((m) => m.id === receiptMessageId);
+    if (!msg) return null;
+    const seen = conversation.contact_last_seen_at;
+    if (seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
+    return 'delivered';
+  }, [receiptMessageId, conversation, messages]);
+
   const groupedMessages = useMemo(() => {
     const items: Array<{ type: 'separator'; label: string } | { type: 'message'; message: SupportMessage; isConsecutive: boolean; isLastInGroup: boolean }> = [];
     let lastDate: string | null = null;
@@ -238,37 +267,17 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
       {/* Action header bar */}
       {conversation && (
         <div className="flex items-center justify-between border-b px-4 py-2.5">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Customer avatar */}
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-              {getInitial(conversation.customer_name)}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="truncate text-sm font-semibold">{conversation.subject}</h2>
-                <span className="shrink-0 text-[10px] text-muted-foreground">#{conversation.display_id}</span>
-              </div>
-              <p className="truncate text-xs text-muted-foreground">
-                {conversation.customer_name || 'Anonymous'}
-                {conversation.customer_email && ` · ${conversation.customer_email}`}
-              </p>
-            </div>
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-sm font-semibold text-muted-foreground">#{conversation.display_id}</h2>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <Badge variant="secondary" className={`text-[10px] ${STATUS_COLORS[conversation.status]}`}>
-              {STATUS_LABELS[conversation.status]}
-            </Badge>
-            <Badge variant="secondary" className={`text-[10px] ${PRIORITY_COLORS[conversation.priority]}`}>
-              {PRIORITY_LABELS[conversation.priority]}
-            </Badge>
-
-            {/* Quick actions */}
+            {/* Run Agent */}
             {conversation.assigned_agent_id && (
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 gap-1 text-xs ml-1"
+                className="h-7 gap-1 text-xs"
                 disabled={runAgent.isPending}
                 onClick={() => runAgent.mutate(conversation.id)}
               >
@@ -277,6 +286,30 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               </Button>
             )}
 
+            {/* Resolve / Unresolve */}
+            {conversation.status === 'resolved' ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 text-xs"
+                onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'open' as ConversationStatus })}
+              >
+                <CircleX className="h-3.5 w-3.5" />
+                Unresolve
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="default"
+                className="h-7 gap-1 text-xs"
+                onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus })}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Resolve
+              </Button>
+            )}
+
+            {/* More actions */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
@@ -284,17 +317,55 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus })}>
-                  <CheckCircle2 className="h-4 w-4" />
-                  Resolve
+                <DropdownMenuItem onClick={() => {
+                  markUnread.mutate(conversation.id);
+                  toast.success('Marked as unread');
+                }}>
+                  <MailOpen className="h-4 w-4" />
+                  Mark as unread
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'waiting' as ConversationStatus })}>
-                  <Clock className="h-4 w-4" />
-                  Set Waiting
+                <DropdownMenuItem onClick={() => {
+                  navigator.clipboard.writeText(window.location.href);
+                  toast.success('Link copied to clipboard');
+                }}>
+                  <Link2 className="h-4 w-4" />
+                  Copy link
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'closed' as ConversationStatus })}>
-                  <XCircle className="h-4 w-4" />
-                  Close
+                <DropdownMenuItem onClick={() => {
+                  const newSubject = window.prompt('Conversation subject:', conversation.subject);
+                  if (newSubject !== null && newSubject.trim()) {
+                    updateSubject.mutate({ conversationId: conversation.id, subject: newSubject.trim() });
+                  }
+                }}>
+                  <Pencil className="h-4 w-4" />
+                  Set conversation subject
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => {
+                    updateStatus.mutate({ conversationId: conversation.id, status: 'spam' as ConversationStatus });
+                    toast.success('Conversation marked as spam');
+                  }}
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  Mark as spam
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => {
+                    if (window.confirm('Are you sure you want to permanently delete this conversation?')) {
+                      deleteConversation.mutate(conversation.id, {
+                        onSuccess: () => {
+                          useSupportInboxStore.getState().selectConversation(null);
+                          toast.success('Conversation deleted');
+                        },
+                      });
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete conversation
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -302,8 +373,8 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         </div>
       )}
 
-      {/* Agent runs (if any) */}
-      {agentRuns.length > 0 && (
+      {/* Agent runs — hidden for AI-first conversations (ai_state is set) */}
+      {agentRuns.length > 0 && !conversation?.ai_state && (
         <div className="border-b px-4 py-2">
           <AgentRunsCard
             workspaceId={workspaceId}
@@ -338,6 +409,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 isConsecutive={item.isConsecutive}
                 isLastInGroup={item.isLastInGroup}
                 source={conversation?.source}
+                receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
               />
             );
           })}

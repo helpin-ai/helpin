@@ -1,8 +1,9 @@
-import { memo } from 'react';
-import { Bot, StickyNote } from 'lucide-react';
+import { memo, useMemo, useState } from 'react';
+import Markdown from 'react-markdown';
+import { Bot, CheckCheck, ChevronDown, ChevronUp, FileText, StickyNote } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
-import type { SupportMessage, TicketSource } from '@/lib/pmTypes';
+import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { formatTimestamp, getInitial } from './helpers';
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -23,9 +24,10 @@ interface MessageBubbleProps {
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
   source?: TicketSource;
+  receiptStatus?: 'delivered' | 'read' | null;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source, receiptStatus }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const isCustomer = message.sender_type === 'customer';
   const isAgent = message.sender_type === 'agent';
@@ -36,6 +38,17 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   const fullTimestamp = formatTimestamp(message.created_at);
   const senderLabel = SENDER_TYPE_LABELS[message.sender_type] ?? message.sender_type;
   const sourceLabel = source ? SOURCE_LABELS[source] ?? source : null;
+
+  // Parse AI metadata if present
+  const aiMeta = useMemo<AIMessageMetadata | null>(() => {
+    if (!message.metadata) return null;
+    try {
+      const meta = JSON.parse(message.metadata);
+      return meta.ai_auto_reply ? meta : null;
+    } catch { return null; }
+  }, [message.metadata]);
+
+  const [sourcesOpen, setSourcesOpen] = useState(false);
 
   const tooltipContent = (
     <div className="space-y-0.5 text-xs">
@@ -63,7 +76,9 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                     <span className="font-normal"> left a private note</span>
                   </span>
                 </div>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-amber-900 dark:text-amber-200">{message.content}</p>
+                <div className="prose-chat text-sm leading-relaxed text-amber-900 dark:text-amber-200">
+                  <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</Markdown>
+                </div>
               </div>
             </TooltipTrigger>
             <TooltipContent side="left">{tooltipContent}</TooltipContent>
@@ -132,13 +147,63 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                   : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
               }`}
             >
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              <div className="prose-chat">
+                <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</Markdown>
+              </div>
             </div>
           </TooltipTrigger>
           <TooltipContent side={isCustomer ? 'right' : 'left'}>
             {tooltipContent}
           </TooltipContent>
         </Tooltip>
+
+        {/* Read receipt indicator */}
+        {receiptStatus && (
+          <div className="mt-0.5 flex items-center justify-end gap-1 pr-1">
+            {receiptStatus === 'read' ? (
+              <>
+                <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
+                <span className="text-[11px] text-muted-foreground">Read in chat</span>
+              </>
+            ) : (
+              <>
+                <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-[11px] text-muted-foreground">Delivered</span>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* AI metadata: confidence badge + collapsible sources */}
+        {aiMeta && (
+          <div className={`mt-1 ${isCustomer ? '' : 'text-right'}`}>
+            <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
+                {(aiMeta.ai_confidence * 100).toFixed(0)}% confident
+              </span>
+              {aiMeta.ai_sources?.length > 0 && (
+                <button
+                  onClick={() => setSourcesOpen(!sourcesOpen)}
+                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 hover:bg-muted"
+                >
+                  <FileText className="h-3 w-3" />
+                  {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
+                  {sourcesOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                </button>
+              )}
+            </div>
+            {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
+              <div className="mt-1.5 space-y-1 rounded-lg border bg-muted/50 p-2 text-left text-xs">
+                {aiMeta.ai_sources.map((src) => (
+                  <div key={src.docId} className="flex items-start gap-1.5">
+                    <FileText className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className="font-medium">{src.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Right side: avatar or spacer (agent/user messages) */}

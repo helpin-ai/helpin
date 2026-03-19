@@ -15,6 +15,7 @@ type SupportConversation struct {
 	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
 	CustomerName      *string    `json:"customer_name"`
 	CustomerEmail     *string    `json:"customer_email"`
+	CustomerPhone     *string    `json:"customer_phone"`
 	OpenedByUserID    *string    `json:"opened_by_user_id" gorm:"type:uuid"`
 	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid"`
 	LinkedStoryID     *string    `json:"linked_story_id" gorm:"type:uuid"`
@@ -25,8 +26,17 @@ type SupportConversation struct {
 	ClosedAt          *time.Time `json:"closed_at"`
 	TeamLastSeenAt    *time.Time `json:"team_last_seen_at" gorm:"type:timestamptz"`
 	ContactLastSeenAt *time.Time `json:"contact_last_seen_at" gorm:"type:timestamptz"`
-	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	// AI State — separate from human Status. Null when AI is not involved.
+	AIState                  *string    `json:"ai_state" gorm:"index"`                 // null, "pending", "resolved", "escalated"
+	AIResolvedAt             *time.Time `json:"ai_resolved_at" gorm:"type:timestamptz"`
+	AIEscalatedAt            *time.Time `json:"ai_escalated_at" gorm:"type:timestamptz"`
+	AIResolutionType         *string    `json:"ai_resolution_type"`                    // "confirmed", "assumed", null
+	AITurnCount              int        `json:"ai_turn_count" gorm:"not null;default:0"`
+	CustomerRequestedHumanAt *time.Time `json:"customer_requested_human_at" gorm:"type:timestamptz"`
+
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage *string `json:"last_message,omitempty" gorm:"->"`
@@ -115,8 +125,11 @@ type SupportWidgetSession struct {
 	IsAnonymous    bool       `json:"is_anonymous" gorm:"default:true"`
 	CustomerName   *string    `json:"customer_name"`
 	CustomerEmail  *string    `json:"customer_email"`
+	CustomerPhone  *string    `json:"customer_phone"`
 	UserAgent      *string    `json:"-"`
 	LastPageURL    *string    `json:"last_page_url"`
+	Timezone       *string    `json:"timezone"`
+	Locale         *string    `json:"locale"`
 	RevokedAt      *time.Time `json:"-" gorm:"index"`
 	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
 	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
@@ -206,8 +219,18 @@ type WidgetSessionRestoreData struct {
 
 // WidgetSessionUpgradeData is the payload for session:upgrade.
 type WidgetSessionUpgradeData struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
+	Email  string `json:"email"`
+	Name   string `json:"name"`
+	Source string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
+}
+
+// WidgetIdentifyRequest is the HTTP payload for POST /api/widget/identify (headless SDK path).
+type WidgetIdentifyRequest struct {
+	APIKey      string `json:"api_key"`
+	AnonymousID string `json:"anonymous_id"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	Source      string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
 }
 
 // WidgetMessageSendData is the payload for message:send.
@@ -230,6 +253,7 @@ type WidgetSessionJoinedPayload struct {
 	SessionToken  string                `json:"session_token"`
 	ExpiresAt     string                `json:"expires_at"`
 	IsAnonymous   bool                  `json:"is_anonymous"`
+	CustomerEmail string                `json:"customer_email,omitempty"`
 	Conversations []SupportConversation `json:"conversations"`
 	Messages      []SupportMessage      `json:"messages"`
 }
@@ -242,6 +266,7 @@ type WidgetMessageReceivedPayload struct {
 	SenderType     string  `json:"sender_type"`
 	SenderName     *string `json:"sender_name"`
 	SenderAvatar   *string `json:"sender_avatar"`
+	Metadata       *string `json:"metadata,omitempty"`
 	CreatedAt      string  `json:"created_at"`
 }
 
@@ -280,7 +305,7 @@ type BusinessHoursDay struct {
 type SupportInboxSettings struct {
 	// Identity Capture
 	RequireEmailBeforeChat bool   `json:"require_email_before_chat"`
-	RequireNameAfterEmail  bool   `json:"require_name_after_email"`
+	RequirePhoneAfterEmail bool   `json:"require_phone_after_email"`
 	WelcomeMessage         string `json:"welcome_message"`
 
 	// CRM Integration
@@ -292,6 +317,9 @@ type SupportInboxSettings struct {
 	AIEnabled             bool    `json:"ai_enabled"`
 	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
+	AIResponseMode        string  `json:"ai_response_mode"`        // v1: "ai_first" | "off"
+	AIMaxFollowups        int     `json:"ai_max_followups"`        // max AI turns before forced handoff (default: 3)
+	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
 	// Handoff Routing
@@ -329,7 +357,7 @@ type SupportInboxSettings struct {
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
 		RequireEmailBeforeChat: true,
-		RequireNameAfterEmail:  false,
+		RequirePhoneAfterEmail: false,
 		WelcomeMessage:         "Hi there! How can we help you today?",
 		AutoCreateCRMContact:   true,
 		DefaultLifecycleStage:  "subscriber",
@@ -337,6 +365,9 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIEnabled:              false,
 		AIAgentID:              nil,
 		AIConfidenceThreshold:  0.7,
+		AIResponseMode:         "off",
+		AIMaxFollowups:         3,
+		AIAutoResolveTimeout:   24,
 		ShowTalkToHuman:        true,
 		HandoffBehavior:        "unassigned",
 		HandoffTeamID:          nil,
@@ -370,7 +401,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
 	RequireEmailBeforeChat *bool                       `json:"require_email_before_chat,omitempty"`
-	RequireNameAfterEmail  *bool                       `json:"require_name_after_email,omitempty"`
+	RequirePhoneAfterEmail *bool                       `json:"require_phone_after_email,omitempty"`
 	WelcomeMessage         *string                     `json:"welcome_message,omitempty"`
 	AutoCreateCRMContact   *bool                       `json:"auto_create_crm_contact,omitempty"`
 	DefaultLifecycleStage  *string                     `json:"default_lifecycle_stage,omitempty"`
@@ -378,6 +409,9 @@ type UpdateInstallationSettingsRequest struct {
 	AIEnabled              *bool                       `json:"ai_enabled,omitempty"`
 	AIAgentID              *string                     `json:"ai_agent_id,omitempty"`
 	AIConfidenceThreshold  *float64                    `json:"ai_confidence_threshold,omitempty"`
+	AIResponseMode         *string                     `json:"ai_response_mode,omitempty"`
+	AIMaxFollowups         *int                        `json:"ai_max_followups,omitempty"`
+	AIAutoResolveTimeout   *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman        *bool                       `json:"show_talk_to_human,omitempty"`
 	HandoffBehavior        *string                     `json:"handoff_behavior,omitempty"`
 	HandoffTeamID          *string                     `json:"handoff_team_id,omitempty"`
@@ -427,11 +461,12 @@ type WidgetConfigBranding struct {
 
 // WidgetConfigFeatures matches the widget-core WidgetConfig.features shape.
 type WidgetConfigFeatures struct {
-	AIEnabled   bool `json:"aiEnabled"`
-	FileUploads bool `json:"fileUploads"`
-	PreChatForm bool `json:"preChatForm"`
-	RequireName bool `json:"requireName"`
-	CSATRating  bool `json:"csatRating"`
+	AIEnabled       bool `json:"aiEnabled"`
+	ShowTalkToHuman bool `json:"showTalkToHuman"`
+	FileUploads     bool `json:"fileUploads"`
+	PreChatForm     bool `json:"preChatForm"`
+	RequirePhone    bool `json:"requirePhone"`
+	CSATRating      bool `json:"csatRating"`
 }
 
 // WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.
@@ -478,6 +513,56 @@ type WidgetConfigResponse struct {
 	Branding      WidgetConfigBranding `json:"branding"`
 	Features      WidgetConfigFeatures `json:"features"`
 	HelpSpaces    []WidgetHelpSpace    `json:"helpSpaces"`
+}
+
+// ── Visitor Context DTOs ─────────────────────────────────────────────
+
+// VisitorDeviceInfo holds parsed user-agent data for visitor context.
+type VisitorDeviceInfo struct {
+	Browser        string `json:"browser"`
+	BrowserVersion string `json:"browser_version"`
+	OS             string `json:"os"`
+	OSVersion      string `json:"os_version"`
+	DeviceType     string `json:"device_type"` // desktop, mobile, tablet
+}
+
+// VisitorLocation holds geographic/locale data for visitor context.
+type VisitorLocation struct {
+	Timezone    *string `json:"timezone"`
+	Locale      *string `json:"locale"`
+	LastPageURL *string `json:"last_page_url"`
+}
+
+// VisitorContactData holds CRM contact details for visitor context.
+type VisitorContactData struct {
+	ID               string            `json:"id"`
+	Name             *string           `json:"name"`
+	Email            *string           `json:"email"`
+	Phone            *string           `json:"phone"`
+	JobTitle         *string           `json:"job_title"`
+	LifecycleStage   string            `json:"lifecycle_stage"`
+	LeadStatus       string            `json:"lead_status"`
+	Source           string            `json:"source"`
+	CustomProperties map[string]string `json:"custom_properties,omitempty"`
+}
+
+// VisitorOtherConversation is a compact summary for other conversations in visitor context.
+type VisitorOtherConversation struct {
+	ID        string `json:"id"`
+	DisplayID int    `json:"display_id"`
+	Subject   string `json:"subject"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
+}
+
+// VisitorContextResponse assembles all visitor intelligence for a conversation.
+type VisitorContextResponse struct {
+	Device             *VisitorDeviceInfo         `json:"device,omitempty"`
+	Location           *VisitorLocation           `json:"location,omitempty"`
+	Contact            *VisitorContactData        `json:"contact,omitempty"`
+	OtherConversations []VisitorOtherConversation `json:"other_conversations"`
+	TotalConversations int                        `json:"total_conversations"`
+	SessionCreatedAt   *string                    `json:"session_created_at,omitempty"`
 }
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.

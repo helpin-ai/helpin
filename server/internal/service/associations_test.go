@@ -119,6 +119,8 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			recurring_template_id TEXT,
 			recurring_run_id TEXT,
 			recurring_occurrence_number INTEGER,
+			slice_type TEXT,
+			implementation_brief TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

@@ -16,12 +16,13 @@ import (
 // WidgetService defines the service methods needed by the widget WS handler.
 type WidgetService interface {
 	GetInstallationByWidgetKey(ctx context.Context, widgetKey string) (*model.SupportWidgetInstallation, error)
-	CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL *string) (*model.SupportWidgetSession, error)
+	CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL, timezone, locale *string) (*model.SupportWidgetSession, error)
+	UpdateSessionPageURL(ctx context.Context, sessionToken, url string) error
 	GetWidgetSession(ctx context.Context, token string) (*model.SupportWidgetSession, error)
 	GetVisitorConversations(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error)
 	ListConversationMessages(ctx context.Context, workspaceID, conversationID string, includeInternal bool) ([]model.SupportMessage, error)
 	WidgetCreateMessage(ctx context.Context, sessionToken, content string) (*model.SupportMessage, error)
-	UpgradeWidgetSession(ctx context.Context, sessionToken, email, name string) error
+	UpgradeWidgetSession(ctx context.Context, sessionToken, email, name, source string) error
 	RevokeWidgetSession(ctx context.Context, sessionToken string) error
 	ClearSessionConversation(ctx context.Context, sessionToken string) error
 	SetSessionConversation(ctx context.Context, sessionToken, conversationID string) error
@@ -198,16 +199,24 @@ func (h *WidgetHandler) handleSessionCreate(ctx context.Context, widgetKey strin
 	anonymousID := typed.AnonymousID
 	pageURL := typed.PageURL
 	userAgent := typed.UserAgent
+	timezone := typed.Timezone
+	locale := typed.Locale
 
-	var pageURLPtr, uaPtr *string
+	var pageURLPtr, uaPtr, tzPtr, localePtr *string
 	if pageURL != "" {
 		pageURLPtr = &pageURL
 	}
 	if userAgent != "" {
 		uaPtr = &userAgent
 	}
+	if timezone != "" {
+		tzPtr = &timezone
+	}
+	if locale != "" {
+		localePtr = &locale
+	}
 
-	session, err := h.service.CreateWidgetSession(ctx, widgetKey, anonymousID, nil, nil, uaPtr, pageURLPtr)
+	session, err := h.service.CreateWidgetSession(ctx, widgetKey, anonymousID, nil, nil, uaPtr, pageURLPtr, tzPtr, localePtr)
 	if err != nil {
 		slog.Error("widget ws: session create failed", "error", err)
 		SendToClient(conn, "session:error", map[string]string{"code": "create_failed", "message": err.Error()})
@@ -297,10 +306,16 @@ func (h *WidgetHandler) sendSessionJoined(ctx context.Context, conn *websocket.C
 		messages = []model.SupportMessage{}
 	}
 
+	var customerEmail string
+	if session.CustomerEmail != nil {
+		customerEmail = *session.CustomerEmail
+	}
+
 	return SendToClient(conn, "session:joined", model.WidgetSessionJoinedPayload{
 		SessionToken:  session.SessionToken,
 		ExpiresAt:     session.ExpiresAt.Format(time.RFC3339),
 		IsAnonymous:   session.IsAnonymous,
+		CustomerEmail: customerEmail,
 		Conversations: conversations,
 		Messages:      messages,
 	})
@@ -452,7 +467,11 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 			email := typed.Email
 			name := typed.Name
-			err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name)
+			source := typed.Source
+			if source == "" {
+				source = "widget_prechat"
+			}
+			err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name, source)
 			if err != nil {
 				SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": err.Error()})
 				continue
@@ -468,7 +487,11 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			return // exit loop, connection will close
 
 		case "page:update":
-			// Update in-memory tracking (no DB write needed)
+			if pageData, ok := msg.Data["url"].(string); ok && pageData != "" {
+				if err := h.service.UpdateSessionPageURL(ctx, session.SessionToken, pageData); err != nil {
+					slog.Error("widget ws: page:update failed", "error", err)
+				}
+			}
 
 		case "conversations:list":
 			convs, _ := h.service.GetVisitorConversations(ctx, session.WorkspaceID, session.AnonymousID)

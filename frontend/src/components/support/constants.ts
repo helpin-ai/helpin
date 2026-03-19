@@ -6,6 +6,7 @@ export const STATUS_COLORS: Record<ConversationStatus, string> = {
   waiting: 'bg-purple-100 text-purple-700',
   resolved: 'bg-green-100 text-green-700',
   closed: 'bg-gray-100 text-gray-600',
+  spam: 'bg-red-100 text-red-600',
 };
 
 export const STATUS_LABELS: Record<ConversationStatus, string> = {
@@ -14,6 +15,7 @@ export const STATUS_LABELS: Record<ConversationStatus, string> = {
   waiting: 'Waiting',
   resolved: 'Resolved',
   closed: 'Closed',
+  spam: 'Spam',
 };
 
 export const PRIORITY_COLORS: Record<ConversationPriority, string> = {

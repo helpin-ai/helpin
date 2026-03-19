@@ -87,6 +87,7 @@ export const queryKeys = {
     all: (wsId: string) => ['agents', wsId] as const,
     detail: (wsId: string, id: string) => ['agents', wsId, id] as const,
     runs: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'runs'] as const,
+    knowledgeSources: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'knowledge-sources'] as const,
   },
 
   git: {
@@ -102,6 +103,7 @@ export const queryKeys = {
     messages: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'messages'] as const,
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
     unreadStats: (wsId: string) => ['support', wsId, 'unread-stats'] as const,
+    visitorContext: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
   },
 
   docs: {

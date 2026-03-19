@@ -32,6 +32,7 @@ dev-full:
 dev-tmux:
     tmux new-session -d -s helpin -n dev 'cd server && air'
     tmux split-window -h -t helpin:dev 'cd frontend && pnpm dev'
+    tmux split-window -v -t helpin:dev.1 'cd server && go run ./cmd/temporal-worker'
     tmux attach -t helpin
 
 build-server:

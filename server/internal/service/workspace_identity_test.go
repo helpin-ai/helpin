@@ -738,6 +738,8 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			recurring_run_id TEXT,
 			recurring_occurrence_number INTEGER,
 			external_id TEXT,
+			slice_type TEXT,
+			implementation_brief TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

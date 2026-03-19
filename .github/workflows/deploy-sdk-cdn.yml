@@ -51,6 +51,7 @@ jobs:
           cp packages/sdk-js/dist/helpin.*.js packages/sdk-js/cdn-deploy/ 2>/dev/null || true
           cp packages/sdk-js/dist/helpin.*.css packages/sdk-js/cdn-deploy/ 2>/dev/null || true
           cp packages/sdk-js/dist-cdn/index.html packages/sdk-js/cdn-deploy/index.html
+          cp -r packages/sdk-js/public/* packages/sdk-js/cdn-deploy/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

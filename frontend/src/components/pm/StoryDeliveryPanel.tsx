@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Bot, ChevronRight, GitBranch, GitPullRequest, Loader2, Play, Save, UserRoundCog, UserPlus } from 'lucide-react';
+import { AlertCircle, Bot, ChevronRight, GitBranch, GitPullRequest, Loader2, Play, Save, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -123,7 +123,7 @@ export function useStoryDelivery(workspaceId: string, storyDetail: StoryDetail, 
   );
 
   const resolvedBaseBranch = baseBranch.trim() || selectedRepository?.default_branch || 'main';
-  const requiresRepo = Boolean(selectedAgent && selectedAgent.agent_kind === 'llm' && requiresRepoProfile(selectedAgent.agent_class));
+  const requiresRepo = Boolean(selectedAgent && requiresRepoProfile(selectedAgent.agent_class));
   const hasDeliveryTarget = Boolean(repositoryId && resolvedBaseBranch);
   const branchPreview = target?.working_branch || buildBranchPreview(storyDetail.story.display_id, storyDetail.story.name);
   const isConfigured = Boolean(assignedAgentId || target?.repository_id);
@@ -414,11 +414,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                     {d.agents.map((agent) => (
                       <SelectItem key={agent.id} value={agent.id}>
                         <div className="flex items-center gap-2">
-                          {agent.agent_kind === 'human' ? (
-                            <UserRoundCog className="h-3 w-3 text-muted-foreground" />
-                          ) : (
-                            <Bot className="h-3 w-3 text-muted-foreground" />
-                          )}
+                          <Bot className="h-3 w-3 text-muted-foreground" />
                           <span>{agent.name}</span>
                           <span className="text-muted-foreground">· {agent.capability_profile}</span>
                         </div>
@@ -428,9 +424,7 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
                 </Select>
                 {d.selectedAgent && (
                   <p className="text-[11px] text-muted-foreground">
-                    {d.selectedAgent.agent_kind === 'human'
-                      ? 'Human agents are assignment-only and do not execute code.'
-                      : 'Starts automatically after assignment.'}
+                    Starts automatically after assignment.
                   </p>
                 )}
                 {d.selectedAgentId && !d.agentSelectionSaved && (
@@ -488,22 +482,12 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
               </div>
             </div>
 
-            {d.selectedAgent && d.selectedAgent.agent_kind === 'llm' && d.requiresRepo && !d.hasDeliveryTarget && (
+            {d.selectedAgent && d.requiresRepo && !d.hasDeliveryTarget && (
               <Alert variant="destructive" className="border-amber-500/30 bg-amber-50 text-amber-800 dark:bg-amber-900/10 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle className="text-xs">Repository required</AlertTitle>
                 <AlertDescription className="text-[11px] text-amber-700 dark:text-amber-400/80">
                   Choose a repository and base branch, then save.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {d.selectedAgent?.agent_kind === 'human' && (
-              <Alert>
-                <UserRoundCog className="h-4 w-4" />
-                <AlertTitle className="text-xs">Human handoff</AlertTitle>
-                <AlertDescription className="text-xs">
-                  Human agents are tracked as assignees only. No run will be started.
                 </AlertDescription>
               </Alert>
             )}
@@ -530,16 +514,14 @@ export function StoryDeliveryPanel({ workspaceId, storyDetail, onStoryUpdated }:
               {d.savingAssignment ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserPlus className="h-3 w-3" />}
               Assign
             </Button>
-            {d.selectedAgent?.agent_kind === 'llm' && (
-              <Button
-                size="xs"
-                onClick={d.handleRunNow}
-                disabled={d.triggeringRun || d.savingAssignment || d.savingTarget || (d.requiresRepo && !d.hasDeliveryTarget)}
-              >
-                {d.triggeringRun ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-                Run Now
-              </Button>
-            )}
+            <Button
+              size="xs"
+              onClick={d.handleRunNow}
+              disabled={d.triggeringRun || d.savingAssignment || d.savingTarget || (d.requiresRepo && !d.hasDeliveryTarget)}
+            >
+              {d.triggeringRun ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+              Run Now
+            </Button>
           </div>
 
           {/* Summary */}

@@ -262,6 +262,14 @@ func (r *PMStoryRepository) Update(ctx context.Context, story *model.PMStory) er
 	return nil
 }
 
+// UpdateFields updates specific fields on a story by ID.
+func (r *PMStoryRepository) UpdateFields(ctx context.Context, id string, fields map[string]interface{}) error {
+	if err := r.db.WithContext(ctx).Model(&model.PMStory{}).Where("id = ?", id).Updates(fields).Error; err != nil {
+		return fmt.Errorf("update story fields: %w", err)
+	}
+	return nil
+}
+
 // Delete archives a story.
 func (r *PMStoryRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).

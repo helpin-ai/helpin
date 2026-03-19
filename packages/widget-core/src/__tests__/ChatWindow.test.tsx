@@ -16,7 +16,7 @@ const baseConfig = {
     aiEnabled: false,
     fileUploads: false,
     preChatForm: false,
-    requireName: false,
+    requirePhone: false,
     csatRating: false,
   },
 };

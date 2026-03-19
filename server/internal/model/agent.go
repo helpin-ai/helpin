@@ -10,24 +10,21 @@ const (
 	AgentClassEngineer       = "engineer"
 	AgentClassReviewer       = "reviewer"
 	AgentClassSupport        = "support"
-	AgentClassHuman          = "human"
 
-	AgentModelProviderAnthropic  = "anthropic"
-	AgentModelProviderOpenAI     = "openai"
+	AgentModelProviderAnthropic           = "anthropic"
+	AgentModelProviderOpenAI              = "openai"
 	AgentModelProviderOpenRouter          = "openrouter"
 	AgentModelProviderOpenRouterResponses = "openrouter-responses"
 )
 
-// Agent represents a human or LLM agent in a workspace.
+// Agent represents an LLM agent in a workspace.
 type Agent struct {
 	ID                  string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID         string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	Name                string          `json:"name" gorm:"not null"`
-	AgentKind           string          `json:"agent_kind" gorm:"not null"`
 	AgentClass          string          `json:"agent_class" gorm:"not null;default:'engineer'"`
 	Role                string          `json:"role"`
 	Status              string          `json:"status" gorm:"not null;default:'idle'"`
-	BackingUserID       *string         `json:"backing_user_id" gorm:"column:user_id;type:uuid"`
 	RuntimeKind         string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
 	CapabilityProfile   string          `json:"capability_profile" gorm:"not null;default:'engineer'"`
 	Skills              json.RawMessage `json:"skills" gorm:"type:jsonb;not null;default:'[]'"`
@@ -117,10 +114,8 @@ func (AgentRunArtifact) TableName() string { return "agent_run_artifacts" }
 type CreateAgentRequest struct {
 	WorkspaceID        string          `json:"workspace_id"`
 	Name               string          `json:"name"`
-	AgentKind          string          `json:"agent_kind"`
 	AgentClass         *string         `json:"agent_class"`
 	Role               string          `json:"role"`
-	BackingUserID      *string         `json:"backing_user_id"`
 	RuntimeKind        *string         `json:"runtime_kind"`
 	CapabilityProfile  *string         `json:"capability_profile"`
 	Skills             json.RawMessage `json:"skills"`
@@ -148,7 +143,6 @@ type UpdateAgentRequest struct {
 	AgentClass         *string         `json:"agent_class"`
 	Role               *string         `json:"role"`
 	Status             *string         `json:"status"`
-	BackingUserID      *string         `json:"backing_user_id"`
 	RuntimeKind        *string         `json:"runtime_kind"`
 	CapabilityProfile  *string         `json:"capability_profile"`
 	Skills             json.RawMessage `json:"skills"`

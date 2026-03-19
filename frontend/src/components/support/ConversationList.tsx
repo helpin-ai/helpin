@@ -44,7 +44,17 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     if (navFilter === 'my_inbox' && userId) {
       result = result.filter((c) => c.opened_by_user_id === userId);
     } else if (navFilter === 'unassigned') {
-      result = result.filter((c) => !c.assigned_agent_id);
+      result = result.filter((c) => !c.assigned_agent_id && !c.opened_by_user_id);
+    } else if (navFilter === 'mentions') {
+      // TODO: filter by @mentions once backend supports it — for now show all
+    } else if (navFilter === 'ai_all') {
+      result = result.filter((c) => c.ai_state != null);
+    } else if (navFilter === 'ai_resolved') {
+      result = result.filter((c) => c.ai_state === 'resolved');
+    } else if (navFilter === 'ai_escalated') {
+      result = result.filter((c) => c.ai_state === 'escalated');
+    } else if (navFilter === 'ai_pending') {
+      result = result.filter((c) => c.ai_state === 'pending');
     }
 
     // Apply search
