@@ -6,6 +6,14 @@ export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 export type Severity = 'none' | 'minor' | 'major' | 'critical';
 export type EpicHealth = 'no_health' | 'on_track' | 'at_risk' | 'off_track';
 export type SprintStatus = 'unstarted' | 'started' | 'done';
+export type RecurringTemplateStatus = 'active' | 'paused' | 'stopped' | 'failed';
+export type RecurringScheduleType = 'time' | 'completion';
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type RecurringCompletionEvent = 'completed' | 'done_state';
+export type RecurringDueDateMode = 'none' | 'scheduled_date' | 'offset_days';
+export type RecurringSprintAssignmentMode = 'none' | 'current_sprint' | 'by_due_date';
+export type RecurringRunStatus = 'succeeded' | 'failed' | 'skipped';
+export type RecurringRunTrigger = 'manual_seed' | 'schedule' | 'completion' | 'generate_now';
 
 export interface Workflow {
   id: string;
@@ -197,6 +205,9 @@ export interface Story {
   archived: boolean;
   assigned_agent_id?: string;
   template_id?: string;
+  recurring_template_id?: string;
+  recurring_run_id?: string;
+  recurring_occurrence_number?: number;
   external_id?: string;
   slice_type?: string;
   implementation_brief?: StoryImplementationBrief;
@@ -501,6 +512,123 @@ export interface StoryTemplate {
   archived: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface RecurringTemplateConfig {
+  schedule_type: RecurringScheduleType;
+  frequency?: RecurringFrequency;
+  interval?: number;
+  weekdays?: number[];
+  day_of_month?: number;
+  completion_event?: RecurringCompletionEvent;
+  completion_state_ids?: string[];
+  due_date_mode?: RecurringDueDateMode;
+  due_offset_days?: number;
+  starts_on?: string;
+  ends_on?: string;
+  ends_after_occurrences?: number;
+  sprint_assignment_mode?: RecurringSprintAssignmentMode;
+}
+
+export interface RecurringStorySeed {
+  name: string;
+  description?: string;
+  story_type?: StoryType;
+  workflow_id: string;
+  workflow_state_id: string;
+  epic_id?: string;
+  team_id?: string;
+  owner_member_id?: string;
+  requester_member_id?: string;
+  estimate?: number;
+  priority?: Priority;
+  severity?: Severity;
+  owner_ids?: string[];
+  follower_ids?: string[];
+  label_ids?: string[];
+  checklist_items?: CreateChecklistItemRequest[];
+  external_links?: CreateExternalLinkRequest[];
+}
+
+export interface RecurringTemplate {
+  id: string;
+  workspace_id: string;
+  team_id?: string;
+  title: string;
+  description?: string;
+  status: RecurringTemplateStatus;
+  owner_member_id?: string;
+  created_from_story_id?: string;
+  seed_payload: string;
+  config: string;
+  start_date?: string;
+  end_date?: string;
+  ends_after_occurrences?: number;
+  next_run_at?: string;
+  last_run_at?: string;
+  last_generated_story_id?: string;
+  last_error?: string;
+  failure_count: number;
+  generated_count: number;
+  skip_next_run: boolean;
+  created_by_id?: string;
+  updated_by_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecurringRun {
+  id: string;
+  workspace_id: string;
+  template_id: string;
+  occurrence_number: number;
+  trigger_type: RecurringRunTrigger;
+  scheduled_for?: string;
+  started_at?: string;
+  finished_at?: string;
+  status: RecurringRunStatus;
+  generated_story_id?: string;
+  dedupe_key: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecurringTemplateDetail {
+  template: RecurringTemplate;
+  config: RecurringTemplateConfig;
+  seed: RecurringStorySeed;
+  rule_summary: string;
+  last_generated_story?: Story;
+  runs?: RecurringRun[];
+}
+
+export interface StoryRecurringSummary {
+  template_id: string;
+  template_title: string;
+  status: RecurringTemplateStatus;
+  occurrence_number: number;
+  generated_count: number;
+  rule_summary: string;
+  next_run_at?: string;
+  last_error?: string;
+  last_generated_story?: Story;
+  config: RecurringTemplateConfig;
+}
+
+export interface CreateRecurringTemplateRequest {
+  workspace_id: string;
+  title: string;
+  description?: string;
+  story_id: string;
+  config: RecurringTemplateConfig;
+}
+
+export interface UpdateRecurringTemplateRequest {
+  title?: string;
+  description?: string;
+  story_id?: string;
+  config?: RecurringTemplateConfig;
 }
 
 export interface CreateStoryTemplateRequest {

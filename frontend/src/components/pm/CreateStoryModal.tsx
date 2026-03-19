@@ -15,6 +15,7 @@ import {
   Loader2,
   Paperclip,
   Plus,
+  RefreshCw,
   Sparkles,
   Tag,
   Trash2,
@@ -24,7 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { TiptapEditor } from "@/components/ui/tiptap-editor";
@@ -63,8 +64,12 @@ import { filterMentionTeams } from "@/components/pm/mentionSuggestions";
 import { extractInlineAttachmentIds } from "@/components/pm/editorImageAttachments";
 import { buildAssignableMemberNameMap, findAssignableMember } from "@/lib/assignableMembers";
 import { pmAttachmentService } from "@/lib/services/pmAttachmentService";
+import { pmRecurringTemplateService } from "@/lib/services/pmRecurringTemplateService";
 import { uploadToS3 } from "@/lib/api";
 import { toast } from "sonner";
+import { RecurringTemplateForm, type RecurringTemplateFormValue } from "@/components/pm/RecurringTemplateForm";
+import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUtils";
+import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
 
 interface CreateStoryModalProps {
   open: boolean;
@@ -213,6 +218,8 @@ export function CreateStoryModal({
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
+  const [recurringDraft, setRecurringDraft] = useState<RecurringTemplateFormValue | null>(null);
+  const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
@@ -288,6 +295,8 @@ export function CreateStoryModal({
     setShowChecklist(isTemplateMode);
     setShowExternalLinks(isTemplateMode);
     setShowAttachments(false);
+    setRecurringDraft(null);
+    setRecurringDialogOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial story type; including it causes form reset on background refetch
   }, [open, initialStateId, initialTeamId, initialOwnerMemberId, currentMemberId, isTemplateMode, editingTemplate]);
 
@@ -380,6 +389,11 @@ export function CreateStoryModal({
     if (!form.requester_member_id) return "No requester";
     return memberNameMap.get(form.requester_member_id) ?? "No requester";
   }, [form.requester_member_id, memberNameMap]);
+
+  const recurringDraftSummary = useMemo(() => {
+    if (!recurringDraft) return 'Not recurring';
+    return formatRecurringRuleSummary(recurringDraft.config);
+  }, [recurringDraft]);
 
   const resolveSubmitWorkflow = useCallback(async () => {
     if (!workflow) {
@@ -502,6 +516,20 @@ export function CreateStoryModal({
           }
         }
 
+        let recurringSetupError: string | null = null;
+        if (result?.id && recurringDraft) {
+          const { error: recurringError } = await pmRecurringTemplateService.create({
+            workspace_id: workspaceId,
+            story_id: result.id,
+            title: recurringDraft.title.trim() || form.name.trim(),
+            description: recurringDraft.description.trim() || undefined,
+            config: recurringDraft.config,
+          });
+          if (recurringError) {
+            recurringSetupError = recurringError;
+          }
+        }
+
         if (createMore) {
           const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
           setDescriptionEditorKey((current) => current + 1);
@@ -515,8 +543,15 @@ export function CreateStoryModal({
           setStoryTypeDirty(false);
           setStateId(initialStateId ?? '');
           setPendingFiles([]);
+          setRecurringDraft(null);
         } else {
           onOpenChange(false);
+        }
+
+        if (recurringSetupError) {
+          toast.error(`Story created, but recurring setup failed: ${recurringSetupError}`);
+        } else if (recurringDraft) {
+          toast.success('Story created with recurring schedule');
         }
       }
     } catch (err) {
@@ -798,23 +833,39 @@ export function CreateStoryModal({
                   </div>
                   <div className="px-4 py-2 space-y-2">
                     {pendingFiles.length > 0 && (
-                      <div className="space-y-1">
-                        {pendingFiles.map((file, idx) => (
-                          <div key={idx} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent/50 transition-colors">
-                            <Paperclip className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-                            <span className="flex-1 text-sm text-foreground truncate">{file.name}</span>
-                            <span className="text-[11px] text-muted-foreground shrink-0">
-                              {file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
-                            </span>
-                            <button
-                              type="button"
-                              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
-                              onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                        {pendingFiles.map((file, idx) => {
+                          const isImage = file.type.startsWith('image/');
+                          const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
+                          return (
+                            <div key={idx} className="group relative">
+                              <div className="overflow-hidden rounded-lg border border-border/60">
+                                {isImage ? (
+                                  <img
+                                    src={URL.createObjectURL(file)}
+                                    alt={file.name}
+                                    className="h-20 w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
+                                    <Paperclip className="h-6 w-6 text-muted-foreground/50" />
+                                    <span className="text-[9px] font-medium uppercase text-muted-foreground tracking-wide">{ext}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  className="flex h-6 w-6 items-center justify-center rounded bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-destructive"
+                                  onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== idx))}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                              <p className="mt-1 truncate text-[10px] text-muted-foreground" title={file.name}>{file.name}</p>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     <label className="flex items-center justify-center gap-2 rounded-md border border-dashed border-border/60 px-3 py-2 cursor-pointer hover:border-border hover:bg-muted/30 transition-colors">
@@ -1151,6 +1202,22 @@ export function CreateStoryModal({
                   />
                 </MetadataRow>
                 )}
+
+                {!isTemplateMode && (
+                  <>
+                    <div className="col-span-3 h-px bg-border/40 my-1" />
+                    <MetadataRow icon={RefreshCw} label="Recurring">
+                      <button
+                        type="button"
+                        className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
+                        onClick={() => setRecurringDialogOpen(true)}
+                      >
+                        {recurringDraft ? <RecurringTemplateBadge compact /> : null}
+                        <span className="truncate">{recurringDraftSummary}</span>
+                      </button>
+                    </MetadataRow>
+                  </>
+                )}
               </div>
             </aside>
           </div>
@@ -1182,6 +1249,44 @@ export function CreateStoryModal({
             </Button>
           </div>
         </div>
+
+        {!isTemplateMode && (
+          <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Configure recurrence</DialogTitle>
+                <DialogDescription>
+                  Automatically create copies of this story on a schedule.
+                </DialogDescription>
+              </DialogHeader>
+              <RecurringTemplateForm
+                initialValue={recurringDraft ?? {
+                  title: form.name.trim() || 'Recurring story',
+                  description: '',
+                  config: {
+                    schedule_type: 'time',
+                    frequency: 'weekly',
+                    interval: 1,
+                    weekdays: [1],
+                    due_date_mode: 'scheduled_date',
+                    sprint_assignment_mode: 'none',
+                  },
+                }}
+                workflowStates={workflow?.states ?? []}
+                submitLabel="Apply"
+                onCancel={() => setRecurringDialogOpen(false)}
+                onSubmit={(value) => {
+                  setRecurringDraft(value);
+                  setRecurringDialogOpen(false);
+                }}
+                onRemove={recurringDraft ? () => {
+                  setRecurringDraft(null);
+                  setRecurringDialogOpen(false);
+                } : undefined}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
       </DialogContent>
     </Dialog>
   );

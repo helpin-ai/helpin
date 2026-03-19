@@ -476,6 +476,77 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 	return &doc, &ha, &content, nil
 }
 
+// GetPublicArticleByCollectionSlug finds a publicly published article by collection slug and article slug.
+func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
+	var ha model.DocsHelpcenterArticle
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN docs_documents d ON d.id = docs_helpcenter_articles.document_id").
+		Joins("JOIN docs_collections c ON c.id = d.collection_id").
+		Where("c.workspace_id = ? AND c.slug = ? AND docs_helpcenter_articles.slug = ? AND d.status = 'published' AND d.deleted_at IS NULL AND docs_helpcenter_articles.public_published_at IS NOT NULL",
+			workspaceID, collectionSlug, articleSlug).
+		First(&ha).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, nil
+		}
+		return nil, nil, nil, fmt.Errorf("get public article by collection slug: %w", err)
+	}
+
+	var doc model.DocsDocument
+	if err := r.db.WithContext(ctx).Where("id = ?", ha.DocumentID).First(&doc).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("get article document: %w", err)
+	}
+
+	var content model.DocsContent
+	if err := r.db.WithContext(ctx).Where("document_id = ?", ha.DocumentID).First(&content).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, fmt.Errorf("get article content: %w", err)
+		}
+		return &doc, &ha, nil, nil
+	}
+
+	return &doc, &ha, &content, nil
+}
+
+// GetPublicCollectionBySlug returns a collection and its published articles by workspace and collection slug.
+func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, error) {
+	var coll model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND slug = ? AND deleted_at IS NULL", workspaceID, collectionSlug).
+		First(&coll).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil
+		}
+		return nil, nil, fmt.Errorf("get public collection by slug: %w", err)
+	}
+
+	type navArticleRow struct {
+		ID    string `gorm:"column:id"`
+		Title string `gorm:"column:title"`
+		Slug  string `gorm:"column:slug"`
+	}
+	var rows []navArticleRow
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT d.id, d.title, ha.slug
+		FROM docs_documents d
+		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		WHERE d.collection_id = ?
+		  AND d.status = 'published'
+		  AND d.deleted_at IS NULL
+		  AND ha.public_published_at IS NOT NULL
+		  AND ha.slug != ''
+		ORDER BY d.is_pinned DESC, d.created_at ASC
+	`, coll.ID).Scan(&rows).Error; err != nil {
+		return nil, nil, fmt.Errorf("list public collection articles: %w", err)
+	}
+
+	articles := make([]model.PublicNavArticle, len(rows))
+	for i, row := range rows {
+		articles[i] = model.PublicNavArticle{ID: row.ID, Title: row.Title, Slug: row.Slug}
+	}
+
+	return &coll, articles, nil
+}
+
 // SetSlug updates the public slug for a helpcenter article.
 func (r *DocsHelpcenterRepository) SetSlug(ctx context.Context, documentID, slug string) error {
 	if err := r.db.WithContext(ctx).Model(&model.DocsHelpcenterArticle{}).

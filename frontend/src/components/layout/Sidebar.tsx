@@ -615,6 +615,7 @@ export function Sidebar() {
         items: [
           { link: `/w/${wsSlug}/settings/labels`, label: 'Labels', icon: Tag },
           { link: `/w/${wsSlug}/settings/story-templates`, label: 'Story Templates', icon: FileText },
+          { link: `/w/${wsSlug}/settings/recurring-tasks`, label: 'Recurring Tasks', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/delivery`, label: 'Delivery', icon: Globe },
           { link: `/w/${wsSlug}/settings/ai`, label: 'AI', icon: Bot },
@@ -624,6 +625,7 @@ export function Sidebar() {
         label: 'Support & Docs',
         items: [
           { link: `/w/${wsSlug}/settings/helpcenter`, label: 'Help Center', icon: Globe },
+          { link: `/w/${wsSlug}/settings/redirects`, label: 'Redirects', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/chat-general`, label: 'Chat Widget', icon: MessageSquare },
           { link: `/w/${wsSlug}/settings/chat-ai`, label: 'AI & Routing', icon: Bot },
         ],
