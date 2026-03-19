@@ -190,17 +190,6 @@ export class WidgetManager {
     } else {
       this.hasBeenOpened = true;
     }
-    if (this.activeConversationId && this.currentView === 'home') {
-      // User had an active conversation — resume it instead of showing home
-      this.currentView = 'conversation';
-    }
-    // Mark active conversation as read when opening to conversation view
-    if (this.activeConversationId && this.currentView === 'conversation') {
-      this.clearActiveConversationUnread();
-      if (this.wsConnection?.readyState === WebSocket.OPEN) {
-        this.wsSend('conversation:read', { conversation_id: this.activeConversationId });
-      }
-    }
     this.ensureWidget();
     this.render();
     this.triggerCallback('onShow');
