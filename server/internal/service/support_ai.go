@@ -35,6 +35,75 @@ type AIResponseContract struct {
 	Confidence   float64  `json:"confidence"`
 }
 
+// isAIContract checks whether a raw JSON string contains the keys expected
+// in an AIResponseContract (can_answer and content), distinguishing it from
+// arbitrary user-shared JSON.
+func isAIContract(raw string) bool {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return false
+	}
+	_, hasCanAnswer := m["can_answer"]
+	_, hasContent := m["content"]
+	return hasCanAnswer && hasContent
+}
+
+// parseAIResponse parses the raw LLM output into an AIResponseContract.
+// It handles three formats:
+//  1. Pure JSON: the entire string is a valid JSON contract
+//  2. Fenced JSON: the string is wrapped in ```json ... ``` markdown fences
+//  3. Mixed content: readable markdown text followed by an embedded ```json block
+//
+// Returns the parsed contract and true, or a zero contract and false if parsing fails.
+// When parsing fails, cleanedContent contains the raw text with any trailing JSON block stripped.
+func parseAIResponse(raw string) (contract AIResponseContract, cleanedContent string, ok bool) {
+	trimmed := strings.TrimSpace(raw)
+
+	// Case 1 & 2: Strip outer markdown fences if present, then try pure JSON parse.
+	jsonCandidate := trimmed
+	if strings.HasPrefix(jsonCandidate, "```") {
+		if idx := strings.Index(jsonCandidate, "\n"); idx != -1 {
+			jsonCandidate = jsonCandidate[idx+1:]
+		}
+		if idx := strings.LastIndex(jsonCandidate, "```"); idx != -1 {
+			jsonCandidate = jsonCandidate[:idx]
+		}
+		jsonCandidate = strings.TrimSpace(jsonCandidate)
+	}
+
+	if err := json.Unmarshal([]byte(jsonCandidate), &contract); err == nil {
+		return contract, contract.Content, true
+	}
+
+	// Case 3: Readable text followed by an embedded ```json block.
+	if jsonStart := strings.Index(trimmed, "```json"); jsonStart != -1 {
+		after := trimmed[jsonStart+len("```json"):]
+		if jsonEnd := strings.Index(after, "```"); jsonEnd != -1 {
+			embedded := strings.TrimSpace(after[:jsonEnd])
+			if err := json.Unmarshal([]byte(embedded), &contract); err == nil && isAIContract(embedded) {
+				// Use contract.Content if present, otherwise use the text before the JSON block.
+				if strings.TrimSpace(contract.Content) == "" {
+					contract.Content = strings.TrimSpace(trimmed[:jsonStart])
+				}
+				return contract, contract.Content, true
+			}
+		}
+	}
+
+	// Parsing failed — strip trailing ```json...``` block only if it looks like an AI contract.
+	cleaned := raw
+	if jsonStart := strings.Index(cleaned, "```json"); jsonStart > 0 {
+		after := cleaned[jsonStart+len("```json"):]
+		if jsonEnd := strings.Index(after, "```"); jsonEnd != -1 {
+			candidate := strings.TrimSpace(after[:jsonEnd])
+			if isAIContract(candidate) {
+				cleaned = strings.TrimSpace(cleaned[:jsonStart])
+			}
+		}
+	}
+	return AIResponseContract{}, cleaned, false
+}
+
 // AIMessageMetadata is stored in the SupportMessage.Metadata JSONB field.
 type AIMessageMetadata struct {
 	AIAutoReply  bool        `json:"ai_auto_reply"`
@@ -446,59 +515,18 @@ func (s *SupportAIService) generateResponse(
 		return nil, 0, err
 	}
 
-	// Strip markdown code fences that LLMs commonly wrap JSON in.
-	rawJSON := strings.TrimSpace(resp.Content)
-	if strings.HasPrefix(rawJSON, "```") {
-		// Remove opening fence (```json or ```)
-		if idx := strings.Index(rawJSON, "\n"); idx != -1 {
-			rawJSON = rawJSON[idx+1:]
-		}
-		// Remove closing fence
-		if idx := strings.LastIndex(rawJSON, "```"); idx != -1 {
-			rawJSON = rawJSON[:idx]
-		}
-		rawJSON = strings.TrimSpace(rawJSON)
-	}
+	contract, cleanedContent, ok := parseAIResponse(resp.Content)
+	totalTokens := resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens
 
-	var contract AIResponseContract
-	if err := json.Unmarshal([]byte(rawJSON), &contract); err != nil {
-		// The LLM may have returned readable markdown followed by a ```json block.
-		// Try to extract the embedded JSON block and parse it.
-		if jsonStart := strings.Index(rawJSON, "```json"); jsonStart != -1 {
-			embedded := rawJSON[jsonStart+len("```json"):]
-			if jsonEnd := strings.Index(embedded, "```"); jsonEnd != -1 {
-				embedded = strings.TrimSpace(embedded[:jsonEnd])
-				if err2 := json.Unmarshal([]byte(embedded), &contract); err2 == nil {
-					// If the contract content is empty or duplicated, use the text before the JSON block.
-					if strings.TrimSpace(contract.Content) == "" {
-						contract.Content = strings.TrimSpace(rawJSON[:jsonStart])
-					}
-					slog.Info("AI response parsed from embedded JSON block",
-						"can_answer", contract.CanAnswer,
-						"confidence", contract.Confidence,
-					)
-					totalTokens := resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens
-					return &contract, totalTokens, nil
-				}
-			}
-		}
-
+	if !ok {
 		slog.ErrorContext(ctx, "AI response JSON parse failed — treating as conversational reply",
-			"error", err,
 			"raw_content_prefix", truncateLog(resp.Content, 200),
 		)
-
-		// Strip any trailing ```json...``` block from the content as a last resort.
-		cleanContent := resp.Content
-		if jsonStart := strings.Index(cleanContent, "```json"); jsonStart != -1 {
-			cleanContent = strings.TrimSpace(cleanContent[:jsonStart])
-		}
-
 		return &AIResponseContract{
-			Content:    cleanContent,
+			Content:    cleanedContent,
 			CanAnswer:  true,
 			Confidence: 0.8,
-		}, resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens, nil
+		}, totalTokens, nil
 	}
 
 	slog.Info("AI response parsed",
@@ -507,7 +535,6 @@ func (s *SupportAIService) generateResponse(
 		"source_count", len(contract.SourceDocIDs),
 	)
 
-	totalTokens := resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens
 	return &contract, totalTokens, nil
 }
 
