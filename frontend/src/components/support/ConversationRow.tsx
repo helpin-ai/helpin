@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -72,7 +73,6 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
   const viewingAgentIds = isSelected && currentUserId && !remoteViewingIds.includes(currentUserId)
     ? [...remoteViewingIds, currentUserId]
     : remoteViewingIds;
-  const hasActivity = isUnread || isCustomerTyping || isAgentTyping || viewingAgentIds.length > 0;
 
   return (
     <button
@@ -157,34 +157,38 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
               )}
             </p>
 
-            {/* Activity indicators */}
-            {hasActivity && (
-              <div className="flex shrink-0 items-center">
-                {(isCustomerTyping || isAgentTyping) && <TypingDotsPill />}
-                {isUnread && (
-                  <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white animate-in zoom-in-75 duration-200">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-                {/* Stacked agent avatars (Crisp-style overlapping) */}
-                {!isUnread && (agentTypingEntries.length > 0 || viewingAgentIds.length > 0) && (
-                  <div className="flex items-center flex-row-reverse">
-                    {viewingAgentIds.map((uid) => (
-                      <AgentAvatar
-                        key={uid}
-                        userId={uid}
-                        tooltip={agentTypingMap?.[uid] !== undefined ? 'responding' : 'viewing'}
-                      />
+            {/* Activity indicators or status icon */}
+            <div className="flex shrink-0 items-center">
+              {(isCustomerTyping || isAgentTyping) ? (
+                <TypingDotsPill />
+              ) : isUnread ? (
+                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white animate-in zoom-in-75 duration-200">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              ) : (agentTypingEntries.length > 0 || viewingAgentIds.length > 0) ? (
+                <div className="flex items-center flex-row-reverse">
+                  {viewingAgentIds.map((uid) => (
+                    <AgentAvatar
+                      key={uid}
+                      userId={uid}
+                      tooltip={agentTypingMap?.[uid] !== undefined ? 'responding' : 'viewing'}
+                    />
+                  ))}
+                  {agentTypingEntries
+                    .filter(([uid]) => !viewingAgentIds.includes(uid))
+                    .map(([uid]) => (
+                      <AgentAvatar key={uid} userId={uid} tooltip="responding" />
                     ))}
-                    {agentTypingEntries
-                      .filter(([uid]) => !viewingAgentIds.includes(uid))
-                      .map(([uid]) => (
-                        <AgentAvatar key={uid} userId={uid} tooltip="responding" />
-                      ))}
-                  </div>
-                )}
-              </div>
-            )}
+                </div>
+              ) : (conversation.status === 'resolved' || conversation.status === 'closed') ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  </TooltipTrigger>
+                  <TooltipContent side="left"><span className="text-xs">Resolved</span></TooltipContent>
+                </Tooltip>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
