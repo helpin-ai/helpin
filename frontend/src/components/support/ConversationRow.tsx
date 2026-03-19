@@ -94,13 +94,16 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
             <span className="absolute -top-0.5 -left-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background" />
           )}
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <span className={`truncate max-w-[160px] text-sm ${isUnread ? 'font-semibold' : 'font-medium'}`}>{displayName}</span>
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          <div className="grid items-center gap-2" style={{ gridTemplateColumns: '1fr auto' }}>
+            <span className={`text-sm overflow-hidden text-ellipsis whitespace-nowrap ${isUnread ? 'font-semibold' : 'font-medium'}`}>{displayName}</span>
             <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(conversation.updated_at)}</span>
           </div>
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
-            <p className={`min-w-0 flex-1 truncate text-sm ${isUnread ? 'font-medium text-foreground' : 'text-foreground/80'}`}>
+          <div className="grid items-center gap-1.5 mt-0.5" style={{ gridTemplateColumns: '1fr auto' }}>
+            <p
+              className={`text-sm m-0 ${isUnread ? 'font-medium text-foreground' : 'text-foreground/80'}`}
+              style={{ display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '18px', maxHeight: '18px' }}
+            >
               {isCustomerTyping ? (
                 <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
               ) : isAgentTyping ? (
@@ -116,18 +119,16 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
                 <>
                   <span className="inline-block w-0.5 h-3 align-middle rounded-full bg-blue-500 mr-1" />
                   <span className="text-blue-600 dark:text-blue-400 font-medium">Draft: </span>
-                  <span className="text-muted-foreground">{draftContent.length > 36 ? draftContent.slice(0, 36) + '…' : draftContent}</span>
+                  <span className="text-muted-foreground">{draftContent}</span>
                 </>
               ) : conversation.last_message?.startsWith('Note: ') ? (
                 <>
                   <span className="inline-block w-0.5 h-3 align-middle rounded-full bg-amber-500 mr-1" />
                   <span className="text-amber-600 dark:text-amber-400 font-medium">Note: </span>
-                  <span className="text-muted-foreground">{conversation.last_message.slice(6, 42)}{conversation.last_message.length > 42 ? '…' : ''}</span>
+                  <span className="text-muted-foreground">{conversation.last_message.slice(6)}</span>
                 </>
               ) : (
-                ((conversation.last_message || conversation.subject || '').length > 36
-                  ? (conversation.last_message || conversation.subject || '').slice(0, 36) + '…'
-                  : (conversation.last_message || conversation.subject))
+                conversation.last_message || conversation.subject
               )}
             </p>
             {hasActivity && (
