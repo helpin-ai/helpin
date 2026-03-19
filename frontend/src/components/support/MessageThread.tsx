@@ -126,8 +126,8 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
 function DaySeparator({ label }: { label: string }) {
   return (
     <div className="sticky top-0 z-[1] flex items-center justify-center py-3">
-      <div className="absolute inset-x-0 top-1/2 h-px bg-border/50" />
-      <span className="relative rounded-full bg-white px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 dark:bg-background">
+      <div className="absolute inset-x-0 top-1/2 h-px bg-border/40" />
+      <span className="relative border-0 rounded-full bg-white px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 shadow-none outline-none dark:bg-background">
         {label}
       </span>
     </div>
