@@ -33,6 +33,7 @@ type SupportInboxService struct {
 	docsCollectionRepo      *repository.DocsCollectionRepository
 	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
+	supportAIService        *SupportAIService
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -83,6 +84,15 @@ func renderWidgetArticleHTML(content json.RawMessage) *string {
 	return &rendered
 }
 
+// SetSupportAIService injects the AI-first auto-reply service.
+func (s *SupportInboxService) SetSupportAIService(aiService *SupportAIService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.supportAIService = aiService
+	return s
+}
+
 // SetConversationAgentRunner injects the agent-run startup hook used for widget auto-replies.
 func (s *SupportInboxService) SetConversationAgentRunner(runner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)) *SupportInboxService {
 	if s == nil {
@@ -101,11 +111,11 @@ func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID
 }
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
-func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination) (*model.ConversationListResponse, error) {
+func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, aiState ...string) (*model.ConversationListResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination)
+	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, aiState...)
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +228,86 @@ func (s *SupportInboxService) pushVisitorConversationsRefresh(ctx context.Contex
 	})
 }
 
+// MarkConversationUnread resets the team read cursor so the conversation appears unread.
+func (s *SupportInboxService) MarkConversationUnread(ctx context.Context, workspaceID, conversationID, userID string) error {
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.MarkUnread(ctx, conversationID); err != nil {
+		return err
+	}
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     userID,
+	})
+	return nil
+}
+
+// UpdateConversationSubject changes the conversation subject.
+func (s *SupportInboxService) UpdateConversationSubject(ctx context.Context, workspaceID, conversationID, subject, actorID string) (*model.SupportConversation, error) {
+	if strings.TrimSpace(subject) == "" {
+		return nil, fmt.Errorf("subject is required")
+	}
+
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.UpdateSubject(ctx, conversationID, strings.TrimSpace(subject)); err != nil {
+		return nil, err
+	}
+	conv.Subject = strings.TrimSpace(subject)
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+	})
+
+	return conv, nil
+}
+
+// DeleteConversation permanently deletes a conversation and its messages.
+func (s *SupportInboxService) DeleteConversation(ctx context.Context, workspaceID, conversationID, actorID string) error {
+	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.Delete(ctx, workspaceID, conversationID); err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "conversation deleted", "conversation_id", conversationID, "workspace_id", workspaceID, "actor_id", actorID)
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "deleted",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+	})
+	return nil
+}
+
 // GetConversation returns a single conversation.
 func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, id string) (*model.SupportConversation, error) {
 	ticket, err := s.conversationRepo.GetByID(ctx, workspaceID, id)
@@ -283,7 +373,7 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 
 // validConversationStatuses defines allowed status transitions.
 var validConversationStatuses = map[string]bool{
-	"open": true, "in_progress": true, "waiting": true, "resolved": true, "closed": true,
+	"open": true, "in_progress": true, "waiting": true, "resolved": true, "closed": true, "spam": true,
 }
 
 // UpdateConversationStatus changes conversation status.
@@ -438,49 +528,102 @@ func (s *SupportInboxService) ListContactConversations(ctx context.Context, work
 	return s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
 }
 
-// matchOrCreateCRMContact looks up a CRM contact by email; if not found and
-// we have a name, it auto-creates one with lifecycle_stage=subscriber, source=support.
+// matchOrCreateCRMContact looks up a CRM contact by email; if not found,
+// creates one as lead with source=live_chat. Always promotes subscriber→lead.
 func (s *SupportInboxService) matchOrCreateCRMContact(ctx context.Context, workspaceID string, email, name *string) *string {
+	return s.matchOrCreateCRMContactTx(ctx, s.contactRepo, workspaceID, email, name, "widget_prechat")
+}
+
+// matchOrCreateCRMContactTx is the transactional version of matchOrCreateCRMContact.
+// It uses the provided contactRepo (which may be wrapped in a transaction).
+// The source param controls lifecycle promotion: "identify" promotes lead→customer.
+func (s *SupportInboxService) matchOrCreateCRMContactTx(ctx context.Context, contactRepo *repository.CRMContactRepository, workspaceID string, email, name *string, source string) *string {
 	if email == nil || *email == "" {
 		return nil
 	}
 
-	search := strings.TrimSpace(*email)
-	contacts, _, err := s.contactRepo.List(ctx, workspaceID, model.CRMContactListFilters{
-		Search: &search,
-	}, model.PMPagination{Page: 1, PerPage: 1})
-	if err == nil && len(contacts) > 0 {
-		if contacts[0].Email != nil && strings.EqualFold(*contacts[0].Email, search) {
-			return &contacts[0].ID
-		}
+	trimmedEmail := strings.TrimSpace(*email)
+
+	// Look up existing contact by exact email match
+	existing, err := contactRepo.GetByEmail(ctx, workspaceID, trimmedEmail)
+	if err != nil {
+		slog.ErrorContext(ctx, "CRM contact lookup failed", "error", err, "workspace_id", workspaceID)
+		return nil
 	}
 
-	// Auto-create contact if we have name + email.
+	if existing != nil {
+		// Promote lifecycle stage if appropriate (never downgrade)
+		promoted := s.promoteContactLifecycle(ctx, contactRepo, existing, source)
+		if promoted {
+			slog.InfoContext(ctx, "promoted CRM contact lifecycle",
+				"contact_id", existing.ID, "stage", existing.LifecycleStage, "source", source)
+		}
+		return &existing.ID
+	}
+
+	// Auto-create new contact as lead with source=live_chat
 	firstName := "Unknown"
 	if name != nil && *name != "" {
 		firstName = *name
 	}
-	source := "support"
+	contactSource := "live_chat"
 	contact := &model.CRMContact{
 		WorkspaceID:    workspaceID,
 		FirstName:      firstName,
-		Email:          email,
-		LifecycleStage: model.CRMLifecycleSubscriber,
+		Email:          &trimmedEmail,
+		LifecycleStage: model.CRMLifecycleLead,
 		LeadStatus:     model.CRMLeadStatusNew,
-		Source:         &source,
+		Source:         &contactSource,
 	}
-	displayID, err := s.contactRepo.GetNextDisplayID(ctx, workspaceID)
+	displayID, err := contactRepo.GetNextDisplayID(ctx, workspaceID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get next display ID for CRM contact", "error", err, "workspace_id", workspaceID)
+		slog.ErrorContext(ctx, "get next display ID for CRM contact", "error", err, "workspace_id", workspaceID)
 		return nil
 	}
 	contact.DisplayID = displayID
-	if err := s.contactRepo.Create(ctx, contact); err != nil {
-		slog.ErrorContext(ctx, "failed to auto-create CRM contact from support", "error", err, "workspace_id", workspaceID)
+	if err := contactRepo.Create(ctx, contact); err != nil {
+		slog.ErrorContext(ctx, "auto-create CRM contact from widget", "error", err, "workspace_id", workspaceID)
 		return nil
 	}
-	slog.InfoContext(ctx, "auto-created CRM contact from support conversation", "contact_id", contact.ID, "workspace_id", workspaceID)
+
+	// If source is "identify", promote new lead → customer
+	if source == "sdk_identify" {
+		s.promoteContactLifecycle(ctx, contactRepo, contact, source)
+	}
+
+	slog.InfoContext(ctx, "auto-created CRM lead from widget",
+		"contact_id", contact.ID, "workspace_id", workspaceID, "source", contactSource)
 	return &contact.ID
+}
+
+// promoteContactLifecycle promotes a CRM contact's lifecycle stage based on the event source.
+// subscriber → lead (always), lead → customer (only on "identify" source).
+// Never downgrades.
+func (s *SupportInboxService) promoteContactLifecycle(ctx context.Context, contactRepo *repository.CRMContactRepository, contact *model.CRMContact, source string) bool {
+	var targetStage string
+
+	switch {
+	case contact.LifecycleStage == model.CRMLifecycleSubscriber:
+		// Always promote subscriber → lead
+		targetStage = model.CRMLifecycleLead
+	case contact.LifecycleStage == model.CRMLifecycleLead && source == "sdk_identify":
+		// SDK identify() promotes lead → customer
+		targetStage = model.CRMLifecycleCustomer
+	default:
+		return false
+	}
+
+	// Guard: never downgrade
+	if model.CRMLifecycleIsHigherOrEqual(contact.LifecycleStage, targetStage) {
+		return false
+	}
+
+	contact.LifecycleStage = targetStage
+	if err := contactRepo.Update(ctx, contact); err != nil {
+		slog.ErrorContext(ctx, "promote CRM contact lifecycle", "error", err, "contact_id", contact.ID)
+		return false
+	}
+	return true
 }
 
 func generateSecureToken(bytes int) (string, error) {

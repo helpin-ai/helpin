@@ -14,7 +14,6 @@ func TestBuildSystemPromptStructuredPlanningUsesMethodologyPack(t *testing.T) {
 	prompt := BuildSystemPrompt(
 		&model.Agent{
 			Name:          "Planner",
-			AgentKind:     "llm",
 			AgentClass:    model.AgentClassProductPlanner,
 			SystemPrompt:  &systemPrompt,
 			PlanningNotes: &planningNotes,
@@ -49,7 +48,6 @@ func TestBuildSystemPromptBasicPlanningKeepsSimpleGuidance(t *testing.T) {
 	prompt := BuildSystemPrompt(
 		&model.Agent{
 			Name:       "Planner",
-			AgentKind:  "llm",
 			AgentClass: model.AgentClassProductPlanner,
 		},
 		nil,
@@ -77,7 +75,6 @@ func TestBuildSystemPromptNonEpicPreservesAgentSystemPrompt(t *testing.T) {
 	prompt := BuildSystemPrompt(
 		&model.Agent{
 			Name:         "Engineer",
-			AgentKind:    "llm",
 			AgentClass:   model.AgentClassEngineer,
 			SystemPrompt: &systemPrompt,
 		},

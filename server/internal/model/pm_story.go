@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const (
 	PMStoryTypeFeature = "feature"
@@ -51,8 +54,10 @@ type PMStory struct {
 	Archived          bool                   `json:"archived" gorm:"not null;default:false"`
 	AssignedAgentID   *string                `json:"assigned_agent_id" gorm:"type:uuid;index"`
 	TemplateID        *string                `json:"template_id"`
-	ExternalID        *string                `json:"external_id"`
-	IsBlockedByStory  bool                   `json:"is_blocked_by_story" gorm:"-"`
+	ExternalID          *string                `json:"external_id"`
+	SliceType           *string                `json:"slice_type,omitempty" gorm:"type:text"`
+	ImplementationBrief json.RawMessage        `json:"implementation_brief,omitempty" gorm:"type:jsonb"`
+	IsBlockedByStory    bool                   `json:"is_blocked_by_story" gorm:"-"`
 	BlockedByCount    int                    `json:"blocked_by_count" gorm:"-"`
 	IsBlockingOther   bool                   `json:"is_blocking_other_story" gorm:"-"`
 	BlockingCount     int                    `json:"blocking_count" gorm:"-"`

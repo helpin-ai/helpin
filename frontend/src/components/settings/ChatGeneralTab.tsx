@@ -59,13 +59,10 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
   const [snippetTab, setSnippetTab] = useState<'basic' | 'advanced'>('basic');
 
-  // Identity & CRM state
+  // Identity state
   const [requireEmail, setRequireEmail] = useState(true);
-  const [requireName, setRequireName] = useState(false);
+  const [requirePhone, setRequirePhone] = useState(false);
   const [welcomeMessage, setWelcomeMessage] = useState('');
-  const [autoCreateContact, setAutoCreateContact] = useState(true);
-  const [lifecycleStage, setLifecycleStage] = useState('subscriber');
-  const [autoPromote, setAutoPromote] = useState(false);
 
   // Appearance state
   const [brandColor, setBrandColor] = useState('#6366F1');
@@ -88,11 +85,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     if (data?.settings) {
       const s = data.settings;
       setRequireEmail(s.require_email_before_chat);
-      setRequireName(s.require_name_after_email);
+      setRequirePhone(s.require_phone_after_email);
       setWelcomeMessage(s.welcome_message);
-      setAutoCreateContact(s.auto_create_crm_contact);
-      setLifecycleStage(s.default_lifecycle_stage);
-      setAutoPromote(s.auto_promote_to_lead);
       setBrandColor(s.brand_color);
       setShowBranding(s.show_branding);
       setLauncherPosition(s.launcher_position);
@@ -110,11 +104,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const handleSave = () => {
     updateMutation.mutate({
       require_email_before_chat: requireEmail,
-      require_name_after_email: requireName,
+      require_phone_after_email: requirePhone,
       welcome_message: welcomeMessage,
-      auto_create_crm_contact: autoCreateContact,
-      default_lifecycle_stage: lifecycleStage,
-      auto_promote_to_lead: autoPromote,
       widget_name: widgetName,
       widget_avatar_url: widgetAvatarUrl,
       widget_help_space_ids: widgetHelpSpaceIds,
@@ -362,10 +353,10 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-sm">Require name after email</Label>
-                <p className="text-xs text-muted-foreground">Also ask for the visitor's name.</p>
+                <Label className="text-sm">Require phone number after email</Label>
+                <p className="text-xs text-muted-foreground">Also ask for the visitor's phone number.</p>
               </div>
-              <Switch checked={requireName} onCheckedChange={setRequireName} disabled={!requireEmail} />
+              <Switch checked={requirePhone} onCheckedChange={setRequirePhone} disabled={!requireEmail} />
             </div>
 
             <div className="space-y-2">
@@ -614,45 +605,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                 <p className="text-xs text-muted-foreground mt-0.5">Display branding in the widget footer.</p>
               </div>
               <Switch checked={showBranding} onCheckedChange={setShowBranding} />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* CRM Integration */}
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base">CRM Integration</CardTitle>
-            <CardDescription>Automatically create and manage CRM contacts from chat conversations.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-sm">Auto-create CRM contact</Label>
-                <p className="text-xs text-muted-foreground">Create a contact when a visitor provides their email.</p>
-              </div>
-              <Switch checked={autoCreateContact} onCheckedChange={setAutoCreateContact} />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm">Default Lifecycle Stage</Label>
-              <Select value={lifecycleStage} onValueChange={setLifecycleStage}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="subscriber">Subscriber</SelectItem>
-                  <SelectItem value="lead">Lead</SelectItem>
-                  <SelectItem value="opportunity">Opportunity</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-sm">Auto-promote to lead</Label>
-                <p className="text-xs text-muted-foreground">Promote subscribers to leads after their first conversation.</p>
-              </div>
-              <Switch checked={autoPromote} onCheckedChange={setAutoPromote} />
             </div>
           </CardContent>
         </Card>

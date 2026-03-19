@@ -15,7 +15,6 @@ func TestFlowTemplateRegistryIncludesCrossModuleTemplates(t *testing.T) {
 	}
 
 	expected := []string{
-		model.FlowTemplateEpicPlanningV1,
 		model.FlowTemplateEpicPlanningV2,
 		model.FlowTemplateStoryCompletionV1,
 		model.FlowTemplateCRMDealReviewV1,

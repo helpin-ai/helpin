@@ -532,7 +532,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
   // Load agents for pipeline builder
   useEffect(() => {
-    agentService.list(workspaceId).then((res) => { if (res.data) setPipelineAgents(res.data.filter((a) => a.agent_kind === 'llm')); });
+    agentService.list(workspaceId).then((res) => { if (res.data) setPipelineAgents(res.data); });
   }, [workspaceId]);
 
   const filteredTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name));

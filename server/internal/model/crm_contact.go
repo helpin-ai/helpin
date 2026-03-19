@@ -21,6 +21,23 @@ const (
 	CRMLeadStatusUnqualified  = "unqualified"
 )
 
+// crmLifecycleOrder maps lifecycle stages to their ordinal position.
+// Higher values represent more advanced stages. Used to prevent downgrades.
+var crmLifecycleOrder = map[string]int{
+	CRMLifecycleSubscriber:         0,
+	CRMLifecycleLead:               1,
+	CRMLifecycleMarketingQualified: 2,
+	CRMLifecycleSalesQualified:     3,
+	CRMLifecycleOpportunity:        4,
+	CRMLifecycleCustomer:           5,
+	CRMLifecycleEvangelist:         6,
+}
+
+// CRMLifecycleIsHigherOrEqual returns true if current is at or above target in the lifecycle ordering.
+func CRMLifecycleIsHigherOrEqual(current, target string) bool {
+	return crmLifecycleOrder[current] >= crmLifecycleOrder[target]
+}
+
 // CRMContact represents a CRM contact.
 type CRMContact struct {
 	ID               string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`

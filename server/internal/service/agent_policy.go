@@ -10,11 +10,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
-func normalizeAgentClass(agentClass, capabilityProfile, role, agentKind string) string {
-	if strings.EqualFold(strings.TrimSpace(agentKind), "human") {
-		return model.AgentClassHuman
-	}
-
+func normalizeAgentClass(agentClass, capabilityProfile, role string) string {
 	raw := strings.TrimSpace(agentClass)
 	if raw == "" {
 		raw = strings.TrimSpace(capabilityProfile)
@@ -28,8 +24,7 @@ func normalizeAgentClass(agentClass, capabilityProfile, role, agentKind string) 
 	case model.AgentClassProductPlanner,
 		model.AgentClassEngineer,
 		model.AgentClassReviewer,
-		model.AgentClassSupport,
-		model.AgentClassHuman:
+		model.AgentClassSupport:
 		return raw
 	default:
 		return raw
@@ -37,37 +32,26 @@ func normalizeAgentClass(agentClass, capabilityProfile, role, agentKind string) 
 }
 
 func capabilityProfileForAgentClass(agentClass string) string {
-	switch normalizeAgentClass(agentClass, "", "", "") {
+	switch normalizeAgentClass(agentClass, "", "") {
 	case model.AgentClassProductPlanner:
 		return model.AgentClassProductPlanner
 	case model.AgentClassReviewer:
 		return model.AgentClassReviewer
 	case model.AgentClassSupport:
 		return model.AgentClassSupport
-	case model.AgentClassHuman:
-		return model.AgentClassHuman
 	default:
 		return model.AgentClassEngineer
 	}
 }
 
-func agentKindForAgentClass(agentClass string) string {
-	if normalizeAgentClass(agentClass, "", "", "") == model.AgentClassHuman {
-		return "human"
-	}
-	return "llm"
-}
-
 func defaultRoleForAgentClass(agentClass string) string {
-	switch normalizeAgentClass(agentClass, "", "", "") {
+	switch normalizeAgentClass(agentClass, "", "") {
 	case model.AgentClassProductPlanner:
 		return "Product Planner"
 	case model.AgentClassReviewer:
 		return "Reviewer"
 	case model.AgentClassSupport:
 		return "Support"
-	case model.AgentClassHuman:
-		return "Human"
 	default:
 		return "Engineer"
 	}
@@ -93,15 +77,14 @@ func normalizeModelProvider(provider string) string {
 }
 
 func validateAgentClass(agentClass string) error {
-	switch normalizeAgentClass(agentClass, "", "", "") {
+	switch normalizeAgentClass(agentClass, "", "") {
 	case model.AgentClassProductPlanner,
 		model.AgentClassEngineer,
 		model.AgentClassReviewer,
-		model.AgentClassSupport,
-		model.AgentClassHuman:
+		model.AgentClassSupport:
 		return nil
 	default:
-		return fmt.Errorf("agent_class must be one of product_planner, engineer, reviewer, support, human")
+		return fmt.Errorf("agent_class must be one of product_planner, engineer, reviewer, support")
 	}
 }
 
@@ -132,10 +115,10 @@ func defaultTriggerModeForAgentClass(agentClass string) string {
 }
 
 func allowedTriggerModesForAgentClass(agentClass string) []string {
-	switch normalizeAgentClass(agentClass, "", "", "") {
+	switch normalizeAgentClass(agentClass, "", "") {
 	case model.AgentClassEngineer, model.AgentClassReviewer:
 		return []string{"manual", "auto_on_assignment", "auto_on_event"}
-	case model.AgentClassProductPlanner, model.AgentClassSupport, model.AgentClassHuman:
+	case model.AgentClassProductPlanner, model.AgentClassSupport:
 		return []string{"manual"}
 	default:
 		return []string{"manual"}
@@ -147,7 +130,7 @@ func validateTriggerModeForAgentClass(triggerMode, agentClass string) error {
 		return err
 	}
 	if !slices.Contains(allowedTriggerModesForAgentClass(agentClass), triggerMode) {
-		return fmt.Errorf("trigger_mode %q is not allowed for agent_class %q", triggerMode, normalizeAgentClass(agentClass, "", "", ""))
+		return fmt.Errorf("trigger_mode %q is not allowed for agent_class %q", triggerMode, normalizeAgentClass(agentClass, "", ""))
 	}
 	return nil
 }
@@ -157,7 +140,7 @@ func normalizeAgentRecord(agent *model.Agent) {
 		return
 	}
 
-	agent.AgentClass = normalizeAgentClass(agent.AgentClass, agent.CapabilityProfile, agent.Role, agent.AgentKind)
+	agent.AgentClass = normalizeAgentClass(agent.AgentClass, agent.CapabilityProfile, agent.Role)
 	if strings.TrimSpace(agent.Role) == "" {
 		agent.Role = defaultRoleForAgentClass(agent.AgentClass)
 	}
@@ -178,25 +161,6 @@ func normalizeAgentRecord(agent *model.Agent) {
 		agent.Tools = json.RawMessage("[]")
 	}
 
-	if agent.AgentClass == model.AgentClassHuman {
-		agent.AgentKind = "human"
-		if strings.TrimSpace(agent.TriggerMode) == "" || !slices.Contains(allowedTriggerModesForAgentClass(agent.AgentClass), agent.TriggerMode) {
-			agent.TriggerMode = defaultTriggerModeForAgentClass(agent.AgentClass)
-		}
-		agent.Model = nil
-		agent.Provider = nil
-		agent.SystemPrompt = nil
-		agent.PlanningNotes = nil
-		agent.Skills = json.RawMessage("[]")
-		agent.Tools = json.RawMessage("[]")
-		agent.MonthlyTokenBudget = nil
-		return
-	}
-
-	if agent.AgentKind == "" || agent.AgentKind == "human" {
-		agent.AgentKind = "llm"
-	}
-	agent.BackingUserID = nil
 	if agent.Provider != nil {
 		normalized := normalizeModelProvider(*agent.Provider)
 		if normalized == "" {
@@ -221,9 +185,7 @@ func supportedModesForAgent(agent *model.Agent) []string {
 	if agent == nil {
 		return []string{}
 	}
-	switch normalizeAgentClass(agent.AgentClass, agent.CapabilityProfile, agent.Role, agent.AgentKind) {
-	case model.AgentClassHuman:
-		return []string{}
+	switch normalizeAgentClass(agent.AgentClass, agent.CapabilityProfile, agent.Role) {
 	case model.AgentClassProductPlanner:
 		modes := []string{model.InvocationModeAutonomous}
 		if agentSupportsInteractive(agent) {
@@ -275,8 +237,8 @@ func validateModelProvider(provider string) error {
 
 func validateAgentTarget(agent *model.Agent, targetType string) error {
 	normalizeAgentRecord(agent)
-	if agent.AgentKind != "llm" {
-		return fmt.Errorf("only LLM agents can be assigned to %s targets", targetType)
+	if err := validateAgentClass(agent.AgentClass); err != nil {
+		return err
 	}
 	resolved := worker.ResolveAgentProfile(agent)
 	if len(resolved.TargetTypes) == 0 {

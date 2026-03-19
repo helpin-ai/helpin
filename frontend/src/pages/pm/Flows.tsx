@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
+import Markdown from 'react-markdown';
 import {
   Bot,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   ClipboardCheck,
   Flag,
@@ -29,6 +31,10 @@ import {
   useSendFlowNodeAction,
   useCancelFlowRun,
 } from '@/hooks/queries/useFlow';
+import { usePlanningStream } from '@/hooks/usePlanningStream';
+import { parseStructuredQuestions } from '@/components/pm/parseStructuredQuestions';
+import { extractArtifacts, type ChatArtifact } from '@/components/pm/parseArtifacts';
+import { StructuredQuestionCard } from '@/components/pm/StructuredQuestionCard';
 import { agentService } from '@/lib/services/agentService';
 import type {
   FlowSpec,
@@ -46,6 +52,7 @@ import type {
   StartEpicPlanningFlowInput,
   StartStoryCompletionFlowInput,
   PlanningSessionMessage,
+  ToolInvocation,
   Story,
 } from '@/lib/pmTypes';
 import type { CRMDeal } from '@/lib/crmTypes';
@@ -75,18 +82,15 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const NODE_LABELS: Record<string, string> = {
+export const NODE_LABELS: Record<string, string> = {
   ensure_spec_doc: 'Ensure Spec Document',
-  spec_planning: 'Plan Specification',
   spec_draft: 'Draft Specification',
   spec_approval: 'Approve Specification',
-  story_planning: 'Plan Stories',
   story_plan: 'Plan Stories',
   plan_approval: 'Approve Story Plan',
   create_stories: 'Create Stories',
@@ -99,9 +103,8 @@ const NODE_LABELS: Record<string, string> = {
   done: 'Complete',
 };
 
-const TEMPLATE_LABELS: Record<string, string> = {
-  'pm.epic_planning_v1': 'Epic Planning v1',
-  'pm.epic_planning_v2': 'Epic Planning v2',
+export const TEMPLATE_LABELS: Record<string, string> = {
+  'pm.epic_planning_v2': 'Epic Planning',
   'pm.story_completion_v1': 'Story Completion',
   'crm.deal_review_v1': 'Deal Review',
 };
@@ -128,7 +131,7 @@ const NODE_TYPE_LABELS: Record<FlowNodeType, string> = {
   terminal: 'Terminal',
 };
 
-const RUN_STATUS_CONFIG: Record<FlowStatus, { label: string; className: string }> = {
+export const RUN_STATUS_CONFIG: Record<FlowStatus, { label: string; className: string }> = {
   running: { label: 'Running', className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
   awaiting_input: { label: 'Awaiting Input', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
   awaiting_approval: { label: 'Awaiting Approval', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
@@ -559,50 +562,229 @@ function FlowRunRow({
 }
 
 // ---------------------------------------------------------------------------
-// InteractiveChat — Chat interface for interactive nodes
+// ToolCallBadge — Expandable badge showing tool invocation details
 // ---------------------------------------------------------------------------
+
+function ToolCallBadge({ invocation }: { invocation: ToolInvocation }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="inline-block">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <Wrench className="h-3 w-3 shrink-0" />
+        <span className="font-medium">{invocation.tool_name}</span>
+        {invocation.duration_ms > 0 && (
+          <span className="text-muted-foreground/70">{(invocation.duration_ms / 1000).toFixed(1)}s</span>
+        )}
+        {invocation.output_summary && (
+          expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />
+        )}
+      </button>
+      {expanded && invocation.output_summary && (
+        <div className="mt-1 rounded-md border border-border/40 bg-muted/20 px-2.5 py-1.5 text-[11px] text-muted-foreground whitespace-pre-wrap">
+          {invocation.output_summary}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// stripXmlTags — Remove <spec_draft> and <questions> XML blocks from content
+// ---------------------------------------------------------------------------
+
+function stripXmlTags(content: string): string {
+  return content
+    .replace(/<spec_draft>[\s\S]*?<\/spec_draft>/g, '')
+    .replace(/<questions>[\s\S]*?<\/questions>/g, '')
+    .trim();
+}
+
+// ---------------------------------------------------------------------------
+// InteractiveChat — Chat interface for interactive nodes with real-time streaming
+// ---------------------------------------------------------------------------
+
+function ArtifactView({ artifact }: { artifact: ChatArtifact }) {
+  return (
+    <div className="flex-1 overflow-y-auto p-4">
+      <div className="prose prose-sm dark:prose-invert max-w-none">
+        <Markdown>{artifact.content}</Markdown>
+      </div>
+    </div>
+  );
+}
 
 function InteractiveChat({
   wsId,
   flowRunId,
   nodeRunId,
+  sessionId,
 }: {
   wsId: string;
   flowRunId: string;
   nodeRunId: string;
+  sessionId?: string;
 }) {
   const [message, setMessage] = useState('');
+  const [activeTab, setActiveTab] = useState<'chat' | 'spec_draft' | 'story_plan'>('chat');
+  const scrollRef = useRef<HTMLDivElement>(null);
   const { data: messages } = useFlowNodeMessages(wsId, flowRunId, nodeRunId);
   const sendMessage = useSendFlowNodeMessage(wsId, flowRunId, nodeRunId);
 
-  const handleSend = () => {
-    if (!message.trim()) return;
-    sendMessage.mutate(message.trim());
-    setMessage('');
+  const {
+    isStreaming,
+    turnPending,
+    markTurnPending,
+    activeToolCall,
+    toolResults,
+  } = usePlanningStream(wsId, sessionId);
+
+  const artifacts = useMemo(() => extractArtifacts(messages ?? []), [messages]);
+  const activeArtifact = artifacts.find((a) => a.type === activeTab);
+
+  // Auto-scroll when new content arrives (only when on chat tab)
+  useEffect(() => {
+    if (activeTab !== 'chat') return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    if (isNearBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, isStreaming, activeToolCall, toolResults, activeTab]);
+
+  const handleSend = (content?: string) => {
+    const text = content ?? message.trim();
+    if (!text) return;
+    markTurnPending();
+    sendMessage.mutate(text);
+    if (!content) setMessage('');
   };
 
   return (
     <div className="flex flex-col h-full">
-      <ScrollArea className="flex-1 p-3">
-        <div className="space-y-3">
-          {(messages ?? []).map((msg: PlanningSessionMessage) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+      {/* Tab bar — only when artifacts exist */}
+      {artifacts.length > 0 && (
+        <div className="flex items-center gap-1 border-b border-border/60 px-3 pt-2">
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`px-2.5 py-1.5 text-xs font-medium rounded-t-md transition-colors ${
+              activeTab === 'chat'
+                ? 'bg-background text-foreground border border-b-0 border-border/60'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Chat
+          </button>
+          {artifacts.map((a) => (
+            <button
+              key={a.type}
+              onClick={() => setActiveTab(a.type)}
+              className={`px-2.5 py-1.5 text-xs font-medium rounded-t-md transition-colors ${
+                activeTab === a.type
+                  ? 'bg-background text-foreground border border-b-0 border-border/60'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
             >
-              <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                  msg.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted'
-                }`}
-              >
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-              </div>
-            </div>
+              {a.label}
+            </button>
           ))}
         </div>
-      </ScrollArea>
+      )}
+
+      {/* Artifact view */}
+      {activeArtifact && <ArtifactView artifact={activeArtifact} />}
+
+      {/* Chat messages */}
+      <div ref={scrollRef} className={`flex-1 overflow-y-auto p-3 ${activeArtifact ? 'hidden' : ''}`}>
+        <div className="space-y-3">
+          {(messages ?? []).map((msg: PlanningSessionMessage) => {
+            const isUser = msg.role === 'user';
+
+            if (isUser) {
+              return (
+                <div key={msg.id} className="flex justify-end">
+                  <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-primary text-primary-foreground">
+                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  </div>
+                </div>
+              );
+            }
+
+            // Assistant message
+            const parsed = parseStructuredQuestions(msg.content);
+            const displayContent = stripXmlTags(msg.content);
+            const toolInvocations = msg.tool_invocations ?? [];
+
+            return (
+              <div key={msg.id} className="flex justify-start">
+                <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
+                  {/* Tool invocation badges */}
+                  {toolInvocations.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {toolInvocations.map((inv, i) => (
+                        <ToolCallBadge key={`${msg.id}-tool-${i}`} invocation={inv} />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Markdown content */}
+                  {displayContent && (
+                    <div className="prose prose-sm dark:prose-invert max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                      <Markdown>{displayContent}</Markdown>
+                    </div>
+                  )}
+
+                  {/* Structured questions */}
+                  {parsed && (
+                    <StructuredQuestionCard
+                      questions={parsed.questions}
+                      onSubmit={(answer) => handleSend(answer)}
+                      disabled={sendMessage.isPending || isStreaming}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Live streaming indicators */}
+          {(turnPending || isStreaming) && (
+            <div className="flex justify-start">
+              <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted space-y-2">
+                {/* Completed tool results */}
+                {toolResults.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {toolResults.map((inv, i) => (
+                      <ToolCallBadge key={`live-result-${i}`} invocation={inv} />
+                    ))}
+                  </div>
+                )}
+
+                {/* Active tool call */}
+                {activeToolCall && (
+                  <div className="inline-flex items-center gap-1.5 rounded-md border border-blue-300/50 bg-blue-50/50 dark:border-blue-700/50 dark:bg-blue-950/30 px-2 py-1 text-[11px] text-blue-600 dark:text-blue-400">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <Wrench className="h-3 w-3" />
+                    <span className="font-medium">{activeToolCall.tool_name}</span>
+                  </div>
+                )}
+
+                {/* Thinking indicator */}
+                {!activeToolCall && toolResults.length === 0 && (
+                  <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Thinking...</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
       <div className="border-t border-border/60 p-3 flex gap-2">
         <Textarea
           value={message}
@@ -617,8 +799,8 @@ function InteractiveChat({
         <Button
           size="sm"
           className="shrink-0 h-9"
-          onClick={handleSend}
-          disabled={!message.trim() || sendMessage.isPending}
+          onClick={() => handleSend()}
+          disabled={!message.trim() || sendMessage.isPending || isStreaming}
         >
           <Send className="h-3.5 w-3.5" />
         </Button>
@@ -631,7 +813,7 @@ function InteractiveChat({
 // FlowRunDetailSheet
 // ---------------------------------------------------------------------------
 
-function FlowRunDetailSheet({
+export function FlowRunDetailSheet({
   open,
   onOpenChange,
   runView,
@@ -710,7 +892,7 @@ function FlowRunDetailSheet({
                   </h4>
                 </div>
                 <div className="flex-1 min-h-0">
-                  <InteractiveChat wsId={workspaceId} flowRunId={flowRunId} nodeRunId={activeNodeRun.id} />
+                  <InteractiveChat wsId={workspaceId} flowRunId={flowRunId} nodeRunId={activeNodeRun.id} sessionId={activeNodeRun.child_session_id} />
                 </div>
                 <div className="px-5 pb-3">
                   <FinalizeButton wsId={workspaceId} flowRunId={flowRunId} nodeRunId={activeNodeRun.id} />

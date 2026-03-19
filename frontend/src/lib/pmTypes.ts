@@ -198,6 +198,8 @@ export interface Story {
   assigned_agent_id?: string;
   template_id?: string;
   external_id?: string;
+  slice_type?: string;
+  implementation_brief?: StoryImplementationBrief;
   created_at: string;
   updated_at: string;
   // Enriched by board/list endpoints
@@ -996,8 +998,7 @@ export interface UpdateViewRequest {
 
 // ── Agents ──────────────────────────────────────────────────────────
 
-export type AgentKind = 'human' | 'llm';
-export type AgentClass = 'product_planner' | 'engineer' | 'reviewer' | 'support' | 'human';
+export type AgentClass = 'product_planner' | 'engineer' | 'reviewer' | 'support';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'native_sdk';
@@ -1011,11 +1012,9 @@ export interface Agent {
   id: string;
   workspace_id: string;
   name: string;
-  agent_kind: AgentKind;
   agent_class: AgentClass;
   role: string;
   status: AgentStatus;
-  backing_user_id?: string;
   runtime_kind: AgentRuntimeKind;
   capability_profile: string;
   skills: string[];
@@ -1079,6 +1078,26 @@ export interface AgentRun {
   updated_at: string;
 }
 
+export interface StoryImplementationBrief {
+  approach: string;
+  files_to_modify: FileChange[];
+  test_strategy: string;
+  vertical_layers?: string[];
+  depends_on_files?: string[];
+}
+
+export interface FileChange {
+  path: string;
+  action: 'create' | 'modify' | 'delete';
+  description: string;
+}
+
+export interface VerticalCoverageEntry {
+  behavior: string;
+  story_refs: string[];
+  full_slice: boolean;
+}
+
 export interface ProposedStory {
   ref?: string;
   name: string;
@@ -1090,6 +1109,8 @@ export interface ProposedStory {
   dependency_refs?: string[];
   source_refs?: PlanningSourceRef[];
   assign_agent_id?: string;
+  slice_type?: 'vertical' | 'enabler' | 'spike';
+  implementation_brief?: StoryImplementationBrief;
 }
 
 export interface PlanningSourceRef {
@@ -1105,6 +1126,7 @@ export interface OrchestrationProposal {
   proposed_stories: ProposedStory[];
   open_questions?: string[];
   risks?: string[];
+  vertical_coverage?: VerticalCoverageEntry[];
   tokens_used: number;
 }
 
@@ -1115,22 +1137,6 @@ export interface ApprovedSpecSummary {
   summary?: string;
   clarifications?: SpecClarification[];
   pending_clarify_count?: number;
-}
-
-export interface PlanningExecutionStart {
-  story_id: string;
-  run_id: string;
-  started_at: string;
-}
-
-export interface PlanningExecutionSkip {
-  story_id: string;
-  reason: string;
-}
-
-export interface KickoffExecutionResult {
-  started: PlanningExecutionStart[];
-  skipped: PlanningExecutionSkip[];
 }
 
 export interface AgentRunArtifact {
@@ -1150,10 +1156,8 @@ export interface AgentRunArtifact {
 export interface CreateAgentRequest {
   workspace_id: string;
   name: string;
-  agent_kind?: AgentKind;
   agent_class?: AgentClass;
   role?: string;
-  backing_user_id?: string;
   runtime_kind?: AgentRuntimeKind;
   capability_profile?: string;
   skills?: string[];
@@ -1180,7 +1184,6 @@ export interface UpdateAgentRequest {
   agent_class?: AgentClass;
   role?: string;
   status?: AgentStatus;
-  backing_user_id?: string;
   runtime_kind?: AgentRuntimeKind;
   capability_profile?: string;
   skills?: string[];
@@ -1272,7 +1275,7 @@ export interface RunnerActiveRun {
 
 // ── Support ─────────────────────────────────────────────────────────
 
-export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed';
+export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed' | 'spam';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TicketSource = 'widget' | 'internal' | 'email' | 'api';
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
@@ -1292,6 +1295,12 @@ export interface SupportConversation {
   linked_story_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
+  ai_state?: 'pending' | 'resolved' | 'escalated' | null;
+  ai_resolved_at?: string;
+  ai_escalated_at?: string;
+  ai_resolution_type?: 'confirmed' | 'assumed' | null;
+  ai_turn_count?: number;
+  customer_requested_human_at?: string;
   last_message?: string;
   unread_count?: number;
   team_last_seen_at?: string;
@@ -1330,8 +1339,33 @@ export interface SupportMessage {
   sender_avatar_url?: string;
   content: string;
   is_internal: boolean;
+  metadata?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AIMessageMetadata {
+  ai_auto_reply: boolean;
+  ai_sources: Array<{
+    docId: string;
+    title: string;
+    snippet: string;
+    confidence: number;
+  }>;
+  ai_confidence: number;
+  ai_model: string;
+  ai_tokens_used: number;
+  ai_agent_id: string;
+}
+
+export interface AgentKnowledgeSource {
+  id: string;
+  agent_id: string;
+  space_id: string;
+  workspace_id: string;
+  space_name?: string;
+  space_type?: string;
+  created_at: string;
 }
 
 export interface CreateConversationRequest {
@@ -1365,14 +1399,14 @@ export interface BusinessHoursDay {
 
 export interface SupportInboxSettings {
   require_email_before_chat: boolean;
-  require_name_after_email: boolean;
+  require_phone_after_email: boolean;
   welcome_message: string;
-  auto_create_crm_contact: boolean;
-  default_lifecycle_stage: string;
-  auto_promote_to_lead: boolean;
   ai_enabled: boolean;
   ai_agent_id: string | null;
   ai_confidence_threshold: number;
+  ai_response_mode: string;
+  ai_max_followups: number;
+  ai_auto_resolve_timeout: number;
   show_talk_to_human: boolean;
   handoff_behavior: string;
   handoff_team_id: string | null;
@@ -1620,11 +1654,6 @@ export interface PlanningStreamEvent {
   error?: string;
 }
 
-export interface StartPlanningSessionRequest {
-  agent_id: string;
-  additional_context?: string;
-}
-
 export type FlowStatus = 'running' | 'awaiting_input' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled';
 export type FlowNodeType = 'interactive_agent' | 'agent_task' | 'approval_gate' | 'system_action' | 'terminal';
 export type FlowNodeStatus =
@@ -1756,4 +1785,49 @@ export interface StructuredQuestion {
   id: string;
   text: string;
   options: StructuredQuestionOption[];
+}
+
+// ── Visitor Context ─────────────────────────────────────────────────
+
+export interface VisitorDeviceInfo {
+  browser: string;
+  browser_version: string;
+  os: string;
+  os_version: string;
+  device_type: string;
+}
+
+export interface VisitorLocation {
+  timezone: string | null;
+  locale: string | null;
+  last_page_url: string | null;
+}
+
+export interface VisitorContactData {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  job_title: string | null;
+  lifecycle_stage: string;
+  lead_status: string;
+  source: string;
+  custom_properties?: Record<string, string>;
+}
+
+export interface VisitorOtherConversation {
+  id: string;
+  display_id: number;
+  subject: string;
+  status: ConversationStatus;
+  created_at: string;
+}
+
+export interface VisitorContextResponse {
+  device: VisitorDeviceInfo | null;
+  location: VisitorLocation | null;
+  contact: VisitorContactData | null;
+  other_conversations: VisitorOtherConversation[];
+  total_conversations: number;
+  session_created_at: string | null;
 }

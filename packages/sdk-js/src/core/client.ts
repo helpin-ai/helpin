@@ -293,6 +293,11 @@ export class HelpinClient {
       await this.track('user_identify', identifyPayload);
     }
 
+    // Also send to Go backend for CRM contact creation + conversation backfill
+    if (userData.email) {
+      this.sendIdentifyToBackend(userData.email.trim(), userData.name || '', 'sdk_identify');
+    }
+
     this.logger.info('User identified:', userData);
   }
 
@@ -328,6 +333,9 @@ export class HelpinClient {
     payload.email = trimmedEmail;
 
     this.track('lead', payload, directSend);
+
+    // Also send to Go backend for CRM lead creation + conversation backfill
+    this.sendIdentifyToBackend(trimmedEmail, (payload.name as string) || '', 'sdk_lead');
   }
 
   private trackInternal(
@@ -558,6 +566,42 @@ export class HelpinClient {
     };
 
     window.addEventListener('popstate', trackPageLeave);
+  }
+
+  /**
+   * Sends identity data to the Go backend for CRM contact creation and conversation backfill.
+   * If the widget WebSocket is open, sends via session:upgrade; otherwise falls back to HTTP POST.
+   */
+  private sendIdentifyToBackend(email: string, name: string, source: string): void {
+    // Try widget WS path first (via global helpin widget manager)
+    const widget = (globalThis as any).helpin?.widget;
+    if (widget?.wsConnection?.readyState === WebSocket.OPEN) {
+      widget.wsSend('session:upgrade', { email, name, source });
+      return;
+    }
+
+    // HTTP fallback: POST /api/widget/identify
+    const host = this.config.trackingHost || 'https://events.helpin.ai';
+    // Derive the API host from tracking host (strip /api/v1/event suffix if present)
+    const apiHost = host.replace(/\/api\/v1\/event\/?$/, '').replace(/\/+$/, '');
+
+    const body = JSON.stringify({
+      api_key: this.config.key,
+      anonymous_id: this.anonymousId,
+      email,
+      name,
+      source,
+    });
+
+    if (typeof fetch !== 'undefined') {
+      fetch(`${apiHost}/widget/identify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      }).catch((err) => {
+        this.logger.error('Failed to send identify to backend:', err);
+      });
+    }
   }
 
   public getConfig(): Config {

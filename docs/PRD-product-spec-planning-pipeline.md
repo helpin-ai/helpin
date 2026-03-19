@@ -158,14 +158,12 @@ Strict target mapping:
 - `engineer` -> stories only
 - `reviewer` -> stories only
 - `support` -> support tickets only
-- `human` -> not runnable
 
 Compatibility aliases:
 
 - `planner` -> `product_planner`
 - `orchestrator` -> `product_planner`
 - `reviewer_tester` -> `reviewer`
-- `human_proxy` -> `human`
 
 ## Planning Methodology
 

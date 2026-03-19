@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -16,43 +15,43 @@ func TestValidateAgentTargetEnforcesOpinionatedTargetMapping(t *testing.T) {
 	}{
 		{
 			name:   "product planner can run on epics",
-			agent:  model.Agent{AgentKind: "llm", AgentClass: model.AgentClassProductPlanner},
+			agent:  model.Agent{AgentClass: model.AgentClassProductPlanner},
 			target: "epic",
 		},
 		{
 			name:   "product planner can run on stories",
-			agent:  model.Agent{AgentKind: "llm", AgentClass: model.AgentClassProductPlanner},
+			agent:  model.Agent{AgentClass: model.AgentClassProductPlanner},
 			target: "story",
 		},
 		{
 			name:   "product planner can run on crm deals",
-			agent:  model.Agent{AgentKind: "llm", AgentClass: model.AgentClassProductPlanner},
+			agent:  model.Agent{AgentClass: model.AgentClassProductPlanner},
 			target: "crm_deal",
 		},
 		{
 			name:   "engineer can run on stories",
-			agent:  model.Agent{AgentKind: "llm", AgentClass: model.AgentClassEngineer},
+			agent:  model.Agent{AgentClass: model.AgentClassEngineer},
 			target: "story",
 		},
 		{
 			name:      "engineer cannot run on epics",
-			agent:     model.Agent{AgentKind: "llm", AgentClass: model.AgentClassEngineer},
+			agent:     model.Agent{AgentClass: model.AgentClassEngineer},
 			target:    "epic",
 			shouldErr: true,
 		},
 		{
 			name:   "reviewer can run on stories",
-			agent:  model.Agent{AgentKind: "llm", AgentClass: model.AgentClassReviewer},
+			agent:  model.Agent{AgentClass: model.AgentClassReviewer},
 			target: "story",
 		},
 		{
 			name:   "support can run on support conversations",
-			agent:  model.Agent{AgentKind: "llm", AgentClass: model.AgentClassSupport},
+			agent:  model.Agent{AgentClass: model.AgentClassSupport},
 			target: "support_conversation",
 		},
 		{
-			name:      "human cannot run anywhere",
-			agent:     model.Agent{AgentKind: "human", AgentClass: model.AgentClassHuman},
+			name:      "invalid human class is not runnable",
+			agent:     model.Agent{AgentClass: "human"},
 			target:    "story",
 			shouldErr: true,
 		},
@@ -73,7 +72,6 @@ func TestValidateAgentTargetEnforcesOpinionatedTargetMapping(t *testing.T) {
 
 func TestNormalizeAgentRecordMapsLegacyAliases(t *testing.T) {
 	agent := &model.Agent{
-		AgentKind:         "llm",
 		CapabilityProfile: "orchestrator",
 		TriggerMode:       "manual",
 	}
@@ -90,7 +88,6 @@ func TestNormalizeAgentRecordMapsLegacyAliases(t *testing.T) {
 
 func TestNormalizeAgentRecordPreservesExplicitCustomCapabilityProfile(t *testing.T) {
 	agent := &model.Agent{
-		AgentKind:         "llm",
 		AgentClass:        model.AgentClassProductPlanner,
 		CapabilityProfile: "planner_with_docs_focus",
 		TriggerMode:       "manual",
@@ -103,24 +100,7 @@ func TestNormalizeAgentRecordPreservesExplicitCustomCapabilityProfile(t *testing
 	}
 }
 
-func TestResolvePlanningMethodologyDefaults(t *testing.T) {
-	svc := &AgentService{}
-
-	if got := svc.resolvePlanningMethodology(context.Background(), "ws_123", ""); got != model.PlanningMethodologyStructuredV1 {
-		t.Fatalf("expected default methodology %q, got %q", model.PlanningMethodologyStructuredV1, got)
-	}
-	if got := svc.resolvePlanningMethodology(context.Background(), "ws_123", model.PlanningMethodologyBasicV1); got != model.PlanningMethodologyBasicV1 {
-		t.Fatalf("expected explicit methodology %q, got %q", model.PlanningMethodologyBasicV1, got)
-	}
-}
-
 func TestAgentDefaultsDerivedFromClass(t *testing.T) {
-	if got := agentKindForAgentClass(model.AgentClassProductPlanner); got != "llm" {
-		t.Fatalf("expected product planner agent kind llm, got %q", got)
-	}
-	if got := agentKindForAgentClass(model.AgentClassHuman); got != "human" {
-		t.Fatalf("expected human agent kind human, got %q", got)
-	}
 	if got := defaultRoleForAgentClass(model.AgentClassReviewer); got != "Reviewer" {
 		t.Fatalf("expected reviewer role label, got %q", got)
 	}
@@ -157,7 +137,6 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 		{
 			name: "native sdk supports interactive",
 			agent: model.Agent{
-				AgentKind:   "llm",
 				AgentClass:  model.AgentClassProductPlanner,
 				RuntimeKind: "native_sdk",
 			},
@@ -166,7 +145,6 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 		{
 			name: "opencode does not support interactive",
 			agent: model.Agent{
-				AgentKind:   "llm",
 				AgentClass:  model.AgentClassProductPlanner,
 				RuntimeKind: "opencode",
 			},
@@ -185,34 +163,31 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 	}
 }
 
-func TestNormalizeAgentRecordClearsIncompatibleFields(t *testing.T) {
-	budget := 100
+func TestNormalizeAgentRecordClearsPlannerOnlyFieldsForNonPlanners(t *testing.T) {
 	planningNotes := "use specs first"
 	systemPrompt := "do the work"
+	budget := 100
 	agent := &model.Agent{
-		AgentKind:          "llm",
-		AgentClass:         model.AgentClassHuman,
+		AgentClass:         model.AgentClassEngineer,
 		RuntimeKind:        "",
 		PlanningNotes:      &planningNotes,
 		SystemPrompt:       &systemPrompt,
 		MonthlyTokenBudget: &budget,
-		Skills:             []byte(`["x"]`),
-		Tools:              []byte(`["y"]`),
 	}
 
 	normalizeAgentRecord(agent)
 
-	if agent.AgentKind != "human" {
-		t.Fatalf("expected human agent kind, got %q", agent.AgentKind)
+	if agent.AgentClass != model.AgentClassEngineer {
+		t.Fatalf("expected engineer class, got %q", agent.AgentClass)
 	}
-	if agent.Model != nil || agent.SystemPrompt != nil || agent.PlanningNotes != nil || agent.MonthlyTokenBudget != nil {
-		t.Fatalf("expected human normalization to clear llm fields: %+v", agent)
+	if agent.PlanningNotes != nil {
+		t.Fatalf("expected non-planner normalization to clear planning notes, got %+v", agent.PlanningNotes)
 	}
-	if agent.Provider != nil {
-		t.Fatalf("expected human normalization to clear provider, got %+v", agent.Provider)
+	if agent.SystemPrompt == nil || *agent.SystemPrompt != systemPrompt {
+		t.Fatalf("expected system prompt to be preserved, got %+v", agent.SystemPrompt)
 	}
-	if string(agent.Skills) != "[]" || string(agent.Tools) != "[]" {
-		t.Fatalf("expected human normalization to clear skills/tools, got skills=%s tools=%s", string(agent.Skills), string(agent.Tools))
+	if agent.MonthlyTokenBudget == nil || *agent.MonthlyTokenBudget != budget {
+		t.Fatalf("expected token budget to be preserved, got %+v", agent.MonthlyTokenBudget)
 	}
 	if agent.RuntimeKind == "" {
 		t.Fatal("expected runtime kind default to be populated")

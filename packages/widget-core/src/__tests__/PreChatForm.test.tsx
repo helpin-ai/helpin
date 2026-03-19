@@ -16,7 +16,7 @@ const mockConfig: WidgetConfig = {
     aiEnabled: false,
     fileUploads: false,
     preChatForm: true,
-    requireName: true,
+    requirePhone: true,
     csatRating: false,
   },
 };
@@ -38,7 +38,7 @@ describe('PreChatForm', () => {
     expect(container.textContent).toContain('Test Support');
   });
 
-  it('advances to name step after email submit', async () => {
+  it('advances to phone step after email submit', async () => {
     const { container } = render(<PreChatForm config={mockConfig} onSubmit={() => {}} />);
 
     const emailInput = container.querySelector('input[type="email"]') as HTMLInputElement;
@@ -48,13 +48,13 @@ describe('PreChatForm', () => {
     fireEvent.submit(form);
 
     await waitFor(() => {
-      const nameInput = container.querySelector('input[type="text"]');
-      expect(nameInput).toBeTruthy();
-      expect(container.textContent).toContain("What's your name");
+      const phoneInput = container.querySelector('input[type="tel"]');
+      expect(phoneInput).toBeTruthy();
+      expect(container.textContent).toContain("What's your phone number");
     });
   });
 
-  it('calls onSubmit with email and name after both steps', async () => {
+  it('calls onSubmit with email and phone after both steps', async () => {
     const onSubmit = vi.fn();
     const { container } = render(<PreChatForm config={mockConfig} onSubmit={onSubmit} />);
 
@@ -63,27 +63,27 @@ describe('PreChatForm', () => {
     fireEvent.input(emailInput, { target: { value: 'test@example.com' } });
     fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 
-    // Submit name
+    // Submit phone
     await waitFor(() => {
-      expect(container.querySelector('input[type="text"]')).toBeTruthy();
+      expect(container.querySelector('input[type="tel"]')).toBeTruthy();
     });
-    const nameInput = container.querySelector('input[type="text"]') as HTMLInputElement;
-    fireEvent.input(nameInput, { target: { value: 'John' } });
+    const phoneInput = container.querySelector('input[type="tel"]') as HTMLInputElement;
+    fireEvent.input(phoneInput, { target: { value: '+1234567890' } });
     fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith({
-        name: 'John',
+        phone: '+1234567890',
         email: 'test@example.com',
       });
     });
   });
 
-  it('skips name step when requireName is false', async () => {
+  it('skips phone step when requirePhone is false', async () => {
     const onSubmit = vi.fn();
     const emailOnlyConfig: WidgetConfig = {
       ...mockConfig,
-      features: { ...mockConfig.features, requireName: false },
+      features: { ...mockConfig.features, requirePhone: false },
     };
     const { container } = render(<PreChatForm config={emailOnlyConfig} onSubmit={onSubmit} />);
 
@@ -93,7 +93,7 @@ describe('PreChatForm', () => {
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith({
-        name: '',
+        phone: '',
         email: 'test@example.com',
       });
     });
@@ -108,9 +108,9 @@ describe('PreChatForm', () => {
     fireEvent.input(emailInput, { target: { value: 'test@example.com' } });
     fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 
-    // Submit name (skip)
+    // Submit phone (skip)
     await waitFor(() => {
-      expect(container.querySelector('input[type="text"]')).toBeTruthy();
+      expect(container.querySelector('input[type="tel"]')).toBeTruthy();
     });
     fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 

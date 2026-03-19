@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -12,7 +14,28 @@ export function SupportInboxLayout() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const user = useAuthStore((s) => s.user);
   const workspaceId = workspace?.id ?? '';
+  const slug = workspace?.slug ?? '';
   const { selectedConversationId, activePanel, setActivePanel, selectConversation, createDialogOpen, setCreateDialogOpen } = useSupportInboxStore();
+  const navigate = useNavigate();
+  const params = useParams({ strict: false }) as { conversationId?: string };
+
+  // Sync URL param → store on mount / URL change
+  useEffect(() => {
+    if (params.conversationId && params.conversationId !== selectedConversationId) {
+      selectConversation(params.conversationId);
+    }
+  }, [params.conversationId]);
+
+  // Sync store → URL when conversation selection changes
+  useEffect(() => {
+    if (!slug) return;
+    const urlConvId = params.conversationId || null;
+    if (selectedConversationId && selectedConversationId !== urlConvId) {
+      navigate({ to: '/w/$slug/support/$conversationId', params: { slug, conversationId: selectedConversationId }, replace: true });
+    } else if (!selectedConversationId && urlConvId) {
+      navigate({ to: '/w/$slug/support', params: { slug }, replace: true });
+    }
+  }, [selectedConversationId, slug]);
 
   if (!workspace) {
     return <p className="p-4 text-sm text-muted-foreground">Workspace not found.</p>;

@@ -71,6 +71,9 @@ func basicPlanningStageGuidance(planningStage string) []string {
 			"- Turn the approved spec into concrete stories.",
 			"- Use stable refs and explicit dependencies.",
 			"- Keep stories implementation-ready and avoid overlap.",
+			"- Mark each story with slice_type: \"vertical\", \"enabler\", or \"spike\". Prefer vertical.",
+			"- Combine horizontal layers (migration, model, CRUD) into a single enabler story.",
+			"- Include implementation_brief with approach, files_to_modify, and test_strategy.",
 		}
 	default:
 		return nil
@@ -141,10 +144,36 @@ func structuredPlanningStageGuidance(planningStage string) []string {
 			"- Reuse existing code paths and naming conventions when the repository context is clear.",
 			"- Surface risks or open questions when the approved spec conflicts with the current implementation.",
 			"- Avoid stories that duplicate existing epic work.",
+
+			"\n## Slicing Rules",
+			"- DEFAULT to vertical slices. Every story should deliver a complete user-visible behavior from database through API to UI. The coding agent must be able to demo the result.",
+			"- COMBINE horizontal layers into a single enabler. If multiple stories would each be a single horizontal layer (e.g., \"Create DB migration\", \"Add CRUD repository\", \"Add CRUD handler\"), combine them into ONE enabler story that all vertical stories depend_on via dependency_refs. Example: \"Enabler: Pipeline entity foundation (migration + model + CRUD)\" with dependent vertical stories like \"User can create a pipeline from the UI\".",
+			"- Never create more than 2 enablers per epic. If you need more, fold enabler work into the first vertical story that needs it.",
+			"- No overlapping file changes across stories. Two stories must not modify the same file unless one depends on the other. If they would, merge them or restructure the dependency.",
+			"- Mark each story with slice_type: \"vertical\" (default, strongly preferred), \"enabler\" (shared infrastructure needed by multiple verticals), or \"spike\" (timeboxed investigation).",
+
+			"\n## Implementation Brief",
+			"For each proposed story, include an implementation_brief object that gives the coding agent a concrete build plan:",
+			"- approach: 1-2 sentences on HOW to build this. Reference existing patterns in the codebase when applicable (e.g., \"Follow the WorkflowState CRUD pattern\").",
+			"- files_to_modify: Ordered list of file changes. Use actual codebase paths discovered during planning. Each entry has: path (relative file path), action (\"create\", \"modify\", or \"delete\"), description (one-line summary). Order: migrations → models → repository → service → handler → router → frontend types → frontend services → frontend hooks → frontend components.",
+			"- test_strategy: What to test and where. Be specific: \"Table-driven tests for CRUD in automation_rule_test.go\" not \"write tests\".",
+			"- vertical_layers: Which architectural layers this story touches. Valid values: \"migration\", \"model\", \"repository\", \"service\", \"handler\", \"route\", \"frontend_type\", \"frontend_service\", \"frontend_hook\", \"frontend_component\".",
+			"- depends_on_files: Key files from dependency stories that must exist before this story can start. Only include files from stories listed in dependency_refs.",
+
+			"\n## Vertical Coverage",
+			"After proposed_stories, include a vertical_coverage array mapping each user-facing behavior in the spec to the stories that deliver it:",
+			`  { "behavior": "User can create a pipeline", "story_refs": ["story_1"], "full_slice": true }`,
+			`  { "behavior": "Admin configures OAuth", "story_refs": ["story_2", "story_3"], "full_slice": false }`,
+			"Behaviors with full_slice=false are warnings — explain in the story descriptions why the split is necessary and ensure explicit dependency_refs between the stories.",
+
 			"\n## Self-check",
 			"- Confirm every proposed story has a stable ref, summary, description, and acceptance criteria.",
 			"- Confirm dependency refs point to valid story refs and do not create cycles.",
 			"- Confirm the story set is aligned to the approved spec and current codebase, not a generic greenfield plan.",
+			"- Confirm each story has a slice_type and implementation_brief.",
+			"- Confirm no two stories modify the same file without a dependency edge.",
+			"- Confirm enabler count ≤ 2. If more, consolidate.",
+			"- Confirm vertical_coverage accounts for every spec requirement.",
 			"- Confirm the response is valid JSON with the required keys only.",
 		}
 	default:

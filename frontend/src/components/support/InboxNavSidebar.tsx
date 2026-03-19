@@ -1,4 +1,4 @@
-import { Inbox, Mail, UserX, Users, Circle, Clock, Pause, CheckCircle2, List } from 'lucide-react';
+import { Bot, Inbox, Mail, UserX, Users, Circle, Clock, Pause, CheckCircle2, List, ArrowUpRight } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { cn } from '@/lib/utils';
@@ -32,7 +32,7 @@ export function InboxNavSidebar({ teams }: InboxNavSidebarProps) {
   const { navFilter, setNavFilter, statusFilter, setStatusFilter } = useSupportInboxStore();
 
   return (
-    <div className="flex w-[200px] flex-col border-r bg-muted/30">
+    <div className="flex w-[170px] flex-col border-r bg-muted/30">
       <div className="flex-1 space-y-1 p-2 overflow-y-auto">
         <h3 className="mb-2 px-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Inbox
@@ -50,6 +50,15 @@ export function InboxNavSidebar({ teams }: InboxNavSidebarProps) {
         <NavItem icon={Pause} label="Waiting" active={statusFilter === 'waiting'} onClick={() => setStatusFilter('waiting')} />
         <NavItem icon={CheckCircle2} label="Resolved" active={statusFilter === 'resolved'} onClick={() => setStatusFilter('resolved')} />
         <NavItem icon={List} label="All" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
+
+        <Separator className="my-2" />
+        <h3 className="mb-1 px-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Helpin AI Agent
+        </h3>
+        <NavItem icon={Bot} label="All AI" active={navFilter === 'ai_all'} onClick={() => setNavFilter('ai_all')} />
+        <NavItem icon={CheckCircle2} label="Resolved" active={navFilter === 'ai_resolved'} onClick={() => setNavFilter('ai_resolved')} />
+        <NavItem icon={ArrowUpRight} label="Escalated" active={navFilter === 'ai_escalated'} onClick={() => setNavFilter('ai_escalated')} />
+        <NavItem icon={Clock} label="Pending" active={navFilter === 'ai_pending'} onClick={() => setNavFilter('ai_pending')} />
 
         {teams && teams.length > 0 && (
           <>

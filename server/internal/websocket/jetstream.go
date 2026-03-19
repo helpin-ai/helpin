@@ -19,10 +19,13 @@ import (
 const (
 	RealtimeInstanceIDEnv = "REALTIME_INSTANCE_ID"
 
-	planningStreamName = "HELPIN_PLANNING"
-	planningSubjectAll = "helpin.planning.stream.*"
-	wsEventsStreamName = "HELPIN_WS_EVENTS"
-	wsEventsSubjectAll = "helpin.ws.events.*"
+	planningStreamName   = "HELPIN_PLANNING"
+	planningSubjectAll   = "helpin.planning.stream.*"
+	wsEventsStreamName   = "HELPIN_WS_EVENTS"
+	wsEventsSubjectAll   = "helpin.ws.events.*"
+	SupportAIStreamName  = "SUPPORT_AI"
+	supportAIRequestAll  = "support.ai.request.*"
+	supportAITypingAll   = "support.ai.typing.*"
 )
 
 // ResolveRealtimeInstanceID returns a stable-enough process identifier for
@@ -90,6 +93,16 @@ func EnsureJetStreamInfrastructure(js nats.JetStreamContext) error {
 			Duplicates: 2 * time.Minute,
 			MaxAge:     time.Hour,
 			MaxBytes:   128 * 1024 * 1024,
+		},
+		{
+			Name:       SupportAIStreamName,
+			Subjects:   []string{supportAIRequestAll, supportAITypingAll},
+			Storage:    nats.FileStorage,
+			Retention:  nats.LimitsPolicy,
+			Discard:    nats.DiscardOld,
+			Duplicates: 2 * time.Minute,
+			MaxAge:     24 * time.Hour,
+			MaxBytes:   256 * 1024 * 1024,
 		},
 	}
 	for _, cfg := range configs {
