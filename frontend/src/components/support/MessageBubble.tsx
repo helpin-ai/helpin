@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react';
-import { Bot, ChevronDown, ChevronUp, FileText, StickyNote } from 'lucide-react';
+import { Bot, CheckCheck, ChevronDown, ChevronUp, FileText, StickyNote } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
@@ -23,9 +23,10 @@ interface MessageBubbleProps {
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
   source?: TicketSource;
+  receiptStatus?: 'delivered' | 'read' | null;
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source, receiptStatus }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const isCustomer = message.sender_type === 'customer';
   const isAgent = message.sender_type === 'agent';
@@ -150,6 +151,23 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
             {tooltipContent}
           </TooltipContent>
         </Tooltip>
+
+        {/* Read receipt indicator */}
+        {receiptStatus && (
+          <div className="mt-0.5 flex items-center justify-end gap-1 pr-1">
+            {receiptStatus === 'read' ? (
+              <>
+                <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
+                <span className="text-[11px] text-muted-foreground">Read in chat</span>
+              </>
+            ) : (
+              <>
+                <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-[11px] text-muted-foreground">Delivered</span>
+              </>
+            )}
+          </div>
+        )}
 
         {/* AI metadata: confidence badge + collapsible sources */}
         {aiMeta && (

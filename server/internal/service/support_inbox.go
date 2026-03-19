@@ -205,6 +205,15 @@ func (s *SupportInboxService) MarkConversationReadByVisitor(ctx context.Context,
 
 	// Push authoritative conversations:listed refresh to all visitor widget sessions
 	s.pushVisitorConversationsRefresh(ctx, workspaceID, anonymousID)
+
+	// Broadcast to agent dashboard so read receipts update in real-time
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+	})
+
 	return nil
 }
 

@@ -899,7 +899,7 @@ export class WidgetManager {
         // Update conversation in the list (lastMessage preview + unread count + move to top)
         if (newMsg.conversationId) {
           const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
-          const isActiveAndOpen = this.isOpen && this.activeConversationId === newMsg.conversationId;
+          const isActiveAndOpen = this.isOpen && this.currentView === 'conversation' && this.activeConversationId === newMsg.conversationId;
           const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
           if (convIdx >= 0) {
             const prev = this.conversations[convIdx];
