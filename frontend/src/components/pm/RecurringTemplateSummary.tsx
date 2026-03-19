@@ -113,7 +113,7 @@ export function RecurringTemplateSummary({
 
       {runs && runs.length > 0 ? (
         <div className="mt-4 border-t border-border/50 pt-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent runs</div>
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Last {Math.min(runs.length, compact ? 3 : 10)} runs</div>
           <div className="space-y-2">
             {runs.slice(0, compact ? 3 : 10).map((run) => (
               <div key={run.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-xs">
