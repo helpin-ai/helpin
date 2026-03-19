@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 import Markdown from 'react-markdown';
-import { Bot, CheckCheck, ChevronDown, ChevronUp, FileText, StickyNote } from 'lucide-react';
+import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, FileText, RotateCcw, StickyNote, XCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
@@ -60,6 +60,46 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
       </div>
     </div>
   );
+
+  // ── System message: centered pill (Crisp-style) ──
+  if (message.message_type === 'system') {
+    const isResolved = message.content.toLowerCase().includes('resolved');
+    const isReopened = message.content.toLowerCase().includes('reopened');
+    const isClosed = message.content.toLowerCase().includes('closed');
+
+    const icon = isResolved ? <CheckCircle2 className="h-4 w-4 shrink-0" />
+      : isReopened ? <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+      : isClosed ? <XCircle className="h-4 w-4 shrink-0" />
+      : <CheckCircle2 className="h-4 w-4 shrink-0" />;
+
+    const avatarUrl = message.sender_avatar_url;
+
+    return (
+      <div className="my-4 flex items-center justify-center gap-2 animate-in fade-in duration-300">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-2.5 rounded-full bg-slate-700 px-4 py-2 text-white shadow-sm" style={{ border: 'none' }}>
+              {icon}
+              <span className="text-sm font-medium">{message.content}</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className="space-y-0.5 text-xs">
+              <div className="font-medium">{senderName}</div>
+              <div className="text-muted-foreground">{fullTimestamp}</div>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        {avatarUrl ? (
+          <img src={avatarUrl} alt={senderName} className="h-7 w-7 rounded-full object-cover shadow-sm" />
+        ) : (
+          <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || senderName)}`}>
+            {getInitial(senderName)}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // ── Internal note: right-aligned card with amber accent ──
   if (isInternal) {

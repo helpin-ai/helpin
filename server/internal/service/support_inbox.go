@@ -416,6 +416,45 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 
 	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
 
+	// Insert a system message for status transitions visible in the thread.
+	if oldStatus != status && (status == "resolved" || status == "closed" || (oldStatus == "resolved" && status == "open")) {
+		label := "Resolved conversation"
+		if status == "closed" {
+			label = "Closed conversation"
+		} else if status == "open" && oldStatus == "resolved" {
+			label = "Reopened conversation"
+		}
+
+		// Resolve actor display name and avatar.
+		var senderDisplayName *string
+		var senderAvatarURL *string
+		if actorID != "" && s.userRepo != nil {
+			user, _ := s.userRepo.GetByID(ctx, actorID)
+			if user != nil {
+				senderDisplayName = &user.FullName
+				senderAvatarURL = user.AvatarURL
+			}
+		}
+		senderUserID := &actorID
+
+		sysMsg := &model.SupportMessage{
+			WorkspaceID:       workspaceID,
+			ConversationID:    ticketID,
+			SenderType:        "user",
+			SenderUserID:      senderUserID,
+			SenderDisplayName: senderDisplayName,
+			SenderAvatarURL:   senderAvatarURL,
+			Content:           label,
+			MessageType:       "system",
+			IsInternal:        false,
+		}
+		if err := s.messageRepo.Create(ctx, sysMsg); err != nil {
+			slog.ErrorContext(ctx, "create system message for status change", "error", err, "conversation_id", ticketID)
+		} else {
+			s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, sysMsg, actorID))
+		}
+	}
+
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
 		Entity:      "support_conversation",
