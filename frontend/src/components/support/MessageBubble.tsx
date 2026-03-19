@@ -4,7 +4,7 @@ import { Bot, CheckCheck, ChevronDown, ChevronUp, FileText, StickyNote } from 'l
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
-import { formatTimestamp, getInitial } from './helpers';
+import { formatTimestamp, getInitial, getAvatarColor } from './helpers';
 
 const SOURCE_LABELS: Record<string, string> = {
   widget: 'Chat Widget',
@@ -94,7 +94,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   const avatarEl = isCustomer ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground shadow-sm">
+        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || senderName)}`}>
           {getInitial(senderName)}
         </div>
       </TooltipTrigger>
@@ -119,7 +119,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   ) : (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white shadow-sm">
+        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || senderName)}`}>
           {getInitial(senderName)}
         </div>
       </TooltipTrigger>

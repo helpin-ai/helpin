@@ -29,7 +29,7 @@ const AgentAvatar = memo(function AgentAvatar({ userId, tooltip }: { userId: str
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex h-5 w-5 -ml-1.5 first:ml-0 items-center justify-center rounded-full bg-primary text-[9px] font-medium text-primary-foreground ring-2 ring-background animate-in zoom-in-75 duration-300">
+        <div className={`flex h-5 w-5 -ml-1.5 first:ml-0 items-center justify-center rounded-full text-[9px] font-medium ring-2 ring-background animate-in zoom-in-75 duration-300 ${getAvatarColor(userId)}`}>
           {member?.avatar_url ? (
             <img src={member.avatar_url} alt={name} className="h-5 w-5 rounded-full object-cover" />
           ) : (
