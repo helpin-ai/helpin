@@ -19,9 +19,10 @@ import { toast } from 'sonner';
 interface RecurringTemplatesSettingsProps {
   workspaceId: string;
   initialTeamId?: string;
+  editable?: boolean;
 }
 
-export function RecurringTemplatesSettings({ workspaceId, initialTeamId }: RecurringTemplatesSettingsProps) {
+export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editable = false }: RecurringTemplatesSettingsProps) {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const { teams } = useAccessibleTeams(workspaceId);
@@ -172,16 +173,16 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId }: Recur
             const detail = await loadTemplateDetail(item.template.id);
             if (detail) setViewTemplate(detail);
           }}
-          onEdit={async (item) => {
+          onEdit={editable ? async (item) => {
             const detail = await loadTemplateDetail(item.template.id);
             if (detail) setEditTemplate(detail);
-          }}
-          onPause={(item) => void runAction(() => pmRecurringTemplateService.pause(workspaceId, item.template.id), 'Recurring template paused')}
-          onResume={(item) => void runAction(() => pmRecurringTemplateService.resume(workspaceId, item.template.id), 'Recurring template resumed')}
-          onStop={(item) => void runAction(() => pmRecurringTemplateService.stop(workspaceId, item.template.id), 'Recurring template stopped')}
-          onSkipNext={(item) => void runAction(() => pmRecurringTemplateService.skipNext(workspaceId, item.template.id), 'Next occurrence skipped')}
-          onGenerateNow={(item) => void runAction(() => pmRecurringTemplateService.generateNow(workspaceId, item.template.id), 'Recurring story generated')}
-          onDuplicate={(item) => void runAction(() => pmRecurringTemplateService.duplicate(workspaceId, item.template.id), 'Recurring template duplicated')}
+          } : undefined}
+          onPause={editable ? (item) => void runAction(() => pmRecurringTemplateService.pause(workspaceId, item.template.id), 'Recurring template paused') : undefined}
+          onResume={editable ? (item) => void runAction(() => pmRecurringTemplateService.resume(workspaceId, item.template.id), 'Recurring template resumed') : undefined}
+          onStop={editable ? (item) => void runAction(() => pmRecurringTemplateService.stop(workspaceId, item.template.id), 'Recurring template stopped') : undefined}
+          onSkipNext={editable ? (item) => void runAction(() => pmRecurringTemplateService.skipNext(workspaceId, item.template.id), 'Next occurrence skipped') : undefined}
+          onGenerateNow={editable ? (item) => void runAction(() => pmRecurringTemplateService.generateNow(workspaceId, item.template.id), 'Recurring story generated') : undefined}
+          onDuplicate={editable ? (item) => void runAction(() => pmRecurringTemplateService.duplicate(workspaceId, item.template.id), 'Recurring template duplicated') : undefined}
         />
       )}
 

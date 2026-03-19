@@ -167,7 +167,7 @@ export default function Settings({ section, initialTeamId }: { section: Settings
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const { data: access } = useWorkspaceAccess(wsId);
-  const { canManageSettings, canManageMembers, canManageTeams, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
+  const { canEdit, canManageSettings, canManageMembers, canManageTeams, canAdminLabels, canAdminAutomations, canImport } = usePermissions(access);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -293,7 +293,7 @@ export default function Settings({ section, initialTeamId }: { section: Settings
       case 'story-templates':
         return <StoryTemplatesSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
       case 'recurring-tasks':
-        return <RecurringTemplatesSettings workspaceId={workspaceId} initialTeamId={initialTeamId} />;
+        return <RecurringTemplatesSettings workspaceId={workspaceId} initialTeamId={initialTeamId} editable={canEdit} />;
       case 'automations':
         return <AutomationsTab workspaceId={workspaceId} teams={settings.teams} editable={canAdminAutomations} />;
       case 'import':
