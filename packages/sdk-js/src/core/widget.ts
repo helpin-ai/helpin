@@ -76,6 +76,7 @@ export class WidgetManager {
   private currentEmail: string | null = null;
   private notificationAudio: HTMLAudioElement | null = null;
   private notificationAudioUnlocked = false;
+  private audioUnlockListener: (() => void) | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
     onShow: [],
@@ -105,6 +106,18 @@ export class WidgetManager {
 
     // Get or create anonymous ID from cookie
     this.anonymousId = getOrCreateAnonymousId(settings.key);
+
+    // Unlock notification audio on first user interaction with the page
+    if (!this.audioUnlockListener) {
+      this.audioUnlockListener = () => {
+        this.unlockNotificationSound();
+        document.removeEventListener('click', this.audioUnlockListener!);
+        document.removeEventListener('touchstart', this.audioUnlockListener!);
+        this.audioUnlockListener = null;
+      };
+      document.addEventListener('click', this.audioUnlockListener, { once: true });
+      document.addEventListener('touchstart', this.audioUnlockListener, { once: true });
+    }
 
     // Fetch widget config (with localStorage caching), then connect WS
     this.fetchWidgetConfig().then(() => {
