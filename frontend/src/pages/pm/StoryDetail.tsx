@@ -690,8 +690,8 @@ export function StoryDetailPage() {
           </div>
 
           {/* Implementation Brief (from planning) */}
-          {detail.story.implementation_brief && (
-            <StoryImplementationBriefPanel brief={detail.story.implementation_brief} />
+          {storyDetail?.story.implementation_brief && (
+            <StoryImplementationBriefPanel brief={storyDetail.story.implementation_brief} />
           )}
 
           {/* Action bar — "Add to Story" */}
