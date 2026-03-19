@@ -39,6 +39,26 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
   const senderLabel = SENDER_TYPE_LABELS[message.sender_type] ?? message.sender_type;
   const sourceLabel = source ? SOURCE_LABELS[source] ?? source : null;
 
+  // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
+  // Only strip if the JSON parses as an AI contract (has can_answer + content keys)
+  // so legitimate user code blocks with ```json are preserved.
+  const displayContent = useMemo(() => {
+    const jsonBlockIdx = message.content.indexOf('```json');
+    if (jsonBlockIdx > 0) {
+      const afterFence = message.content.slice(jsonBlockIdx + 7);
+      const closeIdx = afterFence.indexOf('```');
+      if (closeIdx > 0) {
+        try {
+          const parsed = JSON.parse(afterFence.slice(0, closeIdx).trim());
+          if (parsed && typeof parsed.can_answer === 'boolean' && typeof parsed.content === 'string') {
+            return message.content.slice(0, jsonBlockIdx).trimEnd();
+          }
+        } catch { /* not an AI contract — keep as-is */ }
+      }
+    }
+    return message.content;
+  }, [message.content]);
+
   // Parse AI metadata if present
   const aiMeta = useMemo<AIMessageMetadata | null>(() => {
     if (!message.metadata) return null;
@@ -117,7 +137,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                   </span>
                 </div>
                 <div className="prose-chat text-sm leading-relaxed text-amber-900 dark:text-amber-200">
-                  <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</Markdown>
+                  <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
                 </div>
               </div>
             </TooltipTrigger>
@@ -191,7 +211,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                 }`}
               >
                 <div className="prose-chat">
-                  <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</Markdown>
+                  <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{displayContent}</Markdown>
                 </div>
               </div>
             </TooltipTrigger>

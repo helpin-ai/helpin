@@ -181,7 +181,6 @@
 
 /* Prose-chat: compact markdown styles for support message bubbles */
 .prose-chat {
-  color: inherit;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
@@ -196,7 +195,7 @@
   color: inherit;
 }
 .prose-chat code {
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--muted);
   border-radius: 0.25rem;
   padding: 0.1em 0.3em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -231,9 +230,9 @@
   margin-top: 0.15em;
 }
 .prose-chat blockquote {
-  border-left: 2px solid currentColor;
+  border-left: 2px solid var(--border);
   padding-left: 0.75rem;
-  opacity: 0.8;
+  color: var(--muted-foreground);
   margin: 0.3em 0;
 }
 .prose-chat a {

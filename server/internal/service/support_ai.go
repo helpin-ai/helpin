@@ -462,14 +462,41 @@ func (s *SupportAIService) generateResponse(
 
 	var contract AIResponseContract
 	if err := json.Unmarshal([]byte(rawJSON), &contract); err != nil {
+		// The LLM may have returned readable markdown followed by a ```json block.
+		// Try to extract the embedded JSON block and parse it.
+		if jsonStart := strings.Index(rawJSON, "```json"); jsonStart != -1 {
+			embedded := rawJSON[jsonStart+len("```json"):]
+			if jsonEnd := strings.Index(embedded, "```"); jsonEnd != -1 {
+				embedded = strings.TrimSpace(embedded[:jsonEnd])
+				if err2 := json.Unmarshal([]byte(embedded), &contract); err2 == nil {
+					// If the contract content is empty or duplicated, use the text before the JSON block.
+					if strings.TrimSpace(contract.Content) == "" {
+						contract.Content = strings.TrimSpace(rawJSON[:jsonStart])
+					}
+					slog.Info("AI response parsed from embedded JSON block",
+						"can_answer", contract.CanAnswer,
+						"confidence", contract.Confidence,
+					)
+					totalTokens := resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens
+					return &contract, totalTokens, nil
+				}
+			}
+		}
+
 		slog.ErrorContext(ctx, "AI response JSON parse failed — treating as conversational reply",
 			"error", err,
 			"raw_content_prefix", truncateLog(resp.Content, 200),
 		)
-		// If JSON parsing fails, still use the raw content as a conversational reply.
+
+		// Strip any trailing ```json...``` block from the content as a last resort.
+		cleanContent := resp.Content
+		if jsonStart := strings.Index(cleanContent, "```json"); jsonStart != -1 {
+			cleanContent = strings.TrimSpace(cleanContent[:jsonStart])
+		}
+
 		return &AIResponseContract{
-			Content:   resp.Content,
-			CanAnswer: true,
+			Content:    cleanContent,
+			CanAnswer:  true,
 			Confidence: 0.8,
 		}, resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens, nil
 	}
