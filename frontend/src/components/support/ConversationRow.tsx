@@ -116,16 +116,18 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
                 <>
                   <span className="inline-block w-0.5 h-3 align-middle rounded-full bg-blue-500 mr-1" />
                   <span className="text-blue-600 dark:text-blue-400 font-medium">Draft: </span>
-                  <span className="text-muted-foreground">{draftContent}</span>
+                  <span className="text-muted-foreground">{draftContent.length > 70 ? draftContent.slice(0, 70) + '…' : draftContent}</span>
                 </>
               ) : conversation.last_message?.startsWith('Note: ') ? (
                 <>
                   <span className="inline-block w-0.5 h-3 align-middle rounded-full bg-amber-500 mr-1" />
                   <span className="text-amber-600 dark:text-amber-400 font-medium">Note: </span>
-                  <span className="text-muted-foreground">{conversation.last_message.slice(6)}</span>
+                  <span className="text-muted-foreground">{conversation.last_message.slice(6, 80)}</span>
                 </>
               ) : (
-                conversation.last_message || conversation.subject
+                ((conversation.last_message || conversation.subject || '').length > 80
+                  ? (conversation.last_message || conversation.subject || '').slice(0, 80) + '…'
+                  : (conversation.last_message || conversation.subject))
               )}
             </p>
             {hasActivity && (
