@@ -876,7 +876,11 @@ function StoryDetailPanelBody({
 
           {/* Recurring info card */}
           {recurringSummary ? (
-            <div className="mt-3 flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+            <button
+              type="button"
+              className="mt-3 flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+              onClick={() => void openRecurringDialog()}
+            >
               <RefreshCw className="h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-sm">
@@ -889,22 +893,8 @@ function StoryDetailPanelBody({
                   {recurringSummary.occurrence_number ? `#${recurringSummary.occurrence_number} in series` : ''}{recurringSummary.occurrence_number && recurringSummary.generated_count ? ' · ' : ''}{recurringSummary.generated_count ? `${recurringSummary.generated_count} generated` : ''}
                 </p>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {recurringSummary.status === 'active' && (
-                  <Button type="button" variant="ghost" size="xs" disabled={recurringSaving} onClick={() => void runRecurringAction(() => pmRecurringTemplateService.pause(workspaceId, recurringSummary.template_id), 'Paused')}>
-                    <Pause className="h-3 w-3" />
-                  </Button>
-                )}
-                {recurringSummary.status === 'paused' && (
-                  <Button type="button" variant="ghost" size="xs" disabled={recurringSaving} onClick={() => void runRecurringAction(() => pmRecurringTemplateService.resume(workspaceId, recurringSummary.template_id), 'Resumed')}>
-                    <Play className="h-3 w-3" />
-                  </Button>
-                )}
-                <Button type="button" variant="ghost" size="xs" onClick={() => void openRecurringDialog()}>
-                  Edit
-                </Button>
-              </div>
-            </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
           ) : null}
 
           {/* Description */}
