@@ -41,6 +41,7 @@ const MAX_WS_RETRIES = 10;
 const MAX_WS_INITIAL_RETRIES = 3; // retries before first successful connection (invalid key, server down)
 const WS_BASE_DELAY_MS = 1000;
 const WS_MAX_DELAY_MS = 30000;
+const NOTIFICATION_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
 
 export class WidgetManager {
   private config: WidgetSettings | null = null;
@@ -73,6 +74,7 @@ export class WidgetManager {
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
   private currentEmail: string | null = null;
+  private notificationAudio: HTMLAudioElement | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
     onShow: [],
@@ -189,17 +191,6 @@ export class WidgetManager {
       this.currentView = 'conversation';
     } else {
       this.hasBeenOpened = true;
-    }
-    if (this.activeConversationId && this.currentView === 'home') {
-      // User had an active conversation — resume it instead of showing home
-      this.currentView = 'conversation';
-    }
-    // Mark active conversation as read when opening to conversation view
-    if (this.activeConversationId && this.currentView === 'conversation') {
-      this.clearActiveConversationUnread();
-      if (this.wsConnection?.readyState === WebSocket.OPEN) {
-        this.wsSend('conversation:read', { conversation_id: this.activeConversationId });
-      }
     }
     this.ensureWidget();
     this.render();
@@ -402,6 +393,17 @@ export class WidgetManager {
   }
 
   // ─── Unread Count ──────────────────────────────────────────
+
+  private playNotificationSound(): void {
+    try {
+      if (!this.notificationAudio) {
+        this.notificationAudio = new Audio(NOTIFICATION_SOUND_URL);
+        this.notificationAudio.volume = 0.5;
+      }
+      this.notificationAudio.currentTime = 0;
+      this.notificationAudio.play().catch(() => {/* autoplay blocked — ignore */});
+    } catch { /* audio not supported — ignore */ }
+  }
 
   private syncUnreadCount(): void {
     const total = this.conversations.reduce((sum, c) => {
@@ -894,12 +896,13 @@ export class WidgetManager {
 
         if (msg.sender_type !== 'customer') {
           this.isTyping = false;
+          this.playNotificationSound();
         }
 
         // Update conversation in the list (lastMessage preview + unread count + move to top)
         if (newMsg.conversationId) {
           const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
-          const isActiveAndOpen = this.isOpen && this.activeConversationId === newMsg.conversationId;
+          const isActiveAndOpen = this.isOpen && this.currentView === 'conversation' && this.activeConversationId === newMsg.conversationId;
           const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
           if (convIdx >= 0) {
             const prev = this.conversations[convIdx];

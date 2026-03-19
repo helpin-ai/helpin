@@ -1,16 +1,11 @@
 import { FunctionComponent } from 'preact';
 import type { Message, WidgetConfig } from '../types';
+import { renderMarkdown } from '../utils/markdownRenderer';
 
 interface MessageBubbleProps {
   message: Message;
   config?: WidgetConfig;
   isFirstInGroup?: boolean;
-}
-
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.appendChild(document.createTextNode(str));
-  return div.innerHTML;
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -82,7 +77,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
             <div className={bubbleClass} data-tooltip={tooltipText}>
               <div
                 className="helpin-message-content"
-                dangerouslySetInnerHTML={{ __html: escapeHtml(message.content) }}
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
               />
 
               {message.sources && message.sources.length > 0 && (
@@ -108,7 +103,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
         <div className={bubbleClass} data-tooltip={tooltipText}>
           <div
             className="helpin-message-content"
-            dangerouslySetInnerHTML={{ __html: escapeHtml(message.content) }}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
           />
         </div>
       )}

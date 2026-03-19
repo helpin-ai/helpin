@@ -1338,6 +1338,7 @@ export interface SupportMessage {
   sender_display_name?: string;
   sender_avatar_url?: string;
   content: string;
+  message_type?: string;
   is_internal: boolean;
   metadata?: string;
   created_at: string;

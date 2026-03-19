@@ -198,6 +198,28 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   };
 
   // Group messages with day separators and consecutive sender detection
+  // Find the last outbound reply message (for read receipt display)
+  const receiptMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg.is_internal && msg.sender_type !== 'customer' && (!msg.message_type || msg.message_type === 'reply')) {
+        return msg.id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  // Derive delivered/read status from conversation's contact_last_seen_at cursor
+  const receiptStatus = useMemo<'delivered' | 'read' | null>(() => {
+    if (!receiptMessageId || !conversation) return null;
+    if (conversation.source !== 'widget') return null;
+    const msg = messages.find((m) => m.id === receiptMessageId);
+    if (!msg) return null;
+    const seen = conversation.contact_last_seen_at;
+    if (seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
+    return 'delivered';
+  }, [receiptMessageId, conversation, messages]);
+
   const groupedMessages = useMemo(() => {
     const items: Array<{ type: 'separator'; label: string } | { type: 'message'; message: SupportMessage; isConsecutive: boolean; isLastInGroup: boolean }> = [];
     let lastDate: string | null = null;
@@ -387,6 +409,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                 isConsecutive={item.isConsecutive}
                 isLastInGroup={item.isLastInGroup}
                 source={conversation?.source}
+                receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
               />
             );
           })}
