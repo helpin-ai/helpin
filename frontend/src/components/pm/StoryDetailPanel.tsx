@@ -87,6 +87,7 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { StorySidebarIdRow } from '@/components/pm/StorySidebarIdRow';
+import { Badge } from '@/components/ui/badge';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSummary';
@@ -865,6 +866,39 @@ function StoryDetailPanelBody({
             placeholder="Untitled"
           />
 
+          {/* Recurring info card */}
+          {recurringSummary ? (
+            <div className="mt-3 flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+              <RefreshCw className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium">{recurringSummary.rule_summary}</span>
+                  <Badge variant="outline" className={cn('text-[10px] capitalize', recurringSummary.status === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200' : recurringSummary.status === 'paused' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200' : 'border-border')}>
+                    {recurringSummary.status}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {recurringSummary.occurrence_number ? `#${recurringSummary.occurrence_number} in series` : ''}{recurringSummary.occurrence_number && recurringSummary.generated_count ? ' · ' : ''}{recurringSummary.generated_count ? `${recurringSummary.generated_count} generated` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {recurringSummary.status === 'active' && (
+                  <Button type="button" variant="ghost" size="xs" disabled={recurringSaving} onClick={() => void runRecurringAction(() => pmRecurringTemplateService.pause(workspaceId, recurringSummary.template_id), 'Paused')}>
+                    <Pause className="h-3 w-3" />
+                  </Button>
+                )}
+                {recurringSummary.status === 'paused' && (
+                  <Button type="button" variant="ghost" size="xs" disabled={recurringSaving} onClick={() => void runRecurringAction(() => pmRecurringTemplateService.resume(workspaceId, recurringSummary.template_id), 'Resumed')}>
+                    <Play className="h-3 w-3" />
+                  </Button>
+                )}
+                <Button type="button" variant="ghost" size="xs" onClick={() => void openRecurringDialog()}>
+                  Edit
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {/* Description */}
           <div className="mt-4">
             <TiptapEditor
@@ -1036,95 +1070,6 @@ function StoryDetailPanelBody({
         {/* ── Right column (sidebar) ────────────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5 pb-40">
           <StorySidebarIdRow displayId={storyDetail.story.display_id} />
-
-          <div className="mb-4">
-            {recurringSummary ? (
-              <>
-                <RecurringTemplateSummary
-                  title={recurringSummary.template_title}
-                  status={recurringSummary.status}
-                  ruleSummary={recurringSummary.rule_summary}
-                  nextRunAt={recurringSummary.next_run_at}
-                  generatedCount={recurringSummary.generated_count}
-                  occurrenceNumber={recurringSummary.occurrence_number}
-                  lastError={recurringSummary.last_error}
-                  lastGeneratedStory={recurringSummary.last_generated_story ?? null}
-                  compact
-                  actions={
-                    <Button type="button" variant="ghost" size="xs" onClick={() => void openRecurringDialog()}>
-                      Edit
-                    </Button>
-                  }
-                />
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {recurringSummary.status === 'active' ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      disabled={recurringSaving}
-                      onClick={() => void runRecurringAction(
-                        () => pmRecurringTemplateService.pause(workspaceId, recurringSummary.template_id),
-                        'Recurring template paused',
-                      )}
-                    >
-                      <Pause className="h-3 w-3" />
-                      Pause
-                    </Button>
-                  ) : null}
-                  {recurringSummary.status === 'paused' ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      disabled={recurringSaving}
-                      onClick={() => void runRecurringAction(
-                        () => pmRecurringTemplateService.resume(workspaceId, recurringSummary.template_id),
-                        'Recurring template resumed',
-                      )}
-                    >
-                      <Play className="h-3 w-3" />
-                      Resume
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    disabled={recurringSaving}
-                    onClick={() => void runRecurringAction(
-                      () => pmRecurringTemplateService.skipNext(workspaceId, recurringSummary.template_id),
-                      'Next occurrence skipped',
-                    )}
-                  >
-                    <StepForward className="h-3 w-3" />
-                    Skip next
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    disabled={recurringSaving}
-                    onClick={() => void runRecurringAction(
-                      () => pmRecurringTemplateService.generateNow(workspaceId, recurringSummary.template_id),
-                      'Recurring story generated',
-                    )}
-                  >
-                    <Zap className="h-3 w-3" />
-                    Generate now
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="w-full rounded-lg border border-dashed border-border/60 px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:border-border hover:bg-muted/30"
-                onClick={() => void openRecurringDialog()}
-              >
-                Make this story recurring
-              </button>
-            )}
-          </div>
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* Team */}
