@@ -184,6 +184,7 @@ export class WidgetManager {
 
   show(): void {
     this.isOpen = true;
+    this.unlockNotificationSound();
     if (!this.hasBeenOpened && this.currentView === 'home') {
       this.hasBeenOpened = true;
       // If there's an active conversation (restored session), resume it;
@@ -393,6 +394,22 @@ export class WidgetManager {
   }
 
   // ─── Unread Count ──────────────────────────────────────────
+
+  /** Preload and unlock audio playback (call from a user-gesture handler like show/toggle). */
+  private unlockNotificationSound(): void {
+    try {
+      if (!this.notificationAudio) {
+        this.notificationAudio = new Audio(NOTIFICATION_SOUND_URL);
+      }
+      // Silent play to unlock autoplay policy, then reset
+      this.notificationAudio.volume = 0;
+      this.notificationAudio.play().then(() => {
+        this.notificationAudio!.pause();
+        this.notificationAudio!.currentTime = 0;
+        this.notificationAudio!.volume = 0.5;
+      }).catch(() => {/* ignore */});
+    } catch { /* audio not supported */ }
+  }
 
   private playNotificationSound(): void {
     try {
