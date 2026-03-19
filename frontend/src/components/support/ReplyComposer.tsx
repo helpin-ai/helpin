@@ -308,10 +308,35 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
   return (
     <div
       className={cn(
-        'border-t transition-colors',
+        'relative border-t transition-colors',
         isNote && 'border-l-2 border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/10'
       )}
     >
+      {/* Mention suggestions popover — floats above the composer */}
+      {mentionState && mentionState.items.length > 0 && (
+        <div className="absolute bottom-full left-0 right-0 z-50 mb-1 px-3">
+          <div className="max-h-[240px] overflow-y-auto rounded-lg border border-border/60 bg-muted/40 px-2 py-2 shadow-md backdrop-blur-sm">
+            <MentionSuggestionsList
+              items={mentionState.items}
+              selectedIndex={mentionState.selectedIndex}
+              compact
+              onSelect={(item) => {
+                if (!editor) return;
+                editor
+                  .chain()
+                  .focus()
+                  .insertContentAt(
+                    { from: mentionState.from, to: mentionState.to },
+                    `@${item.handle} `,
+                  )
+                  .run();
+                setMentionState(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Mode toggle */}
       <div className="flex items-center gap-0.5 px-3 pt-2.5">
         <button
@@ -346,28 +371,6 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
       <div className="px-3 py-1.5">
         <EditorContent editor={editor} />
       </div>
-
-      {/* Mention suggestions dropdown */}
-      {mentionState && mentionState.items.length > 0 && (
-        <div className="border-t border-border/60 bg-muted/40 px-3 py-2">
-          <MentionSuggestionsList
-            items={mentionState.items}
-            selectedIndex={mentionState.selectedIndex}
-            onSelect={(item) => {
-              if (!editor) return;
-              editor
-                .chain()
-                .focus()
-                .insertContentAt(
-                  { from: mentionState.from, to: mentionState.to },
-                  `@${item.handle} `,
-                )
-                .run();
-              setMentionState(null);
-            }}
-          />
-        </div>
-      )}
 
       {/* Bottom toolbar */}
       <div className="flex items-center justify-between px-3 pb-2.5">
