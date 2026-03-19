@@ -253,7 +253,7 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
             <>
               <DialogHeader>
                 <DialogTitle>Run History</DialogTitle>
-                <DialogDescription>{viewTemplate.template.title} — {viewTemplate.template.generated_count} stories generated</DialogDescription>
+                <DialogDescription>{viewTemplate.template.title}</DialogDescription>
               </DialogHeader>
               {viewTemplate.runs && viewTemplate.runs.length > 0 ? (
                 <RunHistory runs={viewTemplate.runs} onOpenStory={(storyId) => handleOpenStory(storyId)} />
