@@ -715,14 +715,6 @@ func main() {
 	)
 	supportInboxService.SetSupportAIService(supportAIService)
 
-	// Start AI support consumer in-process for local dev.
-	// In production this runs on the worker node (cmd/temporal-worker/main.go).
-	go func() {
-		if err := supportAIService.StartNATSConsumer(realtimeCtx); err != nil {
-			slog.Error("support AI consumer stopped", "error", err)
-		}
-	}()
-
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
