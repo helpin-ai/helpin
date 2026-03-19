@@ -986,19 +986,6 @@ export function CreateStoryModal({
                 </MetadataRow>
                 )}
 
-                {!isTemplateMode && (
-                  <MetadataRow icon={RefreshCw} label="Recurring">
-                    <button
-                      type="button"
-                      className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
-                      onClick={() => setRecurringDialogOpen(true)}
-                    >
-                      {recurringDraft ? <RecurringTemplateBadge compact /> : null}
-                      <span className="truncate">{recurringDraftSummary}</span>
-                    </button>
-                  </MetadataRow>
-                )}
-
                 {/* ── People ── */}
                 <div className="col-span-3 h-px bg-border/40 my-1" />
 
@@ -1214,6 +1201,22 @@ export function CreateStoryModal({
                     className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
                   />
                 </MetadataRow>
+                )}
+
+                {!isTemplateMode && (
+                  <>
+                    <div className="col-span-3 h-px bg-border/40 my-1" />
+                    <MetadataRow icon={RefreshCw} label="Recurring">
+                      <button
+                        type="button"
+                        className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
+                        onClick={() => setRecurringDialogOpen(true)}
+                      >
+                        {recurringDraft ? <RecurringTemplateBadge compact /> : null}
+                        <span className="truncate">{recurringDraftSummary}</span>
+                      </button>
+                    </MetadataRow>
+                  </>
                 )}
               </div>
             </aside>
