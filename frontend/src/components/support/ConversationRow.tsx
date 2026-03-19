@@ -81,11 +81,11 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
     <button
       type="button"
       onClick={onSelect}
-      className={`w-full overflow-hidden text-left border-b px-3 py-2.5 transition-colors hover:bg-muted/50 ${
+      className={`w-full text-left border-b px-3 py-2.5 transition-colors hover:bg-muted/50 ${
         isSelected ? 'bg-muted border-l-2 border-l-primary' : isUnread ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
       }`}
     >
-      <div className="flex min-w-0 items-start gap-2.5">
+      <div className="flex items-start gap-2.5">
         <div className="relative mt-0.5 shrink-0">
           <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
             {getInitial(displayName)}
@@ -116,17 +116,17 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
                 <>
                   <span className="inline-block w-0.5 h-3 align-middle rounded-full bg-blue-500 mr-1" />
                   <span className="text-blue-600 dark:text-blue-400 font-medium">Draft: </span>
-                  <span className="text-muted-foreground">{draftContent.length > 70 ? draftContent.slice(0, 70) + '…' : draftContent}</span>
+                  <span className="text-muted-foreground">{draftContent.length > 36 ? draftContent.slice(0, 36) + '…' : draftContent}</span>
                 </>
               ) : conversation.last_message?.startsWith('Note: ') ? (
                 <>
                   <span className="inline-block w-0.5 h-3 align-middle rounded-full bg-amber-500 mr-1" />
                   <span className="text-amber-600 dark:text-amber-400 font-medium">Note: </span>
-                  <span className="text-muted-foreground">{conversation.last_message.slice(6, 80)}</span>
+                  <span className="text-muted-foreground">{conversation.last_message.slice(6, 42)}{conversation.last_message.length > 42 ? '…' : ''}</span>
                 </>
               ) : (
-                ((conversation.last_message || conversation.subject || '').length > 80
-                  ? (conversation.last_message || conversation.subject || '').slice(0, 80) + '…'
+                ((conversation.last_message || conversation.subject || '').length > 36
+                  ? (conversation.last_message || conversation.subject || '').slice(0, 36) + '…'
                   : (conversation.last_message || conversation.subject))
               )}
             </p>
