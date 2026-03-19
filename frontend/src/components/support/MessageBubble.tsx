@@ -127,89 +127,98 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
     </Tooltip>
   );
 
+  const hasStatusBelow = !!receiptStatus || !!aiMeta;
+
   return (
-    <div className={`flex ${isCustomer ? 'justify-start' : 'justify-end'} ${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
-      {/* Left side: avatar or spacer (customer messages) */}
-      {isCustomer && (
-        <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
-          {showAvatar && avatarEl}
-        </div>
-      )}
-
-      <div className="max-w-[70%]">
-        {/* Bubble with hover tooltip */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div
-              className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
-                isCustomer
-                  ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
-                  : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
-              }`}
-            >
-              <div className="prose-chat">
-                <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</Markdown>
-              </div>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side={isCustomer ? 'right' : 'left'}>
-            {tooltipContent}
-          </TooltipContent>
-        </Tooltip>
-
-        {/* Read receipt indicator */}
-        {receiptStatus && (
-          <div className="mt-0.5 flex items-center justify-end gap-1 pr-1">
-            {receiptStatus === 'read' ? (
-              <>
-                <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
-                <span className="text-[11px] text-muted-foreground">Read in chat</span>
-              </>
-            ) : (
-              <>
-                <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-[11px] text-muted-foreground">Delivered</span>
-              </>
-            )}
+    <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
+      {/* Bubble row: avatar + bubble aligned together */}
+      <div className={`flex ${isCustomer ? 'justify-start' : 'justify-end'}`}>
+        {/* Left side: avatar or spacer (customer messages) */}
+        {isCustomer && (
+          <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
+            {showAvatar && avatarEl}
           </div>
         )}
 
-        {/* AI metadata: confidence badge + collapsible sources */}
-        {aiMeta && (
-          <div className={`mt-1 ${isCustomer ? '' : 'text-right'}`}>
-            <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
-                {(aiMeta.ai_confidence * 100).toFixed(0)}% confident
-              </span>
-              {aiMeta.ai_sources?.length > 0 && (
-                <button
-                  onClick={() => setSourcesOpen(!sourcesOpen)}
-                  className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 hover:bg-muted"
-                >
-                  <FileText className="h-3 w-3" />
-                  {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
-                  {sourcesOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                </button>
-              )}
-            </div>
-            {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
-              <div className="mt-1.5 space-y-1 rounded-lg border bg-muted/50 p-2 text-left text-xs">
-                {aiMeta.ai_sources.map((src) => (
-                  <div key={src.docId} className="flex items-start gap-1.5">
-                    <FileText className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
-                    <span className="font-medium">{src.title}</span>
-                  </div>
-                ))}
+        <div className="max-w-[70%]">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                  isCustomer
+                    ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
+                    : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
+                }`}
+              >
+                <div className="prose-chat">
+                  <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</Markdown>
+                </div>
               </div>
-            )}
+            </TooltipTrigger>
+            <TooltipContent side={isCustomer ? 'right' : 'left'}>
+              {tooltipContent}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
+        {/* Right side: avatar or spacer (agent/user messages) */}
+        {!isCustomer && (
+          <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
+            {showAvatar && avatarEl}
           </div>
         )}
       </div>
 
-      {/* Right side: avatar or spacer (agent/user messages) */}
-      {!isCustomer && (
-        <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
-          {showAvatar && avatarEl}
+      {/* Status below the bubble row — outside the avatar alignment */}
+      {hasStatusBelow && (
+        <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
+          {/* Read receipt indicator */}
+          {receiptStatus && (
+            <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
+              {receiptStatus === 'read' ? (
+                <>
+                  <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
+                  <span className="text-[11px] text-muted-foreground">Read in chat</span>
+                </>
+              ) : (
+                <>
+                  <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">Delivered</span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* AI metadata: confidence badge + collapsible sources */}
+          {aiMeta && (
+            <div className={`mt-0.5 ${isCustomer ? '' : 'text-right'}`}>
+              <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
+                  {(aiMeta.ai_confidence * 100).toFixed(0)}% confident
+                </span>
+                {aiMeta.ai_sources?.length > 0 && (
+                  <button
+                    onClick={() => setSourcesOpen(!sourcesOpen)}
+                    className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 hover:bg-muted"
+                  >
+                    <FileText className="h-3 w-3" />
+                    {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
+                    {sourcesOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  </button>
+                )}
+              </div>
+              {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
+                <div className="mt-1.5 space-y-1 rounded-lg border bg-muted/50 p-2 text-left text-xs">
+                  {aiMeta.ai_sources.map((src) => (
+                    <div key={src.docId} className="flex items-start gap-1.5">
+                      <FileText className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="font-medium">{src.title}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
