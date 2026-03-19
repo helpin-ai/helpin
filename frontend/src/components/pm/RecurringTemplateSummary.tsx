@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { AlertTriangle, Clock3, GitBranch, ListTodo, PlayCircle } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Clock3, GitBranch, ListTodo, PlayCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type { RecurringRun, RecurringTemplateStatus, Story } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
@@ -47,6 +48,56 @@ function formatRunLabel(run: RecurringRun) {
     default:
       return 'Seed run';
   }
+}
+
+const PAGE_SIZE = 10;
+
+function RunsSection({ runs, compact, onOpenStory }: { runs: RecurringRun[]; compact: boolean; onOpenStory?: (storyId: string) => void }) {
+  const perPage = compact ? 3 : PAGE_SIZE;
+  const [page, setPage] = useState(0);
+  const totalPages = Math.ceil(runs.length / perPage);
+  const visible = runs.slice(page * perPage, (page + 1) * perPage);
+  const start = page * perPage + 1;
+  const end = Math.min((page + 1) * perPage, runs.length);
+
+  return (
+    <div className="mt-4 border-t border-border/50 pt-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {runs.length <= perPage ? `Last ${runs.length} runs` : `Runs ${start}–${end} of ${runs.length}`}
+        </span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
+      </div>
+      <div className="space-y-2">
+        {visible.map((run) => (
+          <div key={run.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-xs">
+            <PlayCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{formatRunLabel(run)}</span>
+            <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
+            <span className="shrink-0 text-muted-foreground">{formatRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
+            {run.generated_story_id && onOpenStory ? (
+              <button
+                type="button"
+                className="shrink-0 text-primary hover:underline"
+                onClick={() => onOpenStory(run.generated_story_id!)}
+              >
+                View story
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function RecurringTemplateSummary({
@@ -112,28 +163,7 @@ export function RecurringTemplateSummary({
       </div>
 
       {runs && runs.length > 0 ? (
-        <div className="mt-4 border-t border-border/50 pt-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Last {Math.min(runs.length, compact ? 3 : 10)} runs</div>
-          <div className="space-y-2">
-            {runs.slice(0, compact ? 3 : 10).map((run) => (
-              <div key={run.id} className="flex items-center gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-xs">
-                <PlayCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">{formatRunLabel(run)}</span>
-                <span className="shrink-0 capitalize text-muted-foreground">{run.status}</span>
-                <span className="shrink-0 text-muted-foreground">{formatRelative(run.finished_at ?? run.started_at ?? run.created_at)}</span>
-                {run.generated_story_id && onOpenStory ? (
-                  <button
-                    type="button"
-                    className="shrink-0 text-primary hover:underline"
-                    onClick={() => onOpenStory(run.generated_story_id!)}
-                  >
-                    View story
-                  </button>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </div>
+        <RunsSection runs={runs} compact={compact} onOpenStory={onOpenStory} />
       ) : null}
     </section>
   );
