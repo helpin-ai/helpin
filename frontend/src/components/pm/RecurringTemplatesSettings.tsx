@@ -188,26 +188,30 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
       )}
 
       <Dialog open={!!viewTemplate} onOpenChange={(open) => !open && setViewTemplate(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-lg">
           {viewTemplate ? (
             <>
               <DialogHeader>
-                <DialogTitle>{viewTemplate.template.title}</DialogTitle>
-                <DialogDescription>{viewTemplate.seed.name}</DialogDescription>
+                <DialogTitle>Run History</DialogTitle>
+                <DialogDescription>{viewTemplate.template.title} — {viewTemplate.template.generated_count} stories generated</DialogDescription>
               </DialogHeader>
-              <RecurringTemplateSummary
-                title={viewTemplate.template.title}
-                status={viewTemplate.template.status}
-                ruleSummary={viewTemplate.rule_summary}
-                nextRunAt={viewTemplate.template.next_run_at}
-                generatedCount={viewTemplate.template.generated_count}
-                lastError={viewTemplate.template.last_error}
-                lastGeneratedStory={viewTemplate.last_generated_story ?? null}
-                runs={viewTemplate.runs}
-              />
+              {viewTemplate.runs && viewTemplate.runs.length > 0 ? (
+                <RecurringTemplateSummary
+                  status={viewTemplate.template.status}
+                  ruleSummary={viewTemplate.rule_summary}
+                  nextRunAt={viewTemplate.template.next_run_at}
+                  generatedCount={viewTemplate.template.generated_count}
+                  lastError={viewTemplate.template.last_error}
+                  lastGeneratedStory={viewTemplate.last_generated_story ?? null}
+                  runs={viewTemplate.runs}
+                  compact
+                />
+              ) : (
+                <p className="py-6 text-center text-sm text-muted-foreground">No runs yet. Stories will appear here after the first scheduled run.</p>
+              )}
               {viewTemplate.last_generated_story ? (
                 <div className="flex justify-end">
-                  <Button type="button" variant="outline" onClick={() => handleOpenStory(viewTemplate.last_generated_story?.id)}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleOpenStory(viewTemplate.last_generated_story?.id)}>
                     Open last generated story
                   </Button>
                 </div>

@@ -59,7 +59,7 @@ export function RecurringTemplateList({
                 <>
                   {onView ? (
                     <Button type="button" variant="ghost" size="xs" onClick={() => onView(item)}>
-                      View
+                      Runs
                     </Button>
                   ) : null}
                   {onEdit ? (
