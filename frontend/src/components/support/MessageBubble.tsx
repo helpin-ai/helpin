@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from 'react';
+import Markdown from 'react-markdown';
 import { Bot, CheckCheck, ChevronDown, ChevronUp, FileText, StickyNote } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
@@ -75,7 +76,9 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                     <span className="font-normal"> left a private note</span>
                   </span>
                 </div>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-amber-900 dark:text-amber-200">{message.content}</p>
+                <div className="prose-chat text-sm leading-relaxed text-amber-900 dark:text-amber-200">
+                  <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</Markdown>
+                </div>
               </div>
             </TooltipTrigger>
             <TooltipContent side="left">{tooltipContent}</TooltipContent>
@@ -144,7 +147,9 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                   : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
               }`}
             >
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              <div className="prose-chat">
+                <Markdown components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</Markdown>
+              </div>
             </div>
           </TooltipTrigger>
           <TooltipContent side={isCustomer ? 'right' : 'left'}>
