@@ -112,7 +112,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
   return {
     navFilter: 'all',
     navCollapsed: persisted.navCollapsed,
-    statusFilter: 'open',
+    statusFilter: 'all',
     searchQuery: '',
     selectedConversationId: null,
     replyMode: 'reply',
@@ -121,7 +121,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     activePanel: 'list',
     drafts: persistedDrafts,
 
-    setNavFilter: (filter) => set({ navFilter: filter }),
+    setNavFilter: (filter) => set({ navFilter: filter, statusFilter: 'all' }),
     toggleNavCollapsed: () => {
       const next = !get().navCollapsed;
       set({ navCollapsed: next });
