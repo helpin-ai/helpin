@@ -905,6 +905,8 @@
   align-items: center;
   gap: 12px;
   width: 100%;
+  max-width: 100%;
+  overflow: hidden;
   padding: 14px 16px;
   border: none;
   border-bottom: 1px solid var(--helpin-border);
@@ -913,6 +915,7 @@
   text-align: left;
   font-family: inherit;
   transition: background 0.15s;
+  box-sizing: border-box;
 }
 
 .helpin-conversation-item:hover {
@@ -955,6 +958,8 @@
   font-size: 13px;
   color: var(--helpin-fg-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .helpin-conversation-item-arrow {
