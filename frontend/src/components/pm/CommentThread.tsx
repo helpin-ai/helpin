@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronRight, Download, MessageSquare, Pencil, Reply, SmilePlus, Trash2 } from 'lucide-react';
+import { ChevronRight, MessageSquare, Pencil, Reply, SmilePlus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -60,11 +60,6 @@ function getFileTypeIcon(ext: string): string {
   return map[ext] || defaultIcon;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 // ── Reaction picker (shared between popover & inline) ──
 function ReactionPicker({ onPick }: { onPick: (emoji: string) => void }) {

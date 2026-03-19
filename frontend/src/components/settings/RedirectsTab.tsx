@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { docsRedirectService, type DocsRedirect } from '@/lib/services/docsRedirectService';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
