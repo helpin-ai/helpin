@@ -379,13 +379,21 @@ function StoryDetailPanelBody({
         toast.error(error);
         return;
       }
+      // Update local state from returned data to avoid full reload cycle.
       if (data) {
         setRecurringDetail(data);
+        setRecurringSummary((prev) => prev ? {
+          ...prev,
+          status: data.template.status,
+          next_run_at: data.template.next_run_at,
+          generated_count: data.template.generated_count,
+          last_error: data.template.last_error,
+          rule_summary: data.rule_summary,
+        } : prev);
       }
-      await loadRecurringSummary(storyDetail.story.id);
       toast.success(successMessage);
     },
-    [loadRecurringSummary, storyDetail.story.id],
+    [],
   );
 
   const handleRecurringSubmit = useCallback(async (value: RecurringTemplateFormValue) => {
