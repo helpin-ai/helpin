@@ -561,22 +561,49 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 	var stats model.UnreadStats
 	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT
-			COUNT(*) FILTER (WHERE u.unread > 0) AS total,
-			COUNT(*) FILTER (WHERE u.unread > 0 AND sc.opened_by_user_id = ?) AS my_inbox,
-			COUNT(*) FILTER (WHERE u.unread > 0 AND (sc.assigned_agent_id IS NULL OR sc.ai_state = 'escalated')) AS unassigned
+			COUNT(*) FILTER (
+				WHERE (
+					SELECT COUNT(*)
+					FROM support_messages sm
+					WHERE sm.conversation_id = sc.id
+					  AND sm.is_internal = false
+					  AND sm.sender_type = 'customer'
+					  AND sm.message_type = 'reply'
+					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+				) > 0
+				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
+			) AS total,
+			COUNT(*) FILTER (
+				WHERE (
+					SELECT COUNT(*)
+					FROM support_messages sm
+					WHERE sm.conversation_id = sc.id
+					  AND sm.is_internal = false
+					  AND sm.sender_type = 'customer'
+					  AND sm.message_type = 'reply'
+					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+				) > 0
+				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
+				  AND sc.opened_by_user_id = ?
+			) AS my_inbox,
+			COUNT(*) FILTER (
+				WHERE (
+					SELECT COUNT(*)
+					FROM support_messages sm
+					WHERE sm.conversation_id = sc.id
+					  AND sm.is_internal = false
+					  AND sm.sender_type = 'customer'
+					  AND sm.message_type = 'reply'
+					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+				) > 0
+				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
+				  AND sc.assigned_agent_id IS NULL
+				  AND sc.opened_by_user_id IS NULL
+			) AS unassigned
 		FROM support_conversations sc
-		CROSS JOIN LATERAL (
-			SELECT COUNT(*) AS unread
-			FROM support_messages sm
-			WHERE sm.conversation_id = sc.id
-			  AND sm.is_internal = false
-			  AND sm.sender_type = 'customer'
-			  AND sm.message_type = 'reply'
-			  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
-		) u
 		WHERE sc.workspace_id = ?
 		  AND sc.status != 'closed'
-	`, r.epochExpr()), userID, workspaceID).Scan(&stats).Error
+	`, r.epochExpr(), r.epochExpr(), r.epochExpr()), userID, workspaceID).Scan(&stats).Error
 	if err != nil {
 		return stats, fmt.Errorf("get unread stats: %w", err)
 	}

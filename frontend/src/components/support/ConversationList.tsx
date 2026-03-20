@@ -7,7 +7,7 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { supportService } from '@/lib/services/supportService';
 import { ConversationRow } from './ConversationRow';
-import type { SupportConversation } from '@/lib/pmTypes';
+import { filterSupportConversations } from '@/lib/supportInboxFilters';
 
 const SkeletonRow = memo(function SkeletonRow() {
   return (
@@ -57,47 +57,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   const conversations = response?.data ?? [];
 
   const filteredConversations = useMemo(() => {
-    let result: SupportConversation[] = conversations;
-
-    // Apply nav filter
-    if (navFilter === 'my_inbox' && userId) {
-      result = result.filter((c) => c.opened_by_user_id === userId);
-    } else if (navFilter === 'unassigned') {
-      result = result.filter((c) => !c.assigned_agent_id && !c.opened_by_user_id);
-    } else if (navFilter === 'mentions') {
-      // Backend filters via API param — no client-side filtering needed
-    } else if (navFilter === 'ai_all') {
-      result = result.filter((c) => c.ai_state != null);
-    } else if (navFilter === 'ai_resolved') {
-      result = result.filter((c) => c.ai_state === 'resolved');
-    } else if (navFilter === 'ai_escalated') {
-      result = result.filter((c) => c.ai_state === 'escalated');
-    } else if (navFilter === 'ai_pending') {
-      result = result.filter((c) => c.ai_state === 'pending');
-    }
-
-    // Apply search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (c) =>
-          c.subject.toLowerCase().includes(q) ||
-          c.customer_name?.toLowerCase().includes(q) ||
-          c.customer_email?.toLowerCase().includes(q) ||
-          String(c.display_id).includes(q)
-      );
-    }
-
-    // Sort: unresolved/open on top, resolved/closed at bottom, then by updated_at desc
-    result.sort((a, b) => {
-      const resolvedStatuses = new Set(['resolved', 'closed']);
-      const aResolved = resolvedStatuses.has(a.status) ? 1 : 0;
-      const bResolved = resolvedStatuses.has(b.status) ? 1 : 0;
-      if (aResolved !== bResolved) return aResolved - bResolved;
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-    });
-
-    return result;
+    return filterSupportConversations(conversations, { navFilter, userId, searchQuery });
   }, [conversations, navFilter, userId, searchQuery]);
 
   return (

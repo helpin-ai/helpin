@@ -41,6 +41,41 @@ const SENDER_TYPE_LABELS: Record<string, string> = {
   agent: 'AI Agent',
 };
 
+function findTrailingAIContractStart(content: string): number {
+  const trimmed = content.trimEnd();
+  if (!trimmed.endsWith('}')) return -1;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = trimmed.length - 1; i >= 0; i -= 1) {
+    const ch = trimmed[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (ch === '}') depth += 1;
+    if (ch === '{') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+
+  return -1;
+}
+
 interface MessageBubbleProps {
   message: SupportMessage;
   isConsecutive?: boolean;
@@ -78,6 +113,17 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
         } catch { /* not an AI contract — keep as-is */ }
       }
     }
+
+    const rawJsonStart = findTrailingAIContractStart(message.content);
+    if (rawJsonStart > 0) {
+      try {
+        const parsed = JSON.parse(message.content.slice(rawJsonStart).trim());
+        if (parsed && typeof parsed.can_answer === 'boolean' && typeof parsed.content === 'string') {
+          return message.content.slice(0, rawJsonStart).trimEnd();
+        }
+      } catch { /* not an AI contract — keep as-is */ }
+    }
+
     return message.content;
   }, [message.content]);
 

@@ -45,7 +45,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
-  const displayName = isCustomer ? '' : (agentName || config?.workspaceName || 'Support');
+  const displayName = isCustomer ? '' : (isAI ? 'Helpin AI' : (agentName || config?.workspaceName || 'Support Agent'));
   const tooltipText = formatRelativeTime(message.createdAt);
 
   return (
@@ -90,11 +90,12 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                 </div>
               )}
 
-              {message.aiConfidence !== undefined && (
+              {/* TODO: Replace with source-based display ("Based on N help articles") */}
+              {/* {message.aiConfidence !== undefined && (
                 <div className="helpin-message-confidence">
                   Confidence: {Math.round(message.aiConfidence * 100)}%
                 </div>
-              )}
+              )} */}
             </div>
           </div>
         </>

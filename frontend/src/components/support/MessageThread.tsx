@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo, memo } from 'react';
+import { useEffect, useRef, useState, useMemo, memo } from 'react';
 import { toast } from 'sonner';
 import { MessageSquare, Bot, Loader2, MoreHorizontal, CheckCircle2, CircleX, Link2, MailOpen, ShieldAlert, Trash2, Pencil } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -123,12 +123,21 @@ function AgentTypingBubble({ conversationId, workspaceId }: { conversationId: st
   );
 }
 
-function DaySeparator({ label }: { label: string }) {
+function DaySeparator({
+  label,
+  isSticky,
+  separatorRef,
+}: {
+  label: string;
+  isSticky: boolean;
+  separatorRef?: (node: HTMLDivElement | null) => void;
+}) {
   return (
-    <div className="sticky top-0 z-[1] flex items-center justify-center py-3">
-      <div className="absolute inset-x-0 top-1/2 h-px bg-border/40" />
+    <div ref={separatorRef} className="sticky top-0 z-[1] flex items-center justify-center py-3">
       <span
-        className="relative rounded-full bg-white px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 dark:bg-background"
+        className={`relative rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
+          isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
+        }`}
         style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
       >
         {label}
@@ -170,6 +179,8 @@ const MessageSkeleton = memo(function MessageSkeleton() {
 
 export function MessageThread({ workspaceId, conversationId }: MessageThreadProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const separatorRefs = useRef(new Map<number, HTMLDivElement>());
   const { data: conversation } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
@@ -179,38 +190,59 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const deleteConversation = useDeleteConversation(workspaceId);
 
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
-
-  const loadAgentRuns = useCallback(async () => {
-    if (!conversationId || !conversation?.assigned_agent_id) {
-      setAgentRuns([]);
-      return;
-    }
-    const res = await agentService.listRuns(workspaceId, conversation.assigned_agent_id);
-    if (res.error) return;
-    setAgentRuns(
-      (res.data?.data ?? []).filter(
-        (run) => run.target_type === 'support_conversation' && run.target_id === conversationId
-      )
-    );
-  }, [workspaceId, conversationId, conversation?.assigned_agent_id]);
+  const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
+  const assignedAgentId = conversation?.assigned_agent_id ?? null;
 
   useEffect(() => {
-    loadAgentRuns();
-  }, [loadAgentRuns]);
+    let cancelled = false;
+
+    if (!conversationId || !assignedAgentId) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setAgentRuns([]);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      const res = await agentService.listRuns(workspaceId, assignedAgentId);
+      if (cancelled || res.error) return;
+      setAgentRuns(
+        (res.data?.data ?? []).filter(
+          (run) => run.target_type === 'support_conversation' && run.target_id === conversationId
+        )
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, conversationId, assignedAgentId]);
 
   useEffect(() => {
     const handleAgentRunEvent = (event: Event) => {
       const detail = (event as CustomEvent<{ parent_type?: string; parent_id?: string }>).detail;
-      if (detail?.parent_type === 'support_conversation' && detail.parent_id === conversationId) {
-        void loadAgentRuns();
-      }
+      if (detail?.parent_type !== 'support_conversation' || detail.parent_id !== conversationId || !assignedAgentId) return;
+
+      void (async () => {
+        const res = await agentService.listRuns(workspaceId, assignedAgentId);
+        if (res.error) return;
+        setAgentRuns(
+          (res.data?.data ?? []).filter(
+            (run) => run.target_type === 'support_conversation' && run.target_id === conversationId
+          )
+        );
+      })();
     };
 
     window.addEventListener('agent_run-updated', handleAgentRunEvent);
     return () => {
       window.removeEventListener('agent_run-updated', handleAgentRunEvent);
     };
-  }, [conversationId, loadAgentRuns]);
+  }, [workspaceId, conversationId, assignedAgentId]);
 
   // Broadcast viewing presence via WebSocket (server tracks state, cleans up on disconnect)
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
@@ -229,7 +261,18 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
   const handleApproveRun = async (runId: string) => {
     await agentService.approveRun(workspaceId, runId, { send_message: true });
-    await loadAgentRuns();
+    if (!conversationId || !assignedAgentId) {
+      setAgentRuns([]);
+      return;
+    }
+
+    const res = await agentService.listRuns(workspaceId, assignedAgentId);
+    if (res.error) return;
+    setAgentRuns(
+      (res.data?.data ?? []).filter(
+        (run) => run.target_type === 'support_conversation' && run.target_id === conversationId
+      )
+    );
   };
 
   // Group messages with day separators and consecutive sender detection
@@ -287,6 +330,43 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
     return items;
   }, [messages]);
+
+  useEffect(() => {
+    const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+    if (!viewport) return;
+
+    let frame = 0;
+    const updateActiveStickySeparator = () => {
+      frame = 0;
+      const scrollTop = viewport.scrollTop;
+      let nextActive: number | null = null;
+
+      for (const [index, node] of separatorRefs.current.entries()) {
+        if (node.offsetTop < scrollTop) {
+          if (nextActive === null || index > nextActive) {
+            nextActive = index;
+          }
+        }
+      }
+
+      setActiveStickySeparator((current) => (current === nextActive ? current : nextActive));
+    };
+
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateActiveStickySeparator);
+    };
+
+    updateActiveStickySeparator();
+    viewport.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => {
+      viewport.removeEventListener('scroll', onScroll);
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, [groupedMessages]);
 
   if (!conversationId) {
     return (
@@ -423,7 +503,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
       )}
 
       {/* Messages area with light background (Crisp-style) */}
-      <ScrollArea className="flex-1 min-h-0 bg-muted/20">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 bg-muted/20">
         <div className="px-4 pb-4 pt-2">
           {isLoading && <MessageSkeleton />}
           {!isLoading && messages.length === 0 && (
@@ -434,7 +514,20 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
           )}
           {groupedMessages.map((item, idx) => {
             if (item.type === 'separator') {
-              return <DaySeparator key={`sep-${idx}`} label={item.label} />;
+              return (
+                <DaySeparator
+                  key={`sep-${idx}`}
+                  label={item.label}
+                  isSticky={activeStickySeparator === idx}
+                  separatorRef={(node) => {
+                    if (node) {
+                      separatorRefs.current.set(idx, node);
+                    } else {
+                      separatorRefs.current.delete(idx);
+                    }
+                  }}
+                />
+              );
             }
             return (
               <MessageBubble

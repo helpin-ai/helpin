@@ -7,6 +7,7 @@ interface ComposeBarProps {
   onTyping?: (content: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  showBranding?: boolean;
 }
 
 export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
@@ -14,6 +15,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   onTyping,
   disabled = false,
   placeholder = 'Ask a question...',
+  showBranding = true,
 }) => {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -85,10 +87,12 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
           </button>
         </div>
       </form>
-      <div className="helpin-compose-footer">
-        By chatting with us, you agree to our{' '}
-        <a href="#" className="helpin-compose-footer-link">Privacy Policy</a>
-      </div>
+      {showBranding && (
+        <div className="helpin-compose-footer">
+          We run on{' '}
+          <a href="https://helpin.ai" target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">Helpin</a>
+        </div>
+      )}
     </div>
   );
 };

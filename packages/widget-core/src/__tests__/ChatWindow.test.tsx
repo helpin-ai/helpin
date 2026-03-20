@@ -14,6 +14,7 @@ const baseConfig = {
   },
   features: {
     aiEnabled: false,
+    showTalkToHuman: false,
     fileUploads: false,
     preChatForm: false,
     requirePhone: false,

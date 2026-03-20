@@ -229,6 +229,14 @@ func (s *SupportInboxService) MarkConversationReadByVisitor(ctx context.Context,
 	return nil
 }
 
+// EscalateConversation delegates to the AI service to escalate a conversation to a human agent.
+func (s *SupportInboxService) EscalateConversation(ctx context.Context, workspaceID, conversationID, reason string) error {
+	if s.supportAIService == nil {
+		return fmt.Errorf("ai service not configured")
+	}
+	return s.supportAIService.EscalateToHuman(ctx, workspaceID, conversationID, reason)
+}
+
 // pushVisitorConversationsRefresh sends an updated conversation list to all widget sessions for a visitor.
 func (s *SupportInboxService) pushVisitorConversationsRefresh(ctx context.Context, workspaceID, anonymousID string) {
 	conversations, err := s.conversationRepo.ListByAnonymousID(ctx, workspaceID, anonymousID)

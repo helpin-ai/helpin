@@ -18,7 +18,7 @@ interface MessagesViewProps {
 }
 
 export const MessagesView: FunctionComponent<MessagesViewProps> = ({
-  config: _config,
+  config,
   messages,
   onSendMessage,
   onQuickReply,
@@ -60,7 +60,7 @@ export const MessagesView: FunctionComponent<MessagesViewProps> = ({
           <QuickReplies replies={quickReplies} onSelect={onQuickReply} />
         )}
       </div>
-      <ComposeBar onSend={onSendMessage} />
+      <ComposeBar onSend={onSendMessage} showBranding={config.branding?.showBranding ?? true} />
     </div>
   );
 };

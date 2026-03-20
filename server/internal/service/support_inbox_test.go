@@ -235,6 +235,100 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Errorf("expected 1 result on page 3, got %d", len(page3))
 		}
 	})
+
+	t.Run("GetUnreadStats excludes AI-managed conversations from human inbox buckets", func(t *testing.T) {
+		ctx := context.Background()
+		now := time.Now()
+		customerMessageAt := now.Add(-time.Minute)
+
+		humanConv := &model.SupportConversation{
+			WorkspaceID:     workspaceID,
+			Subject:         "Human owned conversation",
+			Status:          "open",
+			OpenedByUserID:  strPtr("user-123"),
+			TeamLastSeenAt:  &now,
+			AssignedAgentID: nil,
+		}
+		if err := repo.Create(ctx, humanConv); err != nil {
+			t.Fatalf("create human conversation: %v", err)
+		}
+		if err := db.Exec(
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, humanConv.ID,
+		).Error; err != nil {
+			t.Fatalf("seed human read cursor: %v", err)
+		}
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal, created_at, updated_at) VALUES (?, ?, ?, 'customer', ?, 'reply', 0, ?, ?)`,
+			"msg-human-unread", workspaceID, humanConv.ID, "Need help from a person", customerMessageAt, customerMessageAt,
+		).Error; err != nil {
+			t.Fatalf("seed human unread message: %v", err)
+		}
+
+		aiPending := "pending"
+		aiConv := &model.SupportConversation{
+			WorkspaceID:    workspaceID,
+			Subject:        "AI owned conversation",
+			Status:         "open",
+			OpenedByUserID: strPtr("user-123"),
+			AIState:        &aiPending,
+			TeamLastSeenAt: &now,
+		}
+		if err := repo.Create(ctx, aiConv); err != nil {
+			t.Fatalf("create AI conversation: %v", err)
+		}
+		if err := db.Exec(
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiPending, aiConv.ID,
+		).Error; err != nil {
+			t.Fatalf("seed AI state: %v", err)
+		}
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal, created_at, updated_at) VALUES (?, ?, ?, 'customer', ?, 'reply', 0, ?, ?)`,
+			"msg-ai-unread", workspaceID, aiConv.ID, "AI can take this", customerMessageAt, customerMessageAt,
+		).Error; err != nil {
+			t.Fatalf("seed AI unread message: %v", err)
+		}
+
+		aiEscalated := "escalated"
+		escalatedConv := &model.SupportConversation{
+			WorkspaceID:    workspaceID,
+			Subject:        "Escalated AI conversation",
+			Status:         "open",
+			AIState:        &aiEscalated,
+			TeamLastSeenAt: &now,
+		}
+		if err := repo.Create(ctx, escalatedConv); err != nil {
+			t.Fatalf("create escalated conversation: %v", err)
+		}
+		if err := db.Exec(
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, assigned_agent_id = NULL, opened_by_user_id = NULL WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiEscalated, escalatedConv.ID,
+		).Error; err != nil {
+			t.Fatalf("seed escalated state: %v", err)
+		}
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal, created_at, updated_at) VALUES (?, ?, ?, 'customer', ?, 'reply', 0, ?, ?)`,
+			"msg-escalated-unread", workspaceID, escalatedConv.ID, "Need a human now", customerMessageAt, customerMessageAt,
+		).Error; err != nil {
+			t.Fatalf("seed escalated unread message: %v", err)
+		}
+
+		stats, err := repo.GetUnreadStats(ctx, workspaceID, "user-123")
+		if err != nil {
+			t.Fatalf("get unread stats: %v", err)
+		}
+
+		if stats.Total != 2 {
+			t.Fatalf("expected total unread human inbox count 2, got %d", stats.Total)
+		}
+		if stats.MyInbox != 1 {
+			t.Fatalf("expected my inbox count 1, got %d", stats.MyInbox)
+		}
+		if stats.Unassigned != 1 {
+			t.Fatalf("expected unassigned count 1, got %d", stats.Unassigned)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

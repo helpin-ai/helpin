@@ -90,6 +90,16 @@ func parseAIResponse(raw string) (contract AIResponseContract, cleanedContent st
 		}
 	}
 
+	// Case 4: Readable text followed by a trailing raw JSON object.
+	if jsonStart, embedded := findTrailingJSONObject(trimmed); jsonStart > 0 {
+		if err := json.Unmarshal([]byte(embedded), &contract); err == nil && isAIContract(embedded) {
+			if strings.TrimSpace(contract.Content) == "" {
+				contract.Content = strings.TrimSpace(trimmed[:jsonStart])
+			}
+			return contract, contract.Content, true
+		}
+	}
+
 	// Parsing failed — strip trailing ```json...``` block only if it looks like an AI contract.
 	cleaned := raw
 	if jsonStart := strings.Index(cleaned, "```json"); jsonStart > 0 {
@@ -101,17 +111,65 @@ func parseAIResponse(raw string) (contract AIResponseContract, cleanedContent st
 			}
 		}
 	}
+	if jsonStart, embedded := findTrailingJSONObject(cleaned); jsonStart > 0 && isAIContract(embedded) {
+		cleaned = strings.TrimSpace(cleaned[:jsonStart])
+	}
 	return AIResponseContract{}, cleaned, false
+}
+
+// findTrailingJSONObject returns the start index and raw JSON for a balanced
+// JSON object at the end of the string, or (-1, "") if none is found.
+func findTrailingJSONObject(raw string) (int, string) {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasSuffix(trimmed, "}") {
+		return -1, ""
+	}
+
+	inString := false
+	escaped := false
+	depth := 0
+
+	for i := len(trimmed) - 1; i >= 0; i-- {
+		ch := trimmed[i]
+
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+
+		switch ch {
+		case '}':
+			depth++
+		case '{':
+			depth--
+			if depth == 0 {
+				return i, strings.TrimSpace(trimmed[i:])
+			}
+		}
+	}
+
+	return -1, ""
 }
 
 // AIMessageMetadata is stored in the SupportMessage.Metadata JSONB field.
 type AIMessageMetadata struct {
-	AIAutoReply  bool        `json:"ai_auto_reply"`
-	AISources    []AISource  `json:"ai_sources"`
-	AIConfidence float64     `json:"ai_confidence"`
-	AIModel      string      `json:"ai_model"`
-	AITokensUsed int         `json:"ai_tokens_used"`
-	AIAgentID    string      `json:"ai_agent_id"`
+	AIAutoReply  bool       `json:"ai_auto_reply"`
+	AISources    []AISource `json:"ai_sources"`
+	AIConfidence float64    `json:"ai_confidence"`
+	AIModel      string     `json:"ai_model"`
+	AITokensUsed int        `json:"ai_tokens_used"`
+	AIAgentID    string     `json:"ai_agent_id"`
 }
 
 // AISource is a single source citation in AI message metadata.
@@ -240,9 +298,9 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	if conv.AIState != nil && *conv.AIState == "resolved" {
 		pending := "pending"
 		_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
-			"ai_state":            &pending,
-			"ai_resolved_at":      nil,
-			"ai_resolution_type":  nil,
+			"ai_state":           &pending,
+			"ai_resolved_at":     nil,
+			"ai_resolution_type": nil,
 		})
 	}
 
@@ -267,9 +325,9 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	if aiTurnCount > 0 && isConfirmationMessage(msg.Content) {
 		now := time.Now()
 		_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
-			"ai_state":            "resolved",
-			"ai_resolved_at":      now,
-			"ai_resolution_type":  "confirmed",
+			"ai_state":           "resolved",
+			"ai_resolved_at":     now,
+			"ai_resolution_type": "confirmed",
 		})
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
 		return nil
@@ -396,9 +454,9 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		// Update AI state + turn count
 		pending := "pending"
 		_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
-			"ai_state":         &pending,
+			"ai_state":          &pending,
 			"assigned_agent_id": &agentID,
-			"ai_turn_count":    gorm.Expr("ai_turn_count + 1"),
+			"ai_turn_count":     gorm.Expr("ai_turn_count + 1"),
 		})
 	} else {
 		if err := s.EscalateToHuman(ctx, workspaceID, conversationID, "low_confidence"); err != nil {
@@ -753,8 +811,8 @@ func checkHardEscalation(content string) string {
 // piiRegexes for stripping common PII patterns from AI responses.
 var piiRegexes = []*regexp.Regexp{
 	regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`), // email
-	regexp.MustCompile(`\b\d{3}[-.]?\d{3}[-.]?\d{4}\b`),                        // US phone
-	regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`),                                // SSN
+	regexp.MustCompile(`\b\d{3}[-.]?\d{3}[-.]?\d{4}\b`),                      // US phone
+	regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`),                              // SSN
 }
 
 // truncateLog truncates a string for safe logging.
