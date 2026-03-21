@@ -36,6 +36,7 @@ func SupportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID 
 		SenderName:     msg.SenderDisplayName,
 		SenderAvatar:   msg.SenderAvatarURL,
 		CreatedAt:      msg.CreatedAt.Format(time.RFC3339),
+		ViaChannel:     derefStr(msg.ViaChannel),
 	})
 	if err == nil {
 		event.Data = payload

@@ -33,9 +33,10 @@ type SupportInboxService struct {
 	docsCollectionRepo      *repository.DocsCollectionRepository
 	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
-	supportAIService    *SupportAIService
-	notificationService *NotificationService
-	workspaceRepo       *repository.WorkspaceRepository
+	supportAIService        *SupportAIService
+	emailFallbackService    *EmailFallbackService
+	notificationService     *NotificationService
+	workspaceRepo           *repository.WorkspaceRepository
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -92,6 +93,15 @@ func (s *SupportInboxService) SetSupportAIService(aiService *SupportAIService) *
 		return nil
 	}
 	s.supportAIService = aiService
+	return s
+}
+
+// SetEmailFallbackService injects the email fallback service used for offline visitor replies.
+func (s *SupportInboxService) SetEmailFallbackService(emailFallbackService *EmailFallbackService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailFallbackService = emailFallbackService
 	return s
 }
 
@@ -402,7 +412,7 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 
 // validConversationStatuses defines allowed status transitions.
 var validConversationStatuses = map[string]bool{
-	"open": true, "in_progress": true, "waiting": true, "resolved": true, "closed": true, "spam": true,
+	"open": true, "in_progress": true, "waiting": true, "resolved": true, "closed": true,
 }
 
 // UpdateConversationStatus changes conversation status.
@@ -564,8 +574,17 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	// Push visitor-scoped list refresh for widget unread when an agent/user/AI reply is sent.
 	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" {
 		conv, _ := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
-		if conv != nil && conv.AnonymousID != nil && *conv.AnonymousID != "" {
-			s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+		if conv != nil {
+			if conv.AnonymousID != nil && *conv.AnonymousID != "" {
+				s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+			}
+			if s.emailFallbackService != nil {
+				go func(convSnapshot *model.SupportConversation) {
+					if err := s.emailFallbackService.OnAgentReply(context.WithoutCancel(ctx), workspaceID, msg, convSnapshot); err != nil {
+						slog.ErrorContext(ctx, "enqueue email fallback failed", "conversation_id", ticketID, "message_id", msg.ID, "error", err)
+					}
+				}(conv)
+			}
 		}
 	}
 

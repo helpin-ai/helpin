@@ -1341,6 +1341,8 @@ export interface SupportMessage {
   message_type?: string;
   is_internal: boolean;
   metadata?: string;
+  via_channel?: 'email' | 'widget' | null;
+  email_notified_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -1364,9 +1366,17 @@ export interface AgentKnowledgeSource {
   agent_id: string;
   space_id: string;
   workspace_id: string;
+  sync_status: 'queued' | 'running' | 'ready' | 'failed' | 'stale' | 'disabled';
+  sync_progress: number;
+  indexed_documents: number;
+  indexed_chunks: number;
+  last_sync_error?: string | null;
+  last_sync_started_at?: string | null;
+  last_sync_completed_at?: string | null;
   space_name?: string;
   space_type?: string;
   created_at: string;
+  updated_at: string;
 }
 
 export interface CreateConversationRequest {
@@ -1415,6 +1425,9 @@ export interface SupportInboxSettings {
   business_hours_timezone: string;
   business_hours_schedule: Record<string, BusinessHoursDay>;
   outside_hours_message: string;
+  email_fallback_enabled: boolean;
+  email_fallback_delay_secs: number;
+  email_fallback_from_name: string;
   brand_color: string;
   show_branding: boolean;
   color_scheme: string;

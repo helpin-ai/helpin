@@ -414,6 +414,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				SenderType:     result.SenderType,
 				SenderName:     result.SenderDisplayName,
 				SenderAvatar:   result.SenderAvatarURL,
+				ViaChannel:     derefStr(result.ViaChannel),
 				CreatedAt:      result.CreatedAt.Format(time.RFC3339),
 			})
 

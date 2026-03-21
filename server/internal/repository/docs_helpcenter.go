@@ -263,6 +263,21 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 	return result, nil
 }
 
+// ListPublicDocumentsBySpace returns internally published + externally published docs for a help-center space.
+func (r *DocsHelpcenterRepository) ListPublicDocumentsBySpace(ctx context.Context, workspaceID, spaceID string) ([]model.DocsDocument, error) {
+	var docs []model.DocsDocument
+	if err := r.db.WithContext(ctx).
+		Table("docs_documents d").
+		Select("d.*").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
+		Where("d.workspace_id = ? AND d.space_id = ? AND d.status = 'published' AND d.deleted_at IS NULL AND ha.public_published_at IS NOT NULL", workspaceID, spaceID).
+		Order("d.updated_at DESC").
+		Scan(&docs).Error; err != nil {
+		return nil, fmt.Errorf("list public docs by space: %w", err)
+	}
+	return docs, nil
+}
+
 // ListWidgetCollections returns widget help collections for a space, including article counts.
 func (r *DocsHelpcenterRepository) ListWidgetCollections(ctx context.Context, spaceID string) ([]model.WidgetHelpCollection, error) {
 	type collectionRow struct {

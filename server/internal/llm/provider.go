@@ -7,10 +7,17 @@ type Provider interface {
 	ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error)
 }
 
+// EmbeddingProvider defines a model-agnostic embedding interface.
+type EmbeddingProvider interface {
+	CreateEmbeddings(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error)
+}
+
 // ChatRequest is a model-agnostic chat request.
 type ChatRequest struct {
 	SystemPrompt string
 	Messages     []Message
+	Provider     string
+	Model        string
 	Temperature  float64
 	MaxTokens    int
 	JSONMode     bool
@@ -26,6 +33,18 @@ type Message struct {
 type ChatResponse struct {
 	Content    string
 	TokensUsed TokenUsage
+}
+
+// EmbeddingRequest is a model-agnostic embedding request.
+type EmbeddingRequest struct {
+	Provider string
+	Model    string
+	Inputs   []string
+}
+
+// EmbeddingResponse contains the generated embedding vectors.
+type EmbeddingResponse struct {
+	Vectors [][]float32
 }
 
 // TokenUsage tracks token consumption.

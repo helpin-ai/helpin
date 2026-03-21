@@ -14,6 +14,12 @@ type Client struct {
 	httpClient  *http.Client
 }
 
+// EmailHeader is a single custom Postmark header.
+type EmailHeader struct {
+	Name  string `json:"Name"`
+	Value string `json:"Value"`
+}
+
 // NewClient creates a new Postmark client. Returns nil if serverToken is empty (feature disabled).
 func NewClient(serverToken, fromEmail string) *Client {
 	if serverToken == "" {
@@ -27,11 +33,21 @@ func NewClient(serverToken, fromEmail string) *Client {
 }
 
 type postmarkRequest struct {
-	From     string `json:"From"`
-	To       string `json:"To"`
-	Subject  string `json:"Subject"`
-	HtmlBody string `json:"HtmlBody"`
-	TextBody string `json:"TextBody"`
+	From     string        `json:"From"`
+	To       string        `json:"To"`
+	Subject  string        `json:"Subject"`
+	HtmlBody string        `json:"HtmlBody"`
+	TextBody string        `json:"TextBody"`
+	ReplyTo  string        `json:"ReplyTo,omitempty"`
+	Headers  []EmailHeader `json:"Headers,omitempty"`
+}
+
+type postmarkResponse struct {
+	ErrorCode   int    `json:"ErrorCode"`
+	Message     string `json:"Message"`
+	MessageID   string `json:"MessageID"`
+	SubmittedAt string `json:"SubmittedAt"`
+	To          string `json:"To"`
 }
 
 // SendEmail sends an email via the Postmark API.
@@ -43,15 +59,53 @@ func (c *Client) SendEmail(to, subject, htmlBody, textBody string) error {
 		HtmlBody: htmlBody,
 		TextBody: textBody,
 	}
+	_, err := c.send(payload)
+	return err
+}
 
+// FromEmail returns the configured Postmark sender address.
+func (c *Client) FromEmail() string {
+	if c == nil {
+		return ""
+	}
+	return c.fromEmail
+}
+
+// SetHTTPClient overrides the underlying HTTP client, primarily for tests.
+func (c *Client) SetHTTPClient(httpClient *http.Client) {
+	if c == nil || httpClient == nil {
+		return
+	}
+	c.httpClient = httpClient
+}
+
+// SendEmailWithHeaders sends an email with a custom From/Reply-To and extra RFC headers.
+// It returns the Postmark MessageID for durable logging.
+func (c *Client) SendEmailWithHeaders(from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader) (string, error) {
+	payload := postmarkRequest{
+		From:     from,
+		To:       to,
+		Subject:  subject,
+		HtmlBody: htmlBody,
+		TextBody: textBody,
+		ReplyTo:  replyTo,
+		Headers:  headers,
+	}
+	return c.send(payload)
+}
+
+func (c *Client) send(payload postmarkRequest) (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("postmark client not configured")
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal email request: %w", err)
+		return "", fmt.Errorf("marshal email request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", "https://api.postmarkapp.com/email", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create email request: %w", err)
+		return "", fmt.Errorf("create email request: %w", err)
 	}
 
 	req.Header.Set("Accept", "application/json")
@@ -60,15 +114,23 @@ func (c *Client) SendEmail(to, subject, htmlBody, textBody string) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("send email: %w", err)
+		return "", fmt.Errorf("send email: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("postmark API returned status %d", resp.StatusCode)
+	var decoded postmarkResponse
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return "", fmt.Errorf("decode postmark response: %w", err)
 	}
 
-	return nil
+	if resp.StatusCode >= 400 {
+		if decoded.Message != "" {
+			return "", fmt.Errorf("postmark API returned status %d: %s", resp.StatusCode, decoded.Message)
+		}
+		return "", fmt.Errorf("postmark API returned status %d", resp.StatusCode)
+	}
+
+	return decoded.MessageID, nil
 }
 
 // SendInviteEmail sends a workspace invitation email.

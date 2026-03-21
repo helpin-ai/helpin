@@ -333,5 +333,66 @@ describe('WidgetManager', () => {
       expect(latestOptions?.unreadCount).toBe(1);
       expect(unreadSpy).toHaveBeenLastCalledWith(1);
     });
+
+    it('maps via_channel and respects #helpin-conv deep links on session join', async () => {
+      window.location.hash = '#helpin-conv=conv-2';
+
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const sentFrames: string[] = [];
+      (widget as any).wsConnection = {
+        readyState: WebSocket.OPEN,
+        send: (payload: string) => sentFrames.push(payload),
+        close: vi.fn(),
+      };
+
+      (widget as any).handleWSMessage({
+        type: 'session:joined',
+        data: {
+          session_token: 'session-1',
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          is_anonymous: true,
+          conversations: [
+            {
+              id: 'conv-1',
+              subject: 'First',
+              status: 'open',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            {
+              id: 'conv-2',
+              subject: 'Second',
+              status: 'open',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ],
+          messages: [
+            {
+              id: 'msg-1',
+              conversation_id: 'conv-2',
+              sender_type: 'user',
+              content: 'Email reply',
+              via_channel: 'email',
+              created_at: new Date().toISOString(),
+            },
+          ],
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.messages?.[0]?.viaChannel).toBe('email');
+      expect((widget as any).activeConversationId).toBe('conv-2');
+      expect((widget as any).currentView).toBe('conversation');
+      expect((widget as any).isOpen).toBe(true);
+      expect(sentFrames.map((frame) => JSON.parse(frame))).toContainEqual({
+        type: 'conversation:select',
+        data: { conversation_id: 'conv-2' },
+      });
+
+      window.location.hash = '';
+    });
   });
 });

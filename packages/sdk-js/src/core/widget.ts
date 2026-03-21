@@ -253,6 +253,14 @@ export class WidgetManager {
     this.show();
   }
 
+  private getConversationIdFromHash(): string | null {
+    if (typeof window === 'undefined') return null;
+    const hash = window.location.hash || '';
+    if (!hash.startsWith('#helpin-conv=')) return null;
+    const conversationId = hash.slice('#helpin-conv='.length).trim();
+    return conversationId || null;
+  }
+
   showArticle(articleId: string, _options?: ShowArticleOptions): void {
     this.articleRequestKey += 1;
     this.openArticleRequest = {
@@ -819,6 +827,7 @@ export class WidgetManager {
               content: m.content,
               senderName: m.sender_display_name || undefined,
               senderAvatar: m.sender_avatar_url || undefined,
+              viaChannel: m.via_channel || undefined,
               isInternal: m.is_internal || false,
               createdAt: m.created_at,
             };
@@ -829,6 +838,16 @@ export class WidgetManager {
             }
             return msg;
           });
+        }
+
+        const hashConversationId = this.getConversationIdFromHash();
+        if (hashConversationId && this.conversations.some((c) => c.id === hashConversationId)) {
+          this.activeConversationId = hashConversationId;
+          this.currentView = 'conversation';
+          this.isOpen = true;
+          if (this.wsConnection?.readyState === WebSocket.OPEN) {
+            this.wsSend('conversation:select', { conversation_id: hashConversationId });
+          }
         }
 
         this.connectionStatus = 'connected';
@@ -904,6 +923,7 @@ export class WidgetManager {
           content: msg.content || '',
           senderName: msg.sender_name || undefined,
           senderAvatar: msg.sender_avatar || undefined,
+          viaChannel: msg.via_channel || undefined,
           isInternal: false,
           createdAt: msg.created_at || new Date().toISOString(),
         };
@@ -1059,6 +1079,7 @@ export class WidgetManager {
               content: m.content,
               senderName: m.sender_display_name || undefined,
               senderAvatar: m.sender_avatar_url || undefined,
+              viaChannel: m.via_channel || undefined,
               isInternal: m.is_internal || false,
               createdAt: m.created_at,
             };

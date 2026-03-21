@@ -67,6 +67,7 @@ type Handlers struct {
 	Flow               *handler.FlowHandler
 	SDKAssets          *handler.SDKAssetsHandler
 	SupportAI          *handler.SupportAIHandler
+	PostmarkInbound    *handler.PostmarkInboundHandler
 }
 
 // New creates and configures the Chi router with all routes.
@@ -139,6 +140,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
+		if h.PostmarkInbound != nil {
+			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
+		}
 
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)

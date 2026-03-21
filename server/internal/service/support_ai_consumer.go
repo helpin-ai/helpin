@@ -96,6 +96,11 @@ func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg
 			"conversation_id", event.ConversationID,
 			"message_id", event.MessageID,
 		)
+		if s.processingRepo != nil {
+			if err := s.processingRepo.MarkFailedBySourceMessageID(ctx, event.MessageID); err != nil {
+				slog.Error("support AI consumer: failed to mark message failed", "message_id", event.MessageID, "error", err)
+			}
+		}
 		_ = msg.Ack()
 		return
 	}

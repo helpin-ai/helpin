@@ -62,6 +62,45 @@ func (r *SupportMessageRepository) GetByID(ctx context.Context, id string) (*mod
 	return &message, nil
 }
 
+// GetByIDs returns support messages by ID ordered by created_at.
+func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) ([]model.SupportMessage, error) {
+	if len(ids) == 0 {
+		return []model.SupportMessage{}, nil
+	}
+	var messages []model.SupportMessage
+	if err := r.db.WithContext(ctx).
+		Where("id IN ?", ids).
+		Order("created_at ASC").
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("get messages by ids: %w", err)
+	}
+	return messages, nil
+}
+
+// UpdateEmailNotifiedAt stamps email_notified_at for the provided message IDs.
+func (r *SupportMessageRepository) UpdateEmailNotifiedAt(ctx context.Context, ids []string, notifiedAt time.Time) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportMessage{}).
+		Where("id IN ?", ids).
+		Update("email_notified_at", notifiedAt).Error; err != nil {
+		return fmt.Errorf("update email_notified_at: %w", err)
+	}
+	return nil
+}
+
+// DB returns the underlying *gorm.DB for transaction support.
+func (r *SupportMessageRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// WithTx returns a new SupportMessageRepository using the given transaction.
+func (r *SupportMessageRepository) WithTx(tx *gorm.DB) *SupportMessageRepository {
+	return &SupportMessageRepository{db: tx}
+}
+
 // SupportInboxInstallationRepository handles widget installations.
 type SupportInboxInstallationRepository struct {
 	db *gorm.DB

@@ -5,16 +5,16 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound, Bot, Globe, ChevronDown, Star } from 'lucide-react';
+import { Copy, Code, MessageSquare, HelpCircle, CircleHelp, ImageIcon, Monitor, Sun, Moon, KeyRound, Bot, Globe, ChevronDown, Star, Mail } from 'lucide-react';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
 import { useSupportAgents, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { WidgetPreview } from './WidgetPreview';
 import { CodeBlock } from '@/components/ui/code-block';
 import { BrandColorPicker } from '@/components/pm/ColorPicker';
+import { SupportKnowledgeSourcesField } from './SupportKnowledgeSourcesField';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
@@ -126,6 +126,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [timezone, setTimezone] = useState('America/New_York');
   const [schedule, setSchedule] = useState<Record<string, BusinessHoursDay>>({});
   const [outsideMessage, setOutsideMessage] = useState('');
+  const [emailFallbackEnabled, setEmailFallbackEnabled] = useState(false);
+  const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(120);
+  const [emailFallbackFromName, setEmailFallbackFromName] = useState('');
   const [csatEnabled, setCsatEnabled] = useState(false);
 
   // Accordion state
@@ -134,7 +137,6 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const activeAgentIdValue = aiAgentId !== NO_AGENT_VALUE ? aiAgentId : undefined;
   const { data: knowledgeSources = [] } = useAgentKnowledgeSources(workspaceId, activeAgentIdValue);
   const updateKnowledgeSources = useUpdateAgentKnowledgeSources(workspaceId);
-  const linkedSpaceIds = new Set(knowledgeSources.map((ks) => ks.space_id));
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -169,6 +171,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setTimezone(s.business_hours_timezone);
       setSchedule(s.business_hours_schedule);
       setOutsideMessage(s.outside_hours_message);
+      setEmailFallbackEnabled(s.email_fallback_enabled);
+      setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
+      setEmailFallbackFromName(s.email_fallback_from_name ?? '');
       setCsatEnabled(s.csat_enabled);
     }
   }, [data]);
@@ -201,6 +206,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       business_hours_timezone: timezone,
       business_hours_schedule: schedule,
       outside_hours_message: outsideMessage,
+      email_fallback_enabled: emailFallbackEnabled,
+      email_fallback_delay_secs: emailFallbackDelaySecs,
+      email_fallback_from_name: emailFallbackFromName,
       csat_enabled: csatEnabled,
     }, {
       onSuccess: () => toast.success('Settings saved'),
@@ -217,7 +225,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
   const toggleSpace = (spaceId: string) => {
     if (!activeAgentIdValue) return;
-    const current = knowledgeSources.map((ks) => ks.space_id);
+    const current = externalKnowledgeSources.map((ks) => ks.space_id);
     const next = current.includes(spaceId)
       ? current.filter((id) => id !== spaceId)
       : [...current, spaceId];
@@ -239,6 +247,8 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const isExpanded = (key: string) => expandedSections.has(key);
 
   const externalDocsSpaces = docsSpaces.filter((space) => space.type === 'external_capable');
+  const externalDocsSpaceIds = new Set(externalDocsSpaces.map((space) => space.id));
+  const externalKnowledgeSources = knowledgeSources.filter((source) => externalDocsSpaceIds.has(source.space_id));
 
   const toggleHelpSpace = (spaceId: string, enabled: boolean) => {
     setWidgetHelpSpaceIds((current) => (
@@ -853,26 +863,14 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   <div className="space-y-2">
                     <Label className="text-sm">Knowledge Sources</Label>
                     <p className="text-xs text-muted-foreground mb-2">
-                      Select docs spaces the AI agent can search for answers.
+                      Select help center spaces to chunk, embed, and search during AI replies. Published document updates re-index automatically.
                     </p>
-                    {docsSpaces.length === 0 ? (
-                      <p className="text-xs text-muted-foreground italic">No docs spaces found.</p>
-                    ) : (
-                      <div className="space-y-1.5 rounded-md border p-3">
-                        {docsSpaces.map((space) => (
-                          <label key={space.id} className="flex items-center gap-2.5 cursor-pointer">
-                            <Checkbox
-                              checked={linkedSpaceIds.has(space.id)}
-                              onCheckedChange={() => toggleSpace(space.id)}
-                            />
-                            <span className="text-sm">{space.name}</span>
-                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              {space.type === 'internal' ? 'Internal' : 'Public'}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
+                    <SupportKnowledgeSourcesField
+                      spaces={externalDocsSpaces}
+                      knowledgeSources={externalKnowledgeSources}
+                      onToggle={toggleSpace}
+                      disabled={updateKnowledgeSources.isPending}
+                    />
                   </div>
                 )}
 
@@ -1101,6 +1099,58 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
               </div>
             )}
           </div>
+
+          <div className="overflow-hidden rounded-lg border border-border bg-background">
+            <button
+              type="button"
+              onClick={() => toggleSection('email-notifications')}
+              className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Mail className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">Email Notifications</p>
+                <p className="text-sm text-muted-foreground">Send delayed email replies to offline visitors</p>
+              </div>
+              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('email-notifications') && 'rotate-180')} />
+            </button>
+            {isExpanded('email-notifications') && (
+              <div className="border-t border-border p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Send email when visitor is offline</Label>
+                    <p className="text-xs text-muted-foreground">Queue a fallback email if the visitor disconnects before your team replies.</p>
+                  </div>
+                  <Switch checked={emailFallbackEnabled} onCheckedChange={setEmailFallbackEnabled} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email-fallback-delay" className="text-sm">Delay before sending (seconds)</Label>
+                  <Input
+                    id="email-fallback-delay"
+                    type="number"
+                    min={30}
+                    max={600}
+                    value={emailFallbackDelaySecs}
+                    onChange={(e) => setEmailFallbackDelaySecs(Number(e.target.value || 120))}
+                    className="w-40"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email-fallback-from-name" className="text-sm">From name</Label>
+                  <Input
+                    id="email-fallback-from-name"
+                    value={emailFallbackFromName}
+                    onChange={(e) => setEmailFallbackFromName(e.target.value)}
+                    placeholder={workspace?.name || 'Workspace name'}
+                    className="max-w-md"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Sticky Footer */}
@@ -1138,6 +1188,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   setTimezone(s.business_hours_timezone);
                   setSchedule(s.business_hours_schedule);
                   setOutsideMessage(s.outside_hours_message);
+                  setEmailFallbackEnabled(s.email_fallback_enabled);
+                  setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
+                  setEmailFallbackFromName(s.email_fallback_from_name ?? '');
                   setCsatEnabled(s.csat_enabled);
                   toast.success('Changes discarded');
                 }

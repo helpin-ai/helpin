@@ -5,7 +5,7 @@ import { supportService } from '@/lib/services/supportService';
 import { agentService } from '@/lib/services/agentService';
 import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
-import type { SupportInboxSettings, ConversationStatus, ConversationListResponse, SupportConversation, VisitorContextResponse } from '@/lib/pmTypes';
+import type { AgentKnowledgeSource, SupportInboxSettings, ConversationStatus, ConversationListResponse, SupportConversation, VisitorContextResponse } from '@/lib/pmTypes';
 
 // ── Installation settings ───────────────────────────────────────────
 
@@ -255,9 +255,15 @@ export function useDeleteConversation(workspaceId: string) {
 export function useAgentKnowledgeSources(workspaceId: string, agentId?: string) {
   return useQuery({
     queryKey: queryKeys.agents.knowledgeSources(workspaceId, agentId ?? ''),
-    queryFn: async () => unwrap(await agentService.listKnowledgeSources(workspaceId, agentId!)),
+    queryFn: async (): Promise<AgentKnowledgeSource[]> => unwrap(await agentService.listKnowledgeSources(workspaceId, agentId!)),
     enabled: !!workspaceId && !!agentId,
     staleTime: 60_000,
+    refetchInterval: (query) => {
+      const sources = query.state.data as AgentKnowledgeSource[] | undefined;
+      return sources?.some((source) => source.sync_status === 'queued' || source.sync_status === 'running')
+        ? 2_000
+        : false;
+    },
   });
 }
 
@@ -271,6 +277,12 @@ export function useUpdateAgentKnowledgeSources(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update knowledge sources', { description: error.message });
+    },
+    onSettled: (_data, _error, variables) => {
+      if (!variables?.agentId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.knowledgeSources(workspaceId, variables.agentId) });
     },
   });
 }

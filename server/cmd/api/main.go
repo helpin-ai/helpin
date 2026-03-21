@@ -90,7 +90,15 @@ func main() {
 
 	// Ensure pgcrypto extension is available for gen_random_uuid().
 	slog.Info("startup: enabling pgcrypto extension")
-	db.Exec(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
+	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`).Error; err != nil {
+		slog.Error("failed to enable pgcrypto extension", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("startup: enabling vector extension")
+	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS vector`).Error; err != nil {
+		slog.Error("failed to enable vector extension", "error", err)
+		os.Exit(1)
+	}
 
 	slog.Info("startup: running MigrateAgentRunTargets")
 	if err := repository.MigrateAgentRunTargets(db); err != nil {
@@ -179,6 +187,7 @@ func main() {
 		&model.PMStoryLink{},
 		&model.SupportConversation{},
 		&model.SupportMessage{},
+		&model.SupportEmailLog{},
 		&model.SupportCannedResponse{},
 		&model.SupportWidgetInstallation{},
 		&model.SupportWidgetSession{},
@@ -250,11 +259,27 @@ func main() {
 		// AI Support Agent
 		&model.AgentKnowledgeSource{},
 		&model.AIMessageProcessing{},
+		&model.DocsChunk{},
 	); err != nil {
 		slog.Error("failed to auto-migrate", "error", err)
 		os.Exit(1)
 	}
 	slog.Info("startup: AutoMigrate complete")
+
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_embedding_ivfflat ON docs_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)`,
+		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_fts ON docs_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(content, '')), 'B')))`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			slog.Warn("failed to create docs chunk index", "error", err, "stmt", stmt)
+		}
+	}
+
+	slog.Info("startup: running MigrateEmailFallbackSchema")
+	if err := repository.MigrateEmailFallbackSchema(db); err != nil {
+		slog.Error("failed to migrate email fallback schema", "error", err)
+		os.Exit(1)
+	}
 
 	// Drop legacy ticket_id columns (renamed to conversation_id in migration 039).
 	for _, stmt := range []string{
@@ -327,6 +352,10 @@ func main() {
 
 	// Initialize WebSocket hub and publisher.
 	wsHub := ws.NewHub()
+	podID := os.Getenv("HOSTNAME") // K8s sets this to pod name
+	if podID == "" {
+		podID = fmt.Sprintf("pod-%d", time.Now().UnixNano()%10000)
+	}
 
 	// Initialize Redis relay for cross-pod event broadcasting (optional).
 	var redisRelay *ws.RedisRelay
@@ -341,10 +370,6 @@ func main() {
 		if err := redisClient.Ping(context.Background()).Err(); err != nil {
 			slog.Error("Redis unreachable at startup — cannot run multi-pod", "error", err)
 			os.Exit(1)
-		}
-		podID := os.Getenv("HOSTNAME") // K8s sets this to pod name
-		if podID == "" {
-			podID = fmt.Sprintf("pod-%d", time.Now().UnixNano()%10000)
 		}
 		redisRelay = ws.NewRedisRelay(redisClient, wsHub, podID)
 		redisRelayCtx, redisRelayCancel := context.WithCancel(context.Background())
@@ -362,10 +387,6 @@ func main() {
 	if cfg.RedisURL != "" {
 		redisOpts2, _ := redis.ParseURL(cfg.RedisURL)
 		presenceRedis := redis.NewClient(redisOpts2)
-		podID := os.Getenv("HOSTNAME")
-		if podID == "" {
-			podID = fmt.Sprintf("pod-%d", time.Now().UnixNano()%10000)
-		}
 		wsHub.SetPresenceProvider(ws.NewRedisPresence(presenceRedis, podID))
 		slog.Info("Redis presence provider enabled")
 	}
@@ -428,6 +449,7 @@ func main() {
 	pmStoryLinkRepo := repository.NewPMStoryLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
+	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
@@ -444,6 +466,7 @@ func main() {
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
+	docsChunkRepo := repository.NewDocsChunkRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
@@ -505,11 +528,33 @@ func main() {
 	searchService := service.NewSearchService(searchRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+	emailFallbackService := service.NewEmailFallbackService(
+		redisClient,
+		wsHub,
+		wsPublisher,
+		emailClient,
+		supportMessageRepo,
+		supportConversationRepo,
+		supportEmailLogRepo,
+		supportInstallRepo,
+		supportSessionRepo,
+		workspaceRepo,
+		cfg.SupportEmailReplyDomain,
+		cfg.AppBaseURL,
+		podID,
+	)
+	supportInboxService.SetEmailFallbackService(emailFallbackService)
 
 	// AI Support Agent — new repositories and service
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
 	aiMessageProcessingRepo := repository.NewAIMessageProcessingRepository(db)
-	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceService(agentKnowledgeSourceRepo, docsSpaceRepo)
+	supportLLMRouter, supportEmbeddingProvider := llm.NewSupportRouter(
+		cfg.AnthropicAPIKey,
+		cfg.OpenAIAPIKey,
+		cfg.OpenAIBaseURL,
+		cfg.OpenRouterAPIKey,
+		cfg.OpenRouterBaseURL,
+	)
 
 	slog.Info("startup: initializing GitHub App client")
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
@@ -638,6 +683,18 @@ func main() {
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, s3Client)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, s3Client)
+	docsEmbeddingService := service.NewDocsEmbeddingService(
+		docsChunkRepo,
+		agentKnowledgeSourceRepo,
+		docsContentRepo,
+		docsSpaceRepo,
+		docsHelpcenterRepo,
+		docsDocumentRepo,
+		supportEmbeddingProvider,
+		cfg.OpenAIEmbeddingModel,
+		runEngine,
+	)
+	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceService(agentKnowledgeSourceRepo, docsSpaceRepo, docsEmbeddingService)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
@@ -708,7 +765,7 @@ func main() {
 
 	// AI Support Agent — wire SupportAIService with LLM provider and JetStream.
 	supportAIService := service.NewSupportAIService(
-		llmProvider, docsSearchRepo, docsContentRepo, docsSpaceRepo,
+		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
 		agentKnowledgeSourceRepo, aiMessageProcessingRepo,
 		supportConversationRepo, supportMessageRepo,
 		agentRepo, agentHandoffRepo, supportInstallRepo,
@@ -776,6 +833,7 @@ func main() {
 		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),
 		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),
 		SupportAI:          handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService),
+		PostmarkInbound:    handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkInboundWebhookSecret),
 		Git:                handler.NewGitHandler(gitService),
 		Notification:       handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:  handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
@@ -815,6 +873,7 @@ func main() {
 			docsHelpcenterService,
 			docsSearchService,
 			docsImportService,
+			docsEmbeddingService,
 		),
 	}
 
@@ -863,6 +922,14 @@ func main() {
 			}
 		}
 	}()
+
+	// Start the email fallback poller only when both Redis and Postmark are available.
+	var emailFallbackCancel context.CancelFunc
+	if redisClient != nil && emailClient != nil {
+		var emailFallbackCtx context.Context
+		emailFallbackCtx, emailFallbackCancel = context.WithCancel(context.Background())
+		go emailFallbackService.StartPoller(emailFallbackCtx)
+	}
 
 	// Start background ticker for archived notification cleanup (daily).
 	cleanupDone := make(chan struct{})
@@ -934,6 +1001,9 @@ func main() {
 	<-done
 	slog.Info("server shutting down")
 	realtimeCancel()
+	if emailFallbackCancel != nil {
+		emailFallbackCancel()
+	}
 	close(digestDone)
 	close(cleanupDone)
 

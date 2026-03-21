@@ -1,7 +1,7 @@
 # PRD: Email Fallback for Offline Visitors
 
-**Status**: Draft
-**Date**: 2026-03-19
+**Status**: Implemented
+**Date**: 2026-03-20
 **Author**: Engineering
 
 ## 1. Problem Statement
@@ -265,6 +265,7 @@ EmailFallbackFromName   string `json:"email_fallback_from_name"`   // falls back
 ```
 
 Add to `DefaultSupportInboxSettings()` and `UpdateInstallationSettingsRequest`.
+Also update `mergeSettingsUpdate()` and any new validation in `server/internal/service/support_inbox_settings.go`, since support settings persistence is centralized there.
 
 ## 6. API Endpoints
 
@@ -354,15 +355,16 @@ The email uses a minimal, personal layout — no heavy branding, marketing heade
 | Element | Format | Notes |
 |---------|--------|-------|
 | Agent identity | `● {Agent Name} via {Workspace Name}.` | Small avatar circle (CSS) + agent name + "via" + workspace. Mirrors Crisp's "Fabi Pina via Usermaven." |
-| Reply CTA | `Reply directly to this email, or go to chat.` | "chat" is a hyperlink to `{OriginalPageURL}#helpin-conv={conversation_id}` |
+| Reply CTA | `Reply directly to this email, or go to chat.` | "chat" is a hyperlink to `{LastPageURL}#helpin-conv={conversation_id}` |
 | Attribution | `Sent from Helpin. Unsubscribe from these emails.` | "Helpin" links to `https://helpin.ai`. "Unsubscribe" is a `mailto:` link (see §7.6) |
 
 #### Chat Deep-Link
 
-The "chat" link in the footer points to `{OriginalPageURL}#helpin-conv={conversation_id}`:
-- `OriginalPageURL` = the page URL stored on the conversation at creation time
+The "chat" link in the footer points to `{LastPageURL}#helpin-conv={conversation_id}`:
+- `LastPageURL` = the page URL currently stored on `SupportWidgetSession.LastPageURL` (the existing schema already persists this; the conversation model does not)
 - The SDK (`packages/sdk-js/src/core/widget.ts`) checks `window.location.hash` on init — if it contains `helpin-conv=`, it auto-opens the widget and navigates to that conversation via `openConversation(conversationId)`
-- Fallback: if `page_url` is unavailable, link to the workspace's base URL
+- Fallback: if `last_page_url` is unavailable, link to the workspace's base URL
+- If product later needs an immutable "origin page" per conversation, add a dedicated conversation/session snapshot field rather than assuming one already exists
 - The email copy emphasizes "Reply directly to this email" as the **primary** action — the chat link is secondary
 
 ### 7.4 RFC 2822 Headers (Email Threading)
@@ -400,7 +402,7 @@ Every email includes both HTML and plain-text bodies (Postmark requires both for
 {Agent Name} via {Workspace Name}
 
 Reply directly to this email, or go to chat:
-{OriginalPageURL}#helpin-conv={conversation_id}
+{LastPageURL}#helpin-conv={conversation_id}
 
 Sent from Helpin (https://helpin.ai).
 Unsubscribe: mailto:unsubscribe-{conversation_id}@replies.helpin.ai
@@ -449,7 +451,7 @@ if workspaceName == "" {
     workspaceName = workspace.Name
 }
 // RFC 5322 display name format
-from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, c.emailClient.FromEmail())
+from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, s.emailClient.FromEmail())
 // Result: "Sarah Chen - Acme Support <messages@replies.helpin.ai>"
 ```
 
@@ -554,9 +556,9 @@ Uses existing `useChatSettings` / `useUpdateChatSettings` hooks.
 
 ### Message Badge — Full Propagation Path
 
-Widget clients do **not** consume backend `SupportMessage` directly. Messages flow through three mapping layers that all need `via_channel`:
+Widget clients do **not** consume backend `SupportMessage` directly. The field has to cross both backend payload shapes and both SDK mapping paths:
 
-**1. Backend → WebSocket event** (`server/internal/websocket/support_events.go`):
+**1. Backend payload types** (`server/internal/model/support_inbox.go`):
 Add `ViaChannel` to `WidgetMessageReceivedPayload`:
 ```go
 type WidgetMessageReceivedPayload struct {
@@ -564,27 +566,41 @@ type WidgetMessageReceivedPayload struct {
     ViaChannel string `json:"via_channel,omitempty"`
 }
 ```
-Populate when building the event in the support message broadcast handler.
+Also add `ViaChannel` and `EmailNotifiedAt` to `SupportMessage` itself so the dashboard API and initial widget history can expose them.
 
-**2. SDK message mapper** (`packages/sdk-js/src/core/widget.ts`, ~line 850):
-The SDK maps snake_case backend payloads to the shared `Message` interface. Add mapping:
+**2. Backend payload population**:
+- `server/internal/websocket/support_events.go` must populate `via_channel` when building the `SupportMessageEvent` payload for dashboard/widget fan-out
+- `server/internal/websocket/widget_handler.go` must populate `via_channel` on the direct `message:received` echo path used by widget-originated sends
+
+**3. SDK message mapper** (`packages/sdk-js/src/core/widget.ts`):
+The SDK maps snake_case backend payloads to the shared `Message` interface. Add `via_channel` mapping in both places:
+- Initial session history (`payload.messages.map(...)`)
+- Live `message:received` handling
+
 ```typescript
 viaChannel: raw.via_channel ?? undefined,
 ```
 
-**3. Shared type** (`packages/shared/src/types/message.ts`):
+and for the live event path:
+```typescript
+viaChannel: msg.via_channel ?? undefined,
+```
+
+**4. Shared type** (`packages/shared/src/types/message.ts`):
 Add to the `Message` interface:
 ```typescript
 viaChannel?: 'email' | 'widget';
 ```
 
-**4. Widget-core rendering** (`packages/widget-core/src/components/MessageBubble.tsx`):
+`packages/widget-core/src/types.ts` already aliases the shared `Message` type, so no separate widget-core type definition is needed.
+
+**5. Widget-core rendering** (`packages/widget-core/src/components/MessageBubble.tsx`):
 Read `message.viaChannel` and render a small "Via email" badge (same pattern as `aiConfidence` display).
 
-**5. Dashboard rendering** (`frontend/src/components/support/MessageBubble.tsx`):
+**6. Dashboard rendering** (`frontend/src/components/support/MessageBubble.tsx`):
 Read `via_channel` from the backend `SupportMessage` type and render badge.
 
-**6. Dashboard type** (`frontend/src/lib/pmTypes.ts`):
+**7. Dashboard type** (`frontend/src/lib/pmTypes.ts`):
 Add to `SupportMessage`:
 ```typescript
 via_channel?: 'email' | 'widget' | null;
@@ -640,6 +656,7 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 | `server/internal/model/webhook_postmark.go` | Postmark inbound payload DTOs |
 | `server/internal/email/postmark.go` | Add `EmailHeader`, `SendEmailWithHeaders()` |
 | `server/internal/config/config.go` | Add webhook secret + reply domain config |
+| `server/internal/service/support_inbox_settings.go` | Merge and validate new `email_fallback_*` settings in the JSONB settings flow |
 | `server/cmd/api/main.go` | Register `SupportEmailLog` in `AutoMigrate()` call |
 | `server/migrations/055_add_email_fallback.sql` | Reference-only SQL documentation (not executed at runtime) |
 
@@ -663,9 +680,11 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 ### Phase 4: Frontend & Widget Propagation
 | File | Change |
 |------|--------|
-| `server/internal/websocket/support_events.go` | Add `ViaChannel` to `WidgetMessageReceivedPayload` |
+| `server/internal/model/support_inbox.go` | Add `ViaChannel` to `WidgetMessageReceivedPayload` and propagate `ViaChannel` / `EmailNotifiedAt` on `SupportMessage` |
+| `server/internal/websocket/support_events.go` | Populate `via_channel` in support message broadcast payloads |
+| `server/internal/websocket/widget_handler.go` | Populate `via_channel` on direct widget `message:received` echoes |
 | `packages/shared/src/types/message.ts` | Add `viaChannel?: 'email' \| 'widget'` to `Message` interface |
-| `packages/sdk-js/src/core/widget.ts` | Map `via_channel` → `viaChannel` in message handler (~line 850); add `#helpin-conv=` hash fragment handler on init for email CTA deep-links |
+| `packages/sdk-js/src/core/widget.ts` | Map `via_channel` → `viaChannel` in both initial history and live message handlers; add `#helpin-conv=` hash fragment handler on init for email CTA deep-links |
 | `packages/widget-core/src/components/MessageBubble.tsx` | "Via email" badge when `viaChannel === "email"` |
 | `frontend/src/lib/pmTypes.ts` | Add `via_channel`, `email_notified_at` to `SupportMessage` |
 | `frontend/src/components/settings/ChatGeneralTab.tsx` | Email Notifications settings card |
@@ -733,7 +752,7 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 |------|------|-----------|
 | `MessageBubble renders "Via email" badge` | `frontend/src/components/support/MessageBubble.test.tsx` | Badge visible when `via_channel === "email"`, hidden otherwise |
 | `Widget MessageBubble renders "Via email" badge` | `packages/widget-core/src/components/MessageBubble.test.tsx` | Badge visible when `viaChannel === "email"` |
-| `SDK maps via_channel from payload` | `packages/sdk-js/src/core/widget.test.ts` | `via_channel` in raw payload → `viaChannel` in Message object |
+| `SDK maps via_channel from payload` | `packages/sdk-js/test/unit/core/widget.test.ts` | `via_channel` in raw payload → `viaChannel` in Message object |
 | `ChatGeneralTab renders email fallback settings` | `frontend/src/components/settings/ChatGeneralTab.test.tsx` | Toggle, delay input, from-name input rendered and update correctly |
 
 ### 15.3 Operational Observability

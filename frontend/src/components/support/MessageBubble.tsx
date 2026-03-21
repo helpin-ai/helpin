@@ -265,7 +265,8 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
     </Tooltip>
   );
 
-  const hasStatusBelow = !!receiptStatus || !!aiMeta;
+  const hasEmailBadge = message.via_channel === 'email';
+  const hasStatusBelow = !!receiptStatus || !!aiMeta || hasEmailBadge;
 
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
@@ -310,6 +311,14 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
       {/* Status below the bubble row — outside the avatar alignment */}
       {hasStatusBelow && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
+          {hasEmailBadge && (
+            <div className={`mb-0.5 flex ${isCustomer ? '' : 'justify-end'}`}>
+              <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-300">
+                Via email
+              </span>
+            </div>
+          )}
+
           {/* Read receipt indicator */}
           {receiptStatus && (
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
