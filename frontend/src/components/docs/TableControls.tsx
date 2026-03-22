@@ -321,7 +321,6 @@ export function TableControls({ editor }: TableControlsProps) {
     if (!info || !hover) return;
     const { pos: tablePos, node: tableNode } = info;
     const { tr } = editor.state;
-    let offset = 0;
 
     // Walk rows in reverse so inserts don't shift positions of earlier rows
     for (let r = tableNode.childCount - 1; r >= 0; r--) {

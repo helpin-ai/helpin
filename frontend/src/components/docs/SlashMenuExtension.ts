@@ -65,7 +65,7 @@ export const SlashMenuExtension = Extension.create({
             }
             return false;
           },
-          handleTextInput(view, from, _to, text) {
+          handleTextInput(view, _from, _to, text) {
             if (text !== '/') return false;
             // Only trigger at start of empty text block or after whitespace
             const { $from } = view.state.selection;

@@ -15,16 +15,12 @@ import {
   FileUp,
   Heading2,
   Heading3,
-  ImagePlus,
   Italic,
   Link2,
   List,
   ListOrdered,
   Loader2,
-  Plus,
   Quote,
-  Strikethrough,
-  Trash2,
   Underline,
   X,
 } from 'lucide-react'
@@ -155,7 +151,7 @@ function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; lastSavedA
 
 // ── Floating toolbar ────────────────────────────────────────────────────────
 
-function FloatingToolbar({ editor, uploadConfig, onInsertImage }: {
+function FloatingToolbar({ editor }: {
   editor: ReturnType<typeof useEditor>
   uploadConfig?: EditorUploadConfig
   onInsertImage: () => void
