@@ -24,7 +24,7 @@ func SupportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID 
 		ParentType:  "support_conversation",
 		ParentID:    msg.ConversationID,
 	}
-	if msg.IsInternal {
+	if msg.IsInternal || msg.MessageType == "system" {
 		return event
 	}
 
@@ -35,10 +35,19 @@ func SupportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID 
 		SenderType:     msg.SenderType,
 		SenderName:     msg.SenderDisplayName,
 		SenderAvatar:   msg.SenderAvatarURL,
+		Metadata:       nilIfEmpty(msg.Metadata),
 		CreatedAt:      msg.CreatedAt.Format(time.RFC3339),
+		ViaChannel:     derefStr(msg.ViaChannel),
 	})
 	if err == nil {
 		event.Data = payload
 	}
 	return event
+}
+
+func nilIfEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

@@ -12,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@helpin/shared": path.resolve(__dirname, "../packages/shared/src/index.ts"),
       "@helpin/widget-core/styles": path.resolve(__dirname, "../packages/widget-core/src/styles/widget.css"),
       "@helpin/widget-core": path.resolve(__dirname, "../packages/widget-core/dist/index.js"),
     },

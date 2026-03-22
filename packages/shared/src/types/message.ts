@@ -9,6 +9,7 @@ export interface Message {
   sources?: AiSource[];
   aiConfidence?: number;
   attachments?: Attachment[];
+  viaChannel?: 'email' | 'widget';
   isInternal: boolean;
   createdAt: string;
 }

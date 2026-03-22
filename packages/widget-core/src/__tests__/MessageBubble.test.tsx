@@ -59,4 +59,13 @@ describe('MessageBubble', () => {
     const { container } = render(<MessageBubble message={message} />);
     expect(container.textContent).toContain('85%');
   });
+
+  it('displays email channel badge', () => {
+    const message = createMessage({
+      role: 'agent',
+      viaChannel: 'email',
+    });
+    const { container } = render(<MessageBubble message={message} />);
+    expect(container.textContent).toContain('Via email');
+  });
 });

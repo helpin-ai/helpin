@@ -16,6 +16,8 @@ type SupportAIHandler struct {
 	aiService          *service.SupportAIService
 	supportInboxSvc    *service.SupportInboxService
 	knowledgeSourceSvc *service.AgentKnowledgeSourceService
+	contentSourceSvc   *service.SupportContentSourceService
+	agentContentSvc    *service.AgentContentSourceService
 }
 
 // NewSupportAIHandler creates a new SupportAIHandler.
@@ -23,11 +25,15 @@ func NewSupportAIHandler(
 	aiService *service.SupportAIService,
 	supportInboxSvc *service.SupportInboxService,
 	knowledgeSourceSvc *service.AgentKnowledgeSourceService,
+	contentSourceSvc *service.SupportContentSourceService,
+	agentContentSvc *service.AgentContentSourceService,
 ) *SupportAIHandler {
 	return &SupportAIHandler{
 		aiService:          aiService,
 		supportInboxSvc:    supportInboxSvc,
 		knowledgeSourceSvc: knowledgeSourceSvc,
+		contentSourceSvc:   contentSourceSvc,
+		agentContentSvc:    agentContentSvc,
 	}
 }
 
@@ -78,6 +84,167 @@ func (h *SupportAIHandler) UpdateKnowledgeSources(w http.ResponseWriter, r *http
 		return
 	}
 	writeJSON(w, http.StatusOK, sources)
+}
+
+// ListContentSources returns all workspace content sources for support AI.
+func (h *SupportAIHandler) ListContentSources(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	sources, err := h.contentSourceSvc.List(r.Context(), workspaceID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list content sources failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to list content sources")
+		return
+	}
+	writeJSON(w, http.StatusOK, sources)
+}
+
+// CreateContentSource creates a new workspace content source and queues indexing.
+func (h *SupportAIHandler) CreateContentSource(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	var req model.CreateSupportContentSourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	source, err := h.contentSourceSvc.Create(r.Context(), workspaceID, req)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "create content source failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, source)
+}
+
+// UpdateContentSource updates a content source and queues re-indexing.
+func (h *SupportAIHandler) UpdateContentSource(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	var req model.UpdateSupportContentSourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	source, err := h.contentSourceSvc.Update(r.Context(), workspaceID, chi.URLParam(r, "contentSourceId"), req)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "update content source failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, source)
+}
+
+// DeleteContentSource removes a workspace content source and all indexed content.
+func (h *SupportAIHandler) DeleteContentSource(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	if err := h.contentSourceSvc.Delete(r.Context(), workspaceID, chi.URLParam(r, "contentSourceId")); err != nil {
+		slog.ErrorContext(r.Context(), "delete content source failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ReindexContentSource forces a re-index of a content source.
+func (h *SupportAIHandler) ReindexContentSource(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	if err := h.contentSourceSvc.Reindex(r.Context(), workspaceID, chi.URLParam(r, "contentSourceId")); err != nil {
+		slog.ErrorContext(r.Context(), "reindex content source failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "queued"})
+}
+
+// ListContentSourcePages returns all synced pages for a content source.
+// GET /pm/content-sources/{contentSourceId}/pages
+func (h *SupportAIHandler) ListContentSourcePages(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	contentSourceID := chi.URLParam(r, "contentSourceId")
+	pages, err := h.contentSourceSvc.ListPages(r.Context(), workspaceID, contentSourceID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list content source pages failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, pages)
+}
+
+// GetAgentContentSources returns selected workspace content source IDs for an agent.
+func (h *SupportAIHandler) GetAgentContentSources(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "id")
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	ids, err := h.agentContentSvc.ListSelectedIDs(r.Context(), workspaceID, agentID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list agent content sources failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ids)
+}
+
+// UpdateAgentContentSources replaces selected content source IDs for an agent.
+func (h *SupportAIHandler) UpdateAgentContentSources(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "id")
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	var req model.UpdateAgentContentSourcesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.agentContentSvc.Set(r.Context(), workspaceID, agentID, req.ContentSourceIDs); err != nil {
+		slog.ErrorContext(r.Context(), "update agent content sources failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	ids, err := h.agentContentSvc.ListSelectedIDs(r.Context(), workspaceID, agentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list agent content sources")
+		return
+	}
+	writeJSON(w, http.StatusOK, ids)
 }
 
 // EscalateToHuman handles the widget "Talk to a human" button.

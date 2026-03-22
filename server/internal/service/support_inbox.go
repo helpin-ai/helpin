@@ -34,6 +34,9 @@ type SupportInboxService struct {
 	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
 	supportAIService        *SupportAIService
+	emailFallbackService    *EmailFallbackService
+	notificationService     *NotificationService
+	workspaceRepo           *repository.WorkspaceRepository
 }
 
 // NewSupportInboxService creates a new SupportInboxService.
@@ -90,6 +93,25 @@ func (s *SupportInboxService) SetSupportAIService(aiService *SupportAIService) *
 		return nil
 	}
 	s.supportAIService = aiService
+	return s
+}
+
+// SetEmailFallbackService injects the email fallback service used for offline visitor replies.
+func (s *SupportInboxService) SetEmailFallbackService(emailFallbackService *EmailFallbackService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailFallbackService = emailFallbackService
+	return s
+}
+
+// SetNotificationService injects the notification service and workspace repo for @mention support.
+func (s *SupportInboxService) SetNotificationService(ns *NotificationService, wr *repository.WorkspaceRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.notificationService = ns
+	s.workspaceRepo = wr
 	return s
 }
 
@@ -215,6 +237,14 @@ func (s *SupportInboxService) MarkConversationReadByVisitor(ctx context.Context,
 	})
 
 	return nil
+}
+
+// EscalateConversation delegates to the AI service to escalate a conversation to a human agent.
+func (s *SupportInboxService) EscalateConversation(ctx context.Context, workspaceID, conversationID, reason string) error {
+	if s.supportAIService == nil {
+		return fmt.Errorf("ai service not configured")
+	}
+	return s.supportAIService.EscalateToHuman(ctx, workspaceID, conversationID, reason)
 }
 
 // pushVisitorConversationsRefresh sends an updated conversation list to all widget sessions for a visitor.
@@ -382,7 +412,7 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 
 // validConversationStatuses defines allowed status transitions.
 var validConversationStatuses = map[string]bool{
-	"open": true, "in_progress": true, "waiting": true, "resolved": true, "closed": true, "spam": true,
+	"open": true, "in_progress": true, "waiting": true, "resolved": true, "closed": true,
 }
 
 // UpdateConversationStatus changes conversation status.
@@ -415,6 +445,45 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 	}
 
 	_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
+
+	// Insert a system message for status transitions visible in the thread.
+	if oldStatus != status && (status == "resolved" || status == "closed" || (oldStatus == "resolved" && status == "open")) {
+		label := "Resolved conversation"
+		if status == "closed" {
+			label = "Closed conversation"
+		} else if status == "open" && oldStatus == "resolved" {
+			label = "Reopened conversation"
+		}
+
+		// Resolve actor display name and avatar.
+		var senderDisplayName *string
+		var senderAvatarURL *string
+		if actorID != "" && s.userRepo != nil {
+			user, _ := s.userRepo.GetByID(ctx, actorID)
+			if user != nil {
+				senderDisplayName = &user.FullName
+				senderAvatarURL = user.AvatarURL
+			}
+		}
+		senderUserID := &actorID
+
+		sysMsg := &model.SupportMessage{
+			WorkspaceID:       workspaceID,
+			ConversationID:    ticketID,
+			SenderType:        "user",
+			SenderUserID:      senderUserID,
+			SenderDisplayName: senderDisplayName,
+			SenderAvatarURL:   senderAvatarURL,
+			Content:           label,
+			MessageType:       "system",
+			IsInternal:        false,
+		}
+		if err := s.messageRepo.Create(ctx, sysMsg); err != nil {
+			slog.ErrorContext(ctx, "create system message for status change", "error", err, "conversation_id", ticketID)
+		} else {
+			s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, sysMsg, actorID))
+		}
+	}
 
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
@@ -458,6 +527,16 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
+	// Pre-resolve @mentions for internal notes.
+	var mentionedUserIDs []string
+	if req.IsInternal && s.notificationService != nil && s.workspaceRepo != nil {
+		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(req.Content), derefString(senderUserID), nil)
+		if err != nil {
+			slog.ErrorContext(ctx, "resolve support mentions", "error", err, "conversation_id", ticketID)
+		}
+		mentionedUserIDs = ids
+	}
+
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,
 		ConversationID:    ticketID,
@@ -471,17 +550,41 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		MessageType:       messageType,
 	}
 
+	if len(mentionedUserIDs) > 0 {
+		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
+		msg.Metadata = string(metaJSON)
+	}
+
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
 
+	// Emit mention notifications after message creation.
+	if len(mentionedUserIDs) > 0 {
+		conv, _ := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
+		subject := "Support conversation"
+		if conv != nil {
+			subject = conv.Subject
+		}
+		ProcessSupportMentions(ctx, s.notificationService, workspaceID, ticketID, subject, msg.Content, derefString(senderUserID), mentionedUserIDs)
+	}
+
 	// Push visitor-scoped list refresh for widget unread when an agent/user/AI reply is sent.
 	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" {
 		conv, _ := s.conversationRepo.GetByID(ctx, workspaceID, ticketID)
-		if conv != nil && conv.AnonymousID != nil && *conv.AnonymousID != "" {
-			s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+		if conv != nil {
+			if conv.AnonymousID != nil && *conv.AnonymousID != "" {
+				s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+			}
+			if s.emailFallbackService != nil {
+				go func(convSnapshot *model.SupportConversation) {
+					if err := s.emailFallbackService.OnAgentReply(context.WithoutCancel(ctx), workspaceID, msg, convSnapshot); err != nil {
+						slog.ErrorContext(ctx, "enqueue email fallback failed", "conversation_id", ticketID, "message_id", msg.ID, "error", err)
+					}
+				}(conv)
+			}
 		}
 	}
 
@@ -649,6 +752,37 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen-3]) + "..."
+}
+
+// ListConversationsWithMentions returns conversations where the given user was mentioned.
+func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context, workspaceID, userID string) (*model.ConversationListResponse, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	ids, err := s.conversationRepo.ListConversationIDsWithMentions(ctx, workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return &model.ConversationListResponse{
+			Data: []model.SupportConversation{},
+		}, nil
+	}
+	conversations, err := s.conversationRepo.ListByIDs(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	return &model.ConversationListResponse{
+		Data:       conversations,
+		Total:      len(conversations),
+		Page:       1,
+		PerPage:    len(conversations),
+		TotalPages: 1,
+		Meta:       model.ConversationListMeta{},
+	}, nil
 }
 
 func (s *SupportInboxService) assignConversationAgent(ctx context.Context, workspaceID, conversationID, agentID string, actorID *string) error {

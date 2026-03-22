@@ -253,6 +253,14 @@ export class WidgetManager {
     this.show();
   }
 
+  private getConversationIdFromHash(): string | null {
+    if (typeof window === 'undefined') return null;
+    const hash = window.location.hash || '';
+    if (!hash.startsWith('#helpin-conv=')) return null;
+    const conversationId = hash.slice('#helpin-conv='.length).trim();
+    return conversationId || null;
+  }
+
   showArticle(articleId: string, _options?: ShowArticleOptions): void {
     this.articleRequestKey += 1;
     this.openArticleRequest = {
@@ -602,15 +610,13 @@ export class WidgetManager {
   // ─── Escalation ────────────────────────────────────────────
 
   private handleEscalateToHuman(): void {
-    if (!this.activeConversationId || !this.sessionToken) return;
+    if (!this.activeConversationId) return;
 
-    const url = `https://${this.host}/api/widget/support/${this.activeConversationId}/escalate`;
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Session-Token': this.sessionToken },
-    }).catch((err) => {
-      console.error('Failed to escalate to human:', err);
-    });
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:escalate', {});
+    } else {
+      console.error('Failed to escalate to human: WebSocket not connected');
+    }
   }
 
   // ─── Conversation Switching ─────────────────────────────────
@@ -809,26 +815,39 @@ export class WidgetManager {
         // Load conversation history from server
         if (payload.messages && payload.messages.length > 0) {
           this.messages = payload.messages.map((m: any) => {
+            let parsedMeta: any = null;
+            if (m.metadata) {
+              try { parsedMeta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; } catch { /* ignore */ }
+            }
+            const isAI = m.sender_type === 'ai' || !!(parsedMeta?.ai_agent_id);
             const msg: any = {
               id: m.id,
               conversationId: m.conversation_id,
-              role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
+              role: m.sender_type === 'customer' ? 'customer' : isAI ? 'ai' : 'agent',
               content: m.content,
               senderName: m.sender_display_name || undefined,
               senderAvatar: m.sender_avatar_url || undefined,
+              viaChannel: m.via_channel || undefined,
               isInternal: m.is_internal || false,
               createdAt: m.created_at,
             };
             // Map AI metadata to widget Message fields
-            if (m.metadata) {
-              try {
-                const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
-                if (meta.ai_sources) msg.sources = meta.ai_sources;
-                if (meta.ai_confidence !== undefined) msg.aiConfidence = meta.ai_confidence;
-              } catch { /* ignore parse errors */ }
+            if (parsedMeta) {
+              if (parsedMeta.ai_sources) msg.sources = parsedMeta.ai_sources;
+              if (parsedMeta.ai_confidence !== undefined) msg.aiConfidence = parsedMeta.ai_confidence;
             }
             return msg;
           });
+        }
+
+        const hashConversationId = this.getConversationIdFromHash();
+        if (hashConversationId && this.conversations.some((c) => c.id === hashConversationId)) {
+          this.activeConversationId = hashConversationId;
+          this.currentView = 'conversation';
+          this.isOpen = true;
+          if (this.wsConnection?.readyState === WebSocket.OPEN) {
+            this.wsSend('conversation:select', { conversation_id: hashConversationId });
+          }
         }
 
         this.connectionStatus = 'connected';
@@ -892,23 +911,26 @@ export class WidgetManager {
 
       case 'message:received': {
         const msg = data.data;
+        let wsMeta: any = null;
+        if (msg.metadata) {
+          try { wsMeta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata; } catch { /* ignore */ }
+        }
+        const wsIsAI = msg.sender_type === 'ai' || !!(wsMeta?.ai_agent_id);
         const newMsg: Message = {
           id: msg.id || `ws-${Date.now()}`,
           conversationId: msg.conversation_id || '',
-          role: msg.sender_type === 'customer' ? 'customer' : msg.sender_type === 'ai' ? 'ai' : 'agent',
+          role: msg.sender_type === 'customer' ? 'customer' : wsIsAI ? 'ai' : 'agent',
           content: msg.content || '',
           senderName: msg.sender_name || undefined,
           senderAvatar: msg.sender_avatar || undefined,
+          viaChannel: msg.via_channel || undefined,
           isInternal: false,
           createdAt: msg.created_at || new Date().toISOString(),
         };
         // Map AI metadata from WS payload
-        if (msg.metadata) {
-          try {
-            const meta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
-            if (meta.ai_sources) (newMsg as any).sources = meta.ai_sources;
-            if (meta.ai_confidence !== undefined) (newMsg as any).aiConfidence = meta.ai_confidence;
-          } catch { /* ignore parse errors */ }
+        if (wsMeta) {
+          if (wsMeta.ai_sources) (newMsg as any).sources = wsMeta.ai_sources;
+          if (wsMeta.ai_confidence !== undefined) (newMsg as any).aiConfidence = wsMeta.ai_confidence;
         }
 
         // Replace optimistic message if this is an echo
@@ -1044,16 +1066,29 @@ export class WidgetManager {
       case 'conversation:messages': {
         const msgs = data.data?.messages;
         if (Array.isArray(msgs)) {
-          this.messages = msgs.map((m: any) => ({
-            id: m.id,
-            conversationId: m.conversation_id,
-            role: m.sender_type === 'customer' ? 'customer' : m.sender_type === 'ai' ? 'ai' : 'agent',
-            content: m.content,
-            senderName: m.sender_display_name || undefined,
-            senderAvatar: m.sender_avatar_url || undefined,
-            isInternal: m.is_internal || false,
-            createdAt: m.created_at,
-          }));
+          this.messages = msgs.map((m: any) => {
+            let meta: any = null;
+            if (m.metadata) {
+              try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; } catch { /* ignore */ }
+            }
+            const mIsAI = m.sender_type === 'ai' || !!(meta?.ai_agent_id);
+            const mapped: any = {
+              id: m.id,
+              conversationId: m.conversation_id,
+              role: m.sender_type === 'customer' ? 'customer' : mIsAI ? 'ai' : 'agent',
+              content: m.content,
+              senderName: m.sender_display_name || undefined,
+              senderAvatar: m.sender_avatar_url || undefined,
+              viaChannel: m.via_channel || undefined,
+              isInternal: m.is_internal || false,
+              createdAt: m.created_at,
+            };
+            if (meta) {
+              if (meta.ai_sources) mapped.sources = meta.ai_sources;
+              if (meta.ai_confidence !== undefined) mapped.aiConfidence = meta.ai_confidence;
+            }
+            return mapped;
+          });
           this.render();
         }
         break;

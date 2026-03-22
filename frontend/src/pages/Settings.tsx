@@ -145,16 +145,9 @@ export const SETTINGS_SECTIONS: { id: SettingsSection; label: string; descriptio
   },
   {
     id: 'chat-general',
-    label: 'Chat Widget',
-    description: 'Widget installation, identity capture, and CRM integration.',
+    label: 'Chat',
+    description: 'Widget installation, identity capture, AI auto-reply, and routing.',
     icon: MessageSquare,
-    group: 'Support & Docs',
-  },
-  {
-    id: 'chat-ai',
-    label: 'AI & Routing',
-    description: 'AI auto-reply, handoff routing, business hours, and CSAT.',
-    icon: Bot,
     group: 'Support & Docs',
   },
 ];
@@ -321,6 +314,8 @@ export default function Settings({ section, initialTeamId }: { section: Settings
         return <ChatGeneralTab workspaceId={workspaceId} />;
       case 'chat-ai':
         return <ChatAITab workspaceId={workspaceId} />;
+      case 'redirects':
+        return <RedirectsTab workspaceId={workspaceId} editable={canManageSettings} />;
       default:
         return null;
     }

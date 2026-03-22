@@ -45,7 +45,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
-  const displayName = isCustomer ? '' : (agentName || config?.workspaceName || 'Support');
+  const displayName = isCustomer ? '' : (isAI ? 'Helpin AI' : (agentName || config?.workspaceName || 'Support Agent'));
   const tooltipText = formatRelativeTime(message.createdAt);
 
   return (
@@ -80,6 +80,10 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                 dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
               />
 
+              {message.viaChannel === 'email' && (
+                <div className="helpin-message-channel">Via email</div>
+              )}
+
               {message.sources && message.sources.length > 0 && (
                 <div className="helpin-message-sources">
                   {message.sources.map((source, idx) => (
@@ -90,6 +94,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                 </div>
               )}
 
+              {/* TODO: Replace with source-based display ("Based on N help articles") */}
               {message.aiConfidence !== undefined && (
                 <div className="helpin-message-confidence">
                   Confidence: {Math.round(message.aiConfidence * 100)}%
@@ -105,6 +110,9 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
             className="helpin-message-content"
             dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
           />
+          {message.viaChannel === 'email' && (
+            <div className="helpin-message-channel">Via email</div>
+          )}
         </div>
       )}
     </div>

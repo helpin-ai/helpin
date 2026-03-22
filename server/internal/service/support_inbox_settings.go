@@ -80,6 +80,15 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.OutsideHoursMessage != nil {
 		current.OutsideHoursMessage = *patch.OutsideHoursMessage
 	}
+	if patch.EmailFallbackEnabled != nil {
+		current.EmailFallbackEnabled = *patch.EmailFallbackEnabled
+	}
+	if patch.EmailFallbackDelaySecs != nil {
+		current.EmailFallbackDelaySecs = *patch.EmailFallbackDelaySecs
+	}
+	if patch.EmailFallbackFromName != nil {
+		current.EmailFallbackFromName = *patch.EmailFallbackFromName
+	}
 	if patch.WidgetName != nil {
 		current.WidgetName = *patch.WidgetName
 	}
@@ -163,6 +172,9 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	}
 	if settings.AIAutoResolveTimeout < 0 {
 		return fmt.Errorf("ai_auto_resolve_timeout must be >= 0")
+	}
+	if settings.EmailFallbackDelaySecs < 30 || settings.EmailFallbackDelaySecs > 600 {
+		return fmt.Errorf("email_fallback_delay_secs must be between 30 and 600")
 	}
 	if settings.AIEnabled {
 		if settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {

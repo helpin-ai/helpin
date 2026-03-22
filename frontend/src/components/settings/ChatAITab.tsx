@@ -6,13 +6,14 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useChatSettings, useUpdateChatSettings, useDocsSpaces } from '@/hooks/queries';
 import { useSupportAgents, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
+import { SupportKnowledgeSourcesField } from './SupportKnowledgeSourcesField';
+import { SupportContentSourcesField } from './SupportContentSourcesField';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
 
 const DAYS = [
@@ -69,11 +70,13 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
   const { data: allSpaces = [] } = useDocsSpaces(workspaceId);
   const { data: knowledgeSources = [] } = useAgentKnowledgeSources(workspaceId, activeAgentId);
   const updateKnowledgeSources = useUpdateAgentKnowledgeSources(workspaceId);
-  const linkedSpaceIds = new Set(knowledgeSources.map((ks) => ks.space_id));
+  const helpCenterSpaces = allSpaces.filter((space) => space.type === 'external_capable');
+  const helpCenterSpaceIds = new Set(helpCenterSpaces.map((space) => space.id));
+  const helpCenterKnowledgeSources = knowledgeSources.filter((source) => helpCenterSpaceIds.has(source.space_id));
 
   const toggleSpace = (spaceId: string) => {
     if (!activeAgentId) return;
-    const current = knowledgeSources.map((ks) => ks.space_id);
+    const current = helpCenterKnowledgeSources.map((ks) => ks.space_id);
     const next = current.includes(spaceId)
       ? current.filter((id) => id !== spaceId)
       : [...current, spaceId];
@@ -182,26 +185,28 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
             <div className="space-y-2">
               <Label className="text-sm">Knowledge Sources</Label>
               <p className="text-xs text-muted-foreground mb-2">
-                Select docs spaces the AI agent can search for answers. Internal spaces are used for grounding only — never cited to customers.
+                Your support AI uses these sources to answer customer questions. Add help center docs and websites to keep answers accurate and up to date.
               </p>
-              {allSpaces.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">No docs spaces found. Create one in the Docs section first.</p>
-              ) : (
-                <div className="space-y-1.5 rounded-md border p-3">
-                  {allSpaces.map((space) => (
-                    <label key={space.id} className="flex items-center gap-2.5 cursor-pointer">
-                      <Checkbox
-                        checked={linkedSpaceIds.has(space.id)}
-                        onCheckedChange={() => toggleSpace(space.id)}
-                      />
-                      <span className="text-sm">{space.name}</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        {space.type === 'internal' ? 'Internal' : 'Public'}
-                      </span>
-                    </label>
-                  ))}
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Help Center Docs</p>
+                  <SupportKnowledgeSourcesField
+                    spaces={helpCenterSpaces}
+                    knowledgeSources={helpCenterKnowledgeSources}
+                    onToggle={toggleSpace}
+                    disabled={updateKnowledgeSources.isPending}
+                  />
                 </div>
-              )}
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Website Content</p>
+                  <SupportContentSourcesField
+                    workspaceId={workspaceId}
+                    agentId={activeAgentId}
+                    disabled={updateKnowledgeSources.isPending}
+                  />
+                </div>
+              </div>
             </div>
           )}
 

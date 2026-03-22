@@ -11,8 +11,8 @@ RUN pnpm install && pnpm add typescript@latest -w
 RUN pnpm build
 RUN ls -R
 FROM nginx:latest
-COPY --from=builder /usr/src/packages/javascript-sdk/dist/lib.js /usr/share/nginx/html
+COPY --from=builder /usr/src/packages/sdk-js/dist/ /usr/share/nginx/html/
 RUN rm /etc/nginx/nginx.conf && rm /etc/nginx/conf.d/default.conf
 RUN ls -al
-COPY packages/javascript-sdk/docker/nginx.conf /etc/nginx/nginx.conf
-COPY packages/javascript-sdk/docker/default.conf /etc/nginx/conf.d/default.conf
+COPY packages/sdk-js/docker/nginx.conf /etc/nginx/nginx.conf
+COPY packages/sdk-js/docker/default.conf /etc/nginx/conf.d/default.conf

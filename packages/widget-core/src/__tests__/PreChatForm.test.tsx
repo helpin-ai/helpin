@@ -14,6 +14,7 @@ const mockConfig: WidgetConfig = {
   },
   features: {
     aiEnabled: false,
+    showTalkToHuman: false,
     fileUploads: false,
     preChatForm: true,
     requirePhone: true,

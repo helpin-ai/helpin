@@ -1469,6 +1469,8 @@ export interface SupportMessage {
   message_type?: string;
   is_internal: boolean;
   metadata?: string;
+  via_channel?: 'email' | 'widget' | null;
+  email_notified_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -1492,9 +1494,100 @@ export interface AgentKnowledgeSource {
   agent_id: string;
   space_id: string;
   workspace_id: string;
+  sync_status: 'queued' | 'running' | 'ready' | 'failed' | 'stale' | 'disabled';
+  sync_progress: number;
+  indexed_documents: number;
+  indexed_chunks: number;
+  last_sync_error?: string | null;
+  last_sync_started_at?: string | null;
+  last_sync_completed_at?: string | null;
   space_name?: string;
   space_type?: string;
   created_at: string;
+  updated_at: string;
+}
+
+export interface SupportContentSource {
+  id: string;
+  workspace_id: string;
+  name: string;
+  start_url: string;
+  crawl_limit: number;
+  crawl_depth: number;
+  crawl_source: 'all' | 'sitemaps' | 'links';
+  formats: string[];
+  render: boolean;
+  include_external_links: boolean;
+  include_subdomains: boolean;
+  include_patterns: string[];
+  exclude_patterns: string[];
+  crawl_purposes: string[];
+  max_age_seconds: number;
+  modified_since?: string | null;
+  json_prompt?: string | null;
+  json_response_format?: unknown;
+  sync_status: 'queued' | 'running' | 'ready' | 'failed' | 'stale' | 'disabled';
+  sync_progress: number;
+  indexed_pages: number;
+  indexed_chunks: number;
+  last_sync_error?: string | null;
+  last_crawl_job_id?: string | null;
+  last_sync_started_at?: string | null;
+  last_sync_completed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportContentPage {
+  id: string;
+  workspace_id: string;
+  content_source_id: string;
+  url: string;
+  title: string;
+  http_status: number;
+  content_format: string;
+  content_hash: string;
+  last_crawled_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupportContentSourceRequest {
+  name: string;
+  start_url: string;
+  crawl_limit: number;
+  crawl_depth: number;
+  crawl_source: 'all' | 'sitemaps' | 'links';
+  formats: string[];
+  render: boolean;
+  include_external_links: boolean;
+  include_subdomains: boolean;
+  include_patterns: string[];
+  exclude_patterns: string[];
+  crawl_purposes: string[];
+  max_age_seconds: number;
+  modified_since?: string | null;
+  json_prompt?: string | null;
+  json_response_format?: unknown;
+}
+
+export interface UpdateSupportContentSourceRequest {
+  name?: string;
+  start_url?: string;
+  crawl_limit?: number;
+  crawl_depth?: number;
+  crawl_source?: 'all' | 'sitemaps' | 'links';
+  formats?: string[];
+  render?: boolean;
+  include_external_links?: boolean;
+  include_subdomains?: boolean;
+  include_patterns?: string[];
+  exclude_patterns?: string[];
+  crawl_purposes?: string[];
+  max_age_seconds?: number;
+  modified_since?: string | null;
+  json_prompt?: string | null;
+  json_response_format?: unknown;
 }
 
 export interface CreateConversationRequest {
@@ -1543,6 +1636,9 @@ export interface SupportInboxSettings {
   business_hours_timezone: string;
   business_hours_schedule: Record<string, BusinessHoursDay>;
   outside_hours_message: string;
+  email_fallback_enabled: boolean;
+  email_fallback_delay_secs: number;
+  email_fallback_from_name: string;
   brand_color: string;
   show_branding: boolean;
   color_scheme: string;

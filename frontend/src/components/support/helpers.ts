@@ -1,3 +1,7 @@
+import type { AIMessageMetadata, SupportMessage } from '@/lib/pmTypes';
+
+export const HELPIN_AI_DISPLAY_NAME = 'Helpin AI';
+
 export function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -71,4 +75,25 @@ export function getAvatarColor(seed: string): string {
     hash = seed.charCodeAt(i) + ((hash << 5) - hash);
   }
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+export function parseAIMessageMetadata(metadata?: string): AIMessageMetadata | null {
+  if (!metadata) return null;
+  try {
+    const parsed = JSON.parse(metadata) as Partial<AIMessageMetadata> & { ai_auto_reply?: boolean };
+    return parsed.ai_auto_reply ? (parsed as AIMessageMetadata) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isAIMessage(message: Pick<SupportMessage, 'sender_type' | 'metadata'>): boolean {
+  if (message.sender_type === 'ai') {
+    return true;
+  }
+  return parseAIMessageMetadata(message.metadata) !== null;
+}
+
+export function getEffectiveSenderType(message: Pick<SupportMessage, 'sender_type' | 'metadata'>): SupportMessage['sender_type'] {
+  return isAIMessage(message) ? 'ai' : message.sender_type;
 }

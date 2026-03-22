@@ -5,7 +5,7 @@ import { supportService } from '@/lib/services/supportService';
 import { agentService } from '@/lib/services/agentService';
 import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
-import type { SupportInboxSettings, ConversationStatus, ConversationListResponse, SupportConversation, VisitorContextResponse } from '@/lib/pmTypes';
+import type { AgentKnowledgeSource, SupportContentSource, SupportContentPage, CreateSupportContentSourceRequest, UpdateSupportContentSourceRequest, SupportInboxSettings, ConversationStatus, ConversationListResponse, SupportConversation, VisitorContextResponse } from '@/lib/pmTypes';
 
 // ── Installation settings ───────────────────────────────────────────
 
@@ -47,7 +47,7 @@ export function useRegenerateWidgetKey(workspaceId: string) {
 
 // ── Conversations ───────────────────────────────────────────────────
 
-export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string }) {
+export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string; filter?: string }) {
   return useQuery({
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => {
@@ -255,9 +255,15 @@ export function useDeleteConversation(workspaceId: string) {
 export function useAgentKnowledgeSources(workspaceId: string, agentId?: string) {
   return useQuery({
     queryKey: queryKeys.agents.knowledgeSources(workspaceId, agentId ?? ''),
-    queryFn: async () => unwrap(await agentService.listKnowledgeSources(workspaceId, agentId!)),
+    queryFn: async (): Promise<AgentKnowledgeSource[]> => unwrap(await agentService.listKnowledgeSources(workspaceId, agentId!)),
     enabled: !!workspaceId && !!agentId,
     staleTime: 60_000,
+    refetchInterval: (query) => {
+      const sources = query.state.data as AgentKnowledgeSource[] | undefined;
+      return sources?.some((source) => source.sync_status === 'queued' || source.sync_status === 'running')
+        ? 2_000
+        : false;
+    },
   });
 }
 
@@ -271,6 +277,124 @@ export function useUpdateAgentKnowledgeSources(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update knowledge sources', { description: error.message });
+    },
+    onSettled: (_data, _error, variables) => {
+      if (!variables?.agentId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.knowledgeSources(workspaceId, variables.agentId) });
+    },
+  });
+}
+
+export function useSupportContentSources(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.contentSources(workspaceId),
+    queryFn: async (): Promise<SupportContentSource[]> => unwrap(await agentService.listContentSources(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 60_000,
+    refetchInterval: (query) => {
+      const sources = query.state.data as SupportContentSource[] | undefined;
+      return sources?.some((source) => source.sync_status === 'queued' || source.sync_status === 'running')
+        ? 2_000
+        : false;
+    },
+  });
+}
+
+export function useSupportContentSourcePages(workspaceId: string, contentSourceId?: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.contentSourcePages(workspaceId, contentSourceId ?? ''),
+    queryFn: async (): Promise<SupportContentPage[]> => unwrap(await agentService.listContentSourcePages(workspaceId, contentSourceId!)),
+    enabled: !!workspaceId && !!contentSourceId,
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateSupportContentSource(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSupportContentSourceRequest) =>
+      agentService.createContentSource(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create content source', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateSupportContentSource(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ contentSourceId, payload }: { contentSourceId: string; payload: UpdateSupportContentSourceRequest }) =>
+      agentService.updateContentSource(workspaceId, contentSourceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update content source', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteSupportContentSource(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (contentSourceId: string) =>
+      agentService.deleteContentSource(workspaceId, contentSourceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.all(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete content source', { description: error.message });
+    },
+  });
+}
+
+export function useReindexSupportContentSource(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (contentSourceId: string) =>
+      agentService.reindexContentSource(workspaceId, contentSourceId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to reindex content source', { description: error.message });
+    },
+  });
+}
+
+export function useAgentContentSources(workspaceId: string, agentId?: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.selectedContentSources(workspaceId, agentId ?? ''),
+    queryFn: async (): Promise<string[]> => unwrap(await agentService.listAgentContentSources(workspaceId, agentId!)),
+    enabled: !!workspaceId && !!agentId,
+    staleTime: 60_000,
+  });
+}
+
+export function useUpdateAgentContentSources(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, contentSourceIds }: { agentId: string; contentSourceIds: string[] }) =>
+      agentService.updateAgentContentSources(workspaceId, agentId, contentSourceIds).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.selectedContentSources(workspaceId, variables.agentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update content sources', { description: error.message });
+    },
+    onSettled: (_data, _error, variables) => {
+      if (!variables?.agentId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.selectedContentSources(workspaceId, variables.agentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
     },
   });
 }

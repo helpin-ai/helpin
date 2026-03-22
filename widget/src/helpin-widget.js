@@ -48,6 +48,32 @@
     }
   }
 
+  const HELPIN_AI_DISPLAY_NAME = "Helpin AI";
+
+  function parseAIMessageMetadata(metadata) {
+    if (!metadata) return null;
+    try {
+      const parsed = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+      return parsed && (parsed.ai_auto_reply || parsed.ai_agent_id) ? parsed : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function isAIMessage(msg) {
+    if (!msg) return false;
+    if (msg.sender_type === "ai") return true;
+    return !!parseAIMessageMetadata(msg.metadata);
+  }
+
+  function getMessageSenderKey(msg) {
+    return isAIMessage(msg) ? "ai" : (msg && msg.sender_type) || "";
+  }
+
+  function getMessageSenderName(msg) {
+    return isAIMessage(msg) ? HELPIN_AI_DISPLAY_NAME : msg.sender_display_name;
+  }
+
   // ─── Styles ───
   function getStyles(config) {
     const primary = config.primaryColor || "#6C5CE7";
@@ -605,6 +631,170 @@
         fill: #ffffff;
       }
 
+      /* ─── Emoji Button ─── */
+      .tp-emoji-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease;
+        flex-shrink: 0;
+        color: var(--tp-text-muted);
+      }
+
+      .tp-emoji-btn:hover {
+        background: var(--tp-bg-tertiary);
+        color: var(--tp-text);
+      }
+
+      .tp-emoji-btn svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      /* ─── Emoji Picker ─── */
+      .tp-emoji-picker {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 0;
+        width: 300px;
+        max-height: 320px;
+        background: var(--tp-bg);
+        border: 1px solid var(--tp-border);
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: tp-emoji-in 0.15s ease-out;
+      }
+
+      @keyframes tp-emoji-in {
+        from { opacity: 0; transform: translateY(4px) scale(0.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      .tp-emoji-search {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--tp-border-light);
+        color: var(--tp-text-muted);
+      }
+
+      .tp-emoji-search input {
+        flex: 1;
+        border: none;
+        background: transparent;
+        font-family: var(--tp-font);
+        font-size: 13px;
+        color: var(--tp-text);
+        outline: none;
+      }
+
+      .tp-emoji-search input::placeholder {
+        color: var(--tp-text-muted);
+      }
+
+      .tp-emoji-search-clear {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: var(--tp-text-muted);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px;
+        border-radius: 4px;
+      }
+
+      .tp-emoji-search-clear:hover {
+        background: var(--tp-bg-tertiary);
+        color: var(--tp-text);
+      }
+
+      .tp-emoji-categories {
+        display: flex;
+        gap: 2px;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--tp-border-light);
+        overflow-x: auto;
+      }
+
+      .tp-emoji-category-btn {
+        width: 32px;
+        height: 32px;
+        border: none;
+        background: transparent;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s;
+        flex-shrink: 0;
+      }
+
+      .tp-emoji-category-btn:hover {
+        background: var(--tp-bg-tertiary);
+      }
+
+      .tp-emoji-category-btn.active {
+        background: var(--tp-primary);
+      }
+
+      .tp-emoji-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        padding: 8px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .tp-emoji-btn-pick {
+        width: 34px;
+        height: 34px;
+        border: none;
+        background: transparent;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s;
+      }
+
+      .tp-emoji-btn-pick:hover {
+        background: var(--tp-bg-tertiary);
+      }
+
+      .tp-emoji-empty {
+        width: 100%;
+        text-align: center;
+        padding: 24px 0;
+        font-size: 13px;
+        color: var(--tp-text-muted);
+      }
+
+      .tp-emoji-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 0;
+        color: var(--tp-text-muted);
+        font-size: 13px;
+      }
+
       /* ─── Footer ─── */
       .tp-footer {
         text-align: center;
@@ -861,6 +1051,7 @@
     person: `<svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
     wave: `<svg viewBox="0 0 24 24"><path d="M7.03 4.95L3.49 8.49c-3.32 3.32-3.32 8.7 0 12.02s8.7 3.32 12.02 0l6.01-6.01a2.517 2.517 0 00-.39-3.86l.39-.39c.97-.97.97-2.56 0-3.54-.16-.16-.35-.3-.54-.41a2.497 2.497 0 00-3.72-3.05 2.517 2.517 0 00-3.88-.42l-2.51 2.51a2.493 2.493 0 00-3.84 3.11zm1.41 1.42c.2-.2.51-.2.71 0 .2.2.2.51 0 .71l-3.18 3.18a1 1 0 101.41 1.41l4.6-4.6a.5.5 0 01.7.71l-4.59 4.6a1 1 0 001.41 1.41l4.6-4.6a.5.5 0 01.7.7l-4.59 4.6a1 1 0 101.41 1.42l4.6-4.6a.5.5 0 01.7.7l-2.98 2.98c-2.15 2.15-5.63 2.15-7.78 0s-2.15-5.63 0-7.78l3.28-3.24z"/></svg>`,
     messages: `<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>`,
+    emoji: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 14s1.5 2 4 2 4-2 4-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="9" y1="9" x2="9.01" y2="9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="15" y1="9" x2="15.01" y2="9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`,
   };
 
   // ─── Helpers ───
@@ -886,6 +1077,59 @@
     const div = document.createElement("div");
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  function resolveWidgetAssetBase() {
+    const currentScript = document.currentScript;
+    if (currentScript && currentScript.src) {
+      return new URL(".", currentScript.src).toString();
+    }
+
+    const scripts = Array.from(document.querySelectorAll('script[src]'));
+    for (let idx = scripts.length - 1; idx >= 0; idx--) {
+      const src = scripts[idx].src || "";
+      if (/helpin-widget(\.min)?\.js(?:\?.*)?$/i.test(src)) {
+        return new URL(".", src).toString();
+      }
+    }
+
+    return "https://cdn.helpin.ai/widget/";
+  }
+
+  const WIDGET_ASSET_BASE = resolveWidgetAssetBase();
+
+  function getWidgetAssetURL(filename) {
+    return new URL(filename, WIDGET_ASSET_BASE).toString();
+  }
+
+  function loadEmojiBundle() {
+    if (window.HelpinEmojiBundle) {
+      return Promise.resolve(window.HelpinEmojiBundle);
+    }
+
+    if (window.HelpinEmojiBundlePromise) {
+      return window.HelpinEmojiBundlePromise;
+    }
+
+    window.HelpinEmojiBundlePromise = new Promise((resolve, reject) => {
+      const emojiScript = document.createElement("script");
+      emojiScript.src = getWidgetAssetURL("emoji-data.js");
+      emojiScript.crossOrigin = "anonymous";
+      emojiScript.onload = () => {
+        if (window.HelpinEmojiBundle) {
+          resolve(window.HelpinEmojiBundle);
+          return;
+        }
+        reject(new Error("emoji bundle loaded without global payload"));
+      };
+      emojiScript.onerror = () => reject(new Error("failed to load emoji bundle"));
+      document.head.appendChild(emojiScript);
+    }).catch((error) => {
+      window.HelpinEmojiBundlePromise = null;
+      throw error;
+    });
+
+    return window.HelpinEmojiBundlePromise;
   }
 
   function formatTime(isoString) {
@@ -1156,6 +1400,9 @@
       this.inputArea.innerHTML = `
         <div class="tp-input-wrap">
           <textarea rows="1" placeholder="${escapeHTML(this.config.placeholder)}" aria-label="Message"></textarea>
+          <button class="tp-emoji-btn" aria-label="Open emoji picker" type="button">
+            ${ICONS.emoji}
+          </button>
           <button class="tp-send-btn" aria-label="Send message" type="button">
             ${ICONS.send}
           </button>
@@ -1164,6 +1411,13 @@
 
       this.textarea = this.inputArea.querySelector("textarea");
       this.sendBtn = this.inputArea.querySelector(".tp-send-btn");
+      this.emojiBtn = this.inputArea.querySelector(".tp-emoji-btn");
+      this.emojiPicker = null;
+      this.emojiData = null;
+      this.emojiOpen = false;
+
+      // Emoji button click - lazy load emoji data
+      this.emojiBtn.addEventListener("click", () => this._toggleEmojiPicker());
 
       // Auto-resize textarea
       this.textarea.addEventListener("input", () => {
@@ -1282,6 +1536,172 @@
       } else {
         this.sendBtn.classList.remove("tp-active");
       }
+    }
+
+    _toggleEmojiPicker() {
+      // Close if open
+      if (this.emojiOpen && this.emojiPicker) {
+        this.emojiPicker.remove();
+        this.emojiPicker = null;
+        this.emojiOpen = false;
+        return;
+      }
+
+      // Create picker container
+      this.emojiPicker = document.createElement("div");
+      this.emojiPicker.className = "tp-emoji-picker";
+      this.emojiOpen = true;
+      this.emojiPicker.innerHTML = '<div class="tp-emoji-loading">Loading emojis...</div>';
+      this.inputArea.appendChild(this.emojiPicker);
+
+      loadEmojiBundle()
+        .then((bundle) => {
+          if (!this.emojiPicker || !this.emojiOpen) {
+            return;
+          }
+          this._renderEmojiPicker(bundle);
+        })
+        .catch(() => {
+          if (!this.emojiPicker) {
+            return;
+          }
+          this.emojiPicker.innerHTML = '<div class="tp-emoji-loading">Failed to load emojis</div>';
+        });
+    }
+
+    _bindEmojiImageFallbacks() {
+      if (!this.emojiPicker) {
+        return;
+      }
+
+      this.emojiPicker.querySelectorAll(".tp-emoji-btn-pick img").forEach((img) => {
+        img.addEventListener("error", () => {
+          img.hidden = true;
+          const fallback = img.nextElementSibling;
+          if (fallback) {
+            fallback.hidden = false;
+          }
+        }, { once: true });
+      });
+    }
+
+    _renderEmojiPicker(bundle) {
+      if (!this.emojiPicker || !bundle) return;
+
+      const { emojis, categories, getEmojiImageUrl, hexToEmoji, searchEmojis } = bundle;
+
+      // Category ID mapping for legacy support
+      const categoryIdMap = {
+        'smileys': 'smileys_people',
+        'animals': 'animals_nature',
+        'food': 'food_drink',
+        'travel': 'travel_places',
+        'recent': 'recent'
+      };
+
+      // Filter emojis by category
+      const getEmojisByCategory = (catId) => {
+        const mappedId = categoryIdMap[catId] || catId;
+        return emojis.filter(e => {
+          // Simple category mapping based on emoji unicode ranges
+          const code = parseInt(e.u, 16);
+          if (mappedId === 'recent') return false; // No recent yet
+          if (mappedId === 'smileys_people') return code >= 0x1f600 && code <= 0x1f64f;
+          if (mappedId === 'animals_nature') return (code >= 0x1f400 && code <= 0x1f43f) || (code >= 0x2600 && code <= 0x26ff);
+          if (mappedId === 'food_drink') return (code >= 0x1f340 && code <= 0x1f37f) || (code >= 0x1f950 && code <= 0x1f96f);
+          if (mappedId === 'activities') return code >= 0x1f3c0 && code <= 0x1f3df;
+          if (mappedId === 'travel_places') return (code >= 0x1f680 && code <= 0x1f6ff) || (code >= 0x1f300 && code <= 0x1f3df);
+          if (mappedId === 'objects') return (code >= 0x1f3a0 && code <= 0x1f3f7) || (code >= 0x1f4b0 && code <= 0x1f5ff);
+          if (mappedId === 'symbols') return (code >= 0x1f300 && code <= 0x1f3ff) || (code >= 0x2600 && code <= 0x26ff) || (code >= 0x2700 && code <= 0x27bf);
+          if (mappedId === 'flags') return (code >= 0x1f1e6 && code <= 0x1f1ff) || (code >= 0x1f3f3 && code <= 0x1f3ff);
+          return false;
+        });
+      };
+
+      let activeCategory = 'smileys_people';
+      let search = "";
+
+      const renderGrid = () => {
+        let displayEmojis = [];
+        if (search.trim()) {
+          displayEmojis = searchEmojis(search);
+        } else {
+          displayEmojis = getEmojisByCategory(activeCategory);
+        }
+
+        this.emojiPicker.innerHTML = `
+          <div class="tp-emoji-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input type="text" placeholder="Search emojis..." value="${escapeHTML(search)}" />
+            ${search ? '<button class="tp-emoji-search-clear"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>' : ''}
+          </div>
+          <div class="tp-emoji-categories">
+            ${categories.map(c => `
+              <button class="tp-emoji-category-btn ${c.id === activeCategory ? 'active' : ''}" data-cat="${c.id}" title="${c.label}">
+                ${c.icon}
+              </button>
+            `).join('')}
+          </div>
+          <div class="tp-emoji-grid">
+            ${displayEmojis.length > 0 ? displayEmojis.slice(0, 60).map((emoji, i) => `
+              <button class="tp-emoji-btn-pick" data-unicode="${emoji.u}" data-display="${hexToEmoji(emoji.u)}" title="${emoji.n[0]}">
+                <img src="${getEmojiImageUrl(emoji.u)}" width="24" height="24" alt="" aria-hidden="true" loading="lazy" />
+                <span class="tp-emoji-fallback" hidden>${hexToEmoji(emoji.u)}</span>
+              </button>
+            `).join('') : '<p class="tp-emoji-empty">No emojis found</p>'}
+          </div>
+        `;
+
+        this._bindEmojiImageFallbacks();
+
+        // Category buttons
+        this.emojiPicker.querySelectorAll(".tp-emoji-category-btn").forEach(btn => {
+          btn.addEventListener("click", () => {
+            activeCategory = btn.dataset.cat;
+            search = "";
+            renderGrid();
+          });
+        });
+
+        // Search input
+        const searchInput = this.emojiPicker.querySelector("input");
+        searchInput.addEventListener("input", (e) => {
+          search = e.target.value;
+          renderGrid();
+        });
+
+        // Clear search
+        const clearBtn = this.emojiPicker.querySelector(".tp-emoji-search-clear");
+        if (clearBtn) {
+          clearBtn.addEventListener("click", () => {
+            search = "";
+            renderGrid();
+          });
+        }
+
+        // Emoji selection
+        this.emojiPicker.querySelectorAll(".tp-emoji-btn-pick").forEach(btn => {
+          btn.addEventListener("click", () => {
+            const display = btn.dataset.display;
+            this._insertEmoji(display);
+            this._toggleEmojiPicker(); // Close picker
+          });
+        });
+      };
+
+      renderGrid();
+    }
+
+    _insertEmoji(emoji) {
+      const start = this.textarea.selectionStart;
+      const end = this.textarea.selectionEnd;
+      const value = this.textarea.value;
+      this.textarea.value = value.slice(0, start) + emoji + value.slice(end);
+      this.textarea.selectionStart = this.textarea.selectionEnd = start + emoji.length;
+      this.textarea.focus();
+      this._updateSendBtn();
     }
 
     async _sendMessage() {
@@ -1415,7 +1835,7 @@
 
       // Remove greeting if there are messages
       let lastDateLabel = null;
-      let lastSenderType = null;
+      let lastSenderKey = null;
 
       this.messages.forEach((msg, idx) => {
         const dateLabel = getDateLabel(msg.created_at);
@@ -1427,14 +1847,18 @@
           sep.innerHTML = `<span>${escapeHTML(dateLabel)}</span>`;
           this.messagesEl.appendChild(sep);
           lastDateLabel = dateLabel;
-          lastSenderType = null; // Reset grouping after date
+          lastSenderKey = null; // Reset grouping after date
         }
 
         const isCustomer = msg.sender_type === "customer";
-        const isAgent = msg.sender_type === "agent";
-        const isSameAsPrev = msg.sender_type === lastSenderType;
+        const isAI = isAIMessage(msg);
+        const senderKey = getMessageSenderKey(msg);
+        const nextSenderKey =
+          idx === this.messages.length - 1 ? null : getMessageSenderKey(this.messages[idx + 1]);
+        const senderName = getMessageSenderName(msg);
+        const isSameAsPrev = senderKey === lastSenderKey;
         const isLastInGroup =
-          idx === this.messages.length - 1 || this.messages[idx + 1].sender_type !== msg.sender_type;
+          idx === this.messages.length - 1 || nextSenderKey !== senderKey;
 
         const row = document.createElement("div");
         row.className = `tp-msg-row ${isCustomer ? "tp-customer" : "tp-team"}`;
@@ -1442,15 +1866,15 @@
 
         let avatarHTML = "";
         if (!isCustomer) {
-          const avatarClass = isAgent ? "tp-agent" : "tp-human";
-          const avatarIcon = isAgent ? ICONS.bot : ICONS.person;
+          const avatarClass = isAI ? "tp-agent" : "tp-human";
+          const avatarIcon = isAI ? ICONS.bot : ICONS.person;
           const hidden = !isLastInGroup ? "tp-hidden" : "";
           avatarHTML = `<div class="tp-msg-avatar ${avatarClass} ${hidden}">${avatarIcon}</div>`;
         }
 
         const senderHTML =
-          !isCustomer && !isSameAsPrev && msg.sender_display_name
-            ? `<div class="tp-msg-sender">${escapeHTML(msg.sender_display_name)}</div>`
+          !isCustomer && !isSameAsPrev && senderName
+            ? `<div class="tp-msg-sender">${escapeHTML(senderName)}</div>`
             : "";
 
         const timeHTML = isLastInGroup
@@ -1473,7 +1897,7 @@
         `;
 
         this.messagesEl.appendChild(row);
-        lastSenderType = msg.sender_type;
+        lastSenderKey = senderKey;
       });
 
       // Typing indicator at bottom

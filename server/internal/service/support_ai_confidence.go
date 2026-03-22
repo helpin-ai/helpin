@@ -1,64 +1,77 @@
 package service
 
-import (
-	"github.com/helpin-ai/helpin/server/internal/repository"
-)
+// evaluateConfidence computes a grounded confidence score for support-chat replies.
+//
+// When retrieval produced chunks, we require strong retrieval quality plus explicit citation coverage.
+// When retrieval produced no chunks, only conversational turns like greetings or
+// safe limitation/redirect responses for out-of-scope questions should pass.
+func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIResponseContract) float64 {
+	llmConfidence := clamp01(response.Confidence)
 
-// evaluateConfidence computes a multi-signal confidence score.
-//
-// When search results exist (RAG mode):
-//
-//	retrieval_quality=0.4, llm_confidence=0.3, source_coverage=0.1, can_answer=0.2
-//
-// When no search results (conversational mode — greetings, follow-ups, etc.):
-//
-//	llm_confidence=0.6, can_answer=0.4
-//
-// This prevents greetings and conversational replies from being penalized
-// by zero retrieval scores when no knowledge base lookup was needed.
-func evaluateConfidence(searchResults []repository.DocsSearchResult, response *AIResponseContract) float64 {
-	llmConfidence := response.Confidence
-	if llmConfidence < 0 {
-		llmConfidence = 0
-	}
-	if llmConfidence > 1 {
-		llmConfidence = 1
-	}
-
-	var canAnswerScore float64
+	canAnswerScore := 0.0
 	if response.CanAnswer {
 		canAnswerScore = 1.0
 	}
 
-	// Conversational mode — no search results, rely on LLM self-assessment.
 	if len(searchResults) == 0 {
-		return (llmConfidence * 0.6) + (canAnswerScore * 0.4)
+		return (llmConfidence * 0.65) + (canAnswerScore * 0.35)
 	}
 
-	// RAG mode — multi-signal with retrieval quality.
-	var retrievalQuality float64
-	bestRank := searchResults[0].Rank
-	for _, r := range searchResults[1:] {
-		if r.Rank > bestRank {
-			bestRank = r.Rank
+	bestVector := 0.0
+	bestLexical := 0.0
+	retrievedDocs := map[string]struct{}{}
+	for _, result := range searchResults {
+		if result.VectorScore > bestVector {
+			bestVector = result.VectorScore
+		}
+		if result.LexicalScore > bestLexical {
+			bestLexical = result.LexicalScore
+		}
+		retrievedDocs[result.ReferenceID] = struct{}{}
+	}
+
+	// ts_rank scores are typically small; normalize them into a 0-1 band.
+	normalizedLexical := clamp01(bestLexical / 0.35)
+	retrievalQuality := maxFloat(bestVector, normalizedLexical)
+
+	citedDocs := map[string]struct{}{}
+	for _, docID := range response.SourceDocIDs {
+		if _, ok := retrievedDocs[docID]; ok {
+			citedDocs[docID] = struct{}{}
 		}
 	}
-	if bestRank < 0.1 {
-		retrievalQuality = 0.0
-	} else if bestRank > 1.0 {
-		retrievalQuality = 1.0
-	} else {
-		retrievalQuality = bestRank
-	}
 
-	var sourceCoverage float64
-	sourceCoverage = float64(len(response.SourceDocIDs)) / float64(len(searchResults))
-	if sourceCoverage > 1 {
-		sourceCoverage = 1
+	sourceCoverage := 0.0
+	if len(retrievedDocs) > 0 {
+		sourceCoverage = clamp01(float64(len(citedDocs)) / float64(minInt(len(retrievedDocs), 3)))
 	}
 
 	return (retrievalQuality * 0.4) +
-		(llmConfidence * 0.3) +
-		(sourceCoverage * 0.1) +
-		(canAnswerScore * 0.2)
+		(sourceCoverage * 0.25) +
+		(llmConfidence * 0.2) +
+		(canAnswerScore * 0.15)
+}
+
+func clamp01(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

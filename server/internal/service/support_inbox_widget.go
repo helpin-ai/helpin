@@ -372,6 +372,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		Content:           strings.TrimSpace(content),
 		IsInternal:        false,
 		MessageType:       "reply",
+		ViaChannel:        strPtr("widget"),
 	}
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {

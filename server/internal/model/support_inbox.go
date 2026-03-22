@@ -26,12 +26,13 @@ type SupportConversation struct {
 	ClosedAt          *time.Time `json:"closed_at"`
 	TeamLastSeenAt    *time.Time `json:"team_last_seen_at" gorm:"type:timestamptz"`
 	ContactLastSeenAt *time.Time `json:"contact_last_seen_at" gorm:"type:timestamptz"`
+	EmailUnsubscribed bool       `json:"email_unsubscribed" gorm:"not null;default:false"`
 
 	// AI State — separate from human Status. Null when AI is not involved.
-	AIState                  *string    `json:"ai_state" gorm:"index"`                 // null, "pending", "resolved", "escalated"
+	AIState                  *string    `json:"ai_state" gorm:"index"` // null, "pending", "resolved", "escalated"
 	AIResolvedAt             *time.Time `json:"ai_resolved_at" gorm:"type:timestamptz"`
 	AIEscalatedAt            *time.Time `json:"ai_escalated_at" gorm:"type:timestamptz"`
-	AIResolutionType         *string    `json:"ai_resolution_type"`                    // "confirmed", "assumed", null
+	AIResolutionType         *string    `json:"ai_resolution_type"` // "confirmed", "assumed", null
 	AITurnCount              int        `json:"ai_turn_count" gorm:"not null;default:0"`
 	CustomerRequestedHumanAt *time.Time `json:"customer_requested_human_at" gorm:"type:timestamptz"`
 
@@ -69,20 +70,22 @@ type ConversationListResponse struct {
 
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
-	ID                string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ConversationID    string    `json:"conversation_id" gorm:"type:uuid;index"`
-	SenderType        string    `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
-	MessageType       string    `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system
-	SenderUserID      *string   `json:"sender_user_id" gorm:"type:uuid"`
-	SenderAgentID     *string   `json:"sender_agent_id" gorm:"type:uuid"`
-	SenderDisplayName *string   `json:"sender_display_name"`
-	SenderAvatarURL   *string   `json:"sender_avatar_url"`
-	Content           string    `json:"content" gorm:"not null"`
-	IsInternal        bool      `json:"is_internal" gorm:"not null;default:false"`
-	Metadata          string    `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
-	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ConversationID    string     `json:"conversation_id" gorm:"type:uuid;index"`
+	SenderType        string     `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
+	MessageType       string     `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system
+	SenderUserID      *string    `json:"sender_user_id" gorm:"type:uuid"`
+	SenderAgentID     *string    `json:"sender_agent_id" gorm:"type:uuid"`
+	SenderDisplayName *string    `json:"sender_display_name"`
+	SenderAvatarURL   *string    `json:"sender_avatar_url"`
+	Content           string     `json:"content" gorm:"not null"`
+	IsInternal        bool       `json:"is_internal" gorm:"not null;default:false"`
+	Metadata          string     `json:"metadata" gorm:"type:jsonb;default:'{}'"` // JSONB for CSAT ratings, AI sources, etc.
+	ViaChannel        *string    `json:"via_channel,omitempty" gorm:"size:20"`
+	EmailNotifiedAt   *time.Time `json:"email_notified_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportMessage) TableName() string { return "support_messages" }
@@ -267,6 +270,7 @@ type WidgetMessageReceivedPayload struct {
 	SenderName     *string `json:"sender_name"`
 	SenderAvatar   *string `json:"sender_avatar"`
 	Metadata       *string `json:"metadata,omitempty"`
+	ViaChannel     string  `json:"via_channel,omitempty"`
 	CreatedAt      string  `json:"created_at"`
 }
 
@@ -332,6 +336,11 @@ type SupportInboxSettings struct {
 	BusinessHoursSchedule map[string]BusinessHoursDay `json:"business_hours_schedule"` // mon-sun
 	OutsideHoursMessage   string                      `json:"outside_hours_message"`
 
+	// Offline email fallback
+	EmailFallbackEnabled   bool   `json:"email_fallback_enabled"`
+	EmailFallbackDelaySecs int    `json:"email_fallback_delay_secs"`
+	EmailFallbackFromName  string `json:"email_fallback_from_name"`
+
 	// Widget Identity
 	WidgetName         string   `json:"widget_name"`           // display name in widget header (defaults to workspace name)
 	WidgetAvatarURL    string   `json:"widget_avatar_url"`     // custom avatar URL for the widget
@@ -382,19 +391,22 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 			"sat": {Start: "09:00", End: "17:00", Enabled: false},
 			"sun": {Start: "09:00", End: "17:00", Enabled: false},
 		},
-		OutsideHoursMessage: "We're currently offline. Leave a message and we'll get back to you!",
-		WidgetName:          "",
-		WidgetAvatarURL:     "",
-		WidgetHelpSpaceIDs:  []string{},
-		BrandColor:          "#6366F1",
-		ShowBranding:        true,
-		ColorScheme:         "light",
-		ButtonColor:         "#000000",
-		ButtonIconColor:     "#FFFFFF",
-		LogoURL:             "",
-		LauncherPosition:    "bottom_right",
-		LauncherIcon:        "chat_bubble",
-		CSATEnabled:         false,
+		OutsideHoursMessage:    "We're currently offline. Leave a message and we'll get back to you!",
+		EmailFallbackEnabled:   false,
+		EmailFallbackDelaySecs: 120,
+		EmailFallbackFromName:  "",
+		WidgetName:             "",
+		WidgetAvatarURL:        "",
+		WidgetHelpSpaceIDs:     []string{},
+		BrandColor:             "#6366F1",
+		ShowBranding:           true,
+		ColorScheme:            "light",
+		ButtonColor:            "#000000",
+		ButtonIconColor:        "#FFFFFF",
+		LogoURL:                "",
+		LauncherPosition:       "bottom_right",
+		LauncherIcon:           "chat_bubble",
+		CSATEnabled:            false,
 	}
 }
 
@@ -419,6 +431,9 @@ type UpdateInstallationSettingsRequest struct {
 	BusinessHoursTimezone  *string                     `json:"business_hours_timezone,omitempty"`
 	BusinessHoursSchedule  map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
 	OutsideHoursMessage    *string                     `json:"outside_hours_message,omitempty"`
+	EmailFallbackEnabled   *bool                       `json:"email_fallback_enabled,omitempty"`
+	EmailFallbackDelaySecs *int                        `json:"email_fallback_delay_secs,omitempty"`
+	EmailFallbackFromName  *string                     `json:"email_fallback_from_name,omitempty"`
 	WidgetName             *string                     `json:"widget_name,omitempty"`
 	WidgetAvatarURL        *string                     `json:"widget_avatar_url,omitempty"`
 	WidgetHelpSpaceIDs     []string                    `json:"widget_help_space_ids,omitempty"`

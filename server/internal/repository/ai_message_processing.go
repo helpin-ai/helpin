@@ -88,3 +88,14 @@ func (r *AIMessageProcessingRepository) MarkFailed(ctx context.Context, id strin
 			"updated_at": time.Now(),
 		}).Error
 }
+
+// MarkFailedBySourceMessageID marks a processing record as failed by the customer message ID.
+func (r *AIMessageProcessingRepository) MarkFailedBySourceMessageID(ctx context.Context, sourceMessageID string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.AIMessageProcessing{}).
+		Where("source_message_id = ?", sourceMessageID).
+		Updates(map[string]any{
+			"status":     "failed",
+			"updated_at": time.Now(),
+		}).Error
+}

@@ -50,7 +50,7 @@ func (s *SupportAIService) RunAssumedResolutionScan(ctx context.Context) error {
 			    INNER JOIN (
 			      SELECT conversation_id, MAX(created_at) as last_msg_at
 			      FROM support_messages
-			      WHERE sender_type = 'agent'
+			      WHERE sender_type IN ('agent', 'ai')
 			      GROUP BY conversation_id
 			    ) lm ON lm.conversation_id = sc.id
 			    WHERE sc.workspace_id = ?

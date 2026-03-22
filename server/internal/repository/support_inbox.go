@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -59,6 +60,45 @@ func (r *SupportMessageRepository) GetByID(ctx context.Context, id string) (*mod
 		return nil, fmt.Errorf("get message: %w", err)
 	}
 	return &message, nil
+}
+
+// GetByIDs returns support messages by ID ordered by created_at.
+func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) ([]model.SupportMessage, error) {
+	if len(ids) == 0 {
+		return []model.SupportMessage{}, nil
+	}
+	var messages []model.SupportMessage
+	if err := r.db.WithContext(ctx).
+		Where("id IN ?", ids).
+		Order("created_at ASC").
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("get messages by ids: %w", err)
+	}
+	return messages, nil
+}
+
+// UpdateEmailNotifiedAt stamps email_notified_at for the provided message IDs.
+func (r *SupportMessageRepository) UpdateEmailNotifiedAt(ctx context.Context, ids []string, notifiedAt time.Time) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportMessage{}).
+		Where("id IN ?", ids).
+		Update("email_notified_at", notifiedAt).Error; err != nil {
+		return fmt.Errorf("update email_notified_at: %w", err)
+	}
+	return nil
+}
+
+// DB returns the underlying *gorm.DB for transaction support.
+func (r *SupportMessageRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// WithTx returns a new SupportMessageRepository using the given transaction.
+func (r *SupportMessageRepository) WithTx(tx *gorm.DB) *SupportMessageRepository {
+	return &SupportMessageRepository{db: tx}
 }
 
 // SupportInboxInstallationRepository handles widget installations.
@@ -389,6 +429,20 @@ func (r *SupportConversationRepository) UpdateSubject(ctx context.Context, id, s
 	return nil
 }
 
+// ListConversationIDsWithMentions returns conversation IDs where the given user was mentioned in internal notes.
+func (r *SupportConversationRepository) ListConversationIDsWithMentions(ctx context.Context, workspaceID, userID string) ([]string, error) {
+	filterJSON, _ := json.Marshal(map[string][]string{"mentioned_user_ids": {userID}})
+	var ids []string
+	if err := r.db.WithContext(ctx).
+		Table("support_messages").
+		Where("workspace_id = ? AND is_internal = true AND metadata::jsonb @> ?::jsonb", workspaceID, string(filterJSON)).
+		Distinct().
+		Pluck("conversation_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("list conversations with mentions: %w", err)
+	}
+	return ids, nil
+}
+
 // ListByIDs returns conversations by ID for a workspace.
 func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.SupportConversation, error) {
 	if len(ids) == 0 {
@@ -546,22 +600,49 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 	var stats model.UnreadStats
 	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(`
 		SELECT
-			COUNT(*) FILTER (WHERE u.unread > 0) AS total,
-			COUNT(*) FILTER (WHERE u.unread > 0 AND sc.opened_by_user_id = ?) AS my_inbox,
-			COUNT(*) FILTER (WHERE u.unread > 0 AND (sc.assigned_agent_id IS NULL OR sc.ai_state = 'escalated')) AS unassigned
+			COUNT(*) FILTER (
+				WHERE (
+					SELECT COUNT(*)
+					FROM support_messages sm
+					WHERE sm.conversation_id = sc.id
+					  AND sm.is_internal = false
+					  AND sm.sender_type = 'customer'
+					  AND sm.message_type = 'reply'
+					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+				) > 0
+				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
+			) AS total,
+			COUNT(*) FILTER (
+				WHERE (
+					SELECT COUNT(*)
+					FROM support_messages sm
+					WHERE sm.conversation_id = sc.id
+					  AND sm.is_internal = false
+					  AND sm.sender_type = 'customer'
+					  AND sm.message_type = 'reply'
+					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+				) > 0
+				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
+				  AND sc.opened_by_user_id = ?
+			) AS my_inbox,
+			COUNT(*) FILTER (
+				WHERE (
+					SELECT COUNT(*)
+					FROM support_messages sm
+					WHERE sm.conversation_id = sc.id
+					  AND sm.is_internal = false
+					  AND sm.sender_type = 'customer'
+					  AND sm.message_type = 'reply'
+					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+				) > 0
+				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
+				  AND sc.assigned_agent_id IS NULL
+				  AND sc.opened_by_user_id IS NULL
+			) AS unassigned
 		FROM support_conversations sc
-		CROSS JOIN LATERAL (
-			SELECT COUNT(*) AS unread
-			FROM support_messages sm
-			WHERE sm.conversation_id = sc.id
-			  AND sm.is_internal = false
-			  AND sm.sender_type = 'customer'
-			  AND sm.message_type = 'reply'
-			  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
-		) u
 		WHERE sc.workspace_id = ?
 		  AND sc.status != 'closed'
-	`, r.epochExpr()), userID, workspaceID).Scan(&stats).Error
+	`, r.epochExpr(), r.epochExpr(), r.epochExpr()), userID, workspaceID).Scan(&stats).Error
 	if err != nil {
 		return stats, fmt.Errorf("get unread stats: %w", err)
 	}

@@ -51,8 +51,11 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const activeAgent = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
-      if ((m.role === 'agent' || m.role === 'ai') && m.senderName) {
-        return { name: m.senderName, avatar: m.senderAvatar };
+      if (m.role === 'ai') {
+        return { name: 'Helpin AI', avatar: m.senderAvatar, isAI: true };
+      }
+      if (m.role === 'agent' && m.senderName) {
+        return { name: m.senderName, avatar: m.senderAvatar, isAI: false };
       }
     }
     return null;
@@ -109,13 +112,15 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
             {activeAgent?.name ? (
               <>
                 <span className="helpin-conversation-title">{activeAgent.name}</span>
-                <span className="helpin-conversation-subtitle">from {workspaceName}</span>
+                <span className="helpin-conversation-subtitle">
+                  {activeAgent.isAI ? 'Our bot will reply to your questions' : `from ${workspaceName}`}
+                </span>
               </>
             ) : (
               <>
-                <span className="helpin-conversation-title">{config.features?.aiEnabled ? 'Helpin' : workspaceName}</span>
+                <span className="helpin-conversation-title">{config.features?.aiEnabled ? 'Helpin AI' : workspaceName}</span>
                 {config.features?.aiEnabled && (
-                  <span className="helpin-conversation-subtitle">Our bot will reply instantly</span>
+                  <span className="helpin-conversation-subtitle">Our bot will reply to your questions</span>
                 )}
               </>
             )}
@@ -149,7 +154,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           showDateSeparators={true}
           config={config}
         />
-        {showPreChatForm && !preChatDone && hasCustomerMessage && onPreChatSubmit && (
+        {showPreChatForm && !preChatDone && hasCustomerMessage && hasTeamReply && !isAIThinking && onPreChatSubmit && (
           <PreChatForm
             config={config}
             onSubmit={(data) => {
@@ -185,7 +190,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           </button>
         </div>
       )}
-      <ComposeBar onSend={onSendMessage} onTyping={onTyping} />
+      <ComposeBar onSend={onSendMessage} onTyping={onTyping} showBranding={config.branding?.showBranding ?? true} />
     </div>
   );
 };

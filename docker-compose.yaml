@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     container_name: helpin-postgres
     restart: unless-stopped
     ports:
@@ -73,6 +73,7 @@ services:
       - PORT=8080
       - NATS_URL=nats://nats:4222
       - REDIS_URL=redis://redis:6379/0
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-host.docker.internal:7233}
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,17 +81,27 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   temporal-worker:
     build: ./server
     command: ["./temporal-worker"]
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=postgres://helpin:helpin@postgres:5432/helpin?sslmode=disable
       - JWT_SECRET=dev-secret-change-in-prod
       - NATS_URL=nats://nats:4222
-      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-localhost:7233}
+      - REDIS_URL=redis://redis:6379/0
+      - TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS:-host.docker.internal:7233}
     depends_on:
-      - nats
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build:

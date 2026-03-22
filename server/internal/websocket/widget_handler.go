@@ -27,6 +27,7 @@ type WidgetService interface {
 	ClearSessionConversation(ctx context.Context, sessionToken string) error
 	SetSessionConversation(ctx context.Context, sessionToken, conversationID string) error
 	MarkConversationReadByVisitor(ctx context.Context, workspaceID, conversationID, anonymousID string) error
+	EscalateConversation(ctx context.Context, workspaceID, conversationID, reason string) error
 }
 
 // WidgetHandler upgrades HTTP connections to WebSocket for widget clients.
@@ -413,6 +414,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				SenderType:     result.SenderType,
 				SenderName:     result.SenderDisplayName,
 				SenderAvatar:   result.SenderAvatarURL,
+				ViaChannel:     derefStr(result.ViaChannel),
 				CreatedAt:      result.CreatedAt.Format(time.RFC3339),
 			})
 
@@ -499,6 +501,17 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				convs = []model.SupportConversation{}
 			}
 			SendToClient(conn, "conversations:listed", map[string]any{"conversations": convs})
+
+		case "conversation:escalate":
+			if session.ConversationID == nil {
+				continue
+			}
+			if err := h.service.EscalateConversation(ctx, session.WorkspaceID, *session.ConversationID, "customer_requested"); err != nil {
+				slog.Error("widget ws: escalate failed", "error", err, "conversation_id", *session.ConversationID)
+				SendToClient(conn, "connection:error", map[string]string{"code": "escalate_failed", "message": "Failed to escalate to human"})
+				continue
+			}
+			SendToClient(conn, "conversation:escalated", map[string]string{"conversation_id": *session.ConversationID})
 
 		case "conversation:new":
 			// Clear the persisted active conversation before the next message creates a fresh one.

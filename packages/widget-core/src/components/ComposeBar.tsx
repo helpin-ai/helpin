@@ -1,12 +1,14 @@
 import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { PaperclipIcon, SmileIcon, SendIcon } from './icons';
+import { PaperclipIcon, SendIcon } from './icons';
+import { EmojiPicker } from './EmojiPicker';
 
 interface ComposeBarProps {
   onSend: (content: string) => void;
   onTyping?: (content: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  showBranding?: boolean;
 }
 
 export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
@@ -14,6 +16,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   onTyping,
   disabled = false,
   placeholder = 'Ask a question...',
+  showBranding = true,
 }) => {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -37,6 +40,22 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
+    }
+  };
+
+  const handleEmojiSelect = (emoji: string) => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newValue = message.slice(0, start) + emoji + message.slice(end);
+      setMessage(newValue);
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+        textarea.focus();
+      }, 0);
+    } else {
+      setMessage(message + emoji);
     }
   };
 
@@ -66,14 +85,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
             >
               <PaperclipIcon size={20} />
             </button>
-            <button
-              type="button"
-              className="helpin-compose-tool-btn"
-              aria-label="Add emoji"
-              tabIndex={0}
-            >
-              <SmileIcon size={20} />
-            </button>
+            <EmojiPicker onEmojiSelect={handleEmojiSelect} />
           </div>
           <button
             type="submit"
@@ -85,10 +97,12 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
           </button>
         </div>
       </form>
-      <div className="helpin-compose-footer">
-        By chatting with us, you agree to our{' '}
-        <a href="#" className="helpin-compose-footer-link">Privacy Policy</a>
-      </div>
+      {showBranding && (
+        <div className="helpin-compose-footer">
+          We run on{' '}
+          <a href="https://helpin.ai" target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">Helpin</a>
+        </div>
+      )}
     </div>
   );
 };

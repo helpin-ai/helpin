@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -25,6 +27,7 @@ type DocsHandler struct {
 	helpcenterSvc *service.DocsHelpcenterService
 	searchSvc     *service.DocsSearchService
 	importService *service.DocsImportService
+	embeddingSvc  *service.DocsEmbeddingService
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -38,6 +41,7 @@ func NewDocsHandler(
 	helpcenterSvc *service.DocsHelpcenterService,
 	searchSvc *service.DocsSearchService,
 	importService *service.DocsImportService,
+	embeddingSvc *service.DocsEmbeddingService,
 ) *DocsHandler {
 	return &DocsHandler{
 		spaceSvc:      spaceSvc,
@@ -49,6 +53,7 @@ func NewDocsHandler(
 		helpcenterSvc: helpcenterSvc,
 		searchSvc:     searchSvc,
 		importService: importService,
+		embeddingSvc:  embeddingSvc,
 	}
 }
 
@@ -269,23 +274,30 @@ func (h *DocsHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocsHandler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "docId")
 	var req model.UpdateDocsDocumentRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	doc, err := h.documentSvc.Update(r.Context(), chi.URLParam(r, "docId"), req)
+	doc, err := h.documentSvc.Update(r.Context(), docID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, doc)
 }
 
 func (h *DocsHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
-	if err := h.documentSvc.Delete(r.Context(), chi.URLParam(r, "docId")); err != nil {
+	docID := chi.URLParam(r, "docId")
+	doc, _ := h.documentSvc.Get(r.Context(), docID)
+	if err := h.documentSvc.Delete(r.Context(), docID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if doc != nil && h.embeddingSvc != nil {
+		_ = h.embeddingSvc.QueueSpaceSync(r.Context(), doc.WorkspaceID, doc.SpaceID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -313,6 +325,7 @@ func (h *DocsHandler) UnpublishDocument(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, doc)
 }
 
@@ -330,6 +343,7 @@ func (h *DocsHandler) ArchiveDocument(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, doc)
 }
 
@@ -361,6 +375,7 @@ func (h *DocsHandler) MoveDocument(w http.ResponseWriter, r *http.Request) {
 	if space != nil && space.Type != model.SpaceTypeExternalCapable {
 		_ = h.helpcenterSvc.UnpublishExternally(r.Context(), docID)
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 
 	writeJSON(w, http.StatusOK, doc)
 }
@@ -408,6 +423,7 @@ func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
 
 	// Check for periodic auto-snapshot (non-blocking).
 	go h.versionSvc.MaybeAutoSnapshot(r.Context(), docID, userID)
+	h.queueEmbeddingSync(r.Context(), docID)
 
 	writeJSON(w, http.StatusOK, content)
 }
@@ -450,6 +466,7 @@ func (h *DocsHandler) SaveMarkdownContent(w http.ResponseWriter, r *http.Request
 	}
 
 	go h.versionSvc.MaybeAutoSnapshot(r.Context(), docID, userID)
+	h.queueEmbeddingSync(r.Context(), docID)
 
 	writeJSON(w, http.StatusOK, content)
 }
@@ -549,6 +566,7 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("PublishExternally failed", "doc_id", docID, "error", err)
 		}
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 
 	// Re-fetch to include updated helpcenter article data.
 	doc, _ = h.documentSvc.Get(r.Context(), docID)
@@ -571,15 +589,27 @@ func (h *DocsHandler) PublishExternally(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "published"})
 }
 
 func (h *DocsHandler) UnpublishExternally(w http.ResponseWriter, r *http.Request) {
-	if err := h.helpcenterSvc.UnpublishExternally(r.Context(), chi.URLParam(r, "docId")); err != nil {
+	docID := chi.URLParam(r, "docId")
+	if err := h.helpcenterSvc.UnpublishExternally(r.Context(), docID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.queueEmbeddingSync(r.Context(), docID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "unpublished"})
+}
+
+func (h *DocsHandler) queueEmbeddingSync(ctx context.Context, docID string) {
+	if h == nil || h.embeddingSvc == nil || strings.TrimSpace(docID) == "" {
+		return
+	}
+	if err := h.embeddingSvc.QueueDocumentSync(ctx, docID); err != nil {
+		slog.Warn("queue docs embedding sync failed", "doc_id", docID, "error", err)
+	}
 }
 
 // ─── Links ──────────────────────────────────────────────────────────────────
