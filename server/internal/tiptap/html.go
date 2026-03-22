@@ -48,7 +48,11 @@ func renderNode(b *strings.Builder, n *Node) {
 
 	case "paragraph":
 		b.WriteString("<p>")
-		renderChildren(b, n)
+		if len(n.Content) == 0 {
+			b.WriteString("<br>")
+		} else {
+			renderChildren(b, n)
+		}
 		b.WriteString("</p>\n")
 
 	case "heading":
@@ -119,6 +123,20 @@ func renderNode(b *strings.Builder, n *Node) {
 		renderChildren(b, n)
 		b.WriteString("</blockquote>\n")
 
+	case "callout":
+		variant := strAttr(n.Attrs, "variant")
+		if variant == "" {
+			variant = "grey"
+		}
+		switch variant {
+		case "blue", "green", "grey", "red", "yellow":
+		default:
+			variant = "grey"
+		}
+		fmt.Fprintf(b, "<aside class=\"docs-callout docs-callout--%s\" data-callout-variant=\"%s\">\n", variant, variant)
+		renderChildren(b, n)
+		b.WriteString("</aside>\n")
+
 	case "horizontalRule":
 		b.WriteString("<hr>\n")
 
@@ -126,7 +144,44 @@ func renderNode(b *strings.Builder, n *Node) {
 		b.WriteString("<br>")
 
 	case "image", "resizableImage":
+		alignment := strAttr(n.Attrs, "alignment")
+		linkUrl := strAttr(n.Attrs, "linkUrl")
+		linkNewTab := true
+		if v, ok := n.Attrs["linkNewTab"]; ok {
+			if bv, ok := v.(bool); ok {
+				linkNewTab = bv
+			}
+		}
+
+		if alignment != "" && alignment != "center" {
+			var alignStyle string
+			switch alignment {
+			case "left":
+				alignStyle = "text-align:left"
+			case "right":
+				alignStyle = "text-align:right"
+			}
+			fmt.Fprintf(b, "<div style=\"%s\">\n", alignStyle)
+		} else if alignment == "" || alignment == "center" {
+			b.WriteString("<div style=\"text-align:center\">\n")
+		}
+
+		if linkUrl != "" {
+			b.WriteString(`<a href="`)
+			b.WriteString(html.EscapeString(linkUrl))
+			b.WriteByte('"')
+			if linkNewTab {
+				b.WriteString(` target="_blank" rel="noopener noreferrer"`)
+			}
+			b.WriteByte('>')
+		}
+
 		renderImage(b, n)
+
+		if linkUrl != "" {
+			b.WriteString("</a>")
+		}
+		b.WriteString("\n</div>\n")
 
 	case "table":
 		b.WriteString("<table>\n")

@@ -78,7 +78,7 @@ export function RecurringTemplateForm({
     initialConfig?.ends_on ? 'date' : initialConfig?.ends_after_occurrences ? 'count' : 'never',
   );
   const [sprintAssignmentMode, setSprintAssignmentMode] = useState<RecurringSprintAssignmentMode>(
-    initialConfig?.sprint_assignment_mode ?? 'none',
+    initialConfig?.sprint_assignment_mode ?? 'current_sprint',
   );
 
   const normalizedWeekdays = useMemo(
@@ -255,7 +255,7 @@ export function RecurringTemplateForm({
         <Label>Due date</Label>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={chip(dueDateMode === 'none')} onClick={() => setDueDateMode('none')}>None</button>
-          <button type="button" className={chip(dueDateMode === 'scheduled_date')} onClick={() => setDueDateMode('scheduled_date')}>Same as schedule</button>
+          <button type="button" className={chip(dueDateMode === 'scheduled_date')} onClick={() => setDueDateMode('scheduled_date')}>Day of creation</button>
           <button type="button" className={chip(dueDateMode === 'offset_days')} onClick={() => setDueDateMode('offset_days')}>Days after creation</button>
         </div>
         {dueDateMode === 'offset_days' && (

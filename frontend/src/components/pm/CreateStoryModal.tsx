@@ -1269,7 +1269,7 @@ export function CreateStoryModal({
                     interval: 1,
                     weekdays: [1],
                     due_date_mode: 'scheduled_date',
-                    sprint_assignment_mode: 'none',
+                    sprint_assignment_mode: 'current_sprint',
                   },
                 }}
                 workflowStates={workflow?.states ?? []}
