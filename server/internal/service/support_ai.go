@@ -8,10 +8,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/llm"
@@ -179,26 +181,53 @@ type AISource struct {
 	Title      string  `json:"title"`
 	Snippet    string  `json:"snippet"`
 	Confidence float64 `json:"confidence"`
+	SourceType string  `json:"sourceType,omitempty"`
+	URL        string  `json:"url,omitempty"`
 }
+
+type KnowledgeSearchResult struct {
+	ID            string
+	ReferenceID   string
+	SourceType    string
+	DocumentID    string
+	SourceID      string
+	ChunkIndex    int
+	Title         string
+	URL           string
+	Content       string
+	LexicalScore  float64
+	VectorScore   float64
+	CombinedScore float64
+}
+
+const (
+	knowledgeSourceTypeDocs    = "docs"
+	knowledgeSourceTypeContent = "content"
+	helpinAIDisplayName        = "Helpin AI"
+)
 
 // SupportAIService handles autonomous AI-first auto-replies for support conversations.
 // It is a separate path from the existing AgentRun system (manual-assist mode).
 type SupportAIService struct {
-	llmProvider       llm.Provider
-	embeddingProvider llm.EmbeddingProvider
-	embeddingModel    string
-	docsChunkRepo     *repository.DocsChunkRepository
-	knowledgeRepo     *repository.AgentKnowledgeSourceRepository
-	processingRepo    *repository.AIMessageProcessingRepository
-	conversationRepo  *repository.SupportConversationRepository
-	messageRepo       *repository.SupportMessageRepository
-	agentRepo         *repository.AgentRepository
-	handoffRepo       *repository.AgentHandoffRepository
-	installationRepo  *repository.SupportInboxInstallationRepository
-	wsPublisher       *websocket.Publisher
-	js                nats.JetStreamContext
-	redis             *redis.Client
-	db                *gorm.DB
+	llmProvider            llm.Provider
+	embeddingProvider      llm.EmbeddingProvider
+	embeddingModel         string
+	queryExpansionModel    string
+	queryExpansionProvider string
+	docsChunkRepo          *repository.DocsChunkRepository
+	knowledgeRepo          *repository.AgentKnowledgeSourceRepository
+	contentChunkRepo       *repository.SupportContentChunkRepository
+	contentLinkRepo        *repository.AgentContentSourceRepository
+	processingRepo         *repository.AIMessageProcessingRepository
+	conversationRepo       *repository.SupportConversationRepository
+	messageRepo            *repository.SupportMessageRepository
+	agentRepo              *repository.AgentRepository
+	handoffRepo            *repository.AgentHandoffRepository
+	installationRepo       *repository.SupportInboxInstallationRepository
+	wsPublisher            *websocket.Publisher
+	js                     nats.JetStreamContext
+	redis                  *redis.Client
+	db                     *gorm.DB
 }
 
 // NewSupportAIService creates a new SupportAIService with all dependencies.
@@ -208,6 +237,8 @@ func NewSupportAIService(
 	embeddingModel string,
 	docsChunkRepo *repository.DocsChunkRepository,
 	knowledgeRepo *repository.AgentKnowledgeSourceRepository,
+	contentChunkRepo *repository.SupportContentChunkRepository,
+	contentLinkRepo *repository.AgentContentSourceRepository,
 	processingRepo *repository.AIMessageProcessingRepository,
 	conversationRepo *repository.SupportConversationRepository,
 	messageRepo *repository.SupportMessageRepository,
@@ -218,23 +249,29 @@ func NewSupportAIService(
 	js nats.JetStreamContext,
 	redisClient *redis.Client,
 	db *gorm.DB,
+	queryExpansionModel string,
+	queryExpansionProvider string,
 ) *SupportAIService {
 	return &SupportAIService{
-		llmProvider:       llmProvider,
-		embeddingProvider: embeddingProvider,
-		embeddingModel:    strings.TrimSpace(embeddingModel),
-		docsChunkRepo:     docsChunkRepo,
-		knowledgeRepo:     knowledgeRepo,
-		processingRepo:    processingRepo,
-		conversationRepo:  conversationRepo,
-		messageRepo:       messageRepo,
-		agentRepo:         agentRepo,
-		handoffRepo:       handoffRepo,
-		installationRepo:  installationRepo,
-		wsPublisher:       wsPublisher,
-		js:                js,
-		redis:             redisClient,
-		db:                db,
+		llmProvider:            llmProvider,
+		embeddingProvider:      embeddingProvider,
+		embeddingModel:         strings.TrimSpace(embeddingModel),
+		queryExpansionModel:    queryExpansionModel,
+		queryExpansionProvider: queryExpansionProvider,
+		docsChunkRepo:          docsChunkRepo,
+		knowledgeRepo:          knowledgeRepo,
+		contentChunkRepo:       contentChunkRepo,
+		contentLinkRepo:        contentLinkRepo,
+		processingRepo:         processingRepo,
+		conversationRepo:       conversationRepo,
+		messageRepo:            messageRepo,
+		agentRepo:              agentRepo,
+		handoffRepo:            handoffRepo,
+		installationRepo:       installationRepo,
+		wsPublisher:            wsPublisher,
+		js:                     js,
+		redis:                  redisClient,
+		db:                     db,
 	}
 }
 
@@ -429,9 +466,9 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		aiMsg := &model.SupportMessage{
 			WorkspaceID:       workspaceID,
 			ConversationID:    conversationID,
-			SenderType:        "agent",
+			SenderType:        "ai",
 			SenderAgentID:     &agentID,
-			SenderDisplayName: &agent.Name,
+			SenderDisplayName: strPtr(helpinAIDisplayName),
 			Content:           cleanContent,
 			MessageType:       "reply",
 			Metadata:          metadataStr,
@@ -616,9 +653,10 @@ func buildAISystemPrompt(agent *model.Agent, knowledgeContext string) string {
 - For greetings ("hi", "hello", "hey") — respond naturally with a welcome and ask how you can assist. Set can_answer=true, confidence=0.95.
 - For clearly out-of-scope chit-chat, generic opinions, or third-party tool recommendations/comparisons that are not covered by the knowledge chunks, you may still respond briefly without sources by acknowledging the limitation and redirecting back to supported questions. Do not claim facts about the third party or imply endorsement. Set can_answer=true, source_doc_ids=[], and confidence between 0.75 and 0.85.
 - For support, product, troubleshooting, pricing, policy, or feature questions, answer only from the provided knowledge chunks and the conversation context.
-- If the retrieved knowledge is missing, weak, or insufficient to support a factual answer, set can_answer=false, source_doc_ids=[], and confidence to 0.4 or lower.
+- If the knowledge chunks partially cover the question, share what you know and clearly note what is missing. If a relevant URL exists in the knowledge chunks, link the customer to it for more details. Set can_answer=true with confidence proportional to how well the knowledge covers the question (0.6–0.85).
+- Only set can_answer=false when the knowledge chunks contain absolutely nothing relevant to the question — not even a partial answer or a useful pointer.
 - Never use general knowledge to invent product behavior, workflows, integrations, pricing, policies, or troubleshooting steps.
-- Ask a human to take over whenever the customer needs account-specific actions (billing changes, password resets, accessing their data) or when the knowledge chunks do not support a reliable answer.
+- Ask a human to take over whenever the customer needs account-specific actions (billing changes, password resets, accessing their data) or when the knowledge contains nothing relevant at all.
 - Be concise, friendly, and helpful. Use markdown for formatting.
 - Only include document IDs from the provided knowledge chunks in source_doc_ids.
 - NEVER include customer email addresses, phone numbers, account IDs, or payment details in your response.
@@ -641,32 +679,61 @@ RESPONSE FORMAT (respond with valid JSON only):
 	return sb.String()
 }
 
-func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID, agentID, query string) ([]repository.DocsChunkSearchResult, error) {
-	if s == nil || s.docsChunkRepo == nil || s.knowledgeRepo == nil {
-		return nil, nil
+// expandQuery uses a lightweight LLM to generate alternative search queries
+// for the RAG pipeline. Returns the original query plus up to 3 alternatives.
+// On any failure, gracefully degrades to returning only the original query.
+func (s *SupportAIService) expandQuery(ctx context.Context, originalQuery string) []string {
+	if s.llmProvider == nil || s.queryExpansionModel == "" {
+		return []string{originalQuery}
 	}
 
-	sources, err := s.knowledgeRepo.ListByAgentID(ctx, agentID)
+	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		Provider: s.queryExpansionProvider,
+		Model:    s.queryExpansionModel,
+		SystemPrompt: "Generate 3 alternative search queries for finding relevant support documentation. " +
+			"Each should rephrase the question using different words, synonyms, or angles that might match " +
+			"help articles, FAQs, or product docs. Return a JSON array of 3 strings. Only return the JSON array, nothing else.",
+		Messages: []llm.Message{
+			{Role: "user", Content: originalQuery},
+		},
+		Temperature: 0.7,
+		MaxTokens:   256,
+		JSONMode:    true,
+	})
 	if err != nil {
-		return nil, err
+		slog.WarnContext(ctx, "query expansion LLM call failed; using original query only",
+			"error", err, "query", originalQuery)
+		return []string{originalQuery}
 	}
 
-	spaceIDs := make([]string, 0, len(sources))
-	seenSpaces := map[string]struct{}{}
-	for _, source := range sources {
-		if source.WorkspaceID != workspaceID {
-			continue
-		}
-		if _, ok := seenSpaces[source.SpaceID]; ok {
-			continue
-		}
-		seenSpaces[source.SpaceID] = struct{}{}
-		spaceIDs = append(spaceIDs, source.SpaceID)
-	}
-	if len(spaceIDs) == 0 {
-		return nil, nil
+	var expanded []string
+	if err := json.Unmarshal([]byte(resp.Content), &expanded); err != nil {
+		slog.WarnContext(ctx, "query expansion returned invalid JSON; using original query only",
+			"error", err, "raw_response", resp.Content)
+		return []string{originalQuery}
 	}
 
+	// Cap at 3 expanded queries.
+	if len(expanded) > 3 {
+		expanded = expanded[:3]
+	}
+
+	queries := append([]string{originalQuery}, expanded...)
+	slog.DebugContext(ctx, "query expansion completed",
+		"original_query", originalQuery,
+		"expanded_queries", expanded,
+		"total_queries", len(queries))
+	return queries
+}
+
+// searchSingleQuery runs embedding + hybrid search for a single query string
+// against both docs and content chunk repositories. It returns the merged results.
+func (s *SupportAIService) searchSingleQuery(
+	ctx context.Context,
+	workspaceID, query string,
+	spaceIDs, contentSourceIDs []string,
+) ([]KnowledgeSearchResult, error) {
+	// Create embedding for this query.
 	queryEmbedding := ""
 	if s.embeddingProvider != nil {
 		embeddingModel := strings.TrimSpace(s.embeddingModel)
@@ -678,20 +745,155 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 			Inputs: []string{query},
 		})
 		if err != nil {
-			slog.WarnContext(ctx, "support query embedding failed; falling back to lexical retrieval", "error", err)
+			slog.WarnContext(ctx, "support query embedding failed; falling back to lexical retrieval",
+				"error", err, "query", query)
 		} else if len(resp.Vectors) > 0 {
 			queryEmbedding = formatVector(resp.Vectors[0])
 		}
 	}
 
-	results, err := s.docsChunkRepo.HybridSearch(ctx, workspaceID, spaceIDs, query, queryEmbedding, 12)
-	if err != nil {
-		return nil, err
+	var results []KnowledgeSearchResult
+
+	// Search docs chunks.
+	if s.docsChunkRepo != nil && len(spaceIDs) > 0 {
+		docResults, err := s.docsChunkRepo.HybridSearch(ctx, workspaceID, spaceIDs, query, queryEmbedding, 12)
+		if err != nil {
+			return nil, fmt.Errorf("docs hybrid search: %w", err)
+		}
+		for _, result := range docResults {
+			results = append(results, KnowledgeSearchResult{
+				ID:            result.ID,
+				ReferenceID:   knowledgeReferenceID(knowledgeSourceTypeDocs, result.DocumentID),
+				SourceType:    knowledgeSourceTypeDocs,
+				DocumentID:    result.DocumentID,
+				SourceID:      result.SpaceID,
+				ChunkIndex:    result.ChunkIndex,
+				Title:         result.Title,
+				Content:       result.Content,
+				LexicalScore:  result.LexicalScore,
+				VectorScore:   result.VectorScore,
+				CombinedScore: result.CombinedScore,
+			})
+		}
 	}
-	return rerankChunkResults(query, results), nil
+
+	// Search content chunks.
+	if s.contentChunkRepo != nil && len(contentSourceIDs) > 0 {
+		contentResults, err := s.contentChunkRepo.HybridSearch(ctx, workspaceID, contentSourceIDs, query, queryEmbedding, 12)
+		if err != nil {
+			return nil, fmt.Errorf("content hybrid search: %w", err)
+		}
+		for _, result := range contentResults {
+			results = append(results, KnowledgeSearchResult{
+				ID:            result.ID,
+				ReferenceID:   knowledgeReferenceID(knowledgeSourceTypeContent, result.PageID),
+				SourceType:    knowledgeSourceTypeContent,
+				DocumentID:    result.PageID,
+				SourceID:      result.ContentSourceID,
+				ChunkIndex:    result.ChunkIndex,
+				Title:         result.Title,
+				URL:           result.URL,
+				Content:       result.Content,
+				LexicalScore:  result.LexicalScore,
+				VectorScore:   result.VectorScore,
+				CombinedScore: result.CombinedScore,
+			})
+		}
+	}
+
+	return results, nil
 }
 
-func buildKnowledgeContext(results []repository.DocsChunkSearchResult) string {
+func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID, agentID, query string) ([]KnowledgeSearchResult, error) {
+	if s == nil {
+		return nil, nil
+	}
+
+	// Resolve knowledge source IDs once (shared across all query variants).
+	var spaceIDs []string
+	if s.docsChunkRepo != nil && s.knowledgeRepo != nil {
+		sources, err := s.knowledgeRepo.ListByAgentID(ctx, agentID)
+		if err != nil {
+			return nil, err
+		}
+		seenSpaces := map[string]struct{}{}
+		for _, source := range sources {
+			if source.WorkspaceID != workspaceID {
+				continue
+			}
+			if _, ok := seenSpaces[source.SpaceID]; ok {
+				continue
+			}
+			seenSpaces[source.SpaceID] = struct{}{}
+			spaceIDs = append(spaceIDs, source.SpaceID)
+		}
+	}
+
+	var contentSourceIDs []string
+	if s.contentChunkRepo != nil && s.contentLinkRepo != nil {
+		ids, err := s.contentLinkRepo.ListContentSourceIDs(ctx, agentID)
+		if err != nil {
+			return nil, err
+		}
+		contentSourceIDs = ids
+	}
+
+	// Nothing to search against.
+	if len(spaceIDs) == 0 && len(contentSourceIDs) == 0 {
+		return nil, nil
+	}
+
+	// Expand the query into alternative search queries.
+	queries := s.expandQuery(ctx, query)
+
+	// Run searches concurrently for each query variant.
+	var mu sync.Mutex
+	allResults := make([]KnowledgeSearchResult, 0, 24*len(queries))
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(4) // Bound concurrency to avoid overwhelming the DB.
+	for _, q := range queries {
+		q := q // capture loop variable
+		g.Go(func() error {
+			results, err := s.searchSingleQuery(gctx, workspaceID, q, spaceIDs, contentSourceIDs)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			allResults = append(allResults, results...)
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	// Deduplicate by chunk ID, keeping the highest combined score.
+	seen := make(map[string]int, len(allResults))
+	deduped := make([]KnowledgeSearchResult, 0, len(allResults))
+	for _, result := range allResults {
+		if idx, ok := seen[result.ID]; ok {
+			if result.CombinedScore > deduped[idx].CombinedScore {
+				deduped[idx] = result
+			}
+			continue
+		}
+		seen[result.ID] = len(deduped)
+		deduped = append(deduped, result)
+	}
+
+	reranked := rerankKnowledgeResults(query, deduped)
+
+	// Cap final results to avoid oversized context.
+	if len(reranked) > 12 {
+		reranked = reranked[:12]
+	}
+
+	return reranked, nil
+}
+
+func buildKnowledgeContext(results []KnowledgeSearchResult) string {
 	if len(results) == 0 {
 		return ""
 	}
@@ -701,27 +903,40 @@ func buildKnowledgeContext(results []repository.DocsChunkSearchResult) string {
 		if idx >= 6 {
 			break
 		}
-		sb.WriteString(fmt.Sprintf(
-			"---\nDOC_ID: %s\nTITLE: %s\nCHUNK_INDEX: %d\nCONTENT:\n%s\n",
-			result.DocumentID,
-			result.Title,
-			result.ChunkIndex,
-			result.Content,
-		))
+		if strings.TrimSpace(result.URL) != "" {
+			sb.WriteString(fmt.Sprintf(
+				"---\nDOC_ID: %s\nSOURCE_TYPE: %s\nTITLE: %s\nURL: %s\nCHUNK_INDEX: %d\nCONTENT:\n%s\n",
+				result.ReferenceID,
+				result.SourceType,
+				result.Title,
+				result.URL,
+				result.ChunkIndex,
+				result.Content,
+			))
+		} else {
+			sb.WriteString(fmt.Sprintf(
+				"---\nDOC_ID: %s\nSOURCE_TYPE: %s\nTITLE: %s\nCHUNK_INDEX: %d\nCONTENT:\n%s\n",
+				result.ReferenceID,
+				result.SourceType,
+				result.Title,
+				result.ChunkIndex,
+				result.Content,
+			))
+		}
 	}
 	return sb.String()
 }
 
-func buildAISources(sourceDocIDs []string, searchResults []repository.DocsChunkSearchResult) []AISource {
+func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult) []AISource {
 	if len(sourceDocIDs) == 0 || len(searchResults) == 0 {
 		return nil
 	}
 
-	byDocID := map[string]repository.DocsChunkSearchResult{}
+	byDocID := map[string]KnowledgeSearchResult{}
 	for _, result := range searchResults {
-		current, ok := byDocID[result.DocumentID]
+		current, ok := byDocID[result.ReferenceID]
 		if !ok || result.CombinedScore > current.CombinedScore {
-			byDocID[result.DocumentID] = result
+			byDocID[result.ReferenceID] = result
 		}
 	}
 
@@ -741,18 +956,20 @@ func buildAISources(sourceDocIDs []string, searchResults []repository.DocsChunkS
 			Title:      result.Title,
 			Snippet:    excerptText(result.Content, 180),
 			Confidence: clamp01(maxFloat(result.VectorScore, clamp01(result.LexicalScore/0.35))),
+			SourceType: result.SourceType,
+			URL:        result.URL,
 		})
 	}
 	return sources
 }
 
-func rerankChunkResults(query string, results []repository.DocsChunkSearchResult) []repository.DocsChunkSearchResult {
+func rerankKnowledgeResults(query string, results []KnowledgeSearchResult) []KnowledgeSearchResult {
 	if len(results) == 0 {
 		return nil
 	}
 
 	queryTerms := normalizedTerms(query)
-	reranked := make([]repository.DocsChunkSearchResult, len(results))
+	reranked := make([]KnowledgeSearchResult, len(results))
 	copy(reranked, results)
 
 	for idx := range reranked {
@@ -771,15 +988,19 @@ func rerankChunkResults(query string, results []repository.DocsChunkSearchResult
 	})
 
 	byDocCount := map[string]int{}
-	final := make([]repository.DocsChunkSearchResult, 0, len(reranked))
+	final := make([]KnowledgeSearchResult, 0, len(reranked))
 	for _, result := range reranked {
-		if byDocCount[result.DocumentID] >= 2 {
+		if byDocCount[result.ReferenceID] >= 2 {
 			continue
 		}
-		byDocCount[result.DocumentID]++
+		byDocCount[result.ReferenceID]++
 		final = append(final, result)
 	}
 	return final
+}
+
+func knowledgeReferenceID(sourceType, id string) string {
+	return sourceType + ":" + id
 }
 
 func normalizedTerms(input string) []string {

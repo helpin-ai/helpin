@@ -1379,6 +1379,89 @@ export interface AgentKnowledgeSource {
   updated_at: string;
 }
 
+export interface SupportContentSource {
+  id: string;
+  workspace_id: string;
+  name: string;
+  start_url: string;
+  crawl_limit: number;
+  crawl_depth: number;
+  crawl_source: 'all' | 'sitemaps' | 'links';
+  formats: string[];
+  render: boolean;
+  include_external_links: boolean;
+  include_subdomains: boolean;
+  include_patterns: string[];
+  exclude_patterns: string[];
+  crawl_purposes: string[];
+  max_age_seconds: number;
+  modified_since?: string | null;
+  json_prompt?: string | null;
+  json_response_format?: unknown;
+  sync_status: 'queued' | 'running' | 'ready' | 'failed' | 'stale' | 'disabled';
+  sync_progress: number;
+  indexed_pages: number;
+  indexed_chunks: number;
+  last_sync_error?: string | null;
+  last_crawl_job_id?: string | null;
+  last_sync_started_at?: string | null;
+  last_sync_completed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportContentPage {
+  id: string;
+  workspace_id: string;
+  content_source_id: string;
+  url: string;
+  title: string;
+  http_status: number;
+  content_format: string;
+  content_hash: string;
+  last_crawled_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupportContentSourceRequest {
+  name: string;
+  start_url: string;
+  crawl_limit: number;
+  crawl_depth: number;
+  crawl_source: 'all' | 'sitemaps' | 'links';
+  formats: string[];
+  render: boolean;
+  include_external_links: boolean;
+  include_subdomains: boolean;
+  include_patterns: string[];
+  exclude_patterns: string[];
+  crawl_purposes: string[];
+  max_age_seconds: number;
+  modified_since?: string | null;
+  json_prompt?: string | null;
+  json_response_format?: unknown;
+}
+
+export interface UpdateSupportContentSourceRequest {
+  name?: string;
+  start_url?: string;
+  crawl_limit?: number;
+  crawl_depth?: number;
+  crawl_source?: 'all' | 'sitemaps' | 'links';
+  formats?: string[];
+  render?: boolean;
+  include_external_links?: boolean;
+  include_subdomains?: boolean;
+  include_patterns?: string[];
+  exclude_patterns?: string[];
+  crawl_purposes?: string[];
+  max_age_seconds?: number;
+  modified_since?: string | null;
+  json_prompt?: string | null;
+  json_response_format?: unknown;
+}
+
 export interface CreateConversationRequest {
   subject: string;
   priority?: ConversationPriority;

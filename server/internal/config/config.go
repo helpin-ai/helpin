@@ -35,6 +35,13 @@ type Config struct {
 	OpenRouterBaseURL    string
 	OpenCodePath         string
 	BraveSearchAPIKey    string
+	CloudflareAccountID  string
+	CloudflareAPIToken   string
+	CloudflareAPIBaseURL string
+
+	// Website content crawler (optional — controls crawl engine and proxy)
+	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
+	CrawlerProxyURLs string // comma-separated proxy URLs for local crawler (e.g. Decodo/Smartproxy)
 
 	// GitHub App (optional — required for shared-runner repo mutation).
 	// GITHUB_APP_PRIVATE_KEY should be provided as a base64-encoded PEM value.
@@ -60,6 +67,10 @@ type Config struct {
 	CRMLLMAPIKey   string
 	CRMLLMBaseURL  string
 	CRMLLMModel    string
+
+	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.4-mini)
+	QueryExpansionModel    string
+	QueryExpansionProvider string
 
 	// Redis (optional — empty = local-only mode, no cross-pod broadcasting)
 	RedisURL string
@@ -131,6 +142,11 @@ func Load() (*Config, error) {
 		OpenRouterBaseURL:            strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
 		OpenCodePath:                 strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
 		BraveSearchAPIKey:            strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
+		CloudflareAccountID:          strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
+		CloudflareAPIToken:           strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
+		CloudflareAPIBaseURL:         strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
+		CrawlerMode:                  strings.TrimSpace(firstNonEmpty(os.Getenv("CRAWLER_MODE"), "cloudflare_with_fallback")),
+		CrawlerProxyURLs:             strings.TrimSpace(os.Getenv("CRAWLER_PROXY_URLS")),
 		GitHubAppID:                  os.Getenv("GITHUB_APP_ID"),
 		GitHubAppSlug:                os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:          os.Getenv("GITHUB_APP_PRIVATE_KEY"),
@@ -147,6 +163,8 @@ func Load() (*Config, error) {
 		CRMLLMAPIKey:                 os.Getenv("CRM_LLM_API_KEY"),
 		CRMLLMBaseURL:                os.Getenv("CRM_LLM_BASE_URL"),
 		CRMLLMModel:                  os.Getenv("CRM_LLM_MODEL"),
+		QueryExpansionModel:          strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.4-mini")),
+		QueryExpansionProvider:       strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
 		RedisURL:                     os.Getenv("REDIS_URL"),
 	}, nil
 }

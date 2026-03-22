@@ -579,6 +579,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/knowledge-sources", h.SupportAI.UpdateKnowledgeSources)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/content-sources", h.SupportAI.GetAgentContentSources)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/content-sources", h.SupportAI.UpdateAgentContentSources)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources", h.SupportAI.ListContentSources)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources", h.SupportAI.CreateContentSource)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/content-sources/{contentSourceId}", h.SupportAI.UpdateContentSource)
+					r.With(requirePerm(authorization.PermPMEdit)).Delete("/content-sources/{contentSourceId}", h.SupportAI.DeleteContentSource)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources/{contentSourceId}/pages", h.SupportAI.ListContentSourcePages)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources/{contentSourceId}/reindex", h.SupportAI.ReindexContentSource)
 				}
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/assign-agent", h.Agent.AssignAgentToStory)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/stories/{id}/run-agent", h.Agent.RunAgent)

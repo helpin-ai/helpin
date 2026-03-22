@@ -53,4 +53,20 @@ export const agentService = {
     api.get<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`),
   updateKnowledgeSources: (workspaceId: string, agentId: string, spaceIds: string[]) =>
     api.put<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`, { space_ids: spaceIds }),
+  listContentSources: (workspaceId: string) =>
+    api.get<import('../pmTypes').SupportContentSource[]>(`/pm/content-sources${qs(workspaceId)}`),
+  createContentSource: (workspaceId: string, payload: import('../pmTypes').CreateSupportContentSourceRequest) =>
+    api.post<import('../pmTypes').SupportContentSource>(`/pm/content-sources${qs(workspaceId)}`, payload),
+  updateContentSource: (workspaceId: string, contentSourceId: string, payload: import('../pmTypes').UpdateSupportContentSourceRequest) =>
+    api.put<import('../pmTypes').SupportContentSource>(`/pm/content-sources/${contentSourceId}${qs(workspaceId)}`, payload),
+  deleteContentSource: (workspaceId: string, contentSourceId: string) =>
+    api.del(`/pm/content-sources/${contentSourceId}${qs(workspaceId)}`),
+  listContentSourcePages: (workspaceId: string, contentSourceId: string) =>
+    api.get<import('../pmTypes').SupportContentPage[]>(`/pm/content-sources/${contentSourceId}/pages${qs(workspaceId)}`),
+  reindexContentSource: (workspaceId: string, contentSourceId: string) =>
+    api.post<{ status: string }>(`/pm/content-sources/${contentSourceId}/reindex${qs(workspaceId)}`, {}),
+  listAgentContentSources: (workspaceId: string, agentId: string) =>
+    api.get<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`),
+  updateAgentContentSources: (workspaceId: string, agentId: string, contentSourceIds: string[]) =>
+    api.put<string[]>(`/pm/agents/${agentId}/content-sources${qs(workspaceId)}`, { content_source_ids: contentSourceIds }),
 };

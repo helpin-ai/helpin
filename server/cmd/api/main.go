@@ -23,6 +23,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/config"
+	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -258,8 +259,12 @@ func main() {
 		&model.AutomationHealthSnapshot{},
 		// AI Support Agent
 		&model.AgentKnowledgeSource{},
+		&model.AgentContentSource{},
 		&model.AIMessageProcessing{},
 		&model.DocsChunk{},
+		&model.SupportContentSource{},
+		&model.SupportContentPage{},
+		&model.SupportContentChunk{},
 	); err != nil {
 		slog.Error("failed to auto-migrate", "error", err)
 		os.Exit(1)
@@ -269,6 +274,8 @@ func main() {
 	for _, stmt := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_embedding_ivfflat ON docs_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)`,
 		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_fts ON docs_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(content, '')), 'B')))`,
+		`CREATE INDEX IF NOT EXISTS idx_support_content_chunks_embedding_ivfflat ON support_content_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)`,
+		`CREATE INDEX IF NOT EXISTS idx_support_content_chunks_fts ON support_content_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(content, '')), 'B')))`,
 	} {
 		if err := db.Exec(stmt).Error; err != nil {
 			slog.Warn("failed to create docs chunk index", "error", err, "stmt", stmt)
@@ -467,6 +474,10 @@ func main() {
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
+	supportContentSourceRepo := repository.NewSupportContentSourceRepository(db)
+	agentContentSourceRepo := repository.NewAgentContentSourceRepository(db)
+	supportContentPageRepo := repository.NewSupportContentPageRepository(db)
+	supportContentChunkRepo := repository.NewSupportContentChunkRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
@@ -683,6 +694,14 @@ func main() {
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, s3Client)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, s3Client)
+	contentCrawler := crawler.NewSmartCrawler(
+		cfg.CrawlerMode,
+		cfg.CloudflareAccountID,
+		cfg.CloudflareAPIToken,
+		cfg.CloudflareAPIBaseURL,
+		cfg.CrawlerProxyURLs,
+		slog.Default(),
+	)
 	docsEmbeddingService := service.NewDocsEmbeddingService(
 		docsChunkRepo,
 		agentKnowledgeSourceRepo,
@@ -695,6 +714,29 @@ func main() {
 		runEngine,
 	)
 	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceService(agentKnowledgeSourceRepo, docsSpaceRepo, docsEmbeddingService)
+	supportContentSyncService := service.NewSupportContentSyncService(
+		supportContentSourceRepo,
+		supportContentPageRepo,
+		supportContentChunkRepo,
+		supportEmbeddingProvider,
+		cfg.OpenAIEmbeddingModel,
+		contentCrawler,
+		runEngine,
+	)
+	supportContentSourceService := service.NewSupportContentSourceService(
+		supportContentSourceRepo,
+		agentRepo,
+		agentContentSourceRepo,
+		supportContentPageRepo,
+		supportContentChunkRepo,
+		supportContentSyncService,
+	)
+	agentContentSourceService := service.NewAgentContentSourceService(
+		agentContentSourceRepo,
+		agentRepo,
+		supportContentSourceRepo,
+		supportContentSyncService,
+	)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
@@ -766,10 +808,11 @@ func main() {
 	// AI Support Agent — wire SupportAIService with LLM provider and JetStream.
 	supportAIService := service.NewSupportAIService(
 		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
-		agentKnowledgeSourceRepo, aiMessageProcessingRepo,
+		agentKnowledgeSourceRepo, supportContentChunkRepo, agentContentSourceRepo, aiMessageProcessingRepo,
 		supportConversationRepo, supportMessageRepo,
 		agentRepo, agentHandoffRepo, supportInstallRepo,
 		wsPublisher, jetstream, redisClient, db,
+		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
 	supportInboxService.SetSupportAIService(supportAIService)
 
@@ -832,7 +875,7 @@ func main() {
 		Agent:              handler.NewAgentHandler(agentService),
 		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),
 		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),
-		SupportAI:          handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService),
+		SupportAI:          handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService),
 		PostmarkInbound:    handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkInboundWebhookSecret),
 		Git:                handler.NewGitHandler(gitService),
 		Notification:       handler.NewNotificationHandler(notificationService, followerService),

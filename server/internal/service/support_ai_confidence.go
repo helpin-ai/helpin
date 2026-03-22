@@ -1,13 +1,11 @@
 package service
 
-import "github.com/helpin-ai/helpin/server/internal/repository"
-
 // evaluateConfidence computes a grounded confidence score for support-chat replies.
 //
 // When retrieval produced chunks, we require strong retrieval quality plus explicit citation coverage.
 // When retrieval produced no chunks, only conversational turns like greetings or
 // safe limitation/redirect responses for out-of-scope questions should pass.
-func evaluateConfidence(searchResults []repository.DocsChunkSearchResult, response *AIResponseContract) float64 {
+func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIResponseContract) float64 {
 	llmConfidence := clamp01(response.Confidence)
 
 	canAnswerScore := 0.0
@@ -29,7 +27,7 @@ func evaluateConfidence(searchResults []repository.DocsChunkSearchResult, respon
 		if result.LexicalScore > bestLexical {
 			bestLexical = result.LexicalScore
 		}
-		retrievedDocs[result.DocumentID] = struct{}{}
+		retrievedDocs[result.ReferenceID] = struct{}{}
 	}
 
 	// ts_rank scores are typically small; normalize them into a 0-1 band.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/config"
+	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
@@ -106,6 +108,10 @@ func main() {
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
+	supportContentSourceRepo := repository.NewSupportContentSourceRepository(db)
+	agentContentSourceRepo := repository.NewAgentContentSourceRepository(db)
+	supportContentPageRepo := repository.NewSupportContentPageRepository(db)
+	supportContentChunkRepo := repository.NewSupportContentChunkRepository(db)
 	aiMessageProcessingRepo := repository.NewAIMessageProcessingRepository(db)
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
@@ -185,10 +191,11 @@ func main() {
 	// AI Support Agent consumer — runs alongside Temporal workers.
 	supportAIService := service.NewSupportAIService(
 		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
-		agentKnowledgeSourceRepo, aiMessageProcessingRepo,
+		agentKnowledgeSourceRepo, supportContentChunkRepo, agentContentSourceRepo, aiMessageProcessingRepo,
 		conversationRepo, supportMessageRepo,
 		agentRepo, handoffRepo, supportInstallRepo,
 		wsPublisher, jetstream, redisClient, db,
+		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
 	aiConsumerCtx, aiConsumerCancel := context.WithCancel(context.Background())
 	go func() {
@@ -265,6 +272,14 @@ func main() {
 	).SetModelProviderConfig(cfg.AnthropicAPIKey, cfg.OpenAIAPIKey, cfg.OpenRouterAPIKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo)
+	contentCrawler := crawler.NewSmartCrawler(
+		cfg.CrawlerMode,
+		cfg.CloudflareAccountID,
+		cfg.CloudflareAPIToken,
+		cfg.CloudflareAPIBaseURL,
+		cfg.CrawlerProxyURLs,
+		slog.Default(),
+	)
 	docsEmbeddingService := service.NewDocsEmbeddingService(
 		docsChunkRepo,
 		agentKnowledgeSourceRepo,
@@ -274,6 +289,15 @@ func main() {
 		docsDocumentRepo,
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
+		nil,
+	)
+	supportContentSyncService := service.NewSupportContentSyncService(
+		supportContentSourceRepo,
+		supportContentPageRepo,
+		supportContentChunkRepo,
+		supportEmbeddingProvider,
+		cfg.OpenAIEmbeddingModel,
+		contentCrawler,
 		nil,
 	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
@@ -337,11 +361,12 @@ func main() {
 	// Sprint automation activities.
 	sprintAutomationActivities := temporalapp.NewSprintAutomationActivities(pmAutomationService)
 	docsEmbeddingActivities := temporalapp.NewDocsEmbeddingActivities(docsEmbeddingService)
+	contentSourceSyncActivities := temporalapp.NewContentSourceSyncActivities(supportContentSyncService)
 
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, sprintAutomationActivities, docsEmbeddingActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
 	}
 
 	// Planning session worker — separate queue with session pinning.
@@ -463,7 +488,7 @@ func main() {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 	}
@@ -539,6 +564,14 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	if docsEmbeddingActivities != nil {
 		w.RegisterActivityWithOptions(docsEmbeddingActivities.SyncSpaceActivity, activity.RegisterOptions{
 			Name: "DocsEmbeddingActivities.SyncSpaceActivity",
+		})
+	}
+
+	// Register content source sync workflow and activities.
+	w.RegisterWorkflow(temporalapp.ContentSourceSyncWorkflow)
+	if contentSourceSyncActivities != nil {
+		w.RegisterActivityWithOptions(contentSourceSyncActivities.SyncContentSourceActivity, activity.RegisterOptions{
+			Name: "ContentSourceSyncActivities.SyncContentSourceActivity",
 		})
 	}
 

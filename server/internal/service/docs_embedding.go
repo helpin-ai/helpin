@@ -277,7 +277,7 @@ func (s *DocsEmbeddingService) markSourcesFailed(ctx context.Context, sources []
 }
 
 func chunkDocumentText(text string) []string {
-	normalized := strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	normalized := strings.Join(strings.Fields(strings.TrimSpace(strings.ToValidUTF8(text, ""))), " ")
 	if normalized == "" {
 		return nil
 	}

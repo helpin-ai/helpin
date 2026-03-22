@@ -13,6 +13,7 @@ import { useSupportAgents, useAgentKnowledgeSources, useUpdateAgentKnowledgeSour
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { SupportKnowledgeSourcesField } from './SupportKnowledgeSourcesField';
+import { SupportContentSourcesField } from './SupportContentSourcesField';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
 
 const DAYS = [
@@ -184,14 +185,28 @@ export function ChatAITab({ workspaceId }: { workspaceId: string }) {
             <div className="space-y-2">
               <Label className="text-sm">Knowledge Sources</Label>
               <p className="text-xs text-muted-foreground mb-2">
-                Select help center spaces to chunk, embed, and search during AI replies. Published document updates re-index automatically.
+                Your support AI uses these sources to answer customer questions. Add help center docs and websites to keep answers accurate and up to date.
               </p>
-              <SupportKnowledgeSourcesField
-                spaces={helpCenterSpaces}
-                knowledgeSources={helpCenterKnowledgeSources}
-                onToggle={toggleSpace}
-                disabled={updateKnowledgeSources.isPending}
-              />
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Help Center Docs</p>
+                  <SupportKnowledgeSourcesField
+                    spaces={helpCenterSpaces}
+                    knowledgeSources={helpCenterKnowledgeSources}
+                    onToggle={toggleSpace}
+                    disabled={updateKnowledgeSources.isPending}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Website Content</p>
+                  <SupportContentSourcesField
+                    workspaceId={workspaceId}
+                    agentId={activeAgentId}
+                    disabled={updateKnowledgeSources.isPending}
+                  />
+                </div>
+              </div>
             </div>
           )}
 
