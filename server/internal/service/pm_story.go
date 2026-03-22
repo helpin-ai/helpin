@@ -30,6 +30,7 @@ type PMStoryService struct {
 	followerService     *FollowerService
 	ruleEngine          *AutomationRuleEngine
 	agentService        *AgentService
+	recurringService    *PMRecurringTemplateService
 	logger              *slog.Logger
 }
 
@@ -61,6 +62,11 @@ func (s *PMStoryService) SetRuleEngine(engine *AutomationRuleEngine) *PMStorySer
 // SetAgentService sets the agent service (breaks circular dependency).
 func (s *PMStoryService) SetAgentService(svc *AgentService) {
 	s.agentService = svc
+}
+
+// SetRecurringService sets the recurring template service (breaks circular dependency).
+func (s *PMStoryService) SetRecurringService(svc *PMRecurringTemplateService) {
+	s.recurringService = svc
 }
 
 // requireCanEdit checks that the actor has at least member role (owner, admin, or member).
@@ -618,6 +624,11 @@ func (s *PMStoryService) Update(ctx context.Context, id string, req model.Update
 		// Legacy path: evaluate epic automations from pm_automations table.
 		if s.automationService != nil {
 			s.automationService.OnStoryStateChange(ctx, current, current.WorkflowStateID)
+		}
+		if s.recurringService != nil {
+			if err := s.recurringService.HandleStoryProgress(ctx, current.ID); err != nil {
+				s.logger.ErrorContext(ctx, "failed to process recurring template story progress", "error", err, "story_id", current.ID)
+			}
 		}
 		// Evaluate automation rules for the state change (epic auto-start/complete, etc.)
 		if s.ruleEngine != nil {

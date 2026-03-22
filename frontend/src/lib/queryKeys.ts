@@ -57,6 +57,10 @@ export const queryKeys = {
 
     templates: (wsId: string) => ['pm', wsId, 'templates'] as const,
     template: (wsId: string, id: string) => ['pm', wsId, 'templates', id] as const,
+    recurringTemplates: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['pm', wsId, 'recurringTemplates', filters] as const) : (['pm', wsId, 'recurringTemplates'] as const),
+    recurringTemplate: (wsId: string, id: string) => ['pm', wsId, 'recurringTemplates', id] as const,
+    storyRecurringTemplate: (wsId: string, storyId: string) => ['pm', wsId, 'stories', storyId, 'recurringTemplate'] as const,
 
     automations: (wsId: string) => ['pm', wsId, 'automations'] as const,
 

@@ -22,16 +22,17 @@ export function useCopyToClipboard(resetMs = 2000) {
         setCopied(false);
       };
 
+      if (fallbackCopy(text)) {
+        onSuccess();
+        return true;
+      }
+
       const canUseAsyncClipboard =
         typeof window !== 'undefined' &&
         window.isSecureContext === true &&
         typeof navigator.clipboard?.writeText === 'function';
 
       if (!canUseAsyncClipboard) {
-        if (fallbackCopy(text)) {
-          onSuccess();
-          return true;
-        }
         onFailure();
         return false;
       }
@@ -41,10 +42,6 @@ export function useCopyToClipboard(resetMs = 2000) {
         onSuccess();
         return true;
       } catch {
-        if (fallbackCopy(text)) {
-          onSuccess();
-          return true;
-        }
         onFailure();
         return false;
       }
@@ -56,13 +53,23 @@ export function useCopyToClipboard(resetMs = 2000) {
 }
 
 function fallbackCopy(text: string) {
+  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const selection = document.getSelection();
+  const ranges = selection
+    ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
+    : [];
   const ta = document.createElement('textarea');
   ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.setAttribute('aria-hidden', 'true');
   ta.style.position = 'fixed';
+  ta.style.top = '0';
   ta.style.left = '-9999px';
+  ta.style.opacity = '0';
   document.body.appendChild(ta);
   ta.focus();
   ta.select();
+  ta.setSelectionRange(0, ta.value.length);
 
   try {
     return document.execCommand('copy');
@@ -70,5 +77,12 @@ function fallbackCopy(text: string) {
     return false;
   } finally {
     document.body.removeChild(ta);
+    if (selection) {
+      selection.removeAllRanges();
+      for (const range of ranges) {
+        selection.addRange(range);
+      }
+    }
+    activeElement?.focus();
   }
 }

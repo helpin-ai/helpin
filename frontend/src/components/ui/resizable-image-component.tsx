@@ -35,10 +35,11 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
     aspectRatioRef.current = ar;
 
     // If width is still the default percentage, convert to pixels
-    if (width === '35%' || !width) {
+    if (width === '100%' || width === '35%' || !width) {
       const editorContainer = img.closest('.overflow-hidden');
       const editorWidth = editorContainer?.clientWidth ?? 600;
-      const initialWidth = Math.max(Math.round(editorWidth * 0.35), MIN_WIDTH);
+      const naturalWidth = img.naturalWidth || editorWidth;
+      const initialWidth = Math.max(Math.min(naturalWidth, editorWidth), MIN_WIDTH);
       const initialHeight = Math.round(initialWidth / ar);
 
       setCurrentWidth(`${initialWidth}px`);

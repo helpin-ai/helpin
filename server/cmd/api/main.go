@@ -199,6 +199,8 @@ func main() {
 		&model.StoryGitLink{},
 		&model.AgentHandoff{},
 		&model.PMStoryTemplate{},
+		&model.PMRecurringTemplate{},
+		&model.PMRecurringRun{},
 		&model.PMImportJob{},
 		&authorization.AuthorizationRelation{},
 		// Docs module
@@ -212,6 +214,7 @@ func main() {
 		&model.DocsHelpcenterConfig{},
 		&model.DocsHelpcenterArticle{},
 		&model.DocsSlugAlias{},
+		&model.DocsRedirect{},
 		&model.DocsReviewQueue{},
 		&model.DocsArticleFeedback{},
 		&model.DocsComment{},
@@ -445,6 +448,7 @@ func main() {
 	automationRuleRepo := repository.NewAutomationRuleRepository(db)
 	flowRepo := repository.NewFlowRepository(db)
 	pmStoryTemplateRepo := repository.NewPMStoryTemplateRepository(db)
+	pmRecurringTemplateRepo := repository.NewPMRecurringTemplateRepository(db)
 	searchRepo := repository.NewSearchRepository(db)
 	invitationRepo := repository.NewInvitationRepository(db)
 	planningSessionRepo := repository.NewPlanningSessionRepository(db)
@@ -473,6 +477,7 @@ func main() {
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
+	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
 	supportContentSourceRepo := repository.NewSupportContentSourceRepository(db)
 	agentContentSourceRepo := repository.NewAgentContentSourceRepository(db)
@@ -517,6 +522,7 @@ func main() {
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo)
 	pmStoryTemplateService := service.NewPMStoryTemplateService(pmStoryTemplateRepo)
+	pmRecurringTemplateService := service.NewPMRecurringTemplateService(pmRecurringTemplateRepo, pmStoryRepo, pmWorkflowRepo, pmSprintRepo, workspaceRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmActivityService)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmStoryRepo, pmLabelRepo)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmStoryRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
@@ -640,7 +646,10 @@ func main() {
 	ruleEngine.SetHealthObserver(automationHealthService)
 	pmStoryService.SetRuleEngine(ruleEngine)
 	pmStoryService.SetAgentService(agentService)
+	pmStoryService.SetRecurringService(pmRecurringTemplateService)
+	pmRecurringTemplateService.SetStoryService(pmStoryService)
 	agentService.SetRuleEngine(ruleEngine)
+	pmRecurringTemplateService.SetTemporalClient(temporalClient)
 
 	// Planning session service — HTTP-only (activities run in cmd/temporal-worker).
 	// No claudeClient/toolRegistry/streamer needed: streaming runs in the worker process.
@@ -691,9 +700,9 @@ func main() {
 	docsContentService := service.NewDocsContentService(docsContentRepo)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmStoryRepo, docsDocumentRepo)
-	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, s3Client)
+	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsDocumentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
-	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, s3Client)
+	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
 	contentCrawler := crawler.NewSmartCrawler(
 		cfg.CrawlerMode,
 		cfg.CloudflareAccountID,
@@ -821,6 +830,9 @@ func main() {
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, cfg.BraveSearchAPIKey)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
+	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
+		slog.Error("failed to ensure PM recurring scheduler", "error", err)
+	}
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
@@ -872,6 +884,7 @@ func main() {
 		Flow:               handler.NewFlowHandler(flowService),
 		AutomationRule:     handler.NewAutomationRuleHandler(ruleEngine),
 		PMStoryTemplate:    handler.NewPMStoryTemplateHandler(pmStoryTemplateService),
+		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:              handler.NewAgentHandler(agentService),
 		SupportInbox:       handler.NewSupportInboxHandler(supportInboxService, agentService),
 		SupportInboxWidget: handler.NewSupportInboxWidgetHandler(supportInboxService),

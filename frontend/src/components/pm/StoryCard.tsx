@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, STORY_TYPE_CONFIG, StoryTypeIcon } from '@/lib/pmConstants';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
 import type { Priority, Severity, Story } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
@@ -330,17 +331,22 @@ function StoryCardComponent({
       </div>
 
       {/* Row 2: Title */}
+      {story.recurring_template_id ? (
+        <div className="mt-3">
+          <RecurringTemplateBadge compact occurrenceNumber={story.recurring_occurrence_number} />
+        </div>
+      ) : null}
       {titleIsLong ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <h4 className="mt-3.5 mb-3.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
+            <h4 className="mb-3.5 mt-2 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
               {story.name}
             </h4>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-[300px]">{story.name}</TooltipContent>
         </Tooltip>
       ) : (
-        <h4 className="mt-3.5 mb-3.5 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
+        <h4 className="mb-3.5 mt-2 line-clamp-2 text-[13px] font-medium leading-snug text-foreground">
           {story.name}
         </h4>
       )}

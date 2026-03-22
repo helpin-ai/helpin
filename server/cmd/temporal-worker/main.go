@@ -90,6 +90,8 @@ func main() {
 	commentRepo := repository.NewPMCommentRepository(db)
 	checklistRepo := repository.NewPMChecklistItemRepository(db)
 	externalLinkRepo := repository.NewPMExternalLinkRepository(db)
+	recurringRepo := repository.NewPMRecurringTemplateRepository(db)
+	sprintRepo := repository.NewPMSprintRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
@@ -126,7 +128,6 @@ func main() {
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
-	sprintRepo := repository.NewPMSprintRepository(db)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -210,6 +211,16 @@ func main() {
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
+	pmRecurringTemplateService := service.NewPMRecurringTemplateService(
+		recurringRepo,
+		storyRepo,
+		workflowRepo,
+		sprintRepo,
+		workspaceRepo,
+		checklistRepo,
+		externalLinkRepo,
+		pmActivityService,
+	)
 	pmAutomationService := service.NewPMAutomationService(
 		pmAutomationRepo,
 		epicRepo,
@@ -233,6 +244,8 @@ func main() {
 		nil,
 		nil,
 	)
+	pmStoryService.SetRecurringService(pmRecurringTemplateService)
+	pmRecurringTemplateService.SetStoryService(pmStoryService)
 	gitService := service.NewGitService(
 		gitIntRepo,
 		gitRepo,
@@ -357,6 +370,7 @@ func main() {
 	_ = crmCompanyRepo // available for future enrichment activities
 
 	scheduleActivities := temporalapp.NewScheduledAgentActivities(agentRepo, runRepo)
+	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
 
 	// Sprint automation activities.
 	sprintAutomationActivities := temporalapp.NewSprintAutomationActivities(pmAutomationService)
@@ -366,7 +380,7 @@ func main() {
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
 	}
 
 	// Planning session worker — separate queue with session pinning.
@@ -488,7 +502,7 @@ func main() {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 	}
@@ -548,6 +562,14 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	if scheduleActivities != nil {
 		w.RegisterActivityWithOptions(scheduleActivities.CreateScheduledRun, activity.RegisterOptions{
 			Name: "ScheduledAgentActivities.CreateScheduledRun",
+		})
+	}
+
+	// Register recurring template scheduler workflow and activities.
+	w.RegisterWorkflow(temporalapp.PMRecurringTemplateSchedulerWorkflow)
+	if recurringActivities != nil {
+		w.RegisterActivityWithOptions(recurringActivities.ProcessDueTemplatesActivity, activity.RegisterOptions{
+			Name: "PMRecurringTemplateActivities.ProcessDueTemplatesActivity",
 		})
 	}
 
