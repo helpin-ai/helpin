@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { Send, Smile, Paperclip, StickyNote, MessageCircle } from 'lucide-react';
+import { Send, Paperclip, StickyNote, MessageCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -17,6 +17,7 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { cn } from '@/lib/utils';
 import type { AssignableMember } from '@/lib/types';
+import { EmojiPicker } from './EmojiPicker';
 
 interface ReplyComposerProps {
   workspaceId: string;
@@ -375,14 +376,13 @@ export function ReplyComposer({ workspaceId, conversationId }: ReplyComposerProp
       {/* Bottom toolbar */}
       <div className="flex items-center justify-between px-3 pb-2.5">
         <div className="flex items-center gap-0.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
-                <Smile className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Emoji</TooltipContent>
-          </Tooltip>
+          <EmojiPicker
+            onEmojiSelect={(emoji) => {
+              if (editorRef.current) {
+                editorRef.current.chain().focus().insertContent(emoji).run();
+              }
+            }}
+          />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">

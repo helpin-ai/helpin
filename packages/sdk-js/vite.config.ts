@@ -40,8 +40,8 @@ export default defineConfig(({ command }) => {
     resolve: {
       alias: [
         { find: /^@helpin\/widget-core\/styles/, replacement: resolve(__dirname, '../widget-core/src/styles/widget.css') },
-        { find: /^@helpin\/widget-core$/, replacement: resolve(__dirname, '../widget-core/dist/index.js') },
-        { find: /^@helpin\/shared$/, replacement: resolve(__dirname, '../shared/dist/index.js') },
+        { find: /^@helpin\/widget-core$/, replacement: resolve(__dirname, '../widget-core/src/index.ts') },
+        { find: /^@helpin\/shared$/, replacement: resolve(__dirname, '../shared/src/index.ts') },
       ],
     },
     build: {

@@ -1,6 +1,7 @@
 import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { PaperclipIcon, SmileIcon, SendIcon } from './icons';
+import { PaperclipIcon, SendIcon } from './icons';
+import { EmojiPicker } from './EmojiPicker';
 
 interface ComposeBarProps {
   onSend: (content: string) => void;
@@ -42,6 +43,22 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
     }
   };
 
+  const handleEmojiSelect = (emoji: string) => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newValue = message.slice(0, start) + emoji + message.slice(end);
+      setMessage(newValue);
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + emoji.length;
+        textarea.focus();
+      }, 0);
+    } else {
+      setMessage(message + emoji);
+    }
+  };
+
   const canSend = message.trim().length > 0 && !disabled;
 
   return (
@@ -68,14 +85,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
             >
               <PaperclipIcon size={20} />
             </button>
-            <button
-              type="button"
-              className="helpin-compose-tool-btn"
-              aria-label="Add emoji"
-              tabIndex={0}
-            >
-              <SmileIcon size={20} />
-            </button>
+            <EmojiPicker onEmojiSelect={handleEmojiSelect} />
           </div>
           <button
             type="submit"

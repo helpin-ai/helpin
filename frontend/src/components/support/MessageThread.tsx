@@ -25,7 +25,7 @@ import { agentService } from '@/lib/services/agentService';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
-import { getDayLabel, isSameDay, getInitial } from './helpers';
+import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
 import { AgentRunsCard } from './AgentRunsCard';
@@ -311,16 +311,19 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
       // Check if consecutive (same sender within 2 minutes, same type)
       const prev = idx > 0 ? messages[idx - 1] : null;
+      const currentSenderType = getEffectiveSenderType(msg);
+      const prevSenderType = prev ? getEffectiveSenderType(prev) : null;
       const isConsecutive = prev !== null
-        && prev.sender_type === msg.sender_type
+        && prevSenderType === currentSenderType
         && prev.is_internal === msg.is_internal
         && isSameDay(prev.created_at, msg.created_at)
         && (new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime()) < 120000;
 
       // Check if this is the last message in a consecutive group
       const next = idx < messages.length - 1 ? messages[idx + 1] : null;
+      const nextSenderType = next ? getEffectiveSenderType(next) : null;
       const isLastInGroup = next === null
-        || next.sender_type !== msg.sender_type
+        || nextSenderType !== currentSenderType
         || next.is_internal !== msg.is_internal
         || !isSameDay(msg.created_at, next.created_at)
         || (new Date(next.created_at).getTime() - new Date(msg.created_at).getTime()) >= 120000;

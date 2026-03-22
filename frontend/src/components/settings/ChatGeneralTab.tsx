@@ -15,6 +15,7 @@ import { WidgetPreview } from './WidgetPreview';
 import { CodeBlock } from '@/components/ui/code-block';
 import { BrandColorPicker } from '@/components/pm/ColorPicker';
 import { SupportKnowledgeSourcesField } from './SupportKnowledgeSourcesField';
+import { SupportContentSourcesField } from './SupportContentSourcesField';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
@@ -863,14 +864,28 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                   <div className="space-y-2">
                     <Label className="text-sm">Knowledge Sources</Label>
                     <p className="text-xs text-muted-foreground mb-2">
-                      Select help center spaces to chunk, embed, and search during AI replies. Published document updates re-index automatically.
+                      Support AI searches both help center docs and synced website content. Keep both sources current so replies stay grounded.
                     </p>
-                    <SupportKnowledgeSourcesField
-                      spaces={externalDocsSpaces}
-                      knowledgeSources={externalKnowledgeSources}
-                      onToggle={toggleSpace}
-                      disabled={updateKnowledgeSources.isPending}
-                    />
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Help Center Docs</p>
+                        <SupportKnowledgeSourcesField
+                          spaces={externalDocsSpaces}
+                          knowledgeSources={externalKnowledgeSources}
+                          onToggle={toggleSpace}
+                          disabled={updateKnowledgeSources.isPending}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Website Content</p>
+                        <SupportContentSourcesField
+                          workspaceId={workspaceId}
+                          agentId={activeAgentIdValue}
+                          disabled={updateKnowledgeSources.isPending}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
 

@@ -4,7 +4,7 @@ import { Bot, CheckCheck, CheckCircle2, ChevronDown, ChevronUp, FileText, Rotate
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import type { AIMessageMetadata, SupportMessage, TicketSource } from '@/lib/pmTypes';
-import { formatTimestamp, getInitial, getAvatarColor } from './helpers';
+import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata } from './helpers';
 
 /** Splits text on @mention patterns and wraps them in highlight spans. */
 function renderMentionHighlights(content: string): ReactNode[] | null {
@@ -38,7 +38,8 @@ const SOURCE_LABELS: Record<string, string> = {
 const SENDER_TYPE_LABELS: Record<string, string> = {
   customer: 'Customer',
   user: 'Agent',
-  agent: 'AI Agent',
+  agent: 'Agent',
+  ai: 'AI Agent',
 };
 
 function findTrailingAIContractStart(content: string): number {
@@ -86,14 +87,18 @@ interface MessageBubbleProps {
 
 export const MessageBubble = memo(function MessageBubble({ message, isConsecutive, isLastInGroup = true, source, receiptStatus }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
-  const isCustomer = message.sender_type === 'customer';
-  const isAgent = message.sender_type === 'agent';
+  const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
+  const effectiveSenderType = getEffectiveSenderType(message);
+  const isCustomer = effectiveSenderType === 'customer';
+  const isAI = effectiveSenderType === 'ai';
+  const isAgent = effectiveSenderType === 'agent';
   const isInternal = message.is_internal;
   const senderName = message.sender_display_name
-    ?? (isCustomer ? 'Customer' : isAgent ? 'Agent' : currentUser?.full_name ?? 'You');
+    ?? (isCustomer ? 'Customer' : isAI ? HELPIN_AI_DISPLAY_NAME : isAgent ? 'Agent' : currentUser?.full_name ?? 'You');
+  const resolvedSenderName = isAI ? HELPIN_AI_DISPLAY_NAME : senderName;
   const showAvatar = isLastInGroup;
   const fullTimestamp = formatTimestamp(message.created_at);
-  const senderLabel = SENDER_TYPE_LABELS[message.sender_type] ?? message.sender_type;
+  const senderLabel = SENDER_TYPE_LABELS[effectiveSenderType] ?? effectiveSenderType;
   const sourceLabel = source ? SOURCE_LABELS[source] ?? source : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
@@ -127,15 +132,6 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
     return message.content;
   }, [message.content]);
 
-  // Parse AI metadata if present
-  const aiMeta = useMemo<AIMessageMetadata | null>(() => {
-    if (!message.metadata) return null;
-    try {
-      const meta = JSON.parse(message.metadata);
-      return meta.ai_auto_reply ? meta : null;
-    } catch { return null; }
-  }, [message.metadata]);
-
   // Highlight @mentions in internal notes
   const mentionParts = useMemo(() => {
     if (!isInternal) return null;
@@ -146,7 +142,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
 
   const tooltipContent = (
     <div className="space-y-0.5 text-xs">
-      <div className="font-medium">{senderName}</div>
+      <div className="font-medium">{resolvedSenderName}</div>
       <div className="text-muted-foreground">{fullTimestamp}</div>
       <div className="text-muted-foreground">
         {senderLabel}
@@ -179,16 +175,16 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
           </TooltipTrigger>
           <TooltipContent side="left">
             <div className="space-y-0.5 text-xs">
-              <div className="font-medium">{senderName}</div>
+              <div className="font-medium">{resolvedSenderName}</div>
               <div className="text-muted-foreground">{fullTimestamp}</div>
             </div>
           </TooltipContent>
         </Tooltip>
         {avatarUrl ? (
-          <img src={avatarUrl} alt={senderName} className="h-7 w-7 rounded-full object-cover shadow-sm" />
+          <img src={avatarUrl} alt={resolvedSenderName} className="h-7 w-7 rounded-full object-cover shadow-sm" />
         ) : (
-          <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || senderName)}`}>
-            {getInitial(senderName)}
+          <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || resolvedSenderName)}`}>
+            {getInitial(resolvedSenderName)}
           </div>
         )}
       </div>
@@ -206,7 +202,7 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
                 <div className="mb-1.5 flex items-center gap-1.5">
                   <StickyNote className="h-3 w-3 text-amber-500 dark:text-amber-400" />
                   <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                    <span className="font-semibold">{senderName}</span>
+                    <span className="font-semibold">{resolvedSenderName}</span>
                     <span className="font-normal"> left a private note</span>
                   </span>
                 </div>
@@ -228,40 +224,41 @@ export const MessageBubble = memo(function MessageBubble({ message, isConsecutiv
 
   // ── Chat bubble ──
   const avatarUrl = message.sender_avatar_url;
+  const showBotAvatar = isAI || isAgent;
 
   const avatarEl = isCustomer ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || senderName)}`}>
-          {getInitial(senderName)}
+        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || resolvedSenderName)}`}>
+          {getInitial(resolvedSenderName)}
         </div>
       </TooltipTrigger>
-      <TooltipContent side="left"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+      <TooltipContent side="left"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
   ) : avatarUrl ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <img src={avatarUrl} alt={senderName} className="h-7 w-7 shrink-0 rounded-full object-cover shadow-sm" />
+        <img src={avatarUrl} alt={resolvedSenderName} className="h-7 w-7 shrink-0 rounded-full object-cover shadow-sm" />
       </TooltipTrigger>
-      <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+      <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
-  ) : isAgent ? (
+  ) : showBotAvatar ? (
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary shadow-sm">
           <Bot className="h-3.5 w-3.5" />
         </div>
       </TooltipTrigger>
-      <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+      <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
   ) : (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || senderName)}`}>
-          {getInitial(senderName)}
+        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold shadow-sm ${getAvatarColor(message.sender_user_id || resolvedSenderName)}`}>
+          {getInitial(resolvedSenderName)}
         </div>
       </TooltipTrigger>
-      <TooltipContent side="right"><span className="text-xs font-medium">{senderName}</span></TooltipContent>
+      <TooltipContent side="right"><span className="text-xs font-medium">{resolvedSenderName}</span></TooltipContent>
     </Tooltip>
   );
 

@@ -36,6 +36,8 @@ export { HelpCollectionView } from './components/HelpCollectionView';
 export { HelpArticleView } from './components/HelpArticleView';
 export { ConversationView } from './components/ConversationView';
 export { ConversationListView } from './components/ConversationListView';
+export { loadEmojiCatalog } from './components/emoji-loader';
+export type { EmojiCatalog } from './components/emoji-catalog';
 
 // ─── Mount API ───────────────────────────────────────────────
 // Consumers call mountWidget() instead of importing preact directly.

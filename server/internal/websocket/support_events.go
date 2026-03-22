@@ -35,6 +35,7 @@ func SupportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID 
 		SenderType:     msg.SenderType,
 		SenderName:     msg.SenderDisplayName,
 		SenderAvatar:   msg.SenderAvatarURL,
+		Metadata:       nilIfEmpty(msg.Metadata),
 		CreatedAt:      msg.CreatedAt.Format(time.RFC3339),
 		ViaChannel:     derefStr(msg.ViaChannel),
 	})
@@ -42,4 +43,11 @@ func SupportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID 
 		event.Data = payload
 	}
 	return event
+}
+
+func nilIfEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
