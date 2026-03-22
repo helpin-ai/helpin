@@ -130,6 +130,31 @@ func TestRenderHTML_Blockquote(t *testing.T) {
 	}
 }
 
+func TestRenderHTML_Callout(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"callout","attrs":{"variant":"yellow"},"content":[{"type":"paragraph","content":[{"type":"text","text":"This is a warning."}]}]}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `<aside class="docs-callout docs-callout--yellow"`) {
+		t.Errorf("expected callout aside with variant class, got: %s", got)
+	}
+	if !strings.Contains(got, "This is a warning.") {
+		t.Errorf("expected callout content, got: %s", got)
+	}
+}
+
+func TestRenderHTML_CalloutDefaultVariant(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"callout","content":[{"type":"paragraph","content":[{"type":"text","text":"No variant."}]}]}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `docs-callout--grey`) {
+		t.Errorf("expected default grey variant, got: %s", got)
+	}
+}
+
 func TestRenderHTML_HorizontalRule(t *testing.T) {
 	input := `{"type":"doc","content":[{"type":"horizontalRule"}]}`
 	got, err := RenderHTML(json.RawMessage(input))

@@ -1,4 +1,4 @@
-import { Copy, Pause, Play, Square, StepForward, Zap } from 'lucide-react';
+import { Copy, Pause, Play, StepForward, Trash2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { RecurringTemplateDetail } from '@/lib/pmTypes';
 import { RecurringTemplateSummary } from '@/components/pm/RecurringTemplateSummary';
@@ -59,7 +59,7 @@ export function RecurringTemplateList({
                 <>
                   {onView ? (
                     <Button type="button" variant="ghost" size="xs" onClick={() => onView(item)}>
-                      View
+                      History
                     </Button>
                   ) : null}
                   {onEdit ? (
@@ -103,8 +103,8 @@ export function RecurringTemplateList({
                 Duplicate
               </Button>
               <Button type="button" variant="destructive" size="xs" onClick={() => onStop?.(item)}>
-                <Square className="h-3 w-3" />
-                Stop
+                <Trash2 className="h-3 w-3" />
+                Delete
               </Button>
             </div>
           </div>
