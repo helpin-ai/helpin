@@ -18,6 +18,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useCreateDocsDocument, useDocsSpaces, useDocsCollections } from '@/hooks/queries'
+import { ICON_MAP } from '@/components/ui/icon-picker'
+import { FolderOpen } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface CreateDocumentDialogProps {
@@ -104,11 +106,17 @@ export function CreateDocumentDialog({
                   <SelectValue placeholder="Select a space" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(spaces ?? []).map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.icon ? `${s.icon} ` : ''}{s.name}
-                    </SelectItem>
-                  ))}
+                  {(spaces ?? []).map((s) => {
+                    const SpaceIcon = s.icon ? ICON_MAP[s.icon] : null;
+                    return (
+                      <SelectItem key={s.id} value={s.id}>
+                        <span className="inline-flex items-center gap-1.5">
+                          {SpaceIcon && <SpaceIcon className="h-4 w-4 shrink-0" />}
+                          <span>{s.name}</span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -122,11 +130,17 @@ export function CreateDocumentDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">None</SelectItem>
-                    {(collections ?? []).map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.icon ? `${c.icon} ` : ''}{c.name}
-                      </SelectItem>
-                    ))}
+                    {(collections ?? []).map((c) => {
+                      const ColIcon = c.icon ? ICON_MAP[c.icon] : null;
+                      return (
+                        <SelectItem key={c.id} value={c.id}>
+                          <span className="inline-flex items-center gap-1.5">
+                            {ColIcon ? <ColIcon className="h-4 w-4 shrink-0" /> : <FolderOpen className="h-4 w-4 shrink-0" />}
+                            <span>{c.name}</span>
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>

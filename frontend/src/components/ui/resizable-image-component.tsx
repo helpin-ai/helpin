@@ -1,15 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import { Maximize2, Download, Copy, Link2, Trash2, X } from 'lucide-react';
+import { AlignLeft, AlignCenter, AlignRight, Maximize2, Download, Copy, Link2, Trash2, X, Check, TextCursorInput } from 'lucide-react';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { LoadingImage } from '@/components/ui/loading-image';
 import { useImageActions } from '@/hooks/useImageActions';
 
 const MIN_WIDTH = 100;
 
-export function ResizableImageComponent({ node, updateAttributes, selected, deleteNode }: NodeViewProps) {
-  const { src, alt, width, height, aspectRatio: storedAspectRatio } = node.attrs;
+const ALIGNMENT_CLASS: Record<string, string> = {
+  left: 'justify-start',
+  center: 'justify-center',
+  right: 'justify-end',
+};
+
+const ALIGNMENT_OPTIONS = [
+  { value: 'left', label: 'Left', icon: AlignLeft },
+  { value: 'center', label: 'Center', icon: AlignCenter },
+  { value: 'right', label: 'Right', icon: AlignRight },
+] as const;
+
+export function ResizableImageComponent({ node, updateAttributes, selected, deleteNode, editor }: NodeViewProps) {
+  const { src, alt, width, height, aspectRatio: storedAspectRatio, alignment, linkUrl, linkNewTab } = node.attrs;
   const { copyImage, downloadImage, openInNewTab } = useImageActions();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -20,10 +32,27 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
   const [aspectRatio, setAspectRatio] = useState<number | null>(storedAspectRatio ?? null);
   const [isResizing, setIsResizing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showAlignMenu, setShowAlignMenu] = useState(false);
+  const [showAltInput, setShowAltInput] = useState(false);
+  const [altText, setAltText] = useState<string>(alt ?? '');
+  const [linkInput, setLinkInput] = useState<string>(linkUrl ?? '');
+  const [linkNewTabInput, setLinkNewTabInput] = useState<boolean>(linkNewTab ?? true);
+
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   const containerRectRef = useRef<DOMRect | null>(null);
   const aspectRatioRef = useRef(aspectRatio);
   aspectRatioRef.current = aspectRatio;
+
+  const editable = editor?.isEditable ?? true;
+
+  // Sync from external changes
+  useEffect(() => {
+    setAltText(alt ?? '');
+    setLinkInput(linkUrl ?? '');
+    setLinkNewTabInput(linkNewTab ?? true);
+  }, [alt, linkUrl, linkNewTab]);
 
   // On image load, compute aspect ratio and initial pixel size
   const handleImageLoad = useCallback(() => {
@@ -34,7 +63,6 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
     setAspectRatio(ar);
     aspectRatioRef.current = ar;
 
-    // If width is still the default percentage, convert to pixels
     if (width === '100%' || width === '35%' || !width) {
       const editorContainer = img.closest('.overflow-hidden');
       const editorWidth = editorContainer?.clientWidth ?? 600;
@@ -66,7 +94,6 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
     setCurrentHeight(`${newHeight}px`);
   }, []);
 
-  // We need a ref-based version for the cleanup
   const currentSizeRef = useRef({ width: currentWidth, height: currentHeight });
   currentSizeRef.current = { width: currentWidth, height: currentHeight };
 
@@ -133,8 +160,39 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
     return () => window.removeEventListener('keydown', onKey);
   }, [isFullscreen]);
 
+  // Close settings on click outside
+  useEffect(() => {
+    if (!showSettings) return;
+    const handleClick = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setShowSettings(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showSettings]);
+
+  const saveAlt = () => {
+    updateAttributes({ alt: altText || null });
+  };
+
+  const saveLink = () => {
+    const url = linkInput.trim();
+    updateAttributes({
+      linkUrl: url || null,
+      linkNewTab: linkNewTabInput,
+    });
+  };
+
+  const clearLink = () => {
+    setLinkInput('');
+    updateAttributes({ linkUrl: null, linkNewTab: true });
+  };
+
+  const currentAlignment = alignment || 'center';
+
   return (
-    <NodeViewWrapper className="relative my-2" data-drag-handle>
+    <NodeViewWrapper className={`relative my-2 flex ${ALIGNMENT_CLASS[currentAlignment] ?? 'justify-center'}`} data-drag-handle>
       <div
         ref={containerRef}
         className="group/img relative inline-block max-w-full"
@@ -158,85 +216,208 @@ export function ResizableImageComponent({ node, updateAttributes, selected, dele
           }}
         />
 
-        {/* Selection border — blue, visible on select or hover */}
+        {/* Selection border — only on hover or resize, not on programmatic selection */}
         <div
           className={`pointer-events-none absolute inset-0 rounded-md transition-opacity duration-100 ${
-            selected || isResizing ? 'opacity-100' : 'opacity-0 group-hover/img:opacity-100'
+            isResizing ? 'opacity-100' : 'opacity-0 group-hover/img:opacity-100'
           }`}
           style={{ boxShadow: '0 0 0 2.5px #3b82f6', borderRadius: '0.375rem' }}
         />
 
-        {/* Floating toolbar — inside image, top-right corner */}
-        <div
-          className={`absolute top-2 right-2 flex items-center rounded-lg border border-border bg-popover/95 shadow-md backdrop-blur-sm transition-opacity duration-100 ${
-            isResizing
-              ? 'pointer-events-none opacity-0'
-              : selected
+        {/* Floating toolbar — top-right */}
+        {editable && (
+          <div
+            className={`absolute top-2 right-2 flex items-center rounded-lg border border-border bg-popover/95 shadow-md backdrop-blur-sm transition-opacity duration-100 ${
+              isResizing
+                ? 'pointer-events-none opacity-0'
+                : 'pointer-events-none opacity-0 group-hover/img:pointer-events-auto group-hover/img:opacity-100'
+            }`}
+          >
+            {/* Alignment dropdown */}
+            <div className="relative">
+              <QuickTooltip label="Alignment">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowAlignMenu(!showAlignMenu); setShowAltInput(false); setShowSettings(false); }}
+                  className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {currentAlignment === 'left' ? <AlignLeft className="h-4 w-4" /> :
+                   currentAlignment === 'right' ? <AlignRight className="h-4 w-4" /> :
+                   <AlignCenter className="h-4 w-4" />}
+                </button>
+              </QuickTooltip>
+              {showAlignMenu && (
+                <div className="absolute top-9 left-0 z-50 w-32 rounded-lg border bg-popover p-1 shadow-md">
+                  {ALIGNMENT_OPTIONS.map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateAttributes({ alignment: value });
+                        setShowAlignMenu(false);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                        currentAlignment === value ? 'text-primary bg-accent' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Alt text */}
+            <div className="relative">
+              <QuickTooltip label="Alt text">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowAltInput(!showAltInput); setShowAlignMenu(false); setShowSettings(false); }}
+                  className={`flex h-8 w-8 items-center justify-center transition-colors ${showAltInput ? 'text-primary' : altText ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  <TextCursorInput className="h-4 w-4" />
+                </button>
+              </QuickTooltip>
+              {showAltInput && (
+                <div className="absolute top-9 left-1/2 -translate-x-1/2 z-50 w-56 rounded-lg border bg-popover p-2 shadow-md" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    value={altText}
+                    onChange={(e) => setAltText(e.target.value)}
+                    onBlur={saveAlt}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { saveAlt(); setShowAltInput(false); } }}
+                    placeholder="Describe this image..."
+                    className="w-full rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                    autoFocus
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="mx-0.5 h-4 w-px bg-border" />
+
+            <QuickTooltip label="View full size">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
+                className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+            </QuickTooltip>
+            <QuickTooltip label="Download">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); downloadImage(src, alt); }}
+                className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            </QuickTooltip>
+            <QuickTooltip label="Copy image">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); copyImage(src); }}
+                className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+            </QuickTooltip>
+            <QuickTooltip label="Add link">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings); setShowAlignMenu(false); setShowAltInput(false); }}
+                className={`flex h-8 w-8 items-center justify-center transition-colors ${showSettings ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                <Link2 className="h-4 w-4" />
+              </button>
+            </QuickTooltip>
+
+            <div className="mx-0.5 h-4 w-px bg-border" />
+            <QuickTooltip label="Delete">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteNode();
+                }}
+                className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </QuickTooltip>
+          </div>
+        )}
+
+        {/* Settings panel — below toolbar */}
+        {editable && showSettings && (
+          <div
+            ref={settingsRef}
+            className="absolute top-12 right-2 z-50 w-72 rounded-lg border bg-popover p-3 shadow-lg space-y-3"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* Link URL */}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Link URL</label>
+              <div className="flex gap-1.5">
+                <input
+                  type="url"
+                  value={linkInput}
+                  onChange={(e) => setLinkInput(e.target.value)}
+                  onBlur={saveLink}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { saveLink(); } }}
+                  placeholder="https://..."
+                  className="flex-1 rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                {linkInput && (
+                  <button
+                    type="button"
+                    onClick={clearLink}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Open in new tab */}
+            <button
+              type="button"
+              className="flex items-center gap-2 cursor-pointer"
+              onClick={() => {
+                const newVal = !linkNewTabInput;
+                setLinkNewTabInput(newVal);
+                updateAttributes({ linkNewTab: newVal });
+              }}
+            >
+              <span
+                className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${
+                  linkNewTabInput ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'
+                }`}
+              >
+                {linkNewTabInput && <Check className="h-3 w-3" />}
+              </span>
+              <span className="text-sm">Open in new tab</span>
+            </button>
+          </div>
+        )}
+
+        {/* Resize handle */}
+        {editable && (
+          <div
+            className={`absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-nwse-resize rounded-full border-2 border-white bg-primary shadow-sm transition-opacity duration-100 ${
+              isResizing
                 ? 'pointer-events-auto opacity-100'
                 : 'pointer-events-none opacity-0 group-hover/img:pointer-events-auto group-hover/img:opacity-100'
-          }`}
-        >
-          <QuickTooltip label="View full size">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
-              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Maximize2 className="h-4 w-4" />
-            </button>
-          </QuickTooltip>
-          <QuickTooltip label="Download">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); downloadImage(src, alt); }}
-              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Download className="h-4 w-4" />
-            </button>
-          </QuickTooltip>
-          <QuickTooltip label="Copy image">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); copyImage(src); }}
-              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Copy className="h-4 w-4" />
-            </button>
-          </QuickTooltip>
-          <QuickTooltip label="Open in new tab">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); openInNewTab(src); }}
-              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Link2 className="h-4 w-4" />
-            </button>
-          </QuickTooltip>
-          <div className="mx-0.5 h-4 w-px bg-border" />
-          <QuickTooltip label="Delete">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteNode();
-              }}
-              className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-destructive"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </QuickTooltip>
-        </div>
-
-        {/* Resize handle — bottom-right corner */}
-        <div
-          className={`absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-nwse-resize rounded-full border-2 border-white bg-primary shadow-sm transition-opacity duration-100 ${
-            isResizing
-              ? 'pointer-events-auto opacity-100'
-              : 'pointer-events-none opacity-0 group-hover/img:pointer-events-auto group-hover/img:opacity-100'
-          }`}
-          onMouseDown={handleResizeStart}
-          onTouchStart={handleResizeStart}
-        />
+            }`}
+            onMouseDown={handleResizeStart}
+            onTouchStart={handleResizeStart}
+          />
+        )}
       </div>
 
       {/* Fullscreen overlay */}

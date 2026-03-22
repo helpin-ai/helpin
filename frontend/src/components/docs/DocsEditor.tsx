@@ -4,25 +4,43 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 import {
+  AlertCircle,
   Bold,
   Check,
   ChevronDown,
   Code2,
   Copy,
+  ExternalLink,
   FileDown,
   FileUp,
   Heading2,
+  Heading3,
   ImagePlus,
   Italic,
   Link2,
   List,
   ListOrdered,
   Loader2,
+  Plus,
   Quote,
   Strikethrough,
+  Trash2,
+  Underline,
   X,
 } from 'lucide-react'
+import UnderlineExtension from '@tiptap/extension-underline'
+import Subscript from '@tiptap/extension-subscript'
+import Superscript from '@tiptap/extension-superscript'
+import { Table } from '@tiptap/extension-table'
+import { TableRow } from '@tiptap/extension-table-row'
+import { TableHeader } from '@tiptap/extension-table-header'
+import { TableCell } from '@tiptap/extension-table-cell'
 import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
+import { SlashMenuExtension } from './SlashMenuExtension'
+import { SlashMenu } from './SlashMenu'
+import { CalloutExtension } from './CalloutExtension'
+import { TableControls } from './TableControls'
+import { BlockGapInserter } from './BlockGapInserter'
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
 import { toast } from 'sonner'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
@@ -64,7 +82,7 @@ function ToolbarButton({
           e.preventDefault() // prevent losing selection
           onClick()
         }}
-        className={`rounded p-1.5 transition-colors ${
+        className={`rounded p-2 transition-colors ${
           active
             ? 'bg-white/20 text-white'
             : 'text-white/70 hover:bg-white/10 hover:text-white'
@@ -144,14 +162,77 @@ function FloatingToolbar({ editor, uploadConfig, onInsertImage }: {
 }) {
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [showLinkPopover, setShowLinkPopover] = useState(false)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkNewTab, setLinkNewTab] = useState(true)
+  const [showFormatMenu, setShowFormatMenu] = useState(false)
+  const [linkOnlyMode, setLinkOnlyMode] = useState(false) // show just link popover, no toolbar
+  const linkOnlyRef = useRef(false)
+  const linkInputRef = useRef<HTMLInputElement>(null)
+  const savedSelectionRef = useRef<{ from: number; to: number } | null>(null)
 
   useEffect(() => {
     if (!editor) return
 
     const updatePosition = () => {
       const { from, to, empty } = editor.state.selection
+
+      // Cursor on a link (no selection) — show link-only popover
+      // Only trigger when cursor is truly inside the link, not at the boundary
+      const $pos = editor.state.doc.resolve(from)
+      const linkMarkAtCursor = $pos.marks().find(m => m.type.name === 'link')
+      const charBeforeHasLink = from > 0 && editor.state.doc.resolve(from - 1).marks().some(m => m.type.name === 'link')
+      const isInsideLink = !!(linkMarkAtCursor && charBeforeHasLink)
+
+      if (empty && isInsideLink) {
+        const coords = editor.view.coordsAtPos(from)
+        const toolbar = toolbarRef.current
+        const toolbarWidth = toolbar?.offsetWidth ?? 384
+        setPos({
+          top: coords.bottom + window.scrollY + 4,
+          left: coords.left + window.scrollX - toolbarWidth / 2,
+        })
+
+        if (!linkOnlyRef.current) {
+          const href = editor.getAttributes('link').href ?? ''
+          setLinkUrl(href)
+          setLinkNewTab(true)
+          const $from = editor.state.doc.resolve(from)
+          const linkMark = $from.marks().find(m => m.type.name === 'link')
+          if (linkMark) {
+            let linkFrom = from, linkTo = from
+            editor.state.doc.nodesBetween(Math.max(0, from - 200), Math.min(editor.state.doc.content.size, from + 200), (node, pos) => {
+              if (node.isText && node.marks.some(m => m.type.name === 'link' && m.attrs.href === linkMark.attrs.href)) {
+                if (pos <= from && pos + node.nodeSize >= from) {
+                  linkFrom = pos
+                  linkTo = pos + node.nodeSize
+                }
+              }
+            })
+            savedSelectionRef.current = { from: linkFrom, to: linkTo }
+          }
+          setShowLinkPopover(true)
+          setLinkOnlyMode(true)
+          linkOnlyRef.current = true
+        }
+        return
+      }
+
+      // Cursor moved away from link — close link-only popover and clear position
+      if (linkOnlyRef.current) {
+        setShowLinkPopover(false)
+        setLinkOnlyMode(false)
+        linkOnlyRef.current = false
+        savedSelectionRef.current = null
+        lastPosRef.current = null
+      }
+
       if (empty || from === to) {
         setPos(null)
+        if (!linkOnlyRef.current) {
+          lastPosRef.current = null
+          setShowFormatMenu(false)
+        }
         return
       }
 
@@ -178,100 +259,260 @@ function FloatingToolbar({ editor, uploadConfig, onInsertImage }: {
     }
 
     editor.on('selectionUpdate', updatePosition)
-    editor.on('blur', () => setPos(null))
+    const handleBlur = () => {
+      // Delay blur so clicks on toolbar/popover are processed first
+      setTimeout(() => {
+        // Don't hide if focus moved to our toolbar (e.g. link input)
+        if (toolbarRef.current?.contains(document.activeElement)) return
+        setPos(null)
+        // Clear stale position only if no popover is open
+        if (!linkOnlyRef.current) {
+          lastPosRef.current = null
+        }
+      }, 150)
+    }
+    editor.on('blur', handleBlur)
 
     return () => {
       editor.off('selectionUpdate', updatePosition)
-      editor.off('blur', () => setPos(null))
+      editor.off('blur', handleBlur)
     }
   }, [editor])
 
-  if (!editor || !pos) return null
+  // Close popovers on click outside toolbar
+  useEffect(() => {
+    if (!showLinkPopover && !showFormatMenu) return
+    const handleClick = (e: MouseEvent) => {
+      if (toolbarRef.current?.contains(e.target as Node)) return
+      setShowLinkPopover(false)
+      setShowFormatMenu(false)
+      savedSelectionRef.current = null
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showLinkPopover, showFormatMenu])
 
-  const addLink = () => {
-    const url = window.prompt('URL')
-    if (!url) return
-    editor.chain().focus().setLink({ href: url }).run()
+  // Keep toolbar visible while link popover or format menu is open, even if selection is lost
+  const lastPosRef = useRef(pos)
+  if (pos) lastPosRef.current = pos
+  const activePos = pos ?? lastPosRef.current
+
+  if (!editor) return null
+  if (!activePos && !showLinkPopover && !showFormatMenu) return null
+
+  const openLinkPopover = () => {
+    // Save selection before input steals focus
+    const { from, to } = editor.state.selection
+    savedSelectionRef.current = { from, to }
+    const existing = editor.getAttributes('link').href ?? ''
+    setLinkUrl(existing)
+    setLinkNewTab(true)
+    setShowLinkPopover(true)
+    setShowFormatMenu(false)
+    setTimeout(() => linkInputRef.current?.focus(), 50)
+  }
+
+  const normalizeUrl = (raw: string): string => {
+    const s = raw.trim()
+    if (!s) return ''
+    // Already has protocol
+    if (/^https?:\/\//i.test(s)) return s
+    // Mailto
+    if (/^mailto:/i.test(s)) return s
+    // Tel
+    if (/^tel:/i.test(s)) return s
+    // Anchor link
+    if (s.startsWith('#') || s.startsWith('/')) return s
+    // Looks like a domain — add https
+    return `https://${s}`
+  }
+
+  const isValidUrl = (raw: string): boolean => {
+    const s = raw.trim()
+    if (!s) return false
+    // Anchor links and relative paths
+    if (s.startsWith('#') || s.startsWith('/')) return true
+    // Mailto and tel
+    if (/^mailto:.+/i.test(s) || /^tel:.+/i.test(s)) return true
+    // Must contain a dot for domain (e.g. google.com, docs.example.co.uk)
+    const normalized = /^https?:\/\//i.test(s) ? s : `https://${s}`
+    try {
+      const url = new URL(normalized)
+      return url.hostname.includes('.')
+    } catch {
+      return false
+    }
+  }
+
+  const urlValid = isValidUrl(linkUrl)
+
+  const applyLink = () => {
+    const url = normalizeUrl(linkUrl)
+    if (url && savedSelectionRef.current) {
+      const { from, to } = savedSelectionRef.current
+      editor.chain()
+        .focus()
+        .setTextSelection({ from, to })
+        .setLink({
+          href: url,
+          target: linkNewTab ? '_blank' : null,
+          rel: linkNewTab ? 'noopener noreferrer' : null,
+        })
+        .run()
+    }
+    setShowLinkPopover(false)
+    setLinkOnlyMode(false)
+    linkOnlyRef.current = false
+    savedSelectionRef.current = null
+  }
+
+  const removeLink = () => {
+    if (savedSelectionRef.current) {
+      const { from, to } = savedSelectionRef.current
+      editor.chain().focus().setTextSelection({ from, to }).unsetLink().run()
+    } else {
+      editor.chain().focus().unsetLink().run()
+    }
+    savedSelectionRef.current = null
+    setShowLinkPopover(false)
+    setLinkOnlyMode(false)
+    linkOnlyRef.current = false
   }
 
   return (
     <div
       ref={toolbarRef}
-      className="fixed z-50 flex items-center gap-0.5 rounded-lg bg-foreground px-1 py-0.5 shadow-xl animate-in fade-in zoom-in-95 duration-150"
-      style={{ top: pos.top, left: pos.left }}
+      className="fixed z-50 flex flex-col items-center gap-0 animate-in fade-in zoom-in-95 duration-150"
+      style={{ top: activePos?.top ?? 0, left: activePos?.left ?? 0 }}
     >
-      <ToolbarButton
-        title="Bold"
-        onClick={() => editor.chain().focus().toggleBold().run()}
-        active={editor.isActive('bold')}
-      >
-        <Bold className="h-3.5 w-3.5" />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Italic"
-        onClick={() => editor.chain().focus().toggleItalic().run()}
-        active={editor.isActive('italic')}
-      >
-        <Italic className="h-3.5 w-3.5" />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Strikethrough"
-        onClick={() => editor.chain().focus().toggleStrike().run()}
-        active={editor.isActive('strike')}
-      >
-        <Strikethrough className="h-3.5 w-3.5" />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Code"
-        onClick={() => editor.chain().focus().toggleCode().run()}
-        active={editor.isActive('code')}
-      >
-        <Code2 className="h-3.5 w-3.5" />
-      </ToolbarButton>
+      {!linkOnlyMode && <div className="flex items-center gap-0.5 rounded-lg bg-foreground px-1.5 py-1 shadow-xl">
+        {/* Bold, Italic, Underline */}
+        <ToolbarButton title="Bold" onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')}>
+          <Bold className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Italic" onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')}>
+          <Italic className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')}>
+          <Underline className="h-4 w-4" />
+        </ToolbarButton>
 
-      <div className="mx-0.5 h-4 w-px bg-white/20" />
+        <div className="mx-0.5 h-4 w-px bg-white/20" />
 
-      <ToolbarButton
-        title="Heading"
-        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-        active={editor.isActive('heading')}
-      >
-        <Heading2 className="h-3.5 w-3.5" />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Bullet list"
-        onClick={() => editor.chain().focus().toggleBulletList().run()}
-        active={editor.isActive('bulletList')}
-      >
-        <List className="h-3.5 w-3.5" />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Ordered list"
-        onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        active={editor.isActive('orderedList')}
-      >
-        <ListOrdered className="h-3.5 w-3.5" />
-      </ToolbarButton>
-      <ToolbarButton
-        title="Blockquote"
-        onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        active={editor.isActive('blockquote')}
-      >
-        <Quote className="h-3.5 w-3.5" />
-      </ToolbarButton>
-      <ToolbarButton title="Link" onClick={addLink} active={editor.isActive('link')}>
-        <Link2 className="h-3.5 w-3.5" />
-      </ToolbarButton>
+        {/* H2, H3 */}
+        <ToolbarButton title="Heading 2" onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })}>
+          <Heading2 className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Heading 3" onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })}>
+          <Heading3 className="h-4 w-4" />
+        </ToolbarButton>
 
-      {uploadConfig && (
-        <>
-          <div className="mx-0.5 h-4 w-px bg-white/20" />
-          <ToolbarButton title="Insert image" onClick={onInsertImage}>
-            <ImagePlus className="h-3.5 w-3.5" />
-          </ToolbarButton>
-        </>
+        <div className="mx-0.5 h-4 w-px bg-white/20" />
+
+        {/* Lists */}
+        <ToolbarButton title="Bullet list" onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')}>
+          <List className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Ordered list" onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')}>
+          <ListOrdered className="h-4 w-4" />
+        </ToolbarButton>
+
+        <div className="mx-0.5 h-4 w-px bg-white/20" />
+
+        {/* Link */}
+        <ToolbarButton title="Link" onClick={openLinkPopover} active={editor.isActive('link') || showLinkPopover}>
+          <Link2 className="h-4 w-4" />
+        </ToolbarButton>
+
+        <div className="mx-0.5 h-4 w-px bg-white/20" />
+
+        {/* Format dropdown */}
+        <ToolbarButton title="Format" onClick={() => { setShowFormatMenu(!showFormatMenu); setShowLinkPopover(false); }} active={showFormatMenu}>
+          <ChevronDown className="h-4 w-4" />
+        </ToolbarButton>
+      </div>}
+
+      {/* Link popover */}
+      {showLinkPopover && (
+        <div className="mt-1 w-96 rounded-lg border bg-popover p-3 shadow-lg space-y-2.5" onMouseDown={(e) => { if ((e.target as HTMLElement).tagName !== 'INPUT') e.preventDefault(); }}>
+          <div className="flex items-center gap-1.5">
+            <input
+              ref={linkInputRef}
+              type="text"
+              value={linkUrl}
+              onChange={(e) => setLinkUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && urlValid) applyLink(); if (e.key === 'Escape') setShowLinkPopover(false); }}
+              placeholder="Paste or type a URL (e.g. google.com)"
+              className={`flex-1 rounded-md border bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-2 ${linkUrl && !urlValid ? 'border-destructive focus:ring-destructive/30' : 'focus:ring-primary/30'}`}
+            />
+            {linkUrl && urlValid && (
+              <QuickTooltip label="Preview link">
+                <button
+                  type="button"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer"
+                  onClick={() => window.open(normalizeUrl(linkUrl), '_blank', 'noopener,noreferrer')}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </button>
+              </QuickTooltip>
+            )}
+          </div>
+          {linkUrl && !urlValid && (
+            <p className="flex items-center gap-1 text-xs text-destructive">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              Please enter a valid URL (e.g. google.com, /page, #section)
+            </p>
+          )}
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-sm cursor-pointer"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setLinkNewTab(!linkNewTab)}
+            >
+              <span className={`flex h-4 w-4 items-center justify-center rounded-sm border transition-colors ${linkNewTab ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                {linkNewTab && <Check className="h-3 w-3" />}
+              </span>
+              <span>Open in new tab</span>
+            </button>
+            <div className="flex gap-1">
+              {editor.isActive('link') && (
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={removeLink} className="rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10 cursor-pointer">Remove</button>
+              )}
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={applyLink} disabled={!urlValid || !linkUrl} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Format dropdown menu */}
+      {showFormatMenu && (
+        <div className="mt-1 w-44 rounded-lg border bg-popover p-1 shadow-lg" onMouseDown={(e) => e.preventDefault()}>
+          <FormatMenuItem label="Normal" active={!editor.isActive('blockquote') && !editor.isActive('codeBlock')} onClick={() => { editor.chain().focus().clearNodes().run(); setShowFormatMenu(false); }} />
+          <FormatMenuItem label="Blockquote" icon={<Quote className="h-3.5 w-3.5" />} active={editor.isActive('blockquote')} onClick={() => { editor.chain().focus().toggleBlockquote().run(); setShowFormatMenu(false); }} />
+          <FormatMenuItem label="Code Block" icon={<Code2 className="h-3.5 w-3.5" />} active={editor.isActive('codeBlock')} onClick={() => { editor.chain().focus().toggleCodeBlock().run(); setShowFormatMenu(false); }} />
+          <div className="my-1 h-px bg-border" />
+          <FormatMenuItem label="Inline Code" active={editor.isActive('code')} onClick={() => { editor.chain().focus().toggleCode().run(); setShowFormatMenu(false); }} />
+          <FormatMenuItem label="Strikethrough" active={editor.isActive('strike')} onClick={() => { editor.chain().focus().toggleStrike().run(); setShowFormatMenu(false); }} />
+          <FormatMenuItem label="Subscript" active={editor.isActive('subscript')} onClick={() => { editor.chain().focus().toggleSubscript().run(); setShowFormatMenu(false); }} />
+          <FormatMenuItem label="Superscript" active={editor.isActive('superscript')} onClick={() => { editor.chain().focus().toggleSuperscript().run(); setShowFormatMenu(false); }} />
+        </div>
       )}
     </div>
+  )
+}
+
+function FormatMenuItem({ label, icon, active, onClick }: { label: string; icon?: React.ReactNode; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors cursor-pointer ${active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}`}
+      onClick={onClick}
+    >
+      {icon && <span className="w-4 shrink-0">{icon}</span>}
+      {!icon && <span className="w-4 shrink-0" />}
+      {label}
+    </button>
   )
 }
 
@@ -510,10 +751,15 @@ export function DocsEditor({
         heading: { levels: [1, 2, 3] },
         link: {
           openOnClick: false,
-          HTMLAttributes: { class: 'text-primary underline cursor-pointer' },
+          HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer' },
         },
       }),
-      Placeholder.configure({ placeholder: 'Start writing your document...' }),
+      Placeholder.configure({
+        placeholder: ({ node }) => {
+          if (node.type.name === 'heading') return 'Heading';
+          return "Type '/' for commands, or start writing...";
+        },
+      }),
       Markdown.configure({
         html: true,
         tightLists: true,
@@ -522,6 +768,15 @@ export function DocsEditor({
         transformCopiedText: false, // Don't force clipboard to markdown — we have explicit "Copy as Markdown"
       }),
       ResizableImageExtension,
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      SlashMenuExtension,
+      CalloutExtension,
+      UnderlineExtension,
+      Subscript,
+      Superscript,
     ],
     content: initialContent ?? { type: 'doc', content: [{ type: 'paragraph' }] },
     editable: !readOnly,
@@ -772,7 +1027,7 @@ img { max-width: 100%; }
       )}
 
       {/* Editor content with title */}
-      <div className={`relative flex-1 ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'}`}>
+      <div className={`relative flex-1 docs-editor-wrapper ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'}`}>
         {/* Markdown menu (left) + Save indicator (right) — floating */}
         {!readOnly && (
           <div className="sticky top-2 z-10 flex items-center justify-between px-4 pointer-events-none">
@@ -859,6 +1114,31 @@ img { max-width: 100%; }
               </div>
             )}
             <EditorContent editor={editor} />
+            {editor && (
+              <>
+                <SlashMenu
+                  editor={editor}
+                  onImageInsert={() => {
+                    // Save cursor position before file picker steals focus
+                    const savedPos = editor.state.selection.from;
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file && uploadConfig) {
+                        // Restore cursor position before inserting
+                        editor.chain().focus().setTextSelection(savedPos).run();
+                        handleImageUpload(file, editor);
+                      }
+                    };
+                    input.click();
+                  }}
+                />
+                <TableControls editor={editor} />
+                <BlockGapInserter editor={editor} />
+              </>
+            )}
             <div className="h-64" />
           </div>
         )}

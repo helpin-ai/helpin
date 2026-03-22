@@ -734,7 +734,9 @@
   font-size: 18px;
 }
 
-.helpin-article-content p,
+.helpin-article-content p {
+  margin: 0 0 1rem;
+}
 .helpin-article-content ul,
 .helpin-article-content ol,
 .helpin-article-content blockquote,
@@ -753,12 +755,53 @@
 
 .helpin-article-content a {
   color: var(--helpin-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.helpin-article-content a:hover {
+  opacity: 0.8;
 }
 
 .helpin-article-content blockquote {
   border-left: 3px solid rgba(99, 102, 241, 0.24);
   padding-left: 14px;
   color: var(--helpin-fg-secondary);
+}
+
+.helpin-article-content hr {
+  border: none;
+  border-top: 1px solid rgba(15, 23, 42, 0.12);
+  margin: 1.5em 0;
+}
+
+.helpin-article-content .docs-callout {
+  border-left: 4px solid;
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin: 0 0 1em;
+}
+.helpin-article-content .docs-callout--blue {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.06);
+}
+.helpin-article-content .docs-callout--green {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(34, 197, 94, 0.06);
+}
+.helpin-article-content .docs-callout--grey {
+  border-color: rgba(156, 163, 175, 0.5);
+  background: rgba(156, 163, 175, 0.06);
+}
+.helpin-article-content .docs-callout--red {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.06);
+}
+.helpin-article-content .docs-callout--yellow {
+  border-color: rgba(234, 179, 8, 0.5);
+  background: rgba(234, 179, 8, 0.06);
+}
+.helpin-article-content .docs-callout > *:last-child {
+  margin-bottom: 0;
 }
 
 .helpin-article-content code {
@@ -797,6 +840,10 @@
 .helpin-article-content td {
   border: 1px solid var(--helpin-border);
   padding: 8px 10px;
+}
+.helpin-article-content th {
+  background: rgba(15, 23, 42, 0.04);
+  font-weight: 600;
 }
 
 /* ===== BOTTOM NAVIGATION ===== */
