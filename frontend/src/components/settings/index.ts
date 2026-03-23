@@ -1,7 +1,6 @@
 export { GeneralTab } from './GeneralTab';
 export { MembersTab } from './MembersTab';
 export { TeamsTab } from './TeamsTab';
-export { AITab } from './AITab';
 export { ProjectDeliveryTab } from './ProjectDeliveryTab';
 export { WorkflowManager } from './WorkflowManager';
 export { AutomationsTab } from './AutomationsTab';

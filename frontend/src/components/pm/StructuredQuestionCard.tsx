@@ -6,10 +6,70 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { StructuredQuestion } from '@/lib/pmTypes';
 
-interface Answer {
+export interface StructuredQuestionAnswer {
   value: string;
   label: string;
   freetextValue?: string;
+}
+
+function findSelectedOption(question: StructuredQuestion, answer?: StructuredQuestionAnswer | null) {
+  if (!answer) return null;
+  return question.options.find((option) => option.value === answer.value) ?? null;
+}
+
+export function hasAllStructuredQuestionAnswers(
+  questions: StructuredQuestion[],
+  answers: Record<string, StructuredQuestionAnswer>,
+) {
+  return questions.every((question) => {
+    const answer = answers[question.id];
+    if (!answer) return false;
+    const selectedOption = findSelectedOption(question, answer);
+    if (selectedOption?.freetext) {
+      return Boolean(answer.freetextValue?.trim());
+    }
+    return true;
+  });
+}
+
+export function formatStructuredQuestionAnswers(
+  questions: StructuredQuestion[],
+  answers: Record<string, StructuredQuestionAnswer>,
+) {
+  const serializedAnswers = questions.flatMap((question) => {
+    const answer = answers[question.id];
+    if (!answer) return [];
+    const selectedOption = findSelectedOption(question, answer);
+    const selectedLabel = selectedOption?.label ?? answer.label;
+    const freetextValue = selectedOption?.freetext ? answer.freetextValue?.trim() : '';
+
+    return [{
+      question_id: question.id,
+      question: question.text,
+      selected_value: answer.value,
+      selected_label: selectedLabel,
+      freetext: freetextValue || undefined,
+    }];
+  });
+
+  if (serializedAnswers.length === 0) return '';
+
+  const summaryLines = [
+    'Interactive question responses:',
+    ...serializedAnswers.map((answer) => (
+      answer.freetext
+        ? `- ${answer.question_id}: ${answer.question} -> ${answer.selected_label} (${answer.freetext})`
+        : `- ${answer.question_id}: ${answer.question} -> ${answer.selected_label}`
+    )),
+  ];
+
+  return [
+    ...summaryLines,
+    '',
+    '```json',
+    JSON.stringify({ answers: serializedAnswers }, null, 2),
+    '```',
+  ].join('\n');
 }
 
 interface Props {
@@ -18,18 +78,12 @@ interface Props {
   disabled?: boolean;
   readOnly?: boolean;
   /** Pre-filled answers for read-only mode (keyed by question id) */
-  answers?: Record<string, Answer>;
+  answers?: Record<string, StructuredQuestionAnswer>;
 }
 
 export function StructuredQuestionCard({ questions, onSubmit, disabled, readOnly, answers: initialAnswers }: Props) {
-  const [answers, setAnswers] = useState<Record<string, Answer>>(initialAnswers ?? {});
-
-  const allAnswered = questions.every((q) => {
-    const a = answers[q.id];
-    if (!a) return false;
-    if (a.value === 'other' && !a.freetextValue?.trim()) return false;
-    return true;
-  });
+  const [answers, setAnswers] = useState<Record<string, StructuredQuestionAnswer>>(initialAnswers ?? {});
+  const allAnswered = hasAllStructuredQuestionAnswers(questions, answers);
 
   const handleSelect = (questionId: string, value: string, label: string, freetext?: boolean) => {
     setAnswers((prev) => ({
@@ -46,15 +100,9 @@ export function StructuredQuestionCard({ questions, onSubmit, disabled, readOnly
   };
 
   const handleSubmit = () => {
-    const lines = questions.map((q) => {
-      const a = answers[q.id];
-      if (!a) return '';
-      const answerText = a.value === 'other' && a.freetextValue?.trim()
-        ? `other: ${a.freetextValue.trim()}`
-        : `${a.value}: ${a.label}`;
-      return `${q.id.toUpperCase()}: ${q.text}\n→ ${answerText}`;
-    });
-    onSubmit(lines.filter(Boolean).join('\n\n'));
+    const formattedAnswer = formatStructuredQuestionAnswers(questions, answers);
+    if (!formattedAnswer) return;
+    onSubmit(formattedAnswer);
   };
 
   return (

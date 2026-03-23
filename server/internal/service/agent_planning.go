@@ -20,13 +20,11 @@ const (
 )
 
 type planningRunInput struct {
-	Stage                     string `json:"stage,omitempty"`
-	AdditionalContext         string `json:"additional_context,omitempty"`
-	SpecDocumentID            string `json:"spec_document_id,omitempty"`
-	SpecVersionID             string `json:"spec_version_id,omitempty"`
-	PlanningMethodology       string `json:"planning_methodology,omitempty"`
-	PlanningWebSearchEnabled  bool   `json:"planning_web_search_enabled,omitempty"`
-	PlanningWebSearchProvider string `json:"planning_web_search_provider,omitempty"`
+	Stage               string `json:"stage,omitempty"`
+	AdditionalContext   string `json:"additional_context,omitempty"`
+	SpecDocumentID      string `json:"spec_document_id,omitempty"`
+	SpecVersionID       string `json:"spec_version_id,omitempty"`
+	PlanningMethodology string `json:"planning_methodology,omitempty"`
 }
 
 type epicPlanningRunSummary struct {
@@ -579,32 +577,6 @@ func planningStoryExternalID(runID string, index int, ref string) string {
 		return fmt.Sprintf("planning:%s:%s", runID, ref)
 	}
 	return fmt.Sprintf("planning:%s:%03d", runID, index+1)
-}
-
-type planningWorkspaceAISettings struct {
-	methodology       string
-	webSearchEnabled  bool
-	webSearchProvider string
-}
-
-func (s *AgentService) resolvePlanningWorkspaceAISettings(ctx context.Context, workspaceID string) planningWorkspaceAISettings {
-	resolved := planningWorkspaceAISettings{
-		methodology:       model.PlanningMethodologyStructuredV1,
-		webSearchProvider: model.PlanningWebSearchProviderBrave,
-	}
-	if s.settingsRepo == nil {
-		return resolved
-	}
-
-	settings, err := s.settingsRepo.GetWorkspaceSettings(ctx, workspaceID)
-	if err != nil || settings == nil {
-		return resolved
-	}
-
-	resolved.methodology = normalizePlanningMethodology(settings.PlanningMethodology)
-	resolved.webSearchEnabled = settings.PlanningWebSearchEnabled
-	resolved.webSearchProvider = model.NormalizePlanningWebSearchProvider(settings.PlanningWebSearchProvider)
-	return resolved
 }
 
 // EnsureEpicSpecDocument ensures the epic has a canonical product spec doc and returns it.

@@ -619,7 +619,6 @@ export function Sidebar() {
           { link: `/w/${wsSlug}/settings/recurring-tasks`, label: 'Recurring Tasks', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/automations`, label: 'Automations', icon: RefreshCw },
           { link: `/w/${wsSlug}/settings/delivery`, label: 'Delivery', icon: Globe },
-          { link: `/w/${wsSlug}/settings/ai`, label: 'AI', icon: Bot },
         ],
       },
       {

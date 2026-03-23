@@ -5,12 +5,12 @@ import {
   Loader2,
   Plus,
   Search,
-  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '@/components/ui/collapsible-section';
+import { CompactChip } from '@/components/ui/compact-chip';
 import {
   Dialog,
   DialogContent,
@@ -28,7 +28,7 @@ import {
 } from '@/hooks/queries';
 import { pmStoryService } from '@/lib/services/pmStoryService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
-import type { AssociationObjectSummary, GroupedAssociations, CreateStoryRequest } from '@/lib/pmTypes';
+import type { GroupedAssociations, CreateStoryRequest } from '@/lib/pmTypes';
 
 interface SidebarAssociationsProps {
   workspaceId: string;
@@ -36,30 +36,6 @@ interface SidebarAssociationsProps {
 }
 
 type SectionKey = 'stories' | 'docs';
-
-function CompactChip({
-  item,
-  onRemove,
-}: {
-  item: AssociationObjectSummary;
-  onRemove?: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-1.5 rounded-md border px-2 py-1.5 text-xs">
-      <div className="min-w-0 flex-1">
-        <span className="font-medium truncate block">{item.title}</span>
-      </div>
-      {item.display_id && (
-        <span className="shrink-0 text-[10px] text-muted-foreground">{item.display_id}</span>
-      )}
-      {onRemove && (
-        <button type="button" onClick={onRemove} className="shrink-0 text-muted-foreground hover:text-destructive transition-colors">
-          <Trash2 className="h-3 w-3" />
-        </button>
-      )}
-    </div>
-  );
-}
 
 export function SidebarAssociations({ workspaceId, conversationId }: SidebarAssociationsProps) {
   const associationsQuery = useConversationAssociations(workspaceId, conversationId);
@@ -166,7 +142,8 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
           stories.map((item) => (
             <CompactChip
               key={`${item.object_type}-${item.object_id}`}
-              item={item}
+              title={item.title}
+              displayId={item.display_id}
               onRemove={item.association_id ? () => deleteAssociation.mutate(item.association_id!) : undefined}
             />
           ))
@@ -186,7 +163,8 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
           docs.map((item) => (
             <CompactChip
               key={`${item.object_type}-${item.object_id}`}
-              item={item}
+              title={item.title}
+              displayId={item.display_id}
               onRemove={item.association_id ? () => deleteDocAssociation.mutate(item.association_id!) : undefined}
             />
           ))

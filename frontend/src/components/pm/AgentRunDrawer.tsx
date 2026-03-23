@@ -1,13 +1,13 @@
-import { type ComponentPropsWithoutRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { formatDistanceToNow, parseISO } from 'date-fns';
-import { Bot, FileText, Loader2, Send, ShieldCheck, Sparkles } from 'lucide-react';
+import { type ComponentPropsWithoutRef, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { formatDistanceToNow, parseISO, differenceInSeconds } from 'date-fns';
+import { Bot, FileText, Loader2, Send, ShieldCheck, Sparkles, StopCircle, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 import { AgentRunDetail } from '@/components/pm/AgentRunDetail';
 import { StructuredQuestionCard } from '@/components/pm/StructuredQuestionCard';
-import { parseApprovalRequest, parseSpecDraft, parseStoryPlan, type ParsedApprovalRequest } from '@/components/pm/agentRunMarkup';
-import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
-import { parseStructuredQuestions } from '@/components/pm/parseStructuredQuestions';
+import { parseMessageApprovalRequest, parseMessageStructuredQuestions, type ParsedApprovalRequest } from '@/components/pm/agentRunInteractions';
+import { parseArtifactPublishedPreview, parseMessagePublishedPreview, parsePublishedPreviewRawInput, type PublishedPreview } from '@/components/pm/agentRunPreviews';
+import { ACTIVE_RUN_STATUSES, STATUS_META } from '@/components/pm/agentRunConstants';
 import { StreamingTagRouter, INITIAL_SEGMENTS, type StreamSegments } from '@/components/pm/streamingTagRouter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,13 +40,10 @@ interface AgentRunDrawerProps {
   description?: string;
 }
 
-interface ProductSpecDraftArtifact {
+interface MarkdownPanelPreview {
   title?: string;
   summary?: string;
-  spec_markdown?: string;
-  risks?: string[];
-  assumptions?: string[];
-  open_questions?: string[];
+  markdown: string;
 }
 
 interface LiveToolEvent {
@@ -61,6 +58,10 @@ interface LiveToolEvent {
 interface ParsedApprovalRequestWithMeta extends ParsedApprovalRequest {
   messageId: string;
   index: number;
+}
+
+function toolEventSignature(name: string, content?: string) {
+  return `${name.trim().toLowerCase()}\u0000${(content ?? '').trim()}`;
 }
 
 function formatMessageTimestamp(value: string) {
@@ -82,6 +83,77 @@ function roleLabel(role: string) {
     default:
       return role;
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+export function parseToolMessage(message: AgentRunMessage) {
+  const blocks = Array.isArray(message.content_blocks) ? message.content_blocks : [];
+  for (const rawBlock of blocks) {
+    const block = asRecord(rawBlock);
+    if (!block || asString(block.type) !== 'tool_result') continue;
+    return {
+      name: asString(block.tool_name) || 'tool',
+      content: asString(block.output) || message.content || '',
+      input: asString(block.input),
+      isError: block.is_error === true,
+    };
+  }
+  return {
+    name: 'tool',
+    content: message.content || '',
+    input: '',
+    isError: false,
+  };
+}
+
+function collectRenderedPersistedToolCounts(messages: AgentRunMessage[]) {
+  const counts = new Map<string, number>();
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message.role === 'tool') {
+      const parsed = parseToolMessage(message);
+      const signature = toolEventSignature(parsed.name, parsed.content);
+      counts.set(signature, (counts.get(signature) ?? 0) + 1);
+      continue;
+    }
+
+    const toolInvocations = Array.isArray(message.tool_invocations) ? message.tool_invocations : [];
+    const shouldRenderAssistantToolInvocations =
+      toolInvocations.length > 0 && messages[index + 1]?.role !== 'tool';
+
+    if (!shouldRenderAssistantToolInvocations) continue;
+
+    for (const invocation of toolInvocations) {
+      const toolName = typeof invocation.tool_name === 'string' ? invocation.tool_name : 'tool';
+      const outputSummary = typeof invocation.output_summary === 'string' ? invocation.output_summary : '';
+      const signature = toolEventSignature(toolName, outputSummary);
+      counts.set(signature, (counts.get(signature) ?? 0) + 1);
+    }
+  }
+
+  return counts;
+}
+
+export function getVisibleLiveTools(liveTools: LiveToolEvent[], messages: AgentRunMessage[]) {
+  const persistedCounts = collectRenderedPersistedToolCounts(messages);
+
+  return liveTools.filter((tool) => {
+    if (tool.status !== 'completed') return true;
+    const signature = toolEventSignature(tool.name, tool.output);
+    const persistedCount = persistedCounts.get(signature) ?? 0;
+    if (persistedCount <= 0) return true;
+    persistedCounts.set(signature, persistedCount - 1);
+    return false;
+  });
 }
 
 function MarkdownContent({ content, className }: { content: string; className?: string }) {
@@ -134,30 +206,8 @@ function MarkdownContent({ content, className }: { content: string; className?: 
   );
 }
 
-function parseArtifactJSON<T>(artifact: AgentRunArtifact | null | undefined): T | null {
-  if (!artifact?.inline_content) return null;
-  try {
-    return JSON.parse(artifact.inline_content) as T;
-  } catch {
-    return null;
-  }
-}
-
-function findLatestArtifact(artifacts: AgentRunArtifact[], types: string[]): AgentRunArtifact | null {
-  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
-    if (types.includes(artifacts[index].artifact_type)) {
-      return artifacts[index];
-    }
-  }
-  return null;
-}
-
 function isInlineApprovalRun(run: AgentRun | null): boolean {
   return !!run && run.invocation_mode === 'interactive' && run.status === 'awaiting_input';
-}
-
-function isApprovalActionableRun(run: AgentRun | null): boolean {
-  return !!run && (run.status === 'awaiting_approval' || isInlineApprovalRun(run));
 }
 
 function mergeArtifactsForDisplay(artifacts: AgentRunArtifact[]): AgentRunArtifact[] {
@@ -255,6 +305,7 @@ function ApprovalActions({
   onRequestChanges: (comment: string) => void;
 }) {
   const [comment, setComment] = useState('');
+  const hasComment = comment.trim().length > 0;
   return (
     <div className="mt-3 space-y-2">
       <Textarea
@@ -263,11 +314,16 @@ function ApprovalActions({
         placeholder="Explain what needs to change before approval."
         rows={3}
       />
+      <p className="text-[11px] text-muted-foreground">
+        {hasComment
+          ? 'Send the change request to keep this same session running and get a revised draft.'
+          : 'Leave this blank only if you want to approve immediately.'}
+      </p>
       <div className="flex gap-2">
         <Button
           size="sm"
           onClick={onApprove}
-          disabled={acting}
+          disabled={acting || hasComment}
           className="gap-1.5"
         >
           {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
@@ -275,12 +331,102 @@ function ApprovalActions({
         </Button>
         <Button
           size="sm"
-          variant="outline"
+          variant={hasComment ? 'default' : 'outline'}
           onClick={() => { if (comment.trim()) onRequestChanges(comment.trim()); setComment(''); }}
           disabled={acting || !comment.trim()}
         >
           Request changes
         </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Stable thinking block — single <details> that stays mounted, uncontrolled open state. */
+function ThinkingBlock({ text, active }: { text: string; active: boolean }) {
+  if (!text && !active) return null;
+  return (
+    <details
+      className={cn(
+        'rounded-xl border p-3 shadow-sm',
+        active
+          ? 'border-purple-200/70 bg-purple-50/70 dark:border-purple-900/60 dark:bg-purple-950/20'
+          : 'border-purple-200/50 bg-purple-50/40 dark:border-purple-900/40 dark:bg-purple-950/10',
+      )}
+    >
+      <summary className={cn(
+        'flex cursor-pointer list-none items-center gap-2 text-xs font-medium',
+        active ? 'text-purple-900 dark:text-purple-200' : 'text-muted-foreground',
+      )}>
+        {active ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+        {active ? 'Thinking...' : 'Thought for a moment'}
+      </summary>
+      {text ? (
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">
+          {text}
+        </pre>
+      ) : null}
+    </details>
+  );
+}
+
+function ToolInlineBlock({
+  name,
+  content,
+  status,
+  durationMs,
+  isError = false,
+}: {
+  name: string;
+  content?: string;
+  status: 'running' | 'completed';
+  durationMs?: number;
+  isError?: boolean;
+}) {
+  return (
+    <details className={cn(
+      'rounded-lg border px-2.5 py-2 shadow-sm',
+      isError
+        ? 'border-red-300/60 bg-red-50/60 dark:border-red-900/60 dark:bg-red-950/20'
+        : 'border-border/50 bg-background/70',
+    )}>
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-medium text-muted-foreground">
+        {status === 'running' ? (
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+        ) : (
+          <Wrench className="h-3 w-3 shrink-0" />
+        )}
+        <span className="truncate">{name}</span>
+      </summary>
+      {content ? (
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 text-[10px] leading-4 text-muted-foreground">
+          {content}
+        </pre>
+      ) : null}
+      {status === 'completed' && durationMs ? (
+        <p className="mt-2 text-[10px] text-muted-foreground">
+          {(durationMs / 1000).toFixed(1)}s
+        </p>
+      ) : null}
+    </details>
+  );
+}
+
+function GenericPreviewPanel({ preview }: { preview: PublishedPreview }) {
+  return (
+    <div className="rounded-md border border-border/60 bg-background/80 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <FileText className="h-4 w-4 text-muted-foreground" />
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
+      </div>
+      <div className="max-h-[280px] overflow-auto rounded-md bg-muted/40 p-3">
+        {preview.format === 'markdown' && typeof preview.content === 'string' ? (
+          <MarkdownContent content={preview.content} className="text-[12px] leading-5" />
+        ) : (
+          <pre className="whitespace-pre-wrap text-[12px] leading-5 text-foreground">
+            {JSON.stringify(preview.content, null, 2)}
+          </pre>
+        )}
       </div>
     </div>
   );
@@ -303,12 +449,33 @@ export function AgentRunDrawer({
   const streamRouterRef = useRef(new StreamingTagRouter());
   const [liveSegments, setLiveSegments] = useState<StreamSegments>(INITIAL_SEGMENTS);
   const rafPendingRef = useRef(false);
-  const [latestTool, setLatestTool] = useState<LiveToolEvent | null>(null);
+  const [liveTools, setLiveTools] = useState<LiveToolEvent[]>([]);
+  const [livePreviews, setLivePreviews] = useState<PublishedPreview[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const reloadTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const lastReloadRef = useRef(0);
   const runRef = useRef<AgentRun | null>(null);
   runRef.current = run;
+
+  const upsertLiveTool = useCallback((nextTool: LiveToolEvent) => {
+    setLiveTools((current) => {
+      const index = current.findIndex((tool) => tool.id === nextTool.id);
+      if (index === -1) return [...current, nextTool];
+      const next = current.slice();
+      next[index] = { ...next[index], ...nextTool };
+      return next;
+    });
+  }, []);
+
+  const upsertLivePreview = useCallback((nextPreview: PublishedPreview) => {
+    setLivePreviews((current) => {
+      const index = current.findIndex((preview) => preview.panelKey === nextPreview.panelKey);
+      if (index === -1) return [...current, nextPreview];
+      const next = current.slice();
+      next[index] = nextPreview;
+      return next;
+    });
+  }, []);
 
   const loadRun = useCallback(async (nextRunId: string) => {
     setLoading(true);
@@ -318,9 +485,11 @@ export function AgentRunDrawer({
         agentService.listRunMessages(workspaceId, nextRunId),
         agentService.listRunArtifacts(workspaceId, nextRunId),
       ]);
-      setRun(runRes.data ?? null);
-      setMessages(messagesRes.data ?? []);
-      setArtifacts(artifactsRes.data ?? []);
+      startTransition(() => {
+        setRun(runRes.data ?? null);
+        setMessages(messagesRes.data ?? []);
+        setArtifacts(artifactsRes.data ?? []);
+      });
       lastReloadRef.current = Date.now();
     } finally {
       setLoading(false);
@@ -351,10 +520,6 @@ export function AgentRunDrawer({
 
   useEffect(() => {
     if (!open || !runId) {
-      if (!open) {
-        setReply('');
-        setRequestChangesComment('');
-      }
       if (reloadTimerRef.current) {
         window.clearTimeout(reloadTimerRef.current);
         reloadTimerRef.current = null;
@@ -363,7 +528,8 @@ export function AgentRunDrawer({
     }
     streamRouterRef.current.reset();
     setLiveSegments(INITIAL_SEGMENTS);
-    setLatestTool(null);
+    setLiveTools([]);
+    setLivePreviews([]);
     void loadRun(runId);
   }, [loadRun, open, runId]);
 
@@ -379,6 +545,8 @@ export function AgentRunDrawer({
       if (detail.entity_id !== runId && detail.parent_id !== runId) return;
 
       const eventStatus = detail.data?.status;
+      // Only reload on meaningful status transitions, not heartbeats/running updates.
+      // During streaming, live events handle real-time UI — no need to refetch.
       if (
         eventStatus === 'awaiting_input' ||
         eventStatus === 'awaiting_approval' ||
@@ -387,9 +555,7 @@ export function AgentRunDrawer({
         eventStatus === 'cancelled'
       ) {
         scheduleReload(runId, 300);
-        return;
       }
-      scheduleReload(runId);
     };
     const handleMessageEvent = (event: Event) => {
       const detail = (event as CustomEvent).detail as { entity_id?: string; parent_id?: string } | undefined;
@@ -442,15 +608,21 @@ export function AgentRunDrawer({
           setLiveSegments(streamRouterRef.current.finalize(stream.text));
           break;
         case 'tool_call_started':
-          setLatestTool({
+          upsertLiveTool({
             id: stream.tool_call_id || `${stream.tool_name}-${Date.now()}`,
             name: stream.tool_name || 'tool',
             input: stream.tool_input,
             status: 'running',
           });
+          if (stream.tool_name === 'publish_preview' && stream.tool_input) {
+            const preview = parsePublishedPreviewRawInput(stream.tool_input);
+            if (preview) {
+              upsertLivePreview(preview);
+            }
+          }
           break;
         case 'tool_call_finished':
-          setLatestTool({
+          upsertLiveTool({
             id: stream.tool_call_id || `${stream.tool_name}-${Date.now()}`,
             name: stream.tool_name || 'tool',
             output: stream.output_summary,
@@ -467,19 +639,14 @@ export function AgentRunDrawer({
     return () => {
       window.removeEventListener('agent_run_stream-updated', handleStreamEvent);
     };
-  }, [open, runId]);
+  }, [open, runId, upsertLivePreview, upsertLiveTool]);
 
+  // Only poll while queued (waiting for worker pickup). During streaming,
+  // WebSocket events provide real-time updates — no polling needed.
   useEffect(() => {
-    if (!open || !run || (run.status !== 'queued' && run.status !== 'running')) {
-      return;
-    }
-    const intervalMs = run.status === 'queued' ? 3_000 : 5_000;
-    const intervalId = window.setInterval(() => {
-      void loadRun(run.id);
-    }, intervalMs);
-    return () => {
-      window.clearInterval(intervalId);
-    };
+    if (!open || !run || run.status !== 'queued') return;
+    const intervalId = window.setInterval(() => void loadRun(run.id), 3_000);
+    return () => window.clearInterval(intervalId);
   }, [loadRun, open, run?.id, run?.status]);
 
   useEffect(() => {
@@ -494,14 +661,11 @@ export function AgentRunDrawer({
     if (!run || !ACTIVE_RUN_STATUSES.has(run.status)) {
       streamRouterRef.current.reset();
       setLiveSegments(INITIAL_SEGMENTS);
-      setLatestTool(null);
-    }
-    if (!isApprovalActionableRun(run)) {
-      setRequestChangesComment('');
+      return;
     }
   }, [run]);
 
-  const hasLiveContent = liveSegments.chatText.trim() || liveSegments.specDraftText.trim() || liveSegments.storyPlanText.trim() || liveSegments.questionsText.trim();
+  const hasLiveContent = liveSegments.chatText.trim();
 
   useEffect(() => {
     const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
@@ -528,7 +692,7 @@ export function AgentRunDrawer({
 
   useEffect(() => {
     scrollChatToBottom();
-  }, [messages, liveSegments.chatText, liveSegments.isThinking, latestTool, scrollChatToBottom]);
+  }, [messages, liveSegments.chatText, liveSegments.isThinking, liveTools, scrollChatToBottom]);
 
   const sendReplyContent = useCallback(async (content: string) => {
     if (!run || !content.trim()) return;
@@ -584,7 +748,7 @@ export function AgentRunDrawer({
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index];
       if (message.role !== 'assistant') continue;
-      const parsed = parseStructuredQuestions(message.content || '');
+      const parsed = parseMessageStructuredQuestions(message);
       if (parsed) {
         return { messageId: message.id, ...parsed };
       }
@@ -592,36 +756,70 @@ export function AgentRunDrawer({
     return null;
   }, [messages, run?.status]);
 
-  const latestSpecDraftPreview = useMemo(() => {
-    const draftArtifact = parseArtifactJSON<ProductSpecDraftArtifact>(
-      findLatestArtifact(artifacts, ['product_spec_draft']),
-    );
-    if (draftArtifact) return draftArtifact;
+  const persistedPreviewsByKey = useMemo(() => {
+    const previews = new Map<string, PublishedPreview>();
+
+    for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+      const preview = parseArtifactPublishedPreview(artifacts[index]);
+      if (!preview || previews.has(preview.panelKey)) continue;
+      previews.set(preview.panelKey, preview);
+    }
 
     for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const parsed = parseSpecDraft(messages[index].content || '');
-      if (parsed) {
-        return {
-          summary: parsed.surroundingText || undefined,
-          spec_markdown: parsed.draft,
-        } satisfies ProductSpecDraftArtifact;
-      }
+      const preview = parseMessagePublishedPreview(messages[index]);
+      if (!preview || previews.has(preview.panelKey)) continue;
+      previews.set(preview.panelKey, preview);
+    }
+
+    return previews;
+  }, [artifacts, messages]);
+
+  const previewsByKey = useMemo(() => {
+    const previews = new Map(persistedPreviewsByKey);
+    for (const preview of livePreviews) {
+      previews.set(preview.panelKey, preview);
+    }
+    return previews;
+  }, [livePreviews, persistedPreviewsByKey]);
+
+  const visibleLiveTools = useMemo(() => getVisibleLiveTools(liveTools, messages), [liveTools, messages]);
+
+  const latestSpecDraftPreview = useMemo(() => {
+    const preview = previewsByKey.get('prd_draft');
+    if (preview?.format === 'markdown' && typeof preview.content === 'string') {
+      return {
+        title: preview.title,
+        markdown: preview.content,
+      } satisfies MarkdownPanelPreview;
     }
     return null;
-  }, [artifacts, messages]);
+  }, [previewsByKey]);
 
   const latestStoryPlanPreview = useMemo(() => {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const parsed = parseStoryPlan(messages[index].content || '');
-      if (parsed) return parsed.plan;
+    const preview = previewsByKey.get('story_plan');
+    const previewRecord = asRecord(preview?.content);
+    if (preview?.format === 'json' && previewRecord && Array.isArray(previewRecord.proposed_stories)) {
+      return preview.content as OrchestrationProposal;
     }
-    return parseArtifactJSON<OrchestrationProposal>(findLatestArtifact(artifacts, ['story_plan_proposal', 'orchestration_proposal']));
-  }, [artifacts, messages]);
+    return null;
+  }, [previewsByKey]);
+
+  const otherPreviewPanels = useMemo(() => {
+    return Array.from(previewsByKey.values()).filter((preview) => {
+      if (preview.panelKey === 'prd_draft' && latestSpecDraftPreview?.markdown) {
+        return false;
+      }
+      if (preview.panelKey === 'story_plan' && latestStoryPlanPreview) {
+        return false;
+      }
+      return true;
+    });
+  }, [latestSpecDraftPreview?.markdown, latestStoryPlanPreview, previewsByKey]);
 
   const latestApprovalRequest = useMemo<ParsedApprovalRequestWithMeta | null>(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       if (messages[index].role !== 'assistant') continue;
-      const parsed = parseApprovalRequest(messages[index].content || '');
+      const parsed = parseMessageApprovalRequest(messages[index]);
       if (parsed) return { messageId: messages[index].id, index, ...parsed };
     }
     return null;
@@ -642,12 +840,16 @@ export function AgentRunDrawer({
     return latestApprovalRequest;
   }, [latestApprovalRequest, latestAssistantMessageId]);
 
+  const hasActiveApprovalCard = !!currentApprovalRequest && (
+    run?.status === 'awaiting_approval' || isInlineApprovalRun(run)
+  );
+
   const resolvedTitle = title ?? (run?.invocation_mode === 'interactive' ? 'Interactive Agent Run' : 'Agent Run');
   const resolvedDescription = description ?? (run ? `${run.target_type} · ${formatMessageTimestamp(run.created_at)}` : 'Run conversation and artifacts');
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full border-l sm:max-w-5xl">
+      <SheetContent side="right" className="w-full border-l sm:max-w-7xl">
         <SheetHeader className="border-b border-border/60 pr-12">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -673,28 +875,34 @@ export function AgentRunDrawer({
             </div>
           ) : run ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="border-b border-border/60 p-4">
-                <AgentRunDetail
-                  run={run}
-                  artifacts={displayArtifacts}
-                  actingOnRun={actingOnRun}
-                  onCancel={handleCancel}
-                  onApprove={handleApprove}
-                  showArtifacts={false}
-                />
+              {/* Compact status bar */}
+              <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Badge variant={STATUS_META[run.status]?.variant ?? 'secondary'} className="gap-1 px-1.5 py-0 text-[10px] shrink-0">
+                    {run.status === 'running' ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                    {STATUS_META[run.status]?.label ?? run.status}
+                  </Badge>
+                  {(() => {
+                    if (!run.started_at) return null;
+                    const start = parseISO(run.started_at);
+                    const end = run.completed_at ? parseISO(run.completed_at) : new Date();
+                    const secs = differenceInSeconds(end, start);
+                    const label = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m${secs % 60 > 0 ? ` ${secs % 60}s` : ''}`;
+                    return <span className="text-xs text-muted-foreground">({label})</span>;
+                  })()}
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  {(run.status === 'queued' || run.status === 'running' || run.status === 'awaiting_input' || run.status === 'awaiting_approval') && (
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-[11px]" disabled={actingOnRun === run.id} onClick={() => handleCancel(run.id)}>
+                      <StopCircle className="h-3 w-3" />
+                      Cancel
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
                 <div className="flex min-h-0 flex-col space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Run Chat</p>
-                    {run.status === 'running' ? (
-                      <Badge variant="secondary" className="gap-1">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        Streaming
-                      </Badge>
-                    ) : null}
-                  </div>
 
                   <div className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-md border border-border/60 bg-muted/15 p-3">
                     {messages.length === 0 && !hasLiveContent && !liveSegments.isThinking ? (
@@ -705,15 +913,13 @@ export function AgentRunDrawer({
                       </p>
                     ) : null}
 
-                    {messages.map((message) => {
+                    {messages.map((message, index) => {
                       let displayContent = message.content || '';
-                      const parsedQuestions = message.role === 'assistant' ? parseStructuredQuestions(displayContent) : null;
+                      const parsedQuestions = message.role === 'assistant' ? parseMessageStructuredQuestions(message) : null;
                       if (parsedQuestions) displayContent = parsedQuestions.surroundingText;
-                      const parsedSpec = message.role === 'assistant' ? parseSpecDraft(displayContent) : null;
-                      if (parsedSpec) displayContent = parsedSpec.surroundingText;
-                      const parsedStoryPlan = message.role === 'assistant' ? parseStoryPlan(displayContent) : null;
-                      if (parsedStoryPlan) displayContent = parsedStoryPlan.surroundingText;
-                      const parsedApproval = message.role === 'assistant' ? parseApprovalRequest(displayContent) : null;
+                      const parsedApproval = message.role === 'assistant'
+                        ? parseMessageApprovalRequest({ ...message, content: displayContent })
+                        : null;
                       if (parsedApproval) displayContent = parsedApproval.surroundingText;
                       const toolInvocations = Array.isArray(message.tool_invocations) ? message.tool_invocations : [];
                       const isLatestQuestion = latestQuestionPrompt?.messageId === message.id;
@@ -726,15 +932,29 @@ export function AgentRunDrawer({
                           )
                         );
 
+                      if (message.role === 'tool') {
+                        const toolMessage = parseToolMessage(message);
+                        return (
+                          <ToolInlineBlock
+                            key={message.id}
+                            name={toolMessage.name}
+                            content={toolMessage.content}
+                            status="completed"
+                            isError={toolMessage.isError}
+                          />
+                        );
+                      }
+
+                      const shouldRenderAssistantToolInvocations =
+                        toolInvocations.length > 0 && messages[index + 1]?.role !== 'tool';
+
                       return (
                         <div
                           key={message.id}
                           className={cn(
                             message.role === 'user'
                               ? 'rounded-xl border border-blue-200/70 bg-blue-50/70 p-3 shadow-sm dark:border-blue-900/60 dark:bg-blue-950/20'
-                              : message.role === 'tool'
-                                ? 'rounded-xl border border-border/60 bg-background/90 p-3 shadow-sm'
-                                : '',
+                              : '',
                           )}
                         >
                           <div className={cn(
@@ -750,33 +970,6 @@ export function AgentRunDrawer({
 
                           {displayContent ? <MarkdownContent content={displayContent} /> : null}
 
-                          {parsedSpec?.draft ? (
-                            <div className="mt-3 rounded-lg border border-border/50 bg-background/80 p-3">
-                              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                                <FileText className="h-3.5 w-3.5" />
-                                Live Draft
-                              </div>
-                              <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-[12px] leading-5 text-foreground">
-                                {parsedSpec.draft}
-                              </pre>
-                            </div>
-                          ) : null}
-
-                          {parsedStoryPlan?.plan ? (
-                            <div className="mt-3 rounded-lg border border-border/50 bg-background/80 p-3">
-                              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                                <Sparkles className="h-3.5 w-3.5" />
-                                Story Plan
-                              </div>
-                              <div className="space-y-2 text-sm">
-                                {parsedStoryPlan.plan.summary ? <MarkdownContent content={parsedStoryPlan.plan.summary} className="text-[12px] leading-5" /> : null}
-                                <p className="text-xs text-muted-foreground">
-                                  {parsedStoryPlan.plan.proposed_stories?.length ?? 0} proposed stories
-                                </p>
-                              </div>
-                            </div>
-                          ) : null}
-
                           {parsedApproval ? (
                             <div className="mt-3 rounded-lg border border-amber-300/50 bg-amber-50/70 p-3 dark:border-amber-800/60 dark:bg-amber-950/20">
                               <div className="mb-2 flex items-center gap-2 text-xs font-medium text-amber-900 dark:text-amber-200">
@@ -789,66 +982,39 @@ export function AgentRunDrawer({
                               ) : null}
 
                               {isLatestApproval && canEdit ? (
-                                <div className="mt-3 space-y-2">
-                                  <Textarea
-                                    value={requestChangesComment}
-                                    onChange={(event) => setRequestChangesComment(event.target.value)}
-                                    placeholder="Explain what needs to change before approval."
-                                    rows={3}
-                                  />
-                                  <div className="flex gap-2">
-                                    <Button
-                                      size="sm"
-                                      onClick={() => void handleApprove(run.id)}
-                                      disabled={actingOnRun === run.id}
-                                      className="gap-1.5"
-                                    >
-                                      {actingOnRun === run.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                                      Approve
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => void handleRequestChanges(run.id)}
-                                      disabled={actingOnRun === run.id || !requestChangesComment.trim()}
-                                    >
-                                      Request changes
-                                    </Button>
-                                  </div>
-                                </div>
+                                <ApprovalActions
+                                  acting={actingOnRun === run.id}
+                                  onApprove={() => void handleApprove(run.id)}
+                                  onRequestChanges={(comment) => void handleRequestChanges(run.id, comment)}
+                                />
                               ) : null}
                             </div>
                           ) : null}
 
-                          {toolInvocations.length > 0 ? (
-                            <details className="mt-3 rounded-md border border-border/40 bg-background/60 px-2.5 py-2 text-[11px] text-muted-foreground">
-                              <summary className="cursor-pointer list-none text-[11px] font-medium">
-                                Tool calls ({toolInvocations.length})
-                              </summary>
-                              <div className="mt-2 space-y-2">
-                                {toolInvocations.map((invocation, index) => {
-                                  const toolName = typeof invocation.tool_name === 'string' ? invocation.tool_name : 'tool';
-                                  const outputSummary = typeof invocation.output_summary === 'string' ? invocation.output_summary : '';
-                                  const durationMs = typeof invocation.duration_ms === 'number' ? invocation.duration_ms : null;
-                                  return (
-                                    <div key={`${message.id}-tool-${index}`} className="space-y-1 border-t border-border/30 pt-2 first:border-t-0 first:pt-0">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="font-medium text-foreground/80">{toolName}</span>
-                                        {durationMs !== null ? <span>{durationMs}ms</span> : null}
-                                      </div>
-                                      {outputSummary ? <p className="whitespace-pre-wrap">{outputSummary}</p> : null}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </details>
+                          {shouldRenderAssistantToolInvocations ? (
+                            <div className="mt-3 space-y-2">
+                              {toolInvocations.map((invocation, toolIndex) => {
+                                const toolName = typeof invocation.tool_name === 'string' ? invocation.tool_name : 'tool';
+                                const outputSummary = typeof invocation.output_summary === 'string' ? invocation.output_summary : '';
+                                const durationMs = typeof invocation.duration_ms === 'number' ? invocation.duration_ms : undefined;
+                                return (
+                                  <ToolInlineBlock
+                                    key={`${message.id}-tool-${toolIndex}`}
+                                    name={toolName}
+                                    content={outputSummary}
+                                    status="completed"
+                                    durationMs={durationMs}
+                                  />
+                                );
+                              })}
+                            </div>
                           ) : null}
 
                           {parsedQuestions && isLatestQuestion ? (
                             <StructuredQuestionCard
                               questions={parsedQuestions.questions}
                               onSubmit={(formattedAnswer) => void sendReplyContent(formattedAnswer)}
-                              disabled={sendingReply || !canEdit}
+                              disabled={!canEdit}
                               readOnly={!canEdit}
                             />
                           ) : null}
@@ -857,75 +1023,45 @@ export function AgentRunDrawer({
                     })}
 
                     {/* Live thinking indicator */}
-                    {liveSegments.isThinking ? (
-                      <details
-                        className="rounded-xl border border-purple-200/70 bg-purple-50/70 p-3 shadow-sm dark:border-purple-900/60 dark:bg-purple-950/20"
-                        open={false}
-                      >
-                        <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-medium text-purple-900 dark:text-purple-200">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          Thinking...
-                        </summary>
-                        {liveSegments.thinkingText ? (
-                          <div className="mt-2 max-h-40 overflow-auto text-xs text-muted-foreground">
-                            <MarkdownContent content={liveSegments.thinkingText} className="text-[11px]" />
-                          </div>
-                        ) : null}
-                      </details>
-                    ) : liveSegments.thinkingText ? (
-                      <details className="rounded-xl border border-purple-200/50 bg-purple-50/40 p-3 shadow-sm dark:border-purple-900/40 dark:bg-purple-950/10">
-                        <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-medium text-muted-foreground">
-                          Thought for a moment
-                        </summary>
-                        <div className="mt-2 max-h-40 overflow-auto text-xs text-muted-foreground">
-                          <MarkdownContent content={liveSegments.thinkingText} className="text-[11px]" />
-                        </div>
-                      </details>
-                    ) : null}
+                    <ThinkingBlock text={liveSegments.thinkingText} active={liveSegments.isThinking} />
 
                     {/* Live chat text (everything outside known XML tags) */}
                     {liveSegments.chatText ? (
                       <MarkdownContent content={liveSegments.chatText} />
                     ) : null}
 
-                    {run.status === 'running' && latestTool ? (
-                      <div className="flex items-center gap-2 py-1 text-[11px] text-muted-foreground">
-                        {latestTool.status === 'running' ? (
-                          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-                        ) : (
-                          <span className="h-3 w-3 shrink-0" />
-                        )}
-                        <span className="truncate font-medium">{latestTool.name}</span>
-                        <span className="shrink-0">
-                          {latestTool.status === 'running'
-                            ? ''
-                            : latestTool.durationMs
-                              ? `${(latestTool.durationMs / 1000).toFixed(1)}s`
-                              : 'done'}
-                        </span>
+                    {visibleLiveTools.length > 0 ? (
+                      <div className="space-y-2">
+                        {visibleLiveTools.map((tool) => (
+                          <ToolInlineBlock
+                            key={tool.id}
+                            name={tool.name}
+                            content={tool.status === 'running' ? tool.input : tool.output}
+                            status={tool.status}
+                            durationMs={tool.durationMs}
+                          />
+                        ))}
                       </div>
                     ) : null}
                     <div ref={chatEndRef} />
                   </div>
 
-                  {(run.invocation_mode === 'interactive' ? ACTIVE_RUN_STATUSES.has(run.status) : run.status === 'awaiting_input') && canEdit ? (
-                    <div className="space-y-2 rounded-md border border-border/60 bg-background/80 p-3">
-                      <Label className="text-xs">Reply To Agent</Label>
-                      <Textarea
-                        value={reply}
-                        onChange={(event) => setReply(event.target.value)}
-                        placeholder="Clarify scope, answer a question, or request changes."
-                        rows={3}
-                      />
-                      <Button onClick={() => void sendReplyContent(reply)} disabled={!reply.trim() || sendingReply} className="gap-1.5">
-                        {sendingReply ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                        Send Reply
-                      </Button>
-                    </div>
+                  {(run.invocation_mode === 'interactive' ? ACTIVE_RUN_STATUSES.has(run.status) : run.status === 'awaiting_input') && canEdit && !hasActiveApprovalCard ? (
+                    <ReplyForm onSubmit={(content) => void sendReplyContent(content)} />
                   ) : null}
                 </div>
 
                 <div className="min-h-0 space-y-3 overflow-y-auto">
+                  {/* Run details (metadata + artifacts) */}
+                  <AgentRunDetail
+                    run={run}
+                    artifacts={displayArtifacts}
+                    actingOnRun={actingOnRun}
+                    onCancel={handleCancel}
+                    onApprove={handleApprove}
+                    showArtifacts={false}
+                  />
+
                   {run.status === 'awaiting_approval' ? (
                     <div className="rounded-md border border-amber-300/50 bg-amber-50/70 p-3 dark:border-amber-800/60 dark:bg-amber-950/20">
                       <div className="mb-2 flex items-center gap-2">
@@ -950,67 +1086,34 @@ export function AgentRunDrawer({
                     </div>
                   ) : null}
 
-                  {/* Live streaming spec draft (shown while streaming, before persisted artifact) */}
-                  {(liveSegments.isStreamingSpecDraft || liveSegments.specDraftText) && !latestSpecDraftPreview ? (
-                    <div className="animate-in fade-in-0 rounded-md border border-border/60 bg-background/80 p-3 duration-200">
-                      <div className="mb-2 flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Live Draft
-                        </p>
-                        {liveSegments.isStreamingSpecDraft ? (
-                          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                        ) : null}
-                      </div>
-                      <div className="max-h-[280px] overflow-auto rounded-md bg-muted/40 p-3">
-                        <MarkdownContent content={liveSegments.specDraftText} className="text-[12px] leading-5" />
-                      </div>
-                    </div>
-                  ) : latestSpecDraftPreview?.spec_markdown ? (
+                  {latestSpecDraftPreview?.markdown ? (
                     <div className="rounded-md border border-border/60 bg-background/80 p-3">
                       <div className="mb-2 flex items-center gap-2">
                         <FileText className="h-4 w-4 text-muted-foreground" />
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live Draft</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {latestSpecDraftPreview.title || 'PRD Draft'}
+                        </p>
                       </div>
                       <div className="space-y-2">
-                        {latestSpecDraftPreview.title ? (
+                        {latestSpecDraftPreview.summary ? (
                           <div>
-                            <p className="text-sm font-semibold">{latestSpecDraftPreview.title}</p>
-                            {latestSpecDraftPreview.summary ? (
-                              <p className="text-xs text-muted-foreground">{latestSpecDraftPreview.summary}</p>
-                            ) : null}
+                            <p className="text-xs text-muted-foreground">{latestSpecDraftPreview.summary}</p>
                           </div>
                         ) : null}
                         <div className="max-h-[280px] overflow-auto rounded-md bg-muted/40 p-3">
-                          <MarkdownContent content={latestSpecDraftPreview.spec_markdown} className="text-[12px] leading-5" />
+                          <MarkdownContent content={latestSpecDraftPreview.markdown} className="text-[12px] leading-5" />
                         </div>
                       </div>
                     </div>
                   ) : null}
 
-                  {/* Live streaming story plan (shown while streaming, before persisted artifact) */}
-                  {(liveSegments.isStreamingStoryPlan || liveSegments.storyPlanText) && !latestStoryPlanPreview ? (
-                    <div className="animate-in fade-in-0 rounded-md border border-border/60 bg-background/80 p-3 duration-200">
-                      <div className="mb-2 flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-muted-foreground" />
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Story Plan
-                        </p>
-                        {liveSegments.isStreamingStoryPlan ? (
-                          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                        ) : null}
-                      </div>
-                      <div className="max-h-[280px] overflow-auto rounded-md bg-muted/40 p-3">
-                        <pre className="whitespace-pre-wrap text-[12px] leading-5 text-foreground">
-                          {liveSegments.storyPlanText}
-                        </pre>
-                      </div>
-                    </div>
-                  ) : latestStoryPlanPreview ? (
+                  {latestStoryPlanPreview ? (
                     <div className="rounded-md border border-border/60 bg-background/80 p-3">
                       <div className="mb-2 flex items-center gap-2">
                         <Sparkles className="h-4 w-4 text-muted-foreground" />
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Plan</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {previewsByKey.get('story_plan')?.title || 'Story Plan'}
+                        </p>
                       </div>
                       <div className="space-y-3">
                         {latestStoryPlanPreview.summary ? <MarkdownContent content={latestStoryPlanPreview.summary} /> : null}
@@ -1031,6 +1134,10 @@ export function AgentRunDrawer({
                       </div>
                     </div>
                   ) : null}
+
+                  {otherPreviewPanels.map((preview) => (
+                    <GenericPreviewPanel key={preview.panelKey} preview={preview} />
+                  ))}
 
                 </div>
               </div>

@@ -246,6 +246,10 @@ export function EpicDetailPage() {
     setLoading(false);
   }, [workspaceId, epicId]);
 
+  const handlePlannerRunCompleted = useCallback(() => {
+    void fetchData(false);
+  }, [fetchData]);
+
   // Load epic data + reference data
   useEffect(() => {
     fetchData();
@@ -607,7 +611,7 @@ export function EpicDetailPage() {
                   epicId={epicId}
                   lastRunId={epic.epic.last_planning_run_id}
                   canEdit={canEdit}
-                  onRunCompleted={() => { void fetchData(false); }}
+                  onRunCompleted={handlePlannerRunCompleted}
                 />
               ) : null}
             </div>

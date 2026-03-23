@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Bot, Loader2, MessageSquareMore, Play } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,6 +27,15 @@ interface EpicPlannerPanelProps {
   onRunCompleted?: () => void;
 }
 
+export function nextCompletedRunNotificationId(
+  latestRun: Pick<AgentRun, 'id' | 'status'> | null | undefined,
+  lastReportedCompletedRunId: string | null,
+) {
+  if (!latestRun || latestRun.status !== 'completed') return null;
+  if (lastReportedCompletedRunId === latestRun.id) return null;
+  return latestRun.id;
+}
+
 export function EpicPlannerPanel({
   workspaceId,
   epicId,
@@ -42,6 +51,7 @@ export function EpicPlannerPanel({
   const [additionalContext, setAdditionalContext] = useState('');
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [starting, setStarting] = useState(false);
+  const lastReportedCompletedRunIdRef = useRef<string | null>(null);
 
   const loadAgents = useCallback(async () => {
     const res = await agentService.list(workspaceId);
@@ -145,10 +155,21 @@ export function EpicPlannerPanel({
   }, [preferredPlanner, selectedAgentId]);
 
   useEffect(() => {
-    const completedLatestRun = runs[0];
-    if (completedLatestRun?.status === 'completed') {
-      onRunCompleted?.();
+    const latestRun = runs[0];
+    if (!latestRun) {
+      lastReportedCompletedRunIdRef.current = null;
+      return;
     }
+    if (latestRun.status !== 'completed') {
+      if (lastReportedCompletedRunIdRef.current === latestRun.id) {
+        lastReportedCompletedRunIdRef.current = null;
+      }
+      return;
+    }
+    const nextNotificationId = nextCompletedRunNotificationId(latestRun, lastReportedCompletedRunIdRef.current);
+    if (!nextNotificationId) return;
+    lastReportedCompletedRunIdRef.current = nextNotificationId;
+    onRunCompleted?.();
   }, [onRunCompleted, runs]);
 
   const handleStart = async () => {

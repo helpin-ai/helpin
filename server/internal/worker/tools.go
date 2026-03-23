@@ -187,7 +187,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 	}, toolRunCommand)
 
 	if webSearch != nil {
-		r.register("web_search", "Search the public web for planning research. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results.", map[string]interface{}{
+		r.register("web_search_brave", "Search the public web with Brave Search. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results.", map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"query": map[string]interface{}{
@@ -212,7 +212,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 			},
 			"required": []string{"query"},
 		}, func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-			return r.toolWebSearch(ctx, input)
+			return r.toolWebSearchBrave(ctx, input)
 		})
 	}
 
@@ -259,6 +259,74 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 	}, toolOpenPR)
 
 	// Helpin tools
+	r.register("request_human_input", "Present structured single-select questions in the interactive run drawer and wait for the human's answer.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"questions": map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"id":   map[string]interface{}{"type": "string"},
+						"type": map[string]interface{}{"type": "string", "enum": []string{QuestionTypeSingleSelect}},
+						"text": map[string]interface{}{"type": "string"},
+						"options": map[string]interface{}{
+							"type": "array",
+							"items": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"value":    map[string]interface{}{"type": "string"},
+									"label":    map[string]interface{}{"type": "string"},
+									"freetext": map[string]interface{}{"type": "boolean"},
+								},
+								"required":             []string{"value", "label"},
+								"additionalProperties": false,
+							},
+						},
+					},
+					"required":             []string{"id", "text", "options"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"questions"},
+		"additionalProperties": false,
+	}, toolRequestHumanInput)
+
+	r.register("request_human_approval", "Request an inline human approval or review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"phase":   map[string]interface{}{"type": "string"},
+			"title":   map[string]interface{}{"type": "string"},
+			"summary": map[string]interface{}{"type": "string"},
+		},
+		"required":             []string{"title"},
+		"additionalProperties": false,
+	}, toolRequestHumanApproval)
+
+	r.register("publish_preview", "Publish a structured preview panel in the interactive run drawer right pane. Use this for markdown drafts and JSON plans that should be reviewed separately from the main chat.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"panel_key": map[string]interface{}{"type": "string"},
+			"title":     map[string]interface{}{"type": "string"},
+			"format":    map[string]interface{}{"type": "string", "enum": []string{PreviewFormatMarkdown, PreviewFormatJSON}},
+			"content": map[string]interface{}{
+				"description": "Panel content. Use a string for markdown previews or any JSON value for json previews.",
+				"oneOf": []map[string]interface{}{
+					{"type": "string"},
+					{"type": "object"},
+					{"type": "array"},
+					{"type": "number"},
+					{"type": "boolean"},
+					{"type": "null"},
+				},
+			},
+			"replace": map[string]interface{}{"type": "boolean"},
+		},
+		"required":             []string{"panel_key", "title", "format", "content"},
+		"additionalProperties": false,
+	}, toolPublishPreview)
+
 	r.register("add_story_comment", "Add a comment to the current story visible in Helpin.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -466,7 +534,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"document_id", "linked_object_type", "linked_object_id"},
 	}, toolLinkDocumentToObject)
 
-	r.register("ensure_epic_spec_doc", "Create or load the canonical product spec document for the current epic and ensure it is linked.", map[string]interface{}{
+	r.register("ensure_epic_spec_doc", "Create or load the canonical product spec document for the current epic. Returns document metadata, whether an approved spec exists, the current story count, and a planning_hint for branching.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
 	}, toolEnsureEpicSpecDoc)
@@ -564,6 +632,11 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		},
 		"required": []string{"story_id", "agent_id"},
 	}, toolAssignStoryAgent)
+
+	r.register("list_epic_stories", "List all non-archived stories linked to the current epic with name, type, status, estimate, priority, and agent assignment.", map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}, toolListEpicStories)
 
 	r.register("set_story_dependencies", "Create explicit story dependency links between existing stories.", map[string]interface{}{
 		"type": "object",

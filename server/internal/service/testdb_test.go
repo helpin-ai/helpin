@@ -105,9 +105,6 @@ func newTestDB(t *testing.T) *gorm.DB {
 			notifications_enabled BOOLEAN NOT NULL DEFAULT 1,
 			auto_calculate_bonuses BOOLEAN NOT NULL DEFAULT 0,
 			team_weight INTEGER NOT NULL DEFAULT 50,
-			planning_methodology TEXT NOT NULL DEFAULT 'structured_v1',
-			planning_web_search_enabled BOOLEAN NOT NULL DEFAULT 0,
-			planning_web_search_provider TEXT NOT NULL DEFAULT 'brave',
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

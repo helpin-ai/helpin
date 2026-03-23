@@ -28,7 +28,7 @@ func TestBuildSystemPromptDirectEpicRunUsesAgentSystemPrompt(t *testing.T) {
 		t.Fatalf("expected prompt to contain stored system prompt\n%s", prompt)
 	}
 	for _, unexpected := range []string{
-		"Workspace planning methodology:",
+		"Planning methodology:",
 		"Think like an analyst first",
 		"Treat these as secondary preferences",
 		"Use tools to update the epic's canonical product spec",
@@ -53,7 +53,7 @@ func TestBuildSystemPromptLegacyPlanningStageKeepsMethodologyPack(t *testing.T) 
 		nil,
 	)
 
-	if !strings.Contains(prompt, "Workspace planning methodology: basic_v1") {
+	if !strings.Contains(prompt, "Planning methodology: basic_v1") {
 		t.Fatalf("expected methodology marker in prompt\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "Turn the approved spec into concrete stories.") {

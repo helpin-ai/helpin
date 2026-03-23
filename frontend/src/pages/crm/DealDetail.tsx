@@ -304,7 +304,6 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
           <BuyerSignals workspaceId={wsId} dealId={dealId} />
 
           <Separator className="my-4" />
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Associations</h3>
           <AssociationsList workspaceId={wsId} slug={wsSlug} associations={associations ?? []}
             currentObjectType="deal" currentObjectId={dealId} onAssociationRemoved={() => refetchAssociations()} />
         </aside>

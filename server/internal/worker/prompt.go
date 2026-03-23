@@ -83,7 +83,7 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMStory, epic *model.PME
 			parts = append(parts, "- Produce a structured product spec draft, not implementation tasks.")
 			parts = append(parts, "- The spec markdown must be well organized with headings and scenario-style acceptance language.")
 			parts = append(parts, "- Return assumptions separately from open questions so a human can resolve them before approval.")
-			parts = append(parts, "- If the web_search tool is available and you use it, return sources in the JSON sources field.")
+			parts = append(parts, "- If the web_search_brave tool is available and you use it, return sources in the JSON sources field.")
 			parts = append(parts, "- Do not embed a Research Sources section inside spec_markdown; the system will append a normalized citations section.")
 			parts = append(parts, "- Return JSON only, with no markdown fences.")
 		case model.PlanningStagePlanStories:

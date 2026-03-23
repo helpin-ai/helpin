@@ -34,8 +34,6 @@ type ExecutionContext struct {
 	PlanningMethodology       string
 	PlanningSpecDocumentID    string
 	PlanningSpecVersionID     string
-	PlanningWebSearchEnabled  bool
-	PlanningWebSearchProvider string
 	Config                    *WorkflowConfig
 	ResolvedProfile           ResolvedProfile
 	AllowedTools              map[string]bool
@@ -85,6 +83,7 @@ type ServiceBridge struct {
 	CreateStoryBatch     func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedStory) (CreateStoryBatchResult, error)
 	AssignStoryAgent     func(ctx context.Context, workspaceID, actorID, storyID, agentID string) error
 	SetStoryDependencies func(ctx context.Context, workspaceID, actorID string, dependencies []StoryDependencyLink) error
+	ListEpicStories      func(ctx context.Context, workspaceID, epicID string) ([]EpicStorySummary, error)
 	ListWorkspaceTeams   func(ctx context.Context, workspaceID string) ([]WorkspaceTeamSummary, error)
 	ApproveEpicSpec      func(ctx context.Context, workspaceID, epicID, actorID string, versionID *string) (*model.ApprovedSpecSummary, error)
 
@@ -129,6 +128,17 @@ type CreateStoryBatchStoryResult struct {
 
 type CreateStoryBatchResult struct {
 	Stories []CreateStoryBatchStoryResult `json:"stories"`
+}
+
+// EpicStorySummary is a simplified story for the list_epic_stories tool.
+type EpicStorySummary struct {
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	StoryType       string  `json:"story_type"`
+	Status          string  `json:"status"` // "not_started", "in_progress", "done"
+	Estimate        *int    `json:"estimate,omitempty"`
+	Priority        string  `json:"priority"`
+	AssignedAgentID *string `json:"assigned_agent_id,omitempty"`
 }
 
 type WorkspaceTeamSummary struct {

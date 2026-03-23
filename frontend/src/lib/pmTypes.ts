@@ -1848,6 +1848,7 @@ export interface StructuredQuestionOption {
 
 export interface StructuredQuestion {
   id: string;
+  type?: 'single_select';
   text: string;
   options: StructuredQuestionOption[];
 }

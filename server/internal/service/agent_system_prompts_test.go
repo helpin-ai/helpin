@@ -17,17 +17,18 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"You run the full PRD-to-stories loop inside a single interactive agent run.",
 		"There is no hidden planner phase machine deciding the next step for you.",
 		"Approval checkpoints happen inline in the same chat:",
-		"<questions>",
-		"Do not emit `<question>` and `<options>` as sibling blocks.",
+		"`request_human_input`",
+		"`request_human_approval`",
+		"`publish_preview`",
 		"Each question must be single-select.",
 		"`files_to_modify` must be an array of objects",
 		"`list_workspace_teams`",
-		"<spec_draft>",
-		"<story_plan>",
-		"<approval_request phase=\"prd|stories\">",
+		"`panel_key=\"prd_draft\"`",
+		"`panel_key=\"story_plan\"`",
 		"Call `ensure_epic_spec_doc`.",
 		"Call `approve_epic_spec`",
 		"Call `create_story_batch` to create the stories.",
+		"Only treat the phase as approved when the human gives a clear, explicit approval.",
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(*prompt, snippet) {

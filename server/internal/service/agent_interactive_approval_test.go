@@ -40,9 +40,9 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "not_required",
 		Status:         model.AgentRunStatusAwaitingInput,
-		OutputSummary:   []byte(`{"status":"waiting"}`),
-		CreatedAt: now,
-		UpdatedAt: now,
+		OutputSummary:  []byte(`{"status":"waiting"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -51,7 +51,7 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 		WorkspaceID: "ws-1",
 		RunID:       run.ID,
 		Role:        "assistant",
-		Content:     "<spec_draft># PRD</spec_draft>",
+		Content:     "Please review the latest PRD draft in the preview pane.",
 		MessageType: "assistant_turn",
 		SequenceNo:  1,
 	}); err != nil {
@@ -119,9 +119,9 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "not_required",
 		Status:         model.AgentRunStatusAwaitingInput,
-		OutputSummary:   []byte(`{"status":"waiting"}`),
-		CreatedAt: now,
-		UpdatedAt: now,
+		OutputSummary:  []byte(`{"status":"waiting"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -171,9 +171,9 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 		InvocationMode: model.InvocationModeInteractive,
 		ApprovalState:  "not_required",
 		Status:         model.AgentRunStatusAwaitingInput,
-		OutputSummary:   []byte(`{"status":"waiting"}`),
-		CreatedAt: now,
-		UpdatedAt: now,
+		OutputSummary:  []byte(`{"status":"waiting"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)

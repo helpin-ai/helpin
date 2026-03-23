@@ -3,6 +3,7 @@ package worker
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -24,11 +25,32 @@ func toolEnsureEpicSpecDoc(ctx *ExecutionContext, input json.RawMessage) (string
 		return "", fmt.Errorf("epic spec document was not created")
 	}
 
-	payload, _ := json.MarshalIndent(map[string]any{
-		"document_id": doc.ID,
-		"title":       doc.Title,
-		"status":      doc.Status,
-	}, "", "  ")
+	hasApprovedSpec := ctx.Epic != nil && ctx.Epic.ApprovedSpecVersionID != nil && strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID) != ""
+	storyCount := len(ctx.EpicStories)
+
+	var planningHint string
+	switch {
+	case hasApprovedSpec && storyCount > 0:
+		planningHint = "prd_approved_stories_exist"
+	case hasApprovedSpec:
+		planningHint = "prd_approved_no_stories"
+	default:
+		planningHint = "no_approved_prd"
+	}
+
+	result := map[string]any{
+		"document_id":    doc.ID,
+		"title":          doc.Title,
+		"status":         doc.Status,
+		"has_approved_spec": hasApprovedSpec,
+		"story_count":    storyCount,
+		"planning_hint":  planningHint,
+	}
+	if hasApprovedSpec {
+		result["approved_spec_version_id"] = strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID)
+	}
+
+	payload, _ := json.MarshalIndent(result, "", "  ")
 	return string(payload), nil
 }
 
@@ -73,6 +95,13 @@ func toolCreateStoryBatch(ctx *ExecutionContext, input json.RawMessage) (string,
 	}
 	if len(params.Stories) == 0 {
 		return "", fmt.Errorf("stories is required")
+	}
+
+	if len(ctx.EpicStories) > 0 {
+		slog.InfoContext(ctx.Context, "create_story_batch called with existing stories",
+			"epic_id", ctx.TargetID,
+			"existing_count", len(ctx.EpicStories),
+			"new_count", len(params.Stories))
 	}
 
 	result, err := ctx.Services.CreateStoryBatch(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID, params.Stories)
@@ -120,4 +149,25 @@ func toolSetStoryDependencies(ctx *ExecutionContext, input json.RawMessage) (str
 		return "", fmt.Errorf("set story dependencies: %w", err)
 	}
 	return fmt.Sprintf("Created %d dependency links.", len(params.Dependencies)), nil
+}
+
+func toolListEpicStories(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.TargetType != "epic" || ctx.TargetID == "" {
+		return "", fmt.Errorf("list_epic_stories is only available for epic runs")
+	}
+	if ctx.Services == nil || ctx.Services.ListEpicStories == nil {
+		return "", fmt.Errorf("epic story listing is not available")
+	}
+
+	stories, err := ctx.Services.ListEpicStories(ctx.Context, ctx.WorkspaceID, ctx.TargetID)
+	if err != nil {
+		return "", fmt.Errorf("list epic stories: %w", err)
+	}
+
+	payload, _ := json.MarshalIndent(map[string]any{
+		"epic_id":     ctx.TargetID,
+		"story_count": len(stories),
+		"stories":     stories,
+	}, "", "  ")
+	return string(payload), nil
 }

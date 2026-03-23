@@ -223,6 +223,7 @@ func ExecuteWithEino(
 			return result, nil
 		}
 
+		stopAfterToolRound := false
 		for _, toolCall := range assistantMsg.ToolCalls {
 			argsJSON := normalizeToolArguments(toolCall.Function.Arguments)
 			toolName := toolCall.Function.Name
@@ -232,7 +233,7 @@ func ExecuteWithEino(
 					Type:       "tool_call_started",
 					ToolCallID: toolCall.ID,
 					ToolName:   toolName,
-					ToolInput:  summarizeToolInput(argsJSON),
+					ToolInput:  toolInputForEvent(toolName, argsJSON),
 				})
 			}
 
@@ -274,6 +275,12 @@ func ExecuteWithEino(
 				}},
 			})
 			messages = append(messages, schema.ToolMessage(output, toolCall.ID, schema.WithToolName(toolName)))
+			if IsHumanInteractionTool(toolName) {
+				stopAfterToolRound = true
+			}
+		}
+		if stopAfterToolRound {
+			return result, nil
 		}
 	}
 
@@ -469,6 +476,13 @@ func normalizeToolArguments(raw string) json.RawMessage {
 
 func summarizeToolInput(input json.RawMessage) string {
 	return truncate(strings.TrimSpace(string(input)), 200)
+}
+
+func toolInputForEvent(toolName string, input json.RawMessage) string {
+	if strings.TrimSpace(toolName) == ToolPublishPreview {
+		return strings.TrimSpace(string(input))
+	}
+	return summarizeToolInput(input)
 }
 
 func nonEmptyText(values ...string) string {

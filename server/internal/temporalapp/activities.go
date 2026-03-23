@@ -32,15 +32,13 @@ const (
 )
 
 type planningRunInput struct {
-	Stage                     string   `json:"stage,omitempty"`
-	AdditionalContext         string   `json:"additional_context,omitempty"`
-	SpecDocumentID            string   `json:"spec_document_id,omitempty"`
-	SpecVersionID             string   `json:"spec_version_id,omitempty"`
-	PlanningMethodology       string   `json:"planning_methodology,omitempty"`
-	PlanningWebSearchEnabled  bool     `json:"planning_web_search_enabled,omitempty"`
-	PlanningWebSearchProvider string   `json:"planning_web_search_provider,omitempty"`
-	AllowedTools              []string `json:"allowed_tools,omitempty"`
-	FlowOutputKind            string   `json:"flow_output_kind,omitempty"`
+	Stage               string   `json:"stage,omitempty"`
+	AdditionalContext   string   `json:"additional_context,omitempty"`
+	SpecDocumentID      string   `json:"spec_document_id,omitempty"`
+	SpecVersionID       string   `json:"spec_version_id,omitempty"`
+	PlanningMethodology string   `json:"planning_methodology,omitempty"`
+	AllowedTools        []string `json:"allowed_tools,omitempty"`
+	FlowOutputKind      string   `json:"flow_output_kind,omitempty"`
 }
 
 type planningRunSummary struct {
@@ -302,9 +300,6 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	if len(planningInput.AllowedTools) > 0 {
 		allowedTools = stringSliceToSet(planningInput.AllowedTools)
 	}
-	if input := planningInput; (!input.PlanningWebSearchEnabled) || (input.Stage != "" && input.Stage != model.PlanningStageDraftSpec) {
-		delete(allowedTools, "web_search")
-	}
 
 	history, err := a.ensureRunConversation(ctx, state, initialInstructions, planningInput)
 	if err != nil {
@@ -314,35 +309,33 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 
 	bridge := a.serviceBridge()
 	execCtx := &workerpkg.ExecutionContext{
-		Context:                   ctx,
-		WorkDir:                   workDir,
-		WorkspaceID:               state.run.WorkspaceID,
-		AgentID:                   state.run.AgentID,
-		RunID:                     state.run.ID,
-		TargetType:                state.run.TargetType,
-		TargetID:                  state.run.TargetID,
-		Agent:                     state.agent,
-		Story:                     state.story,
-		Epic:                      state.epic,
-		EpicStories:               state.epicStories,
-		Conversation:              state.conversation,
-		GitIntegration:            state.integration,
-		GitAccessToken:            state.accessToken,
-		Repo:                      repoFullName(state),
-		BaseBranch:                derefString(state.run.BaseBranch),
-		WorkingBranch:             derefString(state.run.WorkingBranch),
-		InitialInstructions:       initialInstructions,
-		PlanningStage:             planningInput.Stage,
-		PlanningMethodology:       planningInput.PlanningMethodology,
-		PlanningSpecDocumentID:    planningInput.SpecDocumentID,
-		PlanningSpecVersionID:     planningInput.SpecVersionID,
-		PlanningWebSearchEnabled:  planningInput.PlanningWebSearchEnabled,
-		PlanningWebSearchProvider: planningInput.PlanningWebSearchProvider,
-		Config:                    config,
-		ResolvedProfile:           state.resolved,
-		AllowedTools:              allowedTools,
-		Services:                  bridge,
-		ConversationHistory:       history,
+		Context:                ctx,
+		WorkDir:                workDir,
+		WorkspaceID:            state.run.WorkspaceID,
+		AgentID:                state.run.AgentID,
+		RunID:                  state.run.ID,
+		TargetType:             state.run.TargetType,
+		TargetID:               state.run.TargetID,
+		Agent:                  state.agent,
+		Story:                  state.story,
+		Epic:                   state.epic,
+		EpicStories:            state.epicStories,
+		Conversation:           state.conversation,
+		GitIntegration:         state.integration,
+		GitAccessToken:         state.accessToken,
+		Repo:                   repoFullName(state),
+		BaseBranch:             derefString(state.run.BaseBranch),
+		WorkingBranch:          derefString(state.run.WorkingBranch),
+		InitialInstructions:    initialInstructions,
+		PlanningStage:          planningInput.Stage,
+		PlanningMethodology:    planningInput.PlanningMethodology,
+		PlanningSpecDocumentID: planningInput.SpecDocumentID,
+		PlanningSpecVersionID:  planningInput.SpecVersionID,
+		Config:                 config,
+		ResolvedProfile:        state.resolved,
+		AllowedTools:           allowedTools,
+		Services:               bridge,
+		ConversationHistory:    history,
 		Heartbeat: func(stage string) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -405,6 +398,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	}
 
 	approvalRequest := latestExecutionApprovalRequest(execCtx)
+	humanInputRequest := latestExecutionHumanInputRequest(execCtx)
 	if err := a.finalizePlanningRun(ctx, state, planningInput); err != nil {
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
@@ -421,13 +415,11 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 
-	waitForInput := state.run.InvocationMode == model.InvocationModeInteractive && state.run.TargetType != "support_conversation"
-	waitForApproval := state.run.ApprovalState == "pending"
+	waitForApproval, waitForInput := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest)
 	continueExecution := false
-	if state.run.InvocationMode == model.InvocationModeInteractive && state.run.TargetType != "support_conversation" && approvalRequest != nil {
+	if state.run.InvocationMode == model.InvocationModeInteractive && approvalRequest != nil {
 		state.run.ApprovalState = "not_required"
-		waitForApproval = false
-		waitForInput = true
+	} else if state.run.InvocationMode == model.InvocationModeInteractive && humanInputRequest != nil {
 	}
 	completedAt := time.Now()
 	if waitForApproval {
@@ -474,6 +466,24 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		AwaitingInput:     waitForInput && !waitForApproval,
 		ContinueExecution: continueExecution && !waitForApproval && !waitForInput,
 	}, nil
+}
+
+func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg.HumanInputRequest, approvalRequest *model.ApprovalRequest) (waitForApproval bool, waitForInput bool) {
+	if run == nil {
+		return false, false
+	}
+
+	waitForApproval = run.ApprovalState == "pending"
+	if run.InvocationMode != model.InvocationModeInteractive {
+		return waitForApproval, false
+	}
+	if approvalRequest != nil {
+		return false, true
+	}
+	if humanInputRequest != nil {
+		return false, true
+	}
+	return waitForApproval, false
 }
 
 func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context, state *resolvedRunState) error {
@@ -649,8 +659,47 @@ func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, sta
 		return fmt.Errorf("marshal usage: %w", err)
 	}
 
-	_, err = a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", strings.TrimSpace(result.AssistantText), blocks, invocations, usagePayload)
-	return err
+	if _, err = a.createRunMessage(ctx, state.run, "assistant", "assistant_turn", strings.TrimSpace(result.AssistantText), blocks, invocations, usagePayload); err != nil {
+		return err
+	}
+
+	for _, toolMessage := range finalRoundToolMessages(result.Messages) {
+		var toolBlocks json.RawMessage
+		if len(toolMessage.Blocks) > 0 {
+			payload, err := json.Marshal(toolMessage.Blocks)
+			if err != nil {
+				return fmt.Errorf("marshal tool message blocks: %w", err)
+			}
+			toolBlocks = payload
+		}
+		if _, err := a.createRunMessage(ctx, state.run, "tool", "tool_result", strings.TrimSpace(toolMessage.Content), toolBlocks, nil, nil); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func finalRoundToolMessages(messages []workerpkg.ExecutionMessage) []workerpkg.ExecutionMessage {
+	lastAssistantIndex := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			lastAssistantIndex = i
+			break
+		}
+	}
+	if lastAssistantIndex == -1 || lastAssistantIndex >= len(messages)-1 {
+		return nil
+	}
+
+	results := make([]workerpkg.ExecutionMessage, 0, len(messages)-lastAssistantIndex-1)
+	for _, message := range messages[lastAssistantIndex+1:] {
+		if message.Role != "tool" {
+			continue
+		}
+		results = append(results, message)
+	}
+	return results
 }
 
 func (a *AgentRunActivities) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string, blocks, toolInvocations, tokenUsage json.RawMessage) (*model.AgentRunMessage, error) {
@@ -731,48 +780,35 @@ func latestExecutionApprovalRequest(execCtx *workerpkg.ExecutionContext) *model.
 	if execCtx == nil || execCtx.LastExecutionResult == nil {
 		return nil
 	}
-	return model.ExtractLatestApprovalRequest(execCtx.LastExecutionResult.AssistantText)
+	return workerpkg.ExtractLatestHumanApprovalRequest(execCtx.LastExecutionResult.ToolInvocations)
 }
 
-func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, input planningRunInput) error {
+func latestExecutionHumanInputRequest(execCtx *workerpkg.ExecutionContext) *workerpkg.HumanInputRequest {
+	if execCtx == nil || execCtx.LastExecutionResult == nil {
+		return nil
+	}
+	return workerpkg.ExtractLatestHumanInputRequest(execCtx.LastExecutionResult.ToolInvocations)
+}
+
+func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, _ planningRunInput) error {
 	if state == nil || state.run == nil || state.epic == nil || state.run.TargetType != "epic" || execCtx == nil || execCtx.LastExecutionResult == nil {
 		return nil
 	}
 
-	assistantText := strings.TrimSpace(execCtx.LastExecutionResult.AssistantText)
-	if assistantText == "" {
-		return nil
-	}
-
-	if draft := model.ExtractLatestSpecDraft(assistantText); draft != "" {
-		if err := a.createRunArtifact(ctx, state.run, "product_spec_draft", "json", map[string]any{
-			"spec_markdown": draft,
-		}, 999995); err != nil {
+	previews := workerpkg.ExtractPublishedPreviews(execCtx.LastExecutionResult.ToolInvocations)
+	for index, preview := range previews {
+		if err := a.createRunArtifact(ctx, state.run, workerpkg.RunPreviewArtifactType, "json", map[string]any{
+			"panel_key": preview.PanelKey,
+			"title":     preview.Title,
+			"format":    preview.Format,
+			"content":   json.RawMessage(preview.Content),
+			"replace":   preview.Replace,
+		}, 999900+index); err != nil {
 			return err
 		}
 	}
 
-	if rawPlan := model.ExtractLatestStoryPlan(assistantText); rawPlan != "" {
-		if proposal, err := parseStoryPlanProposal(rawPlan, state.epic.ID, input.SpecVersionID); err == nil {
-			if err := a.createRunArtifact(ctx, state.run, "story_plan_proposal", "json", proposal, 999996); err != nil {
-				return err
-			}
-		}
-	}
-
 	return nil
-}
-
-func parseStoryPlanProposal(raw, epicID, specVersionID string) (*model.OrchestrationProposal, error) {
-	var proposal model.OrchestrationProposal
-	if err := json.Unmarshal([]byte(raw), &proposal); err != nil {
-		return nil, err
-	}
-	proposal.EpicID = epicID
-	if proposal.SpecVersionID == "" {
-		proposal.SpecVersionID = specVersionID
-	}
-	return &proposal, nil
 }
 
 func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*resolvedRunState, error) {
@@ -1157,7 +1193,6 @@ func (a *AgentRunActivities) resolvePlanningRunInput(ctx context.Context, state 
 	input.SpecDocumentID = strings.TrimSpace(input.SpecDocumentID)
 	input.SpecVersionID = strings.TrimSpace(input.SpecVersionID)
 	input.PlanningMethodology = model.NormalizePlanningMethodology(strings.TrimSpace(input.PlanningMethodology))
-	input.PlanningWebSearchProvider = model.NormalizePlanningWebSearchProvider(strings.TrimSpace(input.PlanningWebSearchProvider))
 	input.FlowOutputKind = strings.TrimSpace(input.FlowOutputKind)
 
 	if state.run.TargetType != "epic" || state.epic == nil {
@@ -1177,28 +1212,8 @@ func (a *AgentRunActivities) resolvePlanningRunInput(ctx context.Context, state 
 	if input.SpecVersionID == "" && state.epic.ApprovedSpecVersionID != nil {
 		input.SpecVersionID = strings.TrimSpace(*state.epic.ApprovedSpecVersionID)
 	}
-	if input.PlanningMethodology == "" || input.PlanningWebSearchProvider == "" {
-		settings, err := a.settingsRepo.GetWorkspaceSettings(ctx, state.run.WorkspaceID)
-		if err != nil {
-			return planningRunInput{}, err
-		}
-		if settings != nil {
-			if input.PlanningMethodology == "" {
-				input.PlanningMethodology = model.NormalizePlanningMethodology(settings.PlanningMethodology)
-			}
-			if !input.PlanningWebSearchEnabled {
-				input.PlanningWebSearchEnabled = settings.PlanningWebSearchEnabled
-			}
-			if input.PlanningWebSearchProvider == "" {
-				input.PlanningWebSearchProvider = model.NormalizePlanningWebSearchProvider(settings.PlanningWebSearchProvider)
-			}
-		}
-	}
 	if input.PlanningMethodology == "" {
 		input.PlanningMethodology = model.PlanningMethodologyStructuredV1
-	}
-	if input.PlanningWebSearchProvider == "" {
-		input.PlanningWebSearchProvider = model.PlanningWebSearchProviderBrave
 	}
 
 	payload, _ := json.Marshal(input)
@@ -1353,8 +1368,8 @@ func (a *AgentRunActivities) buildDraftSpecInstructions(ctx context.Context, sta
 		sections = append(sections, "Current implementation and product surface context from the live repository:\n"+repoContext)
 	}
 
-	if input.PlanningWebSearchEnabled {
-		sections = append(sections, fmt.Sprintf("External research is enabled for this run through the %s provider. Use the web_search tool when market context, standards, competitors, or external evidence would improve the spec. Return any sources separately in the JSON sources field instead of embedding a Research Sources section in spec_markdown.", input.PlanningWebSearchProvider))
+	if toolAllowedForPlanningRun(state.resolved, input.AllowedTools, "web_search_brave") {
+		sections = append(sections, "If market context, standards, competitors, or external evidence would improve the spec, use the `web_search_brave` tool and return any sources separately in the JSON sources field instead of embedding a Research Sources section in spec_markdown.")
 	}
 
 	sections = append(sections, "Use this normalized section structure in the spec markdown:\n# Problem\n## User Impact\n## Source Context\n## Goals\n## Non-goals\n## Requirements\n## Scenarios\n## Constraints / Risks\n## Success Metrics\n## Proposed Story Areas\n## Assumptions\n## Open Questions")
@@ -1439,10 +1454,12 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 		sections = append(sections, "The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.")
 		sections = append(sections, "Treat this as one transcript-driven planning run. There is no hidden planner phase machine controlling the next step for you.")
 		sections = append(sections, "Humans approve and request changes with normal chat replies in this same transcript. Do not tell them to use a separate approval workflow, button, or UI gate.")
+		sections = append(sections, "Only a clear explicit approval counts as approval. Any requested change, concern, critique, follow-up question, or ambiguous reply means the current phase is not approved yet.")
 	}
 	sections = append(sections, "Choose the next step from the transcript, current epic state, linked docs, existing stories, and tool results.")
-	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD in <spec_draft>, wait for inline PRD approval, persist the approved PRD to the canonical epic doc, propose the implementation story plan in <story_plan>, wait for inline story approval, then create stories.")
-	sections = append(sections, "Keep approvals soft and inline. When you need approval, emit <approval_request phase=\"prd\"> or <approval_request phase=\"stories\"> in the same transcript and stop after the request.")
+	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD, publish it with publish_preview using panel_key=\"prd_draft\", wait for inline PRD approval, persist the approved PRD to the canonical epic doc, propose the implementation story plan, publish it with publish_preview using panel_key=\"story_plan\", wait for inline story approval, then create stories.")
+	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_human_approval with phase=\"prd\" or phase=\"stories\" and stop after the request.")
+	sections = append(sections, "Use publish_preview for reviewable right-pane content. For PRDs, publish markdown. For story plans, publish JSON.")
 	sections = append(sections, "Before PRD approval, keep the draft in chat only. After PRD approval, use ensure_epic_spec_doc, write_document_content, and approve_epic_spec to persist and record the approved PRD. After story approval, use create_story_batch and only use assign_story_agent or set_story_dependencies as follow-up correction tools.")
 
 	if input.SpecDocumentID != "" {
@@ -1450,7 +1467,7 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	}
 	if input.SpecVersionID != "" {
 		sections = append(sections, fmt.Sprintf("Approved spec version ID: %s", input.SpecVersionID))
-		sections = append(sections, "A previously approved spec already exists. Use it as the source of truth for story planning unless the human explicitly asks to revise the PRD first.")
+		sections = append(sections, "IMPORTANT: A previously approved spec already exists. The PRD is LOCKED. Do not redraft, rewrite, or re-approve it. Use it as the read-only source of truth for story planning. If the human asks to revise the PRD, explain the spec is approved and suggest creating a follow-up epic instead, unless they insist.")
 	}
 	if state.epic != nil && state.epic.TeamID != nil && strings.TrimSpace(*state.epic.TeamID) != "" {
 		sections = append(sections, fmt.Sprintf("Epic team ID: %s", strings.TrimSpace(*state.epic.TeamID)))
@@ -1496,8 +1513,20 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 		for _, story := range state.epicStories {
 			lines = append(lines, fmt.Sprintf("- %s [%s]", story.Name, story.ID))
 		}
-		sections = append(sections, "Stories already exist under this epic. Avoid creating duplicates; extend or correct the plan only when the human explicitly asks for changes.")
+		sections = append(sections, fmt.Sprintf("IMPORTANT: %d stories already exist under this epic. Do NOT recreate them. Only create new stories if the human explicitly requests additions.", len(state.epicStories)))
 		sections = append(sections, "Stories already linked to this epic:\n"+strings.Join(lines, "\n"))
+	}
+
+	// Explicit three-way branch signal for the agent.
+	hasApprovedSpec := input.SpecVersionID != ""
+	hasStories := len(state.epicStories) > 0
+	switch {
+	case hasApprovedSpec && hasStories:
+		sections = append(sections, "Planning state: PRD approved, stories exist. Enter clarification mode (Branch A). Ask the human what they need.")
+	case hasApprovedSpec && !hasStories:
+		sections = append(sections, "Planning state: PRD approved, no stories yet. Skip PRD drafting and proceed to story planning (Branch B).")
+	default:
+		sections = append(sections, "Planning state: No approved PRD. Follow the full planning loop (Branch C).")
 	}
 
 	return strings.Join(sections, "\n\n"), nil
@@ -2674,6 +2703,34 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}))
 			return err
 		},
+		ListEpicStories: func(ctx context.Context, workspaceID, epicID string) ([]workerpkg.EpicStorySummary, error) {
+			stories, err := a.epicRepo.ListStories(ctx, epicID)
+			if err != nil {
+				return nil, err
+			}
+			summaries := make([]workerpkg.EpicStorySummary, 0, len(stories))
+			for _, s := range stories {
+				if s.WorkspaceID != workspaceID {
+					continue
+				}
+				status := "not_started"
+				if s.Completed {
+					status = "done"
+				} else if s.Started {
+					status = "in_progress"
+				}
+				summaries = append(summaries, workerpkg.EpicStorySummary{
+					ID:              s.ID,
+					Name:            s.Name,
+					StoryType:       s.StoryType,
+					Status:          status,
+					Estimate:        s.Estimate,
+					Priority:        s.Priority,
+					AssignedAgentID: s.AssignedAgentID,
+				})
+			}
+			return summaries, nil
+		},
 		ListWorkspaceTeams: func(ctx context.Context, workspaceID string) ([]workerpkg.WorkspaceTeamSummary, error) {
 			if a.settingsRepo == nil {
 				return nil, fmt.Errorf("workspace settings are not available")
@@ -3132,6 +3189,23 @@ func stringSliceToSet(items []string) map[string]bool {
 		}
 	}
 	return set
+}
+
+func toolAllowedForPlanningRun(resolved workerpkg.ResolvedProfile, explicitAllowed []string, toolName string) bool {
+	if len(explicitAllowed) > 0 {
+		for _, allowed := range explicitAllowed {
+			if strings.TrimSpace(allowed) == toolName {
+				return true
+			}
+		}
+		return false
+	}
+	for _, allowed := range resolved.Tools {
+		if strings.TrimSpace(allowed) == toolName {
+			return true
+		}
+	}
+	return false
 }
 
 func mustJSON(value any) json.RawMessage {

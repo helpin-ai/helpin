@@ -111,10 +111,10 @@ func TestValidatePlanningStoriesSanitizesImplementationBrief(t *testing.T) {
 			Priority:           &priority,
 			AcceptanceCriteria: []string{"Question blocks render inline"},
 			ImplementationBrief: &model.StoryImplementationBrief{
-				Approach:      " follow the existing transcript renderer ",
-				TestStrategy:  " add parser coverage ",
+				Approach:       " follow the existing transcript renderer ",
+				TestStrategy:   " add parser coverage ",
 				VerticalLayers: []string{" frontend_component ", "", "frontend_hook"},
-				DependsOnFiles: []string{" frontend/src/components/pm/parseStructuredQuestions.ts ", ""},
+				DependsOnFiles: []string{" frontend/src/components/pm/agentRunInteractions.ts ", ""},
 				FilesToModify: []model.FileChange{
 					{Path: " ", Action: "modify", Description: "skip blank"},
 					{Path: " frontend/src/components/pm/AgentRunDrawer.tsx ", Action: "", Description: " render approval card "},
@@ -149,7 +149,7 @@ func TestValidatePlanningStoriesSanitizesImplementationBrief(t *testing.T) {
 	if len(brief.VerticalLayers) != 2 || brief.VerticalLayers[0] != "frontend_component" || brief.VerticalLayers[1] != "frontend_hook" {
 		t.Fatalf("expected vertical layers to filter blanks, got %#v", brief.VerticalLayers)
 	}
-	if len(brief.DependsOnFiles) != 1 || brief.DependsOnFiles[0] != "frontend/src/components/pm/parseStructuredQuestions.ts" {
+	if len(brief.DependsOnFiles) != 1 || brief.DependsOnFiles[0] != "frontend/src/components/pm/agentRunInteractions.ts" {
 		t.Fatalf("expected depends_on_files to filter blanks, got %#v", brief.DependsOnFiles)
 	}
 }
@@ -201,9 +201,9 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 		nil,
 	)
 	svc := &AgentService{
-		storyRepo:     storyRepo,
-		epicRepo:      epicRepo,
-		storyService:  storyService,
+		storyRepo:    storyRepo,
+		epicRepo:     epicRepo,
+		storyService: storyService,
 	}
 
 	stories, err := svc.createStoriesFromProposal(ctx, workspaceID, epicID, userID, []model.ProposedStory{

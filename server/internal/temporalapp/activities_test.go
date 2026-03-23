@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestValidatePlanningProposalStoriesRejectsCycle(t *testing.T) {
@@ -158,5 +159,58 @@ func TestBuildDraftSpecClarificationsIncludesQuestionsAndAssumptions(t *testing.
 	}
 	if items[1].Kind != model.SpecClarificationKindAssumption {
 		t.Fatalf("expected second clarification to be an assumption, got %#v", items[1])
+	}
+}
+
+func TestResolveExecutionWaitState(t *testing.T) {
+	baseRun := &model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+		TargetType:     "epic",
+		ApprovalState:  "not_required",
+	}
+
+	waitForApproval, waitForInput := resolveExecutionWaitState(baseRun, nil, nil)
+	if waitForApproval || waitForInput {
+		t.Fatalf("expected no wait state without interaction tools, got approval=%v input=%v", waitForApproval, waitForInput)
+	}
+
+	waitForApproval, waitForInput = resolveExecutionWaitState(baseRun, &workerpkg.HumanInputRequest{
+		Questions: []workerpkg.HumanInputQuestion{{ID: "q1", Text: "Who is this for?", Options: []workerpkg.HumanInputOption{{Value: "a", Label: "A"}}}},
+	}, nil)
+	if waitForApproval || !waitForInput {
+		t.Fatalf("expected human input tool to pause for input, got approval=%v input=%v", waitForApproval, waitForInput)
+	}
+
+	waitForApproval, waitForInput = resolveExecutionWaitState(baseRun, nil, &model.ApprovalRequest{
+		Phase: "prd",
+		Title: "Approve PRD",
+	})
+	if waitForApproval || !waitForInput {
+		t.Fatalf("expected inline approval tool to pause for input, got approval=%v input=%v", waitForApproval, waitForInput)
+	}
+
+	waitForApproval, waitForInput = resolveExecutionWaitState(&model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+		TargetType:     "epic",
+		ApprovalState:  "pending",
+	}, nil, nil)
+	if !waitForApproval || waitForInput {
+		t.Fatalf("expected pending approval state to wait for approval, got approval=%v input=%v", waitForApproval, waitForInput)
+	}
+}
+
+func TestFinalRoundToolMessages(t *testing.T) {
+	messages := []workerpkg.ExecutionMessage{
+		{Role: "user", Content: "Initial prompt"},
+		{Role: "assistant", Content: "Need clarification", Blocks: []workerpkg.ExecutionBlock{{Type: workerpkg.ExecutionBlockTypeToolCall, ToolCallID: "tool-1", ToolName: workerpkg.ToolRequestHumanInput}}},
+		{Role: "tool", Content: `{"status":"awaiting_input"}`, Blocks: []workerpkg.ExecutionBlock{{Type: workerpkg.ExecutionBlockTypeToolResult, ToolCallID: "tool-1", ToolName: workerpkg.ToolRequestHumanInput, Output: `{"status":"awaiting_input"}`}}},
+	}
+
+	results := finalRoundToolMessages(messages)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 trailing tool message, got %#v", results)
+	}
+	if results[0].Role != "tool" || results[0].Content != `{"status":"awaiting_input"}` {
+		t.Fatalf("unexpected tool message %#v", results[0])
 	}
 }
